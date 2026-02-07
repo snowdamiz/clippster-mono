@@ -152,14 +152,16 @@ const canvasBackground = computed(() => {
 		</div>
 
 		<!-- Canvas + Interactive Overlay -->
-		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center p-4">
-			<div class="relative inline-flex max-h-full max-w-full rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]">
+		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
+			<div class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+				:style="{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }"
+			>
 				<canvas
 					ref="canvasRef"
 					:width="canvasWidth"
 					:height="canvasHeight"
-					class="block max-h-full max-w-full rounded-sm"
-					:style="{ background: canvasBackground, aspectRatio: `${canvasWidth} / ${canvasHeight}` }"
+					class="block h-full w-full rounded-sm"
+					:style="{ background: canvasBackground }"
 				/>
 				<PreviewOverlay
 					:canvas-ref="canvasRef"
@@ -170,3 +172,10 @@ const canvasBackground = computed(() => {
 		</div>
 	</div>
 </template>
+
+<style scoped>
+.preview-canvas-wrapper {
+	max-width: 100%;
+	max-height: 100%;
+}
+</style>

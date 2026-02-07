@@ -216,16 +216,16 @@ pub async fn export_video_editor_project(
             transform_filters.push(format!("setpts={}*PTS", 1.0 / speed));
         }
         
-        // Scale to cover canvas (cover-fit) preserving aspect ratio, then crop to exact canvas size
-        // This fills the canvas and crops overflow, centered — matching the preview renderer
+        // Scale to fit canvas (contain-fit) preserving aspect ratio, then pad to exact canvas size
+        // This produces letterboxing/pillarboxing when video AR differs from canvas AR
         if (scale - 1.0).abs() > 0.001 {
             let sw = (width as f64 * scale) as i32;
             let sh = (height as f64 * scale) as i32;
-            transform_filters.push(format!("scale={}:{}:force_original_aspect_ratio=increase", sw, sh));
-            transform_filters.push(format!("crop={}:{}:(iw-{})/2:(ih-{})/2", sw, sh, sw, sh));
+            transform_filters.push(format!("scale={}:{}:force_original_aspect_ratio=decrease", sw, sh));
+            transform_filters.push(format!("pad={}:{}:(ow-iw)/2:(oh-ih)/2:black", sw, sh));
         } else {
-            transform_filters.push(format!("scale={}:{}:force_original_aspect_ratio=increase", width, height));
-            transform_filters.push(format!("crop={}:{}:(iw-{})/2:(ih-{})/2", width, height, width, height));
+            transform_filters.push(format!("scale={}:{}:force_original_aspect_ratio=decrease", width, height));
+            transform_filters.push(format!("pad={}:{}:(ow-iw)/2:(oh-ih)/2:black", width, height));
         }
         
         // Flip

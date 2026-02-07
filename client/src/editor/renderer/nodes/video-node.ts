@@ -133,12 +133,12 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			} else {
 				const mediaW = frame.canvas.width || renderer.width;
 				const mediaH = frame.canvas.height || renderer.height;
-				const coverScale = Math.max(
+				const containScale = Math.min(
 					renderer.width / mediaW,
 					renderer.height / mediaH,
 				);
-				const drawW = mediaW * coverScale;
-				const drawH = mediaH * coverScale;
+				const drawW = mediaW * containScale;
+				const drawH = mediaH * containScale;
 				const drawX = (renderer.width - drawW) / 2;
 				const drawY = (renderer.height - drawH) / 2;
 

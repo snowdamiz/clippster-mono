@@ -9,7 +9,11 @@ import {
 	Check,
 	Sparkles,
 	PencilRuler,
+	ChevronRight,
+	CropIcon,
 } from "lucide-vue-next";
+import ManualPOIEditor from "../../components/poi/ManualPOIEditor.vue";
+import type { ManualFramingConfig, ManualFramingConfigs } from "@/types";
 
 const { editor, version } = useEditor();
 
@@ -76,8 +80,8 @@ const fpsHint = computed(() => {
 
 // Aspect ratio presets for export
 const aspectPresets = [
-	{ width: 1920, height: 1080, label: "16:9", platforms: "YouTube • Twitch" },
-	{ width: 1080, height: 1920, label: "9:16", platforms: "TikTok • Reels" },
+	{ width: 1920, height: 1080, label: "16:9", platforms: "YouTube \u2022 Twitch" },
+	{ width: 1080, height: 1920, label: "9:16", platforms: "TikTok \u2022 Reels" },
 	{ width: 1080, height: 1080, label: "1:1", platforms: "Instagram Feed" },
 	{ width: 1080, height: 1350, label: "4:5", platforms: "Instagram Post" },
 ];
@@ -88,48 +92,161 @@ const projectAspectLabel = computed(() => {
 	const w = projectCanvasSize.value.width;
 	const h = projectCanvasSize.value.height;
 	const match = aspectPresets.find((p) => p.width === w && p.height === h);
-	return match?.label ?? `${w}×${h}`;
+	return match?.label ?? `${w}\u00d7${h}`;
 });
 
 const isProjectLandscape = computed(() => {
 	return projectCanvasSize.value.width > projectCanvasSize.value.height;
 });
 
-// Export aspect ratio selection (only shown when project is landscape/16:9)
-const exportAspectRatio = ref<string>("project");
+// Multi-select aspect ratios (like ClipBuildSettingsDialog)
+const selectedRatios = ref<string[]>(["16:9"]);
 const framingMode = ref<"auto" | "manual">("auto");
 
+// Manual framing configs per aspect ratio
+const manualFramingConfigs = ref<ManualFramingConfigs>({});
+const showManualPOIEditor = ref(false);
+const editingAspectRatio = ref<string>("9:16");
+
+// Video frame for POI editor
+const videoFrameUrl = ref<string | null>(null);
+const loadingVideoFrame = ref(false);
+const firstVideoPath = ref<string | null>(null);
+
+// Check if portrait ratios are selected
+const hasPortraitRatio = computed(() => {
+	const portraitRatios = ["9:16", "4:5", "1:1"];
+	return selectedRatios.value.some((r) => portraitRatios.includes(r));
+});
+
+// Selected portrait ratios that need framing config
+const selectedPortraitRatios = computed(() => {
+	const portraitRatios = ["9:16", "4:5", "1:1"];
+	return selectedRatios.value.filter((r) => portraitRatios.includes(r));
+});
+
+// Export canvas size (uses project canvas for now; actual per-ratio export handled by export pipeline)
 const exportCanvasSize = computed(() => {
-	if (exportAspectRatio.value === "project") {
-		return projectCanvasSize.value;
-	}
-	const preset = aspectPresets.find((p) => p.label === exportAspectRatio.value);
-	return preset ? { width: preset.width, height: preset.height } : projectCanvasSize.value;
+	return projectCanvasSize.value;
 });
 
-const exportAspectLabel = computed(() => {
-	if (exportAspectRatio.value === "project") return projectAspectLabel.value;
-	return exportAspectRatio.value;
-});
-
-const isExportPortrait = computed(() => {
-	return exportCanvasSize.value.height > exportCanvasSize.value.width;
-});
-
-// Current step for multi-step dialog when landscape project
-type ExportStep = "aspect" | "settings";
+// Steps: platforms -> framing (conditional) -> settings
+type ExportStep = "platforms" | "framing" | "settings";
 const currentStep = ref<ExportStep>("settings");
 
+const visibleSteps = computed(() => {
+	const steps: ExportStep[] = ["platforms"];
+	if (hasPortraitRatio.value) steps.push("framing");
+	steps.push("settings");
+	return steps;
+});
+
+const currentStepIndex = computed(() => visibleSteps.value.indexOf(currentStep.value));
+
+function nextStep() {
+	const idx = currentStepIndex.value;
+	if (idx < visibleSteps.value.length - 1) {
+		currentStep.value = visibleSteps.value[idx + 1];
+	}
+}
+
+function previousStep() {
+	const idx = currentStepIndex.value;
+	if (idx > 0) {
+		currentStep.value = visibleSteps.value[idx - 1];
+	}
+}
+
+const isFirstStep = computed(() => currentStepIndex.value === 0);
+const isLastStep = computed(() => currentStepIndex.value === visibleSteps.value.length - 1);
+
+// Toggle aspect ratio selection
+function toggleRatio(ratio: string) {
+	const idx = selectedRatios.value.indexOf(ratio);
+	if (idx >= 0) {
+		selectedRatios.value = selectedRatios.value.filter((r) => r !== ratio);
+	} else {
+		selectedRatios.value = [...selectedRatios.value, ratio];
+	}
+}
+
+// Manual framing helpers
+function isRatioConfigured(ratio: string): boolean {
+	const config = manualFramingConfigs.value[ratio as keyof ManualFramingConfigs];
+	return config !== undefined && config.regions.length > 0;
+}
+
+function getConfigForRatio(ratio: string): ManualFramingConfig | null {
+	return manualFramingConfigs.value[ratio as keyof ManualFramingConfigs] || null;
+}
+
+function openPOIEditorForRatio(ratio: string) {
+	editingAspectRatio.value = ratio;
+	showManualPOIEditor.value = true;
+}
+
+function onManualConfigConfirm(config: ManualFramingConfig) {
+	manualFramingConfigs.value = {
+		...manualFramingConfigs.value,
+		[editingAspectRatio.value]: config,
+	};
+	showManualPOIEditor.value = false;
+}
+
+// Load video frame for POI editor preview
+async function loadVideoFrame() {
+	if (loadingVideoFrame.value) return;
+
+	// Find the first video asset in the project
+	const assets = editor.media.getAssets();
+	const videoAsset = assets.find((a) => a.type === "video" && a.filePath);
+	if (!videoAsset?.filePath) return;
+
+	firstVideoPath.value = videoAsset.filePath;
+	loadingVideoFrame.value = true;
+
+	try {
+		const { invoke } = await import("@tauri-apps/api/core");
+		const thumbnailPath = await invoke<string>("generate_thumbnail_at_timestamp", {
+			videoPath: videoAsset.filePath,
+			timestampSeconds: 1,
+			outputFilename: `poi_editor_preview`,
+		});
+		const dataUrl = await invoke<string>("read_file_as_data_url", {
+			filePath: thumbnailPath,
+		});
+		videoFrameUrl.value = dataUrl;
+	} catch (error) {
+		console.warn("[ExportButton] Failed to load video frame:", error);
+	} finally {
+		loadingVideoFrame.value = false;
+	}
+}
+
 // Reset state when dialog opens
-watch(isOpen, (open) => {
+watch(isOpen, async (open) => {
 	if (open) {
 		exportError.value = null;
 		progress.value = 0;
 		copied.value = false;
 		cancelRequested.value = false;
-		exportAspectRatio.value = "project";
+		selectedRatios.value = ["16:9"];
 		framingMode.value = "auto";
-		currentStep.value = isProjectLandscape.value ? "aspect" : "settings";
+		manualFramingConfigs.value = {};
+		videoFrameUrl.value = null;
+		firstVideoPath.value = null;
+		currentStep.value = isProjectLandscape.value ? "platforms" : "settings";
+
+		if (isProjectLandscape.value) {
+			await loadVideoFrame();
+		}
+	}
+});
+
+// If framing step becomes hidden while on it, skip to settings
+watch(hasPortraitRatio, (show) => {
+	if (!show && currentStep.value === "framing") {
+		currentStep.value = "settings";
 	}
 });
 
@@ -194,18 +311,6 @@ async function handleCopyError() {
 		setTimeout(() => { copied.value = false; }, 1000);
 	}
 }
-
-function selectExportAspect(label: string) {
-	exportAspectRatio.value = label;
-}
-
-function goToSettings() {
-	currentStep.value = "settings";
-}
-
-function goToAspect() {
-	currentStep.value = "aspect";
-}
 </script>
 
 <template>
@@ -245,7 +350,7 @@ function goToAspect() {
 								</div>
 								<h2 class="export-dialog__title">Export Configuration</h2>
 								<p class="export-dialog__subtitle">
-									{{ projectName }} • {{ formatDuration(projectDuration) }}
+									{{ projectName }} &bull; {{ formatDuration(projectDuration) }}
 								</p>
 							</div>
 
@@ -298,53 +403,120 @@ function goToAspect() {
 									</div>
 								</div>
 
-								<!-- Aspect Ratio Step (only for landscape projects) -->
-								<div v-else-if="isProjectLandscape && currentStep === 'aspect'" class="export-dialog__step-content">
+								<!-- Step 1: Platforms (only for landscape projects) -->
+								<div v-else-if="isProjectLandscape && currentStep === 'platforms'" class="export-dialog__step-content">
 									<div class="export-dialog__step-header">
-										<h3 class="export-dialog__step-title">Export Aspect Ratio</h3>
-										<p class="export-dialog__step-subtitle">Choose the aspect ratio for your export</p>
+										<h3 class="export-dialog__step-title">Choose Your Platforms</h3>
+										<p class="export-dialog__step-subtitle">Select aspect ratios for your target platforms</p>
 									</div>
 
 									<div class="export-dialog__aspect-grid">
-										<button
-											v-for="preset in aspectPresets"
-											:key="preset.label"
-											type="button"
-											class="export-dialog__aspect-card"
-											:class="{
-												'export-dialog__aspect-card--selected': exportAspectRatio === preset.label,
-												'export-dialog__aspect-card--project': preset.label === projectAspectLabel,
-											}"
-											@click="selectExportAspect(preset.label)"
-										>
+										<!-- 16:9 Original (always selected) -->
+										<div class="export-dialog__aspect-card export-dialog__aspect-card--original">
 											<div class="export-dialog__aspect-card-header">
 												<div class="export-dialog__aspect-label-group">
-													<span class="export-dialog__aspect-ratio-text">{{ preset.label }}</span>
-													<span v-if="preset.label === projectAspectLabel" class="export-dialog__aspect-badge">Project</span>
+													<span class="export-dialog__aspect-ratio-text">16:9</span>
+													<span class="export-dialog__aspect-badge">Original</span>
 												</div>
-												<div class="export-dialog__aspect-check" :class="{ 'export-dialog__aspect-check--active': exportAspectRatio === preset.label }">
-													<Check v-if="exportAspectRatio === preset.label" class="export-dialog__aspect-check-icon" />
+												<div class="export-dialog__aspect-check export-dialog__aspect-check--active">
+													<Check class="export-dialog__aspect-check-icon" />
 												</div>
 											</div>
 											<div class="export-dialog__aspect-preview">
-												<div
-													class="export-dialog__aspect-box"
-													:class="{ 'export-dialog__aspect-box--selected': exportAspectRatio === preset.label }"
-													:style="{ aspectRatio: `${preset.width} / ${preset.height}`, height: preset.height > preset.width ? '3rem' : 'auto', width: preset.width >= preset.height ? '4rem' : 'auto' }"
-												/>
+												<div class="export-dialog__aspect-box export-dialog__aspect-box--selected" style="aspect-ratio: 16/9; width: 4rem" />
 											</div>
 											<div class="export-dialog__aspect-platforms">
-												<p class="export-dialog__aspect-platform-text">{{ preset.platforms }}</p>
+												<p class="export-dialog__aspect-platform-text">YouTube &bull; Twitch</p>
+											</div>
+										</div>
+
+										<!-- 9:16 -->
+										<button
+											type="button"
+											class="export-dialog__aspect-card"
+											:class="{ 'export-dialog__aspect-card--selected': selectedRatios.includes('9:16') }"
+											@click="toggleRatio('9:16')"
+										>
+											<div class="export-dialog__aspect-card-header">
+												<span class="export-dialog__aspect-ratio-text">9:16</span>
+												<div class="export-dialog__aspect-check" :class="{ 'export-dialog__aspect-check--active': selectedRatios.includes('9:16') }">
+													<Check v-if="selectedRatios.includes('9:16')" class="export-dialog__aspect-check-icon" />
+												</div>
+											</div>
+											<div class="export-dialog__aspect-preview">
+												<div class="export-dialog__aspect-box" :class="{ 'export-dialog__aspect-box--selected': selectedRatios.includes('9:16') }" style="aspect-ratio: 9/16; height: 3rem" />
+											</div>
+											<div class="export-dialog__aspect-platforms">
+												<p class="export-dialog__aspect-platform-text">TikTok &bull; Reels</p>
+											</div>
+										</button>
+
+										<!-- 1:1 -->
+										<button
+											type="button"
+											class="export-dialog__aspect-card"
+											:class="{ 'export-dialog__aspect-card--selected': selectedRatios.includes('1:1') }"
+											@click="toggleRatio('1:1')"
+										>
+											<div class="export-dialog__aspect-card-header">
+												<span class="export-dialog__aspect-ratio-text">1:1</span>
+												<div class="export-dialog__aspect-check" :class="{ 'export-dialog__aspect-check--active': selectedRatios.includes('1:1') }">
+													<Check v-if="selectedRatios.includes('1:1')" class="export-dialog__aspect-check-icon" />
+												</div>
+											</div>
+											<div class="export-dialog__aspect-preview">
+												<div class="export-dialog__aspect-box" :class="{ 'export-dialog__aspect-box--selected': selectedRatios.includes('1:1') }" style="aspect-ratio: 1/1; width: 2.5rem" />
+											</div>
+											<div class="export-dialog__aspect-platforms">
+												<p class="export-dialog__aspect-platform-text">Instagram Feed</p>
+											</div>
+										</button>
+
+										<!-- 4:5 -->
+										<button
+											type="button"
+											class="export-dialog__aspect-card"
+											:class="{ 'export-dialog__aspect-card--selected': selectedRatios.includes('4:5') }"
+											@click="toggleRatio('4:5')"
+										>
+											<div class="export-dialog__aspect-card-header">
+												<span class="export-dialog__aspect-ratio-text">4:5</span>
+												<div class="export-dialog__aspect-check" :class="{ 'export-dialog__aspect-check--active': selectedRatios.includes('4:5') }">
+													<Check v-if="selectedRatios.includes('4:5')" class="export-dialog__aspect-check-icon" />
+												</div>
+											</div>
+											<div class="export-dialog__aspect-preview">
+												<div class="export-dialog__aspect-box" :class="{ 'export-dialog__aspect-box--selected': selectedRatios.includes('4:5') }" style="aspect-ratio: 4/5; height: 2.5rem" />
+											</div>
+											<div class="export-dialog__aspect-platforms">
+												<p class="export-dialog__aspect-platform-text">Instagram Post</p>
 											</div>
 										</button>
 									</div>
 
-									<!-- Framing mode (only when exporting to a different AR than project) -->
-									<div v-if="exportAspectRatio !== 'project' && exportAspectRatio !== projectAspectLabel" class="export-dialog__framing-section">
-										<div class="export-dialog__setting-header">
-											<label class="export-dialog__setting-label">Framing Mode</label>
-											<span class="export-dialog__setting-badge">{{ framingMode === 'auto' ? 'Auto' : 'Manual' }}</span>
+									<!-- Selection summary -->
+									<div v-if="selectedRatios.length > 0" class="export-dialog__selection-summary">
+										<Check class="export-dialog__selection-icon" />
+										<span class="export-dialog__selection-text">
+											{{ selectedRatios.length }} format{{ selectedRatios.length > 1 ? 's' : '' }} selected
+										</span>
+									</div>
+								</div>
+
+								<!-- Step 2: Framing (only when portrait ratios selected) -->
+								<div v-else-if="isProjectLandscape && currentStep === 'framing'" class="export-dialog__step-content">
+									<div class="export-dialog__step-header">
+										<h3 class="export-dialog__step-title">Framing &amp; Layout</h3>
+										<p class="export-dialog__step-subtitle">Configure cropping for portrait formats</p>
+									</div>
+
+									<div class="export-dialog__framing-section">
+										<div class="export-dialog__section-header">
+											<CropIcon class="export-dialog__section-icon" />
+											<h4 class="export-dialog__section-title">Portrait Cropping</h4>
 										</div>
+
+										<!-- Mode Toggle -->
 										<div class="export-dialog__framing-grid">
 											<button
 												@click="framingMode = 'auto'"
@@ -368,21 +540,55 @@ function goToAspect() {
 													<div class="export-dialog__framing-mode-icon" :class="{ 'export-dialog__framing-mode-icon--active': framingMode === 'manual' }">
 														<PencilRuler class="export-dialog__framing-icon" />
 													</div>
-													<span class="export-dialog__framing-mode-label">Letterbox / Pillarbox</span>
+													<span class="export-dialog__framing-mode-label">Manual</span>
 												</div>
-												<p class="export-dialog__framing-mode-desc">Fit video with black bars to preserve full frame</p>
+												<p class="export-dialog__framing-mode-desc">Manually configure regions for each aspect ratio</p>
 											</button>
 										</div>
+
+										<!-- Manual mode configuration list -->
+										<Transition name="slide-fade">
+											<div v-if="framingMode === 'manual'" class="export-dialog__manual-config">
+												<p class="export-dialog__manual-hint">Configure each aspect ratio:</p>
+												<div class="export-dialog__manual-list">
+													<button
+														v-for="ratio in selectedPortraitRatios"
+														:key="ratio"
+														@click="openPOIEditorForRatio(ratio)"
+														class="export-dialog__ratio-config"
+														:class="{ 'export-dialog__ratio-config--configured': isRatioConfigured(ratio) }"
+													>
+														<div class="export-dialog__ratio-config-left">
+															<div
+																class="export-dialog__ratio-preview-mini"
+																:class="{ 'export-dialog__ratio-preview-mini--configured': isRatioConfigured(ratio) }"
+																:style="{ aspectRatio: ratio.replace(':', '/'), height: ratio === '1:1' ? '1.5rem' : '2rem', width: ratio === '1:1' ? '1.5rem' : 'auto' }"
+															/>
+															<span class="export-dialog__ratio-label">{{ ratio }}</span>
+														</div>
+														<div class="export-dialog__ratio-config-right">
+															<span
+																v-if="isRatioConfigured(ratio)"
+																class="export-dialog__ratio-status export-dialog__ratio-status--configured"
+															>
+																&#10003; {{ getConfigForRatio(ratio)?.regions.length }} region{{ getConfigForRatio(ratio)?.regions.length !== 1 ? 's' : '' }}
+															</span>
+															<span v-else class="export-dialog__ratio-status">Click to configure</span>
+															<ChevronRight class="export-dialog__ratio-chevron" />
+														</div>
+													</button>
+												</div>
+												<div v-if="loadingVideoFrame" class="export-dialog__loading-hint">Loading video preview...</div>
+											</div>
+										</Transition>
 									</div>
 								</div>
 
-								<!-- Settings State -->
+								<!-- Settings State (final step, or only step for non-landscape) -->
 								<div v-else class="export-dialog__step-content">
 									<div class="export-dialog__step-header">
 										<h3 class="export-dialog__step-title">Export Settings</h3>
-										<p class="export-dialog__step-subtitle">
-											Exporting at {{ exportAspectLabel }} ({{ exportCanvasSize.width }}×{{ exportCanvasSize.height }})
-										</p>
+										<p class="export-dialog__step-subtitle">Configure quality and format options</p>
 									</div>
 
 									<div class="export-dialog__export-settings">
@@ -393,34 +599,10 @@ function goToAspect() {
 												<span class="export-dialog__setting-badge">{{ quality === 'very_high' ? 'Very High' : quality }}</span>
 											</div>
 											<div class="export-dialog__setting-buttons">
-												<button
-													@click="quality = 'low'"
-													class="export-dialog__setting-btn"
-													:class="{ 'export-dialog__setting-btn--active': quality === 'low' }"
-												>
-													Low
-												</button>
-												<button
-													@click="quality = 'medium'"
-													class="export-dialog__setting-btn"
-													:class="{ 'export-dialog__setting-btn--active': quality === 'medium' }"
-												>
-													Medium
-												</button>
-												<button
-													@click="quality = 'high'"
-													class="export-dialog__setting-btn"
-													:class="{ 'export-dialog__setting-btn--active': quality === 'high' }"
-												>
-													High
-												</button>
-												<button
-													@click="quality = 'very_high'"
-													class="export-dialog__setting-btn"
-													:class="{ 'export-dialog__setting-btn--active': quality === 'very_high' }"
-												>
-													Very High
-												</button>
+												<button @click="quality = 'low'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': quality === 'low' }">Low</button>
+												<button @click="quality = 'medium'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': quality === 'medium' }">Medium</button>
+												<button @click="quality = 'high'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': quality === 'high' }">High</button>
+												<button @click="quality = 'very_high'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': quality === 'very_high' }">Very High</button>
 											</div>
 											<p class="export-dialog__setting-hint">{{ qualityHint }}</p>
 										</div>
@@ -432,20 +614,8 @@ function goToAspect() {
 												<span class="export-dialog__setting-badge">{{ frameRate }} FPS</span>
 											</div>
 											<div class="export-dialog__setting-buttons">
-												<button
-													@click="frameRate = 30"
-													class="export-dialog__setting-btn"
-													:class="{ 'export-dialog__setting-btn--active': frameRate === 30 }"
-												>
-													30 FPS
-												</button>
-												<button
-													@click="frameRate = 60"
-													class="export-dialog__setting-btn"
-													:class="{ 'export-dialog__setting-btn--active': frameRate === 60 }"
-												>
-													60 FPS
-												</button>
+												<button @click="frameRate = 30" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': frameRate === 30 }">30 FPS</button>
+												<button @click="frameRate = 60" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': frameRate === 60 }">60 FPS</button>
 											</div>
 											<p class="export-dialog__setting-hint">{{ fpsHint }}</p>
 										</div>
@@ -457,20 +627,8 @@ function goToAspect() {
 												<span class="export-dialog__setting-badge">{{ format.toUpperCase() }}</span>
 											</div>
 											<div class="export-dialog__setting-buttons">
-												<button
-													@click="format = 'mp4'"
-													class="export-dialog__setting-btn"
-													:class="{ 'export-dialog__setting-btn--active': format === 'mp4' }"
-												>
-													MP4
-												</button>
-												<button
-													@click="format = 'webm'"
-													class="export-dialog__setting-btn"
-													:class="{ 'export-dialog__setting-btn--active': format === 'webm' }"
-												>
-													WebM
-												</button>
+												<button @click="format = 'mp4'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': format === 'mp4' }">MP4</button>
+												<button @click="format = 'webm'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': format === 'webm' }">WebM</button>
 											</div>
 											<p class="export-dialog__setting-hint">{{ formatHint }}</p>
 										</div>
@@ -489,8 +647,8 @@ function goToAspect() {
 										Cancel
 									</button>
 									<button
-										v-if="!isExporting && !exportError && isProjectLandscape && currentStep === 'settings'"
-										@click="goToAspect"
+										v-if="!isExporting && !exportError && !isFirstStep"
+										@click="previousStep"
 										class="export-dialog__btn export-dialog__btn--back"
 									>
 										Back
@@ -499,14 +657,14 @@ function goToAspect() {
 
 								<div class="export-dialog__footer-right">
 									<button
-										v-if="!isExporting && !exportError && isProjectLandscape && currentStep === 'aspect'"
-										@click="goToSettings"
+										v-if="!isExporting && !exportError && !isLastStep"
+										@click="nextStep"
 										class="export-dialog__btn export-dialog__btn--primary"
 									>
 										<span>Next</span>
 									</button>
 									<button
-										v-if="!isExporting && !exportError && (!isProjectLandscape || currentStep === 'settings')"
+										v-if="!isExporting && !exportError && isLastStep"
 										@click="handleExport"
 										class="export-dialog__btn export-dialog__btn--primary"
 									>
@@ -527,6 +685,19 @@ function goToAspect() {
 				</div>
 			</Transition>
 		</Teleport>
+
+		<!-- Manual POI Editor Dialog -->
+		<ManualPOIEditor
+			v-model="showManualPOIEditor"
+			:initial-config="getConfigForRatio(editingAspectRatio)"
+			:target-aspect-ratio="editingAspectRatio"
+			:source-aspect-ratio="'16:9'"
+			:thumbnail-url="videoFrameUrl"
+			:video-path="firstVideoPath"
+			:clip-start-time="0"
+			:clip-end-time="projectDuration"
+			@confirm="onManualConfigConfirm"
+		/>
 	</div>
 </template>
 
@@ -1136,6 +1307,167 @@ function goToAspect() {
 	color: var(--sidebar-text-muted);
 	margin: 0;
 	line-height: 1.3;
+}
+
+/* ===== Original Card ===== */
+.export-dialog__aspect-card--original {
+	cursor: default;
+	border-color: var(--sidebar-accent);
+	background-color: rgba(6, 182, 212, 0.08);
+}
+
+/* ===== Selection Summary ===== */
+.export-dialog__selection-summary {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.625rem 0.875rem;
+	border-radius: 8px;
+	background-color: rgba(6, 182, 212, 0.08);
+	border: 1px solid rgba(6, 182, 212, 0.2);
+}
+
+.export-dialog__selection-icon {
+	width: 14px;
+	height: 14px;
+	color: var(--sidebar-accent);
+}
+
+.export-dialog__selection-text {
+	font-size: 0.8125rem;
+	font-weight: 500;
+	color: var(--sidebar-accent);
+}
+
+/* ===== Section Header ===== */
+.export-dialog__section-header {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.export-dialog__section-icon {
+	width: 16px;
+	height: 16px;
+	color: var(--sidebar-accent);
+}
+
+.export-dialog__section-title {
+	font-size: 0.875rem;
+	font-weight: 600;
+	color: var(--sidebar-text);
+	margin: 0;
+}
+
+/* ===== Manual Config ===== */
+.export-dialog__manual-config {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.export-dialog__manual-hint {
+	font-size: 0.75rem;
+	color: var(--sidebar-text-muted);
+	margin: 0;
+}
+
+.export-dialog__manual-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.375rem;
+}
+
+.export-dialog__ratio-config {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0.625rem 0.75rem;
+	border-radius: 8px;
+	border: 1px solid var(--sidebar-border);
+	background-color: rgba(255, 255, 255, 0.03);
+	cursor: pointer;
+	transition: all 150ms ease;
+}
+
+.export-dialog__ratio-config:hover {
+	background-color: rgba(255, 255, 255, 0.06);
+	border-color: rgba(255, 255, 255, 0.15);
+}
+
+.export-dialog__ratio-config--configured {
+	border-color: rgba(6, 182, 212, 0.3);
+	background-color: rgba(6, 182, 212, 0.05);
+}
+
+.export-dialog__ratio-config-left {
+	display: flex;
+	align-items: center;
+	gap: 0.625rem;
+}
+
+.export-dialog__ratio-preview-mini {
+	border: 1.5px solid var(--sidebar-border);
+	border-radius: 2px;
+	background-color: rgba(255, 255, 255, 0.05);
+}
+
+.export-dialog__ratio-preview-mini--configured {
+	border-color: var(--sidebar-accent);
+	background-color: rgba(6, 182, 212, 0.15);
+}
+
+.export-dialog__ratio-label {
+	font-size: 0.8125rem;
+	font-weight: 600;
+	color: var(--sidebar-text);
+}
+
+.export-dialog__ratio-config-right {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.export-dialog__ratio-status {
+	font-size: 0.6875rem;
+	color: var(--sidebar-text-muted);
+}
+
+.export-dialog__ratio-status--configured {
+	color: var(--sidebar-accent);
+}
+
+.export-dialog__ratio-chevron {
+	width: 14px;
+	height: 14px;
+	color: var(--sidebar-text-muted);
+}
+
+.export-dialog__loading-hint {
+	font-size: 0.6875rem;
+	color: var(--sidebar-text-muted);
+	text-align: center;
+	padding: 0.25rem 0;
+}
+
+/* ===== Slide-Fade Transition ===== */
+.slide-fade-enter-active {
+	transition: all 200ms ease;
+}
+
+.slide-fade-leave-active {
+	transition: all 150ms ease;
+}
+
+.slide-fade-enter-from {
+	opacity: 0;
+	transform: translateY(-8px);
+}
+
+.slide-fade-leave-to {
+	opacity: 0;
+	transform: translateY(-8px);
 }
 
 /* ===== Transitions ===== */
