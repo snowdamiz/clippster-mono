@@ -6,12 +6,16 @@ import type { ExportOptions, ExportResult } from "../../types/export";
 import type { TimelineTrack, VideoElement, ImageElement, TextElement, AudioElement, StickerElement, EffectElement, CaptionElement } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
 import type { VideoEffect } from "../../types/effects";
+import type { AspectRatioId } from "../../types/project";
 import { TextNode } from "../../renderer/nodes/text-node";
 import type { TextNodeParams } from "../../renderer/nodes/text-node";
 import { StickerNode } from "../../renderer/nodes/sticker-node";
 import type { StickerNodeParams } from "../../renderer/nodes/sticker-node";
 import { CaptionNode } from "../../renderer/nodes/caption-node";
 import type { CaptionNodeParams } from "../../renderer/nodes/caption-node";
+import { useBrandingConfig } from "../../composables/useBrandingConfig";
+import { resolveWatermarkById } from "@/services/database/watermarks";
+import { getIntroOutroById } from "@/services/database/intro-outros";
 
 interface TauriVideoSource {
 	source_path: string;
@@ -79,6 +83,15 @@ interface TauriEffectOverlay {
 	end_time: number;
 }
 
+interface TauriBrandingWatermark {
+	image_path: string;
+	x: number;
+	y: number;
+	scale: number;
+	opacity: number;
+	is_full_frame: boolean;
+}
+
 interface TauriExportConfig {
 	video_sources: TauriVideoSource[];
 	audio_tracks: TauriAudioTrack[];
@@ -90,6 +103,19 @@ interface TauriExportConfig {
 	width: number;
 	height: number;
 	cover_timestamp: number | null;
+	branding_watermark: TauriBrandingWatermark | null;
+	intro_path: string | null;
+	intro_duration: number | null;
+	outro_path: string | null;
+	outro_duration: number | null;
+}
+
+interface BrandingExportData {
+	watermark: TauriBrandingWatermark | null;
+	introPath: string | null;
+	introDuration: number | null;
+	outroPath: string | null;
+	outroDuration: number | null;
 }
 
 export class RendererManager {
@@ -163,6 +189,11 @@ export class RendererManager {
 
 			onProgress?.({ progress: 0.15 });
 
+			// Resolve branding config for export
+			const brandingExport = await this.resolveBrandingForExport({ canvasSize });
+
+			onProgress?.({ progress: 0.18 });
+
 			// Build export config from timeline data
 			const config = this.buildExportConfig({
 				tracks,
@@ -173,6 +204,7 @@ export class RendererManager {
 				textOverlays,
 				stickerOverlays,
 				captionOverlays,
+				brandingExport,
 			});
 
 			onProgress?.({ progress: 0.2 });
@@ -204,6 +236,7 @@ export class RendererManager {
 		textOverlays,
 		stickerOverlays,
 		captionOverlays,
+		brandingExport,
 	}: {
 		tracks: TimelineTrack[];
 		mediaAssets: MediaAsset[];
@@ -213,6 +246,7 @@ export class RendererManager {
 		textOverlays: TauriTextOverlay[];
 		stickerOverlays: TauriStickerOverlay[];
 		captionOverlays: TauriTextOverlay[];
+		brandingExport: BrandingExportData;
 	}): TauriExportConfig {
 		const videoSources: TauriVideoSource[] = [];
 		const audioTracks: TauriAudioTrack[] = [];
@@ -316,6 +350,11 @@ export class RendererManager {
 			width: canvasSize.width,
 			height: canvasSize.height,
 			cover_timestamp: coverTimestamp ?? null,
+			branding_watermark: brandingExport.watermark,
+			intro_path: brandingExport.introPath,
+			intro_duration: brandingExport.introDuration,
+			outro_path: brandingExport.outroPath,
+			outro_duration: brandingExport.outroDuration,
 		};
 	}
 
@@ -535,6 +574,92 @@ export class RendererManager {
 
 		console.log(`[Export] Pre-rendered ${overlays.length} caption line overlays from ${captionCount} caption elements`);
 		return overlays;
+	}
+
+	/**
+	 * Resolve branding config (watermark, intro, outro) for the current aspect ratio.
+	 */
+	private async resolveBrandingForExport({
+		canvasSize,
+	}: {
+		canvasSize: { width: number; height: number };
+	}): Promise<BrandingExportData> {
+		const result: BrandingExportData = {
+			watermark: null,
+			introPath: null,
+			introDuration: null,
+			outroPath: null,
+			outroDuration: null,
+		};
+
+		try {
+			const { getWatermarkForCanvasSize, getActiveIntro, getActiveOutro } = useBrandingConfig();
+
+			// Detect aspect ratio from canvas size
+			const ratioMap: Record<string, AspectRatioId> = {
+				"1920x1080": "16:9",
+				"1080x1920": "9:16",
+				"1080x1080": "1:1",
+				"1080x1350": "4:5",
+			};
+			const ratioKey = `${canvasSize.width}x${canvasSize.height}`;
+			const aspectRatio = ratioMap[ratioKey];
+
+			// Resolve watermark
+			const wmConfig = getWatermarkForCanvasSize(canvasSize.width, canvasSize.height);
+			if (wmConfig?.watermarkId && wmConfig.position) {
+				const resolved = await resolveWatermarkById(wmConfig.watermarkId);
+				if (resolved?.filePath) {
+					result.watermark = {
+						image_path: resolved.filePath,
+						x: wmConfig.position.x,
+						y: wmConfig.position.y,
+						scale: wmConfig.position.scale,
+						opacity: wmConfig.position.opacity,
+						is_full_frame: wmConfig.position.isFullFrameOverlay ?? false,
+					};
+				}
+			}
+
+			if (!aspectRatio) {
+				console.log("[Export] Non-standard aspect ratio, skipping intro/outro");
+				return result;
+			}
+
+			// Resolve intro
+			const introConfig = getActiveIntro(aspectRatio);
+			if (introConfig?.assetId) {
+				if (introConfig.filePath) {
+					result.introPath = introConfig.filePath;
+					result.introDuration = introConfig.duration ?? null;
+				} else {
+					const introAsset = await getIntroOutroById(introConfig.assetId);
+					if (introAsset) {
+						result.introPath = introAsset.file_path;
+						result.introDuration = introAsset.duration ?? null;
+					}
+				}
+			}
+
+			// Resolve outro
+			const outroConfig = getActiveOutro(aspectRatio);
+			if (outroConfig?.assetId) {
+				if (outroConfig.filePath) {
+					result.outroPath = outroConfig.filePath;
+					result.outroDuration = outroConfig.duration ?? null;
+				} else {
+					const outroAsset = await getIntroOutroById(outroConfig.assetId);
+					if (outroAsset) {
+						result.outroPath = outroAsset.file_path;
+						result.outroDuration = outroAsset.duration ?? null;
+					}
+				}
+			}
+		} catch (error) {
+			console.warn("[Export] Failed to resolve branding config:", error);
+		}
+
+		return result;
 	}
 
 	subscribe(listener: () => void): () => void {

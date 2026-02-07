@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { ref, computed, watch, shallowRef } from "vue";
+import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
 import { useEditorUIState } from "../../composables/useEditorUIState";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
+import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
 import type { TimelineTrack } from "../../types/timeline";
+import type { AspectRatioId } from "../../types/project";
 import { ChevronDown, Smartphone } from "lucide-vue-next";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
@@ -174,6 +177,71 @@ const canvasBackground = computed(() => {
 	if (!bg) return "transparent";
 	return bg.type === "blur" ? "transparent" : bg.color;
 });
+
+// Branding watermark overlay
+const { getWatermarkForCanvasSize } = useBrandingConfig();
+
+const brandingWatermark = computed(() => {
+	return getWatermarkForCanvasSize(canvasWidth.value, canvasHeight.value);
+});
+
+const brandingWatermarkDataUrl = ref<string | null>(null);
+const lastWatermarkId = ref<string | null>(null);
+
+watch(
+	() => brandingWatermark.value?.watermarkId,
+	async (wmId) => {
+		if (!wmId) {
+			brandingWatermarkDataUrl.value = null;
+			lastWatermarkId.value = null;
+			return;
+		}
+		if (wmId === lastWatermarkId.value) return;
+		lastWatermarkId.value = wmId;
+
+		try {
+			// Try to resolve watermark file path and load as data URL
+			const { resolveWatermarkById } = await import("@/services/database/watermarks");
+			const resolved = await resolveWatermarkById(wmId);
+			if (resolved?.filePath) {
+				const dataUrl = await invoke<string>("read_file_as_data_url", {
+					filePath: resolved.filePath,
+				});
+				brandingWatermarkDataUrl.value = dataUrl;
+			} else {
+				brandingWatermarkDataUrl.value = null;
+			}
+		} catch (e) {
+			console.warn("[PreviewPanel] Failed to load branding watermark:", e);
+			brandingWatermarkDataUrl.value = null;
+		}
+	},
+	{ immediate: true },
+);
+
+const brandingWatermarkStyle = computed(() => {
+	const wm = brandingWatermark.value;
+	if (!wm?.position) return null;
+
+	if (wm.position.isFullFrameOverlay) {
+		return {
+			left: "0",
+			top: "0",
+			width: "100%",
+			height: "100%",
+			opacity: (wm.position.opacity ?? 100) / 100,
+		};
+	}
+
+	return {
+		left: `${wm.position.x}%`,
+		top: `${wm.position.y}%`,
+		transform: "translate(-50%, -50%)",
+		width: `${wm.position.scale}%`,
+		height: "auto",
+		opacity: (wm.position.opacity ?? 100) / 100,
+	};
+});
 </script>
 
 <template>
@@ -285,6 +353,14 @@ const canvasBackground = computed(() => {
 					:preset="activeSocialOverlay"
 					:canvas-width="canvasWidth"
 					:canvas-height="canvasHeight"
+				/>
+				<!-- Branding watermark overlay -->
+				<img
+					v-if="brandingWatermarkDataUrl && brandingWatermarkStyle"
+					:src="brandingWatermarkDataUrl"
+					class="pointer-events-none absolute select-none"
+					:style="brandingWatermarkStyle"
+					draggable="false"
 				/>
 			</div>
 		</div>

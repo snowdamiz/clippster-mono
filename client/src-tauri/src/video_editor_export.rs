@@ -74,6 +74,16 @@ pub struct EffectOverlay {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct BrandingWatermark {
+    pub image_path: String,
+    pub x: f64,
+    pub y: f64,
+    pub scale: f64,
+    pub opacity: f64,
+    pub is_full_frame: bool,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ExportConfig {
     pub video_sources: Vec<VideoSource>,
     pub audio_tracks: Vec<AudioTrack>,
@@ -85,6 +95,11 @@ pub struct ExportConfig {
     pub width: i32,
     pub height: i32,
     pub cover_timestamp: Option<f64>,
+    pub branding_watermark: Option<BrandingWatermark>,
+    pub intro_path: Option<String>,
+    pub intro_duration: Option<f64>,
+    pub outro_path: Option<String>,
+    pub outro_duration: Option<f64>,
 }
 
 /// Full video editor export with audio tracks, text overlays, and effects
@@ -103,6 +118,9 @@ pub async fn export_video_editor_project(
     println!("  Text overlays: {}", config.text_overlays.len());
     println!("  Sticker overlays: {}", config.sticker_overlays.len());
     println!("  Effect overlays: {}", config.effect_overlays.as_ref().map_or(0, |v| v.len()));
+    println!("  Branding watermark: {}", config.branding_watermark.is_some());
+    println!("  Intro: {:?}", config.intro_path);
+    println!("  Outro: {:?}", config.outro_path);
 
     // Validate all input files exist
     for source in &config.video_sources {
@@ -126,6 +144,24 @@ pub async fn export_video_editor_project(
     for sticker in &config.sticker_overlays {
         if !Path::new(&sticker.image_path).exists() {
             return Err(format!("Sticker overlay PNG not found: {}", sticker.image_path));
+        }
+    }
+
+    if let Some(ref wm) = config.branding_watermark {
+        if !Path::new(&wm.image_path).exists() {
+            return Err(format!("Branding watermark not found: {}", wm.image_path));
+        }
+    }
+
+    if let Some(ref intro) = config.intro_path {
+        if !Path::new(intro).exists() {
+            return Err(format!("Intro video not found: {}", intro));
+        }
+    }
+
+    if let Some(ref outro) = config.outro_path {
+        if !Path::new(outro).exists() {
+            return Err(format!("Outro video not found: {}", outro));
         }
     }
 
@@ -176,6 +212,17 @@ pub async fn export_video_editor_project(
         args.push("-i".to_string());
         args.push(sticker.image_path.clone());
     }
+
+    // Add branding watermark input (if configured)
+    let branding_wm_input_idx = if config.branding_watermark.is_some() {
+        let idx = config.video_sources.len() + config.audio_tracks.len() + config.text_overlays.len() + config.sticker_overlays.len();
+        let wm = config.branding_watermark.as_ref().unwrap();
+        args.push("-i".to_string());
+        args.push(wm.image_path.clone());
+        Some(idx)
+    } else {
+        None
+    };
 
     // Build filter_complex for video and audio processing
     let mut filters = Vec::new();
@@ -721,6 +768,41 @@ pub async fn export_video_editor_project(
         }
     }
 
+    // Apply branding watermark overlay (always visible, full duration)
+    if let (Some(wm_idx), Some(ref wm)) = (branding_wm_input_idx, &config.branding_watermark) {
+        let next_stream = "[vwm]".to_string();
+
+        if wm.is_full_frame {
+            // Full-frame overlay: scale watermark to canvas size, apply opacity
+            let opacity_val = wm.opacity / 100.0;
+            filters.push(format!(
+                "[{}:v]scale={}:{}:force_original_aspect_ratio=disable,format=rgba,colorchannelmixer=aa={}[wm_scaled]",
+                wm_idx, config.width, config.height, opacity_val
+            ));
+            filters.push(format!(
+                "{}[wm_scaled]overlay=0:0{}",
+                video_stream, next_stream
+            ));
+        } else {
+            // Positioned overlay: scale watermark to percentage of canvas width, position by percentage
+            let wm_width = (config.width as f64 * wm.scale / 100.0) as i32;
+            let opacity_val = wm.opacity / 100.0;
+            // Position: x/y are percentages (0-100), watermark centered at that point
+            let pos_x = format!("W*{}/100-w/2", wm.x);
+            let pos_y = format!("H*{}/100-h/2", wm.y);
+            filters.push(format!(
+                "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[wm_scaled]",
+                wm_idx, wm_width, opacity_val
+            ));
+            filters.push(format!(
+                "{}[wm_scaled]overlay={}:{}{}",
+                video_stream, pos_x, pos_y, next_stream
+            ));
+        }
+
+        video_stream = next_stream;
+    }
+
     // If nothing produced [vout] yet, rename current stream
     if video_stream != "[vout]" {
         filters.push(format!("{}copy[vout]", video_stream));
@@ -784,6 +866,68 @@ pub async fn export_video_editor_project(
     // Verify output file was created
     if !Path::new(&config.output_path).exists() {
         return Err("Export completed but output file not found".to_string());
+    }
+
+    println!("[Rust] Main export completed: {}", config.output_path);
+
+    // Concat intro/outro if configured
+    let has_intro = config.intro_path.is_some();
+    let has_outro = config.outro_path.is_some();
+    if has_intro || has_outro {
+        println!("[Rust] Concatenating intro/outro...");
+
+        // Build concat list file
+        let concat_dir = std::env::temp_dir().join("clippster_concat");
+        std::fs::create_dir_all(&concat_dir)
+            .map_err(|e| format!("Failed to create concat temp dir: {}", e))?;
+        let concat_list_path = concat_dir.join("concat_list.txt");
+
+        let mut concat_entries = Vec::new();
+        if let Some(ref intro) = config.intro_path {
+            let escaped = intro.replace('\'', "'\\''");
+            concat_entries.push(format!("file '{}'", escaped));
+        }
+        {
+            let escaped = config.output_path.replace('\'', "'\\''");
+            concat_entries.push(format!("file '{}'", escaped));
+        }
+        if let Some(ref outro) = config.outro_path {
+            let escaped = outro.replace('\'', "'\\''");
+            concat_entries.push(format!("file '{}'", escaped));
+        }
+
+        std::fs::write(&concat_list_path, concat_entries.join("\n"))
+            .map_err(|e| format!("Failed to write concat list: {}", e))?;
+
+        // Output to a temp file, then replace the original
+        let temp_output = concat_dir.join("concat_output.mp4");
+
+        let concat_output = shell
+            .command("ffmpeg")
+            .args(&[
+                "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", &concat_list_path.to_string_lossy(),
+                "-c", "copy",
+                "-movflags", "+faststart",
+                &temp_output.to_string_lossy(),
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to concat intro/outro: {}", e))?;
+
+        if concat_output.status.success() {
+            // Replace original with concatenated version
+            std::fs::copy(&temp_output, &config.output_path)
+                .map_err(|e| format!("Failed to replace output with concat: {}", e))?;
+            let _ = std::fs::remove_file(&temp_output);
+            let _ = std::fs::remove_file(&concat_list_path);
+            println!("[Rust] Intro/outro concat completed successfully");
+        } else {
+            let stderr = String::from_utf8_lossy(&concat_output.stderr);
+            println!("[Rust] Intro/outro concat failed (non-fatal, keeping main export): {}", stderr);
+        }
     }
 
     println!("[Rust] Export completed successfully: {}", config.output_path);

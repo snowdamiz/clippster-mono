@@ -1,5 +1,31 @@
 import type { TScene } from "./timeline";
 
+export type AspectRatioId = "16:9" | "9:16" | "1:1" | "4:5";
+
+export interface BrandingWatermarkConfig {
+	watermarkId: string | null;
+	position: {
+		x: number;
+		y: number;
+		opacity: number;
+		scale: number;
+		isFullFrameOverlay?: boolean;
+	} | null;
+}
+
+export interface BrandingIntroOutroConfig {
+	assetId: string;
+	filePath?: string;
+	duration?: number;
+}
+
+export interface BrandingConfig {
+	creatorProfileId?: string | null;
+	watermarks: Record<string, BrandingWatermarkConfig | null>;
+	intros: Record<string, BrandingIntroOutroConfig | null>;
+	outros: Record<string, BrandingIntroOutroConfig | null>;
+}
+
 export type TBackground =
 	| {
 			type: "color";
@@ -29,6 +55,7 @@ export interface TProjectSettings {
 	canvasSize: TCanvasSize;
 	originalCanvasSize?: TCanvasSize | null;
 	background: TBackground;
+	brandingConfig?: BrandingConfig;
 }
 
 export interface TTimelineViewState {

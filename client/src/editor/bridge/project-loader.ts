@@ -34,6 +34,9 @@ import type {
 	VideoEditorTextOverlayRecord,
 	VideoEditorAudioTrackRecord,
 } from "@/services/database/video-editor-edits";
+import { getClip } from "@/services/database/clips";
+import { getCreatorProfileByProjectId } from "@/services/database/creator-profiles";
+import { useBrandingConfig } from "../composables/useBrandingConfig";
 
 const DEFAULT_TRANSFORM: Transform = {
 	scale: 1,
@@ -64,6 +67,17 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 	const existingProject = await storageService.loadProject({ id: projectId });
 	if (existingProject) {
 		await editor.project.loadProject({ id: projectId });
+
+		// Initialize branding config from saved project settings or creator profile
+		const loadedProject = editor.project.getActive();
+		const branding = useBrandingConfig();
+		if (loadedProject?.settings?.brandingConfig) {
+			branding.initFromSavedConfig(loadedProject.settings.brandingConfig);
+		} else {
+			const sources = await getVideoEditorSourcesByProjectId(projectId);
+			await resolveAndInitBranding(sources);
+		}
+
 		return editor;
 	}
 
@@ -117,6 +131,9 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 	}
 
 	await editor.project.loadProject({ id: projectId });
+
+	// Resolve creator profile for branding config
+	await resolveAndInitBranding(sources);
 
 	return editor;
 }
@@ -307,4 +324,38 @@ function inferMediaType(filePath: string): "video" | "audio" | "image" {
 	if (["mp3", "wav", "ogg", "aac", "m4a", "flac"].includes(ext)) return "audio";
 	if (["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg"].includes(ext)) return "image";
 	return "video";
+}
+
+/**
+ * Resolve the creator profile from video editor sources and initialize branding config.
+ * Chain: source (source_type='clip') → clip → clip.project_id → getCreatorProfileByProjectId()
+ */
+async function resolveAndInitBranding(sources: VideoEditorSource[]): Promise<void> {
+	const branding = useBrandingConfig();
+
+	try {
+		// Find the first clip source to trace back to the original project
+		const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
+		if (!clipSource?.source_id) {
+			console.log("[bridge] No clip source found, skipping branding resolution");
+			return;
+		}
+
+		const clip = await getClip(clipSource.source_id);
+		if (!clip?.project_id) {
+			console.log("[bridge] Clip has no project_id, skipping branding resolution");
+			return;
+		}
+
+		const profile = await getCreatorProfileByProjectId(clip.project_id);
+		if (!profile) {
+			console.log("[bridge] No creator profile found for project:", clip.project_id);
+			return;
+		}
+
+		console.log("[bridge] Found creator profile for branding:", profile.name);
+		branding.initFromCreatorProfile(profile);
+	} catch (error) {
+		console.warn("[bridge] Failed to resolve creator profile for branding:", error);
+	}
 }
