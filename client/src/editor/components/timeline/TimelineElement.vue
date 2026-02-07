@@ -4,6 +4,7 @@ import { useEditor } from "../../composables/useEditor";
 import { useTimelineElementResize } from "../../composables/timeline/element/useElementResize";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useFilmstrip } from "../../composables/timeline/useFilmstrip";
+import { useAudioWaveform } from "../../composables/timeline/useAudioWaveform";
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import {
@@ -42,7 +43,7 @@ const emit = defineEmits<{
 	(e: "elementContextMenu", event: MouseEvent, element: TimelineElementType): void;
 }>();
 
-const { editor } = useEditor();
+const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
 
 const mediaAssets = computed(() => editor.media.getAssets());
@@ -139,6 +140,32 @@ const { frames: filmstripFrames, thumbnailWidth: filmstripThumbWidth } = useFilm
 
 const hasFilmstrip = computed(() => isVideoElement.value && filmstripFrames.value.length > 0);
 
+// Audio waveform support (for audio elements)
+const isAudioElement = computed(() => props.element.type === "audio");
+const audioWaveformCanvas = ref<HTMLCanvasElement | null>(null);
+
+// Video waveform support (audio track rendered under filmstrip)
+const videoWaveformCanvas = ref<HTMLCanvasElement | null>(null);
+
+const playheadTime = computed(() => {
+	void version.value;
+	return editor.playback.getCurrentTime();
+});
+
+const { isLoading: waveformLoading, isLoaded: waveformLoaded } = useAudioWaveform({
+	element: toRef(props, "element"),
+	mediaAsset,
+	zoomLevel: toRef(props, "zoomLevel"),
+	elementWidth,
+	canvasRef: computed(() => {
+		// Route to the correct canvas based on element type
+		if (props.element.type === "audio") return audioWaveformCanvas.value;
+		if (props.element.type === "video") return videoWaveformCanvas.value;
+		return null;
+	}),
+	currentTime: playheadTime,
+});
+
 function onContextAction(action: string) {
 	invokeAction(action as any);
 }
@@ -163,9 +190,9 @@ function onContextAction(action: string) {
 			]"
 			:style="{ borderColor: borderColor }"
 		>
-			<!-- Track name label -->
-			<div class="pointer-events-none absolute top-0 left-1 z-20 truncate text-[10px] leading-[16px] font-medium text-white/70">
-				{{ element.name }}
+			<!-- Track name label (sits in the top blue bar, not over content) -->
+			<div class="pointer-events-none absolute top-0 left-1 right-0 z-30 h-[16px] flex items-center">
+				<span class="truncate text-[10px] leading-none font-medium text-white/90">{{ element.name }}</span>
 			</div>
 
 			<button
@@ -182,12 +209,25 @@ function onContextAction(action: string) {
 					<!-- Sticker element -->
 					<div v-else-if="element.type === 'sticker'" class="size-full" />
 
-					<!-- Audio element -->
-					<div v-else-if="element.type === 'audio'" class="size-full" />
+					<!-- Audio element with waveform -->
+					<div v-else-if="element.type === 'audio'" class="relative w-full h-full">
+						<canvas
+							ref="audioWaveformCanvas"
+							class="absolute left-0 right-0 w-full pointer-events-none"
+							style="top: 16px; bottom: 0; mix-blend-mode: normal; z-index: 5"
+						/>
+						<div
+							v-if="waveformLoading"
+							class="absolute inset-0 flex items-center justify-center"
+						>
+							<div class="text-[9px] text-white/40">Loading...</div>
+						</div>
+					</div>
 
 					<!-- Video filmstrip (actual frames at correct timestamps) -->
 					<div v-else-if="hasFilmstrip" class="absolute inset-0">
-						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 10%; bottom: 20%;">
+						<!-- Filmstrip area: below the 16px title bar, above the waveform -->
+						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 16px; bottom: 35%;">
 							<div class="absolute inset-0 flex pointer-events-none">
 								<div
 									v-for="frame in filmstripFrames"
@@ -202,11 +242,17 @@ function onContextAction(action: string) {
 								/>
 							</div>
 						</div>
+						<!-- Audio waveform: fills the entire bottom section -->
+						<canvas
+							ref="videoWaveformCanvas"
+							class="absolute right-0 left-0 w-full pointer-events-none"
+							style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
+						/>
 					</div>
 
 					<!-- Video/Image fallback thumbnail (before filmstrip loads) -->
 					<div v-else-if="imageUrl" class="absolute inset-0">
-						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 10%; bottom: 20%;">
+						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 16px; bottom: 35%;">
 							<div
 								class="absolute inset-0"
 								:style="{
@@ -218,6 +264,13 @@ function onContextAction(action: string) {
 								}"
 							/>
 						</div>
+						<!-- Audio waveform: fills the entire bottom section -->
+						<canvas
+							v-if="isVideoElement"
+							ref="videoWaveformCanvas"
+							class="absolute right-0 left-0 w-full pointer-events-none"
+							style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
+						/>
 					</div>
 
 					<!-- Fallback -->

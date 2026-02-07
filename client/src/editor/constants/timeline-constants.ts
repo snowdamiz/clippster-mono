@@ -3,8 +3,8 @@ import type { TrackType } from "../types/timeline";
 
 export const TRACK_COLORS: Record<TrackType, { background: string; border: string }> = {
 	video: {
-		background: "bg-[#2563EB]",
-		border: "#3B82F6",
+		background: "bg-[#2a2a2e]",
+		border: "#3f3f46",
 	},
 	text: {
 		background: "bg-[#5DBAA0]",
@@ -25,7 +25,7 @@ export const TRACK_COLORS: Record<TrackType, { background: string; border: strin
 } as const;
 
 export const TRACK_HEIGHTS: Record<TrackType, number> = {
-	video: 60,
+	video: 80,
 	text: 25,
 	audio: 50,
 	sticker: 50,
