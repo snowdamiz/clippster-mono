@@ -13,6 +13,7 @@ import {
 	Eye,
 	EyeOff,
 	Gauge,
+	AudioLines,
 } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -26,6 +27,14 @@ const emit = defineEmits<{
 
 const { editor } = useEditor();
 const { selectElement, isElementSelected } = useElementSelection();
+
+const isVideoElement = computed(() => {
+	if (!props.elementRef) return false;
+	const track = editor.timeline.getTrackById({ trackId: props.elementRef.trackId });
+	if (!track || track.type !== "video") return false;
+	const element = track.elements.find((el: { id: string; type: string }) => el.id === props.elementRef!.elementId);
+	return element?.type === "video";
+});
 
 const menuRef = ref<HTMLDivElement | null>(null);
 const adjustedPosition = ref<{ x: number; y: number } | null>(null);
@@ -145,6 +154,10 @@ function handleToggleMute() {
 function handleToggleVisibility() {
 	doAction("toggle-elements-visibility-selected");
 }
+
+function handleExtractAudio() {
+	doAction("extract-audio");
+}
 </script>
 
 <template>
@@ -223,6 +236,18 @@ function handleToggleVisibility() {
 				<EyeOff class="size-3.5" />
 				Toggle visibility
 			</button>
+
+			<template v-if="isVideoElement">
+				<div class="mx-2 my-1 h-px bg-white/10" />
+
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+					@click="handleExtractAudio"
+				>
+					<AudioLines class="size-3.5" />
+					Extract audio
+				</button>
+			</template>
 
 			<div class="mx-2 my-1 h-px bg-white/10" />
 

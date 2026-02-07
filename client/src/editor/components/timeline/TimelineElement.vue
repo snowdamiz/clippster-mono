@@ -214,7 +214,7 @@ function onContextAction(action: string) {
 						<canvas
 							ref="audioWaveformCanvas"
 							class="absolute left-0 right-0 w-full pointer-events-none"
-							style="top: 16px; bottom: 0; mix-blend-mode: normal; z-index: 5"
+							style="top: 16px; height: calc(100% - 16px); mix-blend-mode: normal; z-index: 5"
 						/>
 						<div
 							v-if="waveformLoading"
@@ -242,8 +242,9 @@ function onContextAction(action: string) {
 								/>
 							</div>
 						</div>
-						<!-- Audio waveform: fills the entire bottom section -->
+						<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
 						<canvas
+							v-if="!isMuted"
 							ref="videoWaveformCanvas"
 							class="absolute right-0 left-0 w-full pointer-events-none"
 							style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
@@ -264,9 +265,9 @@ function onContextAction(action: string) {
 								}"
 							/>
 						</div>
-						<!-- Audio waveform: fills the entire bottom section -->
+						<!-- Audio waveform: fills the entire bottom section (hidden when muted/audio extracted) -->
 						<canvas
-							v-if="isVideoElement"
+							v-if="isVideoElement && !isMuted"
 							ref="videoWaveformCanvas"
 							class="absolute right-0 left-0 w-full pointer-events-none"
 							style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
@@ -277,12 +278,12 @@ function onContextAction(action: string) {
 					<div v-else class="size-full" />
 				</div>
 
-				<!-- Muted/Hidden overlay -->
+				<!-- Hidden overlay -->
 				<div
-					v-if="(hasAudio ? isMuted : isHidden)"
+					v-if="isHidden"
 					class="bg-opacity-50 pointer-events-none absolute inset-0 flex items-center justify-center bg-black"
 				>
-					<span class="text-white text-xs">{{ hasAudio ? '🔇' : '👁️‍🗨️' }}</span>
+					<span class="text-white text-xs">👁️‍🗨️</span>
 				</div>
 			</button>
 

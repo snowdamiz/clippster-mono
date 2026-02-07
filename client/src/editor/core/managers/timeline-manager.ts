@@ -28,6 +28,7 @@ import {
 	MoveElementCommand,
 	ChangeSpeedCommand,
 	UpdateElementKeyframesCommand,
+	ExtractAudioCommand,
 } from "../../lib/commands/timeline";
 import type { UpdatableElementProps } from "../../lib/commands/timeline";
 import type { InsertElementParams } from "../../lib/commands/timeline/element/insert-element";
@@ -265,6 +266,21 @@ export class TimelineManager {
 	}): void {
 		const command = new UpdateElementKeyframesCommand(trackId, elementId, keyframes);
 		this.editor.command.execute({ command });
+	}
+
+	extractAudio({
+		trackId,
+		elementId,
+	}: {
+		trackId: string;
+		elementId: string;
+	}): { audioTrackId: string; audioElementId: string } {
+		const command = new ExtractAudioCommand(trackId, elementId);
+		this.editor.command.execute({ command });
+		return {
+			audioTrackId: command.getAudioTrackId(),
+			audioElementId: command.getAudioElementId(),
+		};
 	}
 
 	duplicateElements({

@@ -160,6 +160,24 @@ export function useEditorActions() {
 		editor.timeline.toggleElementsVisibility({ elements: selectedElements.value });
 	});
 
+	useActionHandler("extract-audio", () => {
+		if (selectedElements.value.length === 0) return;
+
+		// Find the first selected video element
+		for (const sel of selectedElements.value) {
+			const track = editor.timeline.getTrackById({ trackId: sel.trackId });
+			if (!track || track.type !== "video") continue;
+			const element = track.elements.find((el) => el.id === sel.elementId);
+			if (element?.type === "video") {
+				editor.timeline.extractAudio({
+					trackId: sel.trackId,
+					elementId: sel.elementId,
+				});
+				break;
+			}
+		}
+	});
+
 	useActionHandler("toggle-bookmark", () => {
 		editor.scenes.toggleBookmark({ time: editor.playback.getCurrentTime() });
 	});

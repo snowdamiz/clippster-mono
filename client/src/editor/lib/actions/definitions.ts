@@ -123,6 +123,10 @@ export const ACTIONS = {
 		description: "Show/hide selected elements",
 		category: "selection",
 	},
+	"extract-audio": {
+		description: "Extract audio from video clip",
+		category: "editing",
+	},
 	"toggle-bookmark": {
 		description: "Toggle bookmark at playhead",
 		category: "timeline",
