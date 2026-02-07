@@ -236,7 +236,7 @@ defmodule ClippsterServerWeb.AuthController do
   @doc """
   Initiates Google OAuth flow by redirecting to Google's authorization URL.
   """
-  def google_request(conn, _params) do
+  def google_request(conn, params) do
     # Get Google OAuth configuration - try config first, then env vars directly
     config = Application.get_env(:ueberauth, Ueberauth.Strategy.Google.OAuth, [])
     client_id = Keyword.get(config, :client_id) || System.get_env("GOOGLE_CLIENT_ID")
@@ -251,14 +251,23 @@ defmodule ClippsterServerWeb.AuthController do
 
       # Build Google OAuth authorization URL
       scope = "email profile"
-      state = :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+
+      # Encode web=true into state if this is a web request
+      web_mode = params["web"] == "true"
+      web_origin = params["origin"]
+      state_data = if web_mode do
+        Jason.encode!(%{"nonce" => Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false), "web" => true, "origin" => web_origin})
+        |> Base.url_encode64(padding: false)
+      else
+        :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+      end
 
       google_auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" <> URI.encode_query(%{
         "client_id" => client_id,
         "redirect_uri" => callback_url,
         "response_type" => "code",
         "scope" => scope,
-        "state" => state,
+        "state" => state_data,
         "access_type" => "offline",
         "prompt" => "consent"
       })
@@ -266,6 +275,7 @@ defmodule ClippsterServerWeb.AuthController do
       IO.puts("\n=== Redirecting to Google OAuth ===")
       IO.puts("Callback URL: #{callback_url}")
       IO.puts("Google Auth URL: #{google_auth_url}")
+      IO.puts("Web mode: #{web_mode}")
 
       redirect(conn, external: google_auth_url)
     end
@@ -278,10 +288,13 @@ defmodule ClippsterServerWeb.AuthController do
     IO.puts("\n=== Google OAuth Callback ===")
     IO.puts("Received code: #{String.slice(code, 0, 20)}...")
 
+    # Decode state to check for web mode
+    web_opts = parse_oauth_state(params["state"])
+
     # Check for error from Google
     if Map.has_key?(params, "error") do
       IO.puts("Google OAuth Error: #{params["error"]}")
-      send_auth_error_html(conn, params["error_description"] || params["error"])
+      send_auth_error_html(conn, params["error_description"] || params["error"], web_opts)
     else
       # Exchange code for tokens
       case exchange_google_code(code) do
@@ -317,25 +330,25 @@ defmodule ClippsterServerWeb.AuthController do
 
                   case TokenGenerator.generate_token(token_claims) do
                     {:ok, token} ->
-                      send_auth_success_html(conn, token, user)
+                      send_auth_success_html(conn, token, user, web_opts)
 
                     {:error, _reason} ->
-                      send_auth_error_html(conn, "Token generation failed")
+                      send_auth_error_html(conn, "Token generation failed", web_opts)
                   end
 
                 {:error, reason} ->
                   IO.puts("Failed to create user: #{inspect(reason)}")
-                  send_auth_error_html(conn, "Failed to create user account")
+                  send_auth_error_html(conn, "Failed to create user account", web_opts)
               end
 
             {:error, reason} ->
               IO.puts("Failed to get user info: #{inspect(reason)}")
-              send_auth_error_html(conn, "Failed to get user information from Google")
+              send_auth_error_html(conn, "Failed to get user information from Google", web_opts)
           end
 
         {:error, reason} ->
           IO.puts("Token exchange failed: #{inspect(reason)}")
-          send_auth_error_html(conn, "Failed to authenticate with Google")
+          send_auth_error_html(conn, "Failed to authenticate with Google", web_opts)
       end
     end
   end
@@ -345,8 +358,9 @@ defmodule ClippsterServerWeb.AuthController do
     IO.puts("\n=== Google OAuth Callback - No Code ===")
     IO.puts("Params: #{inspect(params)}")
 
+    web_opts = parse_oauth_state(params["state"])
     error_msg = params["error_description"] || params["error"] || "Authentication failed"
-    send_auth_error_html(conn, error_msg)
+    send_auth_error_html(conn, error_msg, web_opts)
   end
 
   defp exchange_google_code(code) do
@@ -396,9 +410,67 @@ defmodule ClippsterServerWeb.AuthController do
     end
   end
 
-  defp send_auth_success_html(conn, token, user) do
-    # Redirect to local Tauri callback server with auth data as query params
-    # This avoids mixed content issues (HTTPS page trying to fetch HTTP localhost)
+  defp parse_oauth_state(nil), do: %{web: false, origin: nil}
+  defp parse_oauth_state(state) do
+    case Base.url_decode64(state, padding: false) do
+      {:ok, json} ->
+        case Jason.decode(json) do
+          {:ok, %{"web" => true, "origin" => origin}} -> %{web: true, origin: origin}
+          {:ok, %{"web" => true}} -> %{web: true, origin: nil}
+          _ -> %{web: false, origin: nil}
+        end
+      _ -> %{web: false, origin: nil}
+    end
+  end
+
+  defp send_auth_success_html(conn, token, user, %{web: true} = web_opts) do
+    # Web mode: render HTML that posts message to opener window
+    ai_allowed = check_ai_allowed_for_user(user)
+    target_origin = web_opts[:origin] || "https://clippster.app"
+
+    user_json = Jason.encode!(%{
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      avatar_url: user.avatar_url,
+      wallet_address: user.wallet_address,
+      is_admin: user.is_admin,
+      account_type: user.account_type,
+      owned_organization_id: user.owned_organization_id,
+      created_by_organization_id: user.created_by_organization_id,
+      ai_allowed: ai_allowed,
+      beta_activated: user.beta_activated
+    })
+
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Authentication Successful</title></head>
+    <body>
+      <p>Authentication successful. This window will close automatically.</p>
+      <script>
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'google-auth-success',
+            token: #{Jason.encode!(token)},
+            user: #{user_json}
+          }, #{Jason.encode!(target_origin)});
+          window.close();
+        } else {
+          document.body.innerHTML = '<p>Authentication successful! You can close this window.</p>';
+        }
+      </script>
+    </body>
+    </html>
+    """
+
+    conn
+    |> put_resp_content_type("text/html")
+    |> send_resp(200, html)
+  end
+
+  defp send_auth_success_html(conn, token, user, _web_opts) do
+    # Tauri mode: redirect to local callback server
     ai_allowed = check_ai_allowed_for_user(user)
 
     params = URI.encode_query(%{
@@ -420,9 +492,38 @@ defmodule ClippsterServerWeb.AuthController do
     redirect(conn, external: "http://localhost:54321/google-callback?#{params}")
   end
 
-  defp send_auth_error_html(conn, error_message) do
-    # Redirect to local Tauri callback server with error as query params
-    # This avoids mixed content issues (HTTPS page trying to fetch HTTP localhost)
+  defp send_auth_error_html(conn, error_message, %{web: true} = web_opts) do
+    # Web mode: render HTML that posts error to opener window
+    target_origin = web_opts[:origin] || "https://clippster.app"
+
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head><title>Authentication Failed</title></head>
+    <body>
+      <p>Authentication failed. This window will close automatically.</p>
+      <script>
+        if (window.opener) {
+          window.opener.postMessage({
+            type: 'google-auth-error',
+            error: #{Jason.encode!(error_message)}
+          }, #{Jason.encode!(target_origin)});
+          window.close();
+        } else {
+          document.body.innerHTML = '<p>Authentication failed: #{error_message}</p>';
+        }
+      </script>
+    </body>
+    </html>
+    """
+
+    conn
+    |> put_resp_content_type("text/html")
+    |> send_resp(200, html)
+  end
+
+  defp send_auth_error_html(conn, error_message, _web_opts) do
+    # Tauri mode: redirect to local callback server
     params = URI.encode_query(%{
       "success" => "false",
       "error" => error_message
