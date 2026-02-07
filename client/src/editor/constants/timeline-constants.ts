@@ -18,6 +18,10 @@ export const TRACK_COLORS: Record<TrackType, { background: string; border: strin
 		background: "bg-amber-500",
 		border: "#F59E0B",
 	},
+	effect: {
+		background: "bg-[#E040FB]",
+		border: "#E040FB",
+	},
 } as const;
 
 export const TRACK_HEIGHTS: Record<TrackType, number> = {
@@ -25,6 +29,7 @@ export const TRACK_HEIGHTS: Record<TrackType, number> = {
 	text: 25,
 	audio: 50,
 	sticker: 50,
+	effect: 30,
 } as const;
 
 export const TRACK_GAP = 4;
@@ -50,4 +55,5 @@ export const TRACK_ICON_NAMES: Record<TrackType, string> = {
 	text: "text",
 	audio: "music",
 	sticker: "smile",
+	effect: "wand-2",
 } as const;

@@ -3,10 +3,13 @@ import { save } from "@tauri-apps/plugin-dialog";
 import type { EditorCore } from "../../core";
 import type { RootNode } from "../../renderer/nodes/root-node";
 import type { ExportOptions, ExportResult } from "../../types/export";
-import type { TimelineTrack, VideoElement, ImageElement, TextElement, AudioElement, StickerElement } from "../../types/timeline";
+import type { TimelineTrack, VideoElement, ImageElement, TextElement, AudioElement, StickerElement, EffectElement } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
+import type { VideoEffect } from "../../types/effects";
 import { TextNode } from "../../renderer/nodes/text-node";
 import type { TextNodeParams } from "../../renderer/nodes/text-node";
+import { StickerNode } from "../../renderer/nodes/sticker-node";
+import type { StickerNodeParams } from "../../renderer/nodes/sticker-node";
 
 interface TauriVideoSource {
 	source_path: string;
@@ -28,6 +31,14 @@ interface TauriVideoSource {
 	contrast: number;
 	saturation: number;
 	temperature: number;
+	effects: TauriVideoEffect[];
+}
+
+interface TauriVideoEffect {
+	effect_type: string;
+	enabled: boolean;
+	intensity: number;
+	params: Record<string, number | string>;
 }
 
 interface TauriAudioTrack {
@@ -48,15 +59,18 @@ interface TauriTextOverlay {
 }
 
 interface TauriStickerOverlay {
-	icon_url: string;
+	image_path: string;
 	start_time: number;
 	end_time: number;
-	opacity: number;
-	scale: number;
-	position_x: number;
-	position_y: number;
-	rotation: number;
-	color: string | null;
+}
+
+interface TauriEffectOverlay {
+	effect_type: string;
+	enabled: boolean;
+	intensity: number;
+	params: Record<string, number | string>;
+	start_time: number;
+	end_time: number;
 }
 
 interface TauriExportConfig {
@@ -64,6 +78,7 @@ interface TauriExportConfig {
 	audio_tracks: TauriAudioTrack[];
 	text_overlays: TauriTextOverlay[];
 	sticker_overlays: TauriStickerOverlay[];
+	effect_overlays: TauriEffectOverlay[];
 	output_path: string;
 	total_duration: number;
 	width: number;
@@ -106,7 +121,7 @@ export class RendererManager {
 				return { success: false, error: "Project is empty" };
 			}
 
-			const canvasSize = activeProject.settings.canvasSize;
+			const canvasSize = options.canvasSize ?? activeProject.settings.canvasSize;
 
 			// Prompt user for save location
 			const extension = options.format === "webm" ? "webm" : "mp4";
@@ -129,6 +144,11 @@ export class RendererManager {
 			// Pre-render text elements to transparent PNGs for pixel-perfect export
 			const textOverlays = await this.preRenderTextOverlays({ tracks, canvasSize });
 
+			onProgress?.({ progress: 0.1 });
+
+			// Pre-render sticker elements to transparent PNGs for pixel-perfect export
+			const stickerOverlays = await this.preRenderStickerOverlays({ tracks, canvasSize });
+
 			onProgress?.({ progress: 0.15 });
 
 			// Build export config from timeline data
@@ -139,6 +159,7 @@ export class RendererManager {
 				duration,
 				canvasSize,
 				textOverlays,
+				stickerOverlays,
 			});
 
 			onProgress?.({ progress: 0.2 });
@@ -168,6 +189,7 @@ export class RendererManager {
 		duration,
 		canvasSize,
 		textOverlays,
+		stickerOverlays,
 	}: {
 		tracks: TimelineTrack[];
 		mediaAssets: MediaAsset[];
@@ -175,21 +197,22 @@ export class RendererManager {
 		duration: number;
 		canvasSize: { width: number; height: number };
 		textOverlays: TauriTextOverlay[];
+		stickerOverlays: TauriStickerOverlay[];
 	}): TauriExportConfig {
 		const videoSources: TauriVideoSource[] = [];
 		const audioTracks: TauriAudioTrack[] = [];
 
-		const stickerOverlays: TauriStickerOverlay[] = [];
+		const effectOverlays: TauriEffectOverlay[] = [];
 
 		for (const track of tracks) {
 			if (track.type === "video") {
 				for (const el of track.elements) {
 					const videoEl = el as VideoElement;
 					const asset = mediaAssets.find((a) => a.id === videoEl.mediaId);
-					if (!asset?.url) continue;
+					if (!asset) continue;
 
-					// Resolve file path from asset URL (localhost video server URL → file path)
-					const sourcePath = this.resolveFilePath(asset.url);
+					// Use filePath from SQLite storage, fall back to URL-based extraction
+					const sourcePath = asset.filePath || (asset.url ? this.resolveFilePath(asset.url) : null);
 					if (!sourcePath) continue;
 
 					videoSources.push({
@@ -212,26 +235,22 @@ export class RendererManager {
 						contrast: videoEl.colorAdjustments?.contrast ?? 0,
 						saturation: videoEl.colorAdjustments?.saturation ?? 0,
 						temperature: videoEl.colorAdjustments?.temperature ?? 0,
+						effects: serializeEffects(videoEl.effects),
 					});
 				}
 			} else if (track.type === "sticker") {
+				// Stickers are pre-rendered to PNGs by preRenderStickerOverlays — skip here
+			} else if (track.type === "effect") {
 				for (const el of track.elements) {
-					const stickerEl = el as StickerElement;
-					const color = stickerEl.color
-						? `&color=${encodeURIComponent(stickerEl.color)}`
-						: "";
-					const iconUrl = `https://api.iconify.design/${stickerEl.iconName}.svg?width=200&height=200${color}`;
-
-					stickerOverlays.push({
-						icon_url: iconUrl,
-						start_time: stickerEl.startTime,
-						end_time: stickerEl.startTime + stickerEl.duration,
-						opacity: stickerEl.opacity ?? 1,
-						scale: stickerEl.transform?.scale ?? 1,
-						position_x: stickerEl.transform?.position?.x ?? 0,
-						position_y: stickerEl.transform?.position?.y ?? 0,
-						rotation: stickerEl.transform?.rotate ?? 0,
-						color: stickerEl.color ?? null,
+					const effectEl = el as EffectElement;
+					if (!effectEl.enabled) continue;
+					effectOverlays.push({
+						effect_type: effectEl.effectType,
+						enabled: effectEl.enabled,
+						intensity: effectEl.intensity,
+						params: effectEl.params,
+						start_time: effectEl.startTime,
+						end_time: effectEl.startTime + effectEl.duration,
 					});
 				}
 			} else if (track.type === "audio") {
@@ -241,8 +260,8 @@ export class RendererManager {
 
 					if (audioEl.sourceType === "upload") {
 						const asset = mediaAssets.find((a) => a.id === audioEl.mediaId);
-						if (asset?.url) {
-							filePath = this.resolveFilePath(asset.url);
+						if (asset) {
+							filePath = asset.filePath || (asset.url ? this.resolveFilePath(asset.url) : null);
 						}
 					} else if (audioEl.sourceType === "library") {
 						filePath = this.resolveFilePath(audioEl.sourceUrl);
@@ -270,6 +289,7 @@ export class RendererManager {
 			audio_tracks: audioTracks,
 			text_overlays: textOverlays,
 			sticker_overlays: stickerOverlays,
+			effect_overlays: effectOverlays,
 			output_path: outputPath,
 			total_duration: duration,
 			width: canvasSize.width,
@@ -351,6 +371,79 @@ export class RendererManager {
 		return overlays;
 	}
 
+	/**
+	 * Pre-render each sticker element to a transparent PNG using the same canvas
+	 * renderer as the preview. Saves each PNG to a temp file via Tauri and
+	 * returns overlay descriptors for FFmpeg's overlay filter.
+	 */
+	private async preRenderStickerOverlays({
+		tracks,
+		canvasSize,
+	}: {
+		tracks: TimelineTrack[];
+		canvasSize: { width: number; height: number };
+	}): Promise<TauriStickerOverlay[]> {
+		const overlays: TauriStickerOverlay[] = [];
+		let stickerCount = 0;
+
+		for (const track of tracks) {
+			if (track.type !== "sticker") continue;
+
+			for (const el of track.elements) {
+				const stickerEl = el as StickerElement;
+				stickerCount++;
+
+				try {
+					console.log(`[Export] Pre-rendering sticker ${stickerEl.id}: icon=${stickerEl.iconName}, time=${stickerEl.startTime}-${stickerEl.startTime + stickerEl.duration}`);
+
+					const nodeParams: StickerNodeParams = {
+						iconName: stickerEl.iconName,
+						duration: stickerEl.duration,
+						timeOffset: stickerEl.startTime,
+						trimStart: stickerEl.trimStart,
+						trimEnd: stickerEl.trimEnd,
+						transform: stickerEl.transform,
+						opacity: stickerEl.opacity,
+						color: stickerEl.color,
+						keyframes: stickerEl.keyframes,
+					};
+					const node = new StickerNode(nodeParams);
+
+					const result = await node.renderToImage({
+						canvasWidth: canvasSize.width,
+						canvasHeight: canvasSize.height,
+					});
+					if (!result) {
+						console.error(`[Export] StickerNode.renderToImage returned null for ${stickerEl.id} (${stickerEl.iconName})`);
+						continue;
+					}
+
+					// Convert blob to Uint8Array and save via Tauri
+					const arrayBuffer = await result.blob.arrayBuffer();
+					const bytes = Array.from(new Uint8Array(arrayBuffer));
+					console.log(`[Export] Sticker ${stickerEl.id} rendered to PNG: ${bytes.length} bytes`);
+
+					const imagePath = await invoke<string>("save_text_overlay_png", {
+						pngBytes: bytes,
+						elementId: `sticker_${stickerEl.id}`,
+					});
+					console.log(`[Export] Sticker ${stickerEl.id} saved to: ${imagePath}`);
+
+					overlays.push({
+						image_path: imagePath,
+						start_time: stickerEl.startTime,
+						end_time: stickerEl.startTime + stickerEl.duration,
+					});
+				} catch (err) {
+					console.error(`[Export] Failed to pre-render sticker element ${stickerEl.id} (${stickerEl.iconName}):`, err);
+				}
+			}
+		}
+
+		console.log(`[Export] Pre-rendered ${overlays.length}/${stickerCount} sticker overlays`);
+		return overlays;
+	}
+
 	subscribe(listener: () => void): () => void {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
@@ -359,4 +452,25 @@ export class RendererManager {
 	private notify(): void {
 		this.listeners.forEach((fn) => fn());
 	}
+}
+
+function serializeEffects(effects?: VideoEffect[]): TauriVideoEffect[] {
+	if (!effects || effects.length === 0) return [];
+	return effects
+		.filter((e) => e.enabled)
+		.map((e) => {
+			const params: Record<string, number | string> = {};
+			for (const [key, value] of Object.entries(e)) {
+				if (key === "id" || key === "type" || key === "enabled" || key === "intensity") continue;
+				if (typeof value === "number" || typeof value === "string") {
+					params[key] = value;
+				}
+			}
+			return {
+				effect_type: e.type,
+				enabled: e.enabled,
+				intensity: e.intensity,
+				params,
+			};
+		});
 }

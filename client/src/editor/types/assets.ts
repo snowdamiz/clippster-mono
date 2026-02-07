@@ -6,4 +6,5 @@ export interface MediaAsset
 	extends Omit<MediaAssetData, "size" | "lastModified"> {
 	file: File;
 	url?: string;
+	filePath?: string;
 }

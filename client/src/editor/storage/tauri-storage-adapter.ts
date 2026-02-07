@@ -241,7 +241,7 @@ class TauriStorageService {
 	}: {
 		projectId: string;
 		mediaAsset: MediaAsset;
-	}): Promise<void> {
+	}): Promise<string> {
 		const db = await getDatabase();
 
 		// For Tauri desktop, we store the file path.
@@ -279,6 +279,8 @@ class TauriStorageService {
 				mediaAsset.ephemeral ? 1 : 0,
 			],
 		);
+
+		return filePath;
 	}
 
 	async loadMediaAsset({
@@ -315,6 +317,7 @@ class TauriStorageService {
 				type: row.type as "image" | "video" | "audio",
 				file,
 				url,
+				filePath: row.file_path,
 				width: row.width ?? undefined,
 				height: row.height ?? undefined,
 				duration: row.duration ?? undefined,
@@ -359,6 +362,7 @@ class TauriStorageService {
 					type: row.type as "image" | "video" | "audio",
 					file,
 					url,
+					filePath: row.file_path,
 					width: row.width ?? undefined,
 					height: row.height ?? undefined,
 					duration: row.duration ?? undefined,

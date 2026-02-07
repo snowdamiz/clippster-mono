@@ -28,7 +28,10 @@ export class MediaManager {
 		this.notify();
 
 		try {
-			await storageService.saveMediaAsset({ projectId, mediaAsset: newAsset });
+			const resolvedPath = await storageService.saveMediaAsset({ projectId, mediaAsset: newAsset });
+			// Populate filePath on the in-memory asset so export can find it
+			newAsset.filePath = resolvedPath;
+			this.notify();
 		} catch (error) {
 			console.error("Failed to save media asset:", error);
 			this.assets = this.assets.filter((asset) => asset.id !== newAsset.id);

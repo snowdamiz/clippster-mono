@@ -2,12 +2,13 @@
 import { computed } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
-import type { TextElement, VideoElement, ImageElement, AudioElement, StickerElement } from "../../types/timeline";
+import type { TextElement, VideoElement, ImageElement, AudioElement, StickerElement, EffectElement } from "../../types/timeline";
 import TextProperties from "./properties/TextProperties.vue";
 import VideoProperties from "./properties/VideoProperties.vue";
 import AudioProperties from "./properties/AudioProperties.vue";
 import ImageProperties from "./properties/ImageProperties.vue";
 import StickerProperties from "./properties/StickerProperties.vue";
+import EffectProperties from "./properties/EffectProperties.vue";
 import { Settings } from "lucide-vue-next";
 
 const { editor, version } = useEditor();
@@ -53,6 +54,12 @@ const elementsWithTracks = computed(() => {
 				<StickerProperties
 					v-else-if="element.type === 'sticker'"
 					:element="(element as StickerElement)"
+					:track-id="track.id"
+				/>
+
+				<EffectProperties
+					v-else-if="element.type === 'effect'"
+					:element="(element as EffectElement)"
 					:track-id="track.id"
 				/>
 			</div>

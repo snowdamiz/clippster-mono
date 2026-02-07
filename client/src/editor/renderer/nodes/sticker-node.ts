@@ -21,25 +21,27 @@ export type StickerNodeParams = BaseNodeParams & {
 export class StickerNode extends BaseNode<StickerNodeParams> {
 	private image?: HTMLImageElement;
 	private readyPromise: Promise<void>;
+	private iconUrl: string;
 
 	constructor(params: StickerNodeParams) {
 		super(params);
+		const color = this.params.color
+			? `&color=${encodeURIComponent(this.params.color)}`
+			: "";
+		this.iconUrl = `https://api.iconify.design/${this.params.iconName}.svg?width=200&height=200${color}`;
 		this.readyPromise = this.load();
 	}
 
 	private async load() {
 		const image = new Image();
+		image.crossOrigin = "anonymous";
 		this.image = image;
-		const color = this.params.color
-			? `&color=${encodeURIComponent(this.params.color)}`
-			: "";
-		const url = `https://api.iconify.design/${this.params.iconName}.svg?width=200&height=200${color}`;
 
 		await new Promise<void>((resolve, reject) => {
 			image.onload = () => resolve();
 			image.onerror = () =>
 				reject(new Error(`Failed to load sticker: ${this.params.iconName}`));
-			image.src = url;
+			image.src = this.iconUrl;
 		});
 	}
 
@@ -91,5 +93,86 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 
 		renderer.context.drawImage(this.image, x, y, size, size);
 		renderer.context.restore();
+	}
+
+	/**
+	 * Render this sticker to a standalone OffscreenCanvas as a transparent PNG.
+	 * Used by the export pipeline to composite stickers as image overlays in FFmpeg,
+	 * giving pixel-perfect preview-export parity.
+	 */
+	async renderToImage({
+		canvasWidth,
+		canvasHeight,
+	}: {
+		canvasWidth: number;
+		canvasHeight: number;
+	}): Promise<{ blob: Blob } | null> {
+		// Fetch the SVG as a blob URL to guarantee no CORS canvas taint.
+		// The normal Image load (used for preview) can taint the canvas,
+		// which causes OffscreenCanvas.convertToBlob() to throw.
+		const image = await this.fetchAsBlobImage();
+		if (!image) {
+			console.warn(`[StickerNode.renderToImage] Failed to fetch sticker image: ${this.params.iconName}`);
+			return null;
+		}
+
+		const offscreen = new OffscreenCanvas(canvasWidth, canvasHeight);
+		const ctx = offscreen.getContext("2d");
+		if (!ctx) return null;
+
+		const { transform, opacity } = this.params;
+		const size = 200 * transform.scale;
+		const x = canvasWidth / 2 + transform.position.x - size / 2;
+		const y = canvasHeight / 2 + transform.position.y - size / 2;
+
+		ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+		ctx.globalAlpha = opacity;
+
+		if (transform.rotate !== 0) {
+			const centerX = x + size / 2;
+			const centerY = y + size / 2;
+			ctx.translate(centerX, centerY);
+			ctx.rotate((transform.rotate * Math.PI) / 180);
+			ctx.translate(-centerX, -centerY);
+		}
+
+		ctx.drawImage(image, x, y, size, size);
+
+		const blob = await offscreen.convertToBlob({ type: "image/png" });
+		return { blob };
+	}
+
+	/**
+	 * Fetch the sticker SVG via fetch() and load it as a blob URL image.
+	 * This avoids CORS canvas tainting that happens when drawing a
+	 * cross-origin Image directly — the canvas becomes tainted and
+	 * convertToBlob() / toDataURL() will throw a SecurityError.
+	 */
+	private async fetchAsBlobImage(): Promise<HTMLImageElement | null> {
+		try {
+			const response = await fetch(this.iconUrl);
+			if (!response.ok) {
+				console.error(`[StickerNode] Failed to fetch sticker SVG: ${response.status} ${response.statusText}`);
+				return null;
+			}
+			const svgBlob = await response.blob();
+			const blobUrl = URL.createObjectURL(svgBlob);
+
+			return await new Promise<HTMLImageElement>((resolve, reject) => {
+				const img = new Image();
+				img.onload = () => {
+					URL.revokeObjectURL(blobUrl);
+					resolve(img);
+				};
+				img.onerror = () => {
+					URL.revokeObjectURL(blobUrl);
+					reject(new Error(`Failed to load sticker blob image: ${this.params.iconName}`));
+				};
+				img.src = blobUrl;
+			});
+		} catch (err) {
+			console.error(`[StickerNode] fetchAsBlobImage failed for ${this.params.iconName}:`, err);
+			return null;
+		}
 	}
 }

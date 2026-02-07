@@ -18,4 +18,11 @@ export interface StickerDragData extends BaseDragData {
 	iconName: string;
 }
 
-export type TimelineDragData = MediaDragData | TextDragData | StickerDragData;
+export interface EffectDragData extends BaseDragData {
+	type: "effect";
+	effectType: string;
+	intensity: number;
+	params: Record<string, number | string>;
+}
+
+export type TimelineDragData = MediaDragData | TextDragData | StickerDragData | EffectDragData;

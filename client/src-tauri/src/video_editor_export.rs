@@ -1,6 +1,13 @@
-use std::path::Path;
 use tauri_plugin_shell::ShellExt;
 use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+pub struct VideoEffect {
+    pub effect_type: String,
+    pub enabled: bool,
+    pub intensity: f64,
+    pub params: std::collections::HashMap<String, serde_json::Value>,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct VideoSource {
@@ -23,6 +30,7 @@ pub struct VideoSource {
     pub contrast: Option<f64>,
     pub saturation: Option<f64>,
     pub temperature: Option<f64>,
+    pub effects: Option<Vec<VideoEffect>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,15 +54,19 @@ pub struct TextOverlay {
 
 #[derive(Debug, Deserialize)]
 pub struct StickerOverlay {
-    pub icon_url: String,
+    pub image_path: String,
     pub start_time: f64,
     pub end_time: f64,
-    pub opacity: Option<f64>,
-    pub scale: Option<f64>,
-    pub position_x: Option<f64>,
-    pub position_y: Option<f64>,
-    pub rotation: Option<f64>,
-    pub color: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EffectOverlay {
+    pub effect_type: String,
+    pub enabled: bool,
+    pub intensity: f64,
+    pub params: std::collections::HashMap<String, serde_json::Value>,
+    pub start_time: f64,
+    pub end_time: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -63,6 +75,7 @@ pub struct ExportConfig {
     pub audio_tracks: Vec<AudioTrack>,
     pub text_overlays: Vec<TextOverlay>,
     pub sticker_overlays: Vec<StickerOverlay>,
+    pub effect_overlays: Option<Vec<EffectOverlay>>,
     pub output_path: String,
     pub total_duration: f64,
     pub width: i32,
@@ -84,6 +97,7 @@ pub async fn export_video_editor_project(
     println!("  Audio tracks: {}", config.audio_tracks.len());
     println!("  Text overlays: {}", config.text_overlays.len());
     println!("  Sticker overlays: {}", config.sticker_overlays.len());
+    println!("  Effect overlays: {}", config.effect_overlays.as_ref().map_or(0, |v| v.len()));
 
     // Validate all input files exist
     for source in &config.video_sources {
@@ -104,7 +118,34 @@ pub async fn export_video_editor_project(
         }
     }
 
+    for sticker in &config.sticker_overlays {
+        if !Path::new(&sticker.image_path).exists() {
+            return Err(format!("Sticker overlay PNG not found: {}", sticker.image_path));
+        }
+    }
+
     let shell = app.shell();
+
+    // Probe each video source for audio streams using ffprobe
+    let mut source_has_audio = Vec::new();
+    for source in &config.video_sources {
+        let probe_output = shell
+            .command("ffprobe")
+            .args(&[
+                "-v", "quiet",
+                "-select_streams", "a",
+                "-show_entries", "stream=index",
+                "-of", "csv=p=0",
+                &source.source_path,
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to probe {}: {}", source.source_path, e))?;
+        let has_audio = !String::from_utf8_lossy(&probe_output.stdout).trim().is_empty();
+        println!("  Source '{}' has_audio: {}", source.source_path, has_audio);
+        source_has_audio.push(has_audio);
+    }
+
     let mut args = vec!["-y".to_string()];
 
     // Add video inputs (no -ss here, do all trimming in filters for better accuracy)
@@ -123,6 +164,12 @@ pub async fn export_video_editor_project(
     for text in &config.text_overlays {
         args.push("-i".to_string());
         args.push(text.image_path.clone());
+    }
+
+    // Add sticker overlay PNG inputs (pre-rendered by frontend canvas)
+    for sticker in &config.sticker_overlays {
+        args.push("-i".to_string());
+        args.push(sticker.image_path.clone());
     }
 
     // Build filter_complex for video and audio processing
@@ -169,13 +216,16 @@ pub async fn export_video_editor_project(
             transform_filters.push(format!("setpts={}*PTS", 1.0 / speed));
         }
         
-        // Scale to canvas size first, then apply user scale
+        // Scale to cover canvas (cover-fit) preserving aspect ratio, then crop to exact canvas size
+        // This fills the canvas and crops overflow, centered — matching the preview renderer
         if (scale - 1.0).abs() > 0.001 {
             let sw = (width as f64 * scale) as i32;
             let sh = (height as f64 * scale) as i32;
-            transform_filters.push(format!("scale={}:{}", sw, sh));
+            transform_filters.push(format!("scale={}:{}:force_original_aspect_ratio=increase", sw, sh));
+            transform_filters.push(format!("crop={}:{}:(iw-{})/2:(ih-{})/2", sw, sh, sw, sh));
         } else {
-            transform_filters.push(format!("scale={}:{}", width, height));
+            transform_filters.push(format!("scale={}:{}:force_original_aspect_ratio=increase", width, height));
+            transform_filters.push(format!("crop={}:{}:(iw-{})/2:(ih-{})/2", width, height, width, height));
         }
         
         // Flip
@@ -228,21 +278,179 @@ pub async fn export_video_editor_project(
         transform_filters.join(",")
     }
 
+    fn build_effects_filter(effects: &[VideoEffect]) -> String {
+        let mut effect_filters = Vec::new();
+        
+        for effect in effects {
+            if !effect.enabled {
+                continue;
+            }
+            
+            let get_f64 = |key: &str, default: f64| -> f64 {
+                effect.params.get(key)
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(default)
+            };
+            
+            match effect.effect_type.as_str() {
+                "blur" => {
+                    let radius = get_f64("radius", 8.0).max(1.0);
+                    let luma = radius.round() as i32;
+                    let chroma = (radius * 0.5).round().max(1.0) as i32;
+                    effect_filters.push(format!("boxblur={}:{}:1", luma, chroma));
+                }
+                "pixelate" => {
+                    let block_size = get_f64("blockSize", 12.0).max(2.0) as i32;
+                    // Scale down then back up with nearest-neighbor
+                    effect_filters.push(format!(
+                        "scale=iw/{}:ih/{}:flags=fast_bilinear,scale=iw*{}:ih*{}:flags=neighbor",
+                        block_size, block_size, block_size, block_size
+                    ));
+                }
+                "sharpen" => {
+                    let amount = get_f64("amount", 3.0).max(0.1);
+                    // unsharp mask: luma_msize_x:luma_msize_y:luma_amount
+                    effect_filters.push(format!("unsharp=5:5:{}", amount));
+                }
+                "vignette" => {
+                    // FFmpeg vignette filter: angle in radians (PI/4 = standard)
+                    let radius = get_f64("radius", 50.0);
+                    let angle = (1.0 - radius / 100.0) * std::f64::consts::FRAC_PI_2;
+                    effect_filters.push(format!("vignette=a={}", angle));
+                }
+                "sepia" => {
+                    let i = effect.intensity / 100.0;
+                    // Sepia color matrix blended with identity by intensity
+                    let r0 = 1.0 * (1.0 - i) + 0.393 * i;
+                    let r1 = 0.0 * (1.0 - i) + 0.769 * i;
+                    let r2 = 0.0 * (1.0 - i) + 0.189 * i;
+                    let g0 = 0.0 * (1.0 - i) + 0.349 * i;
+                    let g1 = 1.0 * (1.0 - i) + 0.686 * i;
+                    let g2 = 0.0 * (1.0 - i) + 0.168 * i;
+                    let b0 = 0.0 * (1.0 - i) + 0.272 * i;
+                    let b1 = 0.0 * (1.0 - i) + 0.534 * i;
+                    let b2 = 0.0 * (1.0 - i) + 0.131 * i;
+                    effect_filters.push(format!(
+                        "colorchannelmixer={:.3}:{:.3}:{:.3}:0:{:.3}:{:.3}:{:.3}:0:{:.3}:{:.3}:{:.3}:0",
+                        r0, r1, r2, g0, g1, g2, b0, b1, b2
+                    ));
+                }
+                "grayscale" => {
+                    let i = effect.intensity / 100.0;
+                    let r0 = 1.0 * (1.0 - i) + 0.3 * i;
+                    let r1 = 0.0 * (1.0 - i) + 0.59 * i;
+                    let r2 = 0.0 * (1.0 - i) + 0.11 * i;
+                    let g0 = 0.0 * (1.0 - i) + 0.3 * i;
+                    let g1 = 1.0 * (1.0 - i) + 0.59 * i;
+                    let g2 = 0.0 * (1.0 - i) + 0.11 * i;
+                    let b0 = 0.0 * (1.0 - i) + 0.3 * i;
+                    let b1 = 0.0 * (1.0 - i) + 0.59 * i;
+                    let b2 = 0.0 * (1.0 - i) + 0.11 * i;
+                    effect_filters.push(format!(
+                        "colorchannelmixer={:.3}:{:.3}:{:.3}:0:{:.3}:{:.3}:{:.3}:0:{:.3}:{:.3}:{:.3}:0",
+                        r0, r1, r2, g0, g1, g2, b0, b1, b2
+                    ));
+                }
+                "negative" => {
+                    let i = effect.intensity / 100.0;
+                    if i > 0.99 {
+                        effect_filters.push("negate".to_string());
+                    } else {
+                        // Partial invert via curves
+                        let high = 1.0 - i;
+                        let low = i;
+                        effect_filters.push(format!(
+                            "curves=r='0/{}:1/{}':g='0/{}:1/{}':b='0/{}:1/{}'",
+                            low, high, low, high, low, high
+                        ));
+                    }
+                }
+                "colorShift" => {
+                    let rx = get_f64("redOffsetX", 5.0) as i32;
+                    let ry = get_f64("redOffsetY", 0.0) as i32;
+                    let bx = get_f64("blueOffsetX", -5.0) as i32;
+                    let by = get_f64("blueOffsetY", 0.0) as i32;
+                    effect_filters.push(format!(
+                        "rgbashift=rh={}:rv={}:bh={}:bv={}",
+                        rx, ry, bx, by
+                    ));
+                }
+                "glitch" => {
+                    let color_bleed = get_f64("colorBleed", 40.0);
+                    let shift = (color_bleed / 100.0 * 10.0).round() as i32;
+                    // RGB shift + noise for glitch look
+                    effect_filters.push(format!("rgbashift=rh={}:bh={}", shift, -shift));
+                    let noise_amount = (effect.intensity / 100.0 * 30.0).round() as i32;
+                    if noise_amount > 0 {
+                        effect_filters.push(format!("noise=alls={}:allf=t", noise_amount));
+                    }
+                }
+                "wave" => {
+                    let amplitude = get_f64("amplitude", 10.0);
+                    let frequency = get_f64("frequency", 3.0);
+                    let speed = get_f64("speed", 2.0);
+                    // geq-based sine wave displacement
+                    effect_filters.push(format!(
+                        "geq=lum='lum(X+{}*sin({}*PI*Y/H+{}*T)\\,Y)':cb='cb(X+{}*sin({}*PI*Y/H+{}*T)\\,Y)':cr='cr(X+{}*sin({}*PI*Y/H+{}*T)\\,Y)'",
+                        amplitude, frequency * 2.0, speed * 2.0 * std::f64::consts::PI,
+                        amplitude, frequency * 2.0, speed * 2.0 * std::f64::consts::PI,
+                        amplitude, frequency * 2.0, speed * 2.0 * std::f64::consts::PI
+                    ));
+                }
+                "zoomPulse" => {
+                    let amount = get_f64("amount", 15.0) / 100.0;
+                    let speed = get_f64("speed", 2.0);
+                    // zoompan with sinusoidal zoom expression
+                    effect_filters.push(format!(
+                        "zoompan=z='1+{}*sin({}*PI*on/25)':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s={}x{}",
+                        amount, speed, "iw", "ih"
+                    ));
+                }
+                "flash" => {
+                    let speed = get_f64("speed", 2.0);
+                    let i = effect.intensity / 100.0 * 0.8;
+                    // Flash via periodic brightness boost using eq filter
+                    effect_filters.push(format!(
+                        "eq=brightness='{}*max(0,sin({}*PI*t))'",
+                        i, speed
+                    ));
+                }
+                _ => {}
+            }
+        }
+        
+        effect_filters.join(",")
+    }
+
     // Process video sources - concat if multiple, trim to timeline positions
-    if config.video_sources.len() == 1 {
+    if config.video_sources.is_empty() {
+        // No video sources — generate black video and silent audio for the full duration
+        filters.push(format!(
+            "color=c=black:s={}x{}:d={},format=yuv420p[v]",
+            config.width, config.height, config.total_duration
+        ));
+        filters.push(format!(
+            "anullsrc=r=48000:cl=stereo,atrim=duration={}[va]",
+            config.total_duration
+        ));
+    } else if config.video_sources.len() == 1 {
         let source = &config.video_sources[0];
         let trim_start = source.trim_start.unwrap_or(0.0);
         let duration = source.end_time - source.start_time;
         let transform = build_video_transform_filter(source, config.width, config.height);
+        let effects_str = source.effects.as_ref()
+            .map(|fx| build_effects_filter(fx))
+            .unwrap_or_default();
+        let effects_suffix = if effects_str.is_empty() { String::new() } else { format!(",{}", effects_str) };
         
-        // Trim video from source trim_start for exact duration, then apply transforms
+        // Trim video from source trim_start for exact duration, then apply transforms + effects
         if needs_black_padding {
             filters.push(format!(
-                "[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{},tpad=stop_mode=add:stop_duration={}:color=black[v]",
-                trim_start, duration, transform, black_padding_duration
+                "[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{},tpad=stop_mode=add:stop_duration={}:color=black[v]",
+                trim_start, duration, transform, effects_suffix, black_padding_duration
             ));
         } else {
-            filters.push(format!("[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}[v]", trim_start, duration, transform));
+            filters.push(format!("[0:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}[v]", trim_start, duration, transform, effects_suffix));
         }
         
         // Also trim video audio if it exists (mute if flagged)
@@ -258,7 +466,12 @@ pub async fn export_video_editor_project(
         if (spd - 1.0).abs() > 0.001 {
             audio_extras.push_str(&format!(",atempo={}", spd));
         }
-        filters.push(format!("[0:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va]", trim_start, duration, audio_extras));
+        if source_has_audio[0] {
+            filters.push(format!("[0:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va]", trim_start, duration, audio_extras));
+        } else {
+            // No audio stream in video source — generate silent audio
+            filters.push(format!("anullsrc=r=48000:cl=stereo,atrim=duration={}[va]", duration));
+        }
     } else if config.video_sources.len() > 1 {
         // Concat multiple video sources
         let mut concat_inputs = String::new();
@@ -268,8 +481,13 @@ pub async fn export_video_editor_project(
             let duration = source.end_time - source.start_time;
             let transform = build_video_transform_filter(source, config.width, config.height);
             
-            // Trim each segment from trim_start, apply transforms
-            filters.push(format!("[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}[v{}]", i, trim_start, duration, transform, i));
+            let effects_str = source.effects.as_ref()
+                .map(|fx| build_effects_filter(fx))
+                .unwrap_or_default();
+            let effects_suffix = if effects_str.is_empty() { String::new() } else { format!(",{}", effects_str) };
+            
+            // Trim each segment from trim_start, apply transforms + effects
+            filters.push(format!("[{}:v]trim=start={}:duration={},setpts=PTS-STARTPTS,{}{}[v{}]", i, trim_start, duration, transform, effects_suffix, i));
             concat_inputs.push_str(&format!("[v{}]", i));
         }
         
@@ -301,7 +519,12 @@ pub async fn export_video_editor_project(
             if (spd - 1.0).abs() > 0.001 {
                 audio_extras.push_str(&format!(",atempo={}", spd));
             }
-            filters.push(format!("[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va{}]", i, trim_start, duration, audio_extras, i));
+            if source_has_audio[i] {
+                filters.push(format!("[{}:a]atrim=start={}:duration={},asetpts=PTS-STARTPTS{}[va{}]", i, trim_start, duration, audio_extras, i));
+            } else {
+                // No audio stream in this video source — generate silent audio
+                filters.push(format!("anullsrc=r=48000:cl=stereo,atrim=duration={}[va{}]", duration, i));
+            }
             audio_concat_inputs.push_str(&format!("[va{}]", i));
         }
         filters.push(format!("{}concat=n={}:v=0:a=1[va]", audio_concat_inputs, config.video_sources.len()));
@@ -388,11 +611,7 @@ pub async fn export_video_editor_project(
     for (i, text) in config.text_overlays.iter().enumerate() {
         let input_idx = existing_input_count + i;
         
-        let next_stream = if i == config.text_overlays.len() - 1 {
-            "[vout]".to_string()
-        } else {
-            format!("[vt{}]", i + 1)
-        };
+        let next_stream = format!("[vt{}]", i);
         
         // Use overlay filter with enable expression for timing
         // The PNG is full canvas size with transparency, so overlay at 0:0
@@ -407,10 +626,82 @@ pub async fn export_video_editor_project(
         
         video_stream = next_stream;
     }
-    
-    // If no text overlays, rename video output
-    if config.text_overlays.is_empty() {
-        filters.push("[v]copy[vout]".to_string());
+
+    // Add sticker overlays as image composites (pre-rendered PNGs from canvas)
+    // Stickers are rendered with position, scale, rotation, and opacity baked in.
+    let sticker_input_offset = existing_input_count + config.text_overlays.len();
+
+    for (i, sticker) in config.sticker_overlays.iter().enumerate() {
+        let input_idx = sticker_input_offset + i;
+
+        let next_stream = format!("[vs{}]", i);
+
+        filters.push(format!(
+            "{}[{}:v]overlay=0:0:enable='between(t,{},{})'{}",
+            video_stream,
+            input_idx,
+            sticker.start_time,
+            sticker.end_time,
+            next_stream
+        ));
+
+        video_stream = next_stream;
+    }
+
+    // Apply effect overlays with enable expressions for time-based activation
+    let effect_overlays = config.effect_overlays.unwrap_or_default();
+    if !effect_overlays.is_empty() {
+        for (i, effect_overlay) in effect_overlays.iter().enumerate() {
+            if !effect_overlay.enabled { continue; }
+
+            // Convert EffectOverlay to VideoEffect for reuse of build_effects_filter
+            let ve = VideoEffect {
+                effect_type: effect_overlay.effect_type.clone(),
+                enabled: effect_overlay.enabled,
+                intensity: effect_overlay.intensity,
+                params: effect_overlay.params.clone(),
+            };
+            let effect_filter_str = build_effects_filter(&[ve]);
+            if effect_filter_str.is_empty() { continue; }
+
+            let is_last = i == effect_overlays.len() - 1
+                && effect_overlays.iter().skip(i + 1).all(|e| !e.enabled || {
+                    let ve2 = VideoEffect {
+                        effect_type: e.effect_type.clone(),
+                        enabled: e.enabled,
+                        intensity: e.intensity,
+                        params: e.params.clone(),
+                    };
+                    build_effects_filter(&[ve2]).is_empty()
+                });
+
+            let next_stream = if is_last {
+                "[vout]".to_string()
+            } else {
+                format!("[vfx{}]", i)
+            };
+
+            // Use enable expression to only apply during the effect's time range
+            // Wrap each filter with enable='between(t,start,end)'
+            let enabled_filters: Vec<String> = effect_filter_str
+                .split(',')
+                .map(|f| format!("{}:enable='between(t,{},{})'", f.trim(), effect_overlay.start_time, effect_overlay.end_time))
+                .collect();
+
+            filters.push(format!(
+                "{}{}{}",
+                video_stream,
+                enabled_filters.join(","),
+                next_stream
+            ));
+
+            video_stream = next_stream;
+        }
+    }
+
+    // If nothing produced [vout] yet, rename current stream
+    if video_stream != "[vout]" {
+        filters.push(format!("{}copy[vout]", video_stream));
     }
     
     // Add filter_complex argument

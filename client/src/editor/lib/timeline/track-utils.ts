@@ -90,7 +90,9 @@ export function buildEmptyTrack({
 					? "Audio track"
 					: type === "sticker"
 						? "Sticker track"
-						: "Track");
+						: type === "effect"
+							? "Effect track"
+							: "Track");
 
 	switch (type) {
 		case "video":
@@ -126,6 +128,14 @@ export function buildEmptyTrack({
 				type: "audio",
 				elements: [],
 				muted: false,
+			};
+		case "effect":
+			return {
+				id,
+				name: trackName,
+				type: "effect",
+				elements: [],
+				hidden: false,
 			};
 		default:
 			throw new Error(`Unsupported track type: ${type}`);
@@ -222,6 +232,7 @@ export function canElementGoOnTrack({
 	if (elementType === "video" || elementType === "image") {
 		return trackType === "video";
 	}
+	if (elementType === "effect") return trackType === "effect";
 	return false;
 }
 

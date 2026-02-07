@@ -21,6 +21,7 @@ import StickersView from "./assets/StickersView.vue";
 import SoundsView from "./assets/SoundsView.vue";
 import BuiltClipsView from "./assets/BuiltClipsView.vue";
 import ProjectClipsView from "./assets/ProjectClipsView.vue";
+import EffectsView from "./assets/EffectsView.vue";
 
 const props = defineProps<{
 	activeTab: string;
@@ -326,14 +327,8 @@ function getMediaIcon(type: string) {
 		<!-- Stickers view -->
 		<StickersView v-else-if="activeTab === 'stickers'" />
 
-		<!-- Effects view (placeholder) -->
-		<div v-else-if="activeTab === 'effects'" class="flex flex-1 flex-col items-center justify-center gap-3 p-4">
-			<Wand2 class="size-10 text-zinc-600" :stroke-width="1" />
-			<div class="flex flex-col gap-2 text-center">
-				<p class="text-sm font-medium text-zinc-300">Effects</p>
-				<p class="text-xs text-zinc-500 text-balance">Video effects coming soon</p>
-			</div>
-		</div>
+		<!-- Effects view -->
+		<EffectsView v-else-if="activeTab === 'effects'" />
 
 		<!-- Transitions view (placeholder) -->
 		<div v-else-if="activeTab === 'transitions'" class="flex flex-1 flex-col items-center justify-center gap-3 p-4">

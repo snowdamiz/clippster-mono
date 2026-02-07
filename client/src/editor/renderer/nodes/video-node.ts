@@ -2,8 +2,10 @@ import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import { videoCache } from "../../video-cache/service";
 import type { Transform, FlipState, ColorAdjustments } from "../../types/timeline";
+import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
+import { buildFilterString, hasPostDrawEffects, applyCanvasEffects } from "../effects/canvas-effects";
 
 const VIDEO_EPSILON = 1 / 1000;
 
@@ -25,6 +27,7 @@ export interface VideoNodeParams {
 	colorAdjustments?: ColorAdjustments;
 	speed?: number;
 	keyframes?: ElementKeyframes;
+	effects?: VideoEffect[];
 }
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
@@ -93,18 +96,25 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 
 			// Apply color adjustments via CSS filter on canvas context
 			const ca = this.params.colorAdjustments;
+			const filterParts: string[] = [];
 			if (ca) {
-				const filters: string[] = [];
-				if (ca.brightness !== 0) filters.push(`brightness(${1 + ca.brightness / 100})`);
-				if (ca.contrast !== 0) filters.push(`contrast(${1 + ca.contrast / 100})`);
-				if (ca.saturation !== 0) filters.push(`saturate(${1 + ca.saturation / 100})`);
+				if (ca.brightness !== 0) filterParts.push(`brightness(${1 + ca.brightness / 100})`);
+				if (ca.contrast !== 0) filterParts.push(`contrast(${1 + ca.contrast / 100})`);
+				if (ca.saturation !== 0) filterParts.push(`saturate(${1 + ca.saturation / 100})`);
 				if (ca.temperature !== 0) {
-					// Temperature approximated via hue-rotate: warm = positive, cool = negative
-					filters.push(`hue-rotate(${ca.temperature * 0.3}deg)`);
+					filterParts.push(`hue-rotate(${ca.temperature * 0.3}deg)`);
 				}
-				if (filters.length > 0) {
-					renderer.context.filter = filters.join(" ");
-				}
+			}
+
+			// Add filter-based effects (blur, grayscale, sepia, negative)
+			const fx = this.params.effects;
+			if (fx && fx.length > 0) {
+				const effectFilter = buildFilterString(fx);
+				if (effectFilter) filterParts.push(effectFilter);
+			}
+
+			if (filterParts.length > 0) {
+				renderer.context.filter = filterParts.join(" ");
 			}
 
 			if (
@@ -121,18 +131,36 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 					this.params.height,
 				);
 			} else {
+				const mediaW = frame.canvas.width || renderer.width;
+				const mediaH = frame.canvas.height || renderer.height;
+				const coverScale = Math.max(
+					renderer.width / mediaW,
+					renderer.height / mediaH,
+				);
+				const drawW = mediaW * coverScale;
+				const drawH = mediaH * coverScale;
+				const drawX = (renderer.width - drawW) / 2;
+				const drawY = (renderer.height - drawH) / 2;
+
 				renderer.context.drawImage(
 					frame.canvas,
-					0,
-					0,
-					renderer.width,
-					renderer.height,
+					drawX,
+					drawY,
+					drawW,
+					drawH,
 				);
 			}
 
 			// Reset filter
 			renderer.context.filter = "none";
-			renderer.context.restore();
+
+			// Apply post-draw effects (pixelate, sharpen, vignette, colorShift, glitch, wave, zoomPulse, flash)
+			if (fx && fx.length > 0 && hasPostDrawEffects(fx)) {
+				renderer.context.restore();
+				applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, time, this.params.timeOffset);
+			} else {
+				renderer.context.restore();
+			}
 		}
 	}
 }

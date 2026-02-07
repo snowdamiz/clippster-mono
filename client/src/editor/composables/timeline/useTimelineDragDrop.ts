@@ -13,11 +13,12 @@ import {
 	buildUploadAudioElement,
 	buildVideoElement,
 	buildImageElement,
+	buildEffectElement,
 } from "../../lib/timeline/element-utils";
 import { computeDropTarget } from "../../lib/timeline/drop-utils";
 import { getDragData, hasDragData } from "../../lib/drag-data";
 import type { TrackType, DropTarget, ElementType } from "../../types/timeline";
-import type { MediaDragData, StickerDragData } from "../../types/drag";
+import type { MediaDragData, StickerDragData, EffectDragData } from "../../types/drag";
 
 interface UseTimelineDragDropProps {
 	containerRef: Ref<HTMLDivElement | null>;
@@ -62,6 +63,7 @@ export function useTimelineDragDrop({
 		if (!dragData) return null;
 		if (dragData.type === "text") return "text";
 		if (dragData.type === "sticker") return "sticker";
+		if (dragData.type === "effect") return "effect";
 		if (dragData.type === "media") return dragData.mediaType;
 		return null;
 	}
@@ -180,6 +182,26 @@ export function useTimelineDragDrop({
 		}
 
 		const element = buildStickerElement({ iconName: dragData.iconName, startTime: target.xPosition });
+		editor.timeline.insertElement({ placement: { mode: "explicit", trackId }, element });
+	}
+
+	function executeEffectDrop(target: DropTarget, dragData: EffectDragData) {
+		let trackId: string;
+		if (target.isNewTrack) {
+			trackId = editor.timeline.addTrack({ type: "effect", index: target.trackIndex });
+		} else {
+			const track = tracks.value[target.trackIndex];
+			if (!track) return;
+			trackId = track.id;
+		}
+
+		const element = buildEffectElement({
+			effectType: dragData.effectType as any,
+			name: dragData.name,
+			intensity: dragData.intensity,
+			params: dragData.params,
+			startTime: target.xPosition,
+		});
 		editor.timeline.insertElement({ placement: { mode: "explicit", trackId }, element });
 	}
 
@@ -330,6 +352,8 @@ export function useTimelineDragDrop({
 					executeTextDrop(currentTarget, dragData);
 				} else if (dragData.type === "sticker") {
 					executeStickerDrop(currentTarget, dragData);
+				} else if (dragData.type === "effect") {
+					executeEffectDrop(currentTarget, dragData);
 				} else {
 					executeMediaDrop(currentTarget, dragData);
 				}

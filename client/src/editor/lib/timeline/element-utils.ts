@@ -5,6 +5,7 @@ import type {
 	CreateVideoElement,
 	CreateImageElement,
 	CreateStickerElement,
+	CreateEffectElement,
 	CreateUploadAudioElement,
 	CreateLibraryAudioElement,
 	TextElement,
@@ -16,6 +17,7 @@ import type {
 	StickerElement,
 	UploadAudioElement,
 } from "../../types/timeline";
+import type { VideoEffectType } from "../../types/effects";
 
 export function canElementHaveAudio(
 	element: TimelineElement,
@@ -289,6 +291,35 @@ export function buildLibraryAudioElement({
 		element.buffer = buffer;
 	}
 	return element;
+}
+
+export function buildEffectElement({
+	effectType,
+	name,
+	intensity,
+	params,
+	startTime,
+	duration,
+}: {
+	effectType: VideoEffectType;
+	name: string;
+	intensity: number;
+	params: Record<string, number | string>;
+	startTime: number;
+	duration?: number;
+}): CreateEffectElement {
+	return {
+		type: "effect",
+		effectType,
+		name,
+		enabled: true,
+		intensity,
+		params,
+		duration: duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+		startTime,
+		trimStart: 0,
+		trimEnd: 0,
+	};
 }
 
 export function getElementsAtTime({

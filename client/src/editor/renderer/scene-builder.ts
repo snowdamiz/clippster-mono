@@ -1,4 +1,4 @@
-import type { TimelineTrack, VideoElement, ImageElement } from "../types/timeline";
+import type { TimelineTrack, VideoElement, ImageElement, EffectElement } from "../types/timeline";
 import type { MediaAsset } from "../types/assets";
 import { RootNode } from "./nodes/root-node";
 import { VideoNode } from "./nodes/video-node";
@@ -6,6 +6,7 @@ import { ImageNode } from "./nodes/image-node";
 import { TextNode } from "./nodes/text-node";
 import { StickerNode } from "./nodes/sticker-node";
 import { ColorNode } from "./nodes/color-node";
+import { EffectNode } from "./nodes/effect-node";
 import { BlurBackgroundNode } from "./nodes/blur-background-node";
 import type { TBackground, TCanvasSize } from "../types/project";
 import { DEFAULT_BLUR_INTENSITY } from "../constants/project-constants";
@@ -71,6 +72,7 @@ export function buildScene(params: BuildSceneParams) {
 							colorAdjustments: videoEl.colorAdjustments,
 							speed: videoEl.speed,
 							keyframes: videoEl.keyframes,
+							effects: videoEl.effects,
 						}),
 					);
 				}
@@ -88,6 +90,7 @@ export function buildScene(params: BuildSceneParams) {
 							flip: imageEl.flip,
 							colorAdjustments: imageEl.colorAdjustments,
 							keyframes: imageEl.keyframes,
+							effects: imageEl.effects,
 						}),
 					);
 				}
@@ -115,6 +118,22 @@ export function buildScene(params: BuildSceneParams) {
 						opacity: element.opacity,
 						color: element.color,
 						keyframes: element.keyframes,
+					}),
+				);
+			}
+
+			if (element.type === "effect") {
+				const effectEl = element as EffectElement;
+				contentNodes.push(
+					new EffectNode({
+						effectType: effectEl.effectType,
+						enabled: effectEl.enabled,
+						intensity: effectEl.intensity,
+						params: effectEl.params,
+						duration: effectEl.duration,
+						timeOffset: effectEl.startTime,
+						trimStart: effectEl.trimStart,
+						trimEnd: effectEl.trimEnd,
 					}),
 				);
 			}

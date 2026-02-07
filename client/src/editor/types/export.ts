@@ -15,6 +15,7 @@ export interface ExportOptions {
 	quality: ExportQuality;
 	fps?: number;
 	includeAudio?: boolean;
+	canvasSize?: { width: number; height: number };
 	onProgress?: ({ progress }: { progress: number }) => void;
 	onCancel?: () => boolean;
 }

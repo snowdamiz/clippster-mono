@@ -1,3 +1,5 @@
+import type { VideoEffect, VideoEffectType } from "./effects";
+
 export interface TScene {
 	id: string;
 	name: string;
@@ -8,7 +10,7 @@ export interface TScene {
 	updatedAt: Date;
 }
 
-export type TrackType = "video" | "text" | "audio" | "sticker";
+export type TrackType = "video" | "text" | "audio" | "sticker" | "effect";
 
 interface BaseTrack {
 	id: string;
@@ -42,7 +44,13 @@ export interface StickerTrack extends BaseTrack {
 	hidden: boolean;
 }
 
-export type TimelineTrack = VideoTrack | TextTrack | AudioTrack | StickerTrack;
+export interface EffectTrack extends BaseTrack {
+	type: "effect";
+	elements: EffectElement[];
+	hidden: boolean;
+}
+
+export type TimelineTrack = VideoTrack | TextTrack | AudioTrack | StickerTrack | EffectTrack;
 
 export interface Transform {
 	scale: number;
@@ -108,6 +116,7 @@ export interface VideoElement extends BaseTimelineElement {
 	speed?: number; // 0.1-16, default 1
 	flip?: FlipState;
 	colorAdjustments?: ColorAdjustments;
+	effects?: VideoEffect[];
 }
 
 export interface ImageElement extends BaseTimelineElement {
@@ -118,6 +127,7 @@ export interface ImageElement extends BaseTimelineElement {
 	opacity: number;
 	flip?: FlipState;
 	colorAdjustments?: ColorAdjustments;
+	effects?: VideoEffect[];
 }
 
 export interface TextStroke {
@@ -191,12 +201,21 @@ export interface StickerElement extends BaseTimelineElement {
 	color?: string;
 }
 
+export interface EffectElement extends BaseTimelineElement {
+	type: "effect";
+	effectType: VideoEffectType;
+	enabled: boolean;
+	intensity: number; // 0-100
+	params: Record<string, number | string>;
+}
+
 export type TimelineElement =
 	| AudioElement
 	| VideoElement
 	| ImageElement
 	| TextElement
-	| StickerElement;
+	| StickerElement
+	| EffectElement;
 
 export type ElementType = TimelineElement["type"];
 
@@ -209,12 +228,14 @@ export type CreateVideoElement = Omit<VideoElement, "id">;
 export type CreateImageElement = Omit<ImageElement, "id">;
 export type CreateTextElement = Omit<TextElement, "id">;
 export type CreateStickerElement = Omit<StickerElement, "id">;
+export type CreateEffectElement = Omit<EffectElement, "id">;
 export type CreateTimelineElement =
 	| CreateAudioElement
 	| CreateVideoElement
 	| CreateImageElement
 	| CreateTextElement
-	| CreateStickerElement;
+	| CreateStickerElement
+	| CreateEffectElement;
 
 // ---- Drag State ----
 

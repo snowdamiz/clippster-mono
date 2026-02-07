@@ -1,8 +1,10 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import type { Transform, FlipState, ColorAdjustments } from "../../types/timeline";
+import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
+import { buildFilterString, hasPostDrawEffects, applyCanvasEffects } from "../effects/canvas-effects";
 
 const IMAGE_EPSILON = 1 / 1000;
 
@@ -21,6 +23,7 @@ export interface ImageNodeParams {
 	flip?: FlipState;
 	colorAdjustments?: ColorAdjustments;
 	keyframes?: ElementKeyframes;
+	effects?: VideoEffect[];
 }
 
 export class ImageNode extends BaseNode<ImageNodeParams> {
@@ -106,17 +109,25 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 
 		// Apply color adjustments via CSS filter on canvas context
 		const ca = this.params.colorAdjustments;
+		const filterParts: string[] = [];
 		if (ca) {
-			const filters: string[] = [];
-			if (ca.brightness !== 0) filters.push(`brightness(${1 + ca.brightness / 100})`);
-			if (ca.contrast !== 0) filters.push(`contrast(${1 + ca.contrast / 100})`);
-			if (ca.saturation !== 0) filters.push(`saturate(${1 + ca.saturation / 100})`);
+			if (ca.brightness !== 0) filterParts.push(`brightness(${1 + ca.brightness / 100})`);
+			if (ca.contrast !== 0) filterParts.push(`contrast(${1 + ca.contrast / 100})`);
+			if (ca.saturation !== 0) filterParts.push(`saturate(${1 + ca.saturation / 100})`);
 			if (ca.temperature !== 0) {
-				filters.push(`hue-rotate(${ca.temperature * 0.3}deg)`);
+				filterParts.push(`hue-rotate(${ca.temperature * 0.3}deg)`);
 			}
-			if (filters.length > 0) {
-				renderer.context.filter = filters.join(" ");
-			}
+		}
+
+		// Add filter-based effects (blur, grayscale, sepia, negative)
+		const fx = this.params.effects;
+		if (fx && fx.length > 0) {
+			const effectFilter = buildFilterString(fx);
+			if (effectFilter) filterParts.push(effectFilter);
+		}
+
+		if (filterParts.length > 0) {
+			renderer.context.filter = filterParts.join(" ");
 		}
 
 		if (
@@ -148,6 +159,13 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		}
 
 		renderer.context.filter = "none";
-		renderer.context.restore();
+
+		// Apply post-draw effects (pixelate, sharpen, vignette, colorShift, glitch, wave, zoomPulse, flash)
+		if (fx && fx.length > 0 && hasPostDrawEffects(fx)) {
+			renderer.context.restore();
+			applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, time, this.params.timeOffset);
+		} else {
+			renderer.context.restore();
+		}
 	}
 }

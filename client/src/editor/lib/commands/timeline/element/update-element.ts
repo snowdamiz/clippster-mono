@@ -6,6 +6,7 @@ import type {
 	ImageElement,
 	AudioElement,
 	StickerElement,
+	EffectElement,
 	Transform,
 	ColorAdjustments,
 	FlipState,
@@ -13,11 +14,11 @@ import type {
 import { EditorCore } from "../../../../core";
 
 export type UpdatableVideoProps = Partial<
-	Pick<VideoElement, "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "flip" | "colorAdjustments">
+	Pick<VideoElement, "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "flip" | "colorAdjustments" | "effects">
 >;
 
 export type UpdatableImageProps = Partial<
-	Pick<ImageElement, "opacity" | "transform" | "hidden" | "flip" | "colorAdjustments">
+	Pick<ImageElement, "opacity" | "transform" | "hidden" | "flip" | "colorAdjustments" | "effects">
 >;
 
 export type UpdatableAudioProps = Partial<
@@ -28,11 +29,16 @@ export type UpdatableStickerProps = Partial<
 	Pick<StickerElement, "opacity" | "transform" | "color" | "hidden">
 >;
 
+export type UpdatableEffectProps = Partial<
+	Pick<EffectElement, "enabled" | "intensity" | "params">
+>;
+
 export type UpdatableElementProps =
 	| UpdatableVideoProps
 	| UpdatableImageProps
 	| UpdatableAudioProps
-	| UpdatableStickerProps;
+	| UpdatableStickerProps
+	| UpdatableEffectProps;
 
 export class UpdateElementCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
