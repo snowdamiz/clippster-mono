@@ -499,6 +499,22 @@ export interface CreatorWatermarkSettings {
   '4:5': CreatorWatermarkRatioConfig | null;
 }
 
+// Per-aspect-ratio intro/outro configuration
+// Allows using different intro/outro videos for different aspect ratios
+export interface CreatorIntroOutroRatioConfig {
+  introId: string | null;
+  outroId: string | null;
+}
+
+// Settings can be null to indicate intro/outro are disabled for that ratio
+// Each ratio can have completely different intro and outro videos
+export interface CreatorIntroOutroSettings {
+  '16:9': CreatorIntroOutroRatioConfig | null;
+  '9:16': CreatorIntroOutroRatioConfig | null;
+  '1:1': CreatorIntroOutroRatioConfig | null;
+  '4:5': CreatorIntroOutroRatioConfig | null;
+}
+
 export interface CreatorProfile {
   id: string;
   name: string;
@@ -508,6 +524,7 @@ export interface CreatorProfile {
   outro_id: string | null;
   watermark_id: string | null;
   watermark_settings: string | null; // JSON string of WatermarkSettings
+  intro_outro_settings: string | null; // JSON string of IntroOutroSettings
   auto_dvr_enabled?: number | boolean; // Auto DVR toggle (default off)
   user_id: string | null;
   created_at: number;

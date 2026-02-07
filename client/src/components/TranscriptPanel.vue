@@ -55,23 +55,92 @@
     <template v-else>
       <!-- Search Bar (only shown when header is visible) -->
       <div v-if="!hideHeader" class="py-2">
-        <div class="relative">
-          <div class="absolute left-2.5 top-1/2 transform -translate-y-1/2 pointer-events-none">
-            <Search class="h-3.5 w-3.5 text-muted-foreground/50" />
+        <div class="relative flex items-center gap-1">
+          <div class="relative flex-1">
+            <div class="absolute left-2.5 top-1/2 transform -translate-y-1/2 pointer-events-none">
+              <Search class="h-3.5 w-3.5 text-muted-foreground/50" />
+            </div>
+            <input
+              ref="searchInputRef"
+              v-model="internalSearchQuery"
+              type="text"
+              placeholder="Search transcript..."
+              class="w-full pl-8 py-1.5 text-xs bg-muted/30 border border-border/40 rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all duration-200 placeholder:text-muted-foreground/50"
+              :class="{ 'pr-20': internalSearchQuery.trim(), 'pr-3': !internalSearchQuery.trim() }"
+              @keydown.enter.prevent="navigateMatch(1)"
+              @keydown.shift.enter.prevent="navigateMatch(-1)"
+            />
+            <!-- Match count + clear inside the input -->
+            <div v-if="internalSearchQuery.trim()" class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              <span class="text-[10px] tabular-nums whitespace-nowrap" :class="matchOccurrences.length > 0 ? 'text-muted-foreground/70' : 'text-red-400/70'">
+                {{ matchOccurrences.length > 0 ? `${currentMatchIndex + 1} of ${matchOccurrences.length}` : 'No results' }}
+              </span>
+              <button
+                @click="clearSearch"
+                class="p-0.5 hover:bg-white/10 rounded transition-colors text-muted-foreground/50 hover:text-muted-foreground"
+                title="Clear search"
+              >
+                <XIcon class="h-3 w-3" />
+              </button>
+            </div>
           </div>
-          <input
-            ref="searchInputRef"
-            v-model="internalSearchQuery"
-            type="text"
-            placeholder="Search transcript..."
-            class="w-full pl-8 pr-3 py-1.5 text-xs bg-muted/30 border border-border/40 rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all duration-200 placeholder:text-muted-foreground/50"
-          />
+          <!-- Navigation arrows -->
+          <template v-if="internalSearchQuery.trim() && matchOccurrences.length > 0">
+            <button
+              @click="navigateMatch(-1)"
+              class="p-1 hover:bg-white/10 rounded transition-colors text-muted-foreground/60 hover:text-foreground border border-border/40"
+              title="Previous match (Shift+Enter)"
+            >
+              <ChevronUp class="h-3.5 w-3.5" />
+            </button>
+            <button
+              @click="navigateMatch(1)"
+              class="p-1 hover:bg-white/10 rounded transition-colors text-muted-foreground/60 hover:text-foreground border border-border/40"
+              title="Next match (Enter)"
+            >
+              <ChevronDown class="h-3.5 w-3.5" />
+            </button>
+          </template>
         </div>
       </div>
 
       <!-- Transcript content -->
       <div ref="transcriptContent" class="flex-1 overflow-y-auto custom-scrollbar relative mt-3">
-        <div class="text-sm text-foreground leading-relaxed break-words pb-4 min-h-full select-text transcript-content">
+        <!-- Floating Selection Toolbar -->
+        <Transition name="toolbar-fade">
+          <div
+            v-if="showSelectionToolbar && selectionTimeRange"
+            class="absolute z-20 -translate-x-1/2 pointer-events-auto"
+            :style="{ top: `${selectionToolbarPos.top}px`, left: `${selectionToolbarPos.left}px` }"
+          >
+            <div class="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-900 border border-white/15 rounded-lg shadow-xl shadow-black/40 backdrop-blur-sm">
+              <!-- Time range display -->
+              <span class="text-[10px] font-mono text-muted-foreground/80 tabular-nums">
+                {{ formatTime(selectionTimeRange.startTime) }} – {{ formatTime(selectionTimeRange.endTime) }}
+              </span>
+              <div class="w-px h-3.5 bg-white/10"></div>
+              <!-- Create Clip button -->
+              <button
+                @click.stop="onCreateClipFromSelection"
+                class="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded transition-colors border border-emerald-500/20"
+                title="Create clip from selection"
+              >
+                <Scissors class="h-3 w-3" />
+                Create Clip
+              </button>
+              <!-- Close button -->
+              <button
+                @click.stop="clearWordSelection"
+                class="p-0.5 text-muted-foreground/50 hover:text-muted-foreground rounded transition-colors hover:bg-white/10"
+                title="Clear selection"
+              >
+                <XIcon class="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </Transition>
+
+        <div class="text-sm text-foreground leading-relaxed break-words pb-4 min-h-full select-none transcript-content">
           <span
             v-for="(word, index) in transcriptData.words"
             :key="`word-${index}`"
@@ -80,6 +149,9 @@
             class="inline-block px-1 py-0.5 mx-0.5 rounded-md cursor-pointer whitespace-normal word-interactive"
             @click="onWordClick(word, index)"
             @dblclick="onWordDoubleClick(word, index)"
+            @mousedown="onWordMouseDown($event, index)"
+            @mouseenter="onWordMouseEnter(index)"
+            @mouseup="onWordMouseUp($event)"
             :title="getWordTitle(word, index)"
           >
             <!-- Show input field when editing this word -->
@@ -104,7 +176,7 @@
 <script setup lang="ts">
   import { ref, computed, watch, nextTick, onUnmounted, onMounted } from 'vue';
   import { useTranscriptData } from '../composables/useTranscriptData';
-  import { Loader2, FileText, Search } from 'lucide-vue-next';
+  import { Loader2, FileText, Search, ChevronUp, ChevronDown, X as XIcon, Scissors, Film } from 'lucide-vue-next';
 
   interface Props {
     projectId?: string | null;
@@ -123,6 +195,7 @@
 
   interface Emits {
     (e: 'seekVideo', time: number): void;
+    (e: 'createClipFromTranscript', startTime: number, endTime: number, transcriptText: string): void;
   }
 
   const emit = defineEmits<Emits>();
@@ -138,10 +211,19 @@
   const editingWordIndex = ref(-1);
   const editingWordText = ref('');
 
+  // Word range selection state (for clip creation)
+  const isSelecting = ref(false);
+  const selectionAnchorIndex = ref(-1);
+  const selectionStartIndex = ref(-1);
+  const selectionEndIndex = ref(-1);
+  const showSelectionToolbar = ref(false);
+  const selectionToolbarPos = ref({ top: 0, left: 0 });
+
   // Search state - internal query for when header is shown, prop for when hidden
   const internalSearchQuery = ref('');
   const debouncedSearchQuery = ref('');
   const searchInputRef = ref<HTMLInputElement>();
+  const currentMatchIndex = ref(0);
   let searchDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Computed search query - uses prop when header is hidden, internal state otherwise
@@ -162,6 +244,8 @@
     }
     searchDebounceTimeout = setTimeout(() => {
       debouncedSearchQuery.value = newValue;
+      // Reset to first match when search changes
+      currentMatchIndex.value = 0;
     }, 300); // 300ms debounce
   });
 
@@ -242,10 +326,99 @@
     return matchedIndices;
   });
 
+  // Distinct match occurrences - each entry is the starting word index of a match
+  const matchOccurrences = computed((): number[] => {
+    if (!debouncedSearchQuery.value.trim() || !transcriptData.value?.words.length) return [];
+
+    const query = debouncedSearchQuery.value.toLowerCase().trim();
+    const queryWords = query.split(/\s+/).filter((word) => word.length > 0);
+    if (queryWords.length === 0) return [];
+
+    const words = transcriptData.value.words;
+    const occurrences: number[] = [];
+
+    for (let i = 0; i <= words.length - queryWords.length; i++) {
+      let isMatch = true;
+      for (let j = 0; j < queryWords.length; j++) {
+        const wordText = getWordText(words[i + j]).toLowerCase();
+        const cleanWordText = wordText.replace(/[^\w\s]/g, '');
+        const cleanQueryWord = queryWords[j].replace(/[^\w\s]/g, '');
+        if (!cleanWordText.includes(cleanQueryWord)) {
+          isMatch = false;
+          break;
+        }
+      }
+      if (isMatch) {
+        occurrences.push(i);
+      }
+    }
+
+    return occurrences;
+  });
+
+  // The word index of the currently active/focused match
+  const activeMatchWordIndex = computed((): number => {
+    if (matchOccurrences.value.length === 0) return -1;
+    return matchOccurrences.value[currentMatchIndex.value] ?? -1;
+  });
+
   function isWordMatched(_word: any, index: number): boolean {
     if (!debouncedSearchQuery.value.trim()) return false;
     return matchedPhraseIndices.value.includes(index);
   }
+
+  function isActiveMatch(index: number): boolean {
+    if (activeMatchWordIndex.value === -1) return false;
+    const query = debouncedSearchQuery.value.toLowerCase().trim();
+    const queryWords = query.split(/\s+/).filter((w) => w.length > 0);
+    return index >= activeMatchWordIndex.value && index < activeMatchWordIndex.value + queryWords.length;
+  }
+
+  function navigateMatch(direction: number) {
+    if (matchOccurrences.value.length === 0) return;
+
+    let newIndex = currentMatchIndex.value + direction;
+    // Wrap around
+    if (newIndex < 0) newIndex = matchOccurrences.value.length - 1;
+    if (newIndex >= matchOccurrences.value.length) newIndex = 0;
+    currentMatchIndex.value = newIndex;
+
+    // Get the starting word index of this match
+    const wordIdx = matchOccurrences.value[newIndex];
+    const word = transcriptData.value?.words[wordIdx];
+    if (!word) return;
+
+    // Seek video to this word's timestamp
+    seekToTime(getWordStart(word));
+
+    // Scroll to the matched word element
+    nextTick(() => {
+      const wordElement = wordElements.value.get(wordIdx);
+      if (wordElement && transcriptContent.value) {
+        wordElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+  }
+
+  function clearSearch() {
+    internalSearchQuery.value = '';
+    debouncedSearchQuery.value = '';
+    currentMatchIndex.value = 0;
+    searchInputRef.value?.focus();
+  }
+
+  // Auto-scroll to first match when results change
+  watch(matchOccurrences, (occurrences) => {
+    if (occurrences.length > 0 && currentMatchIndex.value === 0) {
+      const wordIdx = occurrences[0];
+      nextTick(() => {
+        const wordElement = wordElements.value.get(wordIdx);
+        if (wordElement && transcriptContent.value) {
+          wordElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+    }
+  });
 
   // Get CSS classes for a word based on its state relative to currentTime
   function getWordClasses(word: any, index: number): string {
@@ -278,6 +451,16 @@
       }
     }
 
+    // Check for word range selection (clip creation) - blue highlight
+    if (isWordInSelection(index)) {
+      return 'bg-blue-500/30 text-blue-200 border border-blue-400/40 word-selected';
+    }
+
+    // Check for active match (currently navigated to) - orange highlight
+    if (isActiveMatch(index)) {
+      return 'bg-orange-500/40 text-orange-200 border border-orange-400/50 ring-1 ring-orange-400/30 active-match';
+    }
+
     // Check for search match and overlay on top of state
     if (isWordMatched(word, index)) {
       // Search match takes precedence but we maintain font weight from state
@@ -289,6 +472,107 @@
 
   function seekToTime(time: number) {
     emit('seekVideo', time);
+  }
+
+  // ===== Word Range Selection (Clip Creation) =====
+
+  function isWordInSelection(index: number): boolean {
+    if (selectionStartIndex.value === -1 || selectionEndIndex.value === -1) return false;
+    return index >= selectionStartIndex.value && index <= selectionEndIndex.value;
+  }
+
+  // Computed: time range of the current selection
+  const selectionTimeRange = computed(() => {
+    if (selectionStartIndex.value === -1 || selectionEndIndex.value === -1 || !transcriptData.value) {
+      return null;
+    }
+    const words = transcriptData.value.words;
+    const startWord = words[selectionStartIndex.value];
+    const endWord = words[selectionEndIndex.value];
+    if (!startWord || !endWord) return null;
+    return {
+      startTime: getWordStart(startWord),
+      endTime: getWordEnd(endWord),
+    };
+  });
+
+  // Computed: selected transcript text
+  const selectionText = computed(() => {
+    if (selectionStartIndex.value === -1 || selectionEndIndex.value === -1 || !transcriptData.value) {
+      return '';
+    }
+    const words = transcriptData.value.words;
+    return words
+      .slice(selectionStartIndex.value, selectionEndIndex.value + 1)
+      .map((w: any) => getWordText(w))
+      .join(' ');
+  });
+
+  function onWordMouseDown(event: MouseEvent, index: number) {
+    // Only start selection on left click, and not when editing
+    if (event.button !== 0 || editingWordIndex.value !== -1) return;
+
+    // Prevent native text selection
+    event.preventDefault();
+
+    isSelecting.value = true;
+    selectionAnchorIndex.value = index;
+    selectionStartIndex.value = index;
+    selectionEndIndex.value = index;
+    showSelectionToolbar.value = false;
+  }
+
+  function onWordMouseEnter(index: number) {
+    if (!isSelecting.value || selectionAnchorIndex.value === -1) return;
+
+    // Update selection range based on anchor and current hover
+    selectionStartIndex.value = Math.min(selectionAnchorIndex.value, index);
+    selectionEndIndex.value = Math.max(selectionAnchorIndex.value, index);
+  }
+
+  function onWordMouseUp(event: MouseEvent) {
+    if (!isSelecting.value) return;
+    isSelecting.value = false;
+
+    // Only show toolbar if more than 1 word is selected
+    if (selectionStartIndex.value !== selectionEndIndex.value && selectionStartIndex.value !== -1) {
+      // Position toolbar above the last selected word
+      const endElement = wordElements.value.get(selectionEndIndex.value);
+      const startElement = wordElements.value.get(selectionStartIndex.value);
+      if (startElement && endElement && transcriptContent.value) {
+        const containerRect = transcriptContent.value.getBoundingClientRect();
+        const startRect = startElement.getBoundingClientRect();
+        const endRect = endElement.getBoundingClientRect();
+
+        // Center toolbar between start and end, positioned above
+        const midX = (startRect.left + endRect.right) / 2 - containerRect.left;
+        const topY = startRect.top - containerRect.top + transcriptContent.value.scrollTop - 8;
+
+        selectionToolbarPos.value = { top: topY, left: midX };
+        showSelectionToolbar.value = true;
+      }
+    } else {
+      // Single word click — clear selection and do normal seek
+      clearWordSelection();
+    }
+  }
+
+  function clearWordSelection() {
+    selectionStartIndex.value = -1;
+    selectionEndIndex.value = -1;
+    selectionAnchorIndex.value = -1;
+    showSelectionToolbar.value = false;
+  }
+
+  function onCreateClipFromSelection() {
+    if (!selectionTimeRange.value) return;
+    emit(
+      'createClipFromTranscript',
+      selectionTimeRange.value.startTime,
+      selectionTimeRange.value.endTime,
+      selectionText.value
+    );
+    clearWordSelection();
   }
 
   // Word editing functions
@@ -944,5 +1228,39 @@
   .word-interactive[class*='bg-yellow-500']:hover {
     background: hsl(var(--yellow-500) / 0.3) !important;
     color: hsl(var(--yellow-300)) !important;
+  }
+
+  /* Word selection highlight for clip creation */
+  .word-selected {
+    cursor: pointer;
+  }
+
+  .word-interactive.word-selected:hover {
+    background: rgba(59, 130, 246, 0.4) !important;
+    color: rgb(191, 219, 254) !important;
+  }
+
+  /* Floating toolbar transitions */
+  .toolbar-fade-enter-active {
+    transition: all 150ms ease-out;
+  }
+
+  .toolbar-fade-leave-active {
+    transition: all 100ms ease-in;
+  }
+
+  .toolbar-fade-enter-from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+
+  .toolbar-fade-leave-to {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+
+  .toolbar-fade-enter-to,
+  .toolbar-fade-leave-from {
+    transform: translateX(-50%) translateY(0);
   }
 </style>

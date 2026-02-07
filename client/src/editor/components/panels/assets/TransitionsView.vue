@@ -4,15 +4,12 @@ import { TRANSITION_PRESETS, TRANSITION_CATEGORIES } from "../../../constants/tr
 import type { TransitionCategory, TransitionPreset } from "../../../types/transitions";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
-import { useTransitionPreviews } from "../../../composables/usePreviewThumbnails";
 import { ArrowRightLeft, Search, Check, Trash2 } from "lucide-vue-next";
+import TransitionPreviewCanvas from "./TransitionPreviewCanvas.vue";
 import { generateUUID } from "../../../utils/id";
 
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
-
-const transitionTypes = TRANSITION_PRESETS.map((p) => p.type);
-const previews = useTransitionPreviews(transitionTypes);
 
 const activeCategory = ref<TransitionCategory | "all">("all");
 const searchQuery = ref("");
@@ -145,81 +142,66 @@ function removeTransition() {
 
 		<!-- Content -->
 		<div class="flex-1 overflow-y-auto p-3">
-			<!-- No element selected -->
-			<div v-if="!selectedElement" class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-				<ArrowRightLeft class="size-8 text-zinc-600" :stroke-width="1" />
-				<p class="text-xs text-zinc-500">Select a video element to add a transition before it</p>
+			<!-- Hint when no element selected -->
+			<div v-if="!selectedElement" class="mb-3 flex items-center gap-2 rounded-md border border-white/5 bg-white/[0.02] px-2.5 py-1.5">
+				<ArrowRightLeft class="size-3.5 shrink-0 text-zinc-600" />
+				<p class="text-[11px] text-zinc-500">Select a video element to apply a transition</p>
 			</div>
 
-			<template v-else>
-				<!-- Active transition -->
-				<div v-if="activeTransition" class="mb-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-2">
-							<div class="size-8 shrink-0 overflow-hidden rounded bg-zinc-900">
-								<img
-									v-if="previews[activeTransition.type]"
-									:src="previews[activeTransition.type]"
-									:alt="activeTransition.type"
-									class="size-full object-cover"
-								/>
-							</div>
-							<div>
-								<p class="text-xs font-medium text-blue-400">{{ activeTransition.type }}</p>
-								<p class="text-[10px] text-zinc-500">{{ activeTransition.duration }}s duration</p>
-							</div>
+			<!-- Active transition -->
+			<div v-if="activeTransition" class="mb-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-3">
+				<div class="flex items-center justify-between">
+					<div class="flex items-center gap-2">
+						<div class="size-8 shrink-0 overflow-hidden rounded bg-zinc-900">
+							<TransitionPreviewCanvas :transition-type="activeTransition.type" />
 						</div>
-						<button
-							class="flex size-6 items-center justify-center rounded text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
-							@click="removeTransition"
-						>
-							<Trash2 class="size-3.5" />
-						</button>
+						<div>
+							<p class="text-xs font-medium text-blue-400">{{ activeTransition.type }}</p>
+							<p class="text-[10px] text-zinc-500">{{ activeTransition.duration }}s duration</p>
+						</div>
 					</div>
-				</div>
-
-				<!-- Transition grid -->
-				<div v-if="filteredPresets.length === 0" class="flex items-center justify-center py-8">
-					<p class="text-xs text-zinc-500">No transitions found</p>
-				</div>
-
-				<div v-else class="grid grid-cols-2 gap-2">
 					<button
-						v-for="preset in filteredPresets"
-						:key="preset.type"
-						:class="[
-							'group overflow-hidden rounded-lg border transition-all',
-							activeTransition?.type === preset.type
-								? 'border-blue-500/40 bg-blue-500/10'
-								: 'border-white/5 bg-white/[0.02] hover:border-[#E040FB]/30 hover:bg-[#E040FB]/5',
-						]"
-						@click="applyTransition(preset)"
+						class="flex size-6 items-center justify-center rounded text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
+						@click="removeTransition"
 					>
-						<!-- Transition preview thumbnail -->
-						<div class="relative aspect-[3/2] w-full overflow-hidden bg-zinc-900">
-							<img
-								v-if="previews[preset.type]"
-								:src="previews[preset.type]"
-								:alt="preset.label"
-								class="size-full object-cover"
-							/>
-							<div v-else class="flex size-full items-center justify-center">
-								<div class="size-4 animate-pulse rounded-full bg-white/10" />
-							</div>
-							<!-- Active checkmark -->
-							<div v-if="activeTransition?.type === preset.type" class="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-blue-500">
-								<Check class="size-2.5 text-white" />
-							</div>
-						</div>
-						<div class="px-2 py-1.5 text-center">
-							<p class="text-[11px] font-medium" :class="activeTransition?.type === preset.type ? 'text-blue-400' : 'text-zinc-300 group-hover:text-zinc-100'">
-								{{ preset.label }}
-							</p>
-							<p class="mt-0.5 text-[9px] leading-tight text-zinc-600">{{ preset.description }}</p>
-						</div>
+						<Trash2 class="size-3.5" />
 					</button>
 				</div>
-			</template>
+			</div>
+
+			<!-- Transition grid -->
+			<div v-if="filteredPresets.length === 0" class="flex items-center justify-center py-8">
+				<p class="text-xs text-zinc-500">No transitions found</p>
+			</div>
+
+			<div v-else class="grid grid-cols-2 gap-2">
+				<button
+					v-for="preset in filteredPresets"
+					:key="preset.type"
+					:class="[
+						'group overflow-hidden rounded-lg border transition-all',
+						activeTransition?.type === preset.type
+							? 'border-blue-500/40 bg-blue-500/10'
+							: 'border-white/5 bg-white/[0.02] hover:border-[#E040FB]/30 hover:bg-[#E040FB]/5',
+					]"
+					@click="applyTransition(preset)"
+				>
+					<!-- Transition preview thumbnail -->
+					<div class="relative aspect-[3/2] w-full overflow-hidden bg-zinc-900">
+						<TransitionPreviewCanvas :transition-type="preset.type" />
+						<!-- Active checkmark -->
+						<div v-if="activeTransition?.type === preset.type" class="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-blue-500">
+							<Check class="size-2.5 text-white" />
+						</div>
+					</div>
+					<div class="px-2 py-1.5 text-center">
+						<p class="text-[11px] font-medium" :class="activeTransition?.type === preset.type ? 'text-blue-400' : 'text-zinc-300 group-hover:text-zinc-100'">
+							{{ preset.label }}
+						</p>
+						<p class="mt-0.5 text-[9px] leading-tight text-zinc-600">{{ preset.description }}</p>
+					</div>
+				</button>
+			</div>
 		</div>
 	</div>
 </template>
