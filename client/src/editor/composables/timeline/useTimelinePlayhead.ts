@@ -159,6 +159,9 @@ export function useTimelinePlayhead({
 	});
 
 	// Auto-scroll playhead into view during playback
+	// Uses "page forward" behavior: when playhead exits the right edge,
+	// scroll so the playhead is at the left edge of the viewport, letting it
+	// traverse the full visible width before the next page.
 	watch([playheadPosition, isPlaying, isScrubbing], ([pos, playing, scrub]) => {
 		if (!playing || scrub) return;
 		if (autoFollow && !autoFollow.value) return;
@@ -169,14 +172,17 @@ export function useTimelinePlayhead({
 
 		const playheadPixels = (pos as number) * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
 		const viewportWidth = rulerViewport.clientWidth;
+		const scrollLeft = rulerViewport.scrollLeft;
 
 		const needsScroll =
-			playheadPixels < rulerViewport.scrollLeft ||
-			playheadPixels > rulerViewport.scrollLeft + viewportWidth;
+			playheadPixels < scrollLeft ||
+			playheadPixels > scrollLeft + viewportWidth;
 
 		if (needsScroll) {
 			const scrollMax = rulerViewport.scrollWidth - viewportWidth;
-			const desiredScroll = Math.max(0, Math.min(scrollMax, playheadPixels - viewportWidth / 2));
+			// Place playhead at the left edge with a small margin
+			const margin = viewportWidth * 0.05;
+			const desiredScroll = Math.max(0, Math.min(scrollMax, playheadPixels - margin));
 			rulerViewport.scrollLeft = tracksViewport.scrollLeft = desiredScroll;
 		}
 	});
