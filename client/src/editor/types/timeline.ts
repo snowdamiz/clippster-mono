@@ -1,10 +1,12 @@
 import type { VideoEffect, VideoEffectType } from "./effects";
+import type { Transition } from "./transitions";
 
 export interface TScene {
 	id: string;
 	name: string;
 	isMain: boolean;
 	tracks: TimelineTrack[];
+	transitions?: Transition[];
 	bookmarks: number[];
 	createdAt: Date;
 	updatedAt: Date;
@@ -66,7 +68,26 @@ export interface ColorAdjustments {
 	contrast: number; // -100 to 100, default 0
 	saturation: number; // -100 to 100, default 0
 	temperature: number; // -100 to 100, default 0
+	highlights: number; // -100 to 100, default 0
+	shadows: number; // -100 to 100, default 0
+	exposure: number; // -100 to 100, default 0
+	fade: number; // 0 to 100, default 0
+	tint: string; // hex color, default ""
+	sharpness: number; // 0 to 100, default 0
 }
+
+export const DEFAULT_COLOR_ADJUSTMENTS: ColorAdjustments = {
+	brightness: 0,
+	contrast: 0,
+	saturation: 0,
+	temperature: 0,
+	highlights: 0,
+	shadows: 0,
+	exposure: 0,
+	fade: 0,
+	tint: "",
+	sharpness: 0,
+};
 
 export interface FlipState {
 	horizontal: boolean;
@@ -88,6 +109,7 @@ interface BaseAudioElement extends BaseTimelineElement {
 	speed?: number; // 0.1-16, default 1
 	fadeIn?: number; // seconds
 	fadeOut?: number; // seconds
+	audioEffects?: import("./audio-effects").AudioEffect[];
 }
 
 export interface UploadAudioElement extends BaseAudioElement {
@@ -125,6 +147,8 @@ export interface VideoElement extends BaseTimelineElement {
 	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
 	effects?: VideoEffect[];
+	filterPreset?: string; // active filter preset id, for UI display
+	chromakey?: import("./chromakey").ChromakeySettings;
 }
 
 export interface ImageElement extends BaseTimelineElement {
@@ -137,6 +161,8 @@ export interface ImageElement extends BaseTimelineElement {
 	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
 	effects?: VideoEffect[];
+	filterPreset?: string; // active filter preset id, for UI display
+	chromakey?: import("./chromakey").ChromakeySettings;
 }
 
 export interface TextStroke {

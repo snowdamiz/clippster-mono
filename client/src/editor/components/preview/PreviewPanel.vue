@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, shallowRef } from "vue";
+import { ref, computed, watch, shallowRef } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
 import { useEditorUIState } from "../../composables/useEditorUIState";
@@ -8,8 +8,11 @@ import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
 import type { TimelineTrack } from "../../types/timeline";
-import { ChevronDown } from "lucide-vue-next";
+import { ChevronDown, Smartphone } from "lucide-vue-next";
 import PreviewOverlay from "./PreviewOverlay.vue";
+import SocialOverlay from "./SocialOverlay.vue";
+import { SOCIAL_OVERLAY_PRESETS } from "../../constants/social-overlay-constants";
+import type { SocialOverlayPreset } from "../../types/social-overlays";
 
 const { editor, version } = useEditor();
 const { isCropMode } = useEditorUIState();
@@ -23,6 +26,17 @@ const aspectPresets = [
 ];
 
 const showAspectMenu = ref(false);
+const showSocialMenu = ref(false);
+const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
+
+function toggleSocialOverlay(preset: SocialOverlayPreset) {
+	if (activeSocialOverlay.value?.platform === preset.platform) {
+		activeSocialOverlay.value = null;
+	} else {
+		activeSocialOverlay.value = preset;
+	}
+	showSocialMenu.value = false;
+}
 
 const currentAspectLabel = computed(() => {
 	const w = canvasWidth.value;
@@ -49,6 +63,17 @@ const activeProject = computed(() => {
 
 const canvasWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
 const canvasHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
+
+const is916 = computed(() => {
+	return canvasWidth.value === 1080 && canvasHeight.value === 1920;
+});
+
+watch(is916, (val) => {
+	if (!val) {
+		activeSocialOverlay.value = null;
+		showSocialMenu.value = false;
+	}
+});
 const fps = computed(() => activeProject.value?.settings?.fps ?? 30);
 const background = computed(() => activeProject.value?.settings?.background);
 
@@ -188,6 +213,54 @@ const canvasBackground = computed(() => {
 
 			<!-- Click-away -->
 			<div v-if="showAspectMenu" class="fixed inset-0 z-40" @click="showAspectMenu = false" />
+
+			<!-- Social overlay toggle (9:16 only) -->
+			<div v-if="is916" class="absolute right-2 top-1/2 -translate-y-1/2">
+				<button
+					type="button"
+					:class="[
+						'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
+						activeSocialOverlay
+							? 'bg-cyan-500/15 text-cyan-400'
+							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
+					]"
+					@click="showSocialMenu = !showSocialMenu"
+				>
+					<Smartphone class="size-3.5" />
+				</button>
+
+				<div
+					v-if="showSocialMenu"
+					class="absolute right-0 top-full z-50 mt-0.5 w-44 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
+				>
+					<button
+						v-if="activeSocialOverlay"
+						type="button"
+						class="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/5"
+						@click="activeSocialOverlay = null; showSocialMenu = false"
+					>
+						Hide Overlay
+					</button>
+					<button
+						v-for="preset in SOCIAL_OVERLAY_PRESETS"
+						:key="preset.platform"
+						type="button"
+						:class="[
+							'flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors',
+							activeSocialOverlay?.platform === preset.platform
+								? 'text-cyan-400 bg-cyan-500/10'
+								: 'text-zinc-300 hover:bg-white/5',
+						]"
+						@click="toggleSocialOverlay(preset)"
+					>
+						<span>{{ preset.icon }}</span>
+						<span>{{ preset.label }}</span>
+						<span class="ml-auto text-[10px] text-zinc-500">{{ preset.aspectRatio }}</span>
+					</button>
+				</div>
+
+				<div v-if="showSocialMenu" class="fixed inset-0 z-40" @click="showSocialMenu = false" />
+			</div>
 		</div>
 
 		<!-- Canvas + Interactive Overlay -->
@@ -204,6 +277,12 @@ const canvasBackground = computed(() => {
 				/>
 				<PreviewOverlay
 					:canvas-ref="canvasRef"
+					:canvas-width="canvasWidth"
+					:canvas-height="canvasHeight"
+				/>
+				<SocialOverlay
+					v-if="activeSocialOverlay"
+					:preset="activeSocialOverlay"
 					:canvas-width="canvasWidth"
 					:canvas-height="canvasHeight"
 				/>

@@ -22,6 +22,9 @@ import SoundsView from "./assets/SoundsView.vue";
 import BuiltClipsView from "./assets/BuiltClipsView.vue";
 import ProjectClipsView from "./assets/ProjectClipsView.vue";
 import EffectsView from "./assets/EffectsView.vue";
+import FiltersView from "./assets/FiltersView.vue";
+import AdjustmentsView from "./assets/AdjustmentsView.vue";
+import TransitionsView from "./assets/TransitionsView.vue";
 
 const props = defineProps<{
 	activeTab: string;
@@ -330,14 +333,8 @@ function getMediaIcon(type: string) {
 		<!-- Effects view -->
 		<EffectsView v-else-if="activeTab === 'effects'" />
 
-		<!-- Transitions view (placeholder) -->
-		<div v-else-if="activeTab === 'transitions'" class="flex flex-1 flex-col items-center justify-center gap-3 p-4">
-			<ArrowRightLeft class="size-10 text-zinc-600" :stroke-width="1" />
-			<div class="flex flex-col gap-2 text-center">
-				<p class="text-sm font-medium text-zinc-300">Transitions</p>
-				<p class="text-xs text-zinc-500 text-balance">Clip transitions coming soon</p>
-			</div>
-		</div>
+		<!-- Transitions view -->
+		<TransitionsView v-else-if="activeTab === 'transitions'" />
 
 		<!-- Sounds view -->
 		<SoundsView v-else-if="activeTab === 'sounds'" />
@@ -345,23 +342,11 @@ function getMediaIcon(type: string) {
 		<!-- Captions view -->
 		<CaptionsView v-else-if="activeTab === 'captions'" />
 
-		<!-- Filters view (placeholder) -->
-		<div v-else-if="activeTab === 'filters'" class="flex flex-1 flex-col items-center justify-center gap-3 p-4">
-			<Palette class="size-10 text-zinc-600" :stroke-width="1" />
-			<div class="flex flex-col gap-2 text-center">
-				<p class="text-sm font-medium text-zinc-300">Filters</p>
-				<p class="text-xs text-zinc-500 text-balance">Color filters coming soon</p>
-			</div>
-		</div>
+		<!-- Filters view -->
+		<FiltersView v-else-if="activeTab === 'filters'" />
 
-		<!-- Adjustment view (placeholder) -->
-		<div v-else-if="activeTab === 'adjustment'" class="flex flex-1 flex-col items-center justify-center gap-3 p-4">
-			<SlidersHorizontal class="size-10 text-zinc-600" :stroke-width="1" />
-			<div class="flex flex-col gap-2 text-center">
-				<p class="text-sm font-medium text-zinc-300">Adjustment</p>
-				<p class="text-xs text-zinc-500 text-balance">Brightness, contrast, saturation controls coming soon</p>
-			</div>
-		</div>
+		<!-- Adjustment view -->
+		<AdjustmentsView v-else-if="activeTab === 'adjustment'" />
 
 		<!-- Settings view -->
 		<SettingsView v-else-if="activeTab === 'settings'" />

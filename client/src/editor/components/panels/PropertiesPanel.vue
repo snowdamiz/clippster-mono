@@ -9,6 +9,7 @@ import AudioProperties from "./properties/AudioProperties.vue";
 import ImageProperties from "./properties/ImageProperties.vue";
 import StickerProperties from "./properties/StickerProperties.vue";
 import EffectProperties from "./properties/EffectProperties.vue";
+import KeyframeEditorPanel from "./KeyframeEditorPanel.vue";
 import { Settings } from "lucide-vue-next";
 
 const { editor, version } = useEditor();
@@ -62,6 +63,10 @@ const elementsWithTracks = computed(() => {
 					:element="(element as EffectElement)"
 					:track-id="track.id"
 				/>
+			</div>
+			<!-- Keyframe Editor -->
+			<div class="border-t border-white/10">
+				<KeyframeEditorPanel />
 			</div>
 		</template>
 

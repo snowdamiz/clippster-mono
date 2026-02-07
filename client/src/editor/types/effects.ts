@@ -10,7 +10,15 @@ export type VideoEffectType =
 	| "wave"
 	| "zoomPulse"
 	| "flash"
-	| "negative";
+	| "negative"
+	| "noise"
+	| "vhs"
+	| "motionBlur"
+	| "radialBlur"
+	| "hueShift"
+	| "colorHalftone"
+	| "lensDistortion"
+	| "posterize";
 
 export interface VideoEffectBase {
 	id: string;
@@ -89,6 +97,49 @@ export interface NegativeEffect extends VideoEffectBase {
 	// intensity is the only param (0-100)
 }
 
+export interface NoiseEffect extends VideoEffectBase {
+	type: "noise";
+	amount: number; // 0-100 noise strength
+}
+
+export interface VhsEffect extends VideoEffectBase {
+	type: "vhs";
+	scanlineOpacity: number; // 0-100
+	colorBleed: number; // 0-50 pixels
+	noiseAmount: number; // 0-100
+}
+
+export interface MotionBlurEffect extends VideoEffectBase {
+	type: "motionBlur";
+	angle: number; // 0-360 degrees
+	distance: number; // 1-30 pixels
+}
+
+export interface RadialBlurEffect extends VideoEffectBase {
+	type: "radialBlur";
+	amount: number; // 1-20 blur strength
+}
+
+export interface HueShiftEffect extends VideoEffectBase {
+	type: "hueShift";
+	speed: number; // 0.1-5 rotations per second
+}
+
+export interface ColorHalftoneEffect extends VideoEffectBase {
+	type: "colorHalftone";
+	dotSize: number; // 2-20 pixel dot radius
+}
+
+export interface LensDistortionEffect extends VideoEffectBase {
+	type: "lensDistortion";
+	amount: number; // -100 to 100 (negative=pincushion, positive=barrel)
+}
+
+export interface PosterizeEffect extends VideoEffectBase {
+	type: "posterize";
+	levels: number; // 2-16 color levels
+}
+
 export type VideoEffect =
 	| BlurEffect
 	| PixelateEffect
@@ -101,7 +152,15 @@ export type VideoEffect =
 	| WaveEffect
 	| ZoomPulseEffect
 	| FlashEffect
-	| NegativeEffect;
+	| NegativeEffect
+	| NoiseEffect
+	| VhsEffect
+	| MotionBlurEffect
+	| RadialBlurEffect
+	| HueShiftEffect
+	| ColorHalftoneEffect
+	| LensDistortionEffect
+	| PosterizeEffect;
 
 /** Defaults for a preset — same shape as VideoEffect minus the `id` field. */
 export type VideoEffectDefaults = {
@@ -117,4 +176,4 @@ export interface VideoEffectPreset {
 	defaults: VideoEffectDefaults;
 }
 
-export type VideoEffectCategory = "blur" | "color" | "distortion" | "stylize";
+export type VideoEffectCategory = "blur" | "color" | "distortion" | "stylize" | "retro";

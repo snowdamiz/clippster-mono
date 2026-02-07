@@ -5,6 +5,7 @@ export const EFFECT_CATEGORIES: { key: VideoEffectCategory; label: string }[] = 
 	{ key: "color", label: "Color" },
 	{ key: "distortion", label: "Distortion" },
 	{ key: "stylize", label: "Stylize" },
+	{ key: "retro", label: "Retro & Film" },
 ];
 
 export const EFFECT_PRESETS: VideoEffectPreset[] = [
@@ -176,6 +177,121 @@ export const EFFECT_PRESETS: VideoEffectPreset[] = [
 			intensity: 60,
 			color: "#ffffff",
 			speed: 2,
+		},
+	},
+
+	// ── Retro & Film ──
+	{
+		type: "noise",
+		label: "Film Grain",
+		description: "Add organic film grain noise",
+		category: "retro",
+		icon: "noise",
+		defaults: {
+			type: "noise",
+			enabled: true,
+			intensity: 40,
+			amount: 30,
+		},
+	},
+	{
+		type: "vhs",
+		label: "VHS",
+		description: "Retro VHS tape look with scanlines",
+		category: "retro",
+		icon: "vhs",
+		defaults: {
+			type: "vhs",
+			enabled: true,
+			intensity: 60,
+			scanlineOpacity: 30,
+			colorBleed: 8,
+			noiseAmount: 20,
+		},
+	},
+	{
+		type: "posterize",
+		label: "Posterize",
+		description: "Reduce color levels for a poster look",
+		category: "retro",
+		icon: "posterize",
+		defaults: {
+			type: "posterize",
+			enabled: true,
+			intensity: 50,
+			levels: 6,
+		},
+	},
+	{
+		type: "colorHalftone",
+		label: "Halftone",
+		description: "Comic book dot pattern",
+		category: "retro",
+		icon: "colorHalftone",
+		defaults: {
+			type: "colorHalftone",
+			enabled: true,
+			intensity: 50,
+			dotSize: 6,
+		},
+	},
+
+	// ── Additional Blur ──
+	{
+		type: "motionBlur",
+		label: "Motion Blur",
+		description: "Directional blur simulating movement",
+		category: "blur",
+		icon: "motionBlur",
+		defaults: {
+			type: "motionBlur",
+			enabled: true,
+			intensity: 50,
+			angle: 0,
+			distance: 10,
+		},
+	},
+	{
+		type: "radialBlur",
+		label: "Radial Blur",
+		description: "Circular blur from center outward",
+		category: "blur",
+		icon: "radialBlur",
+		defaults: {
+			type: "radialBlur",
+			enabled: true,
+			intensity: 50,
+			amount: 5,
+		},
+	},
+
+	// ── Additional Distortion ──
+	{
+		type: "lensDistortion",
+		label: "Lens Distortion",
+		description: "Barrel or pincushion lens warp",
+		category: "distortion",
+		icon: "lensDistortion",
+		defaults: {
+			type: "lensDistortion",
+			enabled: true,
+			intensity: 50,
+			amount: 30,
+		},
+	},
+
+	// ── Additional Color ──
+	{
+		type: "hueShift",
+		label: "Hue Shift",
+		description: "Animated rainbow color rotation",
+		category: "color",
+		icon: "hueShift",
+		defaults: {
+			type: "hueShift",
+			enabled: true,
+			intensity: 50,
+			speed: 1,
 		},
 	},
 ];

@@ -75,6 +75,7 @@ export function buildScene(params: BuildSceneParams) {
 							speed: videoEl.speed,
 							keyframes: videoEl.keyframes,
 							effects: videoEl.effects,
+							chromakey: videoEl.chromakey,
 						}),
 					);
 				}
@@ -94,6 +95,7 @@ export function buildScene(params: BuildSceneParams) {
 							colorAdjustments: imageEl.colorAdjustments,
 							keyframes: imageEl.keyframes,
 							effects: imageEl.effects,
+							chromakey: imageEl.chromakey,
 						}),
 					);
 				}

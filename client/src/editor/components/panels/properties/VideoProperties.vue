@@ -4,14 +4,35 @@ import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
 import { useEditorUIState } from "../../../composables/useEditorUIState";
 import type { VideoElement, ColorAdjustments, CropRect } from "../../../types/timeline";
+import { DEFAULT_COLOR_ADJUSTMENTS } from "../../../types/timeline";
 import type { VideoEffect } from "../../../types/effects";
 import { getEffectPreset } from "../../../constants/effect-constants";
-import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical } from "lucide-vue-next";
+import type { ChromakeySettings } from "../../../types/chromakey";
+import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
+import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette } from "lucide-vue-next";
 
 const props = defineProps<{
 	element: VideoElement;
 	trackId: string;
 }>();
+
+type TopTab = 'video' | 'audio' | 'speed' | 'adjust';
+type VideoSubTab = 'basic' | 'crop' | 'effects' | 'chromakey';
+const activeTab = ref<TopTab>('video');
+const activeVideoSub = ref<VideoSubTab>('basic');
+
+const topTabs: { id: TopTab; label: string }[] = [
+	{ id: 'video', label: 'Video' },
+	{ id: 'audio', label: 'Audio' },
+	{ id: 'speed', label: 'Speed' },
+	{ id: 'adjust', label: 'Adjust' },
+];
+const videoSubTabs: { id: VideoSubTab; label: string }[] = [
+	{ id: 'basic', label: 'Basic' },
+	{ id: 'crop', label: 'Crop' },
+	{ id: 'effects', label: 'Effects' },
+	{ id: 'chromakey', label: 'Chroma Key' },
+];
 
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
@@ -34,19 +55,47 @@ watch(() => props.element.transform.rotate, (v) => { rotateInput.value = v.toStr
 
 const volumePercent = computed(() => `${Math.round((props.element.volume ?? 1) * 100)}%`);
 
-const speedPresets = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
+const speedTicks = [0.5, 1, 2, 3, 4, 5, 8, 10];
 const currentSpeed = computed(() => props.element.speed ?? 1);
+const speedInput = ref(currentSpeed.value.toFixed(2));
+
+watch(() => props.element.speed, (v) => { speedInput.value = (v ?? 1).toFixed(2); });
 
 function changeSpeed(speed: number) {
+	const clamped = Math.round(Math.max(0.1, Math.min(10, speed)) * 10) / 10;
+	speedInput.value = clamped.toFixed(2);
 	editor.timeline.changeElementSpeed({
 		trackId: props.trackId,
 		elementId: props.element.id,
-		speed,
+		speed: clamped,
 	});
 }
 
-const colorDefaults: ColorAdjustments = { brightness: 0, contrast: 0, saturation: 0, temperature: 0 };
-const ca = computed(() => props.element.colorAdjustments ?? colorDefaults);
+function handleSpeedInput(value: string) {
+	speedInput.value = value;
+	const parsed = parseFloat(value);
+	if (!Number.isNaN(parsed) && parsed >= 0.1 && parsed <= 10) {
+		editor.timeline.changeElementSpeed({
+			trackId: props.trackId,
+			elementId: props.element.id,
+			speed: Math.round(parsed * 10) / 10,
+		});
+	}
+}
+
+function handleSpeedBlur() {
+	const parsed = parseFloat(speedInput.value);
+	const val = Number.isNaN(parsed) ? (props.element.speed ?? 1) : Math.max(0.1, Math.min(10, parsed));
+	const clamped = Math.round(val * 10) / 10;
+	speedInput.value = clamped.toFixed(2);
+	editor.timeline.changeElementSpeed({
+		trackId: props.trackId,
+		elementId: props.element.id,
+		speed: clamped,
+	});
+}
+
+const ca = computed(() => ({ ...DEFAULT_COLOR_ADJUSTMENTS, ...props.element.colorAdjustments }));
 
 // --- Crop ---
 const cropDefaults: CropRect = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -189,6 +238,14 @@ function updateColor(partial: Partial<ColorAdjustments>) {
 	});
 }
 
+// --- Chromakey ---
+const chromakey = computed(() => props.element.chromakey ?? DEFAULT_CHROMAKEY);
+const showChromakey = ref(chromakey.value.enabled);
+
+function updateChromakey(partial: Partial<ChromakeySettings>) {
+	update({ chromakey: { ...chromakey.value, ...partial } });
+}
+
 function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
 }
@@ -276,7 +333,7 @@ function resetTransform() {
 	update({ transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 } });
 }
 function resetColor() {
-	update({ colorAdjustments: { brightness: 0, contrast: 0, saturation: 0, temperature: 0 } });
+	update({ colorAdjustments: { ...DEFAULT_COLOR_ADJUSTMENTS } });
 }
 
 // --- Effects ---
@@ -326,466 +383,662 @@ function formatTime(seconds: number): string {
 </script>
 
 <template>
-	<div class="space-y-5 p-4">
-		<!-- Header -->
-		<div class="flex items-center gap-2">
-			<Film class="size-4 text-zinc-500" />
-			<h3 class="text-sm font-medium">Video</h3>
-		</div>
-
-		<!-- Info -->
-		<div class="space-y-3">
-			<div class="space-y-1">
-				<label class="text-xs text-zinc-500">Name</label>
-				<p class="text-sm">{{ element.name }}</p>
-			</div>
-			<div class="flex gap-4">
-				<div class="space-y-1">
-					<label class="text-xs text-zinc-500">Start</label>
-					<p class="text-sm">{{ formatTime(element.startTime) }}</p>
-				</div>
-				<div class="space-y-1">
-					<label class="text-xs text-zinc-500">Duration</label>
-					<p class="text-sm">{{ formatTime(element.duration) }}</p>
-				</div>
-			</div>
-		</div>
-
-		<!-- Audio section -->
-		<div class="space-y-3">
-			<label class="text-xs font-medium text-zinc-400">Audio</label>
-
-			<!-- Volume -->
-			<div class="space-y-1.5">
-				<label class="text-xs text-zinc-500">Volume</label>
-				<div class="flex items-center gap-2">
-					<input type="range" :value="(element.volume ?? 1) * 100" min="0" max="200" step="1" class="flex-1" @input="handleVolumeSlider" />
-					<input type="number" :value="volumeInput" min="0" max="200" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleVolumeInput((e.target as HTMLInputElement).value)" @blur="handleVolumeBlur" />
-				</div>
-			</div>
-
-			<!-- Mute toggle -->
+	<div class="flex h-full flex-col">
+		<!-- ══════ Top Tabs ══════ -->
+		<div class="flex border-b border-white/10">
 			<button
+				v-for="tab in topTabs"
+				:key="tab.id"
 				:class="[
-					'flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-					element.muted
-						? 'border border-red-500/30 bg-red-500/15 text-red-400 hover:bg-red-500/25'
-						: 'border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10',
+					'flex-1 py-2 text-center text-xs font-medium transition-colors',
+					activeTab === tab.id
+						? 'text-primary border-b-2 border-primary'
+						: 'text-zinc-500 hover:text-zinc-300',
 				]"
-				@click="update({ muted: !element.muted })"
+				@click="activeTab = tab.id"
 			>
-				<component :is="element.muted ? VolumeX : Volume2" class="size-4" />
-				{{ element.muted ? 'Unmute' : 'Mute' }}
+				{{ tab.label }}
 			</button>
 		</div>
 
-		<!-- Speed -->
-		<div class="space-y-1.5">
-			<div class="flex items-center gap-1.5">
-				<Gauge class="size-3 text-zinc-500" />
-				<label class="text-xs text-zinc-500">Speed</label>
-			</div>
-			<div class="flex flex-wrap gap-1">
+		<!-- ══════ Video Tab ══════ -->
+		<template v-if="activeTab === 'video'">
+			<!-- Sub-tabs -->
+			<div class="flex gap-1 border-b border-white/5 px-3 py-1.5">
 				<button
-					v-for="s in speedPresets"
-					:key="s"
+					v-for="sub in videoSubTabs"
+					:key="sub.id"
 					:class="[
-						'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-						currentSpeed === s
-							? 'bg-primary/20 text-primary border border-primary/30'
-							: 'border border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200',
+						'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+						activeVideoSub === sub.id
+							? 'bg-white/10 text-zinc-200'
+							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
 					]"
-					@click="changeSpeed(s)"
+					@click="activeVideoSub = sub.id"
 				>
-					{{ s }}x
-				</button>
-			</div>
-		</div>
-
-		<!-- Opacity -->
-		<div class="space-y-1.5">
-			<label class="text-xs text-zinc-500">Opacity</label>
-			<div class="flex items-center gap-2">
-				<input type="range" :value="element.opacity * 100" min="0" max="100" step="1" class="flex-1" @input="handleOpacitySlider" />
-				<input type="number" :value="opacityInput" min="0" max="100" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleOpacityInput((e.target as HTMLInputElement).value)" @blur="handleOpacityBlur" />
-			</div>
-		</div>
-
-		<!-- Transform section -->
-		<div class="space-y-3">
-			<div class="flex items-center justify-between">
-				<label class="text-xs font-medium text-zinc-400">Transform</label>
-				<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" title="Reset transform" @click="resetTransform">
-					<RotateCcw class="size-3" />
-					Reset
+					{{ sub.label }}
 				</button>
 			</div>
 
-			<!-- Scale -->
-			<div class="space-y-1.5">
-				<label class="text-xs text-zinc-500">Scale</label>
-				<div class="flex items-center gap-2">
-					<input type="range" :value="element.transform.scale * 100" min="10" max="500" step="1" class="flex-1" @input="handleScaleSlider" />
-					<input type="number" :value="scaleInput" min="10" max="500" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleScaleInput((e.target as HTMLInputElement).value)" @blur="handleScaleBlur" />
-				</div>
-			</div>
-
-			<!-- Position -->
-			<div class="grid grid-cols-2 gap-2">
-				<div class="space-y-1">
-					<label class="text-xs text-zinc-500">Position X</label>
-					<input type="number" :value="posXInput" step="1" class="h-7 w-full rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handlePosX((e.target as HTMLInputElement).value)" />
-				</div>
-				<div class="space-y-1">
-					<label class="text-xs text-zinc-500">Position Y</label>
-					<input type="number" :value="posYInput" step="1" class="h-7 w-full rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handlePosY((e.target as HTMLInputElement).value)" />
-				</div>
-			</div>
-
-			<!-- Rotation -->
-			<div class="space-y-1.5">
-				<label class="text-xs text-zinc-500">Rotation</label>
-				<div class="flex items-center gap-2">
-					<input type="range" :value="element.transform.rotate" min="-360" max="360" step="1" class="flex-1" @input="handleRotateSlider" />
-					<input type="number" :value="rotateInput" min="-360" max="360" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleRotateInput((e.target as HTMLInputElement).value)" />
-				</div>
-			</div>
-
-			<!-- Flip -->
-			<div class="space-y-1.5">
-				<label class="text-xs text-zinc-500">Flip</label>
-				<div class="flex gap-2">
-					<button
-						:class="[
-							'flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors',
-							element.flip?.horizontal
-								? 'bg-primary/20 text-primary border border-primary/30'
-								: 'border border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10',
-						]"
-						@click="update({ flip: { horizontal: !(element.flip?.horizontal ?? false), vertical: element.flip?.vertical ?? false } })"
-					>
-						<FlipHorizontal class="size-3.5" />
-						H
-					</button>
-					<button
-						:class="[
-							'flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors',
-							element.flip?.vertical
-								? 'bg-primary/20 text-primary border border-primary/30'
-								: 'border border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10',
-						]"
-						@click="update({ flip: { horizontal: element.flip?.horizontal ?? false, vertical: !(element.flip?.vertical ?? false) } })"
-					>
-						<FlipVertical class="size-3.5" />
-						V
-					</button>
-				</div>
-			</div>
-		</div>
-
-		<!-- Crop -->
-		<div class="space-y-3">
-			<button class="flex w-full items-center justify-between" @click="showCrop = !showCrop">
-				<div class="flex items-center gap-1.5">
-					<Crop class="size-3.5 text-zinc-500" />
-					<label class="text-xs font-medium text-zinc-400">Crop</label>
-					<span v-if="activeCropPresetLabel !== 'None'" class="rounded-full bg-blue-500/20 px-1.5 text-[10px] font-medium text-blue-400">{{ activeCropPresetLabel }}</span>
-				</div>
-				<ChevronDown class="size-3.5 text-zinc-500 transition-transform" :class="{ 'rotate-180': !showCrop }" />
-			</button>
-
-			<div v-if="showCrop" class="space-y-3">
-				<!-- Aspect ratio presets -->
-				<div class="space-y-1.5">
-					<label class="text-xs text-zinc-500">Aspect Ratio</label>
-					<div class="flex flex-wrap gap-1">
-						<button
-							v-for="preset in cropPresets"
-							:key="preset.label"
-							:class="[
-								'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
-								activeCropPresetLabel === preset.label || (preset.label === 'Free' && activeCropPresetLabel === 'None')
-									? 'bg-primary/20 text-primary border border-primary/30'
-									: 'border border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200',
-							]"
-							@click="applyCropPreset(preset)"
-						>
-							{{ preset.label }}
-						</button>
-					</div>
-				</div>
-
-				<!-- Crop sliders -->
-				<div class="space-y-1.5">
-					<label class="text-xs text-zinc-500">Top</label>
-					<div class="flex items-center gap-2">
-						<input type="range" :value="cropVal.top * 100" min="0" max="45" step="1" class="flex-1" @input="(e) => updateCrop({ top: Number((e.target as HTMLInputElement).value) / 100 })" />
-						<input type="number" :value="cropTopInput" min="0" max="45" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200"
-							@input="(e) => { cropTopInput = (e.target as HTMLInputElement).value; const v = parseInt(cropTopInput, 10); if (!Number.isNaN(v)) updateCrop({ top: clamp(v, 0, 45) / 100 }); }" />
-					</div>
-				</div>
-				<div class="space-y-1.5">
-					<label class="text-xs text-zinc-500">Bottom</label>
-					<div class="flex items-center gap-2">
-						<input type="range" :value="cropVal.bottom * 100" min="0" max="45" step="1" class="flex-1" @input="(e) => updateCrop({ bottom: Number((e.target as HTMLInputElement).value) / 100 })" />
-						<input type="number" :value="cropBottomInput" min="0" max="45" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200"
-							@input="(e) => { cropBottomInput = (e.target as HTMLInputElement).value; const v = parseInt(cropBottomInput, 10); if (!Number.isNaN(v)) updateCrop({ bottom: clamp(v, 0, 45) / 100 }); }" />
-					</div>
-				</div>
-				<div class="space-y-1.5">
-					<label class="text-xs text-zinc-500">Left</label>
-					<div class="flex items-center gap-2">
-						<input type="range" :value="cropVal.left * 100" min="0" max="45" step="1" class="flex-1" @input="(e) => updateCrop({ left: Number((e.target as HTMLInputElement).value) / 100 })" />
-						<input type="number" :value="cropLeftInput" min="0" max="45" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200"
-							@input="(e) => { cropLeftInput = (e.target as HTMLInputElement).value; const v = parseInt(cropLeftInput, 10); if (!Number.isNaN(v)) updateCrop({ left: clamp(v, 0, 45) / 100 }); }" />
-					</div>
-				</div>
-				<div class="space-y-1.5">
-					<label class="text-xs text-zinc-500">Right</label>
-					<div class="flex items-center gap-2">
-						<input type="range" :value="cropVal.right * 100" min="0" max="45" step="1" class="flex-1" @input="(e) => updateCrop({ right: Number((e.target as HTMLInputElement).value) / 100 })" />
-						<input type="number" :value="cropRightInput" min="0" max="45" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200"
-							@input="(e) => { cropRightInput = (e.target as HTMLInputElement).value; const v = parseInt(cropRightInput, 10); if (!Number.isNaN(v)) updateCrop({ right: clamp(v, 0, 45) / 100 }); }" />
-					</div>
-				</div>
-
-				<!-- Crop preview indicator -->
-				<div class="flex items-center justify-center">
-					<div class="relative h-20 w-32 rounded border border-white/10 bg-white/5">
-						<div
-							class="absolute rounded border border-primary/50 bg-primary/10"
-							:style="{
-								top: `${cropVal.top * 100}%`,
-								right: `${cropVal.right * 100}%`,
-								bottom: `${cropVal.bottom * 100}%`,
-								left: `${cropVal.left * 100}%`,
-							}"
-						/>
-					</div>
-				</div>
-
-				<!-- Reset crop -->
-				<button
-					class="flex w-full items-center justify-center gap-1 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
-					@click="resetCrop"
-				>
-					<RotateCcw class="size-3" />
-					Reset Crop
-				</button>
-			</div>
-		</div>
-
-		<!-- Color Adjustments -->
-		<div class="space-y-3">
-			<div class="flex items-center justify-between">
-				<label class="text-xs font-medium text-zinc-400">Color Adjustments</label>
-				<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" title="Reset color" @click="resetColor">
-					<RotateCcw class="size-3" />
-					Reset
-				</button>
-			</div>
-
-			<div v-for="prop in (['brightness', 'contrast', 'saturation', 'temperature'] as const)" :key="prop" class="space-y-1">
-				<label class="text-xs capitalize text-zinc-500">{{ prop }}</label>
-				<div class="flex items-center gap-2">
-					<input type="range" :value="ca[prop]" min="-100" max="100" step="1" class="flex-1" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
-					<span class="w-8 text-right text-xs text-zinc-400">{{ ca[prop] }}</span>
-				</div>
-			</div>
-		</div>
-
-		<!-- Effects -->
-		<div class="space-y-3">
-			<button class="flex w-full items-center justify-between" @click="showEffects = !showEffects">
-				<div class="flex items-center gap-1.5">
-					<Wand2 class="size-3.5 text-zinc-500" />
-					<label class="text-xs font-medium text-zinc-400">Effects</label>
-					<span v-if="effects.length > 0" class="rounded-full bg-blue-500/20 px-1.5 text-[10px] font-medium text-blue-400">{{ effects.length }}</span>
-				</div>
-				<ChevronDown class="size-3.5 text-zinc-500 transition-transform" :class="{ 'rotate-180': !showEffects }" />
-			</button>
-
-			<div v-if="showEffects" class="space-y-2">
-				<div v-if="effects.length === 0" class="rounded-md border border-dashed border-white/10 px-3 py-4 text-center">
-					<p class="text-[11px] text-zinc-600">No effects applied</p>
-					<p class="mt-0.5 text-[10px] text-zinc-700">Add effects from the Effects panel</p>
-				</div>
-
-				<div v-for="effect in effects" :key="effect.id" class="rounded-md border border-white/5 bg-white/[0.02]">
-					<!-- Effect header -->
-					<div class="flex items-center justify-between px-2.5 py-1.5">
-						<span class="text-xs font-medium" :class="effect.enabled ? 'text-zinc-300' : 'text-zinc-600'">{{ getEffectLabel(effect.type) }}</span>
-						<div class="flex items-center gap-1">
-							<button class="flex size-5 items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-300" @click="toggleEffect(effect.id)">
-								<component :is="effect.enabled ? Eye : EyeOff" class="size-3" />
-							</button>
-							<button class="flex size-5 items-center justify-center rounded text-zinc-500 hover:bg-red-500/10 hover:text-red-400" @click="removeEffect(effect.id)">
-								<X class="size-3" />
+			<div class="flex-1 overflow-y-auto">
+				<!-- ── Basic sub-tab ── -->
+				<div v-if="activeVideoSub === 'basic'" class="space-y-4 p-3">
+					<!-- Transform -->
+					<div class="space-y-3">
+						<div class="flex items-center justify-between">
+							<span class="text-xs font-medium text-zinc-400">Transform</span>
+							<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" @click="resetTransform">
+								<RotateCcw class="size-3" />
 							</button>
 						</div>
-					</div>
 
-					<!-- Effect params -->
-					<div v-if="effect.enabled" class="space-y-1.5 border-t border-white/5 px-2.5 py-2">
-						<!-- Intensity (all effects) -->
-						<div class="flex items-center gap-2">
-							<span class="w-14 shrink-0 text-[10px] text-zinc-500">Intensity</span>
-							<input type="range" :value="effect.intensity" min="0" max="100" step="1" class="flex-1"
-								@input="(e) => updateEffectParam(effect.id, 'intensity', Number((e.target as HTMLInputElement).value))" />
-							<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ effect.intensity }}</span>
-						</div>
-
-						<!-- Blur: radius -->
-						<template v-if="effect.type === 'blur'">
+						<!-- Scale -->
+						<div class="space-y-1">
+							<label class="text-[11px] text-zinc-500">Scale</label>
 							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Radius</span>
-								<input type="range" :value="(effect as any).radius" min="1" max="50" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'radius', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).radius }}px</span>
-							</div>
-						</template>
-
-						<!-- Pixelate: blockSize -->
-						<template v-if="effect.type === 'pixelate'">
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Block</span>
-								<input type="range" :value="(effect as any).blockSize" min="2" max="64" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'blockSize', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).blockSize }}</span>
-							</div>
-						</template>
-
-						<!-- Sharpen: amount -->
-						<template v-if="effect.type === 'sharpen'">
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Amount</span>
-								<input type="range" :value="(effect as any).amount" min="0" max="10" step="0.5" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).amount }}</span>
-							</div>
-						</template>
-
-						<!-- Vignette: radius + softness -->
-						<template v-if="effect.type === 'vignette'">
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Radius</span>
-								<input type="range" :value="(effect as any).radius" min="0" max="100" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'radius', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).radius }}</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Softness</span>
-								<input type="range" :value="(effect as any).softness" min="0" max="100" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'softness', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).softness }}</span>
-							</div>
-						</template>
-
-						<!-- ColorShift: offsets -->
-						<template v-if="effect.type === 'colorShift'">
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-red-400">Red X</span>
-								<input type="range" :value="(effect as any).redOffsetX" min="-20" max="20" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'redOffsetX', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).redOffsetX }}</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-blue-400">Blue X</span>
-								<input type="range" :value="(effect as any).blueOffsetX" min="-20" max="20" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'blueOffsetX', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).blueOffsetX }}</span>
-							</div>
-						</template>
-
-						<!-- Glitch: sliceCount, maxOffset, colorBleed -->
-						<template v-if="effect.type === 'glitch'">
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Slices</span>
-								<input type="range" :value="(effect as any).sliceCount" min="2" max="20" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'sliceCount', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).sliceCount }}</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Offset</span>
-								<input type="range" :value="(effect as any).maxOffset" min="0" max="50" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'maxOffset', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).maxOffset }}</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Bleed</span>
-								<input type="range" :value="(effect as any).colorBleed" min="0" max="100" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'colorBleed', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).colorBleed }}</span>
-							</div>
-						</template>
-
-						<!-- Wave: amplitude, frequency, speed -->
-						<template v-if="effect.type === 'wave'">
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Amp</span>
-								<input type="range" :value="(effect as any).amplitude" min="1" max="50" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'amplitude', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).amplitude }}</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Freq</span>
-								<input type="range" :value="(effect as any).frequency" min="0.5" max="10" step="0.5" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'frequency', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).frequency }}</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Speed</span>
-								<input type="range" :value="(effect as any).speed" min="0" max="10" step="0.5" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).speed }}</span>
-							</div>
-						</template>
-
-						<!-- ZoomPulse: amount, speed -->
-						<template v-if="effect.type === 'zoomPulse'">
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Amount</span>
-								<input type="range" :value="(effect as any).amount" min="1" max="50" step="1" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).amount }}%</span>
-							</div>
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Speed</span>
-								<input type="range" :value="(effect as any).speed" min="0.5" max="5" step="0.5" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).speed }}x</span>
-							</div>
-						</template>
-
-						<!-- Flash: color, speed -->
-						<template v-if="effect.type === 'flash'">
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Color</span>
-								<div class="relative">
-									<input type="color" :value="(effect as any).color" class="absolute inset-0 h-5 w-5 cursor-pointer opacity-0"
-										@input="(e) => updateEffectParam(effect.id, 'color', (e.target as HTMLInputElement).value)" />
-									<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: (effect as any).color }" />
+								<input type="range" :value="element.transform.scale * 100" min="10" max="500" step="1" class="flex-1" @input="handleScaleSlider" />
+								<div class="flex h-7 w-16 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+									<input type="number" :value="scaleInput" min="10" max="500" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => handleScaleInput((e.target as HTMLInputElement).value)" @blur="handleScaleBlur" />
+									<span class="text-[10px] text-zinc-500">%</span>
 								</div>
 							</div>
-							<div class="flex items-center gap-2">
-								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Speed</span>
-								<input type="range" :value="(effect as any).speed" min="0.5" max="5" step="0.5" class="flex-1"
-									@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
-								<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ (effect as any).speed }}x</span>
+						</div>
+
+						<!-- Position -->
+						<div class="space-y-1">
+							<label class="text-[11px] text-zinc-500">Position</label>
+							<div class="grid grid-cols-2 gap-2">
+								<div class="flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+									<span class="text-[10px] text-zinc-500">X</span>
+									<input type="number" :value="posXInput" step="1" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => handlePosX((e.target as HTMLInputElement).value)" />
+								</div>
+								<div class="flex h-7 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+									<span class="text-[10px] text-zinc-500">Y</span>
+									<input type="number" :value="posYInput" step="1" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => handlePosY((e.target as HTMLInputElement).value)" />
+								</div>
 							</div>
-						</template>
+						</div>
+
+						<!-- Rotation -->
+						<div class="space-y-1">
+							<label class="text-[11px] text-zinc-500">Rotate</label>
+							<div class="flex items-center gap-2">
+								<input type="range" :value="element.transform.rotate" min="-360" max="360" step="1" class="flex-1" @input="handleRotateSlider" />
+								<div class="flex h-7 w-16 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+									<input type="number" :value="rotateInput" min="-360" max="360" step="0.1" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => handleRotateInput((e.target as HTMLInputElement).value)" />
+									<span class="text-[10px] text-zinc-500">°</span>
+								</div>
+							</div>
+						</div>
+
+						<!-- Flip buttons -->
+						<div class="flex gap-1.5">
+							<button
+								v-for="(dir, idx) in [
+									{ icon: FlipHorizontal, label: 'H', key: 'horizontal' as const },
+									{ icon: FlipVertical, label: 'V', key: 'vertical' as const },
+								]"
+								:key="idx"
+								:class="[
+									'flex h-8 w-8 items-center justify-center rounded-md transition-colors',
+									element.flip?.[dir.key]
+										? 'bg-primary/20 text-primary border border-primary/30'
+										: 'border border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10',
+								]"
+								:title="'Flip ' + dir.label"
+								@click="update({ flip: { horizontal: dir.key === 'horizontal' ? !(element.flip?.horizontal ?? false) : (element.flip?.horizontal ?? false), vertical: dir.key === 'vertical' ? !(element.flip?.vertical ?? false) : (element.flip?.vertical ?? false) } })"
+							>
+								<component :is="dir.icon" class="size-4" />
+							</button>
+						</div>
+					</div>
+
+					<!-- Opacity -->
+					<div class="space-y-1 border-t border-white/5 pt-3">
+						<label class="text-[11px] text-zinc-500">Opacity</label>
+						<div class="flex items-center gap-2">
+							<input type="range" :value="element.opacity * 100" min="0" max="100" step="1" class="flex-1" @input="handleOpacitySlider" />
+							<div class="flex h-7 w-16 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+								<input type="number" :value="opacityInput" min="0" max="100" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => handleOpacityInput((e.target as HTMLInputElement).value)" @blur="handleOpacityBlur" />
+								<span class="text-[10px] text-zinc-500">%</span>
+							</div>
+						</div>
+					</div>
+
+					<!-- Visibility -->
+					<div class="flex items-center justify-between border-t border-white/5 pt-3">
+						<span class="text-[11px] text-zinc-500">Visible</span>
+						<button
+							:class="[
+								'relative h-5 w-9 rounded-full transition-colors',
+								!element.hidden ? 'bg-primary' : 'bg-zinc-700',
+							]"
+							@click="update({ hidden: !element.hidden })"
+						>
+							<span :class="['absolute top-0.5 size-4 rounded-full bg-white transition-transform', !element.hidden ? 'left-[18px]' : 'left-0.5']" />
+						</button>
+					</div>
+
+					<!-- Info -->
+					<div class="flex gap-3 border-t border-white/5 pt-3 text-[10px] text-zinc-600">
+						<span>{{ formatTime(element.startTime) }} – {{ formatTime(element.startTime + element.duration) }}</span>
+						<span>{{ formatTime(element.duration) }}</span>
+					</div>
+
+					<!-- Delete -->
+					<button
+						class="flex w-full items-center justify-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
+						@click="handleDelete"
+					>
+						<Trash2 class="size-3.5" />
+						Delete
+					</button>
+				</div>
+
+				<!-- ── Crop sub-tab ── -->
+				<div v-else-if="activeVideoSub === 'crop'" class="space-y-4 p-3">
+					<!-- Aspect ratio presets -->
+					<div class="space-y-1.5">
+						<label class="text-[11px] text-zinc-500">Aspect Ratio</label>
+						<div class="flex flex-wrap gap-1">
+							<button
+								v-for="preset in cropPresets"
+								:key="preset.label"
+								:class="[
+									'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+									activeCropPresetLabel === preset.label || (preset.label === 'Free' && activeCropPresetLabel === 'None')
+										? 'bg-primary/20 text-primary border border-primary/30'
+										: 'border border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200',
+								]"
+								@click="applyCropPreset(preset)"
+							>
+								{{ preset.label }}
+							</button>
+						</div>
+					</div>
+
+					<!-- Crop sliders -->
+					<div v-for="side in (['top', 'bottom', 'left', 'right'] as const)" :key="side" class="space-y-1">
+						<label class="text-[11px] capitalize text-zinc-500">{{ side }}</label>
+						<div class="flex items-center gap-2">
+							<input type="range" :value="cropVal[side] * 100" min="0" max="45" step="1" class="flex-1" @input="(e) => updateCrop({ [side]: Number((e.target as HTMLInputElement).value) / 100 })" />
+							<input type="number" :value="Math.round(cropVal[side] * 100)" min="0" max="45" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateCrop({ [side]: Number((e.target as HTMLInputElement).value) / 100 })" />
+						</div>
+					</div>
+
+					<!-- Crop preview -->
+					<div class="flex items-center justify-center">
+						<div class="relative h-20 w-32 rounded border border-white/10 bg-white/5">
+							<div
+								class="absolute rounded border border-primary/50 bg-primary/10"
+								:style="{
+									top: `${cropVal.top * 100}%`,
+									right: `${cropVal.right * 100}%`,
+									bottom: `${cropVal.bottom * 100}%`,
+									left: `${cropVal.left * 100}%`,
+								}"
+							/>
+						</div>
+					</div>
+
+					<button
+						class="flex w-full items-center justify-center gap-1 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+						@click="resetCrop"
+					>
+						<RotateCcw class="size-3" />
+						Reset Crop
+					</button>
+				</div>
+
+				<!-- ── Effects sub-tab ── -->
+				<div v-else-if="activeVideoSub === 'effects'" class="space-y-3 p-3">
+					<div v-if="effects.length === 0" class="rounded-md border border-dashed border-white/10 px-3 py-6 text-center">
+						<Wand2 class="mx-auto mb-1.5 size-5 text-zinc-600" />
+						<p class="text-[11px] text-zinc-600">No effects applied</p>
+						<p class="mt-0.5 text-[10px] text-zinc-700">Add effects from the Effects panel</p>
+					</div>
+
+					<div v-for="effect in effects" :key="effect.id" class="rounded-md border border-white/5 bg-white/[0.02]">
+						<div class="flex items-center justify-between px-2.5 py-1.5">
+							<span class="text-xs font-medium" :class="effect.enabled ? 'text-zinc-300' : 'text-zinc-600'">{{ getEffectLabel(effect.type) }}</span>
+							<div class="flex items-center gap-1">
+								<button class="flex size-5 items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-300" @click="toggleEffect(effect.id)">
+									<component :is="effect.enabled ? Eye : EyeOff" class="size-3" />
+								</button>
+								<button class="flex size-5 items-center justify-center rounded text-zinc-500 hover:bg-red-500/10 hover:text-red-400" @click="removeEffect(effect.id)">
+									<X class="size-3" />
+								</button>
+							</div>
+						</div>
+
+						<div v-if="effect.enabled" class="space-y-1.5 border-t border-white/5 px-2.5 py-2">
+							<div class="flex items-center gap-2">
+								<span class="w-14 shrink-0 text-[10px] text-zinc-500">Intensity</span>
+								<input type="range" :value="effect.intensity" min="0" max="100" step="1" class="flex-1"
+									@input="(e) => updateEffectParam(effect.id, 'intensity', Number((e.target as HTMLInputElement).value))" />
+								<input type="number" :value="effect.intensity" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+									@input="(e) => updateEffectParam(effect.id, 'intensity', Number((e.target as HTMLInputElement).value))" />
+							</div>
+
+							<!-- Blur -->
+							<template v-if="effect.type === 'blur'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Radius</span>
+									<input type="range" :value="(effect as any).radius" min="1" max="50" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'radius', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).radius" min="1" max="50" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'radius', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Pixelate -->
+							<template v-if="effect.type === 'pixelate'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Block</span>
+									<input type="range" :value="(effect as any).blockSize" min="2" max="64" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'blockSize', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).blockSize" min="2" max="64" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'blockSize', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Sharpen -->
+							<template v-if="effect.type === 'sharpen'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Amount</span>
+									<input type="range" :value="(effect as any).amount" min="0" max="10" step="0.5" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).amount" min="0" max="10" step="0.5" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Vignette -->
+							<template v-if="effect.type === 'vignette'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Radius</span>
+									<input type="range" :value="(effect as any).radius" min="0" max="100" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'radius', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).radius" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'radius', Number((e.target as HTMLInputElement).value))" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Softness</span>
+									<input type="range" :value="(effect as any).softness" min="0" max="100" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'softness', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).softness" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'softness', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- ColorShift -->
+							<template v-if="effect.type === 'colorShift'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-red-400">Red X</span>
+									<input type="range" :value="(effect as any).redOffsetX" min="-20" max="20" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'redOffsetX', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).redOffsetX" min="-20" max="20" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'redOffsetX', Number((e.target as HTMLInputElement).value))" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-blue-400">Blue X</span>
+									<input type="range" :value="(effect as any).blueOffsetX" min="-20" max="20" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'blueOffsetX', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).blueOffsetX" min="-20" max="20" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'blueOffsetX', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Glitch -->
+							<template v-if="effect.type === 'glitch'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Slices</span>
+									<input type="range" :value="(effect as any).sliceCount" min="2" max="20" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'sliceCount', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).sliceCount" min="2" max="20" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'sliceCount', Number((e.target as HTMLInputElement).value))" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Offset</span>
+									<input type="range" :value="(effect as any).maxOffset" min="0" max="50" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'maxOffset', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).maxOffset" min="0" max="50" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'maxOffset', Number((e.target as HTMLInputElement).value))" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Bleed</span>
+									<input type="range" :value="(effect as any).colorBleed" min="0" max="100" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'colorBleed', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).colorBleed" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'colorBleed', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Wave -->
+							<template v-if="effect.type === 'wave'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Amp</span>
+									<input type="range" :value="(effect as any).amplitude" min="1" max="50" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'amplitude', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).amplitude" min="1" max="50" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'amplitude', Number((e.target as HTMLInputElement).value))" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Freq</span>
+									<input type="range" :value="(effect as any).frequency" min="0.5" max="10" step="0.5" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'frequency', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).frequency" min="0.5" max="10" step="0.5" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'frequency', Number((e.target as HTMLInputElement).value))" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Speed</span>
+									<input type="range" :value="(effect as any).speed" min="0" max="10" step="0.5" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).speed" min="0" max="10" step="0.5" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- ZoomPulse -->
+							<template v-if="effect.type === 'zoomPulse'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Amount</span>
+									<input type="range" :value="(effect as any).amount" min="1" max="50" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).amount" min="1" max="50" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Speed</span>
+									<input type="range" :value="(effect as any).speed" min="0.5" max="5" step="0.5" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).speed" min="0.5" max="5" step="0.5" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Flash -->
+							<template v-if="effect.type === 'flash'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Color</span>
+									<div class="relative">
+										<input type="color" :value="(effect as any).color" class="absolute inset-0 h-5 w-5 cursor-pointer opacity-0"
+											@input="(e) => updateEffectParam(effect.id, 'color', (e.target as HTMLInputElement).value)" />
+										<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: (effect as any).color }" />
+									</div>
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Speed</span>
+									<input type="range" :value="(effect as any).speed" min="0.5" max="5" step="0.5" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).speed" min="0.5" max="5" step="0.5" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Noise -->
+							<template v-if="effect.type === 'noise'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Amount</span>
+									<input type="range" :value="(effect as any).amount" min="0" max="100" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).amount" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- VHS -->
+							<template v-if="effect.type === 'vhs'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Scanline</span>
+									<input type="range" :value="(effect as any).scanlineOpacity" min="0" max="100" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'scanlineOpacity', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).scanlineOpacity" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'scanlineOpacity', Number((e.target as HTMLInputElement).value))" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Bleed</span>
+									<input type="range" :value="(effect as any).colorBleed" min="0" max="50" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'colorBleed', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).colorBleed" min="0" max="50" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'colorBleed', Number((e.target as HTMLInputElement).value))" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Noise</span>
+									<input type="range" :value="(effect as any).noiseAmount" min="0" max="100" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'noiseAmount', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).noiseAmount" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'noiseAmount', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Motion Blur -->
+							<template v-if="effect.type === 'motionBlur'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Angle</span>
+									<input type="range" :value="(effect as any).angle" min="0" max="360" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'angle', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).angle" min="0" max="360" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'angle', Number((e.target as HTMLInputElement).value))" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Dist</span>
+									<input type="range" :value="(effect as any).distance" min="1" max="30" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'distance', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).distance" min="1" max="30" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'distance', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Radial Blur -->
+							<template v-if="effect.type === 'radialBlur'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Amount</span>
+									<input type="range" :value="(effect as any).amount" min="1" max="20" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).amount" min="1" max="20" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Hue Shift -->
+							<template v-if="effect.type === 'hueShift'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Speed</span>
+									<input type="range" :value="(effect as any).speed" min="0.1" max="5" step="0.1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).speed" min="0.1" max="5" step="0.1" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'speed', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Halftone -->
+							<template v-if="effect.type === 'colorHalftone'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Dot Size</span>
+									<input type="range" :value="(effect as any).dotSize" min="2" max="20" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'dotSize', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).dotSize" min="2" max="20" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'dotSize', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Lens Distortion -->
+							<template v-if="effect.type === 'lensDistortion'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Amount</span>
+									<input type="range" :value="(effect as any).amount" min="-100" max="100" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).amount" min="-100" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'amount', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+
+							<!-- Posterize -->
+							<template v-if="effect.type === 'posterize'">
+								<div class="flex items-center gap-2">
+									<span class="w-14 shrink-0 text-[10px] text-zinc-500">Levels</span>
+									<input type="range" :value="(effect as any).levels" min="2" max="16" step="1" class="flex-1"
+										@input="(e) => updateEffectParam(effect.id, 'levels', Number((e.target as HTMLInputElement).value))" />
+									<input type="number" :value="(effect as any).levels" min="2" max="16" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+										@input="(e) => updateEffectParam(effect.id, 'levels', Number((e.target as HTMLInputElement).value))" />
+								</div>
+							</template>
+						</div>
+					</div>
+				</div>
+
+				<!-- ── Chroma Key sub-tab ── -->
+				<div v-else-if="activeVideoSub === 'chromakey'" class="space-y-3 p-3">
+					<div class="flex items-center justify-between">
+						<span class="text-[11px] text-zinc-500">Enabled</span>
+						<button
+							:class="[
+								'relative h-5 w-9 rounded-full transition-colors',
+								chromakey.enabled ? 'bg-green-500' : 'bg-zinc-700',
+							]"
+							@click="updateChromakey({ enabled: !chromakey.enabled })"
+						>
+							<span :class="['absolute top-0.5 size-4 rounded-full bg-white transition-transform', chromakey.enabled ? 'left-[18px]' : 'left-0.5']" />
+						</button>
+					</div>
+
+					<template v-if="chromakey.enabled">
+						<div class="flex items-center gap-2">
+							<span class="w-14 shrink-0 text-[10px] text-zinc-500">Color</span>
+							<div class="relative">
+								<input type="color" :value="chromakey.color" class="absolute inset-0 h-6 w-6 cursor-pointer opacity-0"
+									@input="(e) => updateChromakey({ color: (e.target as HTMLInputElement).value })" />
+								<div class="size-6 rounded border border-white/10" :style="{ backgroundColor: chromakey.color }" />
+							</div>
+							<span class="text-[10px] text-zinc-400">{{ chromakey.color }}</span>
+						</div>
+
+						<div v-for="param in ([
+							{ key: 'similarity' as const, label: 'Similar' },
+							{ key: 'smoothness' as const, label: 'Smooth' },
+							{ key: 'spillReduction' as const, label: 'Spill' },
+						])" :key="param.key" class="flex items-center gap-2">
+							<span class="w-14 shrink-0 text-[10px] text-zinc-500">{{ param.label }}</span>
+							<input type="range" :value="chromakey[param.key]" min="0" max="100" step="1" class="flex-1"
+								@input="(e) => updateChromakey({ [param.key]: Number((e.target as HTMLInputElement).value) })" />
+							<input type="number" :value="chromakey[param.key]" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateChromakey({ [param.key]: Number((e.target as HTMLInputElement).value) })" />
+						</div>
+					</template>
+				</div>
+			</div>
+		</template>
+
+		<!-- ══════ Audio Tab ══════ -->
+		<div v-else-if="activeTab === 'audio'" class="flex-1 overflow-y-auto p-3">
+			<div class="space-y-4">
+				<!-- Volume -->
+				<div class="space-y-1">
+					<label class="text-[11px] text-zinc-500">Volume</label>
+					<div class="flex items-center gap-2">
+						<input type="range" :value="(element.volume ?? 1) * 100" min="0" max="200" step="1" class="flex-1" @input="handleVolumeSlider" />
+						<div class="flex h-7 w-16 items-center rounded-sm border border-white/10 bg-white/5 px-2">
+							<input type="number" :value="volumeInput" min="0" max="200" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => handleVolumeInput((e.target as HTMLInputElement).value)" @blur="handleVolumeBlur" />
+							<span class="text-[10px] text-zinc-500">%</span>
+						</div>
+					</div>
+				</div>
+
+				<!-- Mute -->
+				<div class="flex items-center justify-between">
+					<span class="text-[11px] text-zinc-500">Mute</span>
+					<button
+						:class="[
+							'relative h-5 w-9 rounded-full transition-colors',
+							element.muted ? 'bg-red-500' : 'bg-zinc-700',
+						]"
+						@click="update({ muted: !element.muted })"
+					>
+						<span :class="['absolute top-0.5 size-4 rounded-full bg-white transition-transform', element.muted ? 'left-[18px]' : 'left-0.5']" />
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- ══════ Speed Tab ══════ -->
+		<div v-else-if="activeTab === 'speed'" class="flex-1 overflow-y-auto p-3">
+			<div class="space-y-2">
+				<label class="text-[11px] text-zinc-500">Speed</label>
+				<div class="flex items-center gap-2">
+					<div class="relative flex-1">
+						<input type="range" :value="currentSpeed * 10" min="1" max="100" step="1" class="w-full" @input="(e) => changeSpeed(Number((e.target as HTMLInputElement).value) / 10)" />
+						<!-- Tick marks -->
+						<div class="pointer-events-none absolute inset-x-0 top-1/2 flex h-0 items-center">
+							<div
+								v-for="tick in speedTicks"
+								:key="tick"
+								class="absolute h-[8px] w-px bg-white/25"
+								:style="{ left: `${((tick * 10 - 1) / 99) * 100}%` }"
+							/>
+						</div>
+					</div>
+					<div class="flex h-7 w-[72px] items-center rounded-sm border border-white/10 bg-white/5">
+						<input
+							type="text"
+							:value="speedInput"
+							class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none"
+							@input="(e) => handleSpeedInput((e.target as HTMLInputElement).value)"
+							@blur="handleSpeedBlur"
+							@keydown.enter="($event.target as HTMLInputElement).blur()"
+						/>
+						<span class="pr-1.5 text-[10px] text-zinc-500">x</span>
 					</div>
 				</div>
 			</div>
 		</div>
 
-		<!-- Delete -->
-		<button
-			class="flex w-full items-center justify-center gap-2 rounded-md border border-red-500/30 bg-red-500/15 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/25 hover:border-red-500/50"
-			@click="handleDelete"
-		>
-			<Trash2 class="size-4" />
-			Delete Video
-		</button>
+		<!-- ══════ Adjust Tab ══════ -->
+		<div v-else-if="activeTab === 'adjust'" class="flex-1 overflow-y-auto p-3">
+			<div class="space-y-3">
+				<div class="flex items-center justify-between">
+					<span class="text-xs font-medium text-zinc-400">Color</span>
+					<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" @click="resetColor">
+						<RotateCcw class="size-3" />
+					</button>
+				</div>
+
+				<div v-for="prop in (['brightness', 'contrast', 'saturation', 'temperature', 'highlights', 'shadows', 'exposure'] as const)" :key="prop" class="space-y-0.5">
+					<label class="text-[10px] capitalize text-zinc-500">{{ prop }}</label>
+					<div class="flex items-center gap-2">
+						<input type="range" :value="ca[prop]" min="-100" max="100" step="1" class="flex-1" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
+						<input type="number" :value="ca[prop]" min="-100" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateColor({ [prop]: Number((e.target as HTMLInputElement).value) })" />
+					</div>
+				</div>
+
+				<div class="space-y-0.5">
+					<label class="text-[10px] text-zinc-500">Fade</label>
+					<div class="flex items-center gap-2">
+						<input type="range" :value="ca.fade" min="0" max="100" step="1" class="flex-1" @input="(e) => updateColor({ fade: Number((e.target as HTMLInputElement).value) })" />
+						<input type="number" :value="ca.fade" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateColor({ fade: Number((e.target as HTMLInputElement).value) })" />
+					</div>
+				</div>
+
+				<div class="space-y-0.5">
+					<label class="text-[10px] text-zinc-500">Sharpness</label>
+					<div class="flex items-center gap-2">
+						<input type="range" :value="ca.sharpness" min="0" max="100" step="1" class="flex-1" @input="(e) => updateColor({ sharpness: Number((e.target as HTMLInputElement).value) })" />
+						<input type="number" :value="ca.sharpness" min="0" max="100" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none" @input="(e) => updateColor({ sharpness: Number((e.target as HTMLInputElement).value) })" />
+					</div>
+				</div>
+
+				<div class="space-y-0.5">
+					<label class="text-[10px] text-zinc-500">Tint</label>
+					<div class="flex items-center gap-2">
+						<div class="relative">
+							<input type="color" :value="ca.tint || '#000000'" class="absolute inset-0 h-6 w-6 cursor-pointer opacity-0"
+								@input="(e) => updateColor({ tint: (e.target as HTMLInputElement).value })" />
+							<div class="size-6 rounded border border-white/10" :style="{ backgroundColor: ca.tint || 'transparent' }" />
+						</div>
+						<span class="text-[10px] text-zinc-400">{{ ca.tint || 'None' }}</span>
+						<button v-if="ca.tint" class="ml-auto text-[10px] text-zinc-500 hover:text-zinc-300" @click="updateColor({ tint: '' })">Clear</button>
+					</div>
+				</div>
+			</div>
+		</div>
 	</div>
 </template>

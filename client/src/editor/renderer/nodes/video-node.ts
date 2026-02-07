@@ -5,7 +5,9 @@ import type { Transform, FlipState, ColorAdjustments, CropRect } from "../../typ
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
-import { buildFilterString, hasPostDrawEffects, applyCanvasEffects } from "../effects/canvas-effects";
+import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvancedColorAdjustments } from "../effects/canvas-effects";
+import { applyChromakey } from "../effects/canvas-chromakey";
+import type { ChromakeySettings } from "../../types/chromakey";
 
 const VIDEO_EPSILON = 1 / 1000;
 
@@ -30,6 +32,7 @@ export interface VideoNodeParams {
 	speed?: number;
 	keyframes?: ElementKeyframes;
 	effects?: VideoEffect[];
+	chromakey?: ChromakeySettings;
 }
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
@@ -118,7 +121,10 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			const ca = this.params.colorAdjustments;
 			const filterParts: string[] = [];
 			if (ca) {
-				if (ca.brightness !== 0) filterParts.push(`brightness(${1 + ca.brightness / 100})`);
+				// Exposure maps to brightness with gamma curve
+				const exposureOffset = ca.exposure ? ca.exposure / 100 : 0;
+				const brightnessVal = 1 + (ca.brightness ?? 0) / 100 + exposureOffset * 0.5;
+				if (brightnessVal !== 1) filterParts.push(`brightness(${brightnessVal})`);
 				if (ca.contrast !== 0) filterParts.push(`contrast(${1 + ca.contrast / 100})`);
 				if (ca.saturation !== 0) filterParts.push(`saturate(${1 + ca.saturation / 100})`);
 				if (ca.temperature !== 0) {
@@ -206,6 +212,16 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, time, this.params.timeOffset);
 			} else {
 				renderer.context.restore();
+			}
+
+			// Apply advanced color adjustments that require post-draw compositing
+			if (ca) {
+				applyAdvancedColorAdjustments(renderer.context, renderer.width, renderer.height, ca);
+			}
+
+			// Apply chromakey (green screen removal)
+			if (this.params.chromakey?.enabled) {
+				applyChromakey(renderer.context, renderer.width, renderer.height, this.params.chromakey);
 			}
 		}
 	}
