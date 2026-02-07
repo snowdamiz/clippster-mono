@@ -3,6 +3,7 @@ import { computed, ref, toRef, watch } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useTimelineElementResize } from "../../composables/timeline/element/useElementResize";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
+import { useFilmstrip } from "../../composables/timeline/useFilmstrip";
 import type { SnapPoint } from "../../composables/timeline/useTimelineSnapping";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import {
@@ -127,6 +128,17 @@ const imageUrl = computed(() => {
 	return null;
 });
 
+const isVideoElement = computed(() => props.element.type === "video");
+
+const { frames: filmstripFrames, thumbnailWidth: filmstripThumbWidth } = useFilmstrip({
+	element: toRef(props, "element"),
+	mediaAsset,
+	zoomLevel: toRef(props, "zoomLevel"),
+	elementWidth,
+});
+
+const hasFilmstrip = computed(() => isVideoElement.value && filmstripFrames.value.length > 0);
+
 function onContextAction(action: string) {
 	invokeAction(action as any);
 }
@@ -173,7 +185,26 @@ function onContextAction(action: string) {
 					<!-- Audio element -->
 					<div v-else-if="element.type === 'audio'" class="size-full" />
 
-					<!-- Video/Image with thumbnail -->
+					<!-- Video filmstrip (actual frames at correct timestamps) -->
+					<div v-else-if="hasFilmstrip" class="absolute inset-0">
+						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 10%; bottom: 20%;">
+							<div class="absolute inset-0 flex pointer-events-none">
+								<div
+									v-for="frame in filmstripFrames"
+									:key="frame.timestamp"
+									class="h-full flex-shrink-0"
+									:style="{
+										width: `${filmstripThumbWidth}px`,
+										backgroundImage: `url(${frame.objectUrl})`,
+										backgroundSize: 'cover',
+										backgroundPosition: 'center',
+									}"
+								/>
+							</div>
+						</div>
+					</div>
+
+					<!-- Video/Image fallback thumbnail (before filmstrip loads) -->
 					<div v-else-if="imageUrl" class="absolute inset-0">
 						<div :class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']" style="top: 10%; bottom: 20%;">
 							<div
