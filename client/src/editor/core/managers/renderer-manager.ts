@@ -27,6 +27,10 @@ interface TauriVideoSource {
 	speed: number;
 	flip_horizontal: boolean;
 	flip_vertical: boolean;
+	crop_top: number;
+	crop_right: number;
+	crop_bottom: number;
+	crop_left: number;
 	brightness: number;
 	contrast: number;
 	saturation: number;
@@ -231,6 +235,10 @@ export class RendererManager {
 						speed: videoEl.speed ?? 1,
 						flip_horizontal: videoEl.flip?.horizontal ?? false,
 						flip_vertical: videoEl.flip?.vertical ?? false,
+						crop_top: videoEl.crop?.top ?? 0,
+						crop_right: videoEl.crop?.right ?? 0,
+						crop_bottom: videoEl.crop?.bottom ?? 0,
+						crop_left: videoEl.crop?.left ?? 0,
 						brightness: videoEl.colorAdjustments?.brightness ?? 0,
 						contrast: videoEl.colorAdjustments?.contrast ?? 0,
 						saturation: videoEl.colorAdjustments?.saturation ?? 0,

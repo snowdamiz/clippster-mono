@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useEditor } from "../../composables/useEditor";
+import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
+import { useEditorUIState } from "../../composables/useEditorUIState";
 import { formatTimeCode } from "../../lib/time";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import { sliderToZoom, zoomToSlider } from "../../lib/timeline/zoom-utils";
@@ -25,6 +27,7 @@ import {
 	Redo2,
 	MousePointerClick,
 	Navigation2,
+	Crop,
 } from "lucide-vue-next";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -43,6 +46,20 @@ const emit = defineEmits<{
 }>();
 
 const { editor, version } = useEditor();
+const { selectedElements } = useElementSelection();
+const { isCropMode, toggleCropMode } = useEditorUIState();
+
+const hasVideoOrImageSelected = computed(() => {
+	void version.value;
+	if (selectedElements.value.length === 0) return false;
+	const tracks = editor.timeline.getTracks();
+	for (const sel of selectedElements.value) {
+		const track = tracks.find((t) => t.id === sel.trackId);
+		const el = track?.elements.find((e) => e.id === sel.elementId);
+		if (el && (el.type === "video" || el.type === "image")) return true;
+	}
+	return false;
+});
 
 const currentTime = computed(() => {
 	void version.value;
@@ -203,6 +220,22 @@ function handleAction(action: string, event?: MouseEvent) {
 						</Button>
 					</TooltipTrigger>
 					<TooltipContent>Delete element</TooltipContent>
+				</Tooltip>
+
+				<!-- Crop -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button
+							variant="ghost"
+							size="icon"
+							:disabled="!hasVideoOrImageSelected"
+							:class="{ 'bg-primary/20 text-primary': isCropMode }"
+							@click="toggleCropMode()"
+						>
+							<Crop class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Crop video/image (C)</TooltipContent>
 				</Tooltip>
 
 				<div class="mx-1 h-6 w-px bg-white/10" />

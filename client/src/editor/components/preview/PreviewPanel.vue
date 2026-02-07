@@ -2,13 +2,18 @@
 import { ref, computed, watch, onMounted, onUnmounted, shallowRef } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
+import { useEditorUIState } from "../../composables/useEditorUIState";
+import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
+import type { TimelineTrack } from "../../types/timeline";
 import { ChevronDown } from "lucide-vue-next";
 import PreviewOverlay from "./PreviewOverlay.vue";
 
 const { editor, version } = useEditor();
+const { isCropMode } = useEditorUIState();
+const { selectedElements } = useElementSelection();
 
 const aspectPresets = [
 	{ width: 1920, height: 1080, label: "16:9" },
@@ -66,13 +71,29 @@ const mediaAssets = computed(() => {
 	return editor.media.getAssets();
 });
 
+// When in crop mode, strip crop from the selected element so canvas shows full frame
+const sceneTracks = computed((): TimelineTrack[] => {
+	const raw = tracks.value;
+	if (!isCropMode.value || selectedElements.value.length === 0) return raw;
+	const sel = selectedElements.value[0];
+	return raw.map((t) => {
+		if (t.id !== sel.trackId) return t;
+		return {
+			...t,
+			elements: t.elements.map((el) =>
+				el.id === sel.elementId ? { ...el, crop: undefined } : el,
+			),
+		} as typeof t;
+	});
+});
+
 watch(
-	[tracks, mediaAssets, background, canvasWidth, canvasHeight],
+	[sceneTracks, mediaAssets, background, canvasWidth, canvasHeight],
 	() => {
 		if (!activeProject.value) return;
 		const duration = editor.timeline.getTotalDuration();
 		const renderTree = buildScene({
-			tracks: tracks.value,
+			tracks: sceneTracks.value,
 			mediaAssets: mediaAssets.value,
 			duration,
 			canvasSize: { width: canvasWidth.value, height: canvasHeight.value },
@@ -84,11 +105,20 @@ watch(
 );
 
 // RAF render loop
+let rafDebugCount = 0;
+let rafSkipCount = 0;
 useRafLoop(() => {
 	const canvas = canvasRef.value;
 	const r = renderer.value;
 	const renderTree = editor.renderer.getRenderTree();
-	if (!canvas || !r || !renderTree || rendering) return;
+	if (!canvas || !r || !renderTree) return;
+	if (rendering) {
+		rafSkipCount++;
+		if (rafSkipCount % 30 === 0) {
+			console.warn(`[RAF] Skipped ${rafSkipCount} frames (still rendering previous)`);
+		}
+		return;
+	}
 
 	const time = editor.playback.getCurrentTime();
 	const lastFrameTime = getLastFrameTime({ duration: renderTree.duration, fps: r.fps });
@@ -99,8 +129,17 @@ useRafLoop(() => {
 		rendering = true;
 		lastScene = renderTree;
 		lastFrame = frame;
+		const renderStart = performance.now();
 		r.renderToCanvas({ node: renderTree, time: renderTime, targetCanvas: canvas })
-			.then(() => { rendering = false; })
+			.then(() => {
+				const renderMs = performance.now() - renderStart;
+				rendering = false;
+				rafDebugCount++;
+				if (renderMs > 20 || rafDebugCount % 60 === 0) {
+					console.log(`[RAF] frame=${frame} t=${renderTime.toFixed(3)} renderMs=${renderMs.toFixed(1)} skipped=${rafSkipCount}`);
+					rafSkipCount = 0;
+				}
+			})
 			.catch(() => { rendering = false; });
 	}
 });

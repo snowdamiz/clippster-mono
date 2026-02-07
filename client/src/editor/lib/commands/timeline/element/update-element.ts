@@ -10,15 +10,16 @@ import type {
 	Transform,
 	ColorAdjustments,
 	FlipState,
+	CropRect,
 } from "../../../../types/timeline";
 import { EditorCore } from "../../../../core";
 
 export type UpdatableVideoProps = Partial<
-	Pick<VideoElement, "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "flip" | "colorAdjustments" | "effects">
+	Pick<VideoElement, "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "flip" | "crop" | "colorAdjustments" | "effects">
 >;
 
 export type UpdatableImageProps = Partial<
-	Pick<ImageElement, "opacity" | "transform" | "hidden" | "flip" | "colorAdjustments" | "effects">
+	Pick<ImageElement, "opacity" | "transform" | "hidden" | "flip" | "crop" | "colorAdjustments" | "effects">
 >;
 
 export type UpdatableAudioProps = Partial<

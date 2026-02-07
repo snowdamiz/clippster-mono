@@ -73,6 +73,13 @@ export interface FlipState {
 	vertical: boolean;
 }
 
+export interface CropRect {
+	top: number; // 0-1, fraction of source height cropped from top
+	right: number; // 0-1, fraction of source width cropped from right
+	bottom: number; // 0-1, fraction of source height cropped from bottom
+	left: number; // 0-1, fraction of source width cropped from left
+}
+
 interface BaseAudioElement extends BaseTimelineElement {
 	type: "audio";
 	volume: number;
@@ -115,6 +122,7 @@ export interface VideoElement extends BaseTimelineElement {
 	volume?: number; // 0-2, default 1
 	speed?: number; // 0.1-16, default 1
 	flip?: FlipState;
+	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
 	effects?: VideoEffect[];
 }
@@ -126,6 +134,7 @@ export interface ImageElement extends BaseTimelineElement {
 	transform: Transform;
 	opacity: number;
 	flip?: FlipState;
+	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
 	effects?: VideoEffect[];
 }

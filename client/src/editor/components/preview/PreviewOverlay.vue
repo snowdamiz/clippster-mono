@@ -5,6 +5,8 @@ import {
 	type ElementBounds,
 	type HandlePosition,
 } from "../../composables/preview/usePreviewInteraction";
+import { useEditorUIState } from "../../composables/useEditorUIState";
+import CropOverlay from "./CropOverlay.vue";
 
 const props = defineProps<{
 	canvasRef: HTMLCanvasElement | null;
@@ -29,6 +31,8 @@ const {
 	canvasWidth: canvasWidthRef,
 	canvasHeight: canvasHeightRef,
 });
+
+const { isCropMode } = useEditorUIState();
 
 const overlayRef = ref<HTMLDivElement | null>(null);
 
@@ -108,10 +112,12 @@ function onHandleMouseDown(event: MouseEvent, handle: HandlePosition) {
 }
 
 function onOverlayMouseDown(event: MouseEvent) {
+	if (isCropMode.value) return;
 	handleCanvasMouseDown(event);
 }
 
 function onOverlayMouseMove(event: MouseEvent) {
+	if (isCropMode.value) return;
 	handleCanvasMouseMove(event);
 }
 
@@ -155,9 +161,16 @@ const cursorStyle = computed(() => {
 			</g>
 		</svg>
 
-		<!-- Selection bounding box + handles -->
+		<!-- Crop overlay (shown in crop mode) -->
+		<CropOverlay
+			:canvas-ref="canvasRef"
+			:canvas-width="canvasWidth"
+			:canvas-height="canvasHeight"
+		/>
+
+		<!-- Selection bounding box + handles (hidden in crop mode) -->
 		<svg
-			v-if="selectedScreenBounds"
+			v-if="selectedScreenBounds && !isCropMode"
 			class="pointer-events-none absolute inset-0 size-full overflow-visible"
 		>
 			<g

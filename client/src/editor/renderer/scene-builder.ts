@@ -60,6 +60,7 @@ export function buildScene(params: BuildSceneParams) {
 					contentNodes.push(
 						new VideoNode({
 							mediaId: mediaAsset.id,
+							elementId: videoEl.id,
 							url: mediaAsset.url,
 							file: mediaAsset.file,
 							duration: videoEl.duration,
@@ -69,6 +70,7 @@ export function buildScene(params: BuildSceneParams) {
 							opacity: videoEl.opacity,
 							transform: videoEl.transform,
 							flip: videoEl.flip,
+							crop: videoEl.crop,
 							colorAdjustments: videoEl.colorAdjustments,
 							speed: videoEl.speed,
 							keyframes: videoEl.keyframes,
@@ -88,6 +90,7 @@ export function buildScene(params: BuildSceneParams) {
 							opacity: imageEl.opacity,
 							transform: imageEl.transform,
 							flip: imageEl.flip,
+							crop: imageEl.crop,
 							colorAdjustments: imageEl.colorAdjustments,
 							keyframes: imageEl.keyframes,
 							effects: imageEl.effects,

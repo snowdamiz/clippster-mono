@@ -26,6 +26,10 @@ pub struct VideoSource {
     pub speed: Option<f64>,
     pub flip_horizontal: Option<bool>,
     pub flip_vertical: Option<bool>,
+    pub crop_top: Option<f64>,
+    pub crop_right: Option<f64>,
+    pub crop_bottom: Option<f64>,
+    pub crop_left: Option<f64>,
     pub brightness: Option<f64>,
     pub contrast: Option<f64>,
     pub saturation: Option<f64>,
@@ -206,6 +210,10 @@ pub async fn export_video_editor_project(
         let speed = source.speed.unwrap_or(1.0);
         let flip_h = source.flip_horizontal.unwrap_or(false);
         let flip_v = source.flip_vertical.unwrap_or(false);
+        let crop_top = source.crop_top.unwrap_or(0.0);
+        let crop_right = source.crop_right.unwrap_or(0.0);
+        let crop_bottom = source.crop_bottom.unwrap_or(0.0);
+        let crop_left = source.crop_left.unwrap_or(0.0);
         let brightness = source.brightness.unwrap_or(0.0);
         let contrast = source.contrast.unwrap_or(0.0);
         let saturation = source.saturation.unwrap_or(0.0);
@@ -214,6 +222,19 @@ pub async fn export_video_editor_project(
         // Speed via setpts (video only, audio handled separately)
         if (speed - 1.0).abs() > 0.001 {
             transform_filters.push(format!("setpts={}*PTS", 1.0 / speed));
+        }
+        
+        // Crop (applied before scale so we crop the source, then fit to canvas)
+        // Values are 0-1 fractions of source dimensions
+        let has_crop = crop_top > 0.001 || crop_right > 0.001 || crop_bottom > 0.001 || crop_left > 0.001;
+        if has_crop {
+            // crop=w:h:x:y using FFmpeg expressions with iw/ih
+            let crop_w = 1.0 - crop_left - crop_right;
+            let crop_h = 1.0 - crop_top - crop_bottom;
+            transform_filters.push(format!(
+                "crop=iw*{}:ih*{}:iw*{}:ih*{}",
+                crop_w, crop_h, crop_left, crop_top
+            ));
         }
         
         // Scale to fit canvas (contain-fit) preserving aspect ratio, then pad to exact canvas size

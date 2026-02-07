@@ -1,6 +1,6 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
-import type { Transform, FlipState, ColorAdjustments } from "../../types/timeline";
+import type { Transform, FlipState, ColorAdjustments, CropRect } from "../../types/timeline";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
@@ -21,6 +21,7 @@ export interface ImageNodeParams {
 	opacity?: number;
 	transform?: Transform;
 	flip?: FlipState;
+	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
 	keyframes?: ElementKeyframes;
 	effects?: VideoEffect[];
@@ -146,16 +147,40 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		} else {
 			const mediaW = this.image.naturalWidth || renderer.width;
 			const mediaH = this.image.naturalHeight || renderer.height;
-			const containScale = Math.min(
-				renderer.width / mediaW,
-				renderer.height / mediaH,
-			);
-			const drawW = mediaW * containScale;
-			const drawH = mediaH * containScale;
-			const drawX = (renderer.width - drawW) / 2;
-			const drawY = (renderer.height - drawH) / 2;
 
-			renderer.context.drawImage(this.image, drawX, drawY, drawW, drawH);
+			// Apply crop: extract sub-rectangle from source image
+			const crop = this.params.crop;
+			const hasCrop = crop && (crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0);
+
+			if (hasCrop) {
+				const sx = crop.left * mediaW;
+				const sy = crop.top * mediaH;
+				const sw = mediaW * (1 - crop.left - crop.right);
+				const sh = mediaH * (1 - crop.top - crop.bottom);
+
+				const containScale = Math.min(renderer.width / sw, renderer.height / sh);
+				const drawW = sw * containScale;
+				const drawH = sh * containScale;
+				const drawX = (renderer.width - drawW) / 2;
+				const drawY = (renderer.height - drawH) / 2;
+
+				renderer.context.drawImage(
+					this.image,
+					sx, sy, sw, sh,
+					drawX, drawY, drawW, drawH,
+				);
+			} else {
+				const containScale = Math.min(
+					renderer.width / mediaW,
+					renderer.height / mediaH,
+				);
+				const drawW = mediaW * containScale;
+				const drawH = mediaH * containScale;
+				const drawX = (renderer.width - drawW) / 2;
+				const drawY = (renderer.height - drawH) / 2;
+
+				renderer.context.drawImage(this.image, drawX, drawY, drawW, drawH);
+			}
 		}
 
 		renderer.context.filter = "none";

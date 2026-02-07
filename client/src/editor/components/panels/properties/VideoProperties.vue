@@ -2,10 +2,11 @@
 import { ref, watch, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
-import type { VideoElement, ColorAdjustments } from "../../../types/timeline";
+import { useEditorUIState } from "../../../composables/useEditorUIState";
+import type { VideoElement, ColorAdjustments, CropRect } from "../../../types/timeline";
 import type { VideoEffect } from "../../../types/effects";
 import { getEffectPreset } from "../../../constants/effect-constants";
-import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown } from "lucide-vue-next";
+import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical } from "lucide-vue-next";
 
 const props = defineProps<{
 	element: VideoElement;
@@ -14,6 +15,7 @@ const props = defineProps<{
 
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
+const { cropPanelRequested, clearCropPanelRequest } = useEditorUIState();
 
 // --- Local input refs synced with element props ---
 const opacityInput = ref(Math.round(props.element.opacity * 100).toString());
@@ -45,6 +47,120 @@ function changeSpeed(speed: number) {
 
 const colorDefaults: ColorAdjustments = { brightness: 0, contrast: 0, saturation: 0, temperature: 0 };
 const ca = computed(() => props.element.colorAdjustments ?? colorDefaults);
+
+// --- Crop ---
+const cropDefaults: CropRect = { top: 0, right: 0, bottom: 0, left: 0 };
+const cropVal = computed(() => props.element.crop ?? cropDefaults);
+const showCrop = ref(cropVal.value.top > 0 || cropVal.value.right > 0 || cropVal.value.bottom > 0 || cropVal.value.left > 0);
+
+// Watch for toolbar crop button request
+watch(cropPanelRequested, (requested) => {
+	if (requested) {
+		showCrop.value = true;
+		clearCropPanelRequest();
+	}
+});
+
+const cropTopInput = ref(Math.round(cropVal.value.top * 100).toString());
+const cropRightInput = ref(Math.round(cropVal.value.right * 100).toString());
+const cropBottomInput = ref(Math.round(cropVal.value.bottom * 100).toString());
+const cropLeftInput = ref(Math.round(cropVal.value.left * 100).toString());
+
+watch(() => props.element.crop, (v) => {
+	const c = v ?? cropDefaults;
+	cropTopInput.value = Math.round(c.top * 100).toString();
+	cropRightInput.value = Math.round(c.right * 100).toString();
+	cropBottomInput.value = Math.round(c.bottom * 100).toString();
+	cropLeftInput.value = Math.round(c.left * 100).toString();
+	if (c.top > 0 || c.right > 0 || c.bottom > 0 || c.left > 0) showCrop.value = true;
+}, { deep: true });
+
+function updateCrop(partial: Partial<CropRect>) {
+	const newCrop = { ...cropVal.value, ...partial };
+	// Clamp: ensure remaining visible area is at least 5%
+	newCrop.top = clamp(newCrop.top, 0, 0.95 - newCrop.bottom);
+	newCrop.bottom = clamp(newCrop.bottom, 0, 0.95 - newCrop.top);
+	newCrop.left = clamp(newCrop.left, 0, 0.95 - newCrop.right);
+	newCrop.right = clamp(newCrop.right, 0, 0.95 - newCrop.left);
+	update({ crop: newCrop });
+}
+
+function resetCrop() {
+	update({ crop: { top: 0, right: 0, bottom: 0, left: 0 } });
+}
+
+interface CropPreset {
+	label: string;
+	ratio: [number, number]; // width:height
+}
+
+const cropPresets: CropPreset[] = [
+	{ label: "Free", ratio: [0, 0] },
+	{ label: "16:9", ratio: [16, 9] },
+	{ label: "9:16", ratio: [9, 16] },
+	{ label: "4:3", ratio: [4, 3] },
+	{ label: "3:4", ratio: [3, 4] },
+	{ label: "1:1", ratio: [1, 1] },
+	{ label: "4:5", ratio: [4, 5] },
+	{ label: "21:9", ratio: [21, 9] },
+];
+
+function applyCropPreset(preset: CropPreset) {
+	if (preset.ratio[0] === 0) {
+		// Free — just reset
+		resetCrop();
+		return;
+	}
+
+	// Calculate crop to achieve target aspect ratio from source
+	// We assume the source fills the canvas; crop symmetrically
+	const targetW = preset.ratio[0];
+	const targetH = preset.ratio[1];
+	const targetAR = targetW / targetH;
+
+	// Get media asset to know source dimensions
+	const asset = editor.media.getAssets().find((a) => a.id === props.element.mediaId);
+	const srcW = asset?.width ?? 1920;
+	const srcH = asset?.height ?? 1080;
+	const srcAR = srcW / srcH;
+
+	let cropH = 0, cropV = 0; // horizontal and vertical crop fractions (per side)
+
+	if (srcAR > targetAR) {
+		// Source is wider than target — crop left/right
+		const visibleW = srcH * targetAR; // width we want to keep
+		const totalCropW = (srcW - visibleW) / srcW; // total fraction to remove
+		cropH = totalCropW / 2;
+	} else if (srcAR < targetAR) {
+		// Source is taller than target — crop top/bottom
+		const visibleH = srcW / targetAR;
+		const totalCropH = (srcH - visibleH) / srcH;
+		cropV = totalCropH / 2;
+	}
+
+	update({ crop: { top: cropV, right: cropH, bottom: cropV, left: cropH } });
+}
+
+const activeCropPresetLabel = computed(() => {
+	const c = cropVal.value;
+	if (c.top === 0 && c.right === 0 && c.bottom === 0 && c.left === 0) return "None";
+
+	// Check if current crop matches a preset
+	const asset = editor.media.getAssets().find((a) => a.id === props.element.mediaId);
+	const srcW = asset?.width ?? 1920;
+	const srcH = asset?.height ?? 1080;
+
+	const visW = srcW * (1 - c.left - c.right);
+	const visH = srcH * (1 - c.top - c.bottom);
+	const visAR = visW / visH;
+
+	for (const p of cropPresets) {
+		if (p.ratio[0] === 0) continue;
+		const pAR = p.ratio[0] / p.ratio[1];
+		if (Math.abs(visAR - pAR) < 0.02) return p.label;
+	}
+	return "Custom";
+});
 
 function update(updates: Record<string, unknown>) {
 	editor.timeline.updateElement({
@@ -364,6 +480,98 @@ function formatTime(seconds: number): string {
 						V
 					</button>
 				</div>
+			</div>
+		</div>
+
+		<!-- Crop -->
+		<div class="space-y-3">
+			<button class="flex w-full items-center justify-between" @click="showCrop = !showCrop">
+				<div class="flex items-center gap-1.5">
+					<Crop class="size-3.5 text-zinc-500" />
+					<label class="text-xs font-medium text-zinc-400">Crop</label>
+					<span v-if="activeCropPresetLabel !== 'None'" class="rounded-full bg-blue-500/20 px-1.5 text-[10px] font-medium text-blue-400">{{ activeCropPresetLabel }}</span>
+				</div>
+				<ChevronDown class="size-3.5 text-zinc-500 transition-transform" :class="{ 'rotate-180': !showCrop }" />
+			</button>
+
+			<div v-if="showCrop" class="space-y-3">
+				<!-- Aspect ratio presets -->
+				<div class="space-y-1.5">
+					<label class="text-xs text-zinc-500">Aspect Ratio</label>
+					<div class="flex flex-wrap gap-1">
+						<button
+							v-for="preset in cropPresets"
+							:key="preset.label"
+							:class="[
+								'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+								activeCropPresetLabel === preset.label || (preset.label === 'Free' && activeCropPresetLabel === 'None')
+									? 'bg-primary/20 text-primary border border-primary/30'
+									: 'border border-white/10 bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200',
+							]"
+							@click="applyCropPreset(preset)"
+						>
+							{{ preset.label }}
+						</button>
+					</div>
+				</div>
+
+				<!-- Crop sliders -->
+				<div class="space-y-1.5">
+					<label class="text-xs text-zinc-500">Top</label>
+					<div class="flex items-center gap-2">
+						<input type="range" :value="cropVal.top * 100" min="0" max="45" step="1" class="flex-1" @input="(e) => updateCrop({ top: Number((e.target as HTMLInputElement).value) / 100 })" />
+						<input type="number" :value="cropTopInput" min="0" max="45" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200"
+							@input="(e) => { cropTopInput = (e.target as HTMLInputElement).value; const v = parseInt(cropTopInput, 10); if (!Number.isNaN(v)) updateCrop({ top: clamp(v, 0, 45) / 100 }); }" />
+					</div>
+				</div>
+				<div class="space-y-1.5">
+					<label class="text-xs text-zinc-500">Bottom</label>
+					<div class="flex items-center gap-2">
+						<input type="range" :value="cropVal.bottom * 100" min="0" max="45" step="1" class="flex-1" @input="(e) => updateCrop({ bottom: Number((e.target as HTMLInputElement).value) / 100 })" />
+						<input type="number" :value="cropBottomInput" min="0" max="45" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200"
+							@input="(e) => { cropBottomInput = (e.target as HTMLInputElement).value; const v = parseInt(cropBottomInput, 10); if (!Number.isNaN(v)) updateCrop({ bottom: clamp(v, 0, 45) / 100 }); }" />
+					</div>
+				</div>
+				<div class="space-y-1.5">
+					<label class="text-xs text-zinc-500">Left</label>
+					<div class="flex items-center gap-2">
+						<input type="range" :value="cropVal.left * 100" min="0" max="45" step="1" class="flex-1" @input="(e) => updateCrop({ left: Number((e.target as HTMLInputElement).value) / 100 })" />
+						<input type="number" :value="cropLeftInput" min="0" max="45" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200"
+							@input="(e) => { cropLeftInput = (e.target as HTMLInputElement).value; const v = parseInt(cropLeftInput, 10); if (!Number.isNaN(v)) updateCrop({ left: clamp(v, 0, 45) / 100 }); }" />
+					</div>
+				</div>
+				<div class="space-y-1.5">
+					<label class="text-xs text-zinc-500">Right</label>
+					<div class="flex items-center gap-2">
+						<input type="range" :value="cropVal.right * 100" min="0" max="45" step="1" class="flex-1" @input="(e) => updateCrop({ right: Number((e.target as HTMLInputElement).value) / 100 })" />
+						<input type="number" :value="cropRightInput" min="0" max="45" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200"
+							@input="(e) => { cropRightInput = (e.target as HTMLInputElement).value; const v = parseInt(cropRightInput, 10); if (!Number.isNaN(v)) updateCrop({ right: clamp(v, 0, 45) / 100 }); }" />
+					</div>
+				</div>
+
+				<!-- Crop preview indicator -->
+				<div class="flex items-center justify-center">
+					<div class="relative h-20 w-32 rounded border border-white/10 bg-white/5">
+						<div
+							class="absolute rounded border border-primary/50 bg-primary/10"
+							:style="{
+								top: `${cropVal.top * 100}%`,
+								right: `${cropVal.right * 100}%`,
+								bottom: `${cropVal.bottom * 100}%`,
+								left: `${cropVal.left * 100}%`,
+							}"
+						/>
+					</div>
+				</div>
+
+				<!-- Reset crop -->
+				<button
+					class="flex w-full items-center justify-center gap-1 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+					@click="resetCrop"
+				>
+					<RotateCcw class="size-3" />
+					Reset Crop
+				</button>
 			</div>
 		</div>
 

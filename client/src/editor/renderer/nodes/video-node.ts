@@ -1,7 +1,7 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import { videoCache } from "../../video-cache/service";
-import type { Transform, FlipState, ColorAdjustments } from "../../types/timeline";
+import type { Transform, FlipState, ColorAdjustments, CropRect } from "../../types/timeline";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
@@ -13,6 +13,7 @@ export interface VideoNodeParams {
 	url: string;
 	file: File;
 	mediaId: string;
+	elementId: string;
 	duration: number;
 	timeOffset: number;
 	trimStart: number;
@@ -24,6 +25,7 @@ export interface VideoNodeParams {
 	opacity?: number;
 	transform?: Transform;
 	flip?: FlipState;
+	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
 	speed?: number;
 	keyframes?: ElementKeyframes;
@@ -31,6 +33,8 @@ export interface VideoNodeParams {
 }
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
+	private prefetchedFrame: import("mediabunny").WrappedCanvas | null = null;
+
 	private isInRange(time: number) {
 		const elapsed = time - this.params.timeOffset;
 		return elapsed >= -VIDEO_EPSILON && elapsed < this.params.duration;
@@ -42,6 +46,18 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		return this.params.trimStart + elapsed * speed;
 	}
 
+	async prefetch({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
+		this.prefetchedFrame = null;
+		if (!this.isInRange(time)) return;
+
+		const videoTime = this.getSourceTime(time);
+		this.prefetchedFrame = await videoCache.getFrameAt({
+			sinkKey: this.params.elementId,
+			file: this.params.file,
+			time: videoTime,
+		});
+	}
+
 	async render({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
 		await super.render({ renderer, time });
 
@@ -49,13 +65,17 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			return;
 		}
 
-		const videoTime = this.getSourceTime(time);
-
-		const frame = await videoCache.getFrameAt({
-			mediaId: this.params.mediaId,
+		// Use pre-decoded frame from prefetch() if available, otherwise decode inline
+		const t0 = performance.now();
+		const frame = this.prefetchedFrame ?? await videoCache.getFrameAt({
+			sinkKey: this.params.elementId,
 			file: this.params.file,
-			time: videoTime,
+			time: this.getSourceTime(time),
 		});
+		const decodeMs = performance.now() - t0;
+		if (decodeMs > 5) {
+			console.log(`[VideoNode] ${this.params.elementId.slice(0,8)} decode=${decodeMs.toFixed(1)}ms videoTime=${this.getSourceTime(time).toFixed(3)} timelineTime=${time.toFixed(3)}`);
+		}
 
 		if (frame) {
 			renderer.context.save();
@@ -133,22 +153,48 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			} else {
 				const mediaW = frame.canvas.width || renderer.width;
 				const mediaH = frame.canvas.height || renderer.height;
-				const containScale = Math.min(
-					renderer.width / mediaW,
-					renderer.height / mediaH,
-				);
-				const drawW = mediaW * containScale;
-				const drawH = mediaH * containScale;
-				const drawX = (renderer.width - drawW) / 2;
-				const drawY = (renderer.height - drawH) / 2;
 
-				renderer.context.drawImage(
-					frame.canvas,
-					drawX,
-					drawY,
-					drawW,
-					drawH,
-				);
+				// Apply crop: extract sub-rectangle from source frame
+				const crop = this.params.crop;
+				const hasCrop = crop && (crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0);
+
+				if (hasCrop) {
+					// Source rectangle (pixels within the decoded frame)
+					const sx = crop.left * mediaW;
+					const sy = crop.top * mediaH;
+					const sw = mediaW * (1 - crop.left - crop.right);
+					const sh = mediaH * (1 - crop.top - crop.bottom);
+
+					// Contain-fit the cropped region into the canvas
+					const containScale = Math.min(renderer.width / sw, renderer.height / sh);
+					const drawW = sw * containScale;
+					const drawH = sh * containScale;
+					const drawX = (renderer.width - drawW) / 2;
+					const drawY = (renderer.height - drawH) / 2;
+
+					renderer.context.drawImage(
+						frame.canvas,
+						sx, sy, sw, sh,
+						drawX, drawY, drawW, drawH,
+					);
+				} else {
+					const containScale = Math.min(
+						renderer.width / mediaW,
+						renderer.height / mediaH,
+					);
+					const drawW = mediaW * containScale;
+					const drawH = mediaH * containScale;
+					const drawX = (renderer.width - drawW) / 2;
+					const drawY = (renderer.height - drawH) / 2;
+
+					renderer.context.drawImage(
+						frame.canvas,
+						drawX,
+						drawY,
+						drawW,
+						drawH,
+					);
+				}
 			}
 
 			// Reset filter

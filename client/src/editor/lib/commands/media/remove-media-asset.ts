@@ -33,7 +33,7 @@ export class RemoveMediaAssetCommand extends Command {
 			return;
 		}
 
-		videoCache.clearVideo({ mediaId: this.assetId });
+		videoCache.clearAll();
 
 		editor.media.setAssets({
 			assets: assets.filter((media) => media.id !== this.assetId),

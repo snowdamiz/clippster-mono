@@ -48,7 +48,7 @@ export class MediaManager {
 	}): Promise<void> {
 		const asset = this.assets.find((asset) => asset.id === id);
 
-		videoCache.clearVideo({ mediaId: id });
+		videoCache.clearAll();
 
 		if (asset?.url) {
 			URL.revokeObjectURL(asset.url);

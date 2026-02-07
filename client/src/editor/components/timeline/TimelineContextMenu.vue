@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { invokeAction } from "../../lib/actions";
@@ -28,6 +28,13 @@ const { editor } = useEditor();
 const { selectElement, isElementSelected } = useElementSelection();
 
 const menuRef = ref<HTMLDivElement | null>(null);
+const adjustedPosition = ref<{ x: number; y: number } | null>(null);
+
+const menuStyle = computed(() => {
+	const pos = adjustedPosition.value;
+	if (!pos) return {};
+	return { left: `${pos.x}px`, top: `${pos.y}px` };
+});
 
 watch(
 	() => props.position,
@@ -37,8 +44,52 @@ watch(
 				selectElement({ trackId: props.elementRef.trackId, elementId: props.elementRef.elementId });
 			}
 		}
+		if (pos) {
+			// Set initial position, then adjust after render
+			adjustedPosition.value = { x: pos.x, y: pos.y };
+			nextTick(() => {
+				adjustMenuPosition(pos);
+			});
+		} else {
+			adjustedPosition.value = null;
+		}
 	},
 );
+
+function adjustMenuPosition(rawPos: { x: number; y: number }) {
+	const padding = 8;
+	let x = rawPos.x;
+	let y = rawPos.y;
+
+	const menu = menuRef.value;
+	if (menu) {
+		const menuRect = menu.getBoundingClientRect();
+		const menuW = menuRect.width;
+		const menuH = menuRect.height;
+
+		if (x + menuW > window.innerWidth - padding) {
+			x = window.innerWidth - menuW - padding;
+		}
+		if (y + menuH > window.innerHeight - padding) {
+			y = window.innerHeight - menuH - padding;
+		}
+	} else {
+		// Fallback: estimate menu size
+		const estW = 200;
+		const estH = 340;
+		if (x + estW > window.innerWidth - padding) {
+			x = window.innerWidth - estW - padding;
+		}
+		if (y + estH > window.innerHeight - padding) {
+			y = window.innerHeight - estH - padding;
+		}
+	}
+
+	x = Math.max(padding, x);
+	y = Math.max(padding, y);
+
+	adjustedPosition.value = { x, y };
+}
 
 function handleClickOutside(event: MouseEvent) {
 	if (menuRef.value && !menuRef.value.contains(event.target as Node)) {
@@ -102,7 +153,7 @@ function handleToggleVisibility() {
 			v-if="position"
 			ref="menuRef"
 			class="fixed z-[9999] min-w-[180px] rounded-lg border border-white/10 bg-[#1e1e21] py-1 shadow-xl"
-			:style="{ left: `${position.x}px`, top: `${position.y}px` }"
+			:style="menuStyle"
 		>
 			<button
 				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"

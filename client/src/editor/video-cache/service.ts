@@ -19,20 +19,25 @@ interface VideoSinkData {
 export class VideoCache {
 	private sinks = new Map<string, VideoSinkData>();
 	private initPromises = new Map<string, Promise<void>>();
+	private debugFrameCount = 0;
+	private debugLogInterval = 30; // log every N frames
 
 	async getFrameAt({
-		mediaId,
+		sinkKey,
 		file,
 		time,
 	}: {
-		mediaId: string;
+		sinkKey: string;
 		file: File;
 		time: number;
 	}): Promise<WrappedCanvas | null> {
-		await this.ensureSink({ mediaId, file });
+		const t0 = performance.now();
+		await this.ensureSink({ sinkKey, file });
 
-		const sinkData = this.sinks.get(mediaId);
+		const sinkData = this.sinks.get(sinkKey);
 		if (!sinkData) return null;
+
+		let path = 'none';
 
 		if (sinkData.nextFrame && sinkData.nextFrame.timestamp <= time) {
 			sinkData.currentFrame = sinkData.nextFrame;
@@ -46,6 +51,12 @@ export class VideoCache {
 		) {
 			if (!sinkData.nextFrame && !sinkData.prefetching) {
 				this.startPrefetch({ sinkData });
+			}
+			path = 'cache-hit';
+			const elapsed = performance.now() - t0;
+			this.debugFrameCount++;
+			if (this.debugFrameCount % this.debugLogInterval === 0) {
+				console.log(`[VideoCache] ${sinkKey.slice(0,8)} t=${time.toFixed(3)} path=${path} took=${elapsed.toFixed(1)}ms`);
 			}
 			return sinkData.currentFrame;
 		}
@@ -61,6 +72,12 @@ export class VideoCache {
 				if (!sinkData.nextFrame && !sinkData.prefetching) {
 					this.startPrefetch({ sinkData });
 				}
+				path = 'iterate';
+				const elapsed = performance.now() - t0;
+				this.debugFrameCount++;
+				if (elapsed > 10 || this.debugFrameCount % this.debugLogInterval === 0) {
+					console.log(`[VideoCache] ${sinkKey.slice(0,8)} t=${time.toFixed(3)} path=${path} took=${elapsed.toFixed(1)}ms`);
+				}
 				return frame;
 			}
 		}
@@ -69,6 +86,10 @@ export class VideoCache {
 		if (frame && !sinkData.nextFrame && !sinkData.prefetching) {
 			this.startPrefetch({ sinkData });
 		}
+		path = frame ? 'seek' : 'miss';
+		const elapsed = performance.now() - t0;
+		this.debugFrameCount++;
+		console.log(`[VideoCache] ${sinkKey.slice(0,8)} t=${time.toFixed(3)} path=${path} took=${elapsed.toFixed(1)}ms`);
 		return frame;
 	}
 
@@ -217,33 +238,33 @@ export class VideoCache {
 		}
 	}
 	private async ensureSink({
-		mediaId,
+		sinkKey,
 		file,
 	}: {
-		mediaId: string;
+		sinkKey: string;
 		file: File;
 	}): Promise<void> {
-		if (this.sinks.has(mediaId)) return;
+		if (this.sinks.has(sinkKey)) return;
 
-		if (this.initPromises.has(mediaId)) {
-			await this.initPromises.get(mediaId);
+		if (this.initPromises.has(sinkKey)) {
+			await this.initPromises.get(sinkKey);
 			return;
 		}
 
-		const initPromise = this.initializeSink({ mediaId, file });
-		this.initPromises.set(mediaId, initPromise);
+		const initPromise = this.initializeSink({ sinkKey, file });
+		this.initPromises.set(sinkKey, initPromise);
 
 		try {
 			await initPromise;
 		} finally {
-			this.initPromises.delete(mediaId);
+			this.initPromises.delete(sinkKey);
 		}
 	}
 	private async initializeSink({
-		mediaId,
+		sinkKey,
 		file,
 	}: {
-		mediaId: string;
+		sinkKey: string;
 		file: File;
 	}): Promise<void> {
 		try {
@@ -267,7 +288,7 @@ export class VideoCache {
 				fit: "contain",
 			});
 
-			this.sinks.set(mediaId, {
+			this.sinks.set(sinkKey, {
 				sink,
 				iterator: null,
 				currentFrame: null,
@@ -277,27 +298,27 @@ export class VideoCache {
 				prefetchPromise: null,
 			});
 		} catch (error) {
-			console.error(`Failed to initialize video sink for ${mediaId}:`, error);
+			console.error(`Failed to initialize video sink for ${sinkKey}:`, error);
 			throw error;
 		}
 	}
 
-	clearVideo({ mediaId }: { mediaId: string }): void {
-		const sinkData = this.sinks.get(mediaId);
+	clearVideo({ sinkKey }: { sinkKey: string }): void {
+		const sinkData = this.sinks.get(sinkKey);
 		if (sinkData) {
 			if (sinkData.iterator) {
 				void sinkData.iterator.return();
 			}
 
-			this.sinks.delete(mediaId);
+			this.sinks.delete(sinkKey);
 		}
 
-		this.initPromises.delete(mediaId);
+		this.initPromises.delete(sinkKey);
 	}
 
 	clearAll(): void {
-		for (const [mediaId] of this.sinks) {
-			this.clearVideo({ mediaId });
+		for (const [sinkKey] of this.sinks) {
+			this.clearVideo({ sinkKey });
 		}
 	}
 
