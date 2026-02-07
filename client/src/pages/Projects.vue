@@ -1925,6 +1925,7 @@
   const folderCreatorDefaultIntro = ref<IntroOutro | null>(null);
   const folderCreatorDefaultOutro = ref<IntroOutro | null>(null);
   const folderCreatorWatermarkSettings = ref<WatermarkSettings | null>(null);
+  const folderCreatorProfile = ref<any>(null);
 
   // Store unlisten functions for Tauri event cleanup
   const clipBuildUnlistenFunctions = ref<UnlistenFn[]>([]);
@@ -3260,6 +3261,7 @@
     folderCreatorDefaultIntro.value = null;
     folderCreatorDefaultOutro.value = null;
     folderCreatorWatermarkSettings.value = null;
+    folderCreatorProfile.value = null;
 
     // Look up creator profile for this clip's project
     try {
@@ -3269,6 +3271,7 @@
 
       if (profile) {
         console.log('[Projects] Found creator profile for folder build:', profile.name);
+        folderCreatorProfile.value = profile;
 
         // Load creator's default intro
         if (profile.intro_id) {
@@ -3534,6 +3537,46 @@
         }
       }
 
+      // Resolve per-ratio intro/outro from creator profile
+      const introOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> = {};
+      
+      if (folderCreatorProfile.value?.intro_outro_settings) {
+        try {
+          const introOutroSettings = JSON.parse(folderCreatorProfile.value.intro_outro_settings);
+          
+          for (const ratio of settings.aspectRatios) {
+            const ratioConfig = introOutroSettings[ratio];
+            if (ratioConfig) {
+              const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
+              
+              // Resolve intro for this ratio
+              if (ratioConfig.introId) {
+                const introAsset = await getIntroOutroById(ratioConfig.introId);
+                if (introAsset) {
+                  ratioData.introPath = introAsset.file_path || undefined;
+                  ratioData.introDuration = introAsset.duration || undefined;
+                  console.log(`[Projects] Resolved intro for ${ratio}:`, introAsset.name);
+                }
+              }
+              
+              // Resolve outro for this ratio
+              if (ratioConfig.outroId) {
+                const outroAsset = await getIntroOutroById(ratioConfig.outroId);
+                if (outroAsset) {
+                  ratioData.outroPath = outroAsset.file_path || undefined;
+                  ratioData.outroDuration = outroAsset.duration || undefined;
+                  console.log(`[Projects] Resolved outro for ${ratio}:`, outroAsset.name);
+                }
+              }
+              
+              introOutroPerRatio[ratio] = ratioData;
+            }
+          }
+        } catch (e) {
+          console.warn('[Projects] Failed to parse intro_outro_settings:', e);
+        }
+      }
+
       // Start the build using the correct command
       await invoke('build_clip_from_segments', {
         projectId: clip.segment_id,
@@ -3556,6 +3599,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
+        introOutroPerRatio: introOutroPerRatio,
         watermarkSettings: watermarkSettings,
         audioSettings: null,
         framingStrategy: null,

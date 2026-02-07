@@ -390,6 +390,24 @@
                     </div>
                   </div>
 
+                  <!-- Per-Ratio Configuration -->
+                  <div class="org-dialog__asset-row org-dialog__asset-row--config">
+                    <div class="org-dialog__asset-controls org-dialog__asset-controls--full">
+                      <button
+                        type="button"
+                        @click="openIntroOutroRatioPicker"
+                        class="org-dialog__asset-upload org-dialog__asset-upload--config"
+                        :class="{ 'org-dialog__asset-upload--active': hasIntroOutroRatioConfig }"
+                        title="Configure intro/outro per aspect ratio"
+                      >
+                        <Settings2 :size="16" />
+                        <span class="org-dialog__asset-upload-text">
+                          {{ hasIntroOutroRatioConfig ? 'Per-Ratio Configured' : 'Configure per Ratio' }}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
                   <!-- Watermark Selection -->
                   <div class="org-dialog__asset-row">
                     <label class="org-dialog__asset-label">Watermark</label>
@@ -531,6 +549,15 @@
     @close="showWatermarkPositionPicker = false"
     @save="handleWatermarkSettingsSave"
   />
+
+  <!-- Intro/Outro Ratio Picker -->
+  <IntroOutroRatioPicker
+    :show="showIntroOutroRatioPicker"
+    :initial-settings="formData.intro_outro_settings ? JSON.parse(formData.intro_outro_settings) : null"
+    @update:show="showIntroOutroRatioPicker = $event"
+    @save="handleIntroOutroSettingsSave"
+    @close="showIntroOutroRatioPicker = false"
+  />
 </template>
 
 <script setup lang="ts">
@@ -583,6 +610,8 @@
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from './WatermarkPositionPicker.vue';
+  import IntroOutroRatioPicker from './IntroOutroRatioPicker.vue';
+  import type { CreatorIntroOutroSettings } from '@/services/database/types';
 
   type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
 
@@ -666,6 +695,7 @@
     outro_id: number | string | null;
     watermark_id: number | string | null;
     watermark_settings: CreatorWatermarkSettings | null;
+    intro_outro_settings: string | null;
     platformLinks: PlatformLinkInput[];
     auto_dvr_enabled: boolean;
   }>({
@@ -675,12 +705,16 @@
     outro_id: null,
     watermark_id: null,
     watermark_settings: null,
+    intro_outro_settings: null,
     platformLinks: [],
     auto_dvr_enabled: false,
   });
 
   // Watermark position picker state
   const showWatermarkPositionPicker = ref(false);
+
+  // Intro/Outro ratio picker state
+  const showIntroOutroRatioPicker = ref(false);
 
   // Computed assets based on mode
   const introAssets = computed<AssetItem[]>(() => {
@@ -784,6 +818,7 @@
             outro_id: props.profile.outro_id,
             watermark_id: props.profile.watermark_id,
             watermark_settings: (props.profile.watermark_settings as unknown as CreatorWatermarkSettings) || null,
+            intro_outro_settings: (props.profile as any).intro_outro_settings || null,
             auto_dvr_enabled: Boolean((props.profile as any).auto_dvr_enabled),
             platformLinks: props.profile.platform_links.map((link) => ({
               id: link.id,
@@ -804,6 +839,7 @@
             outro_id: props.creator.outro_id,
             watermark_id: props.creator.watermark_id,
             watermark_settings: props.creator.watermark_settings ? JSON.parse(props.creator.watermark_settings) : null,
+            intro_outro_settings: props.creator.intro_outro_settings || null,
             auto_dvr_enabled: Boolean((props.creator as any).auto_dvr_enabled),
             platformLinks: props.creator.platform_links.map((link) => ({
               id: link.id,
@@ -824,6 +860,7 @@
             outro_id: null,
             watermark_id: null,
             watermark_settings: null,
+            intro_outro_settings: null,
             platformLinks: [],
             auto_dvr_enabled: false,
           };
@@ -1125,6 +1162,24 @@
     return count;
   }
 
+  // Check if intro/outro ratio settings are configured
+  const hasIntroOutroRatioConfig = computed((): boolean => {
+    if (!formData.value.intro_outro_settings) return false;
+    const settings = JSON.parse(formData.value.intro_outro_settings);
+    return Object.values(settings).some(config => config !== null);
+  });
+
+  // Open intro/outro ratio picker
+  function openIntroOutroRatioPicker() {
+    showIntroOutroRatioPicker.value = true;
+  }
+
+  // Handle save from intro/outro ratio picker
+  function handleIntroOutroSettingsSave(settings: CreatorIntroOutroSettings) {
+    formData.value.intro_outro_settings = JSON.stringify(settings);
+    showIntroOutroRatioPicker.value = false;
+  }
+
   // ============================================
   // Asset Upload Functions
   // ============================================
@@ -1420,6 +1475,7 @@
         outro_id: formData.value.outro_id as number | null,
         watermark_id: formData.value.watermark_id as number | null,
         watermark_settings: formData.value.watermark_settings,
+        intro_outro_settings: formData.value.intro_outro_settings ? JSON.parse(formData.value.intro_outro_settings) : null,
       });
 
       if (!response.success || !response.profile) {
@@ -1576,6 +1632,7 @@
         watermark_settings: formData.value.watermark_settings
           ? JSON.stringify(formData.value.watermark_settings)
           : null,
+        intro_outro_settings: formData.value.intro_outro_settings,
         auto_dvr_enabled: formData.value.auto_dvr_enabled ? 1 : 0,
       });
 
@@ -1603,6 +1660,7 @@
         formData.value.outro_id as string | null,
         formData.value.watermark_id as string | null,
         formData.value.watermark_settings ? JSON.stringify(formData.value.watermark_settings) : null,
+        formData.value.intro_outro_settings,
         formData.value.auto_dvr_enabled
       );
 
