@@ -1007,7 +1007,7 @@
   const buildToDelete = ref<ClipBuild | null>(null);
 
   // View state
-  const viewMode = ref<'folders' | 'list'>('folders');
+  const viewMode = ref<'folders' | 'list'>('list');
   const showFolderDialog = ref(false);
   const folderProject = ref<{ id: string; name: string; clips: ClipWithBuilds[] } | null>(null);
   const folderCurrentPage = ref(1);
@@ -2123,24 +2123,69 @@
       return;
     }
 
+    console.log(`[Clips] Loading thumbnail for output file: ${filePath}`);
+
     try {
       // Derive the expected thumbnail path
       const thumbnailPath = await getThumbnailPathForVideoFile(filePath);
-      if (!thumbnailPath) return;
+      console.log(`[Clips] Expected thumbnail path: ${thumbnailPath}`);
+      
+      if (!thumbnailPath) {
+        console.warn(`[Clips] Could not derive thumbnail path for ${filePath}`);
+        return;
+      }
 
       // Check if file exists
       const fileExists = await invoke<boolean>('check_file_exists', {
         path: thumbnailPath,
       });
 
+      console.log(`[Clips] Thumbnail exists: ${fileExists}`);
+
       if (fileExists) {
         const dataUrl = await invoke<string>('read_file_as_data_url', {
           filePath: thumbnailPath,
         });
         buildThumbnailCache.value.set(filePath, dataUrl);
+        console.log(`[Clips] Loaded existing thumbnail for ${filePath}`);
+      } else {
+        // Thumbnail doesn't exist - regenerate it from the video file
+        console.log(`[Clips] Thumbnail missing, regenerating for ${filePath}`);
+        
+        // Check if the video file exists
+        const videoExists = await invoke<boolean>('check_file_exists', {
+          path: filePath,
+        });
+        
+        console.log(`[Clips] Video file exists: ${videoExists}`);
+        
+        if (videoExists) {
+          try {
+            // Generate thumbnail at 1 second mark
+            console.log(`[Clips] Calling generate_thumbnail_at_timestamp...`);
+            const newThumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+              videoPath: filePath,
+              timestampSeconds: 1.0,
+              outputFilename: null,
+            });
+            
+            console.log(`[Clips] Generated thumbnail at: ${newThumbnailPath}`);
+            
+            // Load the newly generated thumbnail
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: newThumbnailPath,
+            });
+            buildThumbnailCache.value.set(filePath, dataUrl);
+            console.log(`[Clips] ✅ Successfully regenerated and loaded thumbnail for ${filePath}`);
+          } catch (genError) {
+            console.error(`[Clips] ❌ Failed to regenerate thumbnail for ${filePath}:`, genError);
+          }
+        } else {
+          console.warn(`[Clips] ❌ Video file does not exist: ${filePath}`);
+        }
       }
     } catch (error) {
-      console.warn(`Failed to load thumbnail for output file ${filePath}:`, error);
+      console.error(`[Clips] ❌ Failed to load thumbnail for output file ${filePath}:`, error);
     }
   }
 

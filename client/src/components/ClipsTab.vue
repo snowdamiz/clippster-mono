@@ -2382,43 +2382,16 @@
           Object.keys(settings.manualFramingConfigs).length > 0;
 
         if (hasManualConfigs) {
-          // For manual mode with per-ratio configs, we'll need to build each ratio separately
-          // The backend will receive the manualFramingConfigs object and use the appropriate config per ratio
+          // For manual mode with per-ratio configs, DON'T create a single framingStrategy
+          // The backend will use manualFramingConfigs to apply the correct config per ratio
           console.log(
             '[ClipsTab] Using manual framing configuration with per-ratio configs:',
             Object.keys(settings.manualFramingConfigs || {})
           );
-
-          // Get the first configured ratio for the primary framing strategy
-          // The backend will handle per-ratio configs during build
-          const firstConfiguredRatio = Object.keys(
-            settings.manualFramingConfigs!
-          )[0] as keyof import('@/types').ManualFramingConfigs;
-          const firstConfig = settings.manualFramingConfigs![firstConfiguredRatio];
-
-          if (firstConfig && firstConfig.regions && firstConfig.regions.length > 0) {
-            // Convert manual config to framing strategy format
-            framingStrategy = {
-              mode: 'multi_region',
-              videoType: 'unknown',
-              speakerCount: 0,
-              confidence: 1.0,
-              targetAspectRatio: firstConfig.targetAspectRatio,
-              isPortrait: true,
-              sourceDimensions: {
-                width: 1920, // Will be updated by backend
-                height: 1080,
-              },
-              ffmpegFilter: '',
-              layout: null,
-              keyframes: null,
-              cropRegion: null,
-              cropCenter: null,
-              speakers: null,
-              contentRegions: null,
-              multiRegion: firstConfig,
-            };
-          }
+          
+          // Leave framingStrategy as null - the backend will use manualFramingConfigs instead
+          // This ensures each aspect ratio gets its own unique crop regions
+          framingStrategy = null;
         } else if (settings.framingMode === 'manual' && settings.manualFramingConfig) {
           // Legacy single config support
           console.log(

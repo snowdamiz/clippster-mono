@@ -505,6 +505,7 @@ pub async fn export_video_editor_project(
     } else if config.video_sources.len() == 1 {
         let source = &config.video_sources[0];
         let trim_start = source.trim_start.unwrap_or(0.0);
+        let trim_end = source.trim_end;
         let duration = source.end_time - source.start_time;
         let transform = build_video_transform_filter(source, config.width, config.height);
         let effects_str = source.effects.as_ref()
@@ -547,6 +548,7 @@ pub async fn export_video_editor_project(
         for i in 0..config.video_sources.len() {
             let source = &config.video_sources[i];
             let trim_start = source.trim_start.unwrap_or(0.0);
+            let trim_end = source.trim_end;
             let duration = source.end_time - source.start_time;
             let transform = build_video_transform_filter(source, config.width, config.height);
             
@@ -575,6 +577,7 @@ pub async fn export_video_editor_project(
         for i in 0..config.video_sources.len() {
             let source = &config.video_sources[i];
             let trim_start = source.trim_start.unwrap_or(0.0);
+            let trim_end = source.trim_end;
             let duration = source.end_time - source.start_time;
             let is_muted = source.is_muted.unwrap_or(false);
             let vol = source.volume.unwrap_or(1.0);

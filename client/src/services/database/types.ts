@@ -248,6 +248,7 @@ export interface ClipSegment {
   end_time: number;
   duration: number;
   transcript: string | null;
+  audio_peaks: string | null; // JSON string of audio peak data
   created_at: number;
 }
 

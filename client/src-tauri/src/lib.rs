@@ -14,6 +14,7 @@ mod pumpfun;
 mod kick;
 mod twitch;
 mod waveform;
+mod audio_peaks;
 mod focal_detection;
 mod commands;
 mod dvr;
@@ -734,6 +735,9 @@ generate_proxy_file,
             waveform::clear_waveform_cache,
             waveform::extract_audio_peaks_for_range,
 
+            // Audio peaks detection commands
+            audio_peaks::detect_audio_peaks,
+
             // Storage commands
             storage::get_storage_paths,
             storage::copy_video_to_storage,
@@ -844,6 +848,7 @@ font_commands::list_custom_fonts,
 font_commands::resolve_font_path,
 
 ])
+.manage(remotion_export::SidecarState::new())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
 } 

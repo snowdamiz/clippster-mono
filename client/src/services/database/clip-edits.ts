@@ -758,3 +758,14 @@ export async function getOrCreateClipEdit(clipId: string): Promise<ClipEditRecor
   }
   return edit;
 }
+
+// ==========================================
+// Convenience Aliases for AI Video Creator
+// ==========================================
+
+export const getClipEdit = getClipEditByClipId;
+export const getClipAudioTracks = getAudioTracksByEditId;
+export const getClipTextOverlays = getTextOverlaysByEditId;
+export const getClipStickers = getStickersByEditId;
+export const getClipWatermarks = getWatermarksByEditId;
+export const getClipEffects = getEffectsByEditId;
