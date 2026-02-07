@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useTimelineZoom } from "../../composables/timeline/useTimelineZoom";
 import { useElementInteraction } from "../../composables/timeline/element/useElementInteraction";
@@ -9,6 +9,8 @@ import { useTimelineSeek } from "../../composables/timeline/useTimelineSeek";
 import { useTimelineDragDrop } from "../../composables/timeline/useTimelineDragDrop";
 import { useSelectionBox } from "../../composables/timeline/useSelectionBox";
 import { useScrollSync } from "../../composables/timeline/useScrollSync";
+import { useTimelineTools } from "../../composables/timeline/useTimelineTools";
+import { UpdateCoverTimestampCommand } from "../../lib/commands/project/update-cover-timestamp";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import {
 	getTrackHeight,
@@ -41,6 +43,7 @@ import {
 	EyeOff,
 	Plus,
 	Trash2,
+	ImageIcon,
 } from "lucide-vue-next";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -85,6 +88,12 @@ function toggleTrackVisibility(trackId: string) {
 	editor.timeline.toggleTrackVisibility({ trackId });
 }
 
+function openCoverEditor() {
+	const currentTime = editor.playback.getCurrentTime();
+	const command = new UpdateCoverTimestampCommand(currentTime);
+	editor.command.execute({ command });
+}
+
 const tracks = computed(() => {
 	void version.value;
 	return editor.timeline.getTracks();
@@ -108,7 +117,7 @@ const trackLabelsScrollRef = ref<HTMLDivElement | null>(null);
 // State
 const isResizing = ref(false);
 const currentSnapPoint = ref<SnapPoint | null>(null);
-const snappingEnabled = ref(true);
+const { mainTrackMagnet, autoSnapping, linkage, toggleMainTrackMagnet, toggleAutoSnapping, toggleLinkage } = useTimelineTools();
 const razorMode = ref(false);
 const autoFollow = ref(true);
 
@@ -171,7 +180,7 @@ const {
 	tracksContainerRef,
 	tracksScrollRef,
 	headerRef: timelineHeaderRef,
-	snappingEnabled,
+	snappingEnabled: autoSnapping,
 	onSnapPointChange: handleSnapPointChange,
 });
 
@@ -241,7 +250,7 @@ const dynamicTimelineWidth = computed(() =>
 
 const showSnapIndicator = computed(
 	() =>
-		snappingEnabled.value &&
+		autoSnapping.value && // Use the shared autoSnapping
 		currentSnapPoint.value !== null &&
 		(dragState.value.isDragging || isResizing.value),
 );
@@ -282,6 +291,32 @@ const totalTracksHeight = computed(() => getTotalTracksHeight({ tracks: tracks.v
 const tracksAreaHeight = computed(() =>
 	Math.max(tracksContainerHeight.min, Math.min(tracksContainerHeight.max, totalTracksHeight.value)),
 );
+
+// Vertical centering: offset tracks when content is shorter than container
+const tracksContainerClientHeight = ref(0);
+let tracksResizeObserver: ResizeObserver | null = null;
+
+onMounted(() => {
+	tracksResizeObserver = new ResizeObserver((entries) => {
+		for (const entry of entries) {
+			tracksContainerClientHeight.value = entry.contentRect.height;
+		}
+	});
+	if (tracksScrollRef.value) {
+		tracksResizeObserver.observe(tracksScrollRef.value);
+	}
+});
+
+onUnmounted(() => {
+	tracksResizeObserver?.disconnect();
+});
+
+const tracksVerticalOffset = computed(() => {
+	const containerH = tracksContainerClientHeight.value;
+	const contentH = totalTracksHeight.value;
+	if (containerH <= 0 || contentH >= containerH) return 0;
+	return Math.min(16, Math.floor((containerH - contentH) / 2));
+});
 
 function onScrollAreaWheel(event: WheelEvent) {
 	const isZoomGesture = event.ctrlKey || event.metaKey;
@@ -334,9 +369,15 @@ function onScrollAreaClick(event: MouseEvent) {
 			:min-zoom="minZoomLevel"
 			:razor-mode="razorMode"
 			:auto-follow="autoFollow"
+			:main-track-magnet="mainTrackMagnet"
+			:auto-snapping="autoSnapping"
+			:linkage="linkage"
 			@set-zoom-level="setZoomLevel($event)"
 			@toggle-razor-mode="toggleRazorMode"
 			@toggle-auto-follow="toggleAutoFollow"
+			@toggle-main-track-magnet="toggleMainTrackMagnet"
+			@toggle-auto-snapping="toggleAutoSnapping"
+			@toggle-linkage="toggleLinkage"
 		/>
 
 		<div
@@ -388,7 +429,7 @@ function onScrollAreaClick(event: MouseEvent) {
 						:style="{ paddingTop: `${TIMELINE_CONSTANTS.PADDING_TOP_PX}px` }"
 					>
 						<div ref="trackLabelsScrollRef" class="size-full overflow-auto">
-							<div class="flex flex-col gap-1">
+							<div class="flex flex-col gap-1" :style="{ paddingTop: `${tracksVerticalOffset}px` }">
 								<div
 									v-for="track in tracks"
 									:key="track.id"
@@ -396,7 +437,18 @@ function onScrollAreaClick(event: MouseEvent) {
 									:style="{ height: `${getTrackHeight({ type: track.type })}px` }"
 								>
 									<div class="flex min-w-0 flex-1 items-center justify-between gap-0.5">
-										<span class="text-zinc-500 text-[10px] capitalize truncate">{{ track.name }}</span>
+										<div class="flex flex-col min-w-0">
+											<span class="text-zinc-500 text-[10px] capitalize truncate">{{ track.name }}</span>
+											<button
+												v-if="'isMain' in track && track.isMain"
+												class="flex items-center gap-0.5 rounded px-0.5 py-0 text-[8px] text-primary/80 hover:text-primary hover:bg-white/5 w-fit"
+												@click="openCoverEditor"
+												title="Edit cover image"
+											>
+												<ImageIcon class="size-2.5" />
+												Cover
+											</button>
+										</div>
 										<div class="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity" :class="{ '!opacity-100': track.locked }">
 											<button
 												class="p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300"
@@ -507,7 +559,7 @@ function onScrollAreaClick(event: MouseEvent) {
 							<!-- Tracks area -->
 							<div
 								class="relative"
-								:style="{ height: `${tracksAreaHeight}px` }"
+								:style="{ height: `${tracksAreaHeight + tracksVerticalOffset}px`, paddingTop: `${tracksVerticalOffset}px` }"
 							>
 								<div v-if="tracks.length === 0" />
 								<div
@@ -515,7 +567,7 @@ function onScrollAreaClick(event: MouseEvent) {
 									:key="track.id"
 									class="absolute right-0 left-0"
 									:style="{
-										top: `${getCumulativeHeightBefore({ tracks, trackIndex: index })}px`,
+										top: `${getCumulativeHeightBefore({ tracks, trackIndex: index }) + tracksVerticalOffset}px`,
 										height: `${getTrackHeight({ type: track.type })}px`,
 									}"
 								>
@@ -523,7 +575,7 @@ function onScrollAreaClick(event: MouseEvent) {
 										:track="track"
 										:zoom-level="zoomLevel"
 										:drag-state="dragState"
-										:snapping-enabled="snappingEnabled"
+										:snapping-enabled="autoSnapping"
 										:razor-mode="razorMode"
 										@snap-point-change="handleSnapPointChange"
 										@resize-state-change="handleResizeStateChange"

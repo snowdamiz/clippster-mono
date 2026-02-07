@@ -45,7 +45,7 @@ export const TIMELINE_CONSTANTS = {
 } as const;
 
 export const DEFAULT_TIMELINE_VIEW_STATE: TTimelineViewState = {
-	zoomLevel: 1,
+	zoomLevel: 0.2,
 	scrollLeft: 0,
 	playheadTime: 0,
 };

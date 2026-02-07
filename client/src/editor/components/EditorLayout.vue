@@ -98,7 +98,7 @@ const activeTab = ref<Tab>("media");
 		</div>
 
 		<!-- Bottom: Timeline -->
-		<div class="h-[300px] shrink-0 border-t border-white/10 overflow-hidden bg-[#18181b]">
+		<div class="h-[330px] shrink-0 border-t border-white/10 overflow-hidden bg-[#18181b]">
 			<Timeline />
 		</div>
 	</div>

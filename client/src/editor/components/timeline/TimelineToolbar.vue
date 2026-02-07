@@ -37,12 +37,18 @@ const props = defineProps<{
 	minZoom: number;
 	razorMode?: boolean;
 	autoFollow?: boolean;
+	mainTrackMagnet?: boolean;
+	autoSnapping?: boolean;
+	linkage?: boolean;
 }>();
 
 const emit = defineEmits<{
 	(e: "setZoomLevel", zoom: number): void;
 	(e: "toggleRazorMode"): void;
 	(e: "toggleAutoFollow"): void;
+	(e: "toggleMainTrackMagnet"): void;
+	(e: "toggleAutoSnapping"): void;
+	(e: "toggleLinkage"): void;
 }>();
 
 const { editor, version } = useEditor();
@@ -284,8 +290,55 @@ function handleAction(action: string, event?: MouseEvent) {
 			</TooltipProvider>
 		</div>
 
-		<!-- Right section: zoom controls -->
+		<!-- Right section: timeline tools + zoom controls -->
 		<div class="flex items-center gap-1">
+			<TooltipProvider :delay-duration="500">
+				<!-- Main Track Magnet -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button
+							variant="ghost"
+							size="icon"
+							:class="{ 'bg-primary/20 text-primary': mainTrackMagnet }"
+							@click="emit('toggleMainTrackMagnet')"
+						>
+							<Magnet class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Main track magnet</TooltipContent>
+				</Tooltip>
+
+				<!-- Auto Snapping -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button
+							variant="ghost"
+							size="icon"
+							:class="{ 'bg-primary/20 text-primary': autoSnapping }"
+							@click="emit('toggleAutoSnapping')"
+						>
+							<SplitSquareHorizontal class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Auto snapping</TooltipContent>
+				</Tooltip>
+
+				<!-- Linkage -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button
+							variant="ghost"
+							size="icon"
+							:class="{ 'bg-primary/20 text-primary': linkage }"
+							@click="emit('toggleLinkage')"
+						>
+							<Link class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Linkage</TooltipContent>
+				</Tooltip>
+			</TooltipProvider>
+
 			<div class="mx-1 h-6 w-px bg-white/10" />
 
 			<div class="flex items-center gap-1">

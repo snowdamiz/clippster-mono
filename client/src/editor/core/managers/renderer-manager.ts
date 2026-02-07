@@ -87,6 +87,7 @@ interface TauriExportConfig {
 	total_duration: number;
 	width: number;
 	height: number;
+	cover_timestamp: number | null;
 }
 
 export class RendererManager {
@@ -292,6 +293,8 @@ export class RendererManager {
 			}
 		}
 
+		const coverTimestamp = this.editor.project.getCoverTimestamp();
+
 		return {
 			video_sources: videoSources,
 			audio_tracks: audioTracks,
@@ -302,6 +305,7 @@ export class RendererManager {
 			total_duration: duration,
 			width: canvasSize.width,
 			height: canvasSize.height,
+			cover_timestamp: coverTimestamp ?? null,
 		};
 	}
 

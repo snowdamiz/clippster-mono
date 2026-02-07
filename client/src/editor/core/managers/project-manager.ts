@@ -544,6 +544,20 @@ export class ProjectManager {
 		this.editor.save.markDirty();
 	}
 
+	getCoverTimestamp(): number | undefined {
+		return this.active?.coverTimestamp;
+	}
+
+	setCoverTimestamp({ timestamp }: { timestamp: number | undefined }): void {
+		if (!this.active) return;
+		this.active = {
+			...this.active,
+			coverTimestamp: timestamp,
+		};
+		this.editor.save.markDirty();
+		this.notify();
+	}
+
 	getSavedProjects(): TProjectMetadata[] {
 		return this.savedProjects;
 	}

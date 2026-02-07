@@ -44,6 +44,7 @@ export interface TProject {
 	settings: TProjectSettings;
 	version: number;
 	timelineViewState?: TTimelineViewState;
+	coverTimestamp?: number;
 }
 
 export type TProjectSortKey = "createdAt" | "updatedAt" | "name" | "duration";

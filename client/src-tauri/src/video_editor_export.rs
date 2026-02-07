@@ -84,6 +84,7 @@ pub struct ExportConfig {
     pub total_duration: f64,
     pub width: i32,
     pub height: i32,
+    pub cover_timestamp: Option<f64>,
 }
 
 /// Full video editor export with audio tracks, text overlays, and effects
@@ -786,6 +787,40 @@ pub async fn export_video_editor_project(
     }
 
     println!("[Rust] Export completed successfully: {}", config.output_path);
+
+    // Extract cover image if a cover timestamp was specified
+    if let Some(cover_ts) = config.cover_timestamp {
+        let cover_path = {
+            let p = Path::new(&config.output_path);
+            let stem = p.file_stem().unwrap_or_default().to_string_lossy();
+            let parent = p.parent().unwrap_or(Path::new("."));
+            parent.join(format!("{}_cover.jpg", stem)).to_string_lossy().to_string()
+        };
+
+        println!("[Rust] Extracting cover image at {}s -> {}", cover_ts, cover_path);
+
+        let cover_output = shell
+            .command("ffmpeg")
+            .args(&[
+                "-y",
+                "-ss", &cover_ts.to_string(),
+                "-i", &config.output_path,
+                "-vframes", "1",
+                "-q:v", "2",
+                &cover_path,
+            ])
+            .output()
+            .await
+            .map_err(|e| format!("Failed to extract cover image: {}", e))?;
+
+        if cover_output.status.success() {
+            println!("[Rust] Cover image saved: {}", cover_path);
+        } else {
+            let stderr = String::from_utf8_lossy(&cover_output.stderr);
+            println!("[Rust] Cover image extraction failed (non-fatal): {}", stderr);
+        }
+    }
+
     Ok(())
 }
 

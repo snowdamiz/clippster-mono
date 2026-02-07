@@ -7,6 +7,7 @@ import type {
 	ClipboardItem,
 } from "../../types/timeline";
 import { calculateTotalDuration } from "../../lib/timeline";
+import { getMainTrackMagnet } from "../../composables/timeline/useTimelineTools";
 import {
 	AddTrackCommand,
 	RemoveTrackCommand,
@@ -212,7 +213,7 @@ export class TimelineManager {
 	}: {
 		elements: { trackId: string; elementId: string }[];
 	}): void {
-		const command = new DeleteElementsCommand(elements);
+		const command = new DeleteElementsCommand(elements, getMainTrackMagnet());
 		this.editor.command.execute({ command });
 	}
 

@@ -6,7 +6,10 @@ import { isMainTrack } from "../../../../lib/timeline";
 export class DeleteElementsCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
 
-	constructor(private elements: { trackId: string; elementId: string }[]) {
+	constructor(
+		private elements: { trackId: string; elementId: string }[],
+		private mainTrackMagnet: boolean = true,
+	) {
 		super();
 	}
 
@@ -24,15 +27,27 @@ export class DeleteElementsCommand extends Command {
 					return track;
 				}
 
-				return {
-					...track,
-					elements: track.elements.filter(
-						(element) =>
-							!this.elements.some(
-								(el) => el.trackId === track.id && el.elementId === element.id,
-							),
-					),
-				} as typeof track;
+				const filteredElements = track.elements.filter(
+					(element) =>
+						!this.elements.some(
+							(el) => el.trackId === track.id && el.elementId === element.id,
+						),
+				);
+
+				// Main video track: collapse gaps when magnet is ON
+				if (this.mainTrackMagnet && isMainTrack(track) && filteredElements.length > 0) {
+					const sorted = filteredElements
+						.map((el) => ({ ...el }))
+						.sort((a, b) => a.startTime - b.startTime);
+					let cursor = 0;
+					for (const el of sorted) {
+						el.startTime = cursor;
+						cursor += el.duration;
+					}
+					return { ...track, elements: sorted } as typeof track;
+				}
+
+				return { ...track, elements: filteredElements } as typeof track;
 			})
 			.filter((track) => track.elements.length > 0 || isMainTrack(track));
 
