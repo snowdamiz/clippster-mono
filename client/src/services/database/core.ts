@@ -34,7 +34,8 @@ export async function initDatabase() {
   initializing = (async () => {
     try {
       await waitForRuntimeReady();
-      const instance = await Database.load('sqlite:clippster_v25.db');
+      const dbName = import.meta.env.DEV ? 'clippster_v25_dev.db' : 'clippster_v25.db';
+      const instance = await Database.load(`sqlite:${dbName}`);
 
       db = instance;
       return instance;

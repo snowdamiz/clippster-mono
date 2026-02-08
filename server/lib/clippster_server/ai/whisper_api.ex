@@ -52,7 +52,10 @@ defmodule ClippsterServer.AI.WhisperAPI do
         ]
 
         IO.puts("[WhisperAPI] Making Finch binary request with retry logic...")
-        execute_request_with_retry(headers, multipart_body, 0)
+        content_length = byte_size(multipart_body)
+        chunked_body = chunk_binary_for_streaming(multipart_body)
+        headers_with_length = headers ++ [{"Content-Length", Integer.to_string(content_length)}]
+        execute_request_with_retry(headers_with_length, {:stream, chunked_body}, 0)
     end
   rescue
     error ->
@@ -112,7 +115,10 @@ defmodule ClippsterServer.AI.WhisperAPI do
           ]
 
           IO.puts("[WhisperAPI] Making Finch request with retry logic...")
-          execute_request_with_retry(headers, multipart_body, 0)
+          content_length = byte_size(multipart_body)
+          chunked_body = chunk_binary_for_streaming(multipart_body)
+          headers_with_length = headers ++ [{"Content-Length", Integer.to_string(content_length)}]
+          execute_request_with_retry(headers_with_length, {:stream, chunked_body}, 0)
         end
     end
   rescue
@@ -260,6 +266,20 @@ defmodule ClippsterServer.AI.WhisperAPI do
     # Add random jitter (0-30% of base delay) to prevent thundering herd
     jitter = :rand.uniform(round(base * 0.30))
     min(round(base) + jitter, @max_delay_ms)
+  end
+
+  # Chunk a binary into 64KB pieces for streaming over TLS.
+  # Sending large binaries (>1MB) in a single TLS write causes Bad Record MAC errors
+  # because the TLS record layer can't handle oversized writes reliably.
+  @chunk_size 65_536
+  defp chunk_binary_for_streaming(binary) do
+    Stream.unfold(binary, fn
+      <<>> -> nil
+      data ->
+        size = min(byte_size(data), @chunk_size)
+        <<chunk::binary-size(size), rest::binary>> = data
+        {chunk, rest}
+    end)
   end
 
   # Build multipart body EXACTLY matching the prototype TypeScript implementation

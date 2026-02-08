@@ -828,6 +828,7 @@
     // Creator profile default assets (auto-applied when building clips)
     creatorDefaultIntro?: IntroOutroRef | null;
     creatorDefaultOutro?: IntroOutroRef | null;
+    creatorProfile?: any; // Full creator profile for per-ratio intro/outro
     videoThumbnailUrl?: string | null;
     hideHeader?: boolean;
     playOnCardClick?: boolean;
@@ -853,6 +854,7 @@
     watermarkSettings: null,
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
+    creatorProfile: null,
     videoThumbnailUrl: null,
     playOnCardClick: false,
     showAdjustClipButton: false,
@@ -1949,6 +1951,7 @@
       const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild, getClipBuilds } = await import(
         '@/services/database'
       );
+      const { getIntroOutroById } = await import('@/services/database/intro-outros');
       const { resolveWatermarkById } = await import('@/services/database/watermarks');
 
       // Update database status to building
@@ -2593,6 +2596,46 @@
         }
       }
 
+      // Resolve per-ratio intro/outro from creator profile
+      const introOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> = {};
+      
+      if (props.creatorProfile?.intro_outro_settings) {
+        try {
+          const introOutroSettings = JSON.parse(props.creatorProfile.intro_outro_settings);
+          
+          for (const ratio of settings.aspectRatios) {
+            const ratioConfig = introOutroSettings[ratio];
+            if (ratioConfig) {
+              const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
+              
+              // Resolve intro for this ratio
+              if (ratioConfig.introId) {
+                const introAsset = await getIntroOutroById(ratioConfig.introId);
+                if (introAsset) {
+                  ratioData.introPath = introAsset.file_path || undefined;
+                  ratioData.introDuration = introAsset.duration || undefined;
+                  console.log(`[ClipsTab] Resolved intro for ${ratio}:`, introAsset.name);
+                }
+              }
+              
+              // Resolve outro for this ratio
+              if (ratioConfig.outroId) {
+                const outroAsset = await getIntroOutroById(ratioConfig.outroId);
+                if (outroAsset) {
+                  ratioData.outroPath = outroAsset.file_path || undefined;
+                  ratioData.outroDuration = outroAsset.duration || undefined;
+                  console.log(`[ClipsTab] Resolved outro for ${ratio}:`, outroAsset.name);
+                }
+              }
+              
+              introOutroPerRatio[ratio] = ratioData;
+            }
+          }
+        } catch (e) {
+          console.warn('[ClipsTab] Failed to parse intro_outro_settings:', e);
+        }
+      }
+
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
@@ -2615,6 +2658,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
+        introOutroPerRatio: introOutroPerRatio,
         watermarkSettings: watermarkSettings,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,

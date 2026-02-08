@@ -293,6 +293,11 @@ export interface MediaPanelProps {
   // Creator profile default assets (auto-applied when building clips)
   creatorDefaultIntro?: IntroOutroRef | null;
   creatorDefaultOutro?: IntroOutroRef | null;
+  // Transcription progress
+  isTranscribing?: boolean;
+  transcribeProgress?: number;
+  transcribeStage?: string;
+  transcribeMessage?: string;
 }
 
 // Reference type for intro/outro (matches database IntroOutro type)
@@ -337,6 +342,9 @@ export interface MediaPanelEmits {
   (e: 'editClip', clipId: string): void;
   (e: 'adjustClip', clipId: string): void;
   (e: 'addClip'): void;
+  (e: 'transcribeProject'): void;
+  (e: 'cancelTranscription'): void;
+  (e: 'viewTranscript'): void;
 }
 
 export interface TimelinePlayheadProps {

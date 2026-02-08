@@ -1,5 +1,5 @@
 use std::fs;
-use crate::downloads::{ACTIVE_DOWNLOADS, ACTIVE_FFMPEG_PROCESSES, DOWNLOAD_METADATA};
+use crate::downloads::{ACTIVE_DOWNLOADS, ACTIVE_FFMPEG_PROCESSES, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA};
 use crate::storage;
 
 /// Cancels all active downloads and cleans up partial files
@@ -91,6 +91,18 @@ pub async fn cancel_all_downloads() -> Result<Vec<String>, String> {
 pub async fn cancel_download(download_id: String) -> Result<bool, String> {
     println!("[Rust] Canceling download: {}", download_id);
 
+    // Signal async yt-dlp downloads to stop
+    let mut task_cancelled = false;
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        if let Some(cancel_tx) = cancellers.remove(&download_id) {
+            if cancel_tx.send(()).is_ok() {
+                println!("[Rust] Sent cancel signal to async download task");
+                task_cancelled = true;
+            }
+        }
+    }
+
     // Attempt to kill specific child process via Tauri sidecar handle
     let mut ffmpeg_killed = false;
     {
@@ -146,12 +158,12 @@ pub async fn cancel_download(download_id: String) -> Result<bool, String> {
     // Consider cancellation successful if:
     // 1. The download was active in our tracking, OR
     // 2. We successfully killed an FFmpeg process
-    let cancellation_successful = was_active || ffmpeg_killed;
+    let cancellation_successful = was_active || ffmpeg_killed || task_cancelled;
 
     if was_active {
         println!("[Rust] Successfully cancelled download: {}", download_id);
-    } else if ffmpeg_killed {
-        println!("[Rust] Download was not active in tracking, but process was killed - cancellation successful: {}", download_id);
+    } else if ffmpeg_killed || task_cancelled {
+        println!("[Rust] Download was not active in tracking, but process/task was cancelled - cancellation successful: {}", download_id);
     } else {
         println!("[Rust] Cancellation attempt failed - download not active and no process killed: {}", download_id);
     }

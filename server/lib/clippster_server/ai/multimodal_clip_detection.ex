@@ -22,8 +22,7 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
     "anthropic/claude-haiku-4.5",
     "google/gemini-3-pro-preview",
     "z-ai/glm-4.7",
-    "openai/gpt-4o-mini",
-    "x-ai/grok-4-fast"
+    "x-ai/grok-4.1-fast"
   ]
 
   @decider_model "x-ai/grok-4.1-fast"

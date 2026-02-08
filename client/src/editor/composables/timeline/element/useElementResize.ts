@@ -1,0 +1,319 @@
+/**
+ * Vue composable equivalent of OpenCut's use-element-resize.ts
+ * Handles resizing (trimming) timeline elements from left/right edges.
+ */
+import { ref, watch, onUnmounted, type Ref } from "vue";
+import type { TimelineElement, TimelineTrack } from "../../../types/timeline";
+import { snapTimeToFrame } from "../../../lib/time";
+import { EditorCore } from "../../../core";
+import { useTimelineSnapping, type SnapPoint } from "../useTimelineSnapping";
+
+export interface ResizeState {
+	elementId: string;
+	side: "left" | "right";
+	startX: number;
+	initialTrimStart: number;
+	initialTrimEnd: number;
+	initialStartTime: number;
+	initialDuration: number;
+}
+
+interface UseTimelineElementResizeProps {
+	element: Ref<TimelineElement>;
+	track: Ref<TimelineTrack>;
+	zoomLevel: Ref<number>;
+	snappingEnabled: Ref<boolean>;
+	onSnapPointChange?: (snapPoint: SnapPoint | null) => void;
+	onResizeStateChange?: (params: { isResizing: boolean }) => void;
+}
+
+export function useTimelineElementResize({
+	element,
+	track,
+	zoomLevel,
+	snappingEnabled,
+	onSnapPointChange,
+	onResizeStateChange,
+}: UseTimelineElementResizeProps) {
+	const editor = EditorCore.getInstance();
+	const { findSnapPoints, snapToNearestPoint } = useTimelineSnapping();
+
+	const resizing = ref<ResizeState | null>(null);
+	const currentTrimStart = ref(0);
+	const currentTrimEnd = ref(0);
+	const currentStartTime = ref(0);
+	const currentDuration = ref(0);
+	const rippleShifts = ref<Map<string, number>>(new Map());
+
+	// Use plain vars for refs that don't need reactivity (perf)
+	let trimStartVal = 0;
+	let trimEndVal = 0;
+	let startTimeVal = 0;
+	let durationVal = 0;
+
+	function canExtendElementDuration(): boolean {
+		const t = element.value.type;
+		return t === "text" || t === "image";
+	}
+
+	function handleResizeStart({
+		e,
+		elementId,
+		side,
+	}: {
+		e: MouseEvent;
+		elementId: string;
+		side: "left" | "right";
+	}) {
+		e.stopPropagation();
+		e.preventDefault();
+
+		// Prevent resize on locked tracks
+		if (track.value.locked) return;
+
+		const el = element.value;
+		resizing.value = {
+			elementId,
+			side,
+			startX: e.clientX,
+			initialTrimStart: el.trimStart,
+			initialTrimEnd: el.trimEnd,
+			initialStartTime: el.startTime,
+			initialDuration: el.duration,
+		};
+
+		currentTrimStart.value = trimStartVal = el.trimStart;
+		currentTrimEnd.value = trimEndVal = el.trimEnd;
+		currentStartTime.value = startTimeVal = el.startTime;
+		currentDuration.value = durationVal = el.duration;
+		onResizeStateChange?.({ isResizing: true });
+	}
+
+	function getPreviousElementEnd(): number {
+		const els = track.value.elements;
+		const currentEl = element.value;
+		let prevEnd = 0;
+		for (const el of els) {
+			if (el.id === currentEl.id) continue;
+			const elEnd = el.startTime + el.duration;
+			if (elEnd <= currentEl.startTime + 0.001 && elEnd > prevEnd) {
+				prevEnd = elEnd;
+			}
+		}
+		return prevEnd;
+	}
+
+	function updateTrimFromMouseMove(clientX: number) {
+		const rs = resizing.value;
+		if (!rs) return;
+
+		const activeProject = editor.project.getActive();
+		const projectFps = activeProject?.settings?.fps ?? 30;
+		const minDurationSeconds = 1 / projectFps;
+
+		const deltaX = clientX - rs.startX;
+		let deltaTime = deltaX / (50 * zoomLevel.value);
+		let resizeSnapPoint: SnapPoint | null = null;
+
+		if (snappingEnabled.value) {
+			const tracks = editor.timeline.getTracks();
+			const playheadTime = editor.playback.getCurrentTime();
+			const snapPoints = findSnapPoints({ tracks, playheadTime, excludeElementId: element.value.id });
+
+			if (rs.side === "left") {
+				const targetStartTime = rs.initialStartTime + deltaTime;
+				const snapResult = snapToNearestPoint({ targetTime: targetStartTime, snapPoints, zoomLevel: zoomLevel.value });
+				resizeSnapPoint = snapResult.snapPoint;
+				if (snapResult.snapPoint) {
+					deltaTime = snapResult.snappedTime - rs.initialStartTime;
+				}
+			} else {
+				const baseEndTime = rs.initialStartTime + rs.initialDuration;
+				const targetEndTime = baseEndTime + deltaTime;
+				const snapResult = snapToNearestPoint({ targetTime: targetEndTime, snapPoints, zoomLevel: zoomLevel.value });
+				resizeSnapPoint = snapResult.snapPoint;
+				if (snapResult.snapPoint) {
+					deltaTime = snapResult.snappedTime - baseEndTime;
+				}
+			}
+		}
+		onSnapPointChange?.(resizeSnapPoint);
+
+		if (rs.side === "left") {
+			const sourceDuration = rs.initialTrimStart + rs.initialDuration + rs.initialTrimEnd;
+			const maxAllowed = sourceDuration - rs.initialTrimEnd - minDurationSeconds;
+			const calculated = rs.initialTrimStart + deltaTime;
+			const prevEnd = getPreviousElementEnd();
+
+			if (calculated >= 0 && calculated <= maxAllowed) {
+				const newTrimStart = snapTimeToFrame({ time: Math.min(maxAllowed, calculated), fps: projectFps });
+				const trimDelta = newTrimStart - rs.initialTrimStart;
+				let newStartTime = snapTimeToFrame({ time: rs.initialStartTime + trimDelta, fps: projectFps });
+				let newDuration = snapTimeToFrame({ time: rs.initialDuration - trimDelta, fps: projectFps });
+
+				// Clamp: don't extend past previous element
+				if (newStartTime < prevEnd) {
+					const clampedDelta = rs.initialStartTime - prevEnd;
+					newStartTime = prevEnd;
+					newDuration = snapTimeToFrame({ time: rs.initialDuration + clampedDelta, fps: projectFps });
+					currentTrimStart.value = trimStartVal = snapTimeToFrame({ time: rs.initialTrimStart - clampedDelta, fps: projectFps });
+				} else {
+					currentTrimStart.value = trimStartVal = newTrimStart;
+				}
+				currentStartTime.value = startTimeVal = newStartTime;
+				currentDuration.value = durationVal = newDuration;
+			} else if (calculated < 0) {
+				if (canExtendElementDuration()) {
+					const extensionAmount = Math.abs(calculated);
+					const maxExtension = Math.min(rs.initialStartTime, rs.initialStartTime - prevEnd);
+					const actualExtension = Math.min(extensionAmount, maxExtension);
+					const newStartTime = snapTimeToFrame({ time: rs.initialStartTime - actualExtension, fps: projectFps });
+					const newDuration = snapTimeToFrame({ time: rs.initialDuration + actualExtension, fps: projectFps });
+
+					currentTrimStart.value = trimStartVal = 0;
+					currentStartTime.value = startTimeVal = newStartTime;
+					currentDuration.value = durationVal = newDuration;
+				} else {
+					const trimDelta = 0 - rs.initialTrimStart;
+					let newStartTime = snapTimeToFrame({ time: rs.initialStartTime + trimDelta, fps: projectFps });
+					let newDuration = snapTimeToFrame({ time: rs.initialDuration - trimDelta, fps: projectFps });
+
+					// Clamp: don't extend past previous element
+					if (newStartTime < prevEnd) {
+						newStartTime = prevEnd;
+						newDuration = snapTimeToFrame({ time: rs.initialStartTime + rs.initialDuration - prevEnd, fps: projectFps });
+					}
+
+					currentTrimStart.value = trimStartVal = 0;
+					currentStartTime.value = startTimeVal = newStartTime;
+					currentDuration.value = durationVal = newDuration;
+				}
+			}
+		} else {
+			const sourceDuration = rs.initialTrimStart + rs.initialDuration + rs.initialTrimEnd;
+			const newTrimEnd = rs.initialTrimEnd - deltaTime;
+
+			if (newTrimEnd < 0) {
+				if (canExtendElementDuration()) {
+					const extensionNeeded = Math.abs(newTrimEnd);
+					const baseDuration = rs.initialDuration + rs.initialTrimEnd;
+					const newDuration = snapTimeToFrame({ time: baseDuration + extensionNeeded, fps: projectFps });
+
+					currentDuration.value = durationVal = newDuration;
+					currentTrimEnd.value = trimEndVal = 0;
+				} else {
+					const extensionToLimit = rs.initialTrimEnd;
+					const newDuration = snapTimeToFrame({ time: rs.initialDuration + extensionToLimit, fps: projectFps });
+
+					currentDuration.value = durationVal = newDuration;
+					currentTrimEnd.value = trimEndVal = 0;
+				}
+			} else {
+				const maxTrimEnd = sourceDuration - rs.initialTrimStart - minDurationSeconds;
+				const clampedTrimEnd = Math.min(maxTrimEnd, Math.max(0, newTrimEnd));
+				const finalTrimEnd = snapTimeToFrame({ time: clampedTrimEnd, fps: projectFps });
+				const trimDelta = finalTrimEnd - rs.initialTrimEnd;
+				const newDuration = snapTimeToFrame({ time: rs.initialDuration - trimDelta, fps: projectFps });
+
+				currentTrimEnd.value = trimEndVal = finalTrimEnd;
+				currentDuration.value = durationVal = newDuration;
+			}
+		}
+
+		// Compute ripple shifts for subsequent elements during right-edge resize
+		if (rs.side === "right") {
+			const newEndTime = startTimeVal + durationVal;
+			const shifts = new Map<string, number>();
+			const els = [...track.value.elements]
+				.filter((el) => el.id !== element.value.id)
+				.sort((a, b) => a.startTime - b.startTime);
+
+			let pushBoundary = newEndTime;
+			for (const el of els) {
+				if (el.startTime < pushBoundary - 0.001) {
+					shifts.set(el.id, pushBoundary);
+					pushBoundary = pushBoundary + el.duration;
+				} else {
+					break;
+				}
+			}
+			rippleShifts.value = shifts;
+		} else {
+			rippleShifts.value = new Map();
+		}
+	}
+
+	function handleResizeEnd() {
+		const rs = resizing.value;
+		if (!rs) return;
+
+		const trimStartChanged = trimStartVal !== rs.initialTrimStart;
+		const trimEndChanged = trimEndVal !== rs.initialTrimEnd;
+		const startTimeChanged = startTimeVal !== rs.initialStartTime;
+		const durationChanged = durationVal !== rs.initialDuration;
+
+		if (trimStartChanged || trimEndChanged) {
+			editor.timeline.updateElementTrim({
+				elementId: element.value.id,
+				trimStart: trimStartVal,
+				trimEnd: trimEndVal,
+			});
+		}
+
+		if (startTimeChanged) {
+			editor.timeline.updateElementStartTime({
+				elements: [{ trackId: track.value.id, elementId: element.value.id }],
+				startTime: startTimeVal,
+			});
+		}
+
+		if (durationChanged) {
+			editor.timeline.updateElementDuration({
+				trackId: track.value.id,
+				elementId: element.value.id,
+				duration: durationVal,
+			});
+		}
+
+		resizing.value = null;
+		rippleShifts.value = new Map();
+		onResizeStateChange?.({ isResizing: false });
+		onSnapPointChange?.(null);
+	}
+
+	// Global listeners while resizing
+	let cleanupListeners: (() => void) | null = null;
+
+	watch(resizing, (rs) => {
+		cleanupListeners?.();
+		cleanupListeners = null;
+
+		if (!rs) return;
+
+		const onMove = (e: MouseEvent) => updateTrimFromMouseMove(e.clientX);
+		const onUp = () => handleResizeEnd();
+
+		document.addEventListener("mousemove", onMove);
+		document.addEventListener("mouseup", onUp);
+
+		cleanupListeners = () => {
+			document.removeEventListener("mousemove", onMove);
+			document.removeEventListener("mouseup", onUp);
+		};
+	});
+
+	onUnmounted(() => {
+		cleanupListeners?.();
+	});
+
+	return {
+		resizing,
+		isResizing: ref(false), // computed from resizing !== null in template
+		handleResizeStart,
+		currentTrimStart,
+		currentTrimEnd,
+		currentStartTime,
+		currentDuration,
+		rippleShifts,
+	};
+}

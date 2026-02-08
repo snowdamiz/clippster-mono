@@ -157,6 +157,7 @@ export async function createOrganizationCreatorProfile(
     outro_id?: number | null;
     watermark_id?: number | null;
     watermark_settings?: Record<string, unknown>;
+    intro_outro_settings?: Record<string, unknown>;
   }
 ): Promise<ProfileResponse> {
   try {
@@ -189,6 +190,7 @@ export async function updateOrganizationCreatorProfile(
     outro_id?: number | null;
     watermark_id?: number | null;
     watermark_settings?: Record<string, unknown> | null;
+    intro_outro_settings?: Record<string, unknown> | null;
   }
 ): Promise<ProfileResponse> {
   try {

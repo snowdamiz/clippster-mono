@@ -218,14 +218,6 @@
     <!-- Create/Edit Dialog -->
     <VideoEditorProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
 
-    <!-- Video Editor Dialog (placeholder during rebuild) -->
-    <ClipEditorDialog
-      v-model="showEditorDialog"
-      :editor-mode="true"
-      :editor-project-id="editorProjectId"
-      :editor-project-name="editorProjectName"
-      @editor-save="handleEditorSave"
-    />
 
     <!-- Delete Confirmation Modal -->
     <ConfirmationModal
@@ -371,14 +363,13 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, watch, Transition } from 'vue';
-  import { useRouter } from 'vue-router';
+  import { useRouter, useRoute } from 'vue-router';
   import { Clapperboard, Plus, Trash2, Search, Check, Play, Edit, Film, Clock } from 'lucide-vue-next';
   import { Input } from '@/components/ui/input';
   import PageLayout from '@/components/PageLayout.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import VideoEditorProjectDialog from '@/components/video-editor/VideoEditorProjectDialog.vue';
-  import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
   import AuthModal from '@/components/AuthModal.vue';
   import { useAuthStore } from '@/stores/auth';
@@ -397,6 +388,7 @@
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { invoke } from '@tauri-apps/api/core';
 
+  const router = useRouter();
   const { getRelativeTime: formatRelativeTime } = useFormatters();
 
   // In-editor clips store
@@ -432,9 +424,6 @@
   // Dialog state
   const showDialog = ref(false);
   const selectedProject = ref<VideoEditorProject | null>(null);
-  const showEditorDialog = ref(false);
-  const editorProjectId = ref<string | null>(null);
-  const editorProjectName = ref('Video Project');
   const showAuthModal = ref(false);
 
   const authStore = useAuthStore();
@@ -808,9 +797,8 @@
   }
 
   function openProject(project: VideoEditorProject) {
-    editorProjectId.value = project.id;
-    editorProjectName.value = project.name;
-    showEditorDialog.value = true;
+    // Navigate to the new OpenCut editor
+    router.push({ path: '/editor', query: { projectId: project.id } });
   }
 
   async function handleProjectSubmit(data: { name: string; description?: string }) {
@@ -825,9 +813,7 @@
         // Create new project
         const projectId = await createVideoEditorProject(data.name, data.description);
         // Open the editor for the new project
-        editorProjectId.value = projectId;
-        editorProjectName.value = data.name;
-        showEditorDialog.value = true;
+        router.push({ path: '/editor', query: { projectId } });
       }
       await loadProjects();
     } catch (error) {
@@ -835,9 +821,6 @@
     }
   }
 
-  function handleEditorSave() {
-    loadProjects();
-  }
 
   function confirmDelete(project: VideoEditorProject) {
     projectToDelete.value = project;
@@ -930,7 +913,6 @@
 
   // Lifecycle
   onMounted(async () => {
-    const router = useRouter();
     await loadProjects();
     
     // Check if we should auto-open a project (from navigation state)
@@ -945,12 +927,6 @@
     }
   });
 
-  // Watch for editor dialog close to refresh projects
-  watch(showEditorDialog, (isOpen) => {
-    if (!isOpen) {
-      loadProjects();
-    }
-  });
 </script>
 
 <style scoped>
