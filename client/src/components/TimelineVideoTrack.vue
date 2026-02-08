@@ -133,12 +133,17 @@
 
       if (rect.width === 0 || rect.height === 0) return;
 
-      // Get peaks on-demand from waveform service (1 peak per pixel for maximum accuracy)
+      // Get peaks on-demand from waveform service
+      // Limit peak density to prevent rendering issues at extreme zoom levels
+      // Professional video editors use max ~10,000 peaks for waveform display
+      const MAX_PEAKS = 10000;
+      const requestedPeaks = Math.min(Math.floor(rect.width), MAX_PEAKS);
+      
       const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
       const peaks = await waveformService.getPeaksForRange(props.videoSrc, {
         startTime: 0,
         endTime: props.duration,
-        pixelWidth: Math.floor(rect.width),
+        pixelWidth: requestedPeaks,
         gainMultiplier,
       });
 

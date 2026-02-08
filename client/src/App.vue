@@ -1,5 +1,6 @@
 <script setup lang="ts">
   import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
+  import { useRoute } from 'vue-router';
   import Toast from '@/components/Toast.vue';
   import AppCloseDialog from '@/components/AppCloseDialog.vue';
   import TitleBar from '@/components/TitleBar.vue';
@@ -39,6 +40,10 @@
 
   // Check if this is the PIP window (no title bar needed)
   const isPipWindow = computed(() => window.location.pathname === '/pip-controls');
+
+  // Check if this is the full-screen editor page (no scroll, minimal chrome)
+  const currentRoute = useRoute();
+  const isEditorPage = computed(() => currentRoute.path === '/editor');
 
   // Show beta activation dialog when:
   // - User is authenticated
@@ -279,7 +284,7 @@
     <TitleBar v-if="!isPipWindow" :dark-mode="true" :platform-override="titleBarPlatformOverride" />
 
     <!-- Main content area with scrolling -->
-    <div class="main-content dashboard-container" :class="{ 'pip-content': isPipWindow }">
+    <div class="main-content dashboard-container" :class="{ 'pip-content': isPipWindow, 'editor-content': isEditorPage }">
       <!-- Toast notifications provider -->
       <Toast />
       <!-- Router view for page content (key changes on auth to force refresh) -->
@@ -341,5 +346,9 @@
 
   .dashboard-container {
     background-color: var(--sidebar-bg);
+  }
+
+  .main-content.editor-content {
+    overflow: hidden;
   }
 </style>

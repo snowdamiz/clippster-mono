@@ -29,6 +29,8 @@ export interface VideoSource {
   trim_end: number | null;
   /** Original duration of the source video */
   original_duration: number;
+  /** Track layer: 0 = base, 1+ = overlays */
+  order_index: number;
 }
 
 /**
@@ -39,6 +41,7 @@ export interface AudioTrackInfo {
   filePath: string;
   startTime: number;
   endTime: number;
+  sourceStartTime: number;
   volume: number;
   isMuted: boolean;
   fadeInDuration?: number;
@@ -160,11 +163,6 @@ export function usePlaybackEngine(options: PlaybackEngineOptions = {}): Playback
     // Update time
     const oldTime = currentTime.value;
     currentTime.value = newTime;
-    
-    // Log every 30 frames (~0.5 seconds)
-    if (Math.floor(oldTime * 60) !== Math.floor(newTime * 60)) {
-      console.log(`[PlaybackEngine] ⏩ Tick: ${oldTime.toFixed(3)}s → ${newTime.toFixed(3)}s (delta: ${deltaSec.toFixed(3)}s)`);
-    }
     
     onTimeUpdate?.(newTime);
 

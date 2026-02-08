@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use tauri::Emitter;
 use once_cell::sync::Lazy;
+use tokio::sync::oneshot;
 
 use crate::ffmpeg_utils::{
     parse_ffmpeg_time, get_video_info, extract_duration_from_ffmpeg_output, detect_hardware_encoder
@@ -46,6 +47,8 @@ use tauri_plugin_shell::process::CommandChild;
 pub static ACTIVE_DOWNLOADS: Lazy<Arc<Mutex<HashMap<String, bool>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 pub static ACTIVE_FFMPEG_PROCESSES: Lazy<Arc<Mutex<HashMap<String, CommandChild>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 pub static DOWNLOAD_METADATA: Lazy<Arc<Mutex<HashMap<String, DownloadMetadata>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+pub static ACTIVE_DOWNLOAD_CANCELLERS: Lazy<Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 // Helper function to format time for filename
 fn format_time_for_filename(seconds: f64) -> String {
@@ -129,10 +132,22 @@ async fn run_segment_download_with_encoder(
                     // Look for out_time= lines (current time in HH:MM:SS.ms format)
                     if line.starts_with("out_time=") {
                         if let Some(time_str) = line.strip_prefix("out_time=") {
+                            // Log raw time string for debugging
+                            if lines_processed <= 5 {
+                                println!("[Rust] FFmpeg out_time raw: '{}'", time_str);
+                            }
                             if let Some(current_time) = parse_ffmpeg_time(time_str) {
-                                let progress = ((current_time / total_duration) * 100.0).min(95.0);
+                                // Skip negative times (happens at start of HLS downloads)
+                                if current_time < 0.0 {
+                                    if lines_processed <= 5 {
+                                        println!("[Rust] Skipping negative time: {}", current_time);
+                                    }
+                                    continue;
+                                }
+                                let progress = ((current_time / total_duration) * 100.0).clamp(0.0, 95.0);
 
                                 if last_progress_time.elapsed().as_secs() >= 1 {
+                                    println!("[Rust] Emitting progress: {}% (time: {}/{})", progress, current_time, total_duration);
                                     let _ = app_clone.emit("download-progress", DownloadProgress {
                                         download_id: download_id_owned.clone(),
                                         progress,
@@ -142,6 +157,8 @@ async fn run_segment_download_with_encoder(
                                     });
                                     last_progress_time = std::time::Instant::now();
                                 }
+                            } else if lines_processed <= 5 {
+                                println!("[Rust] Failed to parse time: '{}'", time_str);
                             }
                         }
                     } else if !line.starts_with("frame=") && !line.starts_with("fps=") 
@@ -289,15 +306,27 @@ async fn run_full_download_with_encoder(
 
                     if line.starts_with("out_time=") {
                         if let Some(time_str) = line.strip_prefix("out_time=") {
+                            // Log raw time string for debugging
+                            if lines_processed <= 5 {
+                                println!("[Rust] FFmpeg out_time raw: '{}'", time_str);
+                            }
                             if let Some(current_time) = parse_ffmpeg_time(time_str) {
+                                // Skip negative times (happens at start of HLS downloads)
+                                if current_time < 0.0 {
+                                    if lines_processed <= 5 {
+                                        println!("[Rust] Skipping negative time: {}", current_time);
+                                    }
+                                    continue;
+                                }
                                 // Update duration estimate if needed
                                 if current_time > total_duration {
                                     total_duration = current_time * 1.1;
                                 }
                                 
-                                let progress = ((current_time / total_duration) * 100.0).min(95.0);
+                                let progress = ((current_time / total_duration) * 100.0).clamp(0.0, 95.0);
 
                                 if last_progress_time.elapsed().as_secs() >= 1 {
+                                    println!("[Rust] Emitting progress: {}% (time: {}/{})", progress, current_time, total_duration);
                                     let _ = app_clone.emit("download-progress", DownloadProgress {
                                         download_id: download_id_owned.clone(),
                                         progress,
@@ -307,6 +336,8 @@ async fn run_full_download_with_encoder(
                                     });
                                     last_progress_time = std::time::Instant::now();
                                 }
+                            } else if lines_processed <= 5 {
+                                println!("[Rust] Failed to parse time: '{}'", time_str);
                             }
                         }
                     } else if !line.starts_with("frame=") && !line.starts_with("fps=") 

@@ -254,7 +254,8 @@ pub async fn build_clip_internal_simple(
     intro_path: Option<&str>,
     intro_duration: Option<f64>,
     outro_path: Option<&str>,
-    _outro_duration: Option<f64>,
+    outro_duration: Option<f64>,
+    intro_outro_per_ratio: Option<&std::collections::HashMap<String, (Option<String>, Option<f64>)>>,
     watermark_settings: Option<WatermarkSettings>,
     audio_settings: Option<AudioSettings>,
     framing_strategy: Option<FramingStrategy>,
@@ -434,6 +435,35 @@ pub async fn build_clip_internal_simple(
             // Parse aspect ratio string (e.g., "16:9")
             let aspect_ratio = parse_aspect_ratio(&aspect_ratio_str)?;
             
+            // Resolve intro/outro for this aspect ratio
+            // Priority: per-ratio settings -> global intro/outro -> none
+            let (effective_intro_path, effective_intro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
+                if let Some((ratio_intro_path, ratio_intro_duration)) = per_ratio.get(&aspect_ratio_str) {
+                    (ratio_intro_path.clone(), *ratio_intro_duration)
+                } else {
+                    (intro_path.as_ref().map(|s| s.to_string()), intro_duration)
+                }
+            } else {
+                (intro_path.as_ref().map(|s| s.to_string()), intro_duration)
+            };
+            
+            let (effective_outro_path, effective_outro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
+                if let Some((ratio_outro_path, ratio_outro_duration)) = per_ratio.get(&aspect_ratio_str) {
+                    (ratio_outro_path.clone(), *ratio_outro_duration)
+                } else {
+                    (outro_path.as_ref().map(|s| s.to_string()), outro_duration)
+                }
+            } else {
+                (outro_path.as_ref().map(|s| s.to_string()), outro_duration)
+            };
+            
+            if let Some(ref intro) = effective_intro_path {
+                println!("[Rust] Using intro for {}: {}", aspect_ratio_str, intro);
+            }
+            if let Some(ref outro) = effective_outro_path {
+                println!("[Rust] Using outro for {}: {}", aspect_ratio_str, outro);
+            }
+            
             // Create filename using the AI-generated clip name in snake_case with build number
             // e.g., "Epic Victory Trash Talk" with 16:9, build 2 -> "epic_victory_trash_talk_16-9_2.mp4"
             let ratio_suffix = aspect_ratio_str.replace(":", "-");
@@ -594,8 +624,8 @@ pub async fn build_clip_internal_simple(
                         &quality,
                         frame_rate,
                         final_subtitle_file.as_deref(),
-                        intro_path.as_deref(),
-                        outro_path.as_deref(),
+                        effective_intro_path.as_deref(),
+                        effective_outro_path.as_deref(),
                         intro_outro_cache.clone(),
                         watermark_settings.as_ref(),
                         audio_settings.as_ref(),
@@ -615,8 +645,8 @@ pub async fn build_clip_internal_simple(
                         &quality,
                         frame_rate,
                         &output_format,
-                        intro_path.as_deref(),
-                        outro_path.as_deref(),
+                        effective_intro_path.as_deref(),
+                        effective_outro_path.as_deref(),
                         intro_outro_cache.clone(),
                         watermark_settings.as_ref(),
                         audio_settings.as_ref(),
@@ -675,8 +705,8 @@ pub async fn build_clip_internal_simple(
                             &quality,
                             frame_rate,
                             final_subtitle_file.as_deref(),
-                            intro_path.as_deref(),
-                            outro_path.as_deref(),
+                            effective_intro_path.as_deref(),
+                            effective_outro_path.as_deref(),
                             intro_outro_cache.clone(),
                             watermark_settings.as_ref(),
                             audio_settings.as_ref(),
@@ -778,7 +808,7 @@ pub async fn build_clip_internal_simple(
                     
                     // Concatenate all segments
                     println!("[Rust] Concatenating {} segments for {}", segment_paths.len(), aspect_ratio_str);
-                    concatenate_videos(&app, &segment_paths, &output_path, intro_path.as_deref(), outro_path.as_deref()).await?;
+                    concatenate_videos(&app, &segment_paths, &output_path, effective_intro_path.as_deref(), effective_outro_path.as_deref()).await?;
                     
                     // Apply subtitles to the final concatenated video if needed
                     if let Some(subtitle_path) = final_subtitle_file.as_deref() {

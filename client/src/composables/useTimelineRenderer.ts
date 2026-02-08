@@ -274,7 +274,11 @@ export function useTimelineRenderer(
 
     for (const track of tracks) {
       if (time >= track.startTime && time < track.endTime && !track.isMuted) {
-        const audioTime = time - track.startTime;
+        // Calculate position within the timeline segment
+        const timelineOffset = time - track.startTime;
+        // Add source_start_time to get the correct position in the source audio file
+        // This ensures split segments play the correct portion of the audio
+        const audioTime = track.sourceStartTime + timelineOffset;
         const computedVolume = computeTrackVolume(track, time);
 
         activeTracks.push({
@@ -307,7 +311,8 @@ export function useTimelineRenderer(
       volume *= remaining / track.fadeOutDuration;
     }
 
-    return Math.max(0, Math.min(1, volume));
+    // Clamp to 0-2 range (allow up to 200% volume)
+    return Math.max(0, Math.min(2, volume));
   }
 
   /**

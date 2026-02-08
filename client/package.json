@@ -29,17 +29,24 @@
     "@tailwindcss/typography": "^0.5.19",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "~2.5.0",
+    "@tauri-apps/plugin-fs": "^2.4.5",
     "@tauri-apps/plugin-global-shortcut": "^2.3.1",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-sql": "~2",
     "@tauri-apps/plugin-updater": "^2.9.0",
     "axios": "^1.7.9",
+<<<<<<< HEAD
     "better-sqlite3": "^12.6.2",
+=======
+    "eventemitter3": "^5.0.4",
+>>>>>>> 14de204bb9c54567a0eb0f293c555b9845f91210
     "hls.js": "^1.6.15",
     "livekit-client": "^2.9.1",
     "lucide-vue-next": "^0.548.0",
     "md-editor-v3": "^6.1.0",
+    "mediabunny": "^1.32.0",
+    "mp4box": "^2.3.0",
     "phoenix": "^1.8.1",
     "pinia": "^2.3.0",
     "radix-vue": "^1.9.17",
@@ -49,7 +56,8 @@
     "remotion": "^4.0.0",
     "tailwindcss-animate": "^1.0.7",
     "vue": "^3.5.13",
-    "vue-router": "4"
+    "vue-router": "4",
+    "web-demuxer": "^4.0.0"
   },
   "devDependencies": {
     "@prettier/plugin-pug": "^3.4.2",

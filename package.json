@@ -1,6 +1,6 @@
 {
   "name": "clippster-monorepo",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
@@ -36,5 +36,7 @@
       "yarn format:staged"
     ]
   },
-  "dependencies": {}
+  "dependencies": {
+    "sql.js": "^1.13.0"
+  }
 }
