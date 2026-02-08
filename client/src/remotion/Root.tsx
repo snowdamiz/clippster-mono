@@ -22,6 +22,19 @@ export const RemotionRoot: React.FC = () => {
           composition: null,
           videoServerPort: 0,
         }}
+        calculateMetadata={({ props }) => {
+          const comp = props.composition as AIVideoComposition | null;
+          if (!comp) {
+            return { durationInFrames: 300, fps: 30, width: 1920, height: 1080 };
+          }
+          const fps = comp.fps || 30;
+          return {
+            durationInFrames: Math.ceil(comp.duration * fps),
+            fps,
+            width: comp.width || 1920,
+            height: comp.height || 1080,
+          };
+        }}
       />
     </>
   );

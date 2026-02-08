@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.AIController do
   alias ClippsterServer.AI.VideoComposer
   require Logger
 
+  # Non-streaming endpoint (backwards-compatible fallback)
   def generate_video(conn, params) do
     user = conn.assigns.current_user
 
@@ -11,11 +12,15 @@ defmodule ClippsterServerWeb.AIController do
     with {:ok, composition} <- VideoComposer.generate(
       params["prompt"],
       params["media"],
-      params["style"],
+      params["style"] || params["stylePreset"],
       params["duration"],
       params["aspectRatio"],
       user,
-      params["existingComposition"]
+      params["existingComposition"],
+      %{
+        "intensity" => params["intensity"],
+        "captionStyle" => params["captionStyle"]
+      }
     ) do
       json(conn, %{composition: composition})
     else
@@ -25,6 +30,53 @@ defmodule ClippsterServerWeb.AIController do
         |> put_status(:bad_request)
         |> json(%{error: reason})
     end
+  end
+
+  # SSE streaming endpoint — sends scene-by-scene progress events
+  def generate_video_streamed(conn, params) do
+    user = conn.assigns.current_user
+    Logger.info("AI video generation (streamed) request from user #{user.id}")
+
+    # Set up SSE connection
+    conn =
+      conn
+      |> put_resp_header("content-type", "text/event-stream")
+      |> put_resp_header("cache-control", "no-cache")
+      |> put_resp_header("connection", "keep-alive")
+      |> put_resp_header("x-accel-buffering", "no")
+      |> send_chunked(200)
+
+    # Build send function that writes SSE events to the connection
+    send_fn = fn %{event: event, data: data} ->
+      sse_data = Jason.encode!(data)
+      chunk_data = "event: #{event}\ndata: #{sse_data}\n\n"
+      case Plug.Conn.chunk(conn, chunk_data) do
+        {:ok, _conn} -> :ok
+        {:error, reason} ->
+          Logger.warning("SSE chunk send failed: #{inspect(reason)}")
+          :error
+      end
+    end
+
+    # Run generation in the current process (chunked response keeps connection open)
+    VideoComposer.generate_streamed(
+      params["prompt"],
+      params["media"],
+      params["style"] || params["stylePreset"],
+      params["duration"],
+      params["aspectRatio"],
+      user,
+      send_fn,
+      params["existingComposition"],
+      %{
+        "intensity" => params["intensity"],
+        "captionStyle" => params["captionStyle"]
+      }
+    )
+
+    # Send final done event and close
+    Plug.Conn.chunk(conn, "event: done\ndata: {}\n\n")
+    conn
   end
 
   def save_composition(conn, %{"composition" => _composition_params}) do

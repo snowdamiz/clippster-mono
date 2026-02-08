@@ -94,7 +94,7 @@
         <!-- Playhead -->
         <div 
           class="ai-timeline__playhead"
-          :style="{ left: `${playheadPosition}%` }"
+          :style="{ left: `calc(140px + (100% - 140px) * ${playheadPosition / 100})` }"
         >
           <div class="ai-timeline__playhead-line"></div>
           <div class="ai-timeline__playhead-handle"></div>
@@ -115,53 +115,36 @@ const props = defineProps<{
 }>();
 
 const duration = computed(() => {
-  const dur = props.composition?.duration || 0;
-  console.log('[AITimeline] Duration:', dur);
-  return dur;
+  return props.composition?.duration || 0;
 });
 
 const playheadPosition = computed(() => {
   if (!duration.value || props.currentTime === undefined || props.currentTime === null) {
     return 0;
   }
-  const position = (props.currentTime / duration.value) * 100;
-  // Log only occasionally to avoid spam
-  if (Math.floor(props.currentTime) % 5 === 0) {
-    console.log('[AITimeline] Playhead at', props.currentTime.toFixed(2), 's →', position.toFixed(2), '%');
-  }
-  return position;
+  return (props.currentTime / duration.value) * 100;
 });
 
 const sortedTracks = computed(() => {
   if (!props.composition) return [];
-  const tracks = [...props.composition.tracks].sort((a, b) => a.layer - b.layer);
-  console.log('[AITimeline] Tracks:', tracks.length, tracks.map(t => ({
-    name: t.name,
-    type: t.type,
-    layer: t.layer,
-    startTime: t.startTime,
-    endTime: t.endTime
-  })));
-  return tracks;
+  return [...props.composition.tracks].sort((a, b) => a.layer - b.layer);
 });
 
 const timeMarks = computed(() => {
   const marks: number[] = [];
   const dur = duration.value;
   
-  // Calculate appropriate interval based on duration
   let interval = 2;
-  if (dur > 600) interval = 60;        // 10+ min: every minute
-  else if (dur > 300) interval = 30;   // 5-10 min: every 30s
-  else if (dur > 120) interval = 20;   // 2-5 min: every 20s
-  else if (dur > 60) interval = 10;    // 1-2 min: every 10s
-  else if (dur > 30) interval = 5;     // 30s-1min: every 5s
+  if (dur > 600) interval = 60;
+  else if (dur > 300) interval = 30;
+  else if (dur > 120) interval = 20;
+  else if (dur > 60) interval = 10;
+  else if (dur > 30) interval = 5;
   
   for (let i = 0; i <= dur; i += interval) {
     marks.push(i);
   }
   
-  console.log('[AITimeline] Time marks:', marks.length, 'marks with interval', interval, 'for duration', dur);
   return marks;
 });
 
@@ -189,20 +172,15 @@ function getTrackIcon(type: string) {
 
 function getTrackEffects(track: any) {
   const effects = track.properties?.effects || [];
-  console.log(`[AITimeline] Track "${track.name}" effects:`, effects);
-  const mapped = effects.map((effect: any) => ({
+  return effects.map((effect: any) => ({
     ...effect,
     startTime: effect.startTime ?? effect.time ?? 0,
-    endTime: effect.endTime ?? (effect.time + effect.duration) ?? 0,
+    endTime: effect.endTime ?? ((effect.time ?? 0) + (effect.duration ?? 0)),
   }));
-  console.log(`[AITimeline] Mapped effects:`, mapped);
-  return mapped;
 }
 
 function getTrackTransitions(track: any) {
-  const transitions = track.properties?.transitions || [];
-  console.log(`[AITimeline] Track "${track.name}" transitions:`, transitions);
-  return transitions;
+  return track.properties?.transitions || [];
 }
 
 function formatTime(seconds: number): string {
@@ -417,11 +395,10 @@ function formatTime(seconds: number): string {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px; /* Make slightly wider for visibility */
+  width: 2px;
   pointer-events: none;
   z-index: 100;
   transition: left 0.1s linear;
-  margin-left: 140px; /* Offset for track headers */
 }
 
 .ai-timeline__playhead-line {

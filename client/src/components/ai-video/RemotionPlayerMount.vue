@@ -21,6 +21,8 @@ const emit = defineEmits<{
 const mountPoint = ref<HTMLElement | null>(null);
 let root: any = null;
 let React: any = null;
+let cachedVideoServerPort: number = 0;
+let isInternalUpdate = false;
 
 async function renderPlayer() {
   if (!mountPoint.value || !root) return;
@@ -32,10 +34,10 @@ async function renderPlayer() {
       composition: toRaw(props.composition),
       currentFrame: Math.floor(props.currentTime * (props.composition?.fps || 30)),
       isPlaying: props.isPlaying,
-      videoServerPort: await getVideoServerPort(),
+      videoServerPort: cachedVideoServerPort,
       onFrameUpdate: (frame: number) => {
         const time = frame / (props.composition?.fps || 30);
-        console.log('[RemotionPlayerMount] Frame update:', frame, '→', time, 's');
+        isInternalUpdate = true;
         emit('timeUpdate', time);
       },
       onDurationChange: (dur: number) => emit('durationChange', dur),
@@ -58,15 +60,37 @@ onMounted(async () => {
     const ReactModule = await import('react');
     const ReactDOMClient = await import('react-dom/client');
     React = ReactModule;
+    cachedVideoServerPort = await getVideoServerPort();
     root = ReactDOMClient.createRoot(mountPoint.value);
     renderPlayer();
   }
 });
 
+// Only re-render when composition changes (deep) or isPlaying changes
+// Do NOT re-render on currentTime changes — Remotion handles its own playback clock
+// and the polling sends frame updates back to Vue via onFrameUpdate
 watch(
-  () => [props.composition, props.currentTime, props.isPlaying],
+  () => props.composition,
   () => renderPlayer(),
   { deep: true }
+);
+
+watch(
+  () => props.isPlaying,
+  () => renderPlayer()
+);
+
+// When user seeks via the Vue scrub bar, forward the seek to Remotion
+// but only if it's not an internal update from the polling
+watch(
+  () => props.currentTime,
+  () => {
+    if (isInternalUpdate) {
+      isInternalUpdate = false;
+      return;
+    }
+    renderPlayer();
+  }
 );
 
 onUnmounted(() => {

@@ -1,332 +1,408 @@
 <template>
-  <PageLayout
-    title="AI Video Creator"
-    description="Generate professional video compositions using AI"
-    :show-header="true"
-    :icon="Wand2"
-  >
-    <template #badge>
-      <div class="ai-video-badge">BETA</div>
-    </template>
-
-    <template #actions>
-      <button
-        v-if="composition"
-        @click="openExport"
-        class="ai-export-button"
-      >
-        <Download :size="16" />
-        <span>Export Video</span>
-      </button>
-    </template>
-
-    <div class="ai-creator-layout">
-      <!-- Sidebar -->
-      <aside class="ai-sidebar">
-        <!-- Media Library Panel -->
-        <div class="ai-sidebar-panel media-panel">
-          <div class="panel-header">
-            <div class="panel-title">
-              <Video :size="16" class="text-primary" />
-              <span>Media Library</span>
+  <div class="aiv-root">
+  <!-- Full-screen editor overlay (like ClipEditorDialog) -->
+  <Teleport to="body">
+    <Transition name="modal">
+      <div class="aiv-overlay">
+        <div class="aiv-editor">
+          <!-- Header -->
+          <div class="aiv-header">
+            <div class="aiv-header__left">
+              <Wand2 :size="18" class="aiv-header__icon" />
+              <span class="aiv-header__title">AI Video Creator</span>
+              <span class="aiv-header__badge">BETA</span>
             </div>
-            <button @click="handleUpload" class="panel-action-btn" title="Add Media">
-              <Plus :size="16" />
-            </button>
-          </div>
-
-          <div class="panel-content custom-scrollbar">
-            <!-- Empty Media State -->
-            <div v-if="mediaItems.length === 0" class="media-empty">
-              <div class="empty-icon-container">
-                <Upload :size="28" />
-              </div>
-              <div class="empty-text">
-                <h3>No media yet</h3>
-                <p>Add videos, images, or audio to get started</p>
-              </div>
-              <div class="empty-actions">
-                <button @click="handleUpload" class="empty-action-btn empty-action-btn--primary">
-                  <Upload :size="14" />
-                  <span>Upload Files</span>
-                </button>
-                <button @click="openClipPicker" class="empty-action-btn">
-                  <Video :size="14" />
-                  <span>Clips</span>
-                </button>
-                <button @click="openAssetPicker" class="empty-action-btn">
-                  <ImageIcon :size="14" />
-                  <span>Assets</span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Media Item List -->
-            <div v-else class="media-list">
-              <div
-                v-for="item in mediaItems"
-                :key="item.id"
-                class="media-item-card"
-              >
-                <div class="media-thumb">
-                  <img v-if="item.thumbnailUrl" :src="item.thumbnailUrl" :alt="item.name" />
-                  <component v-else :is="getMediaIcon(item.type)" :size="20" />
-                </div>
-                
-                <div class="media-info" @click="selectMediaForTranscriptEdit(item)">
-                  <span class="media-name">{{ item.name }}</span>
-                  <div class="media-meta-row">
-                    <span class="media-meta">
-                      {{ item.type }} • {{ formatDuration(item.duration) }}
-                    </span>
-                    <span v-if="transcriptGenerationStatus.has(item.id)" class="transcribing-badge">
-                      <Loader2 :size="10" class="animate-spin" />
-                      Transcribing
-                    </span>
-                    <span v-else-if="item.transcript" class="transcript-badge" title="Click to edit transcript">
-                      <FileText :size="10" />
-                      Transcript
-                    </span>
-                  </div>
-                </div>
-
-                <button @click.stop="removeMedia(item.id)" class="media-remove-btn">
-                  <X :size="14" />
-                </button>
-              </div>
-
-              <div class="add-media-actions">
-                <button @click="handleUpload" class="add-media-btn add-media-btn--primary">
-                  <Upload :size="14" />
-                  <span>Upload</span>
-                </button>
-                <button @click="openClipPicker" class="add-media-btn">
-                  <Video :size="14" />
-                  <span>Clips</span>
-                </button>
-                <button @click="openAssetPicker" class="add-media-btn">
-                  <ImageIcon :size="14" />
-                  <span>Assets</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Transcript Editor Panel -->
-        <div v-if="editingTranscript" class="ai-sidebar-panel transcript-editor-panel">
-          <div class="panel-header">
-            <div class="panel-title">
-              <FileText :size="16" class="text-primary" />
-              <span>Edit Transcript</span>
-            </div>
-            <button @click="closeTranscriptEditor" class="panel-action-btn">
-              <X :size="16" />
-            </button>
-          </div>
-
-          <div class="panel-content">
-            <div class="transcript-editor-info">
-              <span class="transcript-media-name">{{ editingTranscript.name }}</span>
-              <span class="transcript-tip">💡 Fix any transcription errors before generating</span>
-            </div>
-            
-            <textarea
-              v-model="editingTranscriptText"
-              class="transcript-textarea custom-scrollbar"
-              placeholder="Transcript will appear here..."
-              rows="15"
-            />
-            
-            <div class="transcript-actions">
-              <button @click="closeTranscriptEditor" class="transcript-btn transcript-btn--secondary">
-                Cancel
+            <div class="aiv-header__right">
+              <button v-if="composition" @click="openExport" class="aiv-header__btn">
+                <Download :size="15" />
+                <span>Export</span>
               </button>
-              <button @click="saveTranscript" class="transcript-btn transcript-btn--primary">
-                <Check :size="14" />
-                Save Changes
+              <button @click="router.back()" class="aiv-header__close" title="Close">
+                <X :size="18" />
               </button>
             </div>
           </div>
-        </div>
 
-        <!-- AI Instructions Panel -->
-        <div class="ai-sidebar-panel prompt-panel">
-          <div class="panel-header">
-            <div class="panel-title">
-              <Sparkles :size="16" class="text-primary" />
-              <span>AI Instructions</span>
-            </div>
-            <button 
-              @click="showPromptExamples = !showPromptExamples" 
-              class="panel-help-btn"
-              :class="{ 'active': showPromptExamples }"
-            >
-              <Lightbulb :size="14" />
-              <span>Examples</span>
-            </button>
-          </div>
+          <!-- Main Content -->
+          <div class="aiv-content">
+            <!-- Left: Icon Tab Strip + Panel -->
+            <div class="aiv-sidebar" :class="{ 'aiv-sidebar--expanded': activePanel }">
+              <!-- Icon Tabs -->
+              <div class="aiv-tabs">
+                <button
+                  v-for="tab in sidebarTabs"
+                  :key="tab.id"
+                  class="aiv-tab"
+                  :class="{ 'aiv-tab--active': activePanel === tab.id }"
+                  :title="tab.label"
+                  @click="togglePanel(tab.id)"
+                >
+                  <component :is="tab.icon" :size="18" />
+                  <span class="aiv-tab__label">{{ tab.shortLabel }}</span>
+                  <span v-if="tab.id === 'media' && mediaItems.length > 0" class="aiv-tab__badge">{{ mediaItems.length }}</span>
+                </button>
+              </div>
 
-          <div class="panel-content">
-            <!-- Prompt Templates Popover -->
-            <Transition name="slide-up">
-              <div v-if="showPromptExamples" class="prompt-examples-popover">
-                <div class="popover-header">
-                  <span>Templates</span>
-                  <button @click="showPromptExamples = false"><X :size="14" /></button>
-                </div>
-                <div class="popover-list custom-scrollbar">
-                  <button
-                    v-for="example in promptExamples"
-                    :key="example.id"
-                    @click="usePromptExample(example.prompt)"
-                    class="example-item-btn"
-                  >
-                    <span class="example-icon">{{ example.icon }}</span>
-                    <div class="example-text">
-                      <div class="example-name">{{ example.name }}</div>
-                      <div class="example-desc">{{ example.description }}</div>
-                    </div>
+              <!-- Expandable Panel Content -->
+              <Transition name="panel-slide">
+              <div v-if="activePanel" class="aiv-panel" :key="activePanel">
+                <div class="aiv-panel__header">
+                  <h3 class="aiv-panel__title">{{ activePanelLabel }}</h3>
+                  <button class="aiv-panel__close" @click="activePanel = ''" title="Close">
+                    <X :size="16" />
                   </button>
                 </div>
-              </div>
-            </Transition>
 
-            <!-- Suggestion / Status -->
-            <div v-if="smartSuggestion" class="ai-smart-suggestion">
-              <Sparkles :size="14" class="text-sky-400" />
-              <span>{{ smartSuggestion }}</span>
+                <div class="aiv-panel__body custom-scrollbar">
+
+                  <!-- ═══ MEDIA PANEL ═══ -->
+                  <template v-if="activePanel === 'media'">
+                    <div v-if="mediaItems.length === 0" class="media-empty">
+                      <div class="empty-icon-container">
+                        <Upload :size="28" />
+                      </div>
+                      <div class="empty-text">
+                        <h3>No media yet</h3>
+                        <p>Add videos, images, or audio</p>
+                      </div>
+                      <div class="empty-actions">
+                        <button @click="handleUpload" class="empty-action-btn empty-action-btn--primary">
+                          <Upload :size="14" /> <span>Upload Files</span>
+                        </button>
+                        <button @click="openClipPicker" class="empty-action-btn">
+                          <Video :size="14" /> <span>Clips</span>
+                        </button>
+                        <button @click="openAssetPicker" class="empty-action-btn">
+                          <ImageIcon :size="14" /> <span>Assets</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div v-else class="media-list">
+                      <div v-for="item in mediaItems" :key="item.id" class="media-item-card">
+                        <div class="media-thumb">
+                          <img v-if="item.thumbnailUrl" :src="item.thumbnailUrl" :alt="item.name" />
+                          <component v-else :is="getMediaIcon(item.type)" :size="20" />
+                        </div>
+                        <div class="media-info" @click="selectMediaForTranscriptEdit(item)">
+                          <span class="media-name">{{ item.name }}</span>
+                          <div class="media-meta-row">
+                            <span class="media-meta">{{ item.type }} • {{ formatDuration(item.duration) }}</span>
+                            <span v-if="transcriptGenerationStatus.has(item.id)" class="transcribing-badge">
+                              <Loader2 :size="10" class="animate-spin" /> Transcribing
+                            </span>
+                            <span v-else-if="item.transcript" class="transcript-badge" title="Click to edit transcript">
+                              <FileText :size="10" /> Transcript
+                            </span>
+                          </div>
+                        </div>
+                        <button @click.stop="removeMedia(item.id)" class="media-remove-btn"><X :size="14" /></button>
+                      </div>
+                      <div class="add-media-actions">
+                        <button @click="handleUpload" class="add-media-btn add-media-btn--primary"><Upload :size="14" /> <span>Upload</span></button>
+                        <button @click="openClipPicker" class="add-media-btn"><Video :size="14" /> <span>Clips</span></button>
+                        <button @click="openAssetPicker" class="add-media-btn"><ImageIcon :size="14" /> <span>Assets</span></button>
+                      </div>
+                    </div>
+
+                    <!-- Transcript Editor (inline) -->
+                    <div v-if="editingTranscript" class="transcript-editor-section">
+                      <div class="transcript-editor-info">
+                        <span class="transcript-media-name">{{ editingTranscript.name }}</span>
+                      </div>
+                      <textarea v-model="editingTranscriptText" class="transcript-textarea custom-scrollbar" placeholder="Transcript..." rows="10" />
+                      <div class="transcript-actions">
+                        <button @click="closeTranscriptEditor" class="transcript-btn transcript-btn--secondary">Cancel</button>
+                        <button @click="saveTranscript" class="transcript-btn transcript-btn--primary"><Check :size="14" /> Save</button>
+                      </div>
+                    </div>
+                  </template>
+
+                  <!-- ═══ AI PROMPT PANEL ═══ -->
+                  <template v-if="activePanel === 'ai'">
+                    <div v-if="smartSuggestion" class="ai-smart-suggestion">
+                      <Sparkles :size="14" /> <span>{{ smartSuggestion }}</span>
+                    </div>
+
+                    <div class="ai-prompt-box">
+                      <textarea
+                        v-model="prompt"
+                        :placeholder="promptPlaceholder"
+                        class="ai-prompt-input"
+                        rows="5"
+                        @focus="onPromptFocus"
+                      />
+                      <div class="ai-prompt-footer">
+                        <div class="ai-tip-container">
+                          <span class="tip-label">TIP:</span>
+                          <span class="tip-text">{{ currentTip }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      @click="handleGenerate"
+                      :disabled="!prompt.trim() || mediaItems.length === 0 || isGenerating"
+                      class="ai-generate-button"
+                    >
+                      <component :is="isGenerating ? Loader2 : Wand2" :size="18" :class="{ 'animate-spin': isGenerating }" />
+                      <span>{{ isGenerating ? generatingTip : (composition ? 'Refine with AI' : 'Generate') }}</span>
+                    </button>
+
+                    <div v-if="isGenerating" class="ai-generating-status">
+                      <!-- Progress bar -->
+                      <div class="scene-progress-bar">
+                        <div class="scene-progress-fill" :style="{ width: generationProgress + '%' }"></div>
+                      </div>
+
+                      <!-- Phase indicator -->
+                      <div v-if="generationPhase === 'planning'" class="scene-phase">
+                        <div class="status-pulse"></div>
+                        <span>Planning scenes...</span>
+                      </div>
+
+                      <!-- Scene-by-scene list -->
+                      <div v-else-if="generationScenes.length > 0" class="scene-list">
+                        <div class="scene-list-header">
+                          <span>{{ completedScenes }}/{{ generationScenes.length }} scenes</span>
+                        </div>
+                        <div
+                          v-for="scene in generationScenes"
+                          :key="scene.index"
+                          class="scene-item"
+                          :class="{
+                            'scene-item--pending': scene.status === 'pending',
+                            'scene-item--generating': scene.status === 'generating',
+                            'scene-item--complete': scene.status === 'complete',
+                            'scene-item--error': scene.status === 'error',
+                          }"
+                        >
+                          <div class="scene-item-indicator">
+                            <Loader2 v-if="scene.status === 'generating'" :size="12" class="animate-spin" />
+                            <Check v-else-if="scene.status === 'complete'" :size="12" />
+                            <AlertCircle v-else-if="scene.status === 'error'" :size="12" />
+                            <div v-else class="scene-dot"></div>
+                          </div>
+                          <div class="scene-item-info">
+                            <span class="scene-item-name">Scene {{ scene.index + 1 }}</span>
+                            <span class="scene-item-desc">{{ scene.description }}</span>
+                          </div>
+                          <span class="scene-item-time">{{ scene.startTime.toFixed(1) }}s–{{ scene.endTime.toFixed(1) }}s</span>
+                        </div>
+                      </div>
+
+                      <div v-else class="scene-phase">
+                        <div class="status-pulse"></div>
+                        <span>{{ loadingTip }}</span>
+                      </div>
+                    </div>
+
+                    <div v-if="generationError" class="ai-error-message">
+                      <AlertCircle :size="14" /> <span>{{ generationError }}</span>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div v-if="composition" class="ai-control-section" style="margin-top: 0.75rem;">
+                      <div class="control-section-label">Quick Actions</div>
+                      <QuickActions :disabled="isGenerating" @action="handleQuickAction" />
+                    </div>
+
+                    <!-- Prompt Examples -->
+                    <div class="ai-control-section" style="margin-top: 0.5rem;">
+                      <button @click="showPromptExamples = !showPromptExamples" class="aiv-toggle-btn">
+                        <Lightbulb :size="14" />
+                        <span>{{ showPromptExamples ? 'Hide' : 'Show' }} Examples</span>
+                      </button>
+                      <div v-if="showPromptExamples" class="prompt-examples-list">
+                        <button
+                          v-for="example in promptExamples"
+                          :key="example.id"
+                          @click="usePromptExample(example.prompt)"
+                          class="example-item-btn"
+                        >
+                          <span class="example-icon">{{ example.icon }}</span>
+                          <div class="example-text">
+                            <div class="example-name">{{ example.name }}</div>
+                            <div class="example-desc">{{ example.description }}</div>
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  </template>
+
+                  <!-- ═══ SETTINGS PANEL ═══ -->
+                  <template v-if="activePanel === 'settings'">
+                    <div class="ai-control-section">
+                      <div class="control-section-label">Style</div>
+                      <StylePresetSelector v-model="selectedStylePreset" />
+                    </div>
+
+                    <div class="ai-control-section">
+                      <div class="control-section-header">
+                        <span class="control-section-label">Effect Intensity</span>
+                        <span class="control-section-value">{{ Math.round(effectIntensity * 100) }}%</span>
+                      </div>
+                      <div class="intensity-slider-row">
+                        <span class="intensity-label">Subtle</span>
+                        <input type="range" v-model.number="effectIntensity" min="0" max="1" step="0.05" class="intensity-slider" />
+                        <span class="intensity-label">Intense</span>
+                      </div>
+                    </div>
+
+                    <div class="ai-control-section">
+                      <div class="control-section-label">Caption Style</div>
+                      <CaptionStylePicker v-model="captionStyle" />
+                    </div>
+                  </template>
+
+                  <!-- ═══ MOTION GRAPHICS PANEL ═══ -->
+                  <template v-if="activePanel === 'graphics'">
+                    <MotionGraphicsPanel
+                      v-if="composition"
+                      :current-time="currentTime"
+                      :composition-duration="composition.duration"
+                      @add="handleAddMotionGraphic"
+                    />
+                    <p v-else class="aiv-panel__placeholder">Generate a composition first to add motion graphics.</p>
+                  </template>
+
+                  <!-- ═══ TRACKS PANEL ═══ -->
+                  <template v-if="activePanel === 'tracks'">
+                    <TrackEditor
+                      v-if="composition"
+                      :composition="composition"
+                      @update:composition="handleCompositionUpdate"
+                    />
+                    <p v-else class="aiv-panel__placeholder">Generate a composition first to edit tracks.</p>
+                  </template>
+
+                </div>
+              </div>
+              </Transition>
             </div>
 
-            <div class="ai-prompt-box">
-              <textarea
-                v-model="prompt"
-                :placeholder="promptPlaceholder"
-                class="ai-prompt-input"
-                rows="5"
-                @focus="onPromptFocus"
-              />
-              <div class="ai-prompt-footer">
-                <div class="ai-tip-container">
-                  <span class="tip-label">TIP:</span>
-                  <span class="tip-text">{{ currentTip }}</span>
+            <!-- Center: Preview + Playback Controls -->
+            <div class="aiv-preview">
+              <div class="aiv-preview__stage">
+                <RemotionPlayerMount
+                  v-if="composition"
+                  :composition="composition"
+                  :current-time="currentTime"
+                  :is-playing="isPlaying"
+                  @time-update="handleTimeUpdate"
+                  @duration-change="handleDurationChange"
+                  @playing-change="handlePlayingChange"
+                />
+                <div v-else class="preview-placeholder">
+                  <div class="placeholder-visual">
+                    <div class="visual-circle"><Wand2 :size="40" /></div>
+                    <h3>AI Video Creator</h3>
+                    <p v-if="mediaItems.length === 0">Start by adding media in the <strong>Media</strong> tab</p>
+                    <p v-else>Describe your video in the <strong>AI Prompt</strong> tab and hit Generate</p>
+                    <div class="placeholder-steps">
+                      <div class="step" :class="{ 'step--done': mediaItems.length > 0 }">
+                        <span class="step__num">1</span>
+                        <span>Add Media</span>
+                      </div>
+                      <div class="step__arrow">→</div>
+                      <div class="step" :class="{ 'step--done': prompt.trim().length > 0 }">
+                        <span class="step__num">2</span>
+                        <span>Write Prompt</span>
+                      </div>
+                      <div class="step__arrow">→</div>
+                      <div class="step">
+                        <span class="step__num">3</span>
+                        <span>Generate</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Playback Controls -->
+              <div v-if="composition" class="aiv-playback">
+                <button @click="seekTo(0)" class="aiv-playback__btn" title="Restart">
+                  <SkipBack :size="16" />
+                </button>
+                <button @click="togglePlayback" class="aiv-playback__btn aiv-playback__btn--play" :title="isPlaying ? 'Pause' : 'Play'">
+                  <component :is="isPlaying ? Pause : Play" :size="18" />
+                </button>
+                <button @click="seekTo(duration)" class="aiv-playback__btn" title="End">
+                  <SkipForward :size="16" />
+                </button>
+                <div class="aiv-playback__time">
+                  <span class="current">{{ formatTime(currentTime) }}</span>
+                  <span class="separator">/</span>
+                  <span class="total">{{ formatTime(duration) }}</span>
+                </div>
+                <div class="aiv-playback__scrub">
+                  <input
+                    type="range"
+                    :value="currentTime"
+                    :max="duration || 1"
+                    step="0.1"
+                    class="aiv-playback__slider"
+                    @input="(e: Event) => seekTo(parseFloat((e.target as HTMLInputElement).value))"
+                  />
                 </div>
               </div>
             </div>
+          </div>
 
-            <div class="ai-actions">
-              <button
-                @click="handleGenerate"
-                :disabled="!prompt.trim() || mediaItems.length === 0 || isGenerating"
-                class="ai-generate-button"
-                :class="{ 'generating': isGenerating }"
-              >
-                <component :is="isGenerating ? Loader2 : Wand2" :size="18" :class="{ 'animate-spin': isGenerating }" />
-                <span>{{ isGenerating ? generatingTip : 'Generate Composition' }}</span>
-              </button>
-              
-              <div v-if="isGenerating" class="ai-generating-status">
-                <div class="status-pulse"></div>
-                <span>{{ loadingTip }}</span>
+          <!-- Bottom: Timeline -->
+          <div class="aiv-timeline">
+            <div class="aiv-timeline__header">
+              <div class="aiv-timeline__title">
+                <ListMusic :size="14" />
+                <span>Timeline</span>
               </div>
-
-              <div v-if="generationError" class="ai-error-message">
-                <AlertCircle :size="14" />
-                <span>{{ generationError }}</span>
+              <div v-if="composition" class="aiv-timeline__meta">
+                <span>{{ composition.tracks.length }} tracks</span>
               </div>
             </div>
-          </div>
-        </div>
-      </aside>
-
-      <!-- Main Content Area -->
-      <main class="ai-main-content">
-        <!-- Preview Panel -->
-        <div class="ai-preview-panel">
-          <div class="preview-stage">
-            <RemotionPlayerMount
-              v-if="composition"
-              :composition="composition"
-              :current-time="currentTime"
-              :is-playing="isPlaying"
-              @time-update="handleTimeUpdate"
-              @duration-change="handleDurationChange"
-              @playing-change="handlePlayingChange"
-            />
-            
-            <div v-else class="preview-placeholder">
-              <div class="placeholder-visual">
-                <div class="visual-circle">
-                  <Video :size="48" />
-                </div>
-                <h3>Ready to Create</h3>
-                <p>Add your media and instructions to see your video here.</p>
-              </div>
+            <div class="aiv-timeline__body custom-scrollbar">
+              <AITimeline v-if="composition" :composition="composition" :current-time="currentTime" />
+              <div v-else class="timeline-empty"><p>Timeline appears after generating</p></div>
             </div>
           </div>
         </div>
 
-        <!-- Timeline Panel -->
-        <div class="ai-timeline-panel">
-          <div class="panel-header">
-            <div class="panel-title">
-              <ListMusic :size="16" class="text-primary" />
-              <span>Composition Timeline</span>
-            </div>
-            <div v-if="composition" class="timeline-time-info">
-              <span class="current">{{ formatTime(currentTime) }}</span>
-              <span class="separator">/</span>
-              <span class="total">{{ formatTime(duration) }}</span>
-            </div>
-          </div>
-          <div class="timeline-container custom-scrollbar">
-            <AITimeline 
-              v-if="composition" 
-              :composition="composition"
-              :current-time="currentTime"
-            />
-            <div v-else class="timeline-empty">
-              <p>Timeline will be available after generating your video</p>
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-
-    <!-- Modals -->
-    <ClipPickerDialog
-      v-model="showClipPicker"
-      @select="handleClipsSelected"
-    />
-    <AssetPickerDialog
-      v-model="showAssetPicker"
-      @select="handleAssetsSelected"
-    />
-    <ExportDialog
-      v-model="showExportDialog"
-      :composition="composition"
-    />
-  </PageLayout>
+        <!-- Modals (inside overlay so they share stacking context) -->
+        <ClipPickerDialog v-model="showClipPicker" @select="handleClipsSelected" />
+        <AssetPickerDialog v-model="showAssetPicker" @select="handleAssetsSelected" />
+        <ExportDialog v-model="showExportDialog" :composition="composition" />
+      </div>
+    </Transition>
+  </Teleport>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { 
   Wand2, Plus, Upload, X, Play, Pause, Video, 
   Music, Image as ImageIcon, Loader2, Download, 
-  AlertCircle, Lightbulb, Sparkles, ListMusic, FileText, Check
+  AlertCircle, Lightbulb, Sparkles, ListMusic, FileText, Check,
+  Film, Sliders, Shapes, Layers, SkipBack, SkipForward
 } from 'lucide-vue-next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
-import PageLayout from '@/components/PageLayout.vue';
 import RemotionPlayerMount from '@/components/ai-video/RemotionPlayerMount.vue';
 import AITimeline from '@/components/ai-video/AITimeline.vue';
 import ClipPickerDialog from '@/components/ai-video/pickers/ClipPickerDialog.vue';
 import AssetPickerDialog from '@/components/ai-video/pickers/AssetPickerDialog.vue';
 import ExportDialog from '@/components/ai-video/ExportDialog.vue';
+import StylePresetSelector from '@/components/ai-video/StylePresetSelector.vue';
+import CaptionStylePicker from '@/components/ai-video/CaptionStylePicker.vue';
+import TrackEditor from '@/components/ai-video/TrackEditor.vue';
+import QuickActions from '@/components/ai-video/QuickActions.vue';
+import MotionGraphicsPanel from '@/components/ai-video/MotionGraphicsPanel.vue';
 import { useAIVideoGeneration } from '@/composables/useAIVideoGeneration';
-import type { AIVideoComposition, AIVideoMediaItem } from '@/types/ai-video';
+import type { AIVideoComposition, AIVideoMediaItem, AIVideoTrack, StylePreset, CaptionStylePreset } from '@/types/ai-video';
 import api from '@/services/api';
+
+const router = useRouter();
 
 // Media library state
 const mediaItems = ref<AIVideoMediaItem[]>([]);
@@ -344,8 +420,53 @@ const showClipPicker = ref(false);
 const showAssetPicker = ref(false);
 const showExportDialog = ref(false);
 
+// Style & editing controls
+const selectedStylePreset = ref<StylePreset | null>(null);
+const effectIntensity = ref(0.5);
+const captionStyle = ref<CaptionStylePreset>('bold_tiktok');
+
+// Sidebar tab state
+const activePanel = ref<string>('media');
+
+const sidebarTabs = [
+  { id: 'media', label: 'Media', shortLabel: 'Media', icon: Film },
+  { id: 'ai', label: 'AI Prompt', shortLabel: 'AI', icon: Sparkles },
+  { id: 'settings', label: 'Settings', shortLabel: 'Style', icon: Sliders },
+  { id: 'graphics', label: 'Motion Graphics', shortLabel: 'MoGfx', icon: Shapes },
+  { id: 'tracks', label: 'Tracks', shortLabel: 'Tracks', icon: Layers },
+];
+
+const activePanelLabel = computed(() => {
+  const tab = sidebarTabs.find(t => t.id === activePanel.value);
+  return tab?.label || '';
+});
+
+function togglePanel(id: string) {
+  activePanel.value = activePanel.value === id ? '' : id;
+}
+
 // AI generation
-const { isGenerating, composition, error: generationError, generate } = useAIVideoGeneration();
+const { isGenerating, composition, error: generationError, generate, scenes: generationScenes, currentScene, completedScenes, generationPhase, progress: generationProgress } = useAIVideoGeneration();
+
+// Detect aspect ratio from the primary video media's dimensions
+const detectedAspectRatio = computed<'16:9' | '9:16' | '1:1' | '4:5'>(() => {
+  // Find the first video media item with dimensions
+  const videoItem = mediaItems.value.find(item => item.type === 'video' && item.dimensions);
+  if (!videoItem?.dimensions) return '16:9'; // fallback only if no dimensions available
+  
+  const { width, height } = videoItem.dimensions;
+  const ratio = width / height;
+  
+  // Match to closest standard aspect ratio
+  if (Math.abs(ratio - 9/16) < 0.15) return '9:16';   // Portrait (0.5625)
+  if (Math.abs(ratio - 1) < 0.15) return '1:1';        // Square (1.0)
+  if (Math.abs(ratio - 4/5) < 0.15) return '4:5';      // Portrait-ish (0.8)
+  if (Math.abs(ratio - 16/9) < 0.15) return '16:9';    // Landscape (1.778)
+  
+  // If no close match, decide based on orientation
+  if (height > width) return '9:16';
+  return '16:9';
+});
 
 // Playback state
 const currentTime = ref(0);
@@ -356,8 +477,12 @@ function togglePlayback() {
   isPlaying.value = !isPlaying.value;
 }
 
+function seekTo(time: number) {
+  currentTime.value = Math.max(0, Math.min(time, duration.value));
+  isPlaying.value = false;
+}
+
 function handleTimeUpdate(time: number) {
-  console.log('[AIVideoCreator] Time update:', time);
   currentTime.value = time;
 }
 
@@ -378,8 +503,11 @@ async function handleGenerate() {
     const targetDuration = totalMediaDuration > 0 ? Math.min(totalMediaDuration, 120) : 30;
     
     await generate(prompt.value, mediaItems.value, {
-      aspectRatio: '16:9',
+      aspectRatio: detectedAspectRatio.value,
       duration: targetDuration,
+      stylePreset: selectedStylePreset.value || undefined,
+      intensity: effectIntensity.value,
+      captionStyle: captionStyle.value,
       existingComposition: composition.value,
     });
     
@@ -387,6 +515,34 @@ async function handleGenerate() {
   } catch (error) {
     console.error('[AIVideoCreator] Generation failed:', error);
   }
+}
+
+function handleQuickAction(actionId: string) {
+  const actionPrompts: Record<string, string> = {
+    add_captions: 'Add captions from the transcript throughout the entire video with good timing and styling.',
+    add_music: 'Add background music that fits the mood of the content.',
+    color_grade: 'Apply a professional color grade that enhances the visual quality.',
+    add_intro: 'Add a professional intro with a title card and smooth animation at the beginning.',
+    add_outro: 'Add an end screen with a call-to-action at the end of the video.',
+  };
+  
+  const actionPrompt = actionPrompts[actionId];
+  if (actionPrompt) {
+    prompt.value = actionPrompt;
+    handleGenerate();
+  }
+}
+
+function handleCompositionUpdate(updated: AIVideoComposition) {
+  composition.value = updated;
+}
+
+function handleAddMotionGraphic(track: AIVideoTrack) {
+  if (!composition.value) return;
+  composition.value = {
+    ...composition.value,
+    tracks: [...composition.value.tracks, track],
+  };
 }
 
 async function handleUpload() {
@@ -410,6 +566,10 @@ async function handleUpload() {
       } catch (err) {
         console.error(`Failed to process file ${filePath}:`, err);
       }
+    }
+    // Auto-switch to AI tab after adding media
+    if (mediaItems.value.length > 0) {
+      activePanel.value = 'ai';
     }
   } catch (error) {
     console.error('Failed to upload files:', error);
@@ -475,7 +635,10 @@ const promptExamples = [
   { id: 'hype', name: 'Hype Moment', icon: '🔥', description: 'Exciting highlights with bold effects', prompt: 'Create an exciting highlight with bold captions, slow zooms during build-up, and flash/shake effects on big moments. Boost colors for a viral TikTok style.' },
   { id: 'professional', name: 'Professional', icon: '✨', description: 'Clean and polished look', prompt: 'Create a professional video with clean, readable captions at the bottom. Use smooth transitions and subtle camera zooms. Maintain a polished, corporate aesthetic.' },
   { id: 'viral', name: 'Viral TikTok', icon: '📱', description: 'Fast-paced social media style', prompt: 'Transform this into a viral TikTok. Fast-paced movements, bold white captions with black strokes, and layered impact effects on every major transition.' },
-  { id: 'gaming', name: 'Gaming Highlight', icon: '🎮', description: 'Action-packed gaming clips', prompt: 'Generate a hype gaming montage. Add zoom effects on kills, screen shakes on eliminations, and glow effects on ultimate abilities. Position captions to highlight player callouts.' }
+  { id: 'gaming', name: 'Gaming Highlight', icon: '🎮', description: 'Action-packed gaming clips', prompt: 'Generate a hype gaming montage. Add zoom effects on kills, screen shakes on eliminations, and glow effects on ultimate abilities. Position captions to highlight player callouts.' },
+  { id: 'kinetic', name: 'Kinetic Typography', icon: '💫', description: 'After Effects-style animated text', prompt: 'Create a kinetic typography video. Animate each word with spring physics — stagger word entrances with bouncy scale-in animations. Use 3D perspective card flips for section transitions. Add a gradient wave background and floating particle effects.' },
+  { id: 'infographic', name: 'Animated Infographic', icon: '📊', description: 'Data visualization with motion', prompt: 'Create an animated infographic. Use data counter rings that fill up with numbers, animated info cards that flip in with 3D transforms, and staggered list reveals. Add animated dividers between sections and a spotlight reveal at the start.' },
+  { id: 'product', name: 'Product Showcase', icon: '🎁', description: 'Premium product reveal', prompt: 'Create a premium product showcase. Start with a spotlight reveal, then use split reveal transitions between features. Add floating badges for key selling points, animated info cards for specs, and a glitch title for the product name. End with a subscribe CTA.' },
 ];
 
 const smartSuggestion = computed(() => {
@@ -496,7 +659,10 @@ const tips = [
   'Try: "Make the captions larger and gold colored"',
   'Ask for: "Slow zoom in from 2s to 5s"',
   'Iterate: "Now remove the screen shake"',
-  'Style: "Make it feel like a professional documentary"'
+  'Style: "Make it feel like a professional documentary"',
+  'Motion: "Add kinetic text with spring animations"',
+  'Effects: "Use a spotlight reveal and 3D card flips"',
+  'Data: "Show stats with animated counter rings"',
 ];
 
 const currentTip = ref(tips[0]);
@@ -543,19 +709,43 @@ async function handleClipsSelected(clips: any[]) {
     });
   });
   
-  const items: AIVideoMediaItem[] = clips.map(clip => ({
-    id: clip.id,
-    name: clip.name || 'Untitled Clip',
-    type: 'video' as const,
-    source: { type: 'clip', clipId: clip.id, path: clip.videoPath || clip.builtFilePath || '' },
-    thumbnailUrl: clip.thumbnailPath,
-    duration: clip.duration || 0,
-    transcript: '',
-    addedAt: new Date(),
-  }));
+  const items: AIVideoMediaItem[] = [];
+  for (const clip of clips) {
+    const videoPath = clip.videoPath || clip.builtFilePath || '';
+    let dimensions: { width: number; height: number } | undefined;
+    
+    // Probe video dimensions so we can detect aspect ratio
+    if (videoPath) {
+      try {
+        const metadata = await invoke<any>('get_media_metadata', { path: videoPath });
+        if (metadata?.width && metadata?.height) {
+          dimensions = { width: metadata.width, height: metadata.height };
+        }
+      } catch (e) {
+        console.warn(`[AIVideoCreator] Failed to get dimensions for clip ${clip.name}:`, e);
+      }
+    }
+    
+    items.push({
+      id: clip.id,
+      name: clip.name || 'Untitled Clip',
+      type: 'video' as const,
+      source: { type: 'clip', clipId: clip.id, path: videoPath },
+      thumbnailUrl: clip.thumbnailPath,
+      duration: clip.duration || 0,
+      dimensions,
+      transcript: '',
+      addedAt: new Date(),
+    });
+  }
   
   mediaItems.value.push(...items);
   showClipPicker.value = false;
+  
+  // Auto-switch to AI tab after adding clips
+  if (mediaItems.value.length > 0) {
+    activePanel.value = 'ai';
+  }
   
   // Fetch transcripts and audio peaks from clip segments for built clips
   for (const item of items) {
@@ -565,6 +755,9 @@ async function handleClipsSelected(clips: any[]) {
 
 function handleAssetsSelected(assets: AIVideoMediaItem[]) {
   mediaItems.value.push(...assets);
+  if (mediaItems.value.length > 0) {
+    activePanel.value = 'ai';
+  }
 }
 
 async function fetchClipTranscript(item: AIVideoMediaItem) {
@@ -827,581 +1020,278 @@ function saveTranscript() {
 </script>
 
 <style scoped>
-.ai-creator-layout {
+/* ═══ Full-Screen Overlay ═══ */
+.aiv-overlay {
+  position: fixed;
+  top: 32px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.98);
+  backdrop-filter: blur(16px);
+  z-index: 10000;
   display: flex;
-  height: 100%;
-  background-color: var(--background);
-  overflow: hidden;
-  color: var(--foreground);
 }
 
-/* Sidebar Styling */
-.ai-sidebar {
-  width: 320px;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid var(--border);
-  background-color: var(--sidebar-bg);
-  flex-shrink: 0;
-}
-
-.ai-sidebar-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.media-panel {
-  flex: 1;
-}
-
-.prompt-panel {
-  border-top: 1px solid var(--border);
-  background-color: var(--sidebar-bg);
-  padding-bottom: 1rem;
-}
-
-.transcript-editor-panel {
-  border-top: 1px solid var(--border);
-  background-color: var(--sidebar-bg);
-  padding-bottom: 1rem;
-}
-
-.transcript-editor-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  padding: 0.75rem;
-  background: var(--sidebar-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.transcript-media-name {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-.transcript-tip {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-}
-
-.transcript-textarea {
+.aiv-editor {
   width: 100%;
-  padding: 0.75rem;
-  background: var(--sidebar-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--foreground);
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  resize: vertical;
-  font-family: inherit;
-  transition: border-color 0.2s;
-}
-
-.transcript-textarea:focus {
-  outline: none;
-  border-color: var(--sidebar-accent);
-}
-
-.transcript-actions {
+  height: 100%;
+  background-color: #0a0a0b;
   display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
+  flex-direction: column;
+  overflow: hidden;
+  color: #f4f4f5;
 }
 
-.transcript-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
-  padding: 0.625rem 1rem;
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  border: 1px solid var(--border);
-}
-
-.transcript-btn--secondary {
-  background: var(--secondary);
-  color: var(--foreground);
-}
-
-.transcript-btn--secondary:hover {
-  background: var(--accent);
-}
-
-.transcript-btn--primary {
-  background: var(--sidebar-accent);
-  color: white;
-  border-color: var(--sidebar-accent);
-}
-
-.transcript-btn--primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
-}
-
-.panel-header {
+/* ═══ Header ═══ */
+.aiv-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.75rem 1rem;
-  background-color: var(--sidebar-surface);
-  border-bottom: 1px solid var(--border);
+  padding: 0 1rem;
+  height: 44px;
+  background: #111113;
+  border-bottom: 1px solid #1e1e22;
+  flex-shrink: 0;
 }
 
-.panel-title {
+.aiv-header__left {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.aiv-header__icon { color: #0ea5e9; }
+
+.aiv-header__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #f4f4f5;
+}
+
+.aiv-header__badge {
+  padding: 0.0625rem 0.375rem;
+  background: #0ea5e9;
+  color: white;
+  border-radius: 3px;
+  font-size: 0.5625rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.aiv-header__right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.aiv-header__btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: #1e1e22;
+  border: 1px solid #2a2a2e;
+  border-radius: 6px;
+  color: #d4d4d8;
   font-size: 0.75rem;
   font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.aiv-header__btn:hover {
+  background: #2a2a2e;
+  border-color: #0ea5e9;
+}
+
+.aiv-header__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.aiv-header__close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
+}
+
+/* ═══ Content Layout ═══ */
+.aiv-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ═══ Sidebar (Icon Tabs + Panel) ═══ */
+.aiv-sidebar {
+  width: 56px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  background: #111113;
+  border-right: 1px solid #1e1e22;
+  transition: width 0.25s ease;
+}
+
+.aiv-sidebar--expanded {
+  width: 336px;
+}
+
+.aiv-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.375rem;
+  width: 56px;
+  flex-shrink: 0;
+  overflow-y: auto;
+}
+
+.aiv-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 48px;
+  height: 48px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.aiv-tab__label {
+  font-size: 0.5rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  opacity: 0.8;
+}
+
+.aiv-tab:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d4d4d8;
+}
+
+.aiv-tab--active {
+  background: rgba(14, 165, 233, 0.15);
+  color: #0ea5e9;
+  box-shadow: inset 0 0 0 1px rgba(14, 165, 233, 0.3);
+}
+
+/* ═══ Expandable Panel ═══ */
+.aiv-panel {
+  width: 280px;
+  flex-shrink: 0;
+  background: #141416;
+  border-right: 1px solid #1e1e22;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.aiv-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid #1e1e22;
+  flex-shrink: 0;
+}
+
+.aiv-panel__title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #f4f4f5;
+  margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--muted-foreground);
 }
 
-.panel-action-btn, .panel-help-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.625rem;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  background: var(--secondary);
-  border: 1px solid var(--border);
-  color: var(--foreground);
-}
-
-.panel-action-btn:hover, .panel-help-btn:hover {
-  background: var(--accent);
-  border-color: var(--sidebar-accent);
-}
-
-.panel-help-btn.active {
-  background: var(--sidebar-active);
-  color: var(--sidebar-accent);
-  border-color: var(--sidebar-accent);
-}
-
-.panel-content {
-  padding: 1rem;
-  flex: 1;
-  overflow-y: auto;
-  position: relative;
-}
-
-/* Media Item List */
-.media-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.media-item-card {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem;
-  background: var(--sidebar-surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  transition: all 0.2s;
-  position: relative;
-}
-
-.media-item-card:hover {
-  border-color: var(--sidebar-accent);
-  background: var(--sidebar-hover);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-
-.media-thumb {
-  width: 44px;
-  height: 44px;
-  background: var(--muted);
-  border-radius: 6px;
-  overflow: hidden;
+.aiv-panel__close {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  position: relative;
-  border: 1px solid var(--border);
-}
-
-.media-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-
-
-.media-name {
-  font-size: 0.8125rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: var(--foreground);
-  line-height: 1.2;
-}
-
-.media-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.media-meta {
-  font-size: 0.6875rem;
-  color: var(--muted-foreground);
-  text-transform: capitalize;
-  line-height: 1.2;
-}
-
-.transcribing-badge, .transcript-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.125rem 0.375rem;
-  background: var(--sidebar-active);
-  color: var(--sidebar-accent);
-  border-radius: 4px;
-  font-size: 0.625rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.transcript-badge {
-  background: rgba(34, 197, 94, 0.1);
-  color: rgb(34, 197, 94);
-  cursor: pointer;
-}
-
-.transcript-badge:hover {
-  background: rgba(34, 197, 94, 0.2);
-}
-
-.media-info {
-  cursor: pointer;
-}
-
-.media-remove-btn {
   width: 24px;
   height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted-foreground);
   background: transparent;
   border: none;
-  cursor: pointer;
   border-radius: 4px;
-  transition: all 0.2s;
-  flex-shrink: 0;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 150ms;
 }
 
-.media-remove-btn:hover {
-  background: var(--destructive);
-  color: var(--destructive-foreground);
-  transform: scale(1.05);
+.aiv-panel__close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f4f5;
 }
 
-.add-media-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.add-media-btn {
+.aiv-panel__body {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.375rem;
-  padding: 0.5rem 0.625rem;
-  background: var(--secondary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--foreground);
-  font-size: 0.6875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.add-media-btn:hover {
-  border-color: var(--sidebar-accent);
-  background: var(--sidebar-hover);
-  transform: translateY(-1px);
-}
-
-.add-media-btn--primary {
-  background: var(--sidebar-accent);
-  color: white;
-  border-color: var(--sidebar-accent);
-}
-
-.add-media-btn--primary:hover {
-  background: var(--sidebar-accent);
-  opacity: 0.9;
-  border-color: var(--sidebar-accent);
-}
-
-/* Empty States */
-.media-empty {
+  overflow-y: auto;
+  padding: 1rem;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 1.5rem 1rem;
-  color: var(--muted-foreground);
+  gap: 0.75rem;
 }
 
-.empty-icon-container {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  background: var(--sidebar-surface);
-  border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1rem;
-  color: var(--sidebar-accent);
-}
-
-.empty-text {
-  margin-bottom: 1.25rem;
-}
-
-.empty-text h3 {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--foreground);
-  margin-bottom: 0.375rem;
-}
-
-.empty-text p {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-  line-height: 1.4;
-}
-
-.empty-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  width: 100%;
-}
-
-.empty-action-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.625rem 0.75rem;
-  background: var(--secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--foreground);
+.aiv-panel__placeholder {
+  color: #71717a;
   font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
+  text-align: center;
+  padding: 2rem 1rem;
 }
 
-.empty-action-btn:hover {
-  background: var(--sidebar-hover);
-  border-color: var(--sidebar-accent);
-  transform: translateY(-1px);
+/* ═══ Tab Badge ═══ */
+.aiv-tab {
+  position: relative;
 }
 
-.empty-action-btn--primary {
-  background: var(--sidebar-accent);
-  color: white;
-  border-color: var(--sidebar-accent);
-  font-weight: 600;
-}
-
-.empty-action-btn--primary:hover {
-  background: var(--sidebar-accent);
-  opacity: 0.9;
-  border-color: var(--sidebar-accent);
-}
-
-/* Prompt Styling */
-.ai-smart-suggestion {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 0.75rem;
-  background: var(--sidebar-active);
-  border: 1px solid var(--sidebar-active);
-  border-radius: 6px;
-  margin-bottom: 0.75rem;
-  color: var(--sidebar-accent);
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.ai-prompt-box {
-  background: var(--input);
-  border: 1px solid var(--border);
+.aiv-tab__badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
   border-radius: 8px;
-  overflow: hidden;
-  transition: border-color 0.2s;
-}
-
-.ai-prompt-box:focus-within {
-  border-color: var(--sidebar-accent);
-}
-
-.ai-prompt-input {
-  width: 100%;
-  background: transparent;
-  border: none;
-  padding: 0.75rem;
-  color: var(--foreground);
-  font-size: 0.875rem;
-  font-family: inherit;
-  resize: none;
-  outline: none;
-}
-
-.ai-prompt-footer {
-  padding: 0.5rem 0.75rem;
-  background: var(--sidebar-surface);
-  border-top: 1px solid var(--border);
-}
-
-.ai-tip-container {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.6875rem;
-}
-
-.tip-label {
+  background: #0ea5e9;
+  color: white;
+  font-size: 0.5625rem;
   font-weight: 700;
-  color: var(--sidebar-accent);
-}
-
-.tip-text {
-  color: var(--muted-foreground);
-  font-weight: 500;
-}
-
-.ai-actions {
-  margin-top: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.ai-generate-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.625rem;
-  padding: 0.875rem;
-  background: var(--sidebar-accent);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-  width: 100%;
+  padding: 0 3px;
+  line-height: 1;
 }
 
-.ai-generate-button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  filter: brightness(1.1);
-}
-
-.ai-generate-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.ai-generating-status {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.625rem 0.75rem;
-  background: var(--sidebar-active);
-  border: 1px solid var(--sidebar-active);
-  border-radius: 8px;
-  color: var(--sidebar-accent);
-  font-size: 0.75rem;
-  font-weight: 500;
-}
-
-.status-pulse {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--sidebar-accent);
-  animation: pulse 2s infinite;
-}
-
-.ai-error-message {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 0.75rem;
-  background: var(--destructive);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--destructive-foreground);
-  font-size: 0.75rem;
-}
-
-/* Main Area Styling */
-.ai-main-content {
+/* ═══ Preview ═══ */
+.aiv-preview {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background-color: var(--background);
+  background: linear-gradient(135deg, #0a0a0b 0%, #0d0d0e 100%);
 }
 
-.ai-preview-panel {
+.aiv-preview__stage {
   flex: 1;
-  min-height: 0;
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-}
-
-.preview-stage {
-  flex: 1;
-  background: var(--background);
-  border-radius: 16px;
-  overflow: hidden;
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
+  min-height: 0;
 }
 
 .preview-placeholder {
@@ -1411,43 +1301,186 @@ function saveTranscript() {
   align-items: center;
   justify-content: center;
   text-align: center;
-  background: radial-gradient(circle at center, var(--sidebar-surface) 0%, var(--background) 100%);
+  background: radial-gradient(circle at center, #141416 0%, #0a0a0b 100%);
+}
+
+/* ═══ Playback Controls ═══ */
+.aiv-playback {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 1rem;
+  background: #111113;
+  border-top: 1px solid #1e1e22;
+  flex-shrink: 0;
+}
+
+.aiv-playback__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.aiv-playback__btn:hover { background: rgba(255,255,255,0.08); color: #f4f4f5; }
+
+.aiv-playback__btn--play {
+  width: 36px;
+  height: 36px;
+  background: #0ea5e9;
+  color: white;
+  border-radius: 50%;
+}
+
+.aiv-playback__btn--play:hover { background: #38bdf8; color: white; }
+
+.aiv-playback__time {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.5rem;
+  min-width: 70px;
+}
+
+.aiv-playback__time .current { color: #0ea5e9; }
+.aiv-playback__time .separator { color: #52525b; }
+.aiv-playback__time .total { color: #71717a; }
+
+.aiv-playback__scrub {
+  flex: 1;
+  margin-left: 0.5rem;
+}
+
+.aiv-playback__slider {
+  width: 100%;
+  height: 4px;
+  accent-color: #0ea5e9;
+  cursor: pointer;
+}
+
+/* ═══ Empty State Steps ═══ */
+.placeholder-steps {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  background: #1a1a1e;
+  border: 1px solid #2a2a2e;
+  border-radius: 20px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: #71717a;
+  transition: all 150ms;
+}
+
+.step--done {
+  border-color: #0ea5e933;
+  color: #0ea5e9;
+  background: rgba(14, 165, 233, 0.08);
+}
+
+.step__num {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #2a2a2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  color: #a1a1aa;
+}
+
+.step--done .step__num {
+  background: #0ea5e9;
+  color: white;
+}
+
+.step__arrow {
+  color: #3f3f46;
+  font-size: 0.75rem;
 }
 
 .visual-circle {
   width: 80px;
   height: 80px;
   border-radius: 50%;
-  background: var(--sidebar-hover);
-  border: 1px solid var(--border);
+  background: #1e1e22;
+  border: 1px solid #2a2a2e;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 1.5rem;
-  color: var(--primary);
+  color: #0ea5e9;
 }
 
 .preview-placeholder h3 {
   font-size: 1.25rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
-  color: var(--foreground);
+  color: #f4f4f5;
 }
 
 .preview-placeholder p {
-  color: var(--muted-foreground);
+  color: #71717a;
   font-size: 0.9375rem;
 }
 
-.ai-timeline-panel {
-  height: 340px;
-  border-top: 1px solid var(--border);
+/* ═══ Timeline ═══ */
+.aiv-timeline {
+  flex-shrink: 0;
+  height: 240px;
+  border-top: 1px solid #1e1e22;
+  background: #111113;
   display: flex;
   flex-direction: column;
-  background-color: var(--sidebar-bg);
 }
 
-.timeline-container {
+.aiv-timeline__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #1e1e22;
+  flex-shrink: 0;
+}
+
+.aiv-timeline__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #71717a;
+}
+
+.aiv-timeline__meta {
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: #52525b;
+}
+
+.aiv-timeline__body {
   flex: 1;
   overflow: hidden;
   position: relative;
@@ -1458,9 +1491,8 @@ function saveTranscript() {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: var(--muted-foreground);
-  font-size: 0.875rem;
-  background: var(--sidebar-surface);
+  color: #52525b;
+  font-size: 0.8125rem;
 }
 
 .timeline-time-info {
@@ -1469,131 +1501,529 @@ function saveTranscript() {
   gap: 0.25rem;
   font-size: 0.75rem;
   font-weight: 600;
-  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
-.timeline-time-info .current { color: var(--sidebar-accent); }
-.timeline-time-info .separator { color: var(--muted-foreground); opacity: 0.5; }
-.timeline-time-info .total { color: var(--muted-foreground); }
+.timeline-time-info .current { color: #0ea5e9; }
+.timeline-time-info .separator { color: #52525b; }
+.timeline-time-info .total { color: #71717a; }
 
-/* Popover & Popups */
-.prompt-examples-popover {
-  position: absolute;
-  bottom: calc(100% + 0.75rem);
-  left: 1rem;
-  right: 1rem;
-  background: var(--popover);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-  z-index: 50;
+/* ═══ Media Items ═══ */
+.media-list {
   display: flex;
   flex-direction: column;
+  gap: 0.5rem;
 }
 
-.popover-header {
+.media-item-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--sidebar-surface);
-  border-top-left-radius: 12px;
-  border-top-right-radius: 12px;
+  gap: 0.625rem;
+  padding: 0.5rem;
+  background: #1a1a1e;
+  border: 1px solid #2a2a2e;
+  border-radius: 8px;
+  transition: all 150ms;
 }
 
-.popover-header span {
+.media-item-card:hover {
+  border-color: #0ea5e9;
+  background: #1e1e24;
+}
+
+.media-thumb {
+  width: 40px;
+  height: 40px;
+  background: #1e1e22;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid #2a2a2e;
+  color: #52525b;
+}
+
+.media-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+.media-info { flex: 1; min-width: 0; cursor: pointer; }
+
+.media-name {
   font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--foreground);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #d4d4d8;
 }
 
-.popover-header button {
-  background: transparent;
-  border: none;
-  color: var(--muted-foreground);
+.media-meta-row { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.125rem; }
+
+.media-meta {
+  font-size: 0.625rem;
+  color: #71717a;
+  text-transform: capitalize;
+}
+
+.transcribing-badge, .transcript-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.0625rem 0.3rem;
+  background: rgba(14, 165, 233, 0.1);
+  color: #0ea5e9;
+  border-radius: 3px;
+  font-size: 0.5625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.transcript-badge {
+  background: rgba(34, 197, 94, 0.1);
+  color: rgb(34, 197, 94);
   cursor: pointer;
 }
 
-.popover-list {
+.media-remove-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #52525b;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 150ms;
+  flex-shrink: 0;
+}
+
+.media-remove-btn:hover { background: #dc2626; color: white; }
+
+.add-media-actions {
+  display: flex;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.add-media-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.4rem 0.5rem;
+  background: #1a1a1e;
+  border: 1px solid #2a2a2e;
+  border-radius: 6px;
+  color: #a1a1aa;
+  font-size: 0.625rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.add-media-btn:hover { border-color: #0ea5e9; color: #d4d4d8; }
+
+.add-media-btn--primary {
+  background: #0ea5e9;
+  color: white;
+  border-color: #0ea5e9;
+}
+
+/* ═══ Empty States ═══ */
+.media-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1.5rem 0.5rem;
+  color: #71717a;
+}
+
+.empty-icon-container {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #1a1a1e;
+  border: 1px solid #2a2a2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.75rem;
+  color: #0ea5e9;
+}
+
+.empty-text { margin-bottom: 1rem; }
+.empty-text h3 { font-size: 0.8125rem; font-weight: 600; color: #d4d4d8; margin-bottom: 0.25rem; }
+.empty-text p { font-size: 0.6875rem; color: #71717a; }
+
+.empty-actions { display: flex; flex-direction: column; gap: 0.375rem; width: 100%; }
+
+.empty-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
   padding: 0.5rem;
+  background: #1a1a1e;
+  border: 1px solid #2a2a2e;
+  border-radius: 6px;
+  color: #d4d4d8;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms;
+}
+
+.empty-action-btn:hover { border-color: #0ea5e9; }
+
+.empty-action-btn--primary {
+  background: #0ea5e9;
+  color: white;
+  border-color: #0ea5e9;
+  font-weight: 600;
+}
+
+/* ═══ Transcript Editor ═══ */
+.transcript-editor-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #2a2a2e;
+}
+
+.transcript-editor-info { margin-bottom: 0.5rem; }
+
+.transcript-media-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #d4d4d8;
+}
+
+.transcript-textarea {
+  width: 100%;
+  padding: 0.625rem;
+  background: #1a1a1e;
+  border: 1px solid #2a2a2e;
+  border-radius: 6px;
+  color: #d4d4d8;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.transcript-textarea:focus { outline: none; border-color: #0ea5e9; }
+
+.transcript-actions { display: flex; gap: 0.375rem; margin-top: 0.5rem; }
+
+.transcript-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #2a2a2e;
+}
+
+.transcript-btn--secondary { background: #1a1a1e; color: #d4d4d8; }
+.transcript-btn--secondary:hover { background: #2a2a2e; }
+.transcript-btn--primary { background: #0ea5e9; color: white; border-color: #0ea5e9; }
+
+/* ═══ AI Prompt ═══ */
+.ai-smart-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(14, 165, 233, 0.15);
+  border-radius: 6px;
+  color: #0ea5e9;
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.ai-prompt-box {
+  background: #1a1a1e;
+  border: 1px solid #2a2a2e;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 150ms;
+}
+
+.ai-prompt-box:focus-within { border-color: #0ea5e9; }
+
+.ai-prompt-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0.625rem;
+  color: #f4f4f5;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  resize: none;
+  outline: none;
+}
+
+.ai-prompt-footer {
+  padding: 0.375rem 0.625rem;
+  background: #141416;
+  border-top: 1px solid #2a2a2e;
+}
+
+.ai-tip-container { display: flex; align-items: center; gap: 0.25rem; font-size: 0.625rem; }
+.tip-label { font-weight: 700; color: #0ea5e9; }
+.tip-text { color: #52525b; font-weight: 500; }
+
+.ai-generate-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #0ea5e9;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms;
+  width: 100%;
+}
+
+.ai-generate-button:hover:not(:disabled) { filter: brightness(1.1); }
+.ai-generate-button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.ai-generating-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  background: rgba(14, 165, 233, 0.08);
+  border-radius: 6px;
+  color: #0ea5e9;
+  font-size: 0.6875rem;
+}
+
+.scene-progress-bar {
+  width: 100%;
+  height: 3px;
+  background: rgba(14, 165, 233, 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.scene-progress-fill {
+  height: 100%;
+  background: #0ea5e9;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.scene-phase {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scene-list {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
-  max-height: 280px;
-  overflow-y: auto;
+}
+
+.scene-list-header {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: #0ea5e9;
+  margin-bottom: 0.125rem;
+}
+
+.scene-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.375rem;
+  border-radius: 4px;
+  font-size: 0.625rem;
+  transition: all 0.2s;
+}
+
+.scene-item--pending { color: #52525b; }
+.scene-item--generating { color: #0ea5e9; background: rgba(14, 165, 233, 0.08); }
+.scene-item--complete { color: #22c55e; }
+.scene-item--error { color: #ef4444; }
+
+.scene-item-indicator {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scene-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #3f3f46;
+}
+
+.scene-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.scene-item-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.scene-item-desc {
+  color: #71717a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.5625rem;
+}
+
+.scene-item--generating .scene-item-desc { color: #7dd3fc; }
+.scene-item--complete .scene-item-desc { color: #86efac; }
+
+.scene-item-time {
+  flex-shrink: 0;
+  font-size: 0.5625rem;
+  color: #52525b;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #0ea5e9;
+  animation: pulse 2s infinite;
+}
+
+.ai-error-message {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.625rem;
+  background: rgba(220, 38, 38, 0.1);
+  border: 1px solid rgba(220, 38, 38, 0.2);
+  border-radius: 6px;
+  color: #fca5a5;
+  font-size: 0.6875rem;
+}
+
+/* ═══ Toggle Button ═══ */
+.aiv-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  background: #1a1a1e;
+  border: 1px solid #2a2a2e;
+  border-radius: 6px;
+  color: #a1a1aa;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 150ms;
+  width: 100%;
+}
+
+.aiv-toggle-btn:hover { border-color: #0ea5e9; color: #d4d4d8; }
+
+.prompt-examples-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
 }
 
 .example-item-btn {
   display: flex;
   align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.75rem;
+  gap: 0.625rem;
+  padding: 0.5rem;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 6px;
   text-align: left;
   cursor: pointer;
-  transition: all 0.2s;
-  color: var(--foreground);
+  transition: all 150ms;
+  color: #d4d4d8;
 }
 
-.example-item-btn:hover {
-  background: var(--accent);
-  border-color: var(--border);
-}
+.example-item-btn:hover { background: #1a1a1e; border-color: #2a2a2e; }
 
-.example-icon { font-size: 1.25rem; }
-.example-name { font-size: 0.8125rem; font-weight: 600; color: var(--foreground); }
-.example-desc { font-size: 0.6875rem; color: var(--muted-foreground); line-height: 1.4; }
+.example-icon { font-size: 1rem; }
+.example-name { font-size: 0.75rem; font-weight: 600; color: #d4d4d8; }
+.example-desc { font-size: 0.625rem; color: #71717a; line-height: 1.3; }
 
-/* Header Elements */
-.ai-video-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.125rem 0.5rem;
-  background: var(--sidebar-accent);
-  color: white;
-  border-radius: 4px;
+/* ═══ Control Sections ═══ */
+.ai-control-section { margin-bottom: 0.75rem; }
+
+.control-section-label {
   font-size: 0.625rem;
-  font-weight: 800;
+  font-weight: 600;
+  text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin-left: 0.5rem;
+  color: #71717a;
+  margin-bottom: 0.5rem;
 }
 
-.ai-export-button {
+.control-section-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: var(--secondary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--foreground);
-  font-size: 0.8125rem;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.control-section-value {
+  font-size: 0.625rem;
   font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
+  color: #0ea5e9;
+  font-variant-numeric: tabular-nums;
 }
 
-.ai-export-button:hover {
-  background: var(--accent);
-  border-color: var(--sidebar-accent);
-}
+.intensity-slider-row { display: flex; align-items: center; gap: 0.5rem; }
+.intensity-label { font-size: 0.5625rem; color: #52525b; white-space: nowrap; flex-shrink: 0; }
+.intensity-slider { flex: 1; height: 4px; accent-color: #0ea5e9; cursor: pointer; }
 
-/* Animations */
+/* ═══ Animations ═══ */
 @keyframes pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.5; transform: scale(0.9); }
 }
 
-.slide-up-enter-active, .slide-up-leave-active { transition: all 0.3s ease; }
-.slide-up-enter-from { opacity: 0; transform: translateY(10px); }
-.slide-up-leave-to { opacity: 0; transform: translateY(10px); }
+.modal-enter-active, .modal-leave-active { transition: opacity 0.2s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
 
-/* Scrollbar */
+/* ═══ Panel Slide Transition ═══ */
+.panel-slide-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.panel-slide-leave-active { transition: opacity 0.1s ease, transform 0.1s ease; }
+.panel-slide-enter-from { opacity: 0; transform: translateX(-8px); }
+.panel-slide-leave-to { opacity: 0; transform: translateX(-8px); }
+
+/* ═══ Scrollbar ═══ */
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-.custom-scrollbar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
-.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
+.custom-scrollbar::-webkit-scrollbar-thumb { background: #2a2a2e; border-radius: 10px; }
+.custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
 </style>

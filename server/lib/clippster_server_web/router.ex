@@ -162,6 +162,7 @@ defmodule ClippsterServerWeb.Router do
 
     # AI video generation routes
     post("/ai/generate-video", AIController, :generate_video)
+    post("/ai/generate-video-streamed", AIController, :generate_video_streamed)
     post("/ai/compositions", AIController, :save_composition)
     get("/ai/compositions", AIController, :list_compositions)
     get("/ai/compositions/:id", AIController, :get_composition)

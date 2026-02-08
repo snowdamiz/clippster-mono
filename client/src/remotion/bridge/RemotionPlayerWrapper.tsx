@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Player, PlayerRef } from '@remotion/player';
 import { AIComposition } from '../compositions/AIComposition';
 import type { AIVideoComposition } from '../../types/ai-video';
@@ -48,9 +48,9 @@ export const RemotionPlayerWrapper: React.FC<Props> = ({
     }
   }, [currentFrame, isPlaying]);
 
-  // Poll for frame updates only when playing, using a throttled interval
+  // Always poll for frame updates so the timeline playhead stays in sync
   useEffect(() => {
-    if (!playerRef.current || !onFrameUpdate || !isPlaying) return;
+    if (!playerRef.current || !onFrameUpdate) return;
 
     let lastFrame = -1;
 
@@ -70,7 +70,33 @@ export const RemotionPlayerWrapper: React.FC<Props> = ({
     return () => {
       clearInterval(intervalId);
     };
-  }, [isPlaying, onFrameUpdate]);
+  }, [onFrameUpdate]);
+
+  // Listen for Remotion Player play/pause events to sync state back to Vue
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player) return;
+
+    const handlePlay = () => {
+      onPlayingChange?.(true);
+    };
+    const handlePause = () => {
+      onPlayingChange?.(false);
+    };
+    const handleEnded = () => {
+      onPlayingChange?.(false);
+    };
+
+    player.addEventListener('play', handlePlay);
+    player.addEventListener('pause', handlePause);
+    player.addEventListener('ended', handleEnded);
+
+    return () => {
+      player.removeEventListener('play', handlePlay);
+      player.removeEventListener('pause', handlePause);
+      player.removeEventListener('ended', handleEnded);
+    };
+  }, [onPlayingChange]);
 
   if (!composition) {
     return (
@@ -108,10 +134,10 @@ export const RemotionPlayerWrapper: React.FC<Props> = ({
       compositionWidth={composition.width}
       compositionHeight={composition.height}
       style={{ width: '100%', height: '100%' }}
-      controls={true}
-      showVolumeControls={true}
+      controls={false}
+      showVolumeControls={false}
       loop={false}
-      clickToPlay={true}
+      clickToPlay={false}
     />
   );
 };

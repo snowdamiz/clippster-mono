@@ -57,17 +57,16 @@ impl RemotionSidecar {
     pub fn spawn(app: &AppHandle) -> Result<Self, String> {
         // In development, use the bundle.js from the sidecars directory
         // In production, this would be bundled with the app
-        let app_dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("Failed to get app dir: {}", e))?;
         
-        // Development path: client/src-tauri/sidecars/remotion-renderer/dist/bundle.js
-        let dev_bundle_path = app_dir
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-            .map(|p| p.join("client").join("src-tauri").join("sidecars").join("remotion-renderer").join("dist").join("bundle.js"))
+        // Development path: resolve from executable location
+        // Exe is at: client/src-tauri/target/debug/clippster.exe
+        // Bundle is at: client/src-tauri/sidecars/remotion-renderer/dist/bundle.js
+        let dev_bundle_path = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf())) // target/debug/
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))     // target/
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))     // src-tauri/
+            .map(|p| p.join("sidecars").join("remotion-renderer").join("dist").join("bundle.js"))
             .ok_or("Failed to construct dev bundle path")?;
 
         let bundle_path = if dev_bundle_path.exists() {

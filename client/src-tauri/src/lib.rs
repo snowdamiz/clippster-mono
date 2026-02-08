@@ -544,6 +544,12 @@ pub fn run() {
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
+                            version: 80,
+                            description: "fix_monitored_streamers_unique_constraint",
+                            sql: include_str!("../migrations/080_fix_monitored_streamers_unique_constraint.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
                             version: 81,
                             description: "add_audio_peaks_to_segments",
                             sql: include_str!("../migrations/081_add_audio_peaks_to_segments.sql"),

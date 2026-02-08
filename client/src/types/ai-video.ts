@@ -14,7 +14,7 @@ export interface AIVideoComposition {
 
 export interface AIVideoTrack {
   id: string;
-  type: 'video' | 'audio' | 'image' | 'text' | 'shape' | 'cameraMotion' | 'impactFX' | 'transition';
+  type: 'video' | 'audio' | 'image' | 'text' | 'shape' | 'cameraMotion' | 'impactFX' | 'transition' | 'motionGraphic';
   name: string;
   source?: MediaSource;
   startTime: number;
@@ -58,6 +58,9 @@ export interface TrackProperties {
   effects?: Effect[];
   enterTransition?: Transition;
   exitTransition?: Transition;
+
+  // Motion graphic specific
+  motionGraphic?: MotionGraphicProperties;
 }
 
 export interface TextProperties {
@@ -94,6 +97,42 @@ export interface ShapeProperties {
   strokeWidth?: number;
   cornerRadius?: number;
 }
+
+export interface MotionGraphicProperties {
+  templateId: MotionGraphicTemplate;
+  variant?: string;
+  customText?: string;
+  customColors?: string[];
+  animationSpeed?: number;
+  springConfig?: { mass?: number; damping?: number; stiffness?: number };
+  perspective?: number;
+  rotateX?: number;
+  rotateY?: number;
+  blur?: number;
+  scale3D?: number;
+}
+
+export type MotionGraphicTemplate =
+  | 'lowerThird'
+  | 'subscribeCTA'
+  | 'logoReveal'
+  | 'titleCard'
+  | 'endScreen'
+  | 'numberCounter'
+  | 'progressBar'
+  | 'timerCountdown'
+  | 'neonFrame'
+  | 'particleBackground'
+  | 'kineticText'
+  | 'animatedInfoCard'
+  | 'dataCounter'
+  | 'calloutBox'
+  | 'splitReveal'
+  | 'glitchTitle'
+  | 'gradientWave'
+  | 'floatingBadge'
+  | 'animatedDivider'
+  | 'spotlightReveal';
 
 export interface KeyframeAnimation {
   keyframes: Keyframe[];
@@ -138,10 +177,17 @@ export interface AIVideoMediaItem {
 }
 
 // AI generation
+export type StylePreset = 'hype' | 'professional' | 'gaming' | 'cinematic' | 'tutorial' | 'vlog' | 'music_video' | 'product';
+
+export type CaptionStylePreset = 'bold_tiktok' | 'clean_subtitle' | 'neon_glow' | 'minimal' | 'none';
+
 export interface AIGenerationRequest {
   prompt: string;
   media: AIVideoMediaItem[];
   style?: string;
+  stylePreset?: StylePreset;
+  intensity?: number; // 0.0 - 1.0
+  captionStyle?: CaptionStylePreset;
   duration?: number;
   aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5';
   existingComposition?: AIVideoComposition | null;

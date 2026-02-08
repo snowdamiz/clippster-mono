@@ -691,3 +691,14 @@ function formatDuration(seconds?: number): string {
   height: 12px;
 }
 </style>
+
+<style>
+/* Ensure Reka Dialog portal renders above AI Video overlay (z-index: 10000) */
+.asset-picker {
+  z-index: 10001 !important;
+}
+[data-reka-portal] > [data-state] {
+  z-index: 10001 !important;
+}
+</style>
+

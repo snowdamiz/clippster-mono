@@ -38,7 +38,7 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({ track }) => {
   let displayText = textProps.content;
   
   if (animation) {
-    const animDuration = animation.duration || 0.5;
+    const animDuration = 'duration' in animation ? animation.duration : 0.5;
     const animFrames = animDuration * fps;
     const animProgress = Math.min(localFrame / animFrames, 1);
     
@@ -104,24 +104,37 @@ export const AnimatedText: React.FC<AnimatedTextProps> = ({ track }) => {
     opacity: animatedOpacity,
   };
   
+  // Build stroke shadow — use multi-layer text-shadow for clean outlines instead of WebkitTextStroke
+  const strokeWidth = textProps.stroke?.width ?? (textProps as any).strokeWidth ?? 0;
+  const strokeColor = textProps.stroke?.color ?? (textProps as any).strokeColor ?? '#000000';
+  
+  let strokeShadow = '';
+  if (strokeWidth > 0) {
+    // Generate 8-direction text-shadow for a clean outline that doesn't eat into the fill
+    const offsets = [
+      [strokeWidth, 0], [-strokeWidth, 0], [0, strokeWidth], [0, -strokeWidth],
+      [strokeWidth, strokeWidth], [-strokeWidth, strokeWidth],
+      [strokeWidth, -strokeWidth], [-strokeWidth, -strokeWidth],
+    ];
+    strokeShadow = offsets.map(([ox, oy]) => `${ox}px ${oy}px 0px ${strokeColor}`).join(', ');
+  }
+
+  const combinedShadow = [strokeShadow, textProps.textShadow].filter(Boolean).join(', ');
+
   const textStyle: React.CSSProperties = {
     fontFamily: textProps.fontFamily || '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    fontSize: `${textProps.fontSize}px`,
-    fontWeight: textProps.fontWeight || 400,
+    fontSize: `${textProps.fontSize || 48}px`,
+    fontWeight: textProps.fontWeight || 700,
     color: textProps.color || '#ffffff',
     textAlign: textProps.textAlign || 'center',
     lineHeight: textProps.lineHeight || 1.2,
     letterSpacing: textProps.letterSpacing ? `${textProps.letterSpacing}px` : undefined,
-    textShadow: textProps.textShadow,
+    textShadow: combinedShadow || undefined,
     backgroundColor: textProps.backgroundColor,
     padding: textProps.padding ? `${textProps.padding}px` : undefined,
     borderRadius: textProps.borderRadius ? `${textProps.borderRadius}px` : undefined,
-    WebkitTextStroke: textProps.stroke 
-      ? `${textProps.stroke.width}px ${textProps.stroke.color}`
-      : (textProps as any).strokeWidth && (textProps as any).strokeColor
-      ? `${(textProps as any).strokeWidth}px ${(textProps as any).strokeColor}`
-      : undefined,
     whiteSpace: 'pre-wrap',
+    maxWidth: '80%',
     ...animatedStyle,
   };
   
