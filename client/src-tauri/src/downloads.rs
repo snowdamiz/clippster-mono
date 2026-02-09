@@ -549,9 +549,7 @@ pub async fn download_pumpfun_vod_segment(
         };
 
         // Check result
-        if let Err(e) = download_result {
-            return Err(e);
-        }
+        download_result?;
 
         println!("[Rust] Segment download completed successfully");
 
@@ -897,9 +895,7 @@ pub async fn download_pumpfun_vod(
         };
 
         // Check result
-        if let Err(e) = download_result {
-            return Err(e);
-        }
+        download_result?;
 
         println!("[Rust] Download completed successfully");
 
@@ -1237,9 +1233,7 @@ pub async fn download_kick_vod_segment(
         };
 
         // Check result
-        if let Err(e) = download_result {
-            return Err(e);
-        }
+        download_result?;
 
         println!("[Rust] Segment download completed successfully");
 
@@ -1577,9 +1571,7 @@ pub async fn download_kick_vod(
         };
 
         // Check result
-        if let Err(e) = download_result {
-            return Err(e);
-        }
+        download_result?;
 
         println!("[Rust] Download completed successfully");
 
@@ -1595,7 +1587,7 @@ pub async fn download_kick_vod(
         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
         let thumbnail_result = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
-                match ffmpeg.args([
+                (ffmpeg.args([
                     "-hwaccel", "auto",
                     "-ss", "00:00:01",
                     "-i", video_path.to_str().ok_or("Invalid video path")?,
@@ -1603,10 +1595,7 @@ pub async fn download_kick_vod(
                     "-vf", "scale=320:-1",
                     "-y",
                     thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-                ]).output().await {
-                    Ok(output) => Some(output),
-                    Err(_) => None
-                }
+                ]).output().await).ok()
             }
             Err(_) => None
         };

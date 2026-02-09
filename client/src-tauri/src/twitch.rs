@@ -289,12 +289,12 @@ pub async fn get_twitch_vods(channel: String, limit: Option<u32>) -> Result<Stri
                     .map(|s| s.to_string()),
                 created_at: json.get("upload_date")
                     .and_then(|v| v.as_str())
-                    .and_then(|s| {
+                    .map(|s| {
                         // yt-dlp returns date as YYYYMMDD, convert to ISO format YYYY-MM-DD
                         if s.len() == 8 {
-                            Some(format!("{}-{}-{}", &s[0..4], &s[4..6], &s[6..8]))
+                            format!("{}-{}-{}", &s[0..4], &s[4..6], &s[6..8])
                         } else {
-                            Some(s.to_string())
+                            s.to_string()
                         }
                     }),
                 url: json.get("webpage_url")
@@ -862,8 +862,7 @@ pub async fn download_twitch_vod(
         let download_id_for_progress = download_id_clone.clone();
         let duration_for_progress = total_duration;
         
-        let stdout_task = if let Some(stdout) = stdout {
-            Some(tokio::spawn(async move {
+        let stdout_task = stdout.map(|stdout| tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let reader = BufReader::new(stdout);
                 let mut lines = reader.lines();
@@ -877,11 +876,7 @@ pub async fn download_twitch_vod(
                             let pct_str = pct_str.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
                             if let Ok(pct) = pct_str.trim().parse::<f64>() {
                                 if last_progress_time.elapsed().as_millis() >= 500 {
-                                    let current_time = if let Some(dur) = duration_for_progress {
-                                        Some((pct / 100.0) * dur)
-                                    } else {
-                                        None
-                                    };
+                                    let current_time = duration_for_progress.map(|dur| (pct / 100.0) * dur);
 
                                     let _ = app_for_progress.emit("download-progress", DownloadProgress {
                                         download_id: download_id_for_progress.clone(),
@@ -898,14 +893,10 @@ pub async fn download_twitch_vod(
                         println!("[Twitch] yt-dlp: {}", line);
                     }
                 }
-            }))
-        } else {
-            None
-        };
+            }));
 
         // Drain stderr for warnings/errors
-        let stderr_task = if let Some(stderr) = stderr {
-            Some(tokio::spawn(async move {
+        let stderr_task = stderr.map(|stderr| tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
@@ -914,10 +905,7 @@ pub async fn download_twitch_vod(
                         println!("[Twitch] yt-dlp stderr: {}", line);
                     }
                 }
-            }))
-        } else {
-            None
-        };
+            }));
 
         let mut stdout_task = stdout_task;
         let mut stderr_task = stderr_task;
@@ -1278,8 +1266,7 @@ pub async fn download_twitch_vod_segment(
         let download_id_for_stderr = download_id_for_progress.clone();
         let segment_dur = segment_duration;
         
-        let stdout_task = if let Some(stdout) = stdout {
-            Some(tokio::spawn(async move {
+        let stdout_task = stdout.map(|stdout| tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let reader = BufReader::new(stdout);
                 let mut lines = reader.lines();
@@ -1308,10 +1295,7 @@ pub async fn download_twitch_vod_segment(
                         println!("[Twitch] yt-dlp: {}", line);
                     }
                 }
-            }))
-        } else {
-            None
-        };
+            }));
 
         // Drain stderr for warnings/errors + progress fallback
         let stderr_task = if let Some(stderr) = stderr {
@@ -1358,10 +1342,7 @@ pub async fn download_twitch_vod_segment(
                         println!("[Twitch] yt-dlp stderr: {}", line);
                     }
                 }
-            }))
-        } else {
-            None
-        };
+            }));
 
         let mut stdout_task = stdout_task;
         let mut stderr_task = stderr_task;

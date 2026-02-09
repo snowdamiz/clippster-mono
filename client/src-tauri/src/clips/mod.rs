@@ -29,9 +29,11 @@ use tokio::sync::watch;
 pub type CancellationToken = watch::Receiver<bool>;
 
 // Active clip builds tracking with cancellation senders
+#[allow(clippy::type_complexity)]
 static ACTIVE_CLIP_BUILDS: Lazy<Arc<Mutex<HashMap<String, watch::Sender<bool>>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 // Build clip from segments using FFmpeg
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn build_clip_from_segments(
     app: tauri::AppHandle,
@@ -157,7 +159,7 @@ pub async fn build_clip_from_segments(
     });
 
     // Use tokio::spawn for background processing (following the download pattern)
-    let _ = tokio::spawn(async move {
+    tokio::spawn(async move {
         println!("[Rust] Async task started for clip build: {}", clip_id_clone);
 
         let build_result = match build_clip_internal_simple(

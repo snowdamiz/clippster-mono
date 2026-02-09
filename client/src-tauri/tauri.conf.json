@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Clippster",
-  "version": "0.1.46",
+  "version": "0.1.52",
   "identifier": "com.openworth.clippster",
   "build": {
     "beforeDevCommand": "yarn dev",
@@ -26,7 +26,9 @@
     "macOSPrivateApi": true,
     "security": {
       "csp": "default-src 'self' asset: https://asset.localhost; connect-src 'self' http://localhost:* http://127.0.0.1:* https://clippster-server.fly.dev https:; img-src 'self' asset: https://asset.localhost data: https:; media-src 'self' asset: https://asset.localhost https: http://localhost:* http://127.0.0.1:*; video-src 'self' asset: https://asset.localhost https: http://localhost:* http://127.0.0.1:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:",
-      "dangerousDisableAssetCspModification": [".*/.*"],
+      "dangerousDisableAssetCspModification": [
+        ".*/.*"
+      ],
       "assetProtocol": {
         "enable": true,
         "scope": [

@@ -31,7 +31,7 @@ pub struct VideoSource {
     pub end_time: f64,
 
     pub trim_start: Option<f64>,
-
+    
     pub trim_end: Option<f64>,
 
     pub opacity: Option<f64>,

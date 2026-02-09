@@ -111,13 +111,13 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
       sources.forEach((source) => {
         // Calculate trim duration from the SOURCE video
         // If trim_end is null (using full video), calculate from timeline duration
-        const trimDuration = source.trim_end != null 
-          ? source.trim_end - source.trim_start 
+        const trimDuration = source.trim_end != null
+          ? source.trim_end - source.trim_start
           : (source.end_time - source.start_time);
         proxyWorkflow.ensureProxyForSource(
-          source.id, 
-          source.source_path, 
-          source.trim_start, 
+          source.id,
+          source.source_path,
+          source.trim_start,
           trimDuration
         ).catch((error) => {
           console.warn('[useEditorPlayback] Failed to ensure proxy:', error);
@@ -171,7 +171,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
       onPlayStateChange?.(playing);
       if (videoElement) {
         if (playing && videoElement.paused && !isInGap.value) {
-          videoElement.play().catch(() => {});
+          videoElement.play().catch(() => { });
         } else if (!playing && !videoElement.paused) {
           videoElement.pause();
         }
@@ -206,17 +206,17 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
   const nextSource = computed(() => {
     const currentTime = engine.currentTime.value;
     const current = activeSource.value;
-    
+
     // If we're in a segment and approaching its end, preload the next one
     if (current && current.timeRemaining <= PRELOAD_THRESHOLD) {
       return renderer.getNextVideoSource(current.end_time - 0.01);
     }
-    
+
     // Also preload if we're in a gap approaching a segment
     if (renderer.isInGap(currentTime)) {
       return renderer.getNextVideoSource(currentTime);
     }
-    
+
     return null;
   });
 
@@ -324,7 +324,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
     }
 
     const drift = Math.abs(videoElement.currentTime - source.videoTime);
-    
+
     // Large drift = user scrubbed the playhead, always sync immediately
     const isUserSeek = drift > LARGE_DRIFT_THRESHOLD;
 
@@ -333,7 +333,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
       if (videoElement.seeking || videoElement.readyState < 3) {
         return;
       }
-      
+
       // Only sync if drift exceeds small tolerance
       if (drift <= SYNC_TOLERANCE) {
         return;
@@ -344,7 +344,7 @@ export function useEditorPlayback(options: EditorPlaybackOptions): EditorPlaybac
 
     // Sync play state
     if (engine.isPlaying.value && videoElement.paused && videoElement.readyState >= 2) {
-      videoElement.play().catch(() => {});
+      videoElement.play().catch(() => { });
     }
   }
 

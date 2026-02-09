@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::ShellExt;
 
@@ -44,7 +44,7 @@ fn extract_init_segment(data: &[u8]) -> Option<Vec<u8>> {
 }
 
 /// Get the path to the init segment file
-fn get_init_segment_path(dvr_dir: &PathBuf) -> PathBuf {
+fn get_init_segment_path(dvr_dir: &Path) -> PathBuf {
     dvr_dir.join("init.webm")
 }
 
@@ -206,12 +206,10 @@ pub async fn has_dvr_chunks(
     let entries = fs::read_dir(&dvr_dir)
         .map_err(|e| format!("Failed to read DVR directory: {}", e))?;
     
-    for entry in entries {
-        if let Ok(entry) = entry {
-            if let Some(filename) = entry.path().file_name().and_then(|n| n.to_str()) {
-                if filename.starts_with("chunk_") && filename.ends_with(".webm") {
-                    return Ok(true);
-                }
+    for entry in entries.flatten() {
+        if let Some(filename) = entry.path().file_name().and_then(|n| n.to_str()) {
+            if filename.starts_with("chunk_") && filename.ends_with(".webm") {
+                return Ok(true);
             }
         }
     }

@@ -524,9 +524,9 @@ fn process_wav_file(
                 let end_idx = (sample_idx + 1000).min(samples.len());
                 let mut min_val = 0.0f64;
                 let mut max_val = 0.0f64;
-                for i in sample_idx..end_idx {
-                    if samples[i] < min_val { min_val = samples[i]; }
-                    if samples[i] > max_val { max_val = samples[i]; }
+                for sample in &samples[sample_idx..end_idx] {
+                    if *sample < min_val { min_val = *sample; }
+                    if *sample > max_val { max_val = *sample; }
                 }
                 println!("[Rust]   At {}s (sample_idx={}): min={:.4}, max={:.4}", time_sec, sample_idx, min_val, max_val);
             }
@@ -552,12 +552,9 @@ fn process_wav_file(
         let mut min_val = 0.0f64;
         let mut max_val = 0.0f64;
 
-        for j in start_idx..end_idx {
-            if j < num_samples {
-                let sample = samples[j];
-                if sample < min_val { min_val = sample; }
-                if sample > max_val { max_val = sample; }
-            }
+        for sample in &samples[start_idx..end_idx.min(num_samples)] {
+            if *sample < min_val { min_val = *sample; }
+            if *sample > max_val { max_val = *sample; }
         }
 
         // Store actual min/max values - this shows the true waveform shape
@@ -566,7 +563,7 @@ fn process_wav_file(
 
     let peak_count = peaks.len() as u32;
     println!("[Rust] Generated {} peaks covering {} samples", peak_count, num_samples);
-    
+
     // Find the actual max peak value across all peaks
     let mut global_max: f64 = 0.0;
     let mut max_peak_idx: usize = 0;
@@ -767,12 +764,9 @@ fn process_wav_file_to_peaks(
         let mut min_val = 0.0f64;
         let mut max_val = 0.0f64;
 
-        for j in start_idx..end_idx {
-            if j < num_samples {
-                let sample = samples[j];
-                if sample < min_val { min_val = sample; }
-                if sample > max_val { max_val = sample; }
-            }
+        for sample in &samples[start_idx..end_idx.min(num_samples)] {
+            if *sample < min_val { min_val = *sample; }
+            if *sample > max_val { max_val = *sample; }
         }
 
         peaks.push(WaveformPeak { min: min_val, max: max_val });

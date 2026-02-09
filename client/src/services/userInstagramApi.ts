@@ -120,7 +120,8 @@ export async function startUserInstagramOAuth(
 
   try {
     // Start OAuth - Tauri will open browser and handle callback
-    await invoke('start_user_instagram_oauth', { authToken });
+    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+    await invoke('start_user_instagram_oauth', { apiBase, authToken });
 
     // Listen for the result
     const unlisten = await listen<InstagramAuthResult>('instagram-auth-complete', (event) => {
@@ -252,6 +253,43 @@ export async function getUserPost(postId: number): Promise<PostResponse> {
 export async function syncPostAnalytics(postId: number): Promise<PostResponse> {
   const response = await api.post(`/user/posts/${postId}/sync`);
   return response.data;
+}
+
+export interface UserAnalyticsSummary {
+  total_posts: number;
+  total_views: number;
+  total_likes: number;
+  total_comments: number;
+  total_saves: number;
+  total_reach: number;
+  total_impressions: number;
+}
+
+export interface AnalyticsSummaryResponse {
+  success: boolean;
+  summary?: UserAnalyticsSummary;
+  error?: string;
+}
+
+/**
+ * Get analytics summary for user's posts
+ */
+export async function getUserAnalyticsSummary(options?: {
+  account_id?: number;
+  days?: number;
+}): Promise<AnalyticsSummaryResponse> {
+  try {
+    const response = await api.get<AnalyticsSummaryResponse>('/user/posts/analytics', {
+      params: options,
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('[UserInstagramApi] Failed to get analytics summary:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to get analytics summary',
+    };
+  }
 }
 
 // ============================================

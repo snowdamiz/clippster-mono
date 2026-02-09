@@ -767,6 +767,8 @@ pub async fn get_video_metadata(app: tauri::AppHandle, video_path: String) -> Re
     let mut width: Option<u32> = None;
     let mut height: Option<u32> = None;
 
+    let resolution_re = regex::Regex::new(r"(\d{2,5})x(\d{2,5})").ok();
+
     for line in stderr.lines() {
         // Parse duration
         if line.contains("Duration:") {
@@ -786,12 +788,11 @@ pub async fn get_video_metadata(app: tauri::AppHandle, video_path: String) -> Re
                 }
             }
         }
-        
+
         // Parse video stream for resolution (e.g., "Stream #0:0: Video: h264, 1920x1080")
         if line.contains("Video:") && line.contains("x") {
             // Look for resolution pattern like "1920x1080" or "1280x720"
-            let re = regex::Regex::new(r"(\d{2,5})x(\d{2,5})").ok();
-            if let Some(re) = re {
+            if let Some(re) = &resolution_re {
                 if let Some(caps) = re.captures(line) {
                     if let (Some(w), Some(h)) = (caps.get(1), caps.get(2)) {
                         width = w.as_str().parse().ok();
@@ -841,6 +842,8 @@ pub async fn get_audio_metadata(app: tauri::AppHandle, audio_path: String) -> Re
     let mut sample_rate: Option<u32> = None;
     let mut channels: Option<u32> = None;
 
+    let hz_re = regex::Regex::new(r"(\d+)\s*Hz").ok();
+
     for line in stderr.lines() {
         // Parse duration
         if line.contains("Duration:") {
@@ -860,12 +863,11 @@ pub async fn get_audio_metadata(app: tauri::AppHandle, audio_path: String) -> Re
                 }
             }
         }
-        
+
         // Parse audio stream for sample rate and channels (e.g., "Audio: aac, 44100 Hz, stereo")
         if line.contains("Audio:") {
             // Parse sample rate (e.g., "44100 Hz")
-            let hz_re = regex::Regex::new(r"(\d+)\s*Hz").ok();
-            if let Some(re) = hz_re {
+            if let Some(re) = &hz_re {
                 if let Some(caps) = re.captures(line) {
                     if let Some(sr) = caps.get(1) {
                         sample_rate = sr.as_str().parse().ok();
@@ -921,11 +923,12 @@ pub async fn get_image_metadata(app: tauri::AppHandle, image_path: String) -> Re
     let mut width: Option<u32> = None;
     let mut height: Option<u32> = None;
 
+    let resolution_re = regex::Regex::new(r"(\d{2,5})x(\d{2,5})").ok();
+
     for line in stderr.lines() {
         // Parse video/image stream for resolution (e.g., "Stream #0:0: Video: png, rgba, 1920x1080")
         if line.contains("Video:") && line.contains("x") {
-            let re = regex::Regex::new(r"(\d{2,5})x(\d{2,5})").ok();
-            if let Some(re) = re {
+            if let Some(re) = &resolution_re {
                 if let Some(caps) = re.captures(line) {
                     if let (Some(w), Some(h)) = (caps.get(1), caps.get(2)) {
                         width = w.as_str().parse().ok();
@@ -1018,7 +1021,7 @@ pub async fn copy_watermark_to_storage(source_path: String, app: tauri::AppHandl
     }
 
     // Get file size
-    let file_size = fs::metadata(&source)
+    let file_size = fs::metadata(source)
         .map(|m| m.len())
         .ok();
 
@@ -1191,7 +1194,7 @@ pub async fn copy_image_to_storage(source_path: String, app: tauri::AppHandle) -
     };
 
     // Get file size
-    let file_size = fs::metadata(&source)
+    let file_size = fs::metadata(source)
         .map(|m| m.len())
         .ok();
 
@@ -1472,7 +1475,7 @@ pub async fn copy_font_to_storage(source_path: String) -> Result<CopyFontRespons
     let dest_path = paths.fonts.join(&dest_filename);
     
     // Copy the file
-    fs::copy(&source, &dest_path)
+    fs::copy(source, &dest_path)
         .map_err(|e| format!("Failed to copy font file: {}", e))?;
     
     println!("[Rust] Font copied: {} -> {}", source_path, dest_path.display());
@@ -1547,7 +1550,7 @@ pub async fn copy_audio_to_storage(source_path: String, app: tauri::AppHandle) -
     }
 
     // Get file size
-    let file_size = fs::metadata(&source)
+    let file_size = fs::metadata(source)
         .map(|m| m.len())
         .ok();
 

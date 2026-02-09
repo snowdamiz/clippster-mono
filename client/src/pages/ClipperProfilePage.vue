@@ -440,6 +440,113 @@
               </div>
             </section>
           </template>
+
+          <!-- Posts Analytics -->
+          <template v-if="activeTab === 'posts'">
+            <!-- Stat Cards -->
+            <div class="posts-stats-grid">
+              <div class="posts-stat-card posts-stat-card--cyan">
+                <div class="posts-stat-card__icon">
+                  <FileVideo />
+                </div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">{{ postsAnalytics?.total_posts || 0 }}</span>
+                  <span class="posts-stat-card__label">Total Posts</span>
+                </div>
+              </div>
+              <div class="posts-stat-card posts-stat-card--purple">
+                <div class="posts-stat-card__icon">
+                  <Eye />
+                </div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">{{ formatViews(postsAnalytics?.total_views || 0) }}</span>
+                  <span class="posts-stat-card__label">Total Views</span>
+                </div>
+              </div>
+              <div class="posts-stat-card posts-stat-card--pink">
+                <div class="posts-stat-card__icon">
+                  <Heart />
+                </div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">{{ formatViews(postsAnalytics?.total_likes || 0) }}</span>
+                  <span class="posts-stat-card__label">Total Likes</span>
+                </div>
+              </div>
+              <div class="posts-stat-card posts-stat-card--green">
+                <div class="posts-stat-card__icon">
+                  <TrendingUp />
+                </div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">{{ formatViews(postsAnalytics?.total_reach || 0) }}</span>
+                  <span class="posts-stat-card__label">Total Reach</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Posts List -->
+            <section class="section">
+              <div class="section__header">
+                <div class="section__header-icon section__header-icon--cyan">
+                  <FileVideo />
+                </div>
+                <div class="section__header-text">
+                  <h2 class="section-title">My Posts</h2>
+                  <p class="section-subtitle">Posts published to your Instagram account</p>
+                </div>
+                <button class="browse-btn" @click="loadPostsAnalytics">
+                  <RefreshCw class="browse-btn__icon" :class="{ 'animate-spin': loadingPosts }" />
+                  Refresh
+                </button>
+              </div>
+
+              <div v-if="loadingPosts" class="loading-rows">
+                <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
+              </div>
+              <div v-else-if="userPosts.length === 0" class="empty-state">
+                <FileVideo class="empty-state__icon" />
+                <p class="empty-state__title">No posts yet</p>
+                <p class="empty-state__text">Publish your first video to see it here</p>
+              </div>
+              <div v-else class="posts-grid">
+                <div v-for="post in userPosts" :key="post.id" class="post-card">
+                  <div class="post-card__media">
+                    <div class="post-card__thumbnail">
+                      <img v-if="post.thumbnail_url" :src="post.thumbnail_url" alt="Post thumbnail" />
+                      <div v-else class="post-card__thumbnail-placeholder">
+                        <FileVideo />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="post-card__content">
+                    <div class="post-card__header">
+                      <span class="post-card__status" :class="`post-card__status--${post.status}`">
+                        {{ post.status }}
+                      </span>
+                      <a v-if="post.post_url" :href="post.post_url" target="_blank" class="post-card__link">
+                        View on Instagram
+                      </a>
+                    </div>
+                    <p v-if="post.caption" class="post-card__caption">
+                      {{ post.caption.substring(0, 100) }}{{ post.caption.length > 100 ? '...' : '' }}
+                    </p>
+                    <div class="post-card__stats">
+                      <div class="post-stat">
+                        <Eye class="post-stat__icon" />
+                        <span class="post-stat__value">{{ formatViews(post.view_count) }}</span>
+                      </div>
+                      <div class="post-stat">
+                        <Heart class="post-stat__icon" />
+                        <span class="post-stat__value">{{ formatViews(post.like_count) }}</span>
+                      </div>
+                    </div>
+                    <div class="post-card__footer">
+                      <span class="post-card__date">{{ formatDate(post.published_at) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </template>
         </main>
       </div>
     </PageLayout>
@@ -722,6 +829,11 @@
     Clock,
     Users,
     X,
+    BarChart3,
+    Heart,
+    TrendingUp,
+    FileVideo,
+    RefreshCw,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
@@ -756,7 +868,11 @@
     disconnectUserInstagramAccount,
     startUserInstagramOAuth,
     isTokenExpiringSoon,
+    getUserAnalyticsSummary,
+    listUserPosts,
     type UserInstagramAccount,
+    type UserPost,
+    type UserAnalyticsSummary,
   } from '@/services/userInstagramApi';
   import { getMyClipperProfile, type ClipperProfile } from '@/services/clipperProfilesApi';
   import {
@@ -776,6 +892,7 @@
     { id: 'accounts', label: 'Accounts', icon: markRaw(Share2) },
     { id: 'payments', label: 'Payments', icon: markRaw(Wallet) },
     { id: 'campaigns', label: 'Campaigns', icon: markRaw(Megaphone) },
+    { id: 'posts', label: 'Posts', icon: markRaw(BarChart3) },
   ];
 
   const activeTab = ref('leaderboard');
@@ -803,6 +920,11 @@
   const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
   const avatarLoadError = ref(false);
 
+  // Posts Analytics State
+  const loadingPosts = ref(false);
+  const postsAnalytics = ref<UserAnalyticsSummary | null>(null);
+  const userPosts = ref<UserPost[]>([]);
+
   interface LeaderboardEntry {
     id: number;
     rank: number;
@@ -816,6 +938,16 @@
     () => clipperProfile.value?.avatar_url,
     () => {
       avatarLoadError.value = false;
+    }
+  );
+
+  // Load posts analytics when posts tab is selected
+  watch(
+    () => activeTab.value,
+    (newTab) => {
+      if (newTab === 'posts' && userPosts.value.length === 0) {
+        loadPostsAnalytics();
+      }
     }
   );
 
@@ -853,6 +985,28 @@
       console.error('Failed to load leaderboard:', error);
     } finally {
       loadingLeaderboard.value = false;
+    }
+  };
+
+  const loadPostsAnalytics = async () => {
+    loadingPosts.value = true;
+    try {
+      // Load analytics summary
+      const analyticsRes = await getUserAnalyticsSummary({ days: 30 });
+      if (analyticsRes.success && analyticsRes.summary) {
+        postsAnalytics.value = analyticsRes.summary;
+      }
+
+      // Load posts list
+      const postsRes = await listUserPosts();
+      if (postsRes.success) {
+        userPosts.value = postsRes.posts;
+      }
+    } catch (error) {
+      console.error('Failed to load posts analytics:', error);
+      toast({ title: 'Error', description: 'Failed to load posts analytics' });
+    } finally {
+      loadingPosts.value = false;
     }
   };
 
@@ -1904,6 +2058,254 @@
   .section__header-icon--purple {
     background-color: rgba(139, 92, 246, 0.15);
     color: #a78bfa;
+  }
+
+  .section__header-icon--cyan {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+  }
+
+  /* Posts Stats Grid */
+  .posts-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .posts-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    transition: all 200ms ease;
+  }
+
+  .posts-stat-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  }
+
+  .posts-stat-card__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .posts-stat-card__icon svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .posts-stat-card--cyan .posts-stat-card__icon {
+    background: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+  }
+
+  .posts-stat-card--purple .posts-stat-card__icon {
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+  }
+
+  .posts-stat-card--pink .posts-stat-card__icon {
+    background: rgba(236, 72, 153, 0.15);
+    color: #ec4899;
+  }
+
+  .posts-stat-card--green .posts-stat-card__icon {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  .posts-stat-card__content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .posts-stat-card__value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .posts-stat-card__label {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  /* Posts Grid */
+  .posts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+  }
+
+  .post-card {
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    overflow: hidden;
+    transition: all 200ms ease;
+  }
+
+  .post-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  }
+
+  .post-card__media {
+    position: relative;
+    width: 100%;
+  }
+
+  .post-card__thumbnail {
+    position: relative;
+    width: 100%;
+    padding-top: 56.25%; /* 16:9 aspect ratio */
+    background: var(--sidebar-hover);
+    overflow: hidden;
+  }
+
+  .post-card__thumbnail img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .post-card__thumbnail-placeholder {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text-muted);
+  }
+
+  .post-card__thumbnail-placeholder svg {
+    width: 32px;
+    height: 32px;
+  }
+
+  .post-card__content {
+    padding: 1rem;
+  }
+
+  .post-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+
+  .post-card__status {
+    padding: 0.125rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .post-card__status--published {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  .post-card__status--failed {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+
+  .post-card__link {
+    font-size: 0.75rem;
+    color: #06b6d4;
+    text-decoration: none;
+    font-weight: 500;
+    transition: opacity 200ms ease;
+  }
+
+  .post-card__link:hover {
+    opacity: 0.8;
+  }
+
+  .post-card__caption {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+  }
+
+  .post-card__stats {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding-bottom: 0.75rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .post-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .post-stat__icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .post-stat__value {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .post-card__footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .post-card__date {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .browse-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   .section__header-text {

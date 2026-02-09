@@ -603,6 +603,7 @@ defmodule ClippsterServerWeb.Router do
     post("/user/posts/upload-media", UserPostsController, :upload_media)
     post("/user/instagram/publish", UserPostsController, :publish)
     get("/user/posts", UserPostsController, :index)
+    get("/user/posts/analytics", UserPostsController, :analytics_summary)
     get("/user/posts/:id", UserPostsController, :show)
     post("/user/posts/:id/sync", UserPostsController, :sync_analytics)
 

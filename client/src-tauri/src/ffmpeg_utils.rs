@@ -55,8 +55,8 @@ pub fn parse_duration_string(duration_str: &str) -> Option<f64> {
 /// Handles negative times (e.g., "-00:00:00.001234") that FFmpeg outputs at start of HLS downloads
 pub fn parse_ffmpeg_time(time_str: &str) -> Option<f64> {
     // Check for negative time (FFmpeg outputs this at start of HLS streams)
-    let (is_negative, time_str) = if time_str.starts_with('-') {
-        (true, &time_str[1..])
+    let (is_negative, time_str) = if let Some(stripped) = time_str.strip_prefix('-') {
+        (true, stripped)
     } else {
         (false, time_str)
     };

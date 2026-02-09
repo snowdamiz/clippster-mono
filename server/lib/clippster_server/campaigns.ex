@@ -912,6 +912,34 @@ defmodule ClippsterServer.Campaigns do
   end
 
   @doc """
+  Gets analytics summary for a user's posts.
+  """
+  def get_user_analytics_summary(user_id, opts \\ []) do
+    days = Keyword.get(opts, :days, 30)
+    account_id = Keyword.get(opts, :account_id)
+
+    since = DateTime.utc_now() |> DateTime.add(-days, :day)
+
+    query = from p in UserPost,
+      where: p.user_id == ^user_id,
+      where: p.status == "published",
+      where: p.inserted_at >= ^since,
+      select: %{
+        total_posts: count(p.id),
+        total_views: sum(p.view_count),
+        total_likes: sum(p.like_count),
+        total_comments: sum(p.comment_count),
+        total_saves: sum(p.save_count),
+        total_reach: sum(p.reach_count),
+        total_impressions: sum(p.impressions_count)
+      }
+
+    query = if account_id, do: where(query, [p], p.clipper_social_account_id == ^account_id), else: query
+
+    Repo.one(query)
+  end
+
+  @doc """
   Updates user post analytics.
   """
   def update_user_post_analytics(%UserPost{} = post, analytics) do

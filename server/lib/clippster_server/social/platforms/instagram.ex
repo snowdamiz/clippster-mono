@@ -423,8 +423,8 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         Logger.info("[Instagram] Publishing as IMAGE")
         publish_image(access_token, ig_user_id, media_url, caption)
       "video" ->
-        Logger.info("[Instagram] Publishing as VIDEO")
-        publish_video(access_token, ig_user_id, media_url, caption)
+        Logger.info("[Instagram] Publishing as REEL (VIDEO deprecated)")
+        publish_reel(access_token, ig_user_id, media_url, caption)
       "reel" ->
         Logger.info("[Instagram] Publishing as REEL")
         publish_reel(access_token, ig_user_id, media_url, caption)

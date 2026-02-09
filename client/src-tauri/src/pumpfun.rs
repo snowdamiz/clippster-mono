@@ -311,6 +311,7 @@ pub async fn stop_livestream_recording(mint_id: String) -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_recorder_process(
     app: tauri::AppHandle,
     script_path: String,

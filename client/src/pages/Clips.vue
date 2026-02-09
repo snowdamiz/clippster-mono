@@ -684,7 +684,7 @@
       <Transition name="fade">
         <div
           v-if="isUploadingMedia"
-          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-50"
+          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[10001]"
         >
           <div class="text-center">
             <div

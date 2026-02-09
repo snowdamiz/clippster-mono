@@ -471,26 +471,24 @@ pub struct BuildSettings {
 /// Framing mode determines how the video is cropped/processed for portrait output
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum FramingMode {
     /// Split screen with two regions stacked vertically (e.g., content top, speaker bottom)
     SplitScreen,
     /// Dynamic panning that follows speakers across frames
     DynamicPan,
     /// Static crop centered on detected speaker(s)
+    #[default]
     Static,
     /// Manual multi-region layout defined by user
     MultiRegion,
 }
 
-impl Default for FramingMode {
-    fn default() -> Self {
-        FramingMode::Static
-    }
-}
 
 /// Video content type classification
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
+#[derive(Default)]
 pub enum VideoType {
     /// Single centered speaker with minimal movement (interview, presentation)
     TalkingHead,
@@ -503,14 +501,10 @@ pub enum VideoType {
     /// Multiple speakers in similar region (side by side)
     Podcast,
     /// Could not determine video type
+    #[default]
     Unknown,
 }
 
-impl Default for VideoType {
-    fn default() -> Self {
-        VideoType::Unknown
-    }
-}
 
 /// Normalized bounding box (coordinates in 0.0-1.0 range)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
