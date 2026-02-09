@@ -2,6 +2,7 @@
 import { computed, ref, toRef, watch } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useTimelineElementResize } from "../../composables/timeline/element/useElementResize";
+import { useElementFade } from "../../composables/timeline/element/useElementFade";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useFilmstrip } from "../../composables/timeline/useFilmstrip";
 import { useAudioWaveform } from "../../composables/timeline/useAudioWaveform";
@@ -32,6 +33,7 @@ const props = defineProps<{
 	dragState: ElementDragState;
 	snappingEnabled: boolean;
 	rippleShifts?: Map<string, number>;
+	isEffectDropTarget?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -41,6 +43,7 @@ const emit = defineEmits<{
 	(e: "elementMouseDown", event: MouseEvent, element: TimelineElementType): void;
 	(e: "elementClick", event: MouseEvent, element: TimelineElementType): void;
 	(e: "elementContextMenu", event: MouseEvent, element: TimelineElementType): void;
+	(e: "keyframeClick", payload: { elementId: string; offset: number; rect: DOMRect }): void;
 }>();
 
 const { editor, version } = useEditor();
@@ -166,6 +169,48 @@ const { isLoading: waveformLoading, isLoaded: waveformLoaded } = useAudioWavefor
 	currentTime: playheadTime,
 });
 
+const { fadeState, currentFadeIn, currentFadeOut, handleFadeStart } = useElementFade({
+	element: toRef(props, "element"),
+	track: toRef(props, "track"),
+	zoomLevel: toRef(props, "zoomLevel"),
+});
+
+const isFading = computed(() => fadeState.value !== null);
+
+const fadeInPx = computed(() => {
+	const fade = isFading.value ? currentFadeIn.value : (props.element.fadeIn ?? 0);
+	return fade * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel;
+});
+
+const fadeOutPx = computed(() => {
+	const fade = isFading.value ? currentFadeOut.value : (props.element.fadeOut ?? 0);
+	return fade * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel;
+});
+
+// Keyframe diamond markers: collect all keyframe offsets from all property tracks
+const keyframeDiamonds = computed(() => {
+	const kf = props.element.keyframes;
+	if (!kf) return [];
+	const offsets = new Set<number>();
+	for (const track of Object.values(kf.tracks)) {
+		if (!track) continue;
+		for (const k of track.keyframes) {
+			offsets.add(k.offset);
+		}
+	}
+	return Array.from(offsets).sort((a, b) => a - b).map((offset) => ({
+		offset,
+		leftPx: offset * elementWidth.value,
+	}));
+});
+
+function handleKeyframeClick(ev: MouseEvent, offset: number) {
+	ev.stopPropagation();
+	const target = ev.currentTarget as HTMLElement;
+	const rect = target.getBoundingClientRect();
+	emit('keyframeClick', { elementId: props.element.id, offset, rect });
+}
+
 function onContextAction(action: string) {
 	invokeAction(action as any);
 }
@@ -285,25 +330,82 @@ function onContextAction(action: string) {
 				>
 					<span class="text-white text-xs">👁️‍🗨️</span>
 				</div>
+
+				<!-- Effect drop target highlight -->
+				<div
+					v-if="isEffectDropTarget"
+					class="pointer-events-none absolute inset-0 z-40 rounded-[0.4rem] border-2 border-[#E040FB] bg-[#E040FB]/15"
+				/>
+			</button>
+
+			<!-- Fade-in gradient overlay -->
+			<div
+				v-if="fadeInPx > 0"
+				class="pointer-events-none absolute top-0 bottom-0 left-0 z-20"
+				:style="{ width: `${fadeInPx}px`, background: 'linear-gradient(to right, rgba(0,0,0,0.5), transparent)' }"
+			/>
+			<!-- Fade-out gradient overlay -->
+			<div
+				v-if="fadeOutPx > 0"
+				class="pointer-events-none absolute top-0 bottom-0 right-0 z-20"
+				:style="{ width: `${fadeOutPx}px`, background: 'linear-gradient(to left, rgba(0,0,0,0.5), transparent)' }"
+			/>
+
+			<!-- Fade-in triangle handle (bottom-left) -->
+			<div
+				v-if="isSelected || fadeInPx > 0"
+				class="absolute bottom-0 z-40 cursor-ew-resize group/fade"
+				:style="{ left: `${fadeInPx}px` }"
+				@mousedown="handleFadeStart($event, 'fadeIn')"
+			>
+				<svg width="8" height="8" viewBox="0 0 8 8" class="opacity-60 group-hover/fade:opacity-100 transition-opacity">
+					<polygon points="0,8 8,8 0,0" fill="white" />
+				</svg>
+			</div>
+
+			<!-- Fade-out triangle handle (bottom-right) -->
+			<div
+				v-if="isSelected || fadeOutPx > 0"
+				class="absolute bottom-0 z-40 cursor-ew-resize group/fade"
+				:style="{ right: `${fadeOutPx}px` }"
+				@mousedown="handleFadeStart($event, 'fadeOut')"
+			>
+				<svg width="8" height="8" viewBox="0 0 8 8" class="opacity-60 group-hover/fade:opacity-100 transition-opacity">
+					<polygon points="0,8 8,8 8,0" fill="white" />
+				</svg>
+			</div>
+
+			<!-- Keyframe diamond markers -->
+			<button
+				v-for="kd in keyframeDiamonds"
+				:key="kd.offset"
+				type="button"
+				class="pointer-events-auto absolute z-30 flex items-center justify-center rounded-sm transition-transform hover:scale-125"
+				:style="{ left: `${kd.leftPx - 6}px`, top: '50%', transform: 'translateY(-50%)', width: '12px', height: '12px' }"
+				@click="handleKeyframeClick($event, kd.offset)"
+			>
+				<svg width="12" height="12" viewBox="0 0 12 12">
+					<polygon points="6,0 12,6 6,12 0,6" fill="#facc15" fill-opacity="0.9" stroke="#a16207" stroke-width="0.5" />
+				</svg>
 			</button>
 
 			<!-- Resize handles -->
 			<template v-if="isSelected">
 				<button
 					type="button"
-					class="bg-primary absolute top-0 bottom-0 left-0 z-50 flex w-[0.6rem] cursor-w-resize items-center justify-center"
+					class="bg-primary/70 absolute top-0 bottom-0 left-0 z-50 flex w-[4px] cursor-w-resize items-center justify-center"
 					@mousedown="handleResizeStart({ e: $event, elementId: element.id, side: 'left' })"
 					aria-label="Left resize handle"
 				>
-					<div class="bg-foreground h-[1.5rem] w-[0.2rem] rounded-full" />
+					<div class="bg-foreground/80 h-[12px] w-[2px] rounded-full" />
 				</button>
 				<button
 					type="button"
-					class="bg-primary absolute top-0 bottom-0 right-0 z-50 flex w-[0.6rem] cursor-e-resize items-center justify-center"
+					class="bg-primary/70 absolute top-0 bottom-0 right-0 z-50 flex w-[4px] cursor-e-resize items-center justify-center"
 					@mousedown="handleResizeStart({ e: $event, elementId: element.id, side: 'right' })"
 					aria-label="Right resize handle"
 				>
-					<div class="bg-foreground h-[1.5rem] w-[0.2rem] rounded-full" />
+					<div class="bg-foreground/80 h-[12px] w-[2px] rounded-full" />
 				</button>
 			</template>
 		</div>

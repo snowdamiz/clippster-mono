@@ -245,14 +245,19 @@ function formatTime(seconds: number): string {
 		</div>
 
 		<!-- Fade In / Fade Out -->
-		<div class="grid grid-cols-2 gap-2">
-			<div class="space-y-1">
-				<label class="text-xs text-zinc-500">Fade In (s)</label>
-				<input type="number" :value="fadeInInput" min="0" :max="element.duration / 2" step="0.1" class="h-7 w-full rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleFadeIn((e.target as HTMLInputElement).value)" />
-			</div>
-			<div class="space-y-1">
-				<label class="text-xs text-zinc-500">Fade Out (s)</label>
-				<input type="number" :value="fadeOutInput" min="0" :max="element.duration / 2" step="0.1" class="h-7 w-full rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleFadeOut((e.target as HTMLInputElement).value)" />
+		<div class="space-y-1.5">
+			<label class="text-xs text-zinc-500">Fade</label>
+			<div class="flex items-center gap-3">
+				<div class="flex flex-1 flex-col gap-1">
+					<span class="text-[9px] text-zinc-600">In</span>
+					<input type="range" :value="(element.fadeIn ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="(e) => handleFadeIn((Number((e.target as HTMLInputElement).value) / 10).toFixed(1))" />
+					<span class="text-[9px] text-zinc-500">{{ (element.fadeIn ?? 0).toFixed(1) }}s</span>
+				</div>
+				<div class="flex flex-1 flex-col gap-1">
+					<span class="text-[9px] text-zinc-600">Out</span>
+					<input type="range" :value="(element.fadeOut ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="(e) => handleFadeOut((Number((e.target as HTMLInputElement).value) / 10).toFixed(1))" />
+					<span class="text-[9px] text-zinc-500">{{ (element.fadeOut ?? 0).toFixed(1) }}s</span>
+				</div>
 			</div>
 		</div>
 

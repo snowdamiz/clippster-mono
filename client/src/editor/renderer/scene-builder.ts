@@ -74,9 +74,14 @@ export function buildScene(params: BuildSceneParams) {
 							crop: videoEl.crop,
 							colorAdjustments: videoEl.colorAdjustments,
 							speed: videoEl.speed,
+							fadeIn: videoEl.fadeIn,
+							fadeOut: videoEl.fadeOut,
 							keyframes: videoEl.keyframes,
 							effects: videoEl.effects,
 							chromakey: videoEl.chromakey,
+							animationIn: videoEl.animationIn,
+							animationOut: videoEl.animationOut,
+							animationLoop: videoEl.animationLoop,
 						}),
 					);
 				}
@@ -94,9 +99,14 @@ export function buildScene(params: BuildSceneParams) {
 							flip: imageEl.flip,
 							crop: imageEl.crop,
 							colorAdjustments: imageEl.colorAdjustments,
+							fadeIn: imageEl.fadeIn,
+							fadeOut: imageEl.fadeOut,
 							keyframes: imageEl.keyframes,
 							effects: imageEl.effects,
 							chromakey: imageEl.chromakey,
+							animationIn: imageEl.animationIn,
+							animationOut: imageEl.animationOut,
+							animationLoop: imageEl.animationLoop,
 						}),
 					);
 				}
@@ -123,7 +133,12 @@ export function buildScene(params: BuildSceneParams) {
 						transform: element.transform,
 						opacity: element.opacity,
 						color: element.color,
+						fadeIn: element.fadeIn,
+						fadeOut: element.fadeOut,
 						keyframes: element.keyframes,
+						animationIn: element.animationIn,
+						animationOut: element.animationOut,
+						animationLoop: element.animationLoop,
 					}),
 				);
 			}

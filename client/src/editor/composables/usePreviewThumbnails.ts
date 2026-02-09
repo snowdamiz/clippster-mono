@@ -635,6 +635,156 @@ export function renderTransitionPreview(
 			ctx.globalAlpha = 1;
 			break;
 		}
+		case "circleWipe": {
+			const maxR = Math.sqrt(w * w + h * h) / 2;
+			ctx.drawImage(tempA, 0, 0);
+			ctx.save();
+			ctx.beginPath();
+			ctx.arc(w / 2, h / 2, maxR * progress, 0, Math.PI * 2);
+			ctx.clip();
+			ctx.drawImage(tempB, 0, 0);
+			ctx.restore();
+			break;
+		}
+		case "diamondWipe": {
+			const size = Math.max(w, h) * progress;
+			ctx.drawImage(tempA, 0, 0);
+			ctx.save();
+			ctx.beginPath();
+			ctx.moveTo(w / 2, h / 2 - size);
+			ctx.lineTo(w / 2 + size, h / 2);
+			ctx.lineTo(w / 2, h / 2 + size);
+			ctx.lineTo(w / 2 - size, h / 2);
+			ctx.closePath();
+			ctx.clip();
+			ctx.drawImage(tempB, 0, 0);
+			ctx.restore();
+			break;
+		}
+		case "clockWipe": {
+			const maxR2 = Math.sqrt(w * w + h * h);
+			ctx.drawImage(tempA, 0, 0);
+			ctx.save();
+			ctx.beginPath();
+			ctx.moveTo(w / 2, h / 2);
+			ctx.arc(w / 2, h / 2, maxR2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
+			ctx.closePath();
+			ctx.clip();
+			ctx.drawImage(tempB, 0, 0);
+			ctx.restore();
+			break;
+		}
+		case "pushLeft": {
+			ctx.drawImage(tempA, -w * progress, 0);
+			ctx.drawImage(tempB, w * (1 - progress), 0);
+			break;
+		}
+		case "pushRight": {
+			ctx.drawImage(tempA, w * progress, 0);
+			ctx.drawImage(tempB, -w * (1 - progress), 0);
+			break;
+		}
+		case "pushUp": {
+			ctx.drawImage(tempA, 0, -h * progress);
+			ctx.drawImage(tempB, 0, h * (1 - progress));
+			break;
+		}
+		case "pushDown": {
+			ctx.drawImage(tempA, 0, h * progress);
+			ctx.drawImage(tempB, 0, -h * (1 - progress));
+			break;
+		}
+		case "coverLeft": {
+			ctx.drawImage(tempA, 0, 0);
+			ctx.drawImage(tempB, w * (1 - progress), 0);
+			break;
+		}
+		case "coverRight": {
+			ctx.drawImage(tempA, 0, 0);
+			ctx.drawImage(tempB, -w * (1 - progress), 0);
+			break;
+		}
+		case "revealLeft": {
+			ctx.drawImage(tempB, 0, 0);
+			ctx.drawImage(tempA, -w * progress, 0);
+			break;
+		}
+		case "revealRight": {
+			ctx.drawImage(tempB, 0, 0);
+			ctx.drawImage(tempA, w * progress, 0);
+			break;
+		}
+		case "rotateIn": {
+			ctx.save();
+			ctx.globalAlpha = 1 - progress;
+			ctx.drawImage(tempA, 0, 0);
+			ctx.restore();
+			ctx.save();
+			ctx.globalAlpha = progress;
+			ctx.translate(w / 2, h / 2);
+			ctx.rotate((1 - progress) * Math.PI * 0.5);
+			ctx.scale(0.5 + progress * 0.5, 0.5 + progress * 0.5);
+			ctx.translate(-w / 2, -h / 2);
+			ctx.drawImage(tempB, 0, 0);
+			ctx.restore();
+			break;
+		}
+		case "flipHorizontal": {
+			if (progress < 0.5) {
+				const s = Math.cos(progress * Math.PI);
+				ctx.save();
+				ctx.translate(w / 2, 0);
+				ctx.scale(s, 1);
+				ctx.translate(-w / 2, 0);
+				ctx.drawImage(tempA, 0, 0);
+				ctx.restore();
+			} else {
+				const s = -Math.cos(progress * Math.PI);
+				ctx.save();
+				ctx.translate(w / 2, 0);
+				ctx.scale(s, 1);
+				ctx.translate(-w / 2, 0);
+				ctx.drawImage(tempB, 0, 0);
+				ctx.restore();
+			}
+			break;
+		}
+		case "flipVertical": {
+			if (progress < 0.5) {
+				const s = Math.cos(progress * Math.PI);
+				ctx.save();
+				ctx.translate(0, h / 2);
+				ctx.scale(1, s);
+				ctx.translate(0, -h / 2);
+				ctx.drawImage(tempA, 0, 0);
+				ctx.restore();
+			} else {
+				const s = -Math.cos(progress * Math.PI);
+				ctx.save();
+				ctx.translate(0, h / 2);
+				ctx.scale(1, s);
+				ctx.translate(0, -h / 2);
+				ctx.drawImage(tempB, 0, 0);
+				ctx.restore();
+			}
+			break;
+		}
+		case "glitch": {
+			const src = progress < 0.5 ? tempA : tempB;
+			ctx.drawImage(src, 0, 0);
+			const intensity = Math.sin(progress * Math.PI);
+			const other = progress < 0.5 ? tempB : tempA;
+			const slices = Math.floor(3 + intensity * 8);
+			for (let i = 0; i < slices; i++) {
+				const hash = ((Math.floor(progress * 100) + i * 73856093) & 0xffff) / 0xffff;
+				if (hash > intensity) continue;
+				const sy = Math.floor(hash * h);
+				const sh = Math.floor(4 + hash * 15);
+				const ox = (hash - 0.5) * w * intensity * 0.3;
+				ctx.drawImage(other, 0, sy, w, sh, ox, sy, w, sh);
+			}
+			break;
+		}
 		default: {
 			// Fallback: simple crossfade
 			ctx.drawImage(tempA, 0, 0);

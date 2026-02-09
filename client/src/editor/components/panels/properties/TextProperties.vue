@@ -17,6 +17,7 @@ import {
 	Strikethrough,
 	Type,
 } from "lucide-vue-next";
+import AnimationProperties from "./AnimationProperties.vue";
 
 const props = defineProps<{
 	element: TextElement;
@@ -560,6 +561,21 @@ const weightOptions = [
 						</div>
 					</div>
 				</div>
+			</div>
+		</div>
+
+		<!-- Animation -->
+		<div class="space-y-1.5">
+			<label class="text-xs font-medium text-zinc-400">Animation</label>
+			<div class="rounded-md border border-white/5 bg-white/[0.01]">
+				<AnimationProperties
+					:element-id="element.id"
+					:track-id="trackId"
+					:animation-in="element.animationIn"
+					:animation-out="element.animationOut"
+					:animation-loop="element.animationLoop"
+					:element-duration="element.duration"
+				/>
 			</div>
 		</div>
 	</div>

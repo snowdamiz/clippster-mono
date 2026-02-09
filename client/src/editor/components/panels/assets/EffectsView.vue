@@ -91,7 +91,7 @@ const categoryTabs = computed(() => [
 		<div class="flex-1 overflow-y-auto p-3">
 			<div class="mb-3 flex items-center gap-2 rounded-md border border-white/5 bg-white/[0.02] px-2.5 py-1.5">
 				<GripVertical class="size-3.5 shrink-0 text-zinc-600" />
-				<p class="text-[11px] text-zinc-500">Drag an effect onto the timeline</p>
+				<p class="text-[11px] text-zinc-500">Drag onto a clip to apply, or onto empty space for a track effect</p>
 			</div>
 
 			<div v-if="filteredPresets.length === 0" class="flex h-full items-center justify-center">

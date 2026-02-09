@@ -36,11 +36,8 @@
     "@tauri-apps/plugin-sql": "~2",
     "@tauri-apps/plugin-updater": "^2.9.0",
     "axios": "^1.7.9",
-<<<<<<< HEAD
     "better-sqlite3": "^12.6.2",
-=======
     "eventemitter3": "^5.0.4",
->>>>>>> 14de204bb9c54567a0eb0f293c555b9845f91210
     "hls.js": "^1.6.15",
     "livekit-client": "^2.9.1",
     "lucide-vue-next": "^0.548.0",

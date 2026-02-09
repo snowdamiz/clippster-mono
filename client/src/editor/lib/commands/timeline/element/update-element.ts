@@ -15,11 +15,11 @@ import type {
 import { EditorCore } from "../../../../core";
 
 export type UpdatableVideoProps = Partial<
-	Pick<VideoElement, "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey">
+	Pick<VideoElement, "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut">
 >;
 
 export type UpdatableImageProps = Partial<
-	Pick<ImageElement, "opacity" | "transform" | "hidden" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey">
+	Pick<ImageElement, "opacity" | "transform" | "hidden" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut">
 >;
 
 export type UpdatableAudioProps = Partial<
@@ -27,7 +27,7 @@ export type UpdatableAudioProps = Partial<
 >;
 
 export type UpdatableStickerProps = Partial<
-	Pick<StickerElement, "opacity" | "transform" | "color" | "hidden">
+	Pick<StickerElement, "opacity" | "transform" | "color" | "hidden" | "fadeIn" | "fadeOut">
 >;
 
 export type UpdatableEffectProps = Partial<

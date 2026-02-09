@@ -33,6 +33,7 @@ import DragLine from "./DragLine.vue";
 import SelectionBox from "../SelectionBox.vue";
 import TimelineScrollbar from "./TimelineScrollbar.vue";
 import TimelineContextMenu from "./TimelineContextMenu.vue";
+import KeyframePopup from "./KeyframePopup.vue";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Lock,
@@ -60,6 +61,12 @@ function handleContextMenu(params: { event: MouseEvent; element: { id: string };
 	params.event.preventDefault();
 	contextMenuPos.value = { x: params.event.clientX, y: params.event.clientY };
 	contextMenuElement.value = { trackId: params.track.id, elementId: params.element.id };
+}
+
+function handleEmptyContextMenu(event: MouseEvent) {
+	event.preventDefault();
+	contextMenuPos.value = { x: event.clientX, y: event.clientY };
+	contextMenuElement.value = null;
 }
 
 function closeContextMenu() {
@@ -208,6 +215,7 @@ const timelineHeight = computed(() => timelineRef.value?.offsetHeight ?? 400);
 const {
 	isDragOver,
 	dropTarget,
+	dragElementType,
 	handleDragEnter,
 	handleDragOver,
 	handleDragLeave,
@@ -230,6 +238,27 @@ const {
 	},
 	tracksScrollRef,
 	zoomLevel,
+});
+
+const effectDropTargetId = computed(() => {
+	if (!isDragOver.value || !dropTarget.value?.targetElementId) return null;
+	return dropTarget.value.targetElementId;
+});
+
+const effectDropTargetTrackId = computed(() => {
+	if (!isDragOver.value || !dropTarget.value?.targetTrackId) return null;
+	return dropTarget.value.targetTrackId;
+});
+
+/** Pixel position of a transition junction drop indicator */
+const transitionJunctionPx = computed(() => {
+	if (!isDragOver.value || !dropTarget.value?.targetElementId || !dropTarget.value?.targetTrackId) return null;
+	// Only show for transition drags (when dragElementType is null — transitions set it to null)
+	if (dragElementType.value !== null) return null;
+	return {
+		x: dropTarget.value.xPosition * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value,
+		trackId: dropTarget.value.targetTrackId,
+	};
 });
 
 const contentWidth = computed(
@@ -352,6 +381,17 @@ function onScrollAreaClick(event: MouseEvent) {
 	if (event.target !== event.currentTarget) return;
 	event.stopPropagation();
 	handleTracksClick(event);
+}
+
+// Keyframe popup state
+const keyframePopup = ref<{ elementId: string; offset: number; rect: DOMRect } | null>(null);
+
+function handleKeyframeClick(payload: { elementId: string; offset: number; rect: DOMRect }) {
+	keyframePopup.value = payload;
+}
+
+function closeKeyframePopup() {
+	keyframePopup.value = null;
 }
 </script>
 
@@ -527,6 +567,7 @@ function onScrollAreaClick(event: MouseEvent) {
 						@click="onScrollAreaClick"
 						@wheel="onScrollAreaWheel"
 						@scroll="saveScrollPosition"
+						@contextmenu.prevent="handleEmptyContextMenu"
 					>
 						<div
 							class="relative"
@@ -577,6 +618,7 @@ function onScrollAreaClick(event: MouseEvent) {
 										:drag-state="dragState"
 										:snapping-enabled="autoSnapping"
 										:razor-mode="razorMode"
+										:effect-drop-target-id="effectDropTargetTrackId === track.id ? effectDropTargetId : null"
 										@snap-point-change="handleSnapPointChange"
 										@resize-state-change="handleResizeStateChange"
 										@element-mouse-down="handleElementMouseDown"
@@ -585,7 +627,22 @@ function onScrollAreaClick(event: MouseEvent) {
 										@razor-cut="handleRazorCut"
 										@track-mouse-down="(event) => { handleSelectionMouseDown(event); handleTracksMouseDown(event); }"
 										@track-click="handleTracksClick"
+										@keyframe-click="handleKeyframeClick"
 									/>
+									<!-- Transition junction drop indicator -->
+									<div
+										v-if="transitionJunctionPx && transitionJunctionPx.trackId === track.id"
+										class="pointer-events-none absolute top-0 z-50"
+										:style="{
+											left: `${transitionJunctionPx.x - 8}px`,
+											width: '16px',
+											height: '100%',
+										}"
+									>
+										<div class="flex h-full items-center justify-center">
+											<div class="h-full w-[2px] rounded-full bg-[#E040FB] shadow-[0_0_6px_#E040FB]" />
+										</div>
+									</div>
 								</div>
 							</div>
 						</div>
@@ -604,6 +661,14 @@ function onScrollAreaClick(event: MouseEvent) {
 			v-if="tracksScrollRef"
 			:scroll-container="tracksScrollRef"
 			:track-labels-width="trackLabelsWidth"
+		/>
+
+		<KeyframePopup
+			v-if="keyframePopup"
+			:element-id="keyframePopup.elementId"
+			:offset="keyframePopup.offset"
+			:anchor-rect="keyframePopup.rect"
+			@close="closeKeyframePopup"
 		/>
 	</section>
 </template>

@@ -7,6 +7,8 @@ import { getKeyframedValue } from "../../types/keyframes";
 import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvancedColorAdjustments } from "../effects/canvas-effects";
 import { applyChromakey } from "../effects/canvas-chromakey";
 import type { ChromakeySettings } from "../../types/chromakey";
+import type { ElementAnimation } from "../../types/animations";
+import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
 
 const IMAGE_EPSILON = 1 / 1000;
 
@@ -25,9 +27,14 @@ export interface ImageNodeParams {
 	flip?: FlipState;
 	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
+	fadeIn?: number;
+	fadeOut?: number;
 	keyframes?: ElementKeyframes;
 	effects?: VideoEffect[];
 	chromakey?: ChromakeySettings;
+	animationIn?: ElementAnimation;
+	animationOut?: ElementAnimation;
+	animationLoop?: ElementAnimation;
 }
 
 export class ImageNode extends BaseNode<ImageNodeParams> {
@@ -82,8 +89,28 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
 		const kf = this.params.keyframes;
 
-		const resolvedOpacity = getKeyframedValue({ elementKeyframes: kf, property: "opacity", normalizedTime, defaultValue: this.params.opacity ?? 1 });
+		let resolvedOpacity = getKeyframedValue({ elementKeyframes: kf, property: "opacity", normalizedTime, defaultValue: this.params.opacity ?? 1 });
+
+		// Apply fade in/out opacity ramp
+		const fadeIn = this.params.fadeIn ?? 0;
+		const fadeOut = this.params.fadeOut ?? 0;
+		if (fadeIn > 0 && elapsed < fadeIn) {
+			resolvedOpacity *= elapsed / fadeIn;
+		}
+		if (fadeOut > 0 && elapsed > this.params.duration - fadeOut) {
+			resolvedOpacity *= (this.params.duration - elapsed) / fadeOut;
+		}
+
 		renderer.context.globalAlpha = resolvedOpacity;
+
+		// Apply element animations (in/out/loop)
+		const animResult = computeAnimationTransforms(
+			this.params.animationIn,
+			this.params.animationOut,
+			this.params.animationLoop,
+			{ elapsed, elementDuration: this.params.duration, canvasWidth: renderer.width, canvasHeight: renderer.height },
+		);
+		applyAnimationToContext(renderer.context, animResult, renderer.width / 2, renderer.height / 2);
 
 		// Apply transform (scale, position, rotation)
 		const transform = this.params.transform;

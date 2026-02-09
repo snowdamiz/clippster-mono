@@ -6,6 +6,7 @@ import { useActionHandler } from "./useActionHandler";
 import { useEditor } from "../useEditor";
 import { useElementSelection } from "../timeline/element/useElementSelection";
 import { getElementsAtTime } from "../../lib/timeline";
+import type { ClipboardItem, CreateTimelineElement } from "../../types/timeline";
 
 export function useEditorActions() {
 	const { editor } = useEditor();
@@ -184,13 +185,48 @@ export function useEditorActions() {
 
 	useActionHandler("copy-selected", () => {
 		if (selectedElements.value.length === 0) return;
-		// Copy to clipboard will be handled by the timeline store in Phase 4
-		console.log("[EditorActions] Copy selected:", selectedElements.value.length, "elements");
+		const items: ClipboardItem[] = [];
+		for (const sel of selectedElements.value) {
+			const track = editor.timeline.getTrackById({ trackId: sel.trackId });
+			if (!track) continue;
+			const element = track.elements.find((el) => el.id === sel.elementId);
+			if (!element) continue;
+			const { id, ...rest } = element;
+			items.push({
+				trackId: sel.trackId,
+				trackType: track.type,
+				element: rest as CreateTimelineElement,
+			});
+		}
+		editor.selection.setClipboard({ items });
+	});
+
+	useActionHandler("cut-selected", () => {
+		if (selectedElements.value.length === 0) return;
+		// Copy first
+		const items: ClipboardItem[] = [];
+		for (const sel of selectedElements.value) {
+			const track = editor.timeline.getTrackById({ trackId: sel.trackId });
+			if (!track) continue;
+			const element = track.elements.find((el) => el.id === sel.elementId);
+			if (!element) continue;
+			const { id, ...rest } = element;
+			items.push({
+				trackId: sel.trackId,
+				trackType: track.type,
+				element: rest as CreateTimelineElement,
+			});
+		}
+		editor.selection.setClipboard({ items });
+		// Then delete
+		editor.timeline.deleteElements({ elements: selectedElements.value });
 	});
 
 	useActionHandler("paste-copied", () => {
-		// Paste from clipboard will be handled by the timeline store in Phase 4
-		console.log("[EditorActions] Paste at:", editor.playback.getCurrentTime());
+		const clipboardItems = editor.selection.getClipboard();
+		if (clipboardItems.length === 0) return;
+		const currentTime = editor.playback.getCurrentTime();
+		editor.timeline.pasteAtTime({ time: currentTime, clipboardItems });
 	});
 
 	useActionHandler("undo", () => {

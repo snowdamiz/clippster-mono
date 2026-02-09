@@ -9,6 +9,10 @@ import { getEffectPreset } from "../../../constants/effect-constants";
 import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
 import { Image, Trash2, RotateCcw, FlipHorizontal, FlipVertical, Wand2, Eye, EyeOff, X, ChevronDown, Pipette } from "lucide-vue-next";
+import { useKeyframes } from "../../../composables/useKeyframes";
+import { toRef } from "vue";
+import KeyframeToggle from "./KeyframeToggle.vue";
+import AnimationProperties from "./AnimationProperties.vue";
 
 const props = defineProps<{
 	element: ImageElement;
@@ -17,6 +21,12 @@ const props = defineProps<{
 
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
+
+const trackRef = computed(() => editor.timeline.getTrackById({ trackId: props.trackId })!);
+const { hasKeyframes: hasKf, addKeyframe, clearPropertyKeyframes } = useKeyframes({
+	trackRef,
+	elementRef: toRef(props, 'element'),
+});
 
 const opacityInput = ref(Math.round(props.element.opacity * 100).toString());
 const scaleInput = ref(Math.round(props.element.transform.scale * 100).toString());
@@ -67,6 +77,26 @@ function updateColor(partial: Partial<ColorAdjustments>) {
 
 function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
+}
+
+function toggleOpacityKeyframe() {
+	if (hasKf('opacity')) {
+		clearPropertyKeyframes('opacity');
+	} else {
+		const currentTime = editor.playback.getCurrentTime();
+		const elapsed = currentTime - props.element.startTime;
+		const offset = props.element.duration > 0 ? elapsed / props.element.duration : 0;
+		addKeyframe('opacity', clamp(offset, 0, 1), props.element.opacity);
+	}
+}
+
+function handleFadeInSlider(e: Event) {
+	const val = Number((e.target as HTMLInputElement).value) / 10;
+	update({ fadeIn: val > 0.01 ? val : undefined });
+}
+function handleFadeOutSlider(e: Event) {
+	const val = Number((e.target as HTMLInputElement).value) / 10;
+	update({ fadeOut: val > 0.01 ? val : undefined });
 }
 
 function handleOpacitySlider(e: Event) {
@@ -206,10 +236,30 @@ function formatTime(seconds: number): string {
 
 		<!-- Opacity -->
 		<div class="space-y-1.5">
-			<label class="text-xs text-zinc-500">Opacity</label>
+			<div class="flex items-center justify-between">
+				<label class="text-xs text-zinc-500">Opacity</label>
+				<KeyframeToggle :active="hasKf('opacity')" label="opacity" @toggle="toggleOpacityKeyframe" />
+			</div>
 			<div class="flex items-center gap-2">
 				<input type="range" :value="element.opacity * 100" min="0" max="100" step="1" class="flex-1" @input="handleOpacitySlider" />
 				<input type="number" :value="opacityInput" min="0" max="100" class="h-7 w-14 rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handleOpacityInput((e.target as HTMLInputElement).value)" @blur="handleOpacityBlur" />
+			</div>
+		</div>
+
+		<!-- Fade In / Out -->
+		<div class="space-y-1.5">
+			<label class="text-xs text-zinc-500">Fade</label>
+			<div class="flex items-center gap-3">
+				<div class="flex flex-1 flex-col gap-1">
+					<span class="text-[9px] text-zinc-600">In</span>
+					<input type="range" :value="(element.fadeIn ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeInSlider" />
+					<span class="text-[9px] text-zinc-500">{{ ((element.fadeIn ?? 0)).toFixed(1) }}s</span>
+				</div>
+				<div class="flex flex-1 flex-col gap-1">
+					<span class="text-[9px] text-zinc-600">Out</span>
+					<input type="range" :value="(element.fadeOut ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeOutSlider" />
+					<span class="text-[9px] text-zinc-500">{{ ((element.fadeOut ?? 0)).toFixed(1) }}s</span>
+				</div>
 			</div>
 		</div>
 
@@ -692,6 +742,21 @@ function formatTime(seconds: number): string {
 						</template>
 					</div>
 				</div>
+			</div>
+		</div>
+
+		<!-- Animation -->
+		<div class="space-y-1.5">
+			<label class="text-xs font-medium text-zinc-400">Animation</label>
+			<div class="rounded-md border border-white/5 bg-white/[0.01]">
+				<AnimationProperties
+					:element-id="element.id"
+					:track-id="trackId"
+					:animation-in="element.animationIn"
+					:animation-out="element.animationOut"
+					:animation-loop="element.animationLoop"
+					:element-duration="element.duration"
+				/>
 			</div>
 		</div>
 

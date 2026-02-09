@@ -17,6 +17,7 @@ mod waveform;
 mod audio_peaks;
 mod focal_detection;
 mod commands;
+mod sidecar;
 mod dvr;
 mod hls;
 mod video_editor_export;

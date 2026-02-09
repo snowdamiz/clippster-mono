@@ -10,7 +10,15 @@ export type AudioEffectType =
 	| "bandpass"
 	| "noisegate"
 	| "pitchShift"
-	| "tremolo";
+	| "tremolo"
+	| "vocalEnhance"
+	| "noiseReduction"
+	| "deesser"
+	| "limiter"
+	| "bassBoost"
+	| "telephone"
+	| "radio"
+	| "echo";
 
 export type AudioEffectCategory = "eq" | "dynamics" | "spatial" | "modulation" | "filter";
 
@@ -98,6 +106,48 @@ export interface TremoloEffect extends AudioEffectBase {
 	depth: number; // 0-100
 }
 
+export interface VocalEnhanceEffect extends AudioEffectBase {
+	type: "vocalEnhance";
+	presence: number; // 0-100
+	clarity: number; // 0-100
+}
+
+export interface NoiseReductionEffect extends AudioEffectBase {
+	type: "noiseReduction";
+	strength: number; // 0-100
+}
+
+export interface DeesserEffect extends AudioEffectBase {
+	type: "deesser";
+	frequency: number; // 4000-10000 Hz
+	threshold: number; // -40 to 0 dB
+}
+
+export interface LimiterEffect extends AudioEffectBase {
+	type: "limiter";
+	ceiling: number; // -6 to 0 dB
+}
+
+export interface BassBoostEffect extends AudioEffectBase {
+	type: "bassBoost";
+	gain: number; // 0-12 dB
+	frequency: number; // 60-200 Hz
+}
+
+export interface TelephoneEffect extends AudioEffectBase {
+	type: "telephone";
+}
+
+export interface RadioEffect extends AudioEffectBase {
+	type: "radio";
+}
+
+export interface EchoEffect extends AudioEffectBase {
+	type: "echo";
+	delayMs: number; // 100-1000 ms
+	decay: number; // 0.1-0.8
+}
+
 export type AudioEffect =
 	| EqEffect
 	| CompressorEffect
@@ -110,7 +160,15 @@ export type AudioEffect =
 	| BandpassEffect
 	| NoisegateEffect
 	| PitchShiftEffect
-	| TremoloEffect;
+	| TremoloEffect
+	| VocalEnhanceEffect
+	| NoiseReductionEffect
+	| DeesserEffect
+	| LimiterEffect
+	| BassBoostEffect
+	| TelephoneEffect
+	| RadioEffect
+	| EchoEffect;
 
 export type AudioEffectDefaults = {
 	[K in AudioEffect["type"]]: Omit<Extract<AudioEffect, { type: K }>, "id">;

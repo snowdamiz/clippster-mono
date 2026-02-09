@@ -13,9 +13,24 @@ export type TransitionType =
 	| "zoomIn"
 	| "zoomOut"
 	| "blur"
-	| "dissolve";
+	| "dissolve"
+	| "circleWipe"
+	| "diamondWipe"
+	| "clockWipe"
+	| "pushLeft"
+	| "pushRight"
+	| "pushUp"
+	| "pushDown"
+	| "coverLeft"
+	| "coverRight"
+	| "revealLeft"
+	| "revealRight"
+	| "rotateIn"
+	| "flipHorizontal"
+	| "flipVertical"
+	| "glitch";
 
-export type TransitionCategory = "fade" | "slide" | "wipe" | "zoom" | "stylize";
+export type TransitionCategory = "fade" | "slide" | "wipe" | "zoom" | "stylize" | "push" | "cover";
 
 export interface Transition {
 	id: string;

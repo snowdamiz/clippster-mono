@@ -221,6 +221,7 @@ export function useTimelineElementResize({
 		}
 
 		// Compute ripple shifts for subsequent elements during right-edge resize
+		// Only push elements that would actually overlap — filling gaps is free
 		if (rs.side === "right") {
 			const newEndTime = startTimeVal + durationVal;
 			const shifts = new Map<string, number>();
@@ -230,6 +231,8 @@ export function useTimelineElementResize({
 
 			let pushBoundary = newEndTime;
 			for (const el of els) {
+				// Only push if the element's ORIGINAL start time is before our new end
+				// (i.e., we'd actually overlap it), not if it's already past the gap
 				if (el.startTime < pushBoundary - 0.001) {
 					shifts.set(el.id, pushBoundary);
 					pushBoundary = pushBoundary + el.duration;

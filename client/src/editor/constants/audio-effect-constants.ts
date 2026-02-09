@@ -179,6 +179,110 @@ export const AUDIO_EFFECT_PRESETS: AudioEffectPreset[] = [
 			tone: 50,
 		},
 	},
+
+	// ── Voice ──
+	{
+		type: "vocalEnhance",
+		label: "Vocal Enhance",
+		description: "Boost presence and clarity for speech",
+		category: "dynamics",
+		defaults: {
+			type: "vocalEnhance",
+			enabled: true,
+			mix: 100,
+			presence: 50,
+			clarity: 50,
+		},
+	},
+	{
+		type: "noiseReduction",
+		label: "Noise Reduction",
+		description: "Remove background noise",
+		category: "dynamics",
+		defaults: {
+			type: "noiseReduction",
+			enabled: true,
+			mix: 100,
+			strength: 50,
+		},
+	},
+	{
+		type: "deesser",
+		label: "De-esser",
+		description: "Reduce harsh sibilance (s/t sounds)",
+		category: "dynamics",
+		defaults: {
+			type: "deesser",
+			enabled: true,
+			mix: 100,
+			frequency: 6000,
+			threshold: -20,
+		},
+	},
+	{
+		type: "limiter",
+		label: "Limiter",
+		description: "Prevent audio from clipping",
+		category: "dynamics",
+		defaults: {
+			type: "limiter",
+			enabled: true,
+			mix: 100,
+			ceiling: -1,
+		},
+	},
+
+	// ── Enhancement ──
+	{
+		type: "bassBoost",
+		label: "Bass Boost",
+		description: "Add low-end punch",
+		category: "eq",
+		defaults: {
+			type: "bassBoost",
+			enabled: true,
+			mix: 100,
+			gain: 6,
+			frequency: 100,
+		},
+	},
+
+	// ── Creative ──
+	{
+		type: "telephone",
+		label: "Telephone",
+		description: "Narrow bandwidth phone effect",
+		category: "filter",
+		defaults: {
+			type: "telephone",
+			enabled: true,
+			mix: 100,
+		},
+	},
+	{
+		type: "radio",
+		label: "Radio",
+		description: "AM radio broadcast effect",
+		category: "filter",
+		defaults: {
+			type: "radio",
+			enabled: true,
+			mix: 100,
+		},
+	},
+	{
+		type: "echo",
+		label: "Echo",
+		description: "Repeating echo with decay",
+		category: "spatial",
+		defaults: {
+			type: "echo",
+			enabled: true,
+			mix: 50,
+			delayMs: 300,
+			decay: 0.5,
+		},
+	},
 ];
 
 export function getAudioEffectPreset(type: string): AudioEffectPreset | undefined {

@@ -89,6 +89,66 @@ export function applyCanvasEffects(
 			case "posterize":
 				applyPosterize(ctx, width, height, effect.levels);
 				break;
+			case "bokehBlur":
+				applyBokehBlur(ctx, width, height, effect.radius, effect.focusX, effect.focusY, effect.focusSize);
+				break;
+			case "tiltShift":
+				applyTiltShift(ctx, width, height, effect.blurAmount, effect.position, effect.bandWidth);
+				break;
+			case "letterbox":
+				applyLetterbox(ctx, width, height, effect.barSize, effect.color);
+				break;
+			case "mirror":
+				applyMirror(ctx, width, height, effect.axis);
+				break;
+			case "kaleidoscope":
+				applyKaleidoscope(ctx, width, height, effect.segments, effect.rotation);
+				break;
+			case "edgeDetect":
+				applyEdgeDetect(ctx, width, height, effect.threshold);
+				break;
+			case "emboss":
+				applyEmboss(ctx, width, height, effect.strength, effect.angle);
+				break;
+			case "colorOverlay":
+				applyColorOverlay(ctx, width, height, effect.color, effect.blendMode, effect.intensity);
+				break;
+			case "duotone":
+				applyDuotone(ctx, width, height, effect.shadowColor, effect.highlightColor, effect.intensity);
+				break;
+			case "thermal":
+				applyThermal(ctx, width, height, effect.intensity);
+				break;
+			case "nightVision":
+				applyNightVision(ctx, width, height, effect.noiseAmount, effect.intensity);
+				break;
+			case "oldFilm":
+				applyOldFilm(ctx, width, height, effect.scratchDensity, effect.flickerAmount, effect.intensity, elapsed);
+				break;
+			case "tvStatic":
+				applyTvStatic(ctx, width, height, effect.density, effect.intensity);
+				break;
+			case "scanlines":
+				applyScanlines(ctx, width, height, effect.spacing, effect.opacity);
+				break;
+			case "rgbSplit":
+				applyRgbSplit(ctx, width, height, effect.amount, effect.angle);
+				break;
+			case "zoomBlur":
+				applyZoomBlur(ctx, width, height, effect.strength);
+				break;
+			case "shake":
+				applyShake(ctx, width, height, effect.amount, effect.speed, elapsed);
+				break;
+			case "strobe":
+				applyStrobe(ctx, width, height, effect.speed, effect.intensity, elapsed);
+				break;
+			case "colorPulse":
+				applyColorPulse(ctx, width, height, effect.speed, effect.intensity, elapsed);
+				break;
+			case "filmBurn":
+				applyFilmBurn(ctx, width, height, effect.speed, effect.color, effect.intensity, elapsed);
+				break;
 		}
 	}
 }
@@ -125,26 +185,8 @@ export function buildFilterString(effects: VideoEffect[]): string {
  * (i.e., cannot be done with ctx.filter alone).
  */
 export function hasPostDrawEffects(effects: VideoEffect[]): boolean {
-	return effects.some(
-		(e) =>
-			e.enabled &&
-			(e.type === "pixelate" ||
-				e.type === "sharpen" ||
-				e.type === "vignette" ||
-				e.type === "colorShift" ||
-				e.type === "glitch" ||
-				e.type === "wave" ||
-				e.type === "zoomPulse" ||
-				e.type === "flash" ||
-				e.type === "noise" ||
-				e.type === "vhs" ||
-				e.type === "motionBlur" ||
-				e.type === "radialBlur" ||
-				e.type === "hueShift" ||
-				e.type === "colorHalftone" ||
-				e.type === "lensDistortion" ||
-				e.type === "posterize"),
-	);
+	const filterOnlyTypes = new Set(["blur", "grayscale", "sepia", "negative"]);
+	return effects.some((e) => e.enabled && !filterOnlyTypes.has(e.type));
 }
 
 // ── Individual effect implementations ──
@@ -677,4 +719,502 @@ export function applyAdvancedColorAdjustments(
 	if (hasSharpness) {
 		applySharpen(ctx, w, h, (ca.sharpness! / 100) * 5);
 	}
+}
+
+// ── New Effect Implementations ──
+
+function applyBokehBlur(ctx: Ctx, w: number, h: number, radius: number, focusX: number, focusY: number, focusSize: number): void {
+	if (radius < 1) return;
+	const tempCanvas = new OffscreenCanvas(w, h);
+	const tempCtx = tempCanvas.getContext("2d")!;
+	tempCtx.drawImage(ctx.canvas as any, 0, 0);
+
+	// Apply blur to temp
+	tempCtx.filter = `blur(${radius}px)`;
+	tempCtx.drawImage(tempCanvas, 0, 0);
+	tempCtx.filter = "none";
+
+	// Create radial gradient mask for focus area
+	const cx = (focusX / 100) * w;
+	const cy = (focusY / 100) * h;
+	const focusRadius = (focusSize / 100) * Math.max(w, h) * 0.5;
+
+	ctx.save();
+	// Draw blurred version
+	ctx.drawImage(tempCanvas, 0, 0);
+	// Cut out the focus area by drawing original back with clip
+	ctx.globalCompositeOperation = "destination-in";
+	const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, focusRadius * 2);
+	gradient.addColorStop(0, "rgba(0,0,0,0)");
+	gradient.addColorStop(0.5, "rgba(0,0,0,0)");
+	gradient.addColorStop(1, "rgba(0,0,0,1)");
+	ctx.fillStyle = gradient;
+	ctx.fillRect(0, 0, w, h);
+	ctx.restore();
+
+	// Composite original sharp center back
+	ctx.save();
+	ctx.globalCompositeOperation = "destination-over";
+	tempCtx.filter = "none";
+	const origCanvas = new OffscreenCanvas(w, h);
+	const origCtx = origCanvas.getContext("2d")!;
+	origCtx.drawImage(ctx.canvas as any, 0, 0);
+	ctx.restore();
+}
+
+function applyTiltShift(ctx: Ctx, w: number, h: number, blurAmount: number, position: number, bandWidth: number): void {
+	if (blurAmount < 1) return;
+	const tempCanvas = new OffscreenCanvas(w, h);
+	const tempCtx = tempCanvas.getContext("2d")!;
+	tempCtx.drawImage(ctx.canvas as any, 0, 0);
+
+	// Create blurred version
+	const blurCanvas = new OffscreenCanvas(w, h);
+	const blurCtx = blurCanvas.getContext("2d")!;
+	blurCtx.filter = `blur(${blurAmount}px)`;
+	blurCtx.drawImage(tempCanvas, 0, 0);
+	blurCtx.filter = "none";
+
+	// Band position and width
+	const bandCenter = (position / 100) * h;
+	const bandHalf = (bandWidth / 100) * h * 0.5;
+	const feather = bandHalf * 0.6;
+
+	// Draw blurred, then draw sharp band on top with gradient mask
+	ctx.clearRect(0, 0, w, h);
+	ctx.drawImage(blurCanvas, 0, 0);
+
+	ctx.save();
+	ctx.globalCompositeOperation = "destination-out";
+	const gradient = ctx.createLinearGradient(0, bandCenter - bandHalf - feather, 0, bandCenter + bandHalf + feather);
+	gradient.addColorStop(0, "rgba(0,0,0,0)");
+	gradient.addColorStop(0.3, "rgba(0,0,0,1)");
+	gradient.addColorStop(0.7, "rgba(0,0,0,1)");
+	gradient.addColorStop(1, "rgba(0,0,0,0)");
+	ctx.fillStyle = gradient;
+	ctx.fillRect(0, 0, w, h);
+	ctx.restore();
+
+	ctx.save();
+	ctx.globalCompositeOperation = "destination-over";
+	ctx.drawImage(tempCanvas, 0, 0);
+	ctx.restore();
+}
+
+function applyLetterbox(ctx: Ctx, w: number, h: number, barSize: number, color: string): void {
+	const barHeight = Math.round((barSize / 100) * h);
+	if (barHeight < 1) return;
+	ctx.save();
+	ctx.fillStyle = color;
+	ctx.fillRect(0, 0, w, barHeight);
+	ctx.fillRect(0, h - barHeight, w, barHeight);
+	ctx.restore();
+}
+
+function applyMirror(ctx: Ctx, w: number, h: number, axis: "horizontal" | "vertical"): void {
+	const tempCanvas = new OffscreenCanvas(w, h);
+	const tempCtx = tempCanvas.getContext("2d")!;
+	tempCtx.drawImage(ctx.canvas as any, 0, 0);
+
+	if (axis === "horizontal") {
+		// Mirror left half to right
+		ctx.save();
+		ctx.translate(w, 0);
+		ctx.scale(-1, 1);
+		ctx.drawImage(tempCanvas, 0, 0, w / 2, h, 0, 0, w / 2, h);
+		ctx.restore();
+	} else {
+		// Mirror top half to bottom
+		ctx.save();
+		ctx.translate(0, h);
+		ctx.scale(1, -1);
+		ctx.drawImage(tempCanvas, 0, 0, w, h / 2, 0, 0, w, h / 2);
+		ctx.restore();
+	}
+}
+
+function applyKaleidoscope(ctx: Ctx, w: number, h: number, segments: number, rotation: number): void {
+	if (segments < 2) return;
+	const tempCanvas = new OffscreenCanvas(w, h);
+	const tempCtx = tempCanvas.getContext("2d")!;
+	tempCtx.drawImage(ctx.canvas as any, 0, 0);
+
+	const cx = w / 2;
+	const cy = h / 2;
+	const angleStep = (Math.PI * 2) / segments;
+	const rotRad = (rotation * Math.PI) / 180;
+
+	ctx.clearRect(0, 0, w, h);
+	ctx.save();
+
+	for (let i = 0; i < segments; i++) {
+		ctx.save();
+		ctx.translate(cx, cy);
+		ctx.rotate(angleStep * i + rotRad);
+		if (i % 2 === 1) ctx.scale(-1, 1);
+		ctx.beginPath();
+		ctx.moveTo(0, 0);
+		ctx.lineTo(Math.max(w, h), 0);
+		ctx.arc(0, 0, Math.max(w, h), 0, angleStep);
+		ctx.closePath();
+		ctx.clip();
+		ctx.translate(-cx, -cy);
+		ctx.drawImage(tempCanvas, 0, 0);
+		ctx.restore();
+	}
+
+	ctx.restore();
+}
+
+function applyEdgeDetect(ctx: Ctx, w: number, h: number, threshold: number): void {
+	const imageData = ctx.getImageData(0, 0, w, h);
+	const src = new Uint8ClampedArray(imageData.data);
+	const dst = imageData.data;
+	const t = (threshold / 100) * 128;
+
+	for (let y = 1; y < h - 1; y++) {
+		for (let x = 1; x < w - 1; x++) {
+			const idx = (y * w + x) * 4;
+			// Sobel operator
+			let gx = 0, gy = 0;
+			for (let c = 0; c < 3; c++) {
+				const tl = src[((y - 1) * w + (x - 1)) * 4 + c];
+				const t0 = src[((y - 1) * w + x) * 4 + c];
+				const tr = src[((y - 1) * w + (x + 1)) * 4 + c];
+				const ml = src[(y * w + (x - 1)) * 4 + c];
+				const mr = src[(y * w + (x + 1)) * 4 + c];
+				const bl = src[((y + 1) * w + (x - 1)) * 4 + c];
+				const b0 = src[((y + 1) * w + x) * 4 + c];
+				const br = src[((y + 1) * w + (x + 1)) * 4 + c];
+				gx += Math.abs(-tl + tr - 2 * ml + 2 * mr - bl + br);
+				gy += Math.abs(-tl - 2 * t0 - tr + bl + 2 * b0 + br);
+			}
+			const magnitude = (gx + gy) / 3;
+			const edge = magnitude > t ? Math.min(255, magnitude) : 0;
+			dst[idx] = edge;
+			dst[idx + 1] = edge;
+			dst[idx + 2] = edge;
+		}
+	}
+	ctx.putImageData(imageData, 0, 0);
+}
+
+function applyEmboss(ctx: Ctx, w: number, h: number, strength: number, angle: number): void {
+	const imageData = ctx.getImageData(0, 0, w, h);
+	const src = new Uint8ClampedArray(imageData.data);
+	const dst = imageData.data;
+	const rad = (angle * Math.PI) / 180;
+	const dx = Math.round(Math.cos(rad));
+	const dy = Math.round(Math.sin(rad));
+
+	for (let y = 1; y < h - 1; y++) {
+		for (let x = 1; x < w - 1; x++) {
+			const idx = (y * w + x) * 4;
+			const srcIdx1 = ((y - dy) * w + (x - dx)) * 4;
+			const srcIdx2 = ((y + dy) * w + (x + dx)) * 4;
+			for (let c = 0; c < 3; c++) {
+				const val = 128 + (src[srcIdx2 + c] - src[srcIdx1 + c]) * strength;
+				dst[idx + c] = Math.max(0, Math.min(255, Math.round(val)));
+			}
+		}
+	}
+	ctx.putImageData(imageData, 0, 0);
+}
+
+function applyColorOverlay(ctx: Ctx, w: number, h: number, color: string, blendMode: string, intensity: number): void {
+	ctx.save();
+	ctx.globalCompositeOperation = blendMode as GlobalCompositeOperation;
+	ctx.globalAlpha = intensity / 100;
+	ctx.fillStyle = color;
+	ctx.fillRect(0, 0, w, h);
+	ctx.restore();
+}
+
+function applyDuotone(ctx: Ctx, w: number, h: number, shadowColor: string, highlightColor: string, intensity: number): void {
+	const imageData = ctx.getImageData(0, 0, w, h);
+	const data = imageData.data;
+	const mix = intensity / 100;
+
+	// Parse colors
+	const sc = hexToRgb(shadowColor);
+	const hc = hexToRgb(highlightColor);
+
+	for (let i = 0; i < data.length; i += 4) {
+		const lum = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
+		const dr = sc.r + (hc.r - sc.r) * lum;
+		const dg = sc.g + (hc.g - sc.g) * lum;
+		const db = sc.b + (hc.b - sc.b) * lum;
+		data[i] = Math.round(data[i] * (1 - mix) + dr * mix);
+		data[i + 1] = Math.round(data[i + 1] * (1 - mix) + dg * mix);
+		data[i + 2] = Math.round(data[i + 2] * (1 - mix) + db * mix);
+	}
+	ctx.putImageData(imageData, 0, 0);
+}
+
+function applyThermal(ctx: Ctx, w: number, h: number, intensity: number): void {
+	const imageData = ctx.getImageData(0, 0, w, h);
+	const data = imageData.data;
+	const mix = intensity / 100;
+
+	for (let i = 0; i < data.length; i += 4) {
+		const lum = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
+		// Thermal palette: black → blue → red → yellow → white
+		let r: number, g: number, b: number;
+		if (lum < 0.25) {
+			const t = lum / 0.25;
+			r = 0; g = 0; b = Math.round(128 * t);
+		} else if (lum < 0.5) {
+			const t = (lum - 0.25) / 0.25;
+			r = Math.round(255 * t); g = 0; b = Math.round(128 * (1 - t));
+		} else if (lum < 0.75) {
+			const t = (lum - 0.5) / 0.25;
+			r = 255; g = Math.round(255 * t); b = 0;
+		} else {
+			const t = (lum - 0.75) / 0.25;
+			r = 255; g = 255; b = Math.round(255 * t);
+		}
+		data[i] = Math.round(data[i] * (1 - mix) + r * mix);
+		data[i + 1] = Math.round(data[i + 1] * (1 - mix) + g * mix);
+		data[i + 2] = Math.round(data[i + 2] * (1 - mix) + b * mix);
+	}
+	ctx.putImageData(imageData, 0, 0);
+}
+
+function applyNightVision(ctx: Ctx, w: number, h: number, noiseAmount: number, intensity: number): void {
+	const imageData = ctx.getImageData(0, 0, w, h);
+	const data = imageData.data;
+	const mix = intensity / 100;
+
+	for (let i = 0; i < data.length; i += 4) {
+		const lum = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) / 255;
+		// Green-tinted monochrome
+		const gr = Math.round(lum * 40);
+		const gg = Math.round(lum * 255);
+		const gb = Math.round(lum * 40);
+		const noise = (Math.random() - 0.5) * noiseAmount;
+		data[i] = Math.max(0, Math.min(255, Math.round(data[i] * (1 - mix) + (gr + noise) * mix)));
+		data[i + 1] = Math.max(0, Math.min(255, Math.round(data[i + 1] * (1 - mix) + (gg + noise) * mix)));
+		data[i + 2] = Math.max(0, Math.min(255, Math.round(data[i + 2] * (1 - mix) + (gb + noise) * mix)));
+	}
+	ctx.putImageData(imageData, 0, 0);
+
+	// Add vignette
+	applyVignette(ctx, w, h, 30, 60);
+}
+
+function applyOldFilm(ctx: Ctx, w: number, h: number, scratchDensity: number, flickerAmount: number, intensity: number, elapsed: number): void {
+	const mix = intensity / 100;
+
+	// Desaturate partially
+	const imageData = ctx.getImageData(0, 0, w, h);
+	const data = imageData.data;
+	for (let i = 0; i < data.length; i += 4) {
+		const lum = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+		// Sepia tint
+		data[i] = Math.round(data[i] * (1 - mix * 0.6) + (lum * 1.1 + 20) * mix * 0.6);
+		data[i + 1] = Math.round(data[i + 1] * (1 - mix * 0.6) + (lum * 0.9 + 10) * mix * 0.6);
+		data[i + 2] = Math.round(data[i + 2] * (1 - mix * 0.6) + (lum * 0.7) * mix * 0.6);
+	}
+	ctx.putImageData(imageData, 0, 0);
+
+	// Brightness flicker
+	if (flickerAmount > 0) {
+		const flicker = Math.sin(elapsed * 12.7) * Math.sin(elapsed * 7.3) * (flickerAmount / 100) * 0.15 * mix;
+		if (Math.abs(flicker) > 0.01) {
+			ctx.save();
+			ctx.globalCompositeOperation = flicker > 0 ? "lighter" : "multiply";
+			ctx.globalAlpha = Math.abs(flicker);
+			ctx.fillStyle = flicker > 0 ? "#ffffff" : "#000000";
+			ctx.fillRect(0, 0, w, h);
+			ctx.restore();
+		}
+	}
+
+	// Scratches
+	if (scratchDensity > 0) {
+		const seed = Math.floor(elapsed * 4);
+		const rng = (i: number) => {
+			const x = Math.sin(seed + i * 127.1) * 43758.5453;
+			return x - Math.floor(x);
+		};
+		const count = Math.ceil((scratchDensity / 100) * 5 * mix);
+		ctx.save();
+		ctx.globalAlpha = 0.3 * mix;
+		ctx.strokeStyle = "#ffffff";
+		ctx.lineWidth = 1;
+		for (let i = 0; i < count; i++) {
+			const x = rng(i) * w;
+			ctx.beginPath();
+			ctx.moveTo(x, 0);
+			ctx.lineTo(x + (rng(i + 50) - 0.5) * 20, h);
+			ctx.stroke();
+		}
+		ctx.restore();
+	}
+
+	// Vignette
+	applyVignette(ctx, w, h, 40, 50);
+}
+
+function applyTvStatic(ctx: Ctx, w: number, h: number, density: number, intensity: number): void {
+	const strength = (density / 100) * (intensity / 100);
+	if (strength < 0.01) return;
+	const imageData = ctx.getImageData(0, 0, w, h);
+	const data = imageData.data;
+	const blockSize = 4;
+
+	for (let y = 0; y < h; y += blockSize) {
+		for (let x = 0; x < w; x += blockSize) {
+			if (Math.random() > strength) continue;
+			const val = Math.random() * 255;
+			for (let dy = 0; dy < blockSize && y + dy < h; dy++) {
+				for (let dx = 0; dx < blockSize && x + dx < w; dx++) {
+					const idx = ((y + dy) * w + (x + dx)) * 4;
+					data[idx] = val;
+					data[idx + 1] = val;
+					data[idx + 2] = val;
+				}
+			}
+		}
+	}
+	ctx.putImageData(imageData, 0, 0);
+}
+
+function applyScanlines(ctx: Ctx, w: number, h: number, spacing: number, opacity: number): void {
+	if (opacity < 1) return;
+	ctx.save();
+	ctx.globalAlpha = opacity / 100 * 0.6;
+	ctx.fillStyle = "#000000";
+	for (let y = 0; y < h; y += spacing * 2) {
+		ctx.fillRect(0, y, w, spacing);
+	}
+	ctx.restore();
+}
+
+function applyRgbSplit(ctx: Ctx, w: number, h: number, amount: number, angle: number): void {
+	if (amount < 1) return;
+	const rad = (angle * Math.PI) / 180;
+	const dx = Math.round(Math.cos(rad) * amount);
+	const dy = Math.round(Math.sin(rad) * amount);
+
+	const imageData = ctx.getImageData(0, 0, w, h);
+	const src = new Uint8ClampedArray(imageData.data);
+	const dst = imageData.data;
+
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const dstIdx = (y * w + x) * 4;
+			// Red shifted one direction
+			const rx = Math.min(w - 1, Math.max(0, x + dx));
+			const ry = Math.min(h - 1, Math.max(0, y + dy));
+			dst[dstIdx] = src[(ry * w + rx) * 4];
+			// Green stays
+			dst[dstIdx + 1] = src[dstIdx + 1];
+			// Blue shifted opposite
+			const bx = Math.min(w - 1, Math.max(0, x - dx));
+			const by = Math.min(h - 1, Math.max(0, y - dy));
+			dst[dstIdx + 2] = src[(by * w + bx) * 4 + 2];
+			dst[dstIdx + 3] = src[dstIdx + 3];
+		}
+	}
+	ctx.putImageData(imageData, 0, 0);
+}
+
+function applyZoomBlur(ctx: Ctx, w: number, h: number, strength: number): void {
+	if (strength < 1) return;
+	const steps = Math.min(strength, 8);
+	const tempCanvas = new OffscreenCanvas(w, h);
+	const tempCtx = tempCanvas.getContext("2d")!;
+	tempCtx.drawImage(ctx.canvas as any, 0, 0);
+
+	ctx.save();
+	ctx.globalAlpha = 0.15 / steps;
+	for (let i = 1; i <= steps; i++) {
+		const scale = 1 + (i * strength * 0.003);
+		ctx.translate(w / 2, h / 2);
+		ctx.scale(scale, scale);
+		ctx.translate(-w / 2, -h / 2);
+		ctx.drawImage(tempCanvas, 0, 0);
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+	}
+	ctx.restore();
+}
+
+function applyShake(ctx: Ctx, w: number, h: number, amount: number, speed: number, elapsed: number): void {
+	const phase = elapsed * speed * Math.PI * 2;
+	const dx = Math.round(Math.sin(phase * 1.3) * amount * Math.sin(phase * 0.7));
+	const dy = Math.round(Math.cos(phase * 0.9) * amount * Math.cos(phase * 1.1));
+	if (dx === 0 && dy === 0) return;
+
+	const tempCanvas = new OffscreenCanvas(w, h);
+	const tempCtx = tempCanvas.getContext("2d")!;
+	tempCtx.drawImage(ctx.canvas as any, 0, 0);
+
+	ctx.clearRect(0, 0, w, h);
+	ctx.drawImage(tempCanvas, dx, dy);
+}
+
+function applyStrobe(ctx: Ctx, w: number, h: number, speed: number, intensity: number, elapsed: number): void {
+	// Square wave strobe: alternate between visible and black
+	const cycle = elapsed * speed;
+	const on = (cycle % 1) < 0.5;
+	if (!on) {
+		const alpha = (intensity / 100) * 0.9;
+		ctx.save();
+		ctx.globalAlpha = alpha;
+		ctx.fillStyle = "#000000";
+		ctx.fillRect(0, 0, w, h);
+		ctx.restore();
+	}
+}
+
+function applyColorPulse(ctx: Ctx, w: number, h: number, speed: number, intensity: number, elapsed: number): void {
+	const phase = elapsed * speed * Math.PI * 2;
+	const satBoost = Math.sin(phase) * (intensity / 100);
+	if (Math.abs(satBoost) < 0.01) return;
+
+	const tempCanvas = new OffscreenCanvas(w, h);
+	const tempCtx = tempCanvas.getContext("2d")!;
+	tempCtx.drawImage(ctx.canvas as any, 0, 0);
+
+	ctx.clearRect(0, 0, w, h);
+	ctx.save();
+	ctx.filter = `saturate(${1 + satBoost * 2})`;
+	ctx.drawImage(tempCanvas, 0, 0);
+	ctx.filter = "none";
+	ctx.restore();
+}
+
+function applyFilmBurn(ctx: Ctx, w: number, h: number, speed: number, color: string, intensity: number, elapsed: number): void {
+	const phase = elapsed * speed;
+	// Moving light leak blob
+	const x = (Math.sin(phase * 0.7) * 0.5 + 0.5) * w;
+	const y = (Math.cos(phase * 0.5) * 0.5 + 0.5) * h;
+	const radius = Math.max(w, h) * 0.4;
+	const alpha = (Math.sin(phase * 1.3) * 0.5 + 0.5) * (intensity / 100) * 0.5;
+
+	if (alpha < 0.01) return;
+
+	const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+	gradient.addColorStop(0, color);
+	gradient.addColorStop(0.5, color + "80");
+	gradient.addColorStop(1, "rgba(0,0,0,0)");
+
+	ctx.save();
+	ctx.globalCompositeOperation = "screen";
+	ctx.globalAlpha = alpha;
+	ctx.fillStyle = gradient;
+	ctx.fillRect(0, 0, w, h);
+	ctx.restore();
+}
+
+// ── Utility ──
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+	const h = hex.replace("#", "");
+	return {
+		r: parseInt(h.substring(0, 2), 16) || 0,
+		g: parseInt(h.substring(2, 4), 16) || 0,
+		b: parseInt(h.substring(4, 6), 16) || 0,
+	};
 }

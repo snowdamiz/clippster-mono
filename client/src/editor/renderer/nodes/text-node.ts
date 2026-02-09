@@ -2,6 +2,7 @@ import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
 import type { TextElement, TextBubbleStyle } from "../../types/timeline";
 import { getKeyframedValue } from "../../types/keyframes";
+import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
 
 type Ctx = OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D;
 
@@ -75,14 +76,34 @@ export class TextNode extends BaseNode<TextNodeParams> {
 
 		const elapsed = time - this.params.startTime;
 		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
-		const resolvedOpacity = getKeyframedValue({
+		let resolvedOpacity = getKeyframedValue({
 			elementKeyframes: this.params.keyframes,
 			property: "opacity",
 			normalizedTime,
 			defaultValue: this.params.opacity,
 		});
+
+		// Apply fade in/out opacity ramp
+		const fadeIn = this.params.fadeIn ?? 0;
+		const fadeOut = this.params.fadeOut ?? 0;
+		if (fadeIn > 0 && elapsed < fadeIn) {
+			resolvedOpacity *= elapsed / fadeIn;
+		}
+		if (fadeOut > 0 && elapsed > this.params.duration - fadeOut) {
+			resolvedOpacity *= (this.params.duration - elapsed) / fadeOut;
+		}
+
 		const prevAlpha = ctx.globalAlpha;
 		ctx.globalAlpha = resolvedOpacity;
+
+		// Apply element animations (in/out/loop)
+		const animResult = computeAnimationTransforms(
+			this.params.animationIn,
+			this.params.animationOut,
+			this.params.animationLoop,
+			{ elapsed, elementDuration: this.params.duration, canvasWidth: renderer.width, canvasHeight: renderer.height },
+		);
+		applyAnimationToContext(ctx, animResult, 0, 0);
 
 		this.paintText(ctx);
 

@@ -14,6 +14,7 @@ import {
 	EyeOff,
 	Gauge,
 	AudioLines,
+	ScissorsLineDashed,
 } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -28,6 +29,8 @@ const emit = defineEmits<{
 const { editor } = useEditor();
 const { selectElement, isElementSelected } = useElementSelection();
 
+const hasElement = computed(() => !!props.elementRef);
+
 const isVideoElement = computed(() => {
 	if (!props.elementRef) return false;
 	const track = editor.timeline.getTrackById({ trackId: props.elementRef.trackId });
@@ -35,6 +38,8 @@ const isVideoElement = computed(() => {
 	const element = track.elements.find((el: { id: string; type: string }) => el.id === props.elementRef!.elementId);
 	return element?.type === "video";
 });
+
+const hasClipboard = computed(() => editor.selection.hasClipboard());
 
 const menuRef = ref<HTMLDivElement | null>(null);
 const adjustedPosition = ref<{ x: number; y: number } | null>(null);
@@ -155,6 +160,10 @@ function handleToggleVisibility() {
 	doAction("toggle-elements-visibility-selected");
 }
 
+function handleCut() {
+	doAction("cut-selected");
+}
+
 function handleExtractAudio() {
 	doAction("extract-audio");
 }
@@ -168,97 +177,114 @@ function handleExtractAudio() {
 			class="fixed z-[9999] min-w-[180px] rounded-lg border border-white/10 bg-[#1e1e21] py-1 shadow-xl"
 			:style="menuStyle"
 		>
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-				@click="handleSplit"
-			>
-				<Scissors class="size-3.5" />
-				Split at playhead
-				<span class="ml-auto text-zinc-500">S</span>
-			</button>
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-				@click="handleSplitLeft"
-			>
-				<Scissors class="size-3.5" />
-				Split &amp; keep left
-				<span class="ml-auto text-zinc-500">Q</span>
-			</button>
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-				@click="handleSplitRight"
-			>
-				<Scissors class="size-3.5" />
-				Split &amp; keep right
-				<span class="ml-auto text-zinc-500">W</span>
-			</button>
+			<!-- Element-specific actions -->
+			<template v-if="hasElement">
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+					@click="handleSplit"
+				>
+					<Scissors class="size-3.5" />
+					Split at playhead
+					<span class="ml-auto text-zinc-500">S</span>
+				</button>
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+					@click="handleSplitLeft"
+				>
+					<Scissors class="size-3.5" />
+					Split &amp; keep left
+					<span class="ml-auto text-zinc-500">Q</span>
+				</button>
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+					@click="handleSplitRight"
+				>
+					<Scissors class="size-3.5" />
+					Split &amp; keep right
+					<span class="ml-auto text-zinc-500">W</span>
+				</button>
 
-			<div class="mx-2 my-1 h-px bg-white/10" />
+				<div class="mx-2 my-1 h-px bg-white/10" />
+
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+					@click="handleCut"
+				>
+					<ScissorsLineDashed class="size-3.5" />
+					Cut
+					<span class="ml-auto text-zinc-500">Ctrl+X</span>
+				</button>
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+					@click="handleCopy"
+				>
+					<Copy class="size-3.5" />
+					Copy
+					<span class="ml-auto text-zinc-500">Ctrl+C</span>
+				</button>
+			</template>
 
 			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-				@click="handleCopy"
-			>
-				<Copy class="size-3.5" />
-				Copy
-				<span class="ml-auto text-zinc-500">Ctrl+C</span>
-			</button>
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/10"
+				:class="hasClipboard ? 'text-zinc-300' : 'text-zinc-600 cursor-not-allowed'"
+				:disabled="!hasClipboard"
 				@click="handlePaste"
 			>
 				<ClipboardPaste class="size-3.5" />
 				Paste
 				<span class="ml-auto text-zinc-500">Ctrl+V</span>
 			</button>
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-				@click="handleDuplicate"
-			>
-				<Copy class="size-3.5" />
-				Duplicate
-				<span class="ml-auto text-zinc-500">Ctrl+D</span>
-			</button>
 
-			<div class="mx-2 my-1 h-px bg-white/10" />
+			<template v-if="hasElement">
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+					@click="handleDuplicate"
+				>
+					<Copy class="size-3.5" />
+					Duplicate
+					<span class="ml-auto text-zinc-500">Ctrl+D</span>
+				</button>
 
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-				@click="handleToggleMute"
-			>
-				<VolumeX class="size-3.5" />
-				Toggle mute
-			</button>
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-				@click="handleToggleVisibility"
-			>
-				<EyeOff class="size-3.5" />
-				Toggle visibility
-			</button>
-
-			<template v-if="isVideoElement">
 				<div class="mx-2 my-1 h-px bg-white/10" />
 
 				<button
 					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleExtractAudio"
+					@click="handleToggleMute"
 				>
-					<AudioLines class="size-3.5" />
-					Extract audio
+					<VolumeX class="size-3.5" />
+					Toggle mute
+				</button>
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+					@click="handleToggleVisibility"
+				>
+					<EyeOff class="size-3.5" />
+					Toggle visibility
+				</button>
+
+				<template v-if="isVideoElement">
+					<div class="mx-2 my-1 h-px bg-white/10" />
+
+					<button
+						class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+						@click="handleExtractAudio"
+					>
+						<AudioLines class="size-3.5" />
+						Extract audio
+					</button>
+				</template>
+
+				<div class="mx-2 my-1 h-px bg-white/10" />
+
+				<button
+					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-400 hover:bg-white/10"
+					@click="handleDelete"
+				>
+					<Trash2 class="size-3.5" />
+					Delete
+					<span class="ml-auto text-zinc-500">Del</span>
 				</button>
 			</template>
-
-			<div class="mx-2 my-1 h-px bg-white/10" />
-
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-400 hover:bg-white/10"
-				@click="handleDelete"
-			>
-				<Trash2 class="size-3.5" />
-				Delete
-				<span class="ml-auto text-zinc-500">Del</span>
-			</button>
 		</div>
 	</Teleport>
 </template>

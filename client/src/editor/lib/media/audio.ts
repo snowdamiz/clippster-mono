@@ -398,8 +398,8 @@ export async function collectAudioClips({
 							muted,
 							volume: element.volume ?? 1,
 							speed: element.speed ?? 1,
-							fadeIn: 0,
-							fadeOut: 0,
+							fadeIn: element.fadeIn ?? 0,
+							fadeOut: element.fadeOut ?? 0,
 						}),
 					);
 				}

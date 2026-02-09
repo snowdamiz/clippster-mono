@@ -10,13 +10,29 @@ import { getEffectPreset } from "../../../constants/effect-constants";
 import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
 import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette } from "lucide-vue-next";
+import { useKeyframes } from "../../../composables/useKeyframes";
+import { toRef } from "vue";
+import KeyframeToggle from "./KeyframeToggle.vue";
+import AnimationProperties from "./AnimationProperties.vue";
+import TransitionProperties from "./TransitionProperties.vue";
+import type { Transition } from "../../../types/transitions";
 
 const props = defineProps<{
 	element: VideoElement;
 	trackId: string;
 }>();
 
-type TopTab = 'video' | 'audio' | 'speed' | 'adjust';
+const activeTransition = computed<Transition | null>(() => {
+	try {
+		const scene = editor.scenes.getActiveScene();
+		if (!scene?.transitions) return null;
+		return scene.transitions.find((t) => t.targetElementId === props.element.id) ?? null;
+	} catch {
+		return null;
+	}
+});
+
+type TopTab = 'video' | 'audio' | 'speed' | 'adjust' | 'animate';
 type VideoSubTab = 'basic' | 'crop' | 'effects' | 'chromakey';
 const activeTab = ref<TopTab>('video');
 const activeVideoSub = ref<VideoSubTab>('basic');
@@ -26,6 +42,7 @@ const topTabs: { id: TopTab; label: string }[] = [
 	{ id: 'audio', label: 'Audio' },
 	{ id: 'speed', label: 'Speed' },
 	{ id: 'adjust', label: 'Adjust' },
+	{ id: 'animate', label: 'Animate' },
 ];
 const videoSubTabs: { id: VideoSubTab; label: string }[] = [
 	{ id: 'basic', label: 'Basic' },
@@ -37,6 +54,12 @@ const videoSubTabs: { id: VideoSubTab; label: string }[] = [
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
 const { cropPanelRequested, clearCropPanelRequest } = useEditorUIState();
+
+const trackRef = computed(() => editor.timeline.getTrackById({ trackId: props.trackId })!);
+const { hasKeyframes: hasKf, addKeyframe, clearPropertyKeyframes } = useKeyframes({
+	trackRef,
+	elementRef: toRef(props, 'element'),
+});
 
 // --- Local input refs synced with element props ---
 const opacityInput = ref(Math.round(props.element.opacity * 100).toString());
@@ -248,6 +271,35 @@ function updateChromakey(partial: Partial<ChromakeySettings>) {
 
 function clamp(value: number, min: number, max: number) {
 	return Math.min(max, Math.max(min, value));
+}
+
+// --- Fade ---
+const fadeInInput = ref(((props.element.fadeIn ?? 0) * 10).toFixed(0));
+const fadeOutInput = ref(((props.element.fadeOut ?? 0) * 10).toFixed(0));
+
+watch(() => props.element.fadeIn, (v) => { fadeInInput.value = ((v ?? 0) * 10).toFixed(0); });
+watch(() => props.element.fadeOut, (v) => { fadeOutInput.value = ((v ?? 0) * 10).toFixed(0); });
+
+function handleFadeInSlider(e: Event) {
+	const val = Number((e.target as HTMLInputElement).value) / 10;
+	fadeInInput.value = (val * 10).toFixed(0);
+	update({ fadeIn: val > 0.01 ? val : undefined });
+}
+function handleFadeOutSlider(e: Event) {
+	const val = Number((e.target as HTMLInputElement).value) / 10;
+	fadeOutInput.value = (val * 10).toFixed(0);
+	update({ fadeOut: val > 0.01 ? val : undefined });
+}
+
+function toggleOpacityKeyframe() {
+	if (hasKf('opacity')) {
+		clearPropertyKeyframes('opacity');
+	} else {
+		const currentTime = editor.playback.getCurrentTime();
+		const elapsed = currentTime - props.element.startTime;
+		const offset = props.element.duration > 0 ? elapsed / props.element.duration : 0;
+		addKeyframe('opacity', clamp(offset, 0, 1), props.element.opacity);
+	}
 }
 
 // --- Opacity ---
@@ -495,12 +547,32 @@ function formatTime(seconds: number): string {
 
 					<!-- Opacity -->
 					<div class="space-y-1 border-t border-white/5 pt-3">
-						<label class="text-[11px] text-zinc-500">Opacity</label>
+						<div class="flex items-center justify-between">
+							<label class="text-[11px] text-zinc-500">Opacity</label>
+							<KeyframeToggle :active="hasKf('opacity')" label="opacity" @toggle="toggleOpacityKeyframe" />
+						</div>
 						<div class="flex items-center gap-2">
 							<input type="range" :value="element.opacity * 100" min="0" max="100" step="1" class="flex-1" @input="handleOpacitySlider" />
 							<div class="flex h-7 w-16 items-center rounded-sm border border-white/10 bg-white/5 px-2">
 								<input type="number" :value="opacityInput" min="0" max="100" class="w-full bg-transparent text-center text-xs text-zinc-200 outline-none" @input="(e) => handleOpacityInput((e.target as HTMLInputElement).value)" @blur="handleOpacityBlur" />
 								<span class="text-[10px] text-zinc-500">%</span>
+							</div>
+						</div>
+					</div>
+
+					<!-- Fade In / Out -->
+					<div class="space-y-1 border-t border-white/5 pt-3">
+						<label class="text-[11px] text-zinc-500">Fade</label>
+						<div class="flex items-center gap-3">
+							<div class="flex flex-1 flex-col gap-1">
+								<span class="text-[9px] text-zinc-600">In</span>
+								<input type="range" :value="(element.fadeIn ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeInSlider" />
+								<span class="text-[9px] text-zinc-500">{{ ((element.fadeIn ?? 0)).toFixed(1) }}s</span>
+							</div>
+							<div class="flex flex-1 flex-col gap-1">
+								<span class="text-[9px] text-zinc-600">Out</span>
+								<input type="range" :value="(element.fadeOut ?? 0) * 10" min="0" max="30" step="1" class="w-full" @input="handleFadeOutSlider" />
+								<span class="text-[9px] text-zinc-500">{{ ((element.fadeOut ?? 0)).toFixed(1) }}s</span>
 							</div>
 						</div>
 					</div>
@@ -992,6 +1064,18 @@ function formatTime(seconds: number): string {
 			</div>
 		</div>
 
+		<!-- ══════ Animate Tab ══════ -->
+		<div v-else-if="activeTab === 'animate'" class="flex-1 overflow-y-auto">
+			<AnimationProperties
+				:element-id="element.id"
+				:track-id="trackId"
+				:animation-in="element.animationIn"
+				:animation-out="element.animationOut"
+				:animation-loop="element.animationLoop"
+				:element-duration="element.duration"
+			/>
+		</div>
+
 		<!-- ══════ Adjust Tab ══════ -->
 		<div v-else-if="activeTab === 'adjust'" class="flex-1 overflow-y-auto p-3">
 			<div class="space-y-3">
@@ -1039,6 +1123,11 @@ function formatTime(seconds: number): string {
 					</div>
 				</div>
 			</div>
+		</div>
+
+		<!-- ══════ Transition (shown at bottom if element has one) ══════ -->
+		<div v-if="activeTransition" class="shrink-0 border-t border-white/10 p-3">
+			<TransitionProperties :transition="activeTransition" />
 		</div>
 	</div>
 </template>

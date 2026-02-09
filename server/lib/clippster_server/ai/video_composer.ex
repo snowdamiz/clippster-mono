@@ -977,19 +977,16 @@ defmodule ClippsterServer.AI.VideoComposer do
     """
   end
 
-  # Scene-specific system prompt (used for per-scene track generation)
-  # Contains the same track format rules but scoped to generating a tracks array
-  defp build_scene_system_prompt(ctx) do
+  # Scene-specific system prompt for OVERLAY tracks only (no video/image)
+  defp build_scene_overlay_system_prompt(ctx) do
     style_guidance = build_style_guidance(ctx.style)
 
     """
-    # AI VIDEO EDITOR — Scene Track Generator
+    # AI VIDEO EDITOR — Scene Overlay Track Generator
 
-    You are a professional video editor generating tracks for ONE scene of a larger composition.
+    You are a professional video editor generating OVERLAY tracks for ONE scene of a larger composition.
+    The base video/image tracks are already created separately — you must NOT create any video or image tracks.
     You will receive the scene's time range, description, and context about surrounding scenes.
-
-    ## Available Media
-    #{ctx.media_context}
 
     ## Video Specs
     - Aspect ratio: #{ctx.aspect_ratio || "16:9"}
@@ -1020,15 +1017,16 @@ defmodule ClippsterServer.AI.VideoComposer do
     - Impact shake: MAX 0.6 intensity, MAX 0.4s duration
     - Punch zoom: MAX 1-2 per scene
 
-    ## TRACK TYPES & LAYERS
+    ## ALLOWED TRACK TYPES & LAYERS (overlay only)
     | Layer | Type | Description |
     |-------|------|-------------|
-    | 0 | video/image | Main media with source path and filters |
     | 1-5 | cameraMotion | Zoom, pan, shake effects |
     | 6-9 | transition | Scene transitions |
     | 10-14 | text | Captions and text overlays |
     | 15-19 | shape | Visual overlays (vignettes, gradients) |
     | 20+ | impactFX | Flash, shake, glow, particles |
+
+    ⚠️ FORBIDDEN: Do NOT generate tracks with type "video" or "image". Those are handled separately.
 
     ## AVAILABLE EFFECTS
 
@@ -1047,8 +1045,7 @@ defmodule ClippsterServer.AI.VideoComposer do
     ## OUTPUT FORMAT
     Return ONLY a valid JSON object: {"tracks": [...]}
 
-    ### Track examples:
-    Video: {"id":"s0-vid-1","type":"video","name":"Main","source":{"type":"local","path":"EXACT_PATH"},"startTime":0,"endTime":5,"layer":0,"properties":{"x":50,"y":50,"scale":1,"opacity":1}}
+    ### Track examples (overlay types only):
     Text: {"id":"s0-txt-1","type":"text","name":"Caption","startTime":0,"endTime":2,"layer":10,"properties":{"x":50,"y":85,"text":{"content":"Words here","fontFamily":"Inter, sans-serif","fontSize":56,"fontWeight":800,"color":"#ffffff","textAlign":"center","animation":{"type":"fade","duration":0.3},"stroke":{"width":6,"color":"#000000"}}}}
     Camera: {"id":"s0-cam-1","type":"cameraMotion","name":"Zoom","startTime":0,"endTime":5,"layer":1,"properties":{"effects":[{"type":"slowZoom","startTime":0,"endTime":5,"intensity":0.3,"direction":"in"}]}}
     Impact: {"id":"s0-fx-1","type":"impactFX","name":"Flash","startTime":2,"endTime":2.5,"layer":20,"properties":{"effects":[{"type":"flash","time":2,"duration":0.3,"intensity":0.5}]}}
@@ -1056,7 +1053,7 @@ defmodule ClippsterServer.AI.VideoComposer do
     MotionGraphic: {"id":"s0-mg-1","type":"motionGraphic","name":"Title","startTime":0,"endTime":3,"layer":17,"properties":{"x":50,"y":50,"motionGraphic":{"templateId":"titleCard","customText":"Title","customColors":["#000000","#ffffff"],"animationSpeed":1}}}
 
     ### Critical Rules
-    - Use EXACT file paths from the media list
+    - ⚠️ NEVER generate "video" or "image" type tracks
     - All times in SECONDS
     - All x/y positions are percentages (0-100), center = 50
     - Text MUST be nested: properties.text.content

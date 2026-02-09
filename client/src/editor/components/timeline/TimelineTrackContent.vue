@@ -18,6 +18,7 @@ const props = defineProps<{
 	dragState: ElementDragState;
 	snappingEnabled: boolean;
 	razorMode?: boolean;
+	effectDropTargetId?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -29,6 +30,7 @@ const emit = defineEmits<{
 	(e: "razorCut", params: { trackId: string; elementId: string; time: number }): void;
 	(e: "trackMouseDown", event: MouseEvent): void;
 	(e: "trackClick", event: MouseEvent): void;
+	(e: "keyframeClick", payload: { elementId: string; offset: number; rect: DOMRect }): void;
 }>();
 
 defineExpose({});
@@ -96,6 +98,7 @@ function onTrackMouseDown(event: MouseEvent) {
 				:is-selected="isElementSelected({ trackId: track.id, elementId: element.id })"
 				:drag-state="dragState"
 				:snapping-enabled="snappingEnabled"
+			:is-effect-drop-target="effectDropTargetId === element.id"
 				:ripple-shifts="rippleShifts"
 				@snap-point-change="(sp) => emit('snapPointChange', sp)"
 				@resize-state-change="(p) => emit('resizeStateChange', p)"
@@ -103,6 +106,7 @@ function onTrackMouseDown(event: MouseEvent) {
 				@element-mouse-down="(ev, el) => emit('elementMouseDown', { event: ev, element: el, track })"
 				@element-click="(ev, el) => handleElementClick(ev, el)"
 				@element-context-menu="(ev: MouseEvent, el: TimelineElementType) => emit('elementContextMenu', { event: ev, element: el, track })"
+				@keyframe-click="(payload) => emit('keyframeClick', payload)"
 			/>
 		</div>
 	</button>

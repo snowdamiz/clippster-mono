@@ -17,6 +17,12 @@ import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { resolveWatermarkById } from "@/services/database/watermarks";
 import { getIntroOutroById } from "@/services/database/intro-outros";
 
+interface TauriAnimationData {
+	anim_type: string;
+	duration: number;
+	easing: string;
+}
+
 interface TauriVideoSource {
 	source_path: string;
 	start_time: number;
@@ -31,6 +37,8 @@ interface TauriVideoSource {
 	is_muted: boolean;
 	volume: number;
 	speed: number;
+	fade_in: number;
+	fade_out: number;
 	flip_horizontal: boolean;
 	flip_vertical: boolean;
 	crop_top: number;
@@ -42,12 +50,20 @@ interface TauriVideoSource {
 	saturation: number;
 	temperature: number;
 	effects: TauriVideoEffect[];
+	animation_in: TauriAnimationData | null;
+	animation_out: TauriAnimationData | null;
+	animation_loop: TauriAnimationData | null;
 }
 
 interface TauriVideoEffect {
 	effect_type: string;
 	enabled: boolean;
 	intensity: number;
+	params: Record<string, number | string>;
+}
+
+interface TauriAudioEffect {
+	effect_type: string;
 	params: Record<string, number | string>;
 }
 
@@ -60,18 +76,25 @@ interface TauriAudioTrack {
 	speed: number;
 	fade_in: number;
 	fade_out: number;
+	audio_effects: TauriAudioEffect[] | null;
 }
 
 interface TauriTextOverlay {
 	image_path: string;
 	start_time: number;
 	end_time: number;
+	animation_in: TauriAnimationData | null;
+	animation_out: TauriAnimationData | null;
+	animation_loop: TauriAnimationData | null;
 }
 
 interface TauriStickerOverlay {
 	image_path: string;
 	start_time: number;
 	end_time: number;
+	animation_in: TauriAnimationData | null;
+	animation_out: TauriAnimationData | null;
+	animation_loop: TauriAnimationData | null;
 }
 
 interface TauriEffectOverlay {
@@ -92,12 +115,19 @@ interface TauriBrandingWatermark {
 	is_full_frame: boolean;
 }
 
+interface TauriTransitionData {
+	transition_type: string;
+	duration: number;
+	target_element_index: number;
+}
+
 interface TauriExportConfig {
 	video_sources: TauriVideoSource[];
 	audio_tracks: TauriAudioTrack[];
 	text_overlays: TauriTextOverlay[];
 	sticker_overlays: TauriStickerOverlay[];
 	effect_overlays: TauriEffectOverlay[];
+	transitions: TauriTransitionData[] | null;
 	output_path: string;
 	total_duration: number;
 	width: number;
@@ -278,6 +308,8 @@ export class RendererManager {
 						is_muted: videoEl.muted ?? false,
 						volume: videoEl.volume ?? 1,
 						speed: videoEl.speed ?? 1,
+						fade_in: videoEl.fadeIn ?? 0,
+						fade_out: videoEl.fadeOut ?? 0,
 						flip_horizontal: videoEl.flip?.horizontal ?? false,
 						flip_vertical: videoEl.flip?.vertical ?? false,
 						crop_top: videoEl.crop?.top ?? 0,
@@ -289,6 +321,9 @@ export class RendererManager {
 						saturation: videoEl.colorAdjustments?.saturation ?? 0,
 						temperature: videoEl.colorAdjustments?.temperature ?? 0,
 						effects: serializeEffects(videoEl.effects),
+						animation_in: serializeAnimation(videoEl.animationIn),
+						animation_out: serializeAnimation(videoEl.animationOut),
+						animation_loop: serializeAnimation(videoEl.animationLoop),
 					});
 				}
 			} else if (track.type === "sticker") {
@@ -322,6 +357,16 @@ export class RendererManager {
 
 					if (!filePath) continue;
 
+					const serializedAudioEffects: TauriAudioEffect[] | null =
+						audioEl.audioEffects && audioEl.audioEffects.length > 0
+							? audioEl.audioEffects
+									.filter((fx) => fx.enabled)
+									.map((fx) => {
+										const { id, type, enabled, ...rest } = fx as any;
+										return { effect_type: type, params: rest };
+									})
+							: null;
+
 					audioTracks.push({
 						file_path: filePath,
 						start_time: audioEl.startTime,
@@ -331,6 +376,7 @@ export class RendererManager {
 						speed: audioEl.speed ?? 1,
 						fade_in: audioEl.fadeIn ?? 0,
 						fade_out: audioEl.fadeOut ?? 0,
+						audio_effects: serializedAudioEffects,
 					});
 				}
 				// Text tracks are handled by preRenderTextOverlays — skip here
@@ -339,12 +385,43 @@ export class RendererManager {
 
 		const coverTimestamp = this.editor.project.getCoverTimestamp();
 
+		// Build transition data from scene transitions
+		const transitionData: TauriTransitionData[] = [];
+		try {
+			const scene = this.editor.scenes.getActiveScene();
+			if (scene?.transitions) {
+				for (const t of scene.transitions) {
+					// Find the index of the target element in videoSources
+					const targetIdx = videoSources.findIndex(
+						(vs) => {
+							// Match by finding the video element with this ID on the track
+							const track = tracks.find((tr) => tr.id === t.trackId);
+							if (!track) return false;
+							const el = track.elements.find((e) => e.id === t.targetElementId);
+							if (!el) return false;
+							return Math.abs(vs.start_time - el.startTime) < 0.001;
+						},
+					);
+					if (targetIdx > 0) {
+						transitionData.push({
+							transition_type: t.type,
+							duration: t.duration,
+							target_element_index: targetIdx,
+						});
+					}
+				}
+			}
+		} catch {
+			// No scene transitions
+		}
+
 		return {
 			video_sources: videoSources,
 			audio_tracks: audioTracks,
 			text_overlays: [...textOverlays, ...captionOverlays],
 			sticker_overlays: stickerOverlays,
 			effect_overlays: effectOverlays,
+			transitions: transitionData.length > 0 ? transitionData : null,
 			output_path: outputPath,
 			total_duration: duration,
 			width: canvasSize.width,
@@ -422,6 +499,9 @@ export class RendererManager {
 						image_path: imagePath,
 						start_time: textEl.startTime,
 						end_time: textEl.startTime + textEl.duration,
+						animation_in: serializeAnimation(textEl.animationIn),
+						animation_out: serializeAnimation(textEl.animationOut),
+						animation_loop: serializeAnimation(textEl.animationLoop),
 					});
 				} catch (err) {
 					console.error(`[Export] Failed to pre-render text element ${textEl.id}:`, err);
@@ -494,6 +574,9 @@ export class RendererManager {
 						image_path: imagePath,
 						start_time: stickerEl.startTime,
 						end_time: stickerEl.startTime + stickerEl.duration,
+						animation_in: serializeAnimation(stickerEl.animationIn),
+						animation_out: serializeAnimation(stickerEl.animationOut),
+						animation_loop: serializeAnimation(stickerEl.animationLoop),
 					});
 				} catch (err) {
 					console.error(`[Export] Failed to pre-render sticker element ${stickerEl.id} (${stickerEl.iconName}):`, err);
@@ -564,6 +647,9 @@ export class RendererManager {
 							image_path: imagePath,
 							start_time: line.startTime,
 							end_time: line.endTime,
+							animation_in: serializeAnimation(captionEl.animationIn),
+							animation_out: serializeAnimation(captionEl.animationOut),
+							animation_loop: serializeAnimation(captionEl.animationLoop),
 						});
 					} catch (err) {
 						console.error(`[Export] Failed to pre-render caption element ${captionEl.id} line ${lineIdx}:`, err);
@@ -670,6 +756,15 @@ export class RendererManager {
 	private notify(): void {
 		this.listeners.forEach((fn) => fn());
 	}
+}
+
+function serializeAnimation(anim?: import("../../types/animations").ElementAnimation): TauriAnimationData | null {
+	if (!anim) return null;
+	return {
+		anim_type: anim.type,
+		duration: anim.duration,
+		easing: anim.easing,
+	};
 }
 
 function serializeEffects(effects?: VideoEffect[]): TauriVideoEffect[] {

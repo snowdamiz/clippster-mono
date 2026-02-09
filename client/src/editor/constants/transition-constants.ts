@@ -5,6 +5,8 @@ export const TRANSITION_CATEGORIES: { key: TransitionCategory; label: string }[]
 	{ key: "slide", label: "Slide" },
 	{ key: "wipe", label: "Wipe" },
 	{ key: "zoom", label: "Zoom" },
+	{ key: "push", label: "Push" },
+	{ key: "cover", label: "Cover & Reveal" },
 	{ key: "stylize", label: "Stylize" },
 ];
 
@@ -115,6 +117,89 @@ export const TRANSITION_PRESETS: TransitionPreset[] = [
 		defaultDuration: 0.5,
 	},
 
+	// ── Wipe (shape) ──
+	{
+		type: "circleWipe",
+		label: "Circle Wipe",
+		description: "Circular iris wipe from center",
+		category: "wipe",
+		defaultDuration: 0.5,
+	},
+	{
+		type: "diamondWipe",
+		label: "Diamond Wipe",
+		description: "Diamond-shaped wipe from center",
+		category: "wipe",
+		defaultDuration: 0.5,
+	},
+	{
+		type: "clockWipe",
+		label: "Clock Wipe",
+		description: "Clockwise radial wipe",
+		category: "wipe",
+		defaultDuration: 0.6,
+	},
+
+	// ── Push ──
+	{
+		type: "pushLeft",
+		label: "Push Left",
+		description: "Incoming pushes outgoing to the left",
+		category: "push",
+		defaultDuration: 0.4,
+	},
+	{
+		type: "pushRight",
+		label: "Push Right",
+		description: "Incoming pushes outgoing to the right",
+		category: "push",
+		defaultDuration: 0.4,
+	},
+	{
+		type: "pushUp",
+		label: "Push Up",
+		description: "Incoming pushes outgoing upward",
+		category: "push",
+		defaultDuration: 0.4,
+	},
+	{
+		type: "pushDown",
+		label: "Push Down",
+		description: "Incoming pushes outgoing downward",
+		category: "push",
+		defaultDuration: 0.4,
+	},
+
+	// ── Cover & Reveal ──
+	{
+		type: "coverLeft",
+		label: "Cover Left",
+		description: "Incoming slides over outgoing from right",
+		category: "cover",
+		defaultDuration: 0.4,
+	},
+	{
+		type: "coverRight",
+		label: "Cover Right",
+		description: "Incoming slides over outgoing from left",
+		category: "cover",
+		defaultDuration: 0.4,
+	},
+	{
+		type: "revealLeft",
+		label: "Reveal Left",
+		description: "Outgoing slides away revealing incoming",
+		category: "cover",
+		defaultDuration: 0.4,
+	},
+	{
+		type: "revealRight",
+		label: "Reveal Right",
+		description: "Outgoing slides away revealing incoming",
+		category: "cover",
+		defaultDuration: 0.4,
+	},
+
 	// ── Stylize ──
 	{
 		type: "blur",
@@ -122,6 +207,34 @@ export const TRANSITION_PRESETS: TransitionPreset[] = [
 		description: "Blur transition between clips",
 		category: "stylize",
 		defaultDuration: 0.5,
+	},
+	{
+		type: "rotateIn",
+		label: "Rotate In",
+		description: "Incoming rotates in from center",
+		category: "stylize",
+		defaultDuration: 0.5,
+	},
+	{
+		type: "flipHorizontal",
+		label: "Flip Horizontal",
+		description: "3D horizontal flip between clips",
+		category: "stylize",
+		defaultDuration: 0.5,
+	},
+	{
+		type: "flipVertical",
+		label: "Flip Vertical",
+		description: "3D vertical flip between clips",
+		category: "stylize",
+		defaultDuration: 0.5,
+	},
+	{
+		type: "glitch",
+		label: "Glitch",
+		description: "Digital glitch distortion transition",
+		category: "stylize",
+		defaultDuration: 0.4,
 	},
 ];
 

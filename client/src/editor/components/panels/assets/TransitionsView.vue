@@ -4,9 +4,23 @@ import { TRANSITION_PRESETS, TRANSITION_CATEGORIES } from "../../../constants/tr
 import type { TransitionCategory, TransitionPreset } from "../../../types/transitions";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
-import { ArrowRightLeft, Search, Check, Trash2 } from "lucide-vue-next";
+import { ArrowRightLeft, Search, Check, Trash2, GripVertical } from "lucide-vue-next";
 import TransitionPreviewCanvas from "./TransitionPreviewCanvas.vue";
 import { generateUUID } from "../../../utils/id";
+import { setDragData } from "../../../lib/drag-data";
+import type { TransitionDragData } from "../../../types/drag";
+
+function handleDragStart(e: DragEvent, preset: TransitionPreset) {
+	if (!e.dataTransfer) return;
+	const data: TransitionDragData = {
+		id: generateUUID(),
+		name: preset.label,
+		type: "transition",
+		transitionType: preset.type,
+		duration: preset.defaultDuration,
+	};
+	setDragData({ dataTransfer: e.dataTransfer, dragData: data });
+}
 
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
@@ -142,10 +156,10 @@ function removeTransition() {
 
 		<!-- Content -->
 		<div class="flex-1 overflow-y-auto p-3">
-			<!-- Hint when no element selected -->
-			<div v-if="!selectedElement" class="mb-3 flex items-center gap-2 rounded-md border border-white/5 bg-white/[0.02] px-2.5 py-1.5">
-				<ArrowRightLeft class="size-3.5 shrink-0 text-zinc-600" />
-				<p class="text-[11px] text-zinc-500">Select a video element to apply a transition</p>
+			<!-- Hint -->
+			<div class="mb-3 flex items-center gap-2 rounded-md border border-white/5 bg-white/[0.02] px-2.5 py-1.5">
+				<GripVertical class="size-3.5 shrink-0 text-zinc-600" />
+				<p class="text-[11px] text-zinc-500">Drag between clips, or select a clip and click to apply</p>
 			</div>
 
 			<!-- Active transition -->
@@ -178,13 +192,15 @@ function removeTransition() {
 				<button
 					v-for="preset in filteredPresets"
 					:key="preset.type"
+					draggable="true"
 					:class="[
-						'group overflow-hidden rounded-lg border transition-all',
+						'group overflow-hidden rounded-lg border transition-all cursor-grab active:cursor-grabbing',
 						activeTransition?.type === preset.type
 							? 'border-blue-500/40 bg-blue-500/10'
 							: 'border-white/5 bg-white/[0.02] hover:border-[#E040FB]/30 hover:bg-[#E040FB]/5',
 					]"
 					@click="applyTransition(preset)"
+					@dragstart="handleDragStart($event, preset)"
 				>
 					<!-- Transition preview thumbnail -->
 					<div class="relative aspect-[3/2] w-full overflow-hidden bg-zinc-900">

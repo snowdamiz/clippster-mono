@@ -176,6 +176,25 @@ export function computeDropTarget({
 		trackType: track.type,
 	});
 
+	// Effect-on-element: when dragging an effect over a video/image track,
+	// find the element under the cursor and mark it as the drop target so
+	// the effect gets added to that element's effects[] array.
+	if (elementType === "effect" && track.type === "video") {
+		const timeAtCursor = Math.max(0, mouseX / (pixelsPerSecond * zoomLevel));
+		for (const el of track.elements) {
+			if (timeAtCursor >= el.startTime && timeAtCursor < el.startTime + el.duration) {
+				return {
+					trackIndex,
+					isNewTrack: false,
+					insertPosition: null,
+					xPosition,
+					targetElementId: el.id,
+					targetTrackId: track.id,
+				};
+			}
+		}
+	}
+
 	// Allow drop on compatible tracks even with overlap — MoveElementCommand
 	// will ripple-push overlapping elements forward automatically.
 	if (isTrackCompatible) {

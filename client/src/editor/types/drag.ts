@@ -25,4 +25,10 @@ export interface EffectDragData extends BaseDragData {
 	params: Record<string, number | string>;
 }
 
-export type TimelineDragData = MediaDragData | TextDragData | StickerDragData | EffectDragData;
+export interface TransitionDragData extends BaseDragData {
+	type: "transition";
+	transitionType: string;
+	duration: number;
+}
+
+export type TimelineDragData = MediaDragData | TextDragData | StickerDragData | EffectDragData | TransitionDragData;

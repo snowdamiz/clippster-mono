@@ -69,6 +69,51 @@ export function renderTransition(
 		case "blur":
 			renderBlurTransition(ctx, w, h, outgoing, incoming, t);
 			break;
+		case "circleWipe":
+			renderCircleWipe(ctx, w, h, outgoing, incoming, t);
+			break;
+		case "diamondWipe":
+			renderDiamondWipe(ctx, w, h, outgoing, incoming, t);
+			break;
+		case "clockWipe":
+			renderClockWipe(ctx, w, h, outgoing, incoming, t);
+			break;
+		case "pushLeft":
+			renderPush(ctx, w, h, outgoing, incoming, t, "left");
+			break;
+		case "pushRight":
+			renderPush(ctx, w, h, outgoing, incoming, t, "right");
+			break;
+		case "pushUp":
+			renderPush(ctx, w, h, outgoing, incoming, t, "up");
+			break;
+		case "pushDown":
+			renderPush(ctx, w, h, outgoing, incoming, t, "down");
+			break;
+		case "coverLeft":
+			renderCover(ctx, w, h, outgoing, incoming, t, "left");
+			break;
+		case "coverRight":
+			renderCover(ctx, w, h, outgoing, incoming, t, "right");
+			break;
+		case "revealLeft":
+			renderReveal(ctx, w, h, outgoing, incoming, t, "left");
+			break;
+		case "revealRight":
+			renderReveal(ctx, w, h, outgoing, incoming, t, "right");
+			break;
+		case "rotateIn":
+			renderRotateIn(ctx, w, h, outgoing, incoming, t);
+			break;
+		case "flipHorizontal":
+			renderFlip(ctx, w, h, outgoing, incoming, t, "horizontal");
+			break;
+		case "flipVertical":
+			renderFlip(ctx, w, h, outgoing, incoming, t, "vertical");
+			break;
+		case "glitch":
+			renderGlitchTransition(ctx, w, h, outgoing, incoming, t);
+			break;
 		default:
 			renderCrossfade(ctx, w, h, outgoing, incoming, t);
 	}
@@ -265,6 +310,233 @@ function renderBlurTransition(
 		ctx.drawImage(incoming, 0, 0, w, h);
 		ctx.filter = "none";
 		ctx.restore();
+	}
+}
+
+function renderCircleWipe(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
+): void {
+	const eased = easeInOutCubic(t);
+	const maxRadius = Math.sqrt(w * w + h * h) / 2;
+	const radius = maxRadius * eased;
+
+	ctx.drawImage(outgoing, 0, 0, w, h);
+	ctx.save();
+	ctx.beginPath();
+	ctx.arc(w / 2, h / 2, radius, 0, Math.PI * 2);
+	ctx.clip();
+	ctx.drawImage(incoming, 0, 0, w, h);
+	ctx.restore();
+}
+
+function renderDiamondWipe(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
+): void {
+	const eased = easeInOutCubic(t);
+	const maxSize = Math.max(w, h);
+	const size = maxSize * eased;
+	const cx = w / 2;
+	const cy = h / 2;
+
+	ctx.drawImage(outgoing, 0, 0, w, h);
+	ctx.save();
+	ctx.beginPath();
+	ctx.moveTo(cx, cy - size);
+	ctx.lineTo(cx + size, cy);
+	ctx.lineTo(cx, cy + size);
+	ctx.lineTo(cx - size, cy);
+	ctx.closePath();
+	ctx.clip();
+	ctx.drawImage(incoming, 0, 0, w, h);
+	ctx.restore();
+}
+
+function renderClockWipe(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
+): void {
+	const eased = easeInOutCubic(t);
+	const cx = w / 2;
+	const cy = h / 2;
+	const maxRadius = Math.sqrt(w * w + h * h);
+	const startAngle = -Math.PI / 2;
+	const endAngle = startAngle + Math.PI * 2 * eased;
+
+	ctx.drawImage(outgoing, 0, 0, w, h);
+	ctx.save();
+	ctx.beginPath();
+	ctx.moveTo(cx, cy);
+	ctx.arc(cx, cy, maxRadius, startAngle, endAngle);
+	ctx.closePath();
+	ctx.clip();
+	ctx.drawImage(incoming, 0, 0, w, h);
+	ctx.restore();
+}
+
+function renderPush(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource,
+	t: number, direction: "left" | "right" | "up" | "down",
+): void {
+	const eased = easeInOutCubic(t);
+
+	switch (direction) {
+		case "left":
+			ctx.drawImage(outgoing, -w * eased, 0, w, h);
+			ctx.drawImage(incoming, w * (1 - eased), 0, w, h);
+			break;
+		case "right":
+			ctx.drawImage(outgoing, w * eased, 0, w, h);
+			ctx.drawImage(incoming, -w * (1 - eased), 0, w, h);
+			break;
+		case "up":
+			ctx.drawImage(outgoing, 0, -h * eased, w, h);
+			ctx.drawImage(incoming, 0, h * (1 - eased), w, h);
+			break;
+		case "down":
+			ctx.drawImage(outgoing, 0, h * eased, w, h);
+			ctx.drawImage(incoming, 0, -h * (1 - eased), w, h);
+			break;
+	}
+}
+
+function renderCover(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource,
+	t: number, direction: "left" | "right",
+): void {
+	const eased = easeInOutCubic(t);
+
+	// Outgoing stays in place, incoming slides over it
+	ctx.drawImage(outgoing, 0, 0, w, h);
+	if (direction === "left") {
+		ctx.drawImage(incoming, w * (1 - eased), 0, w, h);
+	} else {
+		ctx.drawImage(incoming, -w * (1 - eased), 0, w, h);
+	}
+}
+
+function renderReveal(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource,
+	t: number, direction: "left" | "right",
+): void {
+	const eased = easeInOutCubic(t);
+
+	// Incoming is underneath, outgoing slides away
+	ctx.drawImage(incoming, 0, 0, w, h);
+	if (direction === "left") {
+		ctx.drawImage(outgoing, -w * eased, 0, w, h);
+	} else {
+		ctx.drawImage(outgoing, w * eased, 0, w, h);
+	}
+}
+
+function renderRotateIn(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
+): void {
+	const eased = easeInOutCubic(t);
+
+	// Outgoing fades out
+	ctx.save();
+	ctx.globalAlpha = 1 - eased;
+	ctx.drawImage(outgoing, 0, 0, w, h);
+	ctx.restore();
+
+	// Incoming rotates in from small + rotated
+	ctx.save();
+	ctx.globalAlpha = eased;
+	ctx.translate(w / 2, h / 2);
+	ctx.rotate((1 - eased) * Math.PI * 0.5);
+	ctx.scale(0.5 + eased * 0.5, 0.5 + eased * 0.5);
+	ctx.translate(-w / 2, -h / 2);
+	ctx.drawImage(incoming, 0, 0, w, h);
+	ctx.restore();
+}
+
+function renderFlip(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource,
+	t: number, axis: "horizontal" | "vertical",
+): void {
+	// First half: outgoing flips away, second half: incoming flips in
+	if (t < 0.5) {
+		const scale = Math.cos(t * Math.PI); // 1 → 0
+		ctx.save();
+		ctx.translate(w / 2, h / 2);
+		if (axis === "horizontal") {
+			ctx.scale(scale, 1);
+		} else {
+			ctx.scale(1, scale);
+		}
+		ctx.translate(-w / 2, -h / 2);
+		ctx.drawImage(outgoing, 0, 0, w, h);
+		ctx.restore();
+	} else {
+		const scale = -Math.cos(t * Math.PI); // 0 → 1
+		ctx.save();
+		ctx.translate(w / 2, h / 2);
+		if (axis === "horizontal") {
+			ctx.scale(scale, 1);
+		} else {
+			ctx.scale(1, scale);
+		}
+		ctx.translate(-w / 2, -h / 2);
+		ctx.drawImage(incoming, 0, 0, w, h);
+		ctx.restore();
+	}
+}
+
+function renderGlitchTransition(
+	ctx: Ctx, w: number, h: number,
+	outgoing: CanvasImageSource, incoming: CanvasImageSource, t: number,
+): void {
+	// Draw base frame
+	const source = t < 0.5 ? outgoing : incoming;
+	ctx.drawImage(source, 0, 0, w, h);
+
+	// Glitch slices from the other frame
+	const other = t < 0.5 ? incoming : outgoing;
+	const intensity = Math.sin(t * Math.PI); // peaks at 0.5
+	const sliceCount = Math.floor(5 + intensity * 15);
+	const seed = Math.floor(t * 100);
+
+	ctx.save();
+	for (let i = 0; i < sliceCount; i++) {
+		const hash = ((seed + i * 73856093) & 0xffff) / 0xffff;
+		const hash2 = ((seed + i * 19349663) & 0xffff) / 0xffff;
+		if (hash > intensity) continue;
+
+		const sliceY = Math.floor(hash2 * h);
+		const sliceH = Math.floor(4 + hash * 30);
+		const offsetX = (hash - 0.5) * w * intensity * 0.3;
+
+		ctx.drawImage(
+			other,
+			0, sliceY, w, sliceH,
+			offsetX, sliceY, w, sliceH,
+		);
+	}
+	ctx.restore();
+
+	// RGB shift during peak
+	if (intensity > 0.3) {
+		const shift = Math.round(intensity * 8);
+		const imageData = ctx.getImageData(0, 0, w, h);
+		const src = new Uint8ClampedArray(imageData.data);
+		const dst = imageData.data;
+		for (let y = 0; y < h; y++) {
+			for (let x = 0; x < w; x++) {
+				const idx = (y * w + x) * 4;
+				const rx = Math.min(w - 1, Math.max(0, x + shift));
+				dst[idx] = src[(y * w + rx) * 4]; // Red shifted
+				dst[idx + 2] = src[(y * w + Math.min(w - 1, Math.max(0, x - shift))) * 4 + 2]; // Blue shifted
+			}
+		}
+		ctx.putImageData(imageData, 0, 0);
 	}
 }
 

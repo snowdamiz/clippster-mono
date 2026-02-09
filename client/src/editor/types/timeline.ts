@@ -137,7 +137,12 @@ interface BaseTimelineElement {
 	startTime: number;
 	trimStart: number;
 	trimEnd: number;
+	fadeIn?: number; // seconds
+	fadeOut?: number; // seconds
 	keyframes?: import("./keyframes").ElementKeyframes;
+	animationIn?: import("./animations").ElementAnimation;
+	animationOut?: import("./animations").ElementAnimation;
+	animationLoop?: import("./animations").ElementAnimation;
 }
 
 export interface VideoElement extends BaseTimelineElement {
@@ -362,6 +367,8 @@ export interface DropTarget {
 	isNewTrack: boolean;
 	insertPosition: "above" | "below" | null;
 	xPosition: number;
+	targetElementId?: string;
+	targetTrackId?: string;
 }
 
 export interface ComputeDropTargetParams {

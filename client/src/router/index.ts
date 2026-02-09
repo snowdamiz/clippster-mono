@@ -56,6 +56,18 @@ const router = createRouter({
       ],
     },
     {
+      path: '/ai-video',
+      name: 'ai-video',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'ai-video-home',
+          component: () => import('@/pages/AIVideoCreator.vue'),
+        },
+      ],
+    },
+    {
       path: '/editor',
       name: 'opencut-editor',
       component: () => import('@/pages/OpenCutEditor.vue'),
