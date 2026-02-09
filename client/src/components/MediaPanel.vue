@@ -51,6 +51,55 @@
           <Sparkles class="h-3 w-3 group-hover:text-violet-400 transition-colors" />
           Detect
         </button>
+        <!-- Transcription Progress Bar (when transcribing) -->
+        <div
+          v-if="props.isTranscribing"
+          class="flex items-center gap-2 min-w-[140px]"
+        >
+          <div class="flex-1 space-y-0.5">
+            <div class="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+              <div
+                class="h-full bg-gradient-to-r from-emerald-500 to-green-500 transition-all duration-500 ease-out"
+                :class="{ 'animate-pulse': props.transcribeProgress === 0 }"
+                :style="{ width: `${Math.max(props.transcribeProgress, 5)}%` }"
+              ></div>
+            </div>
+            <div class="flex justify-between items-center text-[9px] text-muted-foreground/70">
+              <span class="flex items-center gap-1">
+                <LoaderIcon class="w-2 h-2 animate-spin text-emerald-400" />
+                <span class="truncate max-w-[80px]">{{ props.transcribeStage || 'Transcribing' }}</span>
+              </span>
+              <span class="font-mono tabular-nums">{{ Math.round(props.transcribeProgress) }}%</span>
+            </div>
+          </div>
+          <button
+            @click="handleCancelTranscription"
+            class="p-1 hover:bg-red-500/15 rounded transition-colors text-muted-foreground/60 hover:text-red-400"
+            title="Cancel transcription"
+          >
+            <XIcon class="h-3 w-3" />
+          </button>
+        </div>
+        <!-- View Transcript Button (when transcript exists) -->
+        <button
+          v-else-if="transcriptData && !props.isGenerating"
+          @click="handleViewTranscript"
+          class="group flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15 rounded-md transition-all border border-emerald-500/20 hover:border-emerald-500/30"
+          title="View transcript"
+        >
+          <FileText class="h-3 w-3 text-emerald-400" />
+          View Transcript
+        </button>
+        <!-- Transcribe Button (when no transcript and not transcribing) -->
+        <button
+          v-else-if="!props.isGenerating && isAIAllowed && !transcriptData"
+          @click="handleTranscribe"
+          class="group flex items-center gap-1 px-2.5 py-1.5 text-[10px] font-medium text-muted-foreground/80 hover:text-foreground bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.06] hover:border-white/[0.1]"
+          title="Generate transcript"
+        >
+          <FileText class="h-3 w-3 group-hover:text-emerald-400 transition-colors" />
+          Transcribe
+        </button>
 
         <!-- Add Clip Button (when AI is not allowed and has clips) -->
         <button
@@ -120,7 +169,7 @@
   import ClipsTab from './ClipsTab.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { useAIPermission } from '@/composables/useAIPermission';
-  import { Sparkles, X as XIcon, Loader as LoaderIcon, Plus } from 'lucide-vue-next';
+  import { Sparkles, X as XIcon, Loader as LoaderIcon, Plus, FileText } from 'lucide-vue-next';
 
   // AI Permission check
   const { isAIAllowed } = useAIPermission();
@@ -141,6 +190,10 @@
     subtitleSettings: null,
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
+    isTranscribing: false,
+    transcribeProgress: 0,
+    transcribeStage: '',
+    transcribeMessage: '',
   });
 
   const emit = defineEmits<MediaPanelEmits>();
@@ -335,6 +388,18 @@
 
   function handleAddClip() {
     emit('addClip');
+  }
+
+  function handleTranscribe() {
+    emit('transcribeProject');
+  }
+
+  function handleCancelTranscription() {
+    emit('cancelTranscription');
+  }
+
+  function handleViewTranscript() {
+    emit('viewTranscript');
   }
 
   function onDeleteClip(clipId: string) {

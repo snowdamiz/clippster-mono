@@ -107,5 +107,5 @@ analysis-output/
 *.iml
 nul
 client/src-tauri/ffmpeg-dev.zip
-client/src-tauri/ffmpeg-dev/
 client/src-tauri/pkg-config.zip
+client/src-tauri/ffmpeg-dev/

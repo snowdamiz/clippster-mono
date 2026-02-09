@@ -16,11 +16,42 @@ fn main() {
     let binaries_dir = manifest_dir.join("binaries");
     fs::create_dir_all(&binaries_dir).expect("Failed to create binaries directory");
 
+    // Configure FFmpeg paths for ffmpeg-sys-next
+    if target_os == "windows" {
+        let ffmpeg_dir = manifest_dir.join("ffmpeg-dev").join("ffmpeg-master-latest-win64-gpl-shared");
+        if ffmpeg_dir.exists() {
+            println!("cargo:warning=Found FFmpeg at: {}", ffmpeg_dir.display());
+            env::set_var("FFMPEG_DIR", &ffmpeg_dir);
+            env::set_var("FFMPEG_INCLUDE_DIR", ffmpeg_dir.join("include"));
+            env::set_var("FFMPEG_LIB_DIR", ffmpeg_dir.join("lib"));
+            
+            // Add to system paths for MSVC
+            if let Ok(include) = env::var("INCLUDE") {
+                env::set_var("INCLUDE", format!("{};{}", ffmpeg_dir.join("include").display(), include));
+            } else {
+                env::set_var("INCLUDE", ffmpeg_dir.join("include").display().to_string());
+            }
+            
+            if let Ok(lib) = env::var("LIB") {
+                env::set_var("LIB", format!("{};{}", ffmpeg_dir.join("lib").display(), lib));
+            } else {
+                env::set_var("LIB", ffmpeg_dir.join("lib").display().to_string());
+            }
+        }
+    }
+
     // Download ffmpeg
     download_ffmpeg(&binaries_dir, &target_os, &target_arch);
 
-    // Download node
-    download_node(&binaries_dir, &target_os, &target_arch);
+    // Download node for ALL platforms (needed for cross-platform bundling)
+    // Windows
+    download_node(&binaries_dir, "windows", "x86_64");
+    // macOS Intel
+    download_node(&binaries_dir, "macos", "x86_64");
+    // macOS Apple Silicon
+    download_node(&binaries_dir, "macos", "aarch64");
+    // Linux
+    download_node(&binaries_dir, "linux", "x86_64");
 
     // Download yt-dlp (standalone binaries for all platforms)
     download_ytdlp(&binaries_dir, &target_os, &target_arch);
@@ -580,33 +611,4 @@ fn download_ytdlp(binaries_dir: &Path, target_os: &str, target_arch: &str) {
     }
 }
 
-// Keep the old streamlink extraction function for reference but it's no longer used
-#[allow(dead_code)]
-fn download_and_extract_streamlink_legacy(
-    url: &str,
-    output_path: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // Download the zip file
-    let response = ureq::get(url).call()?;
-    let mut bytes = Vec::new();
-    response.into_reader().read_to_end(&mut bytes)?;
 
-    // Extract streamlink.exe from the zip
-    let reader = Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(reader)?;
-
-    // Find streamlink.exe in the archive (it's in a subdirectory)
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-        let file_name = file.name().to_string();
-
-        // Look for streamlink.exe (not streamlinkw.exe which is the windowed version)
-        if file_name.ends_with("/streamlink.exe") || file_name.ends_with("\\streamlink.exe") {
-            let mut output_file = File::create(output_path)?;
-            io::copy(&mut file, &mut output_file)?;
-            return Ok(());
-        }
-    }
-
-    Err("streamlink.exe not found in archive".into())
-}

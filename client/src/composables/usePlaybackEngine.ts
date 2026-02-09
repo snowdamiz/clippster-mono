@@ -164,11 +164,6 @@ export function usePlaybackEngine(options: PlaybackEngineOptions = {}): Playback
     const oldTime = currentTime.value;
     currentTime.value = newTime;
     
-    // Log every 30 frames (~0.5 seconds)
-    if (Math.floor(oldTime * 60) !== Math.floor(newTime * 60)) {
-      console.log(`[PlaybackEngine] ⏩ Tick: ${oldTime.toFixed(3)}s → ${newTime.toFixed(3)}s (delta: ${deltaSec.toFixed(3)}s)`);
-    }
-    
     onTimeUpdate?.(newTime);
 
     // Schedule next frame

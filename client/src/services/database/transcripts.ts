@@ -163,6 +163,17 @@ export async function searchTranscriptSegmentsByClipIds(
   return result.map((r) => r.clip_id);
 }
 
+export async function hasTranscriptForProject(projectId: string): Promise<boolean> {
+  const db = await getDatabase();
+  const result = await db.select<{ cnt: number }[]>(
+    `SELECT COUNT(*) as cnt FROM transcripts t
+     JOIN raw_videos rv ON t.raw_video_id = rv.id
+     WHERE rv.project_id = ?`,
+    [projectId]
+  );
+  return (result[0]?.cnt || 0) > 0;
+}
+
 export async function getClipIdsWithTranscripts(clipIds: string[]): Promise<string[]> {
   const db = await getDatabase();
 

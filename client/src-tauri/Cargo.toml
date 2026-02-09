@@ -51,6 +51,12 @@ tauri-plugin-global-shortcut = "2"
 log = "0.4"
 # Text-to-image rendering for advanced text overlays (chat bubbles, gradients, glows)
 resvg = "0.44"
+# Video frame decoding for professional playback engine
+# Using ffmpeg-the-third (actively maintained fork of ffmpeg-next)
+ffmpeg-the-third = { version = "4.0", default-features = false, features = ["codec", "format", "software-scaling", "software-resampling"] }
+lru = "0.12"
+image = "0.25"
+parking_lot = "0.12"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"

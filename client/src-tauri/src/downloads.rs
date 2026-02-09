@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use tauri::Emitter;
 use once_cell::sync::Lazy;
+use tokio::sync::oneshot;
 
 use crate::ffmpeg_utils::{
     parse_ffmpeg_time, get_video_info, extract_duration_from_ffmpeg_output, detect_hardware_encoder
@@ -46,6 +47,8 @@ use tauri_plugin_shell::process::CommandChild;
 pub static ACTIVE_DOWNLOADS: Lazy<Arc<Mutex<HashMap<String, bool>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 pub static ACTIVE_FFMPEG_PROCESSES: Lazy<Arc<Mutex<HashMap<String, CommandChild>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 pub static DOWNLOAD_METADATA: Lazy<Arc<Mutex<HashMap<String, DownloadMetadata>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+pub static ACTIVE_DOWNLOAD_CANCELLERS: Lazy<Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 // Helper function to format time for filename
 fn format_time_for_filename(seconds: f64) -> String {

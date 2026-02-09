@@ -347,6 +347,16 @@
                     <Sparkles class="project-card__action-icon" />
                   </button>
 
+                  <button
+                    v-if="canTranscribe(project.id)"
+                    class="project-card__action-btn"
+                    :class="{ 'project-card__action-btn--transcribed': isProjectTranscribed(project.id) }"
+                    :title="isProjectTranscribed(project.id) ? 'Transcribed' : 'Transcribe'"
+                    @click.stop="startTranscription(project)"
+                  >
+                    <FileText class="project-card__action-icon" />
+                  </button>
+
                   <button class="project-card__action-btn" title="Edit" @click.stop="editProject(project)">
                     <Edit class="project-card__action-icon" />
                   </button>
@@ -425,6 +435,16 @@
       :total-duration="totalDetectionDuration"
       @update:model-value="showProjectDetectDialog = $event"
       @confirm="onProjectDetectClipsConfirmed"
+    />
+    <!-- Transcription Confirm Dialog -->
+    <TranscriptionConfirmDialog
+      :model-value="showTranscribeDialog"
+      :video-duration="0"
+      :segment-count="segmentsToTranscribe.length"
+      :total-duration="totalTranscribeDuration"
+      :is-transcribed="segmentsToTranscribe.length === 1 && projectTranscriptStatus[segmentsToTranscribe[0]?.id]"
+      @update:model-value="showTranscribeDialog = $event"
+      @confirm="onTranscribeConfirmed"
     />
     <!-- Folder Clip Build Dialog -->
     <ClipBuildSettingsDialog
@@ -568,6 +588,16 @@
                         <Loader2 :size="12" class="folder-dialog__spin" />
                         <span>Detecting...</span>
                       </div>
+                      <!-- Transcription Progress Indicator -->
+                      <div v-else-if="activeTranscriptions.has(project.id)" class="folder-dialog__segment-detecting" style="background: rgba(34, 197, 94, 0.85)">
+                        <Loader2 :size="12" class="folder-dialog__spin" />
+                        <span>Transcribing...</span>
+                      </div>
+                      <!-- Transcribed Badge -->
+                      <div v-else-if="projectTranscriptStatus[project.id]" class="folder-dialog__segment-duration" style="background: rgba(34, 197, 94, 0.85)">
+                        <FileText :size="12" />
+                        Transcribed
+                      </div>
                       <!-- Duration Badge -->
                       <div v-else-if="getProjectDuration(project.id)" class="folder-dialog__segment-duration">
                         <Clock :size="12" />
@@ -603,6 +633,19 @@
                           @click.stop="startProjectDetection(project)"
                         >
                           <Sparkles :size="20" />
+                        </button>
+                        <button
+                          v-if="
+                            canTranscribe(project.id) &&
+                            !isDetectionActive(project.id) &&
+                            !activeTranscriptions.has(project.id)
+                          "
+                          class="folder-dialog__segment-action"
+                          :class="{ 'folder-dialog__segment-action--transcribed': projectTranscriptStatus[project.id] }"
+                          :title="projectTranscriptStatus[project.id] ? 'Already Transcribed' : 'Transcribe'"
+                          @click.stop="startTranscription(project)"
+                        >
+                          <FileText :size="20" />
                         </button>
                         <button
                           v-if="!isDetectionActive(project.id) && !isProjectDetecting(folderProject?.id || '')"
@@ -1162,20 +1205,6 @@
       </template>
     </SearchPalette>
 
-    <!-- Clip Editor Dialog (video editor mode) -->
-    <ClipEditorDialog
-      v-model="showClipEditorDialog"
-      :clip-id="clipEditorClipId"
-      :clip-start-time="clipEditorStartTime"
-      :clip-end-time="clipEditorEndTime"
-      :clip-title="clipEditorTitle"
-      :clip-segments="clipEditorSegments"
-      :editor-mode="true"
-      :editor-project-id="clipEditorProjectId"
-      :editor-project-name="clipEditorProjectName"
-      @save="onClipEditorSave"
-      @editor-save="onClipEditorSave"
-    />
 
     <!-- Existing Project Dialog -->
     <ExistingProjectDialog
@@ -1228,6 +1257,7 @@
     HelpCircle,
     AlertTriangle,
     Info,
+    FileText,
   } from 'lucide-vue-next';
   import {
     getAllProjects,
@@ -1254,6 +1284,7 @@
     type Prompt,
     type WatermarkSettings,
     type VideoEditorProject,
+    hasTranscriptForProject,
   } from '@/services/database';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { getWatermarkImage } from '@/services/database/watermarks';
@@ -1273,12 +1304,13 @@
   import DownloadCard from '@/components/DownloadCard.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
   import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
+  import TranscriptionConfirmDialog from '@/components/TranscriptionConfirmDialog.vue';
   import ClipBuildSettingsDialog, {
     type BuildSettings,
     type IntroOutroItem,
   } from '@/components/ClipBuildSettingsDialog.vue';
   import ClipsTab from '@/components/ClipsTab.vue';
-  import ClipEditorDialog from '@/components/clip-editor/ClipEditorDialog.vue';
+  import { useRouter } from 'vue-router';
   import ExistingProjectDialog from '@/components/clip-editor/ExistingProjectDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -1286,10 +1318,12 @@
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { useChunkedClipDetection } from '@/composables/useChunkedClipDetection';
+  import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useAIPermission } from '@/composables/useAIPermission';
+  const router = useRouter();
   // AI Permission check
   const { isAIAllowed } = useAIPermission();
   const { gates } = useSubscriptionGate();
@@ -1351,6 +1385,14 @@
   const isDetectingProject = ref(false);
   const authStore = useAuthStore();
   const { startDetection, updateProgress, completeDetection, isDetectionActive } = useClipDetectionTracking();
+
+  // Transcription-only state
+  const showTranscribeDialog = ref(false);
+  const projectToTranscribe = ref<Project | null>(null);
+  const segmentsToTranscribe = ref<Project[]>([]);
+  const totalTranscribeDuration = ref(0);
+  const projectTranscriptStatus = ref<Record<string, boolean>>({});
+  const activeTranscriptions = ref<Set<string>>(new Set());
 
   // Filter state
   const searchQuery = ref('');
@@ -1583,6 +1625,9 @@
           }
         }
       }
+      // Load transcript statuses for all projects (non-blocking)
+      const allProjectIds = projects.value.map((p) => p.id);
+      loadTranscriptStatuses(allProjectIds);
     } catch (error) {
       console.error('Failed to load projects:', error);
     } finally {
@@ -1831,15 +1876,6 @@
   const folderDownloadDropdownId = ref<string | null>(null);
   const folderPrompts = ref<Prompt[]>([]);
 
-  // Clip editor dialog state (folder clips)
-  const showClipEditorDialog = ref(false);
-  const clipEditorClipId = ref('');
-  const clipEditorStartTime = ref(0);
-  const clipEditorEndTime = ref(0);
-  const clipEditorTitle = ref('');
-  const clipEditorSegments = ref<{ start_time: number; end_time: number }[]>([]);
-  const clipEditorProjectId = ref<string | null>(null);
-  const clipEditorProjectName = ref('Video Project');
   const showExistingProjectDialog = ref(false);
   const existingProjectForClip = ref<VideoEditorProject | null>(null);
   const pendingClipToEdit = ref<{
@@ -1889,6 +1925,7 @@
   const folderCreatorDefaultIntro = ref<IntroOutro | null>(null);
   const folderCreatorDefaultOutro = ref<IntroOutro | null>(null);
   const folderCreatorWatermarkSettings = ref<WatermarkSettings | null>(null);
+  const folderCreatorProfile = ref<any>(null);
 
   // Store unlisten functions for Tauri event cleanup
   const clipBuildUnlistenFunctions = ref<UnlistenFn[]>([]);
@@ -3180,18 +3217,8 @@
         clipSegments: segments,
       });
 
-      clipEditorClipId.value = clipId;
-      clipEditorStartTime.value = startTime;
-      clipEditorEndTime.value = endTime;
-      clipEditorTitle.value = clipTitle;
-      clipEditorSegments.value = segments;
-      clipEditorProjectId.value = result.projectId;
-      clipEditorProjectName.value = result.projectName;
-
       showFolderDialog.value = false;
-      nextTick(() => {
-        showClipEditorDialog.value = true;
-      });
+      router.push({ path: '/editor', query: { projectId: result.projectId } });
     } catch (err) {
       console.error('[Projects] Failed to create video editor project:', err);
       error('Failed to Open Editor', 'Could not create video editor project. Please try again.');
@@ -3202,22 +3229,12 @@
     const pending = pendingClipToEdit.value;
     if (!pending) return;
 
-    clipEditorClipId.value = pending.clipId;
-    clipEditorStartTime.value = pending.startTime;
-    clipEditorEndTime.value = pending.endTime;
-    clipEditorTitle.value = pending.title;
-    clipEditorSegments.value = pending.segments;
-    clipEditorProjectId.value = project.id;
-    clipEditorProjectName.value = project.name;
-
     pendingClipToEdit.value = null;
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
 
     showFolderDialog.value = false;
-    nextTick(() => {
-      showClipEditorDialog.value = true;
-    });
+    router.push({ path: '/editor', query: { projectId: project.id } });
   }
 
   function onOpenExistingProject() {
@@ -3236,11 +3253,6 @@
     await openClipInNewProject(pending.clipId, pending.title, pending.startTime, pending.endTime, pending.segments);
   }
 
-  async function onClipEditorSave() {
-    if (!folderProject.value) return;
-    await loadFolderClips(folderProject.value.id);
-  }
-
   // Build clip from folder view
   async function onFolderBuildClip(clip: ClipWithVersionAndSegment) {
     folderClipToBuild.value = clip;
@@ -3249,6 +3261,7 @@
     folderCreatorDefaultIntro.value = null;
     folderCreatorDefaultOutro.value = null;
     folderCreatorWatermarkSettings.value = null;
+    folderCreatorProfile.value = null;
 
     // Look up creator profile for this clip's project
     try {
@@ -3258,6 +3271,7 @@
 
       if (profile) {
         console.log('[Projects] Found creator profile for folder build:', profile.name);
+        folderCreatorProfile.value = profile;
 
         // Load creator's default intro
         if (profile.intro_id) {
@@ -3523,6 +3537,46 @@
         }
       }
 
+      // Resolve per-ratio intro/outro from creator profile
+      const introOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> = {};
+      
+      if (folderCreatorProfile.value?.intro_outro_settings) {
+        try {
+          const introOutroSettings = JSON.parse(folderCreatorProfile.value.intro_outro_settings);
+          
+          for (const ratio of settings.aspectRatios) {
+            const ratioConfig = introOutroSettings[ratio];
+            if (ratioConfig) {
+              const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
+              
+              // Resolve intro for this ratio
+              if (ratioConfig.introId) {
+                const introAsset = await getIntroOutroById(ratioConfig.introId);
+                if (introAsset) {
+                  ratioData.introPath = introAsset.file_path || undefined;
+                  ratioData.introDuration = introAsset.duration || undefined;
+                  console.log(`[Projects] Resolved intro for ${ratio}:`, introAsset.name);
+                }
+              }
+              
+              // Resolve outro for this ratio
+              if (ratioConfig.outroId) {
+                const outroAsset = await getIntroOutroById(ratioConfig.outroId);
+                if (outroAsset) {
+                  ratioData.outroPath = outroAsset.file_path || undefined;
+                  ratioData.outroDuration = outroAsset.duration || undefined;
+                  console.log(`[Projects] Resolved outro for ${ratio}:`, outroAsset.name);
+                }
+              }
+              
+              introOutroPerRatio[ratio] = ratioData;
+            }
+          }
+        } catch (e) {
+          console.warn('[Projects] Failed to parse intro_outro_settings:', e);
+        }
+      }
+
       // Start the build using the correct command
       await invoke('build_clip_from_segments', {
         projectId: clip.segment_id,
@@ -3545,6 +3599,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
+        introOutroPerRatio: introOutroPerRatio,
         watermarkSettings: watermarkSettings,
         audioSettings: null,
         framingStrategy: null,
@@ -4610,6 +4665,151 @@
       projectToDetect.value = null;
       segmentsToDetect.value = [];
       totalDetectionDuration.value = 0;
+    }
+  }
+
+  // ===== Transcription-Only Functions =====
+
+  function canTranscribe(projectId: string): boolean {
+    const videos = projectVideos.value[projectId];
+    if (videos && videos.length > 0) {
+      return true;
+    }
+    const children = getFolderChildren(projectId);
+    for (const child of children) {
+      const childVideos = projectVideos.value[child.id];
+      if (childVideos && childVideos.length > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function isProjectTranscribed(projectId: string): boolean {
+    // For standalone projects, check directly
+    const children = getFolderChildren(projectId);
+    if (children.length === 0) {
+      return !!projectTranscriptStatus.value[projectId];
+    }
+    // For folder projects, check if ALL children with videos are transcribed
+    const childrenWithVideos = children.filter((child) => {
+      const videos = projectVideos.value[child.id];
+      return videos && videos.length > 0;
+    });
+    if (childrenWithVideos.length === 0) return false;
+    return childrenWithVideos.every((child) => projectTranscriptStatus.value[child.id]);
+  }
+
+  async function loadTranscriptStatuses(projectIds: string[]) {
+    for (const pid of projectIds) {
+      try {
+        projectTranscriptStatus.value[pid] = await hasTranscriptForProject(pid);
+      } catch {
+        // Non-critical — leave as false
+      }
+    }
+  }
+
+  async function startTranscription(project: Project) {
+    if (!authStore.isAuthenticated) {
+      window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+
+    if (!(await gates.aiDetection(`Transcribe "${project.name}"`))) {
+      return;
+    }
+
+    // Gather segments to transcribe
+    const children = getFolderChildren(project.id);
+    if (children.length > 0) {
+      segmentsToTranscribe.value = children.filter((child) => {
+        const videos = projectVideos.value[child.id];
+        return videos && videos.length > 0;
+      });
+    } else {
+      const videos = projectVideos.value[project.id];
+      if (videos && videos.length > 0) {
+        segmentsToTranscribe.value = [project];
+      } else {
+        segmentsToTranscribe.value = [];
+      }
+    }
+
+    if (segmentsToTranscribe.value.length === 0) {
+      error('No videos found', 'This project has no videos to transcribe.');
+      return;
+    }
+
+    // Calculate total duration
+    totalTranscribeDuration.value = segmentsToTranscribe.value.reduce((acc, segment) => {
+      const videos = projectVideos.value[segment.id];
+      return acc + (videos?.reduce((sum, v) => sum + (v.duration || 0), 0) || 0);
+    }, 0);
+
+    projectToTranscribe.value = project;
+    showTranscribeDialog.value = true;
+  }
+
+  async function onTranscribeConfirmed(organizationId: number | null = null) {
+    if (!projectToTranscribe.value || segmentsToTranscribe.value.length === 0) {
+      return;
+    }
+
+    const segments = [...segmentsToTranscribe.value];
+    const totalSegments = segments.length;
+    let successCount = 0;
+
+    try {
+      for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+
+        success(
+          'Transcribing...',
+          `Processing segment ${i + 1} of ${totalSegments}: ${segment.name}`,
+          3000
+        );
+
+        activeTranscriptions.value.add(segment.id);
+        // Trigger reactivity
+        activeTranscriptions.value = new Set(activeTranscriptions.value);
+
+        try {
+          const { transcribeProject, progress: transcribeProgress } = useTranscriptionOnly();
+
+          const result = await transcribeProject(segment.id, {
+            organizationId: organizationId,
+          });
+
+          if (result.success) {
+            successCount++;
+            projectTranscriptStatus.value[segment.id] = true;
+          }
+        } catch (err) {
+          console.error(`Failed to transcribe segment ${segment.name}:`, err);
+        } finally {
+          activeTranscriptions.value.delete(segment.id);
+          activeTranscriptions.value = new Set(activeTranscriptions.value);
+        }
+      }
+
+      if (successCount === totalSegments) {
+        success(
+          'Transcription Complete',
+          `Successfully transcribed ${successCount} segment${successCount !== 1 ? 's' : ''}.`
+        );
+      } else if (successCount > 0) {
+        error(
+          'Transcription Partially Complete',
+          `Transcribed ${successCount} of ${totalSegments} segments. Some segments failed.`
+        );
+      } else {
+        error('Transcription Failed', 'All segments failed to transcribe.');
+      }
+    } finally {
+      projectToTranscribe.value = null;
+      segmentsToTranscribe.value = [];
+      totalTranscribeDuration.value = 0;
     }
   }
 
@@ -5721,6 +5921,15 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   }
 
+  .project-card__action-btn--transcribed {
+    background-color: rgba(34, 197, 94, 0.9);
+    color: white;
+  }
+
+  .project-card__action-btn--transcribed:hover {
+    background-color: #22c55e;
+  }
+
   .project-card__action-btn:hover {
     background-color: white;
     transform: scale(1.1);
@@ -6293,6 +6502,15 @@
     cursor: pointer;
     transition: all 150ms ease;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .folder-dialog__segment-action--transcribed {
+    background-color: rgba(34, 197, 94, 0.9);
+    color: white;
+  }
+
+  .folder-dialog__segment-action--transcribed:hover {
+    background-color: #22c55e;
   }
 
   .folder-dialog__segment-action:hover {

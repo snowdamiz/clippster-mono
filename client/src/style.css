@@ -496,6 +496,43 @@
     scrollbar-color: oklch(0.4 0 0 / 0.85) transparent !important;
   }
 
+  /* ── Range slider: thin track + small round thumb ── */
+  input[type='range'] {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+    height: 20px;
+  }
+
+  input[type='range']::-webkit-slider-runnable-track {
+    height: 2px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 1px;
+  }
+
+  input[type='range']::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: none;
+    margin-top: -6px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+
+  input[type='range']::-webkit-slider-thumb:hover {
+    background: #f0f0f0;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  }
+
+  input[type='range']::-webkit-slider-thumb:active {
+    background: #e0e0e0;
+    transform: scale(1.1);
+  }
+
   /* Enhanced scrollbar for ScrollArea components */
   [data-radix-scroll-area-viewport]::-webkit-scrollbar {
     width: 6px;

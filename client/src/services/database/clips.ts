@@ -67,14 +67,21 @@ export async function getAllClips(): Promise<Clip[]> {
 
   if (userId === null) {
     return await db.select<Clip[]>(
-      'SELECT * FROM clips WHERE user_id IS NULL ORDER BY created_at DESC'
+      'SELECT * FROM clips ORDER BY created_at DESC'
     );
   }
 
-  return await db.select<Clip[]>(
-    'SELECT * FROM clips WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+  let clips = await db.select<Clip[]>(
+    'SELECT * FROM clips WHERE (CAST(user_id AS INTEGER) = ? OR user_id IS NULL) ORDER BY created_at DESC',
     [userId]
   );
+  if (clips.length === 0) {
+    const total = await db.select<any[]>('SELECT COUNT(*) as cnt FROM clips');
+    if (total[0]?.cnt > 0) {
+      clips = await db.select<Clip[]>('SELECT * FROM clips ORDER BY created_at DESC');
+    }
+  }
+  return clips;
 }
 
 export async function getGeneratedClips(): Promise<Clip[]> {
@@ -83,15 +90,22 @@ export async function getGeneratedClips(): Promise<Clip[]> {
 
   if (userId === null) {
     return await db.select<Clip[]>(
-      'SELECT * FROM clips WHERE status = ? AND user_id IS NULL ORDER BY created_at DESC',
+      'SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC',
       ['generated']
     );
   }
 
-  return await db.select<Clip[]>(
-    'SELECT * FROM clips WHERE status = ? AND (user_id = ? OR user_id IS NULL) ORDER BY created_at DESC',
+  let clips = await db.select<Clip[]>(
+    'SELECT * FROM clips WHERE status = ? AND (CAST(user_id AS INTEGER) = ? OR user_id IS NULL) ORDER BY created_at DESC',
     ['generated', userId]
   );
+  if (clips.length === 0) {
+    const total = await db.select<any[]>('SELECT COUNT(*) as cnt FROM clips WHERE status = ?', ['generated']);
+    if (total[0]?.cnt > 0) {
+      clips = await db.select<Clip[]>('SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC', ['generated']);
+    }
+  }
+  return clips;
 }
 
 export async function getDetectedClips(): Promise<Clip[]> {
@@ -100,15 +114,22 @@ export async function getDetectedClips(): Promise<Clip[]> {
 
   if (userId === null) {
     return await db.select<Clip[]>(
-      'SELECT * FROM clips WHERE status = ? AND user_id IS NULL ORDER BY created_at DESC',
+      'SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC',
       ['detected']
     );
   }
 
-  return await db.select<Clip[]>(
-    'SELECT * FROM clips WHERE status = ? AND (user_id = ? OR user_id IS NULL) ORDER BY created_at DESC',
+  let clips = await db.select<Clip[]>(
+    'SELECT * FROM clips WHERE status = ? AND (CAST(user_id AS INTEGER) = ? OR user_id IS NULL) ORDER BY created_at DESC',
     ['detected', userId]
   );
+  if (clips.length === 0) {
+    const total = await db.select<any[]>('SELECT COUNT(*) as cnt FROM clips WHERE status = ?', ['detected']);
+    if (total[0]?.cnt > 0) {
+      clips = await db.select<Clip[]>('SELECT * FROM clips WHERE status = ? ORDER BY created_at DESC', ['detected']);
+    }
+  }
+  return clips;
 }
 
 export async function getClipsByProjectId(projectId: string): Promise<Clip[]> {

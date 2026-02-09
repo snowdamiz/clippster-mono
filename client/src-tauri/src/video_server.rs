@@ -47,6 +47,44 @@ pub async fn start_video_server_impl() {
         return; // Server already running
     }
 
+    // HEAD route for video health checks with CORS headers
+    let video_head_route = warp::path!("video" / String)
+        .and(warp::head())
+        .and_then(|encoded_path: String| async move {
+            use base64::{Engine as _, engine::general_purpose};
+            let decoded = match general_purpose::STANDARD.decode(&encoded_path) {
+                Ok(d) => d,
+                Err(_) => {
+                    let resp = warp::reply::with_header("", "Access-Control-Allow-Origin", "*");
+                    return Ok::<_, warp::Rejection>(warp::reply::with_status(resp, warp::http::StatusCode::BAD_REQUEST).into_response());
+                }
+            };
+            let path_str = match String::from_utf8(decoded) {
+                Ok(s) => s,
+                Err(_) => {
+                    let resp = warp::reply::with_header("", "Access-Control-Allow-Origin", "*");
+                    return Ok(warp::reply::with_status(resp, warp::http::StatusCode::BAD_REQUEST).into_response());
+                }
+            };
+            let file_path = PathBuf::from(&path_str);
+            if !file_path.exists() {
+                let resp = warp::reply::with_header("", "Access-Control-Allow-Origin", "*");
+                return Ok(warp::reply::with_status(resp, warp::http::StatusCode::NOT_FOUND).into_response());
+            }
+            let file_size = tokio::fs::metadata(&file_path).await.map(|m| m.len()).unwrap_or(0);
+            let content_type = match file_path.extension().and_then(|e| e.to_str()) {
+                Some("mp4") => "video/mp4",
+                Some("webm") => "video/webm",
+                _ => "application/octet-stream",
+            };
+            let resp = warp::reply::with_header("", "Content-Type", content_type);
+            let resp = warp::reply::with_header(resp, "Content-Length", file_size.to_string());
+            let resp = warp::reply::with_header(resp, "Accept-Ranges", "bytes");
+            let resp = warp::reply::with_header(resp, "Access-Control-Allow-Origin", "*");
+            let resp = warp::reply::with_header(resp, "Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+            Ok(warp::reply::with_status(resp, warp::http::StatusCode::OK).into_response())
+        });
+
     let video_route = warp::path!("video" / String)
         .and(warp::get())
         .and(warp::header::optional::<String>("range"))
@@ -204,6 +242,12 @@ pub async fn start_video_server_impl() {
                                             response,
                                             "Access-Control-Allow-Origin",
                                             "*"
+                                        );
+
+                                        let response = warp::reply::with_header(
+                                            response,
+                                            "Access-Control-Expose-Headers",
+                                            "Content-Range, Content-Length, Accept-Ranges"
                                         );
 
                                         return Ok(warp::reply::with_status(
@@ -1041,10 +1085,9 @@ pub async fn start_video_server_impl() {
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "HEAD", "OPTIONS"])
-        .allow_headers(vec!["Content-Type", "Range"]);
+        .allow_headers(vec!["Content-Type", "Range", "Accept", "Origin"]).expose_headers(vec!["Content-Range", "Content-Length", "Accept-Ranges"]);
 
-    let routes = video_route
-        .or(hls_playlist_head_route)
+    let routes = video_head_route.or(video_route).or(hls_playlist_head_route)
         .or(hls_playlist_tmp_head_route)
         .or(hls_playlist_route)
         .or(hls_playlist_tmp_route)

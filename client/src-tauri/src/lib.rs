@@ -14,11 +14,17 @@ mod pumpfun;
 mod kick;
 mod twitch;
 mod waveform;
+mod audio_peaks;
 mod focal_detection;
 mod commands;
+mod sidecar;
 mod dvr;
 mod hls;
 mod video_editor_export;
+mod video;
+mod clip_extractor_commands;
+mod utils;
+mod font_commands;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -42,6 +48,20 @@ async fn copy_file(source: String, destination: String) -> Result<(), String> {
     
     println!("[Rust] File copied successfully");
     Ok(())
+}
+
+/// Read video file as bytes for WebCodecs playback
+#[tauri::command]
+async fn read_video_file(file_path: String) -> Result<Vec<u8>, String> {
+    use std::fs;
+    
+    println!("[Rust] Reading video file: {}", file_path);
+    
+    let bytes = fs::read(&file_path)
+        .map_err(|e| format!("Failed to read video file: {}", e))?;
+    
+    println!("[Rust] Video file read successfully: {} bytes", bytes.len());
+    Ok(bytes)
 }
 
 /// Create an always-on-top PIP window with video and controls
@@ -546,9 +566,21 @@ pub fn run() {
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
+                            version: 80,
+                            description: "fix_monitored_streamers_unique_constraint",
+                            sql: include_str!("../migrations/080_fix_monitored_streamers_unique_constraint.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
                             version: 81,
                             description: "add_source_start_time_to_audio_tracks",
                             sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 82,
+                            description: "add_opencut_editor_projects",
+                            sql: include_str!("../migrations/082_add_opencut_editor_projects.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                     ],
@@ -562,6 +594,7 @@ pub fn run() {
         // OTA Updates - required for automatic app updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
@@ -625,16 +658,17 @@ pub fn run() {
             set_clip_generation_in_progress,
             is_clip_generation_in_progress,
 
-            // Download management commands
-            cancel_all_downloads,
-            cancel_download,
-            cleanup_completed_download,
+// Download management commands
+cancel_all_downloads,
+cancel_download,
+cleanup_completed_download,
 
-            // File operations commands
-            check_file_exists,
-            validate_video_file,
+// File operations commands
+check_file_exists,
+validate_video_file,
+generate_proxy_file,
 
-            // Auth commands
+// Auth commands
             auth::open_wallet_auth_window,
             auth::open_wallet_payment_window,
             auth::close_auth_window,
@@ -662,8 +696,8 @@ pub fn run() {
             // Kick commands
             kick::check_kick_livestream,
             kick::get_kick_stream_url,
-            kick::check_streamlink_available,
-            kick::get_streamlink_version,
+            kick::check_ytdlp_available,
+            kick::get_ytdlp_version,
             kick::start_kick_recording,
             kick::stop_kick_recording,
             kick::stop_all_kick_recordings,
@@ -700,6 +734,9 @@ pub fn run() {
             waveform::clear_waveform_cache,
             waveform::extract_audio_peaks_for_range,
 
+            // Audio peaks detection commands
+            audio_peaks::detect_audio_peaks,
+
             // Storage commands
             storage::get_storage_paths,
             storage::copy_video_to_storage,
@@ -709,6 +746,7 @@ pub fn run() {
             storage::generate_thumbnail,
             storage::generate_thumbnail_at_timestamp,
             storage::save_temp_file,
+            storage::save_editor_media_file,
             storage::read_file_as_data_url,
             storage::delete_video_file,
             storage::delete_raw_video_files,
@@ -756,6 +794,7 @@ pub fn run() {
             
             // File operations
             copy_file,
+            read_video_file,
 
     // PIP control window commands
     create_pip_control_window,
@@ -777,15 +816,43 @@ pub fn run() {
 
     // HLS commands
     hls::start_hls_recording,
-    hls::stop_hls_recording,
-    hls::cleanup_hls_recordings,
-    hls::get_recording_output_dir,
-    hls::get_hls_segments,
 
-    // Video Editor Export commands
-    video_editor_export::export_video_editor_project_simple,
-    video_editor_export::export_video_editor_project,
+// Video Editor Export commands
+video_editor_export::export_video_editor_project_simple,
+video_editor_export::export_video_editor_project,
+video_editor_export::save_text_overlay_png,
+
+// Video Frame Decoder commands
+video::get_video_frame,
+video::get_video_frame_with_dimensions,
+video::prefetch_video_frames,
+video::clear_video_decoder,
+video::clear_all_video_decoders,
+video::clear_frame_cache,
+video::get_frame_cache_stats,
+video::get_decoder_info,
+
+// Clip Extractor commands
+clip_extractor_commands::extract_clip,
+clip_extractor_commands::generate_clip_thumbnail,
+clip_extractor_commands::generate_waveform,
+clip_extractor_commands::delete_file,
+clip_extractor_commands::file_exists,
+
+// Font commands
+font_commands::read_font_file,
+font_commands::read_bundled_font,
+font_commands::copy_font_to_app_data,
+font_commands::list_custom_fonts,
+font_commands::resolve_font_path,
+
+// Remotion export commands
+remotion_export::start_remotion_export,
+remotion_export::cancel_remotion_export,
+remotion_export::stop_remotion_sidecar,
+
 ])
+.manage(remotion_export::SidecarState::new())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
-}
+} 

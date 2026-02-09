@@ -704,7 +704,50 @@ class WaveformServiceImpl {
    * Get peaks for a time range at specified pixel width
    * This is the main method for rendering - call this per render frame
    * HYBRID: Routes to Rust streaming or cached peaks based on video duration
+   * NOW WITH: Smart caching by full parameters + request deduplication
    */
+  private peakCache = new Map<string, WaveformPeak[]>();
+  private pendingPeakRequests = new Map<string, Promise<WaveformPeak[]>>();
+  private readonly MAX_CACHE_SIZE = 1000;
+  private peakCacheAccessOrder: string[] = [];
+
+  private getPeakCacheKey(normalizedPath: string, startTime: number, endTime: number, pixelWidth: number): string {
+    return `${normalizedPath}:${startTime.toFixed(3)}:${endTime.toFixed(3)}:${pixelWidth}`;
+  }
+
+  private setPeakCache(key: string, peaks: WaveformPeak[]): void {
+    if (this.peakCache.size >= this.MAX_CACHE_SIZE) {
+      // LRU eviction: remove oldest accessed items
+      const toRemove = Math.floor(this.MAX_CACHE_SIZE * 0.2); // Remove 20% when full
+      for (let i = 0; i < toRemove && this.peakCacheAccessOrder.length > 0; i++) {
+        const oldestKey = this.peakCacheAccessOrder.shift();
+        if (oldestKey) {
+          this.peakCache.delete(oldestKey);
+        }
+      }
+    }
+    this.peakCache.set(key, peaks);
+    // Update access order
+    const index = this.peakCacheAccessOrder.indexOf(key);
+    if (index > -1) {
+      this.peakCacheAccessOrder.splice(index, 1);
+    }
+    this.peakCacheAccessOrder.push(key);
+  }
+
+  private getPeakFromCache(key: string): WaveformPeak[] | undefined {
+    const peaks = this.peakCache.get(key);
+    if (peaks) {
+      // Update access order for LRU
+      const index = this.peakCacheAccessOrder.indexOf(key);
+      if (index > -1) {
+        this.peakCacheAccessOrder.splice(index, 1);
+      }
+      this.peakCacheAccessOrder.push(key);
+    }
+    return peaks;
+  }
+
   async getPeaksForRange(
     filePath: string,
     options: WaveformRenderOptions
@@ -712,11 +755,56 @@ class WaveformServiceImpl {
     const normalizedPath = this.normalizePath(filePath);
     const mode = this.peakMode.get(normalizedPath);
 
+    // Generate cache key including pixel width for proper zoom caching
+    const cacheKey = this.getPeakCacheKey(
+      normalizedPath,
+      options.startTime,
+      options.endTime,
+      options.pixelWidth
+    );
+
+    // Check cache first
+    const cached = this.getPeakFromCache(cacheKey);
+    if (cached) {
+      // Cache hit - frequent during playback, skip logging
+      return cached;
+    }
+
+    // Check for pending request (deduplication)
+    if (this.pendingPeakRequests.has(cacheKey)) {
+      console.log('[WaveformService] Reusing pending peak request:', cacheKey);
+      return this.pendingPeakRequests.get(cacheKey)!;
+    }
+
+    // Create the peak extraction promise
+    const peakPromise = this.doGetPeaksForRange(normalizedPath, mode, options, cacheKey);
+    
+    // Store as pending
+    this.pendingPeakRequests.set(cacheKey, peakPromise);
+
+    try {
+      const peaks = await peakPromise;
+      // Cache the result
+      this.setPeakCache(cacheKey, peaks);
+      return peaks;
+    } finally {
+      // Clean up pending request
+      this.pendingPeakRequests.delete(cacheKey);
+    }
+  }
+
+  private async doGetPeaksForRange(
+    normalizedPath: string,
+    mode: WaveformMode | undefined,
+    options: WaveformRenderOptions,
+    cacheKey: string
+  ): Promise<WaveformPeak[]> {
     if (mode === 'streaming') {
       // LONG VIDEO: Ask Rust to calculate peaks on-demand
+      console.log('[WaveformService] Extracting peaks via Rust:', cacheKey);
       try {
         const peaks = await invoke<WaveformPeak[]>('extract_audio_peaks_for_range', {
-          videoPath: filePath,
+          videoPath: normalizedPath,
           startTime: options.startTime,
           duration: options.endTime - options.startTime,
           numPeaks: options.pixelWidth,
@@ -730,10 +818,10 @@ class WaveformServiceImpl {
           }));
         }
         
+        console.log('[WaveformService] Peaks extracted:', peaks.length);
         return peaks;
       } catch (error) {
         console.error('[WaveformService] Rust peak extraction failed:', error);
-        // Return empty array - no placeholders
         return [];
       }
     } else {
@@ -755,6 +843,24 @@ class WaveformServiceImpl {
     }
   }
 
+
+  /**
+   * Get cached peaks synchronously without triggering async fetch
+   * Returns undefined if not in cache - used for render helpers
+   */
+  getCachedPeaks(
+    filePath: string,
+    options: WaveformRenderOptions
+  ): WaveformPeak[] | undefined {
+    const normalizedPath = this.normalizePath(filePath);
+    const cacheKey = this.getPeakCacheKey(
+      normalizedPath,
+      options.startTime,
+      options.endTime,
+      options.pixelWidth
+    );
+    return this.getPeakFromCache(cacheKey);
+  }
 
   /**
    * Get peaks synchronously if data is already loaded
@@ -821,6 +927,15 @@ class WaveformServiceImpl {
     const normalizedPath = this.normalizePath(filePath);
     this.audioCache.delete(normalizedPath);
     this.peakMode.delete(normalizedPath);
+    // Also clear any peak caches for this path
+    const prefix = `${normalizedPath}:`;
+    for (const key of this.peakCache.keys()) {
+      if (key.startsWith(prefix)) {
+        this.peakCache.delete(key);
+        const idx = this.peakCacheAccessOrder.indexOf(key);
+        if (idx > -1) this.peakCacheAccessOrder.splice(idx, 1);
+      }
+    }
     await deleteCachedAudio(normalizedPath);
     console.log('[WaveformService] Cleared cache for:', normalizedPath);
   }
@@ -831,6 +946,8 @@ class WaveformServiceImpl {
   async clearAllCache(): Promise<void> {
     this.audioCache.clear();
     this.peakMode.clear();
+    this.peakCache.clear();
+    this.peakCacheAccessOrder = [];
     await clearAllCache();
     console.log('[WaveformService] Cleared all cache');
   }

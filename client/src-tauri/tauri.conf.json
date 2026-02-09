@@ -19,7 +19,8 @@
         "decorations": false,
         "titleBarStyle": "Overlay",
         "visible": false,
-        "transparent": true
+        "transparent": true,
+        "dragDropEnabled": false
       }
     ],
     "macOSPrivateApi": true,
@@ -31,7 +32,13 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPLOCALDATA/Clippster/**"
+          "$APPLOCALDATA/Clippster/**/*",
+          "$APPLOCALDATA/**/*",
+          "$HOME/**/*",
+          "$DOWNLOAD/**/*",
+          "$DESKTOP/**/*",
+          "$DOCUMENT/**/*",
+          "$VIDEO/**/*"
         ]
       }
     },
@@ -67,7 +74,8 @@
     ],
     "resources": [
       "fonts/*",
-      "pumpfun-service/**/*"
+      "pumpfun-service/**/*",
+      "sidecars/remotion-renderer/dist/bundle.js"
     ],
     "externalBin": [
       "binaries/ffmpeg",

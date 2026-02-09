@@ -88,7 +88,7 @@ The existing clip editor uses a purple/violet accent color scheme that doesn't m
 
 Add editor-specific CSS variables to [`client/src/style.css`](client/src/style.css) for consistent theming:
 
-```css
+````css
 /* Video Editor theme variables */
 --editor-bg: #0a0a0b;
 --editor-surface: #111113;
@@ -228,4 +228,5 @@ Changes:
 5. [`client/src/components/clip-editor/ClipEditorPreview.vue`](client/src/components/clip-editor/ClipEditorPreview.vue) - Preview area
 6. [`client/src/components/clip-editor/ClipEditorInspector.vue`](client/src/components/clip-editor/ClipEditorInspector.vue) - Collapsible inspector
 7. [`client/src/components/clip-editor/ClipEditorTimeline.vue`](client/src/components/clip-editor/ClipEditorTimeline.vue) - Timeline
-8. [`client/src/components/clip-editor/ClipEditorToolbar.vue`](client/src/components/clip-editor/ClipEditorToolbar.vue) - Toolbar
+
+````

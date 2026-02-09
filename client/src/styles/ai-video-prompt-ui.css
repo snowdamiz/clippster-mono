@@ -1,0 +1,230 @@
+/* AI Video Creator - Prompt UI Enhancements */
+
+/* Prompt Header */
+.ai-video__prompt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.ai-video__help-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ai-video__help-btn:hover {
+  background: var(--accent);
+  border-color: var(--primary);
+  color: var(--foreground);
+}
+
+.ai-video__help-btn--active {
+  background: var(--sidebar-active);
+  border-color: var(--sidebar-accent);
+  color: var(--sidebar-accent);
+}
+
+/* Prompt Examples Dropdown */
+.ai-video__examples {
+  margin-bottom: 0.75rem;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ai-video__examples-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.625rem 0.75rem;
+  background: var(--sidebar-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-video__examples-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.ai-video__examples-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.ai-video__examples-close:hover {
+  background: var(--sidebar-hover);
+  color: var(--foreground);
+}
+
+.ai-video__examples-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
+.ai-video__example-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: left;
+}
+
+.ai-video__example-item:hover {
+  background: var(--accent);
+  border-color: var(--sidebar-accent);
+  transform: translateY(-1px);
+}
+
+.ai-video__example-icon {
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.ai-video__example-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-video__example-name {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin-bottom: 0.25rem;
+}
+
+.ai-video__example-desc {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  line-height: 1.4;
+}
+
+/* Smart Suggestions */
+.ai-video__suggestion {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--sidebar-active);
+  border: 1px solid var(--sidebar-active);
+  border-radius: 6px;
+  margin-bottom: 0.75rem;
+}
+
+.ai-video__suggestion-icon {
+  flex-shrink: 0;
+  color: var(--sidebar-accent);
+}
+
+.ai-video__suggestion-text {
+  font-size: 0.75rem;
+  color: var(--sidebar-accent);
+  font-weight: 500;
+}
+
+/* Inline Tips */
+.ai-video__prompt-tips {
+  margin-top: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.ai-video__tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  background: var(--sidebar-surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.ai-video__tip-icon {
+  flex-shrink: 0;
+  font-size: 0.875rem;
+}
+
+.ai-video__tip-text {
+  font-size: 0.6875rem;
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+
+/* Loading Tips */
+.ai-video__loading-tip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--sidebar-active);
+  border: 1px solid var(--sidebar-active);
+  border-radius: 6px;
+  margin-top: 0.75rem;
+}
+
+.ai-video__loading-tip-icon {
+  flex-shrink: 0;
+  color: var(--sidebar-accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.ai-video__loading-tip span {
+  font-size: 0.75rem;
+  color: var(--sidebar-accent);
+  font-weight: 500;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Generate Button Animation */
+.ai-video__generate-icon--spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Error Message */
+.ai-video__error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--destructive);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-top: 0.75rem;
+  color: var(--destructive-foreground);
+  font-size: 0.75rem;
+}

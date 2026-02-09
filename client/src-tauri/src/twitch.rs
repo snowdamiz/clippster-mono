@@ -10,8 +10,11 @@ use tokio::sync::oneshot;
 use tauri::Emitter;
 
 use crate::storage;
-use crate::downloads::{DownloadProgress, DownloadResult, ACTIVE_DOWNLOADS, DOWNLOAD_METADATA, DownloadMetadata};
-use crate::ffmpeg_utils::get_video_info;
+use crate::downloads::{
+    DownloadProgress, DownloadResult, ACTIVE_DOWNLOADS, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA,
+    DownloadMetadata,
+};
+use crate::ffmpeg_utils::{get_video_info, parse_ffmpeg_time};
 
 // Recording state management
 #[derive(Debug)]
@@ -800,6 +803,12 @@ pub async fn download_twitch_vod(
     let download_id_clone = download_id.clone();
     println!("[Twitch] Starting async download task...");
 
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
     let result = tokio::spawn(async move {
         println!("[Twitch] Async task started for download: {}", download_id_clone);
 
@@ -898,9 +907,25 @@ pub async fn download_twitch_vod(
                 }
             }));
 
-        // Wait for yt-dlp to complete
-        let status = child.wait().await
-            .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?;
+        let mut stdout_task = stdout_task;
+        let mut stderr_task = stderr_task;
+
+        // Wait for yt-dlp to complete or cancellation
+        let status = tokio::select! {
+            result = child.wait() => result
+                .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?,
+            _ = &mut cancel_rx => {
+                println!("[Twitch] Download cancelled, terminating yt-dlp...");
+                let _ = child.kill().await;
+                if let Some(task) = stdout_task.take() {
+                    task.abort();
+                }
+                if let Some(task) = stderr_task.take() {
+                    task.abort();
+                }
+                return Err("Download cancelled".to_string());
+            }
+        };
 
         // Wait for output tasks
         if let Some(task) = stderr_task {
@@ -995,6 +1020,11 @@ pub async fn download_twitch_vod(
     }).await;
 
     println!("[Twitch] Async task completed");
+
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.remove(&download_id);
+    }
 
     cleanup_download();
 
@@ -1184,6 +1214,12 @@ pub async fn download_twitch_vod_segment(
     let download_id_clone = download_id.clone();
     println!("[Twitch] Starting async segment download task...");
 
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
     let result = tokio::spawn(async move {
         println!("[Twitch] Async task started for segment download: {}", download_id_clone);
 
@@ -1203,6 +1239,8 @@ pub async fn download_twitch_vod_segment(
         cmd.arg(&video_url)
             .arg("-o").arg(&video_path_str)
             .arg("--ffmpeg-location").arg(&ffmpeg_path)
+            .arg("--external-downloader").arg("ffmpeg")
+            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
             .arg("--download-sections").arg(&section_arg)
             .arg("--force-keyframes-at-cuts")  // Ensure clean cuts
             .arg("--no-part")  // Don't use .part files
@@ -1222,6 +1260,10 @@ pub async fn download_twitch_vod_segment(
         // Read stdout for progress updates (yt-dlp outputs progress to stdout)
         let app_for_progress = app_clone.clone();
         let download_id_for_progress = download_id_clone.clone();
+        let app_for_stdout = app_for_progress.clone();
+        let download_id_for_stdout = download_id_for_progress.clone();
+        let app_for_stderr = app_for_progress.clone();
+        let download_id_for_stderr = download_id_for_progress.clone();
         let segment_dur = segment_duration;
         
         let stdout_task = stdout.map(|stdout| tokio::spawn(async move {
@@ -1238,8 +1280,8 @@ pub async fn download_twitch_vod_segment(
                             if let Ok(pct) = pct_str.trim().parse::<f64>() {
                                 if last_progress_time.elapsed().as_millis() >= 500 {
                                     let current_time = (pct / 100.0) * segment_dur;
-                                    let _ = app_for_progress.emit("download-progress", DownloadProgress {
-                                        download_id: download_id_for_progress.clone(),
+                                    let _ = app_for_stdout.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_for_stdout.clone(),
                                         progress: pct.min(99.0),
                                         current_time: Some(current_time),
                                         total_time: Some(segment_dur),
@@ -1255,21 +1297,72 @@ pub async fn download_twitch_vod_segment(
                 }
             }));
 
-        // Drain stderr for warnings/errors
-        let stderr_task = stderr.map(|stderr| tokio::spawn(async move {
+        // Drain stderr for warnings/errors + progress fallback
+        let stderr_task = if let Some(stderr) = stderr {
+            Some(tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
+                let mut last_progress_time = std::time::Instant::now();
                 while let Ok(Some(line)) = lines.next_line().await {
-                    if !line.is_empty() {
+                    if let Some(time_str) = line.strip_prefix("out_time=") {
+                        if let Some(current_time) = parse_ffmpeg_time(time_str) {
+                            if current_time >= 0.0 && last_progress_time.elapsed().as_millis() >= 500 {
+                                let progress = ((current_time / segment_dur) * 100.0).clamp(0.0, 99.0);
+                                let _ = app_for_stderr.emit("download-progress", DownloadProgress {
+                                    download_id: download_id_for_stderr.clone(),
+                                    progress,
+                                    current_time: Some(current_time),
+                                    total_time: Some(segment_dur),
+                                    status: format!("Downloading segment: {:.1}%", progress),
+                                });
+                                last_progress_time = std::time::Instant::now();
+                            }
+                        }
+                        continue;
+                    }
+                    if line.contains("% of") || line.contains("100% of") {
+                        if let Some(pct_str) = line.split('%').next() {
+                            let pct_str = pct_str.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                            if let Ok(pct) = pct_str.trim().parse::<f64>() {
+                                if last_progress_time.elapsed().as_millis() >= 500 {
+                                    let current_time = (pct / 100.0) * segment_dur;
+                                    let _ = app_for_stderr.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_for_stderr.clone(),
+                                        progress: pct.min(99.0),
+                                        current_time: Some(current_time),
+                                        total_time: Some(segment_dur),
+                                        status: format!("Downloading segment: {:.1}%", pct),
+                                    });
+                                    last_progress_time = std::time::Instant::now();
+                                }
+                            }
+                        }
+                    } else if !line.is_empty() {
                         println!("[Twitch] yt-dlp stderr: {}", line);
                     }
                 }
             }));
 
-        // Wait for yt-dlp to complete
-        let status = child.wait().await
-            .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?;
+        let mut stdout_task = stdout_task;
+        let mut stderr_task = stderr_task;
+
+        // Wait for yt-dlp to complete or cancellation
+        let status = tokio::select! {
+            result = child.wait() => result
+                .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?,
+            _ = &mut cancel_rx => {
+                println!("[Twitch] Segment download cancelled, terminating yt-dlp...");
+                let _ = child.kill().await;
+                if let Some(task) = stdout_task.take() {
+                    task.abort();
+                }
+                if let Some(task) = stderr_task.take() {
+                    task.abort();
+                }
+                return Err("Segment download cancelled".to_string());
+            }
+        };
 
         // Wait for output tasks
         if let Some(task) = stderr_task {
@@ -1364,6 +1457,11 @@ pub async fn download_twitch_vod_segment(
     }).await;
 
     println!("[Twitch] Async segment download task completed");
+
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.remove(&download_id);
+    }
 
     cleanup_download();
 

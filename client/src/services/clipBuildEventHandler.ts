@@ -10,6 +10,10 @@
 
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { updateClipBuildStatus, updateClipBuild, getClipBuilds } from './database/clip-build';
+import { getClip } from './database/clips';
+import { getTranscriptByProjectId } from './database/transcripts';
+import { getDatabase, generateId, timestamp } from './database/core';
+import { invoke } from '@tauri-apps/api/core';
 
 interface ClipBuildCompletePayload {
   clip_id: string;
@@ -25,6 +29,194 @@ interface ClipBuildCompletePayload {
 
 let unlistenComplete: UnlistenFn | null = null;
 let isInitialized = false;
+
+/**
+ * Copy transcript from project level to clip segments
+ * This makes clips self-contained so they retain transcripts even if the source project is deleted
+ */
+async function copyTranscriptToClipSegments(clipId: string, projectId: string): Promise<void> {
+  console.log(`[GlobalClipBuildHandler] Copying transcript to clip segments for: ${clipId}`);
+  
+  try {
+    // Get the clip to verify it exists
+    const clip = await getClip(clipId);
+    if (!clip) {
+      console.warn(`[GlobalClipBuildHandler] Clip not found: ${clipId}`);
+      return;
+    }
+    
+    // Get the project-level transcript
+    const transcript = await getTranscriptByProjectId(projectId);
+    if (!transcript || !transcript.text) {
+      console.log(`[GlobalClipBuildHandler] No transcript found for project: ${projectId}`);
+      return;
+    }
+    
+    console.log(`[GlobalClipBuildHandler] Found project transcript: ${transcript.text.length} characters`);
+    
+    // Extract only the relevant portion for this clip based on start_time and end_time
+    let clipTranscript = transcript.text;
+    const startTime = clip.start_time || 0;
+    const endTime = clip.end_time || clip.duration || 0;
+    
+    // Use transcript_segments table to get time-based segments
+    try {
+      const db = await getDatabase();
+      const segments = await db.select<Array<{ text: string; start_time: number; end_time: number }>>(
+        `SELECT text, start_time, end_time 
+         FROM transcript_segments 
+         WHERE transcript_id = ? 
+         AND start_time < ? 
+         AND end_time > ?
+         ORDER BY segment_index`,
+        [transcript.id, endTime, startTime]
+      );
+      
+      if (segments.length > 0) {
+        clipTranscript = segments.map(s => s.text).join(' ');
+        console.log(`[GlobalClipBuildHandler] Extracted ${segments.length} transcript segments for clip time range ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
+      } else {
+        console.log(`[GlobalClipBuildHandler] No transcript segments in DB, trying to parse raw_json...`);
+        
+        // Try to parse raw_json as fallback
+        try {
+          const transcriptData = JSON.parse(transcript.raw_json);
+          console.log(`[GlobalClipBuildHandler] Parsed raw_json, keys: ${Object.keys(transcriptData).join(', ')}`);
+          
+          // Check for segments array (Whisper format)
+          if (transcriptData.segments && Array.isArray(transcriptData.segments)) {
+            const clipSegments = transcriptData.segments.filter((seg: any) => {
+              const segStart = seg.start || 0;
+              const segEnd = seg.end || 0;
+              return segStart < endTime && segEnd > startTime;
+            });
+            
+            if (clipSegments.length > 0) {
+              clipTranscript = clipSegments.map((s: any) => s.text || '').join(' ');
+              console.log(`[GlobalClipBuildHandler] Extracted ${clipSegments.length} segments from raw_json for time range ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
+            } else {
+              console.log(`[GlobalClipBuildHandler] No segments in time range, checking first/last segment times...`);
+              if (transcriptData.segments.length > 0) {
+                const firstSeg = transcriptData.segments[0];
+                const lastSeg = transcriptData.segments[transcriptData.segments.length - 1];
+                console.log(`[GlobalClipBuildHandler] First segment: ${firstSeg.start}s, Last segment: ${lastSeg.end}s, Clip range: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
+              }
+            }
+          }
+        } catch (parseError) {
+          console.warn(`[GlobalClipBuildHandler] Failed to parse raw_json:`, parseError);
+        }
+        
+        if (clipTranscript === transcript.text) {
+          console.log(`[GlobalClipBuildHandler] Using full transcript as fallback (${clipTranscript.length} chars)`);
+        }
+      }
+    } catch (segmentError) {
+      console.warn(`[GlobalClipBuildHandler] Failed to query transcript segments:`, segmentError);
+      // Fall back to full transcript
+    }
+    
+    console.log(`[GlobalClipBuildHandler] Clip-specific transcript: ${clipTranscript.length} characters`);
+    
+    // Calculate audio peaks for the clip
+    let audioPeaksJson: string | null = null;
+    try {
+      console.log(`[GlobalClipBuildHandler] Calculating audio peaks for clip...`);
+      const videoPath = clip.built_file_path || clip.file_path;
+      
+      if (videoPath) {
+        // Use Tauri command to detect audio peaks
+        const peaks = await invoke<Array<{ time: number; amplitude: number }>>('detect_audio_peaks', {
+          videoPath,
+          threshold: 0.3,
+          minInterval: 0.5
+        });
+        
+        if (peaks && peaks.length > 0) {
+          audioPeaksJson = JSON.stringify(peaks);
+          console.log(`[GlobalClipBuildHandler] Detected ${peaks.length} audio peaks`);
+        }
+      }
+    } catch (peakError) {
+      console.warn(`[GlobalClipBuildHandler] Failed to calculate audio peaks:`, peakError);
+      // Continue without peaks - not critical
+    }
+    
+    // Get database connection
+    const db = await getDatabase();
+    
+    // Create a clip version for this clip if it doesn't exist
+    const versionId = generateId();
+    const now = timestamp();
+    
+    // Check if clip already has a current_version_id
+    const existingVersion = await db.select<{ current_version_id: string | null }[]>(
+      'SELECT current_version_id FROM clips WHERE id = ?',
+      [clipId]
+    );
+    
+    let actualVersionId = versionId;
+    
+    if (existingVersion[0]?.current_version_id) {
+      // Use existing version
+      actualVersionId = existingVersion[0].current_version_id;
+      console.log(`[GlobalClipBuildHandler] Using existing version: ${actualVersionId}`);
+    } else {
+      // Create new version
+      await db.execute(
+        `INSERT INTO clip_versions (id, clip_id, session_id, version_number, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+        [versionId, clipId, 'build', 1, now]
+      );
+      
+      // Update clip to point to this version
+      await db.execute(
+        'UPDATE clips SET current_version_id = ? WHERE id = ?',
+        [versionId, clipId]
+      );
+      
+      console.log(`[GlobalClipBuildHandler] Created clip version: ${versionId}`);
+    }
+    
+    // Check if segments already exist for this version
+    const existingSegments = await db.select<any[]>(
+      'SELECT id FROM clip_segments WHERE clip_version_id = ?',
+      [actualVersionId]
+    );
+    
+    if (existingSegments.length > 0) {
+      console.log(`[GlobalClipBuildHandler] Clip already has ${existingSegments.length} segments, updating instead of creating new`);
+      
+      // Update the first segment with new transcript and audio peaks
+      await db.execute(
+        `UPDATE clip_segments 
+         SET transcript = ?, audio_peaks = ?
+         WHERE clip_version_id = ? AND segment_index = 0`,
+        [clipTranscript, audioPeaksJson, actualVersionId]
+      );
+      
+      const peaksInfo = audioPeaksJson ? ` + ${JSON.parse(audioPeaksJson).length} audio peaks` : '';
+      console.log(`[GlobalClipBuildHandler] ✅ Updated existing clip segment (${clipTranscript.length} chars${peaksInfo})`);
+      return;
+    }
+    
+    // Create a single segment with the clip-specific transcript and audio peaks
+    const segmentId = generateId();
+    const segmentDuration = endTime - startTime;
+    
+    await db.execute(
+      `INSERT INTO clip_segments (id, clip_version_id, segment_index, start_time, end_time, duration, transcript, audio_peaks, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [segmentId, actualVersionId, 0, startTime, endTime, segmentDuration, clipTranscript, audioPeaksJson, now]
+    );
+    
+    const peaksInfo = audioPeaksJson ? ` + ${JSON.parse(audioPeaksJson).length} audio peaks` : '';
+    console.log(`[GlobalClipBuildHandler] ✅ Successfully copied transcript to clip segment (${clipTranscript.length} chars${peaksInfo})`);
+  } catch (error) {
+    console.error(`[GlobalClipBuildHandler] Error copying transcript:`, error);
+    throw error;
+  }
+}
 
 /**
  * Handle clip build completion event
@@ -90,6 +282,14 @@ async function handleClipBuildComplete(event: { payload: ClipBuildCompletePayloa
       }
 
       console.log(`[GlobalClipBuildHandler] Database updated successfully for clip: ${clip_id}`);
+      
+      // Copy transcript from project to clip segments for self-contained clips
+      try {
+        await copyTranscriptToClipSegments(clip_id, payload.project_id);
+      } catch (transcriptError) {
+        console.error(`[GlobalClipBuildHandler] Failed to copy transcript to clip segments:`, transcriptError);
+        // Don't fail the build if transcript copy fails
+      }
     } else if (isCancelled) {
       console.log(`[GlobalClipBuildHandler] Resetting cancelled build: ${clip_id}`);
       await updateClipBuildStatus(clip_id, 'pending', {

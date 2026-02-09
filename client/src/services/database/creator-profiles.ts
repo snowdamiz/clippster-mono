@@ -9,11 +9,33 @@ async function ensureAutoDvrColumn(db: any) {
   }
 }
 
+async function ensureIntroOutroSettingsColumn(db: any) {
+  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
+  const hasIntroOutroSettings = columns.some((c: { name: string }) => c.name === 'intro_outro_settings');
+  if (!hasIntroOutroSettings) {
+    await db.execute('ALTER TABLE creator_profiles ADD COLUMN intro_outro_settings TEXT DEFAULT NULL');
+  }
+}
+
+async function ensureRatioSettingsColumns(db: any) {
+  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
+  const hasIntroRatio = columns.some((c: { name: string }) => c.name === 'intro_ratio_settings');
+  if (!hasIntroRatio) {
+    await db.execute('ALTER TABLE creator_profiles ADD COLUMN intro_ratio_settings TEXT DEFAULT NULL');
+  }
+  const hasOutroRatio = columns.some((c: { name: string }) => c.name === 'outro_ratio_settings');
+  if (!hasOutroRatio) {
+    await db.execute('ALTER TABLE creator_profiles ADD COLUMN outro_ratio_settings TEXT DEFAULT NULL');
+  }
+}
+
 // ==================== Creator Profiles ====================
 
 export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]> {
   const db = await getDatabase();
   await ensureAutoDvrColumn(db);
+  await ensureIntroOutroSettingsColumn(db);
+  await ensureRatioSettingsColumns(db);
   const userId = getCurrentUserId();
 
   // Get all profiles for current user
@@ -62,6 +84,8 @@ export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]
 export async function getCreatorProfile(id: string): Promise<CreatorProfileWithLinks | null> {
   const db = await getDatabase();
   await ensureAutoDvrColumn(db);
+  await ensureIntroOutroSettingsColumn(db);
+  await ensureRatioSettingsColumns(db);
 
   const profiles = await db.select<CreatorProfile[]>(
     'SELECT * FROM creator_profiles WHERE id = ?',
@@ -95,6 +119,15 @@ const DEFAULT_WATERMARK_SETTINGS = JSON.stringify({
   '4:5': null,
 });
 
+// Default intro/outro settings - all ratios disabled by default
+// Users can enable specific ratios in the UI
+const DEFAULT_INTRO_OUTRO_SETTINGS = JSON.stringify({
+  '16:9': { introId: null, outroId: null },
+  '9:16': null,
+  '1:1': null,
+  '4:5': null,
+});
+
 export async function createCreatorProfile(
   name: string,
   description?: string | null,
@@ -103,17 +136,22 @@ export async function createCreatorProfile(
   outroId?: string | null,
   watermarkId?: string | null,
   watermarkSettings?: string | null,
-  autoDvrEnabled: boolean = false
+  introOutroSettings?: string | null,
+  autoDvrEnabled: boolean = false,
+  introRatioSettings?: string | null,
+  outroRatioSettings?: string | null
 ): Promise<string> {
   const db = await getDatabase();
   await ensureAutoDvrColumn(db);
+  await ensureIntroOutroSettingsColumn(db);
+  await ensureRatioSettingsColumns(db);
   const id = generateId();
   const now = timestamp();
   const userId = getCurrentUserId();
 
   await db.execute(
-    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, auto_dvr_enabled, user_id, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, intro_outro_settings, auto_dvr_enabled, intro_ratio_settings, outro_ratio_settings, user_id, created_at, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -123,7 +161,10 @@ export async function createCreatorProfile(
       outroId || null,
       watermarkId || null,
       watermarkSettings || DEFAULT_WATERMARK_SETTINGS,
+      introOutroSettings || DEFAULT_INTRO_OUTRO_SETTINGS,
       autoDvrEnabled ? 1 : 0,
+      introRatioSettings || null,
+      outroRatioSettings || null,
       userId,
       now,
       now,
@@ -143,11 +184,16 @@ export async function updateCreatorProfile(
     outro_id: string | null;
     watermark_id: string | null;
     watermark_settings: string | null;
+    intro_outro_settings: string | null;
+    intro_ratio_settings: string | null;
+    outro_ratio_settings: string | null;
     auto_dvr_enabled: number | boolean;
   }>
 ): Promise<void> {
   const db = await getDatabase();
   await ensureAutoDvrColumn(db);
+  await ensureIntroOutroSettingsColumn(db);
+  await ensureRatioSettingsColumns(db);
   const fields: string[] = [];
   const values: any[] = [];
 
@@ -184,6 +230,21 @@ export async function updateCreatorProfile(
   if (updates.watermark_settings !== undefined) {
     fields.push('watermark_settings = ?');
     values.push(updates.watermark_settings);
+  }
+
+  if (updates.intro_outro_settings !== undefined) {
+    fields.push('intro_outro_settings = ?');
+    values.push(updates.intro_outro_settings);
+  }
+
+  if (updates.intro_ratio_settings !== undefined) {
+    fields.push('intro_ratio_settings = ?');
+    values.push(updates.intro_ratio_settings);
+  }
+
+  if (updates.outro_ratio_settings !== undefined) {
+    fields.push('outro_ratio_settings = ?');
+    values.push(updates.outro_ratio_settings);
   }
 
   if (updates.auto_dvr_enabled !== undefined) {

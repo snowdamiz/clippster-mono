@@ -63,8 +63,8 @@ export interface AudioMixerReturn {
   setMuted: (muted: boolean) => void;
   toggleMute: () => void;
 
-  // Video audio control
-  connectVideoElement: (video: HTMLVideoElement) => void;
+  // Video/Audio element control
+  connectVideoElement: (element: HTMLVideoElement | HTMLAudioElement) => void;
   disconnectVideoElement: () => void;
   setVideoVolume: (volume: number) => void;
   setVideoMuted: (muted: boolean) => void;
@@ -103,7 +103,7 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
   let masterGainNode: GainNode | null = null;
 
   // Video audio
-  let videoElement: HTMLVideoElement | null = null;
+  let videoElement: HTMLVideoElement | HTMLAudioElement | null = null;
   let videoSourceNode: MediaElementAudioSourceNode | null = null;
   let videoGainNode: GainNode | null = null;
   const videoVolume = ref(1);
@@ -143,22 +143,22 @@ export function useAudioMixer(options: AudioMixerOptions = {}): AudioMixerReturn
   }
 
   /**
-   * Connect a video element's audio to the mixer
+   * Connect a video or audio element to the mixer
    */
-  function connectVideoElement(video: HTMLVideoElement): void {
+  function connectVideoElement(element: HTMLVideoElement | HTMLAudioElement): void {
     if (!audioContext || !masterGainNode) {
-      console.warn('[AudioMixer] Cannot connect video: not initialized');
+      console.warn('[AudioMixer] Cannot connect element: not initialized');
       return;
     }
 
     // Disconnect existing video if any
     disconnectVideoElement();
 
-    videoElement = video;
+    videoElement = element;
 
     try {
-      // Create source node from video element
-      videoSourceNode = audioContext.createMediaElementSource(video);
+      // Create source node from video/audio element
+      videoSourceNode = audioContext.createMediaElementSource(element);
 
       // Create gain node for video volume control
       videoGainNode = audioContext.createGain();
