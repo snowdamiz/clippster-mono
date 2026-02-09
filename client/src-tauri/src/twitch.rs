@@ -1342,7 +1342,10 @@ pub async fn download_twitch_vod_segment(
                         println!("[Twitch] yt-dlp stderr: {}", line);
                     }
                 }
-            }));
+            }))
+        } else {
+            None
+        };
 
         let mut stdout_task = stdout_task;
         let mut stderr_task = stderr_task;

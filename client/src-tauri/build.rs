@@ -16,7 +16,7 @@ fn main() {
     let binaries_dir = manifest_dir.join("binaries");
     fs::create_dir_all(&binaries_dir).expect("Failed to create binaries directory");
 
-    // Configure FFmpeg paths for ffmpeg-sys-next
+    // Configure FFmpeg paths for ffmpeg-sys-next (Windows only)
     if target_os == "windows" {
         let ffmpeg_dir = manifest_dir.join("ffmpeg-dev").join("ffmpeg-master-latest-win64-gpl-shared");
         if ffmpeg_dir.exists() {
@@ -37,6 +37,26 @@ fn main() {
             } else {
                 env::set_var("LIB", ffmpeg_dir.join("lib").display().to_string());
             }
+        } else {
+            // Fallback to vcpkg FFmpeg paths for Windows CI/dev
+            let vcpkg_dir = "C:/vcpkg/installed/x64-windows";
+            if Path::new(vcpkg_dir).exists() {
+                println!("cargo:warning=Using vcpkg FFmpeg at: {}", vcpkg_dir);
+                env::set_var("FFMPEG_DIR", vcpkg_dir);
+                env::set_var("FFMPEG_INCLUDE_DIR", format!("{}/include", vcpkg_dir));
+                env::set_var("FFMPEG_LIB_DIR", format!("{}/lib", vcpkg_dir));
+                env::set_var("FFMPEG_DLL_PATH", format!("{}/bin", vcpkg_dir));
+                env::set_var("PKG_CONFIG_PATH", format!("{}/lib/pkgconfig", vcpkg_dir));
+                env::set_var("PKG_CONFIG_LIBDIR", format!("{}/lib/pkgconfig", vcpkg_dir));
+            }
+        }
+
+        // Bindgen needs MSVC/Windows SDK include paths for stddef.h, stdint.h
+        if env::var("BINDGEN_EXTRA_CLANG_ARGS").is_err() {
+            env::set_var("BINDGEN_EXTRA_CLANG_ARGS",
+                "-IC:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/include \
+                 -IC:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt \
+                 -IC:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared");
         }
     }
 
