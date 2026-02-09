@@ -611,33 +611,4 @@ fn download_ytdlp(binaries_dir: &Path, target_os: &str, target_arch: &str) {
     }
 }
 
-// Keep the old streamlink extraction function for reference but it's no longer used
-#[allow(dead_code)]
-fn download_and_extract_streamlink_legacy(
-    url: &str,
-    output_path: &Path,
-) -> Result<(), Box<dyn std::error::Error>> {
-    // Download the zip file
-    let response = ureq::get(url).call()?;
-    let mut bytes = Vec::new();
-    response.into_reader().read_to_end(&mut bytes)?;
 
-    // Extract streamlink.exe from the zip
-    let reader = Cursor::new(bytes);
-    let mut archive = zip::ZipArchive::new(reader)?;
-
-    // Find streamlink.exe in the archive (it's in a subdirectory)
-    for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
-        let file_name = file.name().to_string();
-
-        // Look for streamlink.exe (not streamlinkw.exe which is the windowed version)
-        if file_name.ends_with("/streamlink.exe") || file_name.ends_with("\\streamlink.exe") {
-            let mut output_file = File::create(output_path)?;
-            io::copy(&mut file, &mut output_file)?;
-            return Ok(());
-        }
-    }
-
-    Err("streamlink.exe not found in archive".into())
-}

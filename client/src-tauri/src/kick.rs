@@ -332,7 +332,7 @@ fn resolve_ytdlp_binary() -> Result<String, String> {
 
 /// Check if yt-dlp is available on the system
 #[tauri::command]
-pub async fn check_streamlink_available() -> Result<bool, String> {
+pub async fn check_ytdlp_available() -> Result<bool, String> {
     let ytdlp_path = resolve_ytdlp_binary()?;
     
     let output = tokio::process::Command::new(&ytdlp_path)
@@ -348,7 +348,7 @@ pub async fn check_streamlink_available() -> Result<bool, String> {
 
 /// Get yt-dlp version info
 #[tauri::command]
-pub async fn get_streamlink_version() -> Result<String, String> {
+pub async fn get_ytdlp_version() -> Result<String, String> {
     let ytdlp_path = resolve_ytdlp_binary()?;
     
     let output = tokio::process::Command::new(&ytdlp_path)
@@ -386,7 +386,7 @@ fn normalize_channel_slug(input: &str) -> String {
     slug.to_lowercase()
 }
 
-/// Start recording a Kick livestream using Streamlink
+/// Start recording a Kick livestream using yt-dlp + FFmpeg
 /// Records to segmented files for DVR and clipping functionality
 #[tauri::command]
 pub async fn start_kick_recording(

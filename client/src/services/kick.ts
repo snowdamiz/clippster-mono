@@ -184,29 +184,29 @@ export async function getKickStreamUrl(channel: string): Promise<string | null> 
 }
 
 /**
- * Check if Streamlink is available on the system
- * @returns true if Streamlink is installed and working
+ * Check if yt-dlp is available on the system
+ * @returns true if yt-dlp is installed and working
  */
-export async function checkStreamlinkAvailable(): Promise<boolean> {
+export async function checkYtdlpAvailable(): Promise<boolean> {
   try {
-    const result = await invoke<boolean>('check_streamlink_available');
+    const result = await invoke<boolean>('check_ytdlp_available');
     return result;
   } catch (error) {
-    console.error('[Kick] Failed to check Streamlink availability:', error);
+    console.error('[Kick] Failed to check yt-dlp availability:', error);
     return false;
   }
 }
 
 /**
- * Get Streamlink version information
+ * Get yt-dlp version information
  * @returns Version string or null if not available
  */
-export async function getStreamlinkVersion(): Promise<string | null> {
+export async function getYtdlpVersion(): Promise<string | null> {
   try {
-    const result = await invoke<string>('get_streamlink_version');
+    const result = await invoke<string>('get_ytdlp_version');
     return result;
   } catch (error) {
-    console.error('[Kick] Failed to get Streamlink version:', error);
+    console.error('[Kick] Failed to get yt-dlp version:', error);
     return null;
   }
 }
@@ -219,7 +219,7 @@ export async function fetchKickLiveStatus(channel: string): Promise<KickLiveStat
 }
 
 /**
- * Start recording a Kick livestream using Streamlink
+ * Start recording a Kick livestream using yt-dlp + FFmpeg
  * @param channelSlug - The Kick channel slug
  * @param streamerId - The internal streamer ID
  * @param sessionId - The recording session ID

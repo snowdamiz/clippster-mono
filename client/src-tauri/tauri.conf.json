@@ -72,7 +72,8 @@
     ],
     "resources": [
       "fonts/*",
-      "pumpfun-service/**/*"
+      "pumpfun-service/**/*",
+      "sidecars/remotion-renderer/dist/bundle.js"
     ],
     "externalBin": [
       "binaries/ffmpeg",

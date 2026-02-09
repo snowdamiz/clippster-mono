@@ -151,6 +151,12 @@ jobs:
         run: yarn install
         working-directory: client/src-tauri/pumpfun-service
 
+      - name: Build remotion-renderer sidecar
+        working-directory: client/src-tauri/sidecars/remotion-renderer
+        run: |
+          yarn install
+          yarn build
+
       # Download sidecar binaries (ffmpeg, node, yt-dlp) before Tauri build
       # build.rs will skip downloading since files already exist
       - name: Download sidecar binaries (macOS)

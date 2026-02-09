@@ -698,8 +698,8 @@ generate_proxy_file,
             // Kick commands
             kick::check_kick_livestream,
             kick::get_kick_stream_url,
-            kick::check_streamlink_available,
-            kick::get_streamlink_version,
+            kick::check_ytdlp_available,
+            kick::get_ytdlp_version,
             kick::start_kick_recording,
             kick::stop_kick_recording,
             kick::stop_all_kick_recordings,
@@ -847,6 +847,11 @@ font_commands::read_bundled_font,
 font_commands::copy_font_to_app_data,
 font_commands::list_custom_fonts,
 font_commands::resolve_font_path,
+
+// Remotion export commands
+remotion_export::start_remotion_export,
+remotion_export::cancel_remotion_export,
+remotion_export::stop_remotion_sidecar,
 
 ])
 .manage(remotion_export::SidecarState::new())
