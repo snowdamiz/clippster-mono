@@ -828,6 +828,7 @@
     // Creator profile default assets (auto-applied when building clips)
     creatorDefaultIntro?: IntroOutroRef | null;
     creatorDefaultOutro?: IntroOutroRef | null;
+    creatorProfile?: any; // Full creator profile for per-ratio intro/outro
     videoThumbnailUrl?: string | null;
     hideHeader?: boolean;
     playOnCardClick?: boolean;
@@ -853,6 +854,7 @@
     watermarkSettings: null,
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
+    creatorProfile: null,
     videoThumbnailUrl: null,
     playOnCardClick: false,
     showAdjustClipButton: false,
@@ -1949,6 +1951,7 @@
       const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild, getClipBuilds } = await import(
         '@/services/database'
       );
+      const { getIntroOutroById } = await import('@/services/database/intro-outros');
       const { resolveWatermarkById } = await import('@/services/database/watermarks');
 
       // Update database status to building
@@ -2379,43 +2382,16 @@
           Object.keys(settings.manualFramingConfigs).length > 0;
 
         if (hasManualConfigs) {
-          // For manual mode with per-ratio configs, we'll need to build each ratio separately
-          // The backend will receive the manualFramingConfigs object and use the appropriate config per ratio
+          // For manual mode with per-ratio configs, DON'T create a single framingStrategy
+          // The backend will use manualFramingConfigs to apply the correct config per ratio
           console.log(
             '[ClipsTab] Using manual framing configuration with per-ratio configs:',
             Object.keys(settings.manualFramingConfigs || {})
           );
-
-          // Get the first configured ratio for the primary framing strategy
-          // The backend will handle per-ratio configs during build
-          const firstConfiguredRatio = Object.keys(
-            settings.manualFramingConfigs!
-          )[0] as keyof import('@/types').ManualFramingConfigs;
-          const firstConfig = settings.manualFramingConfigs![firstConfiguredRatio];
-
-          if (firstConfig && firstConfig.regions && firstConfig.regions.length > 0) {
-            // Convert manual config to framing strategy format
-            framingStrategy = {
-              mode: 'multi_region',
-              videoType: 'unknown',
-              speakerCount: 0,
-              confidence: 1.0,
-              targetAspectRatio: firstConfig.targetAspectRatio,
-              isPortrait: true,
-              sourceDimensions: {
-                width: 1920, // Will be updated by backend
-                height: 1080,
-              },
-              ffmpegFilter: '',
-              layout: null,
-              keyframes: null,
-              cropRegion: null,
-              cropCenter: null,
-              speakers: null,
-              contentRegions: null,
-              multiRegion: firstConfig,
-            };
-          }
+          
+          // Leave framingStrategy as null - the backend will use manualFramingConfigs instead
+          // This ensures each aspect ratio gets its own unique crop regions
+          framingStrategy = null;
         } else if (settings.framingMode === 'manual' && settings.manualFramingConfig) {
           // Legacy single config support
           console.log(
@@ -2620,6 +2596,46 @@
         }
       }
 
+      // Resolve per-ratio intro/outro from creator profile
+      const introOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> = {};
+      
+      if (props.creatorProfile?.intro_outro_settings) {
+        try {
+          const introOutroSettings = JSON.parse(props.creatorProfile.intro_outro_settings);
+          
+          for (const ratio of settings.aspectRatios) {
+            const ratioConfig = introOutroSettings[ratio];
+            if (ratioConfig) {
+              const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
+              
+              // Resolve intro for this ratio
+              if (ratioConfig.introId) {
+                const introAsset = await getIntroOutroById(ratioConfig.introId);
+                if (introAsset) {
+                  ratioData.introPath = introAsset.file_path || undefined;
+                  ratioData.introDuration = introAsset.duration || undefined;
+                  console.log(`[ClipsTab] Resolved intro for ${ratio}:`, introAsset.name);
+                }
+              }
+              
+              // Resolve outro for this ratio
+              if (ratioConfig.outroId) {
+                const outroAsset = await getIntroOutroById(ratioConfig.outroId);
+                if (outroAsset) {
+                  ratioData.outroPath = outroAsset.file_path || undefined;
+                  ratioData.outroDuration = outroAsset.duration || undefined;
+                  console.log(`[ClipsTab] Resolved outro for ${ratio}:`, outroAsset.name);
+                }
+              }
+              
+              introOutroPerRatio[ratio] = ratioData;
+            }
+          }
+        } catch (e) {
+          console.warn('[ClipsTab] Failed to parse intro_outro_settings:', e);
+        }
+      }
+
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
@@ -2642,6 +2658,7 @@
         introDuration: introDuration,
         outroPath: outroPath,
         outroDuration: outroDuration,
+        introOutroPerRatio: introOutroPerRatio,
         watermarkSettings: watermarkSettings,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,

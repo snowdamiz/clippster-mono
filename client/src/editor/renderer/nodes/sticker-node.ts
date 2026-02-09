@@ -3,6 +3,8 @@ import { BaseNode, type BaseNodeParams } from "./base-node";
 import type { Transform } from "../../types/timeline";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
+import type { ElementAnimation } from "../../types/animations";
+import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
 
 const STICKER_EPSILON = 1 / 1000;
 
@@ -15,7 +17,12 @@ export type StickerNodeParams = BaseNodeParams & {
 	transform: Transform;
 	opacity: number;
 	color?: string;
+	fadeIn?: number;
+	fadeOut?: number;
 	keyframes?: ElementKeyframes;
+	animationIn?: ElementAnimation;
+	animationOut?: ElementAnimation;
+	animationLoop?: ElementAnimation;
 };
 
 export class StickerNode extends BaseNode<StickerNodeParams> {
@@ -78,10 +85,29 @@ export class StickerNode extends BaseNode<StickerNodeParams> {
 		// Resolve keyframed values
 		const elapsed = time - this.params.timeOffset;
 		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
-		const resolvedOpacity = getKeyframedValue({ elementKeyframes: this.params.keyframes, property: "opacity", normalizedTime, defaultValue: opacity });
+		let resolvedOpacity = getKeyframedValue({ elementKeyframes: this.params.keyframes, property: "opacity", normalizedTime, defaultValue: opacity });
+
+		// Apply fade in/out opacity ramp
+		const fadeIn = this.params.fadeIn ?? 0;
+		const fadeOut = this.params.fadeOut ?? 0;
+		if (fadeIn > 0 && elapsed < fadeIn) {
+			resolvedOpacity *= elapsed / fadeIn;
+		}
+		if (fadeOut > 0 && elapsed > this.params.duration - fadeOut) {
+			resolvedOpacity *= (this.params.duration - elapsed) / fadeOut;
+		}
 
 		renderer.context.save();
 		renderer.context.globalAlpha = resolvedOpacity;
+
+		// Apply element animations (in/out/loop)
+		const animResult = computeAnimationTransforms(
+			this.params.animationIn,
+			this.params.animationOut,
+			this.params.animationLoop,
+			{ elapsed, elementDuration: this.params.duration, canvasWidth: renderer.width, canvasHeight: renderer.height },
+		);
+		applyAnimationToContext(renderer.context, animResult, x + size / 2, y + size / 2);
 
 		if (transform.rotate !== 0) {
 			const centerX = x + size / 2;

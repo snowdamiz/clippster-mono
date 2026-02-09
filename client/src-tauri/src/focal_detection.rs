@@ -251,7 +251,7 @@ fn parse_cropdetect_output(
             let crop_height = y2 - y1;
             let crop_area = crop_width * crop_height;
             let total_area = (video_info.width * video_info.height) as f64;
-            let confidence = (crop_area / total_area).min(1.0).max(0.1);
+            let confidence = (crop_area / total_area).clamp(0.1, 1.0);
 
             focal_points.push(FocalPointData {
                 time_offset: current_time,

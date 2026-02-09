@@ -160,6 +160,14 @@ defmodule ClippsterServerWeb.Router do
     post("/clips/detect-chunked", ClipsController, :detect_chunked)
     post("/clips/transcribe", ClipsController, :transcribe)
 
+    # AI video generation routes
+    post("/ai/generate-video", AIController, :generate_video)
+    post("/ai/generate-video-streamed", AIController, :generate_video_streamed)
+    post("/ai/compositions", AIController, :save_composition)
+    get("/ai/compositions", AIController, :list_compositions)
+    get("/ai/compositions/:id", AIController, :get_composition)
+    delete("/ai/compositions/:id", AIController, :delete_composition)
+
     # Speaker detection and framing strategy
     post("/clips/:clip_id/analyze-speakers", SpeakerDetectionController, :analyze)
     post("/clips/:clip_id/classify-video", SpeakerDetectionController, :classify)
@@ -595,6 +603,7 @@ defmodule ClippsterServerWeb.Router do
     post("/user/posts/upload-media", UserPostsController, :upload_media)
     post("/user/instagram/publish", UserPostsController, :publish)
     get("/user/posts", UserPostsController, :index)
+    get("/user/posts/analytics", UserPostsController, :analytics_summary)
     get("/user/posts/:id", UserPostsController, :show)
     post("/user/posts/:id/sync", UserPostsController, :sync_analytics)
 

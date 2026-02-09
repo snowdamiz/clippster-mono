@@ -17,6 +17,7 @@ import {
 	Strikethrough,
 	Type,
 } from "lucide-vue-next";
+import AnimationProperties from "./AnimationProperties.vue";
 
 const props = defineProps<{
 	element: TextElement;
@@ -467,7 +468,8 @@ const weightOptions = [
 						</div>
 						<input type="range" :value="element.stroke.width" min="1" max="20" step="0.5" class="flex-1"
 							@input="(e) => update({ stroke: { ...element.stroke!, width: Number((e.target as HTMLInputElement).value) } })" />
-						<span class="w-8 text-right font-mono text-[10px] text-zinc-500">{{ element.stroke.width }}px</span>
+						<input type="number" :value="element.stroke.width" min="1" max="20" step="0.5" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+							@input="(e) => update({ stroke: { ...element.stroke!, width: Number((e.target as HTMLInputElement).value) } })" />
 					</div>
 				</div>
 
@@ -501,7 +503,8 @@ const weightOptions = [
 							<span class="w-5 text-[10px] text-zinc-500">Blur</span>
 							<input type="range" :value="element.shadow.blur" min="0" max="30" step="1" class="flex-1"
 								@input="(e) => update({ shadow: { ...element.shadow!, blur: Number((e.target as HTMLInputElement).value) } })" />
-							<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ element.shadow.blur }}</span>
+							<input type="number" :value="element.shadow.blur" min="0" max="30" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+								@input="(e) => update({ shadow: { ...element.shadow!, blur: Number((e.target as HTMLInputElement).value) } })" />
 						</div>
 					</div>
 				</div>
@@ -522,7 +525,8 @@ const weightOptions = [
 						</div>
 						<input type="range" :value="element.glow.intensity" min="1" max="30" step="1" class="flex-1"
 							@input="(e) => update({ glow: { ...element.glow!, intensity: Number((e.target as HTMLInputElement).value) } })" />
-						<span class="w-6 text-right font-mono text-[10px] text-zinc-500">{{ element.glow.intensity }}</span>
+						<input type="number" :value="element.glow.intensity" min="1" max="30" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+							@input="(e) => update({ glow: { ...element.glow!, intensity: Number((e.target as HTMLInputElement).value) } })" />
 					</div>
 				</div>
 
@@ -552,10 +556,26 @@ const weightOptions = [
 							<span class="text-[10px] text-zinc-500">Angle</span>
 							<input type="range" :value="element.gradient.angle" min="0" max="360" step="15" class="flex-1"
 								@input="(e) => update({ gradient: { ...element.gradient!, angle: Number((e.target as HTMLInputElement).value) } })" />
-							<span class="w-8 text-right font-mono text-[10px] text-zinc-500">{{ element.gradient.angle }}°</span>
+							<input type="number" :value="element.gradient.angle" min="0" max="360" step="15" class="h-6 w-12 rounded-sm border border-white/10 bg-white/5 text-center text-[10px] text-zinc-300 outline-none"
+								@input="(e) => update({ gradient: { ...element.gradient!, angle: Number((e.target as HTMLInputElement).value) } })" />
 						</div>
 					</div>
 				</div>
+			</div>
+		</div>
+
+		<!-- Animation -->
+		<div class="space-y-1.5">
+			<label class="text-xs font-medium text-zinc-400">Animation</label>
+			<div class="rounded-md border border-white/5 bg-white/[0.01]">
+				<AnimationProperties
+					:element-id="element.id"
+					:track-id="trackId"
+					:animation-in="element.animationIn"
+					:animation-out="element.animationOut"
+					:animation-loop="element.animationLoop"
+					:element-duration="element.duration"
+				/>
 			</div>
 		</div>
 	</div>

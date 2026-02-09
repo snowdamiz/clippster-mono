@@ -1,4 +1,5 @@
 import { DEFAULT_TEXT_ELEMENT } from "../../constants/text-constants";
+import { DEFAULT_CAPTION_ELEMENT } from "../../constants/caption-constants";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import type {
 	CreateTimelineElement,
@@ -6,9 +7,12 @@ import type {
 	CreateImageElement,
 	CreateStickerElement,
 	CreateEffectElement,
+	CreateCaptionElement,
 	CreateUploadAudioElement,
 	CreateLibraryAudioElement,
 	TextElement,
+	CaptionElement,
+	CaptionLine,
 	TimelineElement,
 	TimelineTrack,
 	AudioElement,
@@ -319,6 +323,51 @@ export function buildEffectElement({
 		startTime,
 		trimStart: 0,
 		trimEnd: 0,
+	};
+}
+
+export function buildCaptionElement({
+	lines,
+	startTime,
+	duration,
+	raw,
+}: {
+	lines: CaptionLine[];
+	startTime: number;
+	duration: number;
+	raw?: Partial<Omit<CaptionElement, "type" | "id" | "lines">>;
+}): CreateCaptionElement {
+	const c = raw as Partial<CaptionElement> | undefined;
+
+	return {
+		type: "caption",
+		name: c?.name ?? "Caption",
+		lines,
+		startTime,
+		duration,
+		trimStart: 0,
+		trimEnd: 0,
+		presetId: c?.presetId ?? DEFAULT_CAPTION_ELEMENT.presetId,
+		highlightStyle: c?.highlightStyle ?? DEFAULT_CAPTION_ELEMENT.highlightStyle,
+		highlightColor: c?.highlightColor ?? DEFAULT_CAPTION_ELEMENT.highlightColor,
+		fontSize: c?.fontSize ?? DEFAULT_CAPTION_ELEMENT.fontSize,
+		fontFamily: c?.fontFamily ?? DEFAULT_CAPTION_ELEMENT.fontFamily,
+		fontFilePath: c?.fontFilePath,
+		color: c?.color ?? DEFAULT_CAPTION_ELEMENT.color,
+		backgroundColor: c?.backgroundColor ?? DEFAULT_CAPTION_ELEMENT.backgroundColor,
+		textAlign: c?.textAlign ?? DEFAULT_CAPTION_ELEMENT.textAlign,
+		fontWeight: c?.fontWeight ?? DEFAULT_CAPTION_ELEMENT.fontWeight,
+		fontStyle: c?.fontStyle ?? DEFAULT_CAPTION_ELEMENT.fontStyle,
+		letterSpacing: c?.letterSpacing ?? DEFAULT_CAPTION_ELEMENT.letterSpacing,
+		lineHeight: c?.lineHeight ?? DEFAULT_CAPTION_ELEMENT.lineHeight,
+		textCase: c?.textCase ?? DEFAULT_CAPTION_ELEMENT.textCase,
+		stroke: c?.stroke ?? DEFAULT_CAPTION_ELEMENT.stroke,
+		shadow: c?.shadow,
+		glow: c?.glow,
+		gradient: c?.gradient,
+		transform: c?.transform ?? DEFAULT_CAPTION_ELEMENT.transform,
+		opacity: c?.opacity ?? DEFAULT_CAPTION_ELEMENT.opacity,
+		maxWordsPerLine: c?.maxWordsPerLine ?? DEFAULT_CAPTION_ELEMENT.maxWordsPerLine,
 	};
 }
 

@@ -29,9 +29,11 @@ use tokio::sync::watch;
 pub type CancellationToken = watch::Receiver<bool>;
 
 // Active clip builds tracking with cancellation senders
+#[allow(clippy::type_complexity)]
 static ACTIVE_CLIP_BUILDS: Lazy<Arc<Mutex<HashMap<String, watch::Sender<bool>>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 // Build clip from segments using FFmpeg
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn build_clip_from_segments(
     app: tauri::AppHandle,
@@ -56,6 +58,7 @@ pub async fn build_clip_from_segments(
     intro_duration: Option<f64>,
     outro_path: Option<String>,
     outro_duration: Option<f64>,
+    intro_outro_per_ratio: Option<std::collections::HashMap<String, (Option<String>, Option<f64>)>>,
     watermark_settings: Option<WatermarkSettings>,
     audio_settings: Option<AudioSettings>,
     framing_strategy: Option<FramingStrategy>,
@@ -87,6 +90,7 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   build_id: {:?}", build_id);
     println!("[Rust]   intro_path: {:?}", intro_path);
     println!("[Rust]   outro_path: {:?}", outro_path);
+    println!("[Rust]   intro_outro_per_ratio: {:?}", intro_outro_per_ratio.as_ref().map(|m| m.keys().collect::<Vec<_>>()));
     println!("[Rust]   watermark enabled: {}", watermark_settings.as_ref().map(|w| w.enabled).unwrap_or(false));
     if let Some(ref wm) = watermark_settings {
         println!("[Rust]   watermark file_path: {}", wm.file_path);
@@ -130,6 +134,7 @@ pub async fn build_clip_from_segments(
     let output_format_clone = output_format.clone();
     let intro_path_clone = intro_path.clone();
     let outro_path_clone = outro_path.clone();
+    let intro_outro_per_ratio_clone = intro_outro_per_ratio.clone();
     let watermark_settings_clone = watermark_settings.clone();
     let audio_settings_clone = audio_settings.clone();
     let build_id_clone = build_id.clone();
@@ -154,7 +159,7 @@ pub async fn build_clip_from_segments(
     });
 
     // Use tokio::spawn for background processing (following the download pattern)
-    let _ = tokio::spawn(async move {
+    tokio::spawn(async move {
         println!("[Rust] Async task started for clip build: {}", clip_id_clone);
 
         let build_result = match build_clip_internal_simple(
@@ -180,6 +185,7 @@ pub async fn build_clip_from_segments(
             intro_duration,
             outro_path_clone.as_deref(),
             outro_duration,
+            intro_outro_per_ratio_clone.as_ref(),
             watermark_settings_clone,
             audio_settings_clone,
             framing_strategy_clone,

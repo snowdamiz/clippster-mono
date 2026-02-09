@@ -90,6 +90,11 @@ export const ACTIONS = {
 		category: "editing",
 		defaultShortcuts: ["backspace", "delete"],
 	},
+	"cut-selected": {
+		description: "Cut selected elements",
+		category: "editing",
+		defaultShortcuts: ["ctrl+x"],
+	},
 	"copy-selected": {
 		description: "Copy selected elements",
 		category: "editing",

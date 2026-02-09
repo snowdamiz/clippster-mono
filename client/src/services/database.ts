@@ -151,6 +151,7 @@ export {
   searchSegments,
   searchTranscriptSegmentsByClipIds,
   getClipIdsWithTranscripts,
+  hasTranscriptForProject,
 } from './database/transcripts';
 
 // Re-export chunked transcript functions

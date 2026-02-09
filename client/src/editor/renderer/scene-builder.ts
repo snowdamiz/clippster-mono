@@ -1,4 +1,4 @@
-import type { TimelineTrack, VideoElement, ImageElement, EffectElement } from "../types/timeline";
+import type { TimelineTrack, VideoElement, ImageElement, EffectElement, CaptionElement } from "../types/timeline";
 import type { MediaAsset } from "../types/assets";
 import { RootNode } from "./nodes/root-node";
 import { VideoNode } from "./nodes/video-node";
@@ -7,6 +7,7 @@ import { TextNode } from "./nodes/text-node";
 import { StickerNode } from "./nodes/sticker-node";
 import { ColorNode } from "./nodes/color-node";
 import { EffectNode } from "./nodes/effect-node";
+import { CaptionNode } from "./nodes/caption-node";
 import { BlurBackgroundNode } from "./nodes/blur-background-node";
 import type { TBackground, TCanvasSize } from "../types/project";
 import { DEFAULT_BLUR_INTENSITY } from "../constants/project-constants";
@@ -73,8 +74,14 @@ export function buildScene(params: BuildSceneParams) {
 							crop: videoEl.crop,
 							colorAdjustments: videoEl.colorAdjustments,
 							speed: videoEl.speed,
+							fadeIn: videoEl.fadeIn,
+							fadeOut: videoEl.fadeOut,
 							keyframes: videoEl.keyframes,
 							effects: videoEl.effects,
+							chromakey: videoEl.chromakey,
+							animationIn: videoEl.animationIn,
+							animationOut: videoEl.animationOut,
+							animationLoop: videoEl.animationLoop,
 						}),
 					);
 				}
@@ -92,8 +99,14 @@ export function buildScene(params: BuildSceneParams) {
 							flip: imageEl.flip,
 							crop: imageEl.crop,
 							colorAdjustments: imageEl.colorAdjustments,
+							fadeIn: imageEl.fadeIn,
+							fadeOut: imageEl.fadeOut,
 							keyframes: imageEl.keyframes,
 							effects: imageEl.effects,
+							chromakey: imageEl.chromakey,
+							animationIn: imageEl.animationIn,
+							animationOut: imageEl.animationOut,
+							animationLoop: imageEl.animationLoop,
 						}),
 					);
 				}
@@ -120,7 +133,12 @@ export function buildScene(params: BuildSceneParams) {
 						transform: element.transform,
 						opacity: element.opacity,
 						color: element.color,
+						fadeIn: element.fadeIn,
+						fadeOut: element.fadeOut,
 						keyframes: element.keyframes,
+						animationIn: element.animationIn,
+						animationOut: element.animationOut,
+						animationLoop: element.animationLoop,
 					}),
 				);
 			}
@@ -137,6 +155,16 @@ export function buildScene(params: BuildSceneParams) {
 						timeOffset: effectEl.startTime,
 						trimStart: effectEl.trimStart,
 						trimEnd: effectEl.trimEnd,
+					}),
+				);
+			}
+
+			if (element.type === "caption") {
+				const captionEl = element as CaptionElement;
+				contentNodes.push(
+					new CaptionNode({
+						...captionEl,
+						canvasCenter: { x: canvasSize.width / 2, y: canvasSize.height / 2 },
 					}),
 				);
 			}

@@ -14,8 +14,10 @@ mod pumpfun;
 mod kick;
 mod twitch;
 mod waveform;
+mod audio_peaks;
 mod focal_detection;
 mod commands;
+mod sidecar;
 mod dvr;
 mod hls;
 mod video_editor_export;
@@ -95,13 +97,11 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     .map_err(|e| format!("Failed to create PIP window: {}", e))?;
 
     // Position in bottom-right corner
-    if let Ok(monitor) = window.current_monitor() {
-        if let Some(monitor) = monitor {
-            let size = monitor.size();
-            let x = size.width as i32 - 420;
-            let y = size.height as i32 - 300;
-            let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
-        }
+    if let Ok(Some(monitor)) = window.current_monitor() {
+        let size = monitor.size();
+        let x = size.width as i32 - 420;
+        let y = size.height as i32 - 300;
+        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
     }
 
     Ok(())
@@ -696,8 +696,8 @@ generate_proxy_file,
             // Kick commands
             kick::check_kick_livestream,
             kick::get_kick_stream_url,
-            kick::check_streamlink_available,
-            kick::get_streamlink_version,
+            kick::check_ytdlp_available,
+            kick::get_ytdlp_version,
             kick::start_kick_recording,
             kick::stop_kick_recording,
             kick::stop_all_kick_recordings,
@@ -733,6 +733,9 @@ generate_proxy_file,
             waveform::save_waveform_to_cache,
             waveform::clear_waveform_cache,
             waveform::extract_audio_peaks_for_range,
+
+            // Audio peaks detection commands
+            audio_peaks::detect_audio_peaks,
 
             // Storage commands
             storage::get_storage_paths,
@@ -843,7 +846,13 @@ font_commands::copy_font_to_app_data,
 font_commands::list_custom_fonts,
 font_commands::resolve_font_path,
 
+// Remotion export commands
+remotion_export::start_remotion_export,
+remotion_export::cancel_remotion_export,
+remotion_export::stop_remotion_sidecar,
+
 ])
+.manage(remotion_export::SidecarState::new())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
 } 

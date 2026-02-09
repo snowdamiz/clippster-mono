@@ -32,16 +32,16 @@ export function useKeybindingsListener() {
 			invokeAction("toggle-play", undefined, "keypress");
 			handled = true;
 		} else if (key === "arrowright" && !ctrl && !shift) {
-			invokeAction("seek-forward", { seconds: 1 }, "keypress");
+			invokeAction("frame-step-forward", undefined, "keypress");
 			handled = true;
 		} else if (key === "arrowleft" && !ctrl && !shift) {
+			invokeAction("frame-step-backward", undefined, "keypress");
+			handled = true;
+		} else if (key === "arrowright" && shift && !ctrl) {
+			invokeAction("seek-forward", { seconds: 1 }, "keypress");
+			handled = true;
+		} else if (key === "arrowleft" && shift && !ctrl) {
 			invokeAction("seek-backward", { seconds: 1 }, "keypress");
-			handled = true;
-		} else if (key === "arrowright" && shift) {
-			invokeAction("jump-forward", { seconds: 5 }, "keypress");
-			handled = true;
-		} else if (key === "arrowleft" && shift) {
-			invokeAction("jump-backward", { seconds: 5 }, "keypress");
 			handled = true;
 		} else if (key === "." && !ctrl) {
 			invokeAction("frame-step-forward", undefined, "keypress");

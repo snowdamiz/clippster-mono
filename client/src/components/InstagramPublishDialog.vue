@@ -611,17 +611,22 @@
   .instagram-dialog__preview {
     position: relative;
     width: 100%;
-    aspect-ratio: 16 / 9;
+    max-height: 400px;
     border-radius: 8px;
     overflow: hidden;
     background-color: rgba(0, 0, 0, 0.3);
     border: 1px solid var(--sidebar-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .instagram-dialog__preview-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    max-width: 100%;
+    max-height: 400px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
   }
 
   .instagram-dialog__preview-empty {

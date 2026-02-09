@@ -10,7 +10,7 @@ use super::font_manager::get_fonts_dir;
 /// Ensure a dimension is even (required by H.264/libx264)
 /// Rounds up to the nearest even number
 fn make_even(n: u32) -> u32 {
-    if n % 2 == 0 { n } else { n + 1 }
+    if n.is_multiple_of(2) { n } else { n + 1 }
 }
 
 /// Build time-based FFmpeg filter string from filter segments
@@ -674,6 +674,7 @@ async fn apply_watermark_to_video_with_ratio(
 
 // Build single-segment clip with aspect ratio and quality settings
 // Note: output_format is unused here because the path already has the correct extension
+#[allow(clippy::too_many_arguments)]
 pub async fn build_single_segment_clip_with_settings(
     app: &tauri::AppHandle,
     video_path: &str,
@@ -1166,6 +1167,7 @@ pub async fn build_single_segment_clip_with_settings(
 
 // Build multi-segment clip with aspect ratio and quality settings
 // Note: output_format is unused here because the path already has the correct extension
+#[allow(clippy::too_many_arguments)]
 pub async fn build_multi_segment_clip_with_settings(
     app: &tauri::AppHandle,
     video_path: &str,
@@ -1569,6 +1571,7 @@ pub async fn build_multi_segment_clip_with_settings(
 // Helper function to prepare intro/outro for concatenation with the main clip
 // This processes the intro/outro to match the aspect ratio, frame rate, and resolution
 // Includes caching to avoid re-processing the same intro/outro multiple times
+#[allow(clippy::too_many_arguments)]
 pub async fn prepare_intro_outro_for_concat(
     app: &tauri::AppHandle,
     intro_outro_path: &str,
@@ -1687,6 +1690,7 @@ use super::types::{FramingStrategy, FramingMode, PanKeyframe, ManualFramingConfi
 /// The resulting video has:
 /// - Top region: Content area (e.g., gameplay)
 /// - Bottom region: Speaker area
+#[allow(clippy::too_many_arguments)]
 pub async fn build_split_screen_clip(
     app: &tauri::AppHandle,
     video_path: &str,
@@ -1991,6 +1995,7 @@ fn calculate_aspect_preserving_crop(
 /// 
 /// Uses keyframes to interpolate crop position over time, creating a smooth
 /// panning effect that keeps the subject in frame.
+#[allow(clippy::too_many_arguments)]
 pub async fn build_dynamic_pan_clip(
     app: &tauri::AppHandle,
     video_path: &str,
@@ -2196,6 +2201,7 @@ fn build_pan_expression(
 /// 1. Cropped from the source video
 /// 2. Scaled to fit its output rect
 /// 3. Placed on the output canvas
+#[allow(clippy::too_many_arguments)]
 pub async fn build_multi_region_clip(
     app: &tauri::AppHandle,
     video_path: &str,
@@ -2392,6 +2398,7 @@ pub async fn build_multi_region_clip(
 /// 
 /// The `target_aspect_ratio` parameter allows overriding the strategy's aspect ratio
 /// to support building multiple aspect ratios (9:16, 4:5, 1:1) from the same strategy.
+#[allow(clippy::too_many_arguments)]
 pub async fn build_clip_with_framing_strategy(
     app: &tauri::AppHandle,
     video_path: &str,
@@ -2526,6 +2533,7 @@ pub async fn build_clip_with_framing_strategy(
 /// Builds a multi-segment clip with framing strategy applied.
 /// 
 /// This extracts each segment, applies the framing strategy, then concatenates them.
+#[allow(clippy::too_many_arguments)]
 pub async fn build_multi_segment_clip_with_framing_strategy(
     app: &tauri::AppHandle,
     video_path: &str,
@@ -2713,6 +2721,7 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
 }
 
 /// Helper to extract a segment with simple center crop (for Static framing mode)
+#[allow(clippy::too_many_arguments)]
 async fn extract_segment_with_crop(
     app: &tauri::AppHandle,
     video_path: &str,
@@ -3876,8 +3885,8 @@ fn build_preview_filter_complex(
                 .replace(":", "\\:");
             
             // Convert hex color to FFmpeg format
-            let ffmpeg_color = if font_color.starts_with('#') {
-                format!("0x{}", &font_color[1..])
+            let ffmpeg_color = if let Some(stripped) = font_color.strip_prefix('#') {
+                format!("0x{}", stripped)
             } else {
                 font_color.to_string()
             };
@@ -4073,6 +4082,7 @@ fn build_preview_filter_complex(
 /// 
 /// # Returns
 /// Result containing the chunk output path and metadata
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn generate_preview_chunk(
     app: tauri::AppHandle,

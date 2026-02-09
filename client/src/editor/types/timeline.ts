@@ -1,16 +1,18 @@
 import type { VideoEffect, VideoEffectType } from "./effects";
+import type { Transition } from "./transitions";
 
 export interface TScene {
 	id: string;
 	name: string;
 	isMain: boolean;
 	tracks: TimelineTrack[];
+	transitions?: Transition[];
 	bookmarks: number[];
 	createdAt: Date;
 	updatedAt: Date;
 }
 
-export type TrackType = "video" | "text" | "audio" | "sticker" | "effect";
+export type TrackType = "video" | "text" | "audio" | "sticker" | "effect" | "caption";
 
 interface BaseTrack {
 	id: string;
@@ -50,7 +52,13 @@ export interface EffectTrack extends BaseTrack {
 	hidden: boolean;
 }
 
-export type TimelineTrack = VideoTrack | TextTrack | AudioTrack | StickerTrack | EffectTrack;
+export interface CaptionTrack extends BaseTrack {
+	type: "caption";
+	elements: CaptionElement[];
+	hidden: boolean;
+}
+
+export type TimelineTrack = VideoTrack | TextTrack | AudioTrack | StickerTrack | EffectTrack | CaptionTrack;
 
 export interface Transform {
 	scale: number;
@@ -66,7 +74,26 @@ export interface ColorAdjustments {
 	contrast: number; // -100 to 100, default 0
 	saturation: number; // -100 to 100, default 0
 	temperature: number; // -100 to 100, default 0
+	highlights: number; // -100 to 100, default 0
+	shadows: number; // -100 to 100, default 0
+	exposure: number; // -100 to 100, default 0
+	fade: number; // 0 to 100, default 0
+	tint: string; // hex color, default ""
+	sharpness: number; // 0 to 100, default 0
 }
+
+export const DEFAULT_COLOR_ADJUSTMENTS: ColorAdjustments = {
+	brightness: 0,
+	contrast: 0,
+	saturation: 0,
+	temperature: 0,
+	highlights: 0,
+	shadows: 0,
+	exposure: 0,
+	fade: 0,
+	tint: "",
+	sharpness: 0,
+};
 
 export interface FlipState {
 	horizontal: boolean;
@@ -88,6 +115,7 @@ interface BaseAudioElement extends BaseTimelineElement {
 	speed?: number; // 0.1-16, default 1
 	fadeIn?: number; // seconds
 	fadeOut?: number; // seconds
+	audioEffects?: import("./audio-effects").AudioEffect[];
 }
 
 export interface UploadAudioElement extends BaseAudioElement {
@@ -109,7 +137,12 @@ interface BaseTimelineElement {
 	startTime: number;
 	trimStart: number;
 	trimEnd: number;
+	fadeIn?: number; // seconds
+	fadeOut?: number; // seconds
 	keyframes?: import("./keyframes").ElementKeyframes;
+	animationIn?: import("./animations").ElementAnimation;
+	animationOut?: import("./animations").ElementAnimation;
+	animationLoop?: import("./animations").ElementAnimation;
 }
 
 export interface VideoElement extends BaseTimelineElement {
@@ -125,6 +158,8 @@ export interface VideoElement extends BaseTimelineElement {
 	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
 	effects?: VideoEffect[];
+	filterPreset?: string; // active filter preset id, for UI display
+	chromakey?: import("./chromakey").ChromakeySettings;
 }
 
 export interface ImageElement extends BaseTimelineElement {
@@ -137,6 +172,8 @@ export interface ImageElement extends BaseTimelineElement {
 	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
 	effects?: VideoEffect[];
+	filterPreset?: string; // active filter preset id, for UI display
+	chromakey?: import("./chromakey").ChromakeySettings;
 }
 
 export interface TextStroke {
@@ -218,13 +255,76 @@ export interface EffectElement extends BaseTimelineElement {
 	params: Record<string, number | string>;
 }
 
+// ---- Caption Types ----
+
+export interface CaptionWord {
+	word: string;
+	start: number; // absolute time in seconds
+	end: number; // absolute time in seconds
+	confidence?: number;
+}
+
+export interface CaptionLine {
+	text: string;
+	words: CaptionWord[];
+	startTime: number;
+	endTime: number;
+}
+
+export type CaptionHighlightStyle =
+	| "none" // no word highlight
+	| "karaoke" // word-by-word color change
+	| "karaoke-scale" // word-by-word color change + scale pop
+	| "underline" // word-by-word underline
+	| "background" // word-by-word background highlight
+	| "glow"; // word-by-word glow pulse
+
+export type CaptionPresetId =
+	| "default"
+	| "karaoke"
+	| "karaoke-pop"
+	| "bold-outline"
+	| "neon-glow"
+	| "boxed"
+	| "typewriter"
+	| "minimal"
+	| "gradient-pop";
+
+export interface CaptionElement extends BaseTimelineElement {
+	type: "caption";
+	lines: CaptionLine[];
+	presetId: CaptionPresetId;
+	highlightStyle: CaptionHighlightStyle;
+	highlightColor: string; // color for the active/highlighted word
+	fontSize: number;
+	fontFamily: string;
+	fontFilePath?: string;
+	color: string; // base text color (inactive words)
+	backgroundColor: string;
+	textAlign: "left" | "center" | "right";
+	fontWeight: "normal" | "bold" | "100" | "200" | "300" | "400" | "500" | "600" | "700" | "800" | "900";
+	fontStyle: "normal" | "italic";
+	letterSpacing: number;
+	lineHeight: number;
+	textCase: TextCase;
+	stroke?: TextStroke;
+	shadow?: TextShadow;
+	glow?: TextGlow;
+	gradient?: TextGradient;
+	hidden?: boolean;
+	transform: Transform;
+	opacity: number;
+	maxWordsPerLine: number; // how many words per visual line
+}
+
 export type TimelineElement =
 	| AudioElement
 	| VideoElement
 	| ImageElement
 	| TextElement
 	| StickerElement
-	| EffectElement;
+	| EffectElement
+	| CaptionElement;
 
 export type ElementType = TimelineElement["type"];
 
@@ -238,13 +338,15 @@ export type CreateImageElement = Omit<ImageElement, "id">;
 export type CreateTextElement = Omit<TextElement, "id">;
 export type CreateStickerElement = Omit<StickerElement, "id">;
 export type CreateEffectElement = Omit<EffectElement, "id">;
+export type CreateCaptionElement = Omit<CaptionElement, "id">;
 export type CreateTimelineElement =
 	| CreateAudioElement
 	| CreateVideoElement
 	| CreateImageElement
 	| CreateTextElement
 	| CreateStickerElement
-	| CreateEffectElement;
+	| CreateEffectElement
+	| CreateCaptionElement;
 
 // ---- Drag State ----
 
@@ -265,6 +367,8 @@ export interface DropTarget {
 	isNewTrack: boolean;
 	insertPosition: "above" | "below" | null;
 	xPosition: number;
+	targetElementId?: string;
+	targetTrackId?: string;
 }
 
 export interface ComputeDropTargetParams {

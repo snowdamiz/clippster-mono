@@ -5,7 +5,11 @@ import type { Transform, FlipState, ColorAdjustments, CropRect } from "../../typ
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
 import { getKeyframedValue } from "../../types/keyframes";
-import { buildFilterString, hasPostDrawEffects, applyCanvasEffects } from "../effects/canvas-effects";
+import { buildFilterString, hasPostDrawEffects, applyCanvasEffects, applyAdvancedColorAdjustments } from "../effects/canvas-effects";
+import { applyChromakey } from "../effects/canvas-chromakey";
+import type { ChromakeySettings } from "../../types/chromakey";
+import type { ElementAnimation } from "../../types/animations";
+import { computeAnimationTransforms, applyAnimationToContext } from "../effects/canvas-animations";
 
 const VIDEO_EPSILON = 1 / 1000;
 
@@ -28,8 +32,14 @@ export interface VideoNodeParams {
 	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
 	speed?: number;
+	fadeIn?: number;
+	fadeOut?: number;
 	keyframes?: ElementKeyframes;
 	effects?: VideoEffect[];
+	chromakey?: ChromakeySettings;
+	animationIn?: ElementAnimation;
+	animationOut?: ElementAnimation;
+	animationLoop?: ElementAnimation;
 }
 
 export class VideoNode extends BaseNode<VideoNodeParams> {
@@ -85,8 +95,28 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
 			const kf = this.params.keyframes;
 
-			const resolvedOpacity = getKeyframedValue({ elementKeyframes: kf, property: "opacity", normalizedTime, defaultValue: this.params.opacity ?? 1 });
+			let resolvedOpacity = getKeyframedValue({ elementKeyframes: kf, property: "opacity", normalizedTime, defaultValue: this.params.opacity ?? 1 });
+
+			// Apply fade in/out opacity ramp
+			const fadeIn = this.params.fadeIn ?? 0;
+			const fadeOut = this.params.fadeOut ?? 0;
+			if (fadeIn > 0 && elapsed < fadeIn) {
+				resolvedOpacity *= elapsed / fadeIn;
+			}
+			if (fadeOut > 0 && elapsed > this.params.duration - fadeOut) {
+				resolvedOpacity *= (this.params.duration - elapsed) / fadeOut;
+			}
+
 			renderer.context.globalAlpha = resolvedOpacity;
+
+			// Apply element animations (in/out/loop)
+			const animResult = computeAnimationTransforms(
+				this.params.animationIn,
+				this.params.animationOut,
+				this.params.animationLoop,
+				{ elapsed, elementDuration: this.params.duration, canvasWidth: renderer.width, canvasHeight: renderer.height },
+			);
+			applyAnimationToContext(renderer.context, animResult, renderer.width / 2, renderer.height / 2);
 
 			// Apply transform (scale, position, rotation) with keyframe overrides
 			const transform = this.params.transform;
@@ -118,7 +148,10 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			const ca = this.params.colorAdjustments;
 			const filterParts: string[] = [];
 			if (ca) {
-				if (ca.brightness !== 0) filterParts.push(`brightness(${1 + ca.brightness / 100})`);
+				// Exposure maps to brightness with gamma curve
+				const exposureOffset = ca.exposure ? ca.exposure / 100 : 0;
+				const brightnessVal = 1 + (ca.brightness ?? 0) / 100 + exposureOffset * 0.5;
+				if (brightnessVal !== 1) filterParts.push(`brightness(${brightnessVal})`);
 				if (ca.contrast !== 0) filterParts.push(`contrast(${1 + ca.contrast / 100})`);
 				if (ca.saturation !== 0) filterParts.push(`saturate(${1 + ca.saturation / 100})`);
 				if (ca.temperature !== 0) {
@@ -206,6 +239,16 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				applyCanvasEffects(renderer.context, renderer.width, renderer.height, fx, time, this.params.timeOffset);
 			} else {
 				renderer.context.restore();
+			}
+
+			// Apply advanced color adjustments that require post-draw compositing
+			if (ca) {
+				applyAdvancedColorAdjustments(renderer.context, renderer.width, renderer.height, ca);
+			}
+
+			// Apply chromakey (green screen removal)
+			if (this.params.chromakey?.enabled) {
+				applyChromakey(renderer.context, renderer.width, renderer.height, this.params.chromakey);
 			}
 		}
 	}

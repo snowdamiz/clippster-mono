@@ -1,7 +1,7 @@
 use tauri::Emitter;
 use tauri_plugin_shell::ShellExt;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::encoder::{detect_hardware_encoder, run_ffmpeg_with_fallback};
 use super::types::WatermarkSettings;
@@ -35,6 +35,7 @@ pub struct SegmentInfo {
 /// 3. Extracts the precise clip duration
 /// 4. Applies watermark if provided
 /// 5. Returns the output file path
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn extract_livestream_clip(
     app: tauri::AppHandle,
@@ -257,7 +258,7 @@ pub async fn extract_livestream_clip(
 /// Generate a thumbnail for a clip at its midpoint
 async fn generate_clip_thumbnail(
     app: &tauri::AppHandle,
-    clip_path: &PathBuf,
+    clip_path: &Path,
     clip_duration: f64,
 ) -> Option<String> {
     use tauri_plugin_shell::ShellExt;
@@ -345,7 +346,7 @@ async fn extract_single_segment_clip(
     segment: &SegmentInfo,
     clip_start_time: f64,
     clip_duration: f64,
-    temp_dir: &PathBuf,
+    temp_dir: &Path,
 ) -> Result<PathBuf, String> {
     let _shell = app.shell();
     
@@ -401,7 +402,7 @@ async fn extract_multi_segment_clip(
     clip_start_time: f64,
     _clip_end_time: f64,
     clip_duration: f64,
-    temp_dir: &PathBuf,
+    temp_dir: &Path,
 ) -> Result<PathBuf, String> {
     let shell = app.shell();
 

@@ -30,6 +30,7 @@ import {
 	ChangeSpeedCommand,
 	UpdateElementKeyframesCommand,
 	ExtractAudioCommand,
+	UpdateCaptionElementCommand,
 } from "../../lib/commands/timeline";
 import type { UpdatableElementProps } from "../../lib/commands/timeline";
 import type { InsertElementParams } from "../../lib/commands/timeline/element/insert-element";
@@ -266,6 +267,19 @@ export class TimelineManager {
 		keyframes: ElementKeyframes;
 	}): void {
 		const command = new UpdateElementKeyframesCommand(trackId, elementId, keyframes);
+		this.editor.command.execute({ command });
+	}
+
+	updateCaptionElement({
+		trackId,
+		elementId,
+		updates,
+	}: {
+		trackId: string;
+		elementId: string;
+		updates: import("../../lib/commands/timeline/element/update-caption-element").CaptionElementUpdatable;
+	}): void {
+		const command = new UpdateCaptionElementCommand(trackId, elementId, updates);
 		this.editor.command.execute({ command });
 	}
 

@@ -206,7 +206,7 @@ pub async fn run_ffmpeg_with_fallback(
     env_vars: Option<Vec<(&str, String)>>,
 ) -> Result<Output, String> {
     let cpu_count = num_cpus::get().max(1);
-    let encode_threads = (cpu_count / 2).max(2).min(8);
+    let encode_threads = (cpu_count / 2).clamp(2, 8);
     let filter_threads = (encode_threads / 2).max(1);
 
     // CRITICAL: Add -nostdin to prevent FFmpeg from hanging waiting for user input
@@ -411,8 +411,7 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle, quality: &str) -> E
     
     // Try to get ffmpeg encoder list
     let encoder_check = shell.sidecar("ffmpeg")
-        .map_err(|_| ())
-        .and_then(|cmd| Ok(cmd.args(["-encoders"])));
+        .map_err(|_| ()).map(|cmd| cmd.args(["-encoders"]));
     
     if let Ok(cmd) = encoder_check {
         if let Ok(output) = cmd.output().await {

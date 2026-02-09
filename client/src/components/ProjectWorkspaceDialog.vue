@@ -70,9 +70,33 @@
                 />
               </div>
 
-              <!-- Right Column: Media Panel -->
+              <!-- Right Column: Tabs (Clips / Transcript) -->
               <div class="workspace-dialog__media-column">
+                <!-- Tab Bar -->
+                <div class="workspace-dialog__tab-bar">
+                  <button
+                    class="workspace-dialog__tab"
+                    :class="{ 'workspace-dialog__tab--active': rightPanelTab === 'clips' }"
+                    @click="rightPanelTab = 'clips'"
+                  >
+                    Clips
+                  </button>
+                  <button
+                    class="workspace-dialog__tab"
+                    :class="{
+                      'workspace-dialog__tab--active': rightPanelTab === 'transcript',
+                      'workspace-dialog__tab--has-transcript': isTranscribed,
+                    }"
+                    @click="rightPanelTab = 'transcript'"
+                  >
+                    Transcript
+                    <span v-if="isTranscribed" class="workspace-dialog__tab-badge">✓</span>
+                  </button>
+                </div>
+
+                <!-- Clips Tab -->
                 <MediaPanel
+                  v-show="rightPanelTab === 'clips'"
                   ref="mediaPanelRef"
                   :is-generating="clipGenerationInProgress"
                   :generation-progress="clipProgress"
@@ -88,6 +112,10 @@
                   :aspect-ratio="selectedAspectRatio"
                   :creator-default-intro="creatorDefaultIntro"
                   :creator-default-outro="creatorDefaultOutro"
+                  :is-transcribing="isTranscribing"
+                  :transcribe-progress="transcribeProgressValue"
+                  :transcribe-stage="transcribeStage"
+                  :transcribe-message="transcribeMessage"
                   @detectClips="onDetectClips"
                   @cancelDetection="onCancelDetection"
                   @clipHover="onClipHover"
@@ -98,7 +126,22 @@
                   @watermarkSettingsChanged="onWatermarkSettingsChanged"
                   @editClip="onEditClip"
                   @addClip="onAddClip"
+                  @transcribeProject="onTranscribeProject"
+                  @cancelTranscription="onCancelTranscription"
+                  @viewTranscript="rightPanelTab = 'transcript'"
                 />
+
+                <!-- Transcript Tab -->
+                <div v-show="rightPanelTab === 'transcript'" class="flex flex-col flex-1 h-full min-h-0 px-4">
+                  <TranscriptPanel
+                    :project-id="project?.id"
+                    :current-time="currentTime"
+                    :duration="duration"
+                    :hide-header="false"
+                    @seekTo="seekToTime"
+                    @createClipFromTranscript="onCreateClipFromTranscript"
+                  />
+                </div>
               </div>
             </div>
 
@@ -168,6 +211,15 @@
     @confirm="onDetectClipsConfirmed"
   />
 
+  <!-- Transcription Confirmation Dialog -->
+  <TranscriptionConfirmDialog
+    :model-value="showTranscribeConfirmDialog"
+    :video-duration="duration"
+    :is-transcribed="isTranscribed"
+    @update:model-value="showTranscribeConfirmDialog = $event"
+    @confirm="onTranscribeConfirmed"
+  />
+
 
   <!-- Existing Project Dialog -->
   <ExistingProjectDialog
@@ -208,6 +260,9 @@
   import ClipGenerationProgress from './ClipGenerationProgress.vue';
   import ConfirmationModal from './ConfirmationModal.vue';
   import ClipDetectionConfirmDialog from './ClipDetectionConfirmDialog.vue';
+  import TranscriptionConfirmDialog from './TranscriptionConfirmDialog.vue';
+  import TranscriptPanel from './TranscriptPanel.vue';
+  import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
   import { createVideoEditorProjectFromClip } from '@/services/video-editor-project-creator';
@@ -255,6 +310,19 @@
 
   // Clip detection confirmation state
   const showDetectConfirmDialog = ref(false);
+
+  // Transcription confirmation state
+  const showTranscribeConfirmDialog = ref(false);
+
+  // Right panel tab state
+  const rightPanelTab = ref<'clips' | 'transcript'>('clips');
+
+  // Transcription progress state
+  const isTranscribing = ref(false);
+  const transcribeProgressValue = ref(0);
+  const transcribeStage = ref('');
+  const transcribeMessage = ref('');
+  const cancelTranscriptionFn = ref<(() => void) | null>(null);
 
   const isCreatingProject = ref(false);
 
@@ -562,6 +630,108 @@
     if (timelineRef.value && timelineRef.value.toggleAddClipMode) {
       timelineRef.value.toggleAddClipMode();
     }
+  }
+
+  function onTranscribeProject() {
+    if (!authStore.isAuthenticated) {
+      window.dispatchEvent(new CustomEvent('show-auth-modal'));
+      return;
+    }
+    showTranscribeConfirmDialog.value = true;
+  }
+
+  async function onTranscribeConfirmed(organizationId: number | null = null) {
+    if (!props.project?.id) return;
+
+    const projectId = props.project.id;
+    const { transcribeProject, progress: tProgress, cancelTranscription } = useTranscriptionOnly();
+
+    isTranscribing.value = true;
+    transcribeProgressValue.value = 0;
+    transcribeStage.value = 'initializing';
+    transcribeMessage.value = 'Starting transcription...';
+
+    // Store cancel function
+    cancelTranscriptionFn.value = cancelTranscription;
+
+    // Watch transcription progress
+    const stopWatch = watch(tProgress, (p) => {
+      if (props.project?.id === projectId) {
+        transcribeProgressValue.value = p.progress;
+        transcribeStage.value = p.stage;
+        transcribeMessage.value = p.message;
+      }
+    }, { deep: true });
+
+    try {
+      const result = await transcribeProject(projectId, { organizationId });
+
+      if (result.success) {
+        const { success: showSuccess } = useToast();
+        if (result.alreadyTranscribed) {
+          showSuccess('Already Transcribed', 'This video already has a transcript.');
+        } else {
+          showSuccess('Transcription Complete', 'Transcript is ready for viewing.');
+        }
+        // Auto-switch to transcript tab after successful transcription
+        rightPanelTab.value = 'transcript';
+      }
+    } catch (err) {
+      console.error('[ProjectWorkspaceDialog] Transcription failed:', err);
+    } finally {
+      stopWatch();
+      isTranscribing.value = false;
+      transcribeProgressValue.value = 0;
+      transcribeStage.value = '';
+      transcribeMessage.value = '';
+      cancelTranscriptionFn.value = null;
+    }
+  }
+
+  async function onCreateClipFromTranscript(startTime: number, endTime: number, transcriptText: string) {
+    if (!props.project?.id) return;
+
+    try {
+      const { createManualClip } = await import('@/services/database/manual-clips');
+
+      // Auto-generate clip name from transcript text (first ~50 chars)
+      const clipName = transcriptText.length > 50
+        ? transcriptText.substring(0, 50).trim() + '...'
+        : transcriptText.trim();
+
+      await createManualClip(props.project.id, {
+        name: clipName || 'Transcript Clip',
+        startTime,
+        endTime,
+        description: `Created from transcript selection: "${transcriptText.substring(0, 200)}"`,
+      });
+
+      const { success: showSuccess } = useToast();
+      showSuccess('Clip Created', `Clip "${clipName}" created from transcript selection.`);
+
+      // Refresh clips in the MediaPanel
+      onRefreshClipsData();
+
+      // Switch to clips tab to show the new clip
+      rightPanelTab.value = 'clips';
+    } catch (err) {
+      console.error('[ProjectWorkspaceDialog] Failed to create clip from transcript:', err);
+      const { error: showErr } = useToast();
+      showErr('Clip Creation Failed', 'Failed to create clip from transcript selection.');
+    }
+  }
+
+  function onCancelTranscription() {
+    if (cancelTranscriptionFn.value) {
+      cancelTranscriptionFn.value();
+      cancelTranscriptionFn.value = null;
+    }
+    isTranscribing.value = false;
+    transcribeProgressValue.value = 0;
+    transcribeStage.value = 'cancelled';
+    transcribeMessage.value = 'Transcription cancelled';
+    const { success: showSuccess } = useToast();
+    showSuccess('Transcription Cancelled', 'Transcription was cancelled.');
   }
 
   async function onCancelDetection() {
@@ -1967,6 +2137,8 @@
         frontendError.value = '';
         // Reset backend progress tracking
         resetProgress();
+        // Reset right panel tab
+        rightPanelTab.value = 'clips';
         // Clear creator profile
         creatorProfile.value = null;
       }
@@ -2302,6 +2474,56 @@
     flex-direction: column;
     background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
     overflow: hidden;
+  }
+
+  /* ===== Tab Bar ===== */
+  .workspace-dialog__tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    flex-shrink: 0;
+    background-color: rgba(0, 0, 0, 0.2);
+  }
+
+  .workspace-dialog__tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted, rgba(255, 255, 255, 0.5));
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .workspace-dialog__tab:hover {
+    color: var(--sidebar-text, rgba(255, 255, 255, 0.9));
+    background-color: rgba(255, 255, 255, 0.03);
+  }
+
+  .workspace-dialog__tab--active {
+    color: var(--sidebar-text, rgba(255, 255, 255, 0.9));
+    border-bottom-color: var(--sidebar-accent, #06b6d4);
+  }
+
+  .workspace-dialog__tab--has-transcript {
+    color: #4ade80;
+  }
+
+  .workspace-dialog__tab--has-transcript.workspace-dialog__tab--active {
+    border-bottom-color: #22c55e;
+  }
+
+  .workspace-dialog__tab-badge {
+    font-size: 0.625rem;
+    font-weight: 700;
+    color: #22c55e;
   }
 
   /* ===== Timeline Section ===== */

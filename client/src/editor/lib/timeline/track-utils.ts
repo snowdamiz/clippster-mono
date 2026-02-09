@@ -6,6 +6,7 @@ import type {
 	AudioTrack,
 	StickerTrack,
 	TextTrack,
+	CaptionTrack,
 } from "../../types/timeline";
 import {
 	TRACK_COLORS,
@@ -92,7 +93,9 @@ export function buildEmptyTrack({
 						? "Sticker track"
 						: type === "effect"
 							? "Effect track"
-							: "Track");
+							: type === "caption"
+								? "Caption track"
+								: "Track");
 
 	switch (type) {
 		case "video":
@@ -137,6 +140,14 @@ export function buildEmptyTrack({
 				elements: [],
 				hidden: false,
 			};
+		case "caption":
+			return {
+				id,
+				name: trackName,
+				type: "caption",
+				elements: [],
+				hidden: false,
+			} as CaptionTrack;
 		default:
 			throw new Error(`Unsupported track type: ${type}`);
 	}
@@ -233,6 +244,7 @@ export function canElementGoOnTrack({
 		return trackType === "video";
 	}
 	if (elementType === "effect") return trackType === "effect";
+	if (elementType === "caption") return trackType === "caption";
 	return false;
 }
 

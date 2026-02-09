@@ -114,7 +114,7 @@ pub async fn upload_asset_async(
         Err(e) => {
             println!("[Rust] Async asset upload task failed: {}", e);
             let error_result = AssetUploadResult {
-                upload_id: upload_id,
+                upload_id,
                 success: false,
                 file_path: None,
                 thumbnail_path: None,

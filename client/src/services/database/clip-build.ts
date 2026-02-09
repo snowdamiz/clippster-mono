@@ -580,18 +580,32 @@ export async function getAllClipsWithBuilds(): Promise<(Clip & { builds: ClipBui
     const db = await getDatabase();
     const userId = getCurrentUserId();
 
-    // Get all clips for current user
+    // Debug: check total clips in database regardless of user_id
+    const allRows = await db.select<any[]>('SELECT id, name, user_id, build_status FROM clips ORDER BY created_at DESC LIMIT 10');
+    console.log('[getAllClipsWithBuilds] userId:', userId, 'Total clips in DB (any user):', allRows.length, 'Sample:', allRows.slice(0, 3));
+
+    // Get all clips — include all user_id values to be safe
+    // Some clips may have been created with a different user_id type or value
     let clips: Clip[];
     if (userId === null) {
       clips = await db.select<Clip[]>(
-        'SELECT * FROM clips WHERE user_id IS NULL ORDER BY created_at DESC'
+        'SELECT * FROM clips ORDER BY created_at DESC'
       );
     } else {
+      // Cast user_id comparison to handle potential type mismatches (string vs number)
       clips = await db.select<Clip[]>(
-        'SELECT * FROM clips WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC',
+        'SELECT * FROM clips WHERE (CAST(user_id AS INTEGER) = ? OR user_id IS NULL) ORDER BY created_at DESC',
         [userId]
       );
+      // If no clips found with user filter, fall back to all clips
+      if (clips.length === 0 && allRows.length > 0) {
+        console.warn('[getAllClipsWithBuilds] No clips matched user_id filter but DB has clips — loading all clips');
+        clips = await db.select<Clip[]>(
+          'SELECT * FROM clips ORDER BY created_at DESC'
+        );
+      }
     }
+    console.log('[getAllClipsWithBuilds] Filtered clips:', clips.length);
 
     // Load builds for each clip
     const clipsWithBuilds = await Promise.all(

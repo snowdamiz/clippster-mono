@@ -6,7 +6,21 @@
  */
 
 /** Interpolation method between keyframes */
-export type KeyframeInterpolation = "linear" | "ease-in" | "ease-out" | "ease-in-out" | "hold";
+export type KeyframeInterpolation =
+	| "linear"
+	| "ease-in"
+	| "ease-out"
+	| "ease-in-out"
+	| "hold"
+	| "ease-in-cubic"
+	| "ease-out-cubic"
+	| "ease-in-out-cubic"
+	| "ease-in-expo"
+	| "ease-out-expo"
+	| "ease-in-back"
+	| "ease-out-back"
+	| "ease-out-bounce"
+	| "spring";
 
 /** A single keyframe value at a specific normalized time offset */
 export interface Keyframe<T = number> {
@@ -99,6 +113,41 @@ function applyEasing(t: number, interpolation: KeyframeInterpolation): number {
 			return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 		case "hold":
 			return 0;
+		case "ease-in-cubic":
+			return t * t * t;
+		case "ease-out-cubic":
+			return 1 - Math.pow(1 - t, 3);
+		case "ease-in-out-cubic":
+			return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+		case "ease-in-expo":
+			return t === 0 ? 0 : Math.pow(2, 10 * t - 10);
+		case "ease-out-expo":
+			return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+		case "ease-in-back": {
+			const c1 = 1.70158;
+			const c3 = c1 + 1;
+			return c3 * t * t * t - c1 * t * t;
+		}
+		case "ease-out-back": {
+			const c1 = 1.70158;
+			const c3 = c1 + 1;
+			return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+		}
+		case "ease-out-bounce": {
+			const n1 = 7.5625;
+			const d1 = 2.75;
+			let x = t;
+			if (x < 1 / d1) return n1 * x * x;
+			if (x < 2 / d1) { x -= 1.5 / d1; return n1 * x * x + 0.75; }
+			if (x < 2.5 / d1) { x -= 2.25 / d1; return n1 * x * x + 0.9375; }
+			x -= 2.625 / d1;
+			return n1 * x * x + 0.984375;
+		}
+		case "spring": {
+			const w = 4.71238; // ~1.5 * PI
+			const decay = 4;
+			return 1 - Math.exp(-decay * t) * Math.cos(w * t);
+		}
 		default:
 			return t;
 	}

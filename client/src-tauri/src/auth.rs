@@ -141,6 +141,7 @@ pub async fn open_wallet_auth_window(app: tauri::AppHandle, api_base: Option<Str
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn open_wallet_payment_window(
     app: tauri::AppHandle,
@@ -636,6 +637,7 @@ pub async fn poll_instagram_auth_result() -> Result<Option<InstagramAuthResult>,
 #[tauri::command]
 pub async fn start_user_instagram_oauth(
     app: tauri::AppHandle,
+    api_base: String,
     auth_token: String,
 ) -> Result<(), String> {
     // Clear any previous auth result
@@ -643,10 +645,6 @@ pub async fn start_user_instagram_oauth(
 
     // Start local callback server (reuse the same server)
     start_instagram_callback_server(app.clone());
-
-    // Get API base URL from environment or config
-    let api_base = std::env::var("API_URL")
-        .unwrap_or_else(|_| "http://localhost:4000".to_string());
 
     // Build the user Instagram OAuth initiation URL
     let auth_url = format!(

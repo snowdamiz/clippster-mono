@@ -227,9 +227,13 @@ defmodule ClippsterServerWeb.ClipperProfileController do
       platform_user_id: account.platform_user_id,
       username: account.username,
       display_name: account.display_name,
+      profile_image_url: account.profile_image_url,
       profile_url: account.profile_url,
       follower_count: account.follower_count,
       is_verified: account.is_verified,
+      is_active: account.is_active,
+      token_expires_at: account.token_expires_at,
+      connected_at: account.connected_at,
       inserted_at: account.inserted_at,
       updated_at: account.updated_at
     }

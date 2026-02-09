@@ -151,8 +151,175 @@ jobs:
         run: yarn install
         working-directory: client/src-tauri/pumpfun-service
 
-      # Sign native .node binaries for macOS notarization
-      - name: Sign native node modules (macOS)
+      - name: Build remotion-renderer sidecar
+        working-directory: client/src-tauri/sidecars/remotion-renderer
+        run: |
+          yarn install
+          yarn build
+
+      # Download sidecar binaries (ffmpeg, node, yt-dlp) before Tauri build
+      # build.rs will skip downloading since files already exist
+      - name: Download sidecar binaries (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: |
+          BINARIES_DIR="client/src-tauri/binaries"
+          mkdir -p "$BINARIES_DIR"
+
+          # Determine target arch from matrix args
+          if echo "${{ matrix.args }}" | grep -q "aarch64"; then
+            ARCH="aarch64"
+            NODE_ARCH="arm64"
+            FFMPEG_ARCH="arm64"
+          else
+            ARCH="x86_64"
+            NODE_ARCH="x64"
+            FFMPEG_ARCH="x64"
+          fi
+          TRIPLE="${ARCH}-apple-darwin"
+
+          echo "=== Downloading sidecar binaries for $TRIPLE ==="
+
+          # --- FFmpeg ---
+          FFMPEG_TARGET="$BINARIES_DIR/ffmpeg-${TRIPLE}"
+          if [ ! -f "$FFMPEG_TARGET" ]; then
+            echo "Downloading ffmpeg for darwin-${FFMPEG_ARCH}..."
+            curl -fSL "https://github.com/eugeneware/ffmpeg-static/releases/download/b6.0/ffmpeg-darwin-${FFMPEG_ARCH}" -o "$FFMPEG_TARGET"
+            chmod +x "$FFMPEG_TARGET"
+          fi
+
+          # --- yt-dlp ---
+          YTDLP_TARGET="$BINARIES_DIR/yt-dlp-${TRIPLE}"
+          if [ ! -f "$YTDLP_TARGET" ]; then
+            echo "Downloading yt-dlp for darwin..."
+            curl -fSL "https://github.com/yt-dlp/yt-dlp/releases/download/2025.12.08/yt-dlp_macos" -o "$YTDLP_TARGET"
+            chmod +x "$YTDLP_TARGET"
+          fi
+
+          # --- Node (target arch) ---
+          NODE_TARGET="$BINARIES_DIR/node-${TRIPLE}"
+          if [ ! -f "$NODE_TARGET" ]; then
+            echo "Downloading node v20.11.0 for darwin-${NODE_ARCH}..."
+            curl -fSL "https://nodejs.org/dist/v20.11.0/node-v20.11.0-darwin-${NODE_ARCH}.tar.gz" -o /tmp/node.tar.gz
+            tar -xzf /tmp/node.tar.gz -C /tmp
+            cp "/tmp/node-v20.11.0-darwin-${NODE_ARCH}/bin/node" "$NODE_TARGET"
+            chmod +x "$NODE_TARGET"
+            rm -rf /tmp/node.tar.gz /tmp/node-v20.11.0-darwin-${NODE_ARCH}
+          fi
+
+          # --- Node (other platforms - build.rs downloads all variants) ---
+          # Windows node
+          WIN_NODE="$BINARIES_DIR/node-x86_64-pc-windows-msvc.exe"
+          if [ ! -f "$WIN_NODE" ]; then
+            echo "Downloading node for windows-x64..."
+            curl -fSL "https://nodejs.org/dist/v20.11.0/node-v20.11.0-win-x64.zip" -o /tmp/node-win.zip
+            unzip -o /tmp/node-win.zip "node-v20.11.0-win-x64/node.exe" -d /tmp
+            cp "/tmp/node-v20.11.0-win-x64/node.exe" "$WIN_NODE"
+            rm -rf /tmp/node-win.zip /tmp/node-v20.11.0-win-x64
+          fi
+          # macOS other arch node
+          if [ "$ARCH" = "aarch64" ]; then
+            OTHER_NODE="$BINARIES_DIR/node-x86_64-apple-darwin"
+            OTHER_NODE_ARCH="x64"
+          else
+            OTHER_NODE="$BINARIES_DIR/node-aarch64-apple-darwin"
+            OTHER_NODE_ARCH="arm64"
+          fi
+          if [ ! -f "$OTHER_NODE" ]; then
+            echo "Downloading node for darwin-${OTHER_NODE_ARCH}..."
+            curl -fSL "https://nodejs.org/dist/v20.11.0/node-v20.11.0-darwin-${OTHER_NODE_ARCH}.tar.gz" -o /tmp/node-other.tar.gz
+            tar -xzf /tmp/node-other.tar.gz -C /tmp
+            cp "/tmp/node-v20.11.0-darwin-${OTHER_NODE_ARCH}/bin/node" "$OTHER_NODE"
+            chmod +x "$OTHER_NODE"
+            rm -rf /tmp/node-other.tar.gz /tmp/node-v20.11.0-darwin-${OTHER_NODE_ARCH}
+          fi
+          # Linux node
+          LINUX_NODE="$BINARIES_DIR/node-x86_64-unknown-linux-gnu"
+          if [ ! -f "$LINUX_NODE" ]; then
+            echo "Downloading node for linux-x64..."
+            curl -fSL "https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.gz" -o /tmp/node-linux.tar.gz
+            tar -xzf /tmp/node-linux.tar.gz -C /tmp
+            cp "/tmp/node-v20.11.0-linux-x64/bin/node" "$LINUX_NODE"
+            chmod +x "$LINUX_NODE"
+            rm -rf /tmp/node-linux.tar.gz /tmp/node-v20.11.0-linux-x64
+          fi
+
+          echo "=== Sidecar binaries downloaded ==="
+          ls -la "$BINARIES_DIR/"
+
+      - name: Download sidecar binaries (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $binDir = "client/src-tauri/binaries"
+          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+
+          # --- FFmpeg ---
+          $ffmpegTarget = "$binDir/ffmpeg-x86_64-pc-windows-msvc.exe"
+          if (-not (Test-Path $ffmpegTarget)) {
+            Write-Host "Downloading ffmpeg for windows-x64..."
+            $zipPath = "$env:RUNNER_TEMP/ffmpeg.zip"
+            Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile $zipPath
+            Expand-Archive -Path $zipPath -DestinationPath "$env:RUNNER_TEMP/ffmpeg-extract" -Force
+            $ffmpegExe = Get-ChildItem -Path "$env:RUNNER_TEMP/ffmpeg-extract" -Recurse -Filter "ffmpeg.exe" | Where-Object { $_.FullName -notmatch "ffprobe|ffplay" } | Select-Object -First 1
+            Copy-Item $ffmpegExe.FullName $ffmpegTarget
+            Remove-Item -Recurse -Force "$env:RUNNER_TEMP/ffmpeg-extract", $zipPath
+          }
+
+          # --- yt-dlp ---
+          $ytdlpTarget = "$binDir/yt-dlp-x86_64-pc-windows-msvc.exe"
+          if (-not (Test-Path $ytdlpTarget)) {
+            Write-Host "Downloading yt-dlp for windows-x64..."
+            Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/download/2025.12.08/yt-dlp.exe" -OutFile $ytdlpTarget
+          }
+
+          # --- Node (windows) ---
+          $nodeTarget = "$binDir/node-x86_64-pc-windows-msvc.exe"
+          if (-not (Test-Path $nodeTarget)) {
+            Write-Host "Downloading node v20.11.0 for windows-x64..."
+            $zipPath = "$env:RUNNER_TEMP/node.zip"
+            Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.11.0/node-v20.11.0-win-x64.zip" -OutFile $zipPath
+            Expand-Archive -Path $zipPath -DestinationPath "$env:RUNNER_TEMP/node-extract" -Force
+            Copy-Item "$env:RUNNER_TEMP/node-extract/node-v20.11.0-win-x64/node.exe" $nodeTarget
+            Remove-Item -Recurse -Force "$env:RUNNER_TEMP/node-extract", $zipPath
+          }
+
+          # --- Node (other platforms - build.rs downloads all variants) ---
+          # macOS aarch64
+          $macArmNode = "$binDir/node-aarch64-apple-darwin"
+          if (-not (Test-Path $macArmNode)) {
+            Write-Host "Downloading node for darwin-arm64..."
+            $tarPath = "$env:RUNNER_TEMP/node-mac-arm.tar.gz"
+            Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.11.0/node-v20.11.0-darwin-arm64.tar.gz" -OutFile $tarPath
+            tar -xzf $tarPath -C "$env:RUNNER_TEMP"
+            Copy-Item "$env:RUNNER_TEMP/node-v20.11.0-darwin-arm64/bin/node" $macArmNode
+            Remove-Item -Recurse -Force $tarPath, "$env:RUNNER_TEMP/node-v20.11.0-darwin-arm64"
+          }
+          # macOS x86_64
+          $macX64Node = "$binDir/node-x86_64-apple-darwin"
+          if (-not (Test-Path $macX64Node)) {
+            Write-Host "Downloading node for darwin-x64..."
+            $tarPath = "$env:RUNNER_TEMP/node-mac-x64.tar.gz"
+            Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.11.0/node-v20.11.0-darwin-x64.tar.gz" -OutFile $tarPath
+            tar -xzf $tarPath -C "$env:RUNNER_TEMP"
+            Copy-Item "$env:RUNNER_TEMP/node-v20.11.0-darwin-x64/bin/node" $macX64Node
+            Remove-Item -Recurse -Force $tarPath, "$env:RUNNER_TEMP/node-v20.11.0-darwin-x64"
+          }
+          # Linux x86_64
+          $linuxNode = "$binDir/node-x86_64-unknown-linux-gnu"
+          if (-not (Test-Path $linuxNode)) {
+            Write-Host "Downloading node for linux-x64..."
+            $tarPath = "$env:RUNNER_TEMP/node-linux.tar.gz"
+            Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.gz" -OutFile $tarPath
+            tar -xzf $tarPath -C "$env:RUNNER_TEMP"
+            Copy-Item "$env:RUNNER_TEMP/node-v20.11.0-linux-x64/bin/node" $linuxNode
+            Remove-Item -Recurse -Force $tarPath, "$env:RUNNER_TEMP/node-v20.11.0-linux-x64"
+          }
+
+          Write-Host "=== Sidecar binaries downloaded ==="
+          Get-ChildItem $binDir
+
+      # Sign native .node binaries AND sidecar binaries for macOS notarization
+      - name: Sign native modules and sidecar binaries (macOS)
         if: matrix.platform == 'macos-latest'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -186,6 +353,28 @@ jobs:
           done
           
           echo "Native modules signed successfully"
+
+          # Sign sidecar binaries (ffmpeg, node, yt-dlp)
+          echo "=== Signing sidecar binaries ==="
+          if echo "${{ matrix.args }}" | grep -q "aarch64"; then
+            TRIPLE="aarch64-apple-darwin"
+          else
+            TRIPLE="x86_64-apple-darwin"
+          fi
+
+          for BINARY in \
+            "client/src-tauri/binaries/ffmpeg-${TRIPLE}" \
+            "client/src-tauri/binaries/node-${TRIPLE}" \
+            "client/src-tauri/binaries/yt-dlp-${TRIPLE}"; do
+            if [ -f "$BINARY" ]; then
+              echo "Signing sidecar: $BINARY"
+              codesign --force --options runtime --timestamp --sign "$IDENTITY" "$BINARY"
+            else
+              echo "WARNING: Sidecar binary not found: $BINARY"
+            fi
+          done
+
+          echo "=== All signing complete ==="
 
       # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
       - name: Skip frontend rebuild (macOS)

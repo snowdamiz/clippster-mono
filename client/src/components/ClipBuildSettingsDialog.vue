@@ -76,8 +76,12 @@
                     </div>
 
                     <div class="build-dialog__platform-grid">
-                      <!-- 16:9 Landscape (Original - Always Selected) -->
-                      <div class="build-dialog__platform-card build-dialog__platform-card--original">
+                      <!-- 16:9 Landscape -->
+                      <button
+                        @click="toggleRatio('16:9')"
+                        class="build-dialog__platform-card"
+                        :class="{ 'build-dialog__platform-card--selected': selectedRatios.includes('16:9') }"
+                      >
                         <div class="build-dialog__platform-card-header">
                           <div class="build-dialog__platform-label-group">
                             <span class="build-dialog__platform-ratio">16:9</span>
@@ -85,17 +89,26 @@
                               Original
                             </span>
                           </div>
-                          <div class="build-dialog__platform-check build-dialog__platform-check--active">
-                            <CheckIcon class="build-dialog__platform-check-icon" />
+                          <div
+                            class="build-dialog__platform-check"
+                            :class="{ 'build-dialog__platform-check--active': selectedRatios.includes('16:9') }"
+                          >
+                            <CheckIcon
+                              v-if="selectedRatios.includes('16:9')"
+                              class="build-dialog__platform-check-icon"
+                            />
                           </div>
                         </div>
                         <div class="build-dialog__platform-preview">
-                          <div class="build-dialog__platform-box build-dialog__platform-box--16-9"></div>
+                          <div
+                            class="build-dialog__platform-box build-dialog__platform-box--16-9"
+                            :class="{ 'build-dialog__platform-box--selected': selectedRatios.includes('16:9') }"
+                          ></div>
                         </div>
                         <div class="build-dialog__platform-platforms">
                           <p class="build-dialog__platform-text">YouTube • Twitch</p>
                         </div>
-                      </div>
+                      </button>
 
                       <!-- 9:16 Portrait -->
                       <button
@@ -1019,13 +1032,9 @@
         // Reset to first step when dialog opens
         currentStep.value = 'platforms';
 
-        // Initialize from saved AspectTab settings if available, otherwise use defaults
+        // Initialize from saved AspectTab settings if available, otherwise default to 16:9
         if (props.initialAspectRatios && props.initialAspectRatios.length > 0) {
           selectedRatios.value = [...props.initialAspectRatios];
-          // Ensure 16:9 (Original) is always included
-          if (!selectedRatios.value.includes('16:9')) {
-            selectedRatios.value.unshift('16:9');
-          }
           console.log('[ClipBuildSettingsDialog] Initialized aspect ratios from saved settings:', selectedRatios.value);
         } else {
           selectedRatios.value = ['16:9'];
@@ -1397,9 +1406,6 @@
 
   // Methods
   function toggleRatio(ratio: string) {
-    // 16:9 (Original) is always selected and cannot be removed
-    if (ratio === '16:9') return;
-
     const index = selectedRatios.value.indexOf(ratio);
     if (index > -1) {
       selectedRatios.value.splice(index, 1);
@@ -1408,12 +1414,6 @@
     }
   }
 
-  // Ensure 16:9 is always included in aspect ratios
-  function ensureOriginalRatio() {
-    if (!selectedRatios.value.includes('16:9')) {
-      selectedRatios.value.unshift('16:9');
-    }
-  }
 
   function formatDuration(seconds: number): string {
     if (!seconds) return '0:00';

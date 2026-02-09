@@ -85,26 +85,41 @@ function onTrackClick(e: MouseEvent) {
 	container.scrollLeft = Math.max(0, Math.min(scrollRange, targetScroll));
 }
 
-let observer: MutationObserver | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let contentResizeObserver: ResizeObserver | null = null;
+let rafId: number | null = null;
+
+function scheduleSync() {
+	if (rafId !== null) return;
+	rafId = requestAnimationFrame(() => {
+		rafId = null;
+		syncFromContainer();
+	});
+}
 
 onMounted(() => {
 	const el = props.scrollContainer;
 	el.addEventListener("scroll", syncFromContainer, { passive: true });
 
-	resizeObserver = new ResizeObserver(() => syncFromContainer());
+	// Track container viewport size changes
+	resizeObserver = new ResizeObserver(() => scheduleSync());
 	resizeObserver.observe(el);
 
-	observer = new MutationObserver(() => syncFromContainer());
-	observer.observe(el, { childList: true, subtree: true, attributes: true });
+	// Track inner content size changes (zoom causes width changes on the first child)
+	const contentChild = el.firstElementChild;
+	if (contentChild) {
+		contentResizeObserver = new ResizeObserver(() => scheduleSync());
+		contentResizeObserver.observe(contentChild);
+	}
 
 	syncFromContainer();
 });
 
 onUnmounted(() => {
 	props.scrollContainer?.removeEventListener("scroll", syncFromContainer);
-	observer?.disconnect();
 	resizeObserver?.disconnect();
+	contentResizeObserver?.disconnect();
+	if (rafId !== null) cancelAnimationFrame(rafId);
 	document.removeEventListener("mousemove", onMouseMove);
 	document.removeEventListener("mouseup", onMouseUp);
 });
