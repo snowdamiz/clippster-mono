@@ -1,7 +1,7 @@
 import { createContext, useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { AuthUser, AuthContextType, AuthResult } from '@/types/auth'
 
-const API_BASE = 'https://clippster-server.fly.dev'
+const API_BASE = import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'
 
 export const AuthContext = createContext<AuthContextType | null>(null)
 
@@ -211,57 +211,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Google OAuth (popup)
+  // Google OAuth (redirect-based to avoid COOP issues with popups)
   const authenticateWithGoogle = useCallback(async (): Promise<AuthResult> => {
     setLoading(true)
     setError(null)
-    try {
-      const popup = window.open(
-        `${API_BASE}/api/auth/google?web=true`,
-        'google-auth',
-        'width=500,height=600,scrollbars=yes'
-      )
-      if (!popup) {
-        setError('Popup blocked. Please allow popups for this site.')
-        setLoading(false)
-        return { success: false, error: 'Popup blocked' }
-      }
-
-      return new Promise<AuthResult>((resolve) => {
-        const handleMessage = (event: MessageEvent) => {
-          if (event.data?.type === 'google-auth-result' || (event.data?.token && event.data?.user)) {
-            window.removeEventListener('message', handleMessage)
-            const { token: authToken, user: userData } = event.data
-            if (authToken && userData) {
-              setAuthState(userData, authToken, 'google')
-              setLoading(false)
-              resolve({ success: true, user: userData })
-            } else {
-              setError('Google authentication failed')
-              setLoading(false)
-              resolve({ success: false, error: 'Authentication failed' })
-            }
-          }
-        }
-        window.addEventListener('message', handleMessage)
-
-        // Poll for popup close
-        const pollTimer = setInterval(() => {
-          if (popup.closed) {
-            clearInterval(pollTimer)
-            window.removeEventListener('message', handleMessage)
-            setLoading(false)
-            resolve({ success: false, error: 'Authentication cancelled' })
-          }
-        }, 500)
-      })
-    } catch (err: any) {
-      const msg = err.message || 'Google authentication failed'
-      setError(msg)
-      setLoading(false)
-      return { success: false, error: msg }
-    }
-  }, [setAuthState])
+    const origin = encodeURIComponent(window.location.origin)
+    window.location.href = `${API_BASE}/api/auth/google?web=true&origin=${origin}`
+    // Page navigates away — return a pending promise (never resolves)
+    return new Promise<AuthResult>(() => {})
+  }, [])
 
   // Wallet auth
   const authenticateWithWallet = useCallback(async (

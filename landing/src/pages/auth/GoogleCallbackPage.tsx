@@ -1,12 +1,17 @@
-import { useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
+import { useAuth } from '@/hooks/useAuth'
 
 export function GoogleCallbackPage() {
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { checkAuth } = useAuth()
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
     const token = searchParams.get('token')
+    const error = searchParams.get('error')
     const userParam = searchParams.get('user')
 
     let user = null
@@ -18,34 +23,29 @@ export function GoogleCallbackPage() {
       // Failed to parse user data
     }
 
-    if (window.opener) {
-      window.opener.postMessage(
-        {
-          type: 'google-auth-result',
-          token,
-          user,
-        },
-        '*'
-      )
+    if (error) {
+      setErrorMsg(error)
+      setTimeout(() => navigate('/login', { replace: true }), 2000)
+      return
+    }
 
-      // Close the popup after a brief delay to ensure the message is sent
-      setTimeout(() => {
-        window.close()
-      }, 500)
-    } else {
-      // If there's no opener (e.g., navigated directly), store and redirect
-      if (token && user) {
-        localStorage.setItem('auth_token', token)
-        localStorage.setItem('user', JSON.stringify(user))
-        localStorage.setItem('auth_provider', 'google')
-        window.location.href = user.owned_organization_id
+    if (token && user) {
+      // Store auth data in localStorage
+      localStorage.setItem('auth_token', token)
+      localStorage.setItem('user', JSON.stringify(user))
+      localStorage.setItem('auth_provider', 'google')
+
+      // Sync React auth state from localStorage, then navigate
+      checkAuth().then(() => {
+        const path = user.owned_organization_id
           ? `/dashboard/org/${user.owned_organization_id}`
           : '/dashboard'
-      } else {
-        window.location.href = '/login'
-      }
+        navigate(path, { replace: true })
+      })
+    } else {
+      navigate('/login', { replace: true })
     }
-  }, [searchParams])
+  }, [searchParams, navigate, checkAuth])
 
   return (
     <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center px-4 py-12">
@@ -59,11 +59,21 @@ export function GoogleCallbackPage() {
         {/* Card */}
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-8">
           <div className="flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
-            <p className="text-white font-medium">Authenticating...</p>
-            <p className="text-zinc-500 text-sm text-center">
-              Please wait while we complete your sign in.
-            </p>
+            {errorMsg ? (
+              <>
+                <p className="text-red-400 font-medium">Authentication failed</p>
+                <p className="text-zinc-500 text-sm text-center">{errorMsg}</p>
+                <p className="text-zinc-600 text-xs">Redirecting to login...</p>
+              </>
+            ) : (
+              <>
+                <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+                <p className="text-white font-medium">Authenticating...</p>
+                <p className="text-zinc-500 text-sm text-center">
+                  Please wait while we complete your sign in.
+                </p>
+              </>
+            )}
           </div>
         </div>
       </div>

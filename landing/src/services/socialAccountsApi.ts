@@ -14,6 +14,10 @@ export async function completeSocialConnection(data: { organization_id: number; 
   return api.post<{ success: boolean; account?: SocialAccount; error?: string }>('/auth/social/complete', data)
 }
 
+export async function updateSocialAccount(orgId: number | string, accountId: number, data: { is_active?: boolean }) {
+  return api.patch<{ success: boolean; account?: SocialAccount; error?: string }>(`/organizations/${orgId}/social-accounts/${accountId}`, data)
+}
+
 export async function deleteSocialAccount(orgId: number | string, accountId: number) {
   return api.delete<{ success: boolean; error?: string }>(`/organizations/${orgId}/social-accounts/${accountId}`)
 }

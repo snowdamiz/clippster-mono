@@ -79,6 +79,7 @@ createRoot(document.getElementById('root')!).render(
                   }
                 >
                   <Route index element={<OrgHub />} />
+                  <Route path="hub" element={<OrgHub />} />
                   <Route path="members" element={<OrgMembers />} />
                   <Route path="creators" element={<OrgCreators />} />
                   <Route path="assets" element={<OrgAssets />} />

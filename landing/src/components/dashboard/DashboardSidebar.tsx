@@ -1,4 +1,3 @@
-import { useState, useEffect } from 'react'
 import { Link, useParams, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutGrid,
@@ -12,15 +11,10 @@ import {
   FolderOpen,
   CreditCard,
   Settings,
-  ChevronLeft,
-  ChevronRight,
   LogOut,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
-import { OrgSelector } from '@/components/dashboard/OrgSelector'
-
-const STORAGE_KEY = 'sidebar_collapsed'
 
 interface NavItem {
   label: string
@@ -47,8 +41,8 @@ const navGroups: NavGroup[] = [
     items: [
       { label: 'Campaigns', icon: Megaphone, path: 'campaigns' },
       { label: 'Clippers', icon: Scissors, path: 'clippers' },
-      { label: 'Shared Clips', icon: Share2, path: 'shared-clips' },
-      { label: 'Social Accounts', icon: Globe, path: 'social-accounts' },
+      { label: 'Shared Clips', icon: Share2, path: 'shared' },
+      { label: 'Social Accounts', icon: Globe, path: 'social' },
       { label: 'Posts', icon: FileText, path: 'posts' },
     ],
   },
@@ -71,7 +65,7 @@ function getInitials(user: { name?: string; email: string }): string {
       .toUpperCase()
       .slice(0, 2)
   }
-  return user.email.charAt(0).toUpperCase()
+  return user.email.slice(0, 2).toUpperCase()
 }
 
 export function DashboardSidebar() {
@@ -80,24 +74,12 @@ export function DashboardSidebar() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
 
-  const [collapsed, setCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY) === 'true'
-    } catch {
-      return false
-    }
-  })
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, String(collapsed))
-    } catch {
-      // ignore
-    }
-  }, [collapsed])
-
   function isActive(path: string): boolean {
     const fullPath = `/dashboard/org/${id}/${path}`
+    // Hub is also active for the index route
+    if (path === 'hub') {
+      return location.pathname === `/dashboard/org/${id}` || location.pathname === fullPath || location.pathname.startsWith(fullPath + '/')
+    }
     return location.pathname === fullPath || location.pathname.startsWith(fullPath + '/')
   }
 
@@ -107,119 +89,85 @@ export function DashboardSidebar() {
   }
 
   return (
-    <aside
-      className={`flex flex-col border-r border-zinc-800 bg-zinc-900/50 transition-all duration-200 ${
-        collapsed ? 'w-16' : 'w-[260px]'
-      }`}
-    >
-      {/* Logo + Org Selector */}
-      <div className="p-3 space-y-3">
+    <aside className="flex flex-col w-60 border-r border-zinc-800 bg-[#0a0a0b] shrink-0">
+      {/* Logo */}
+      <div className="p-3">
         <Link
           to="/"
-          className={`flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-zinc-800/50 transition-colors ${
-            collapsed ? 'justify-center' : ''
-          }`}
+          className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-zinc-800/50 transition-colors no-underline"
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-cyan-600 flex items-center justify-center shrink-0">
-            <span className="text-sm font-bold text-white">C</span>
-          </div>
-          {!collapsed && <span className="text-base font-semibold text-white">Clippster</span>}
+          <img src="/logo-icon.svg" alt="Clippster" className="w-8 h-8 rounded-lg shrink-0" />
+          <img src="/logo.svg" alt="Clippster" className="h-4" />
         </Link>
-        <OrgSelector collapsed={collapsed} />
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-5">
-        {navGroups.map((group) => (
-          <div key={group.header}>
-            {!collapsed && (
-              <p className="px-2 mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="flex flex-col p-3 gap-4">
+          {navGroups.map((group, groupIndex) => (
+            <div key={group.header} className="flex flex-col gap-1">
+              {/* Group Label */}
+              <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500/70 pt-2 px-3 pb-1">
                 {group.header}
-              </p>
-            )}
-            <div className="space-y-0.5">
-              {group.items.map((item) => {
-                const active = isActive(item.path)
-                const Icon = item.icon
-                return (
-                  <Link
-                    key={item.path}
-                    to={`/dashboard/org/${id}/${item.path}`}
-                    title={collapsed ? item.label : undefined}
-                    className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors relative ${
-                      active
-                        ? 'bg-cyan-500/10 text-cyan-400 border-l-2 border-cyan-400'
-                        : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50 border-l-2 border-transparent'
-                    } ${collapsed ? 'justify-center px-0' : ''}`}
-                  >
-                    <Icon className="w-[18px] h-[18px] shrink-0" />
-                    {!collapsed && <span>{item.label}</span>}
-                  </Link>
-                )
-              })}
+              </div>
+
+              {/* Navigation Items */}
+              <ul className="list-none m-0 p-0 flex flex-col gap-0.5">
+                {group.items.map((item) => {
+                  const active = isActive(item.path)
+                  const Icon = item.icon
+                  return (
+                    <li key={item.path}>
+                      <Link
+                        to={`/dashboard/org/${id}/${item.path}`}
+                        className={`flex items-center gap-3 w-full py-2 px-3 rounded-md text-sm no-underline transition-all duration-150 cursor-pointer ${
+                          active
+                            ? 'bg-cyan-500/[0.08] text-cyan-400'
+                            : 'text-zinc-500 hover:bg-zinc-800/50 hover:text-zinc-200'
+                        }`}
+                      >
+                        <Icon className="w-[18px] h-[18px] shrink-0" />
+                        <span className="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">{item.label}</span>
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </nav>
 
-      {/* Bottom: User + Collapse */}
-      <div className="border-t border-zinc-800 p-3 space-y-2">
-        {/* User Section */}
+      {/* Footer: User Profile */}
+      <div className="border-t border-zinc-800 p-[0.3rem]">
         {user && (
-          <div
-            className={`flex items-center gap-2.5 px-2 py-2 rounded-lg ${
-              collapsed ? 'justify-center' : ''
-            }`}
-          >
+          <div className="flex items-center gap-2 w-full py-2 px-2 rounded-md">
             {user.avatar_url ? (
               <img
                 src={user.avatar_url}
                 alt={user.name || user.email}
-                className="w-8 h-8 rounded-full object-cover shrink-0"
+                className="w-7 h-7 rounded-[20px] object-cover shrink-0"
+                referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center shrink-0">
-                <span className="text-xs font-medium text-zinc-300">
+              <div className="w-7 h-7 rounded-[20px] bg-cyan-400 flex items-center justify-center shrink-0">
+                <span className="text-xs font-extrabold text-[#0a0a0b] uppercase">
                   {getInitials(user)}
                 </span>
               </div>
             )}
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                {user.name && (
-                  <p className="text-sm font-medium text-white truncate">{user.name}</p>
-                )}
-                <p className="text-xs text-zinc-500 truncate">{user.email}</p>
-              </div>
-            )}
-            {!collapsed && (
-              <button
-                onClick={handleLogout}
-                title="Log out"
-                className="p-1.5 rounded-md text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            )}
+            <span className="flex-1 text-xs text-left whitespace-nowrap overflow-hidden text-ellipsis text-zinc-500" title={user.email}>
+              {user.email}
+            </span>
+            <button
+              onClick={handleLogout}
+              title="Sign out"
+              className="p-1.5 rounded-md text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer border-none bg-transparent"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
-
-        {/* Collapse Toggle */}
-        <button
-          onClick={() => setCollapsed((c) => !c)}
-          className={`flex items-center gap-2 w-full px-2.5 py-2 rounded-lg text-sm text-zinc-500 hover:text-white hover:bg-zinc-800/50 transition-colors ${
-            collapsed ? 'justify-center' : ''
-          }`}
-        >
-          {collapsed ? (
-            <ChevronRight className="w-4 h-4" />
-          ) : (
-            <>
-              <ChevronLeft className="w-4 h-4" />
-              <span>Collapse</span>
-            </>
-          )}
-        </button>
       </div>
     </aside>
   )

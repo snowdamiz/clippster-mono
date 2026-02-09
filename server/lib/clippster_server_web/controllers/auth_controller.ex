@@ -424,7 +424,7 @@ defmodule ClippsterServerWeb.AuthController do
   end
 
   defp send_auth_success_html(conn, token, user, %{web: true} = web_opts) do
-    # Web mode: render HTML that posts message to opener window
+    # Web mode: redirect to the origin's callback page (avoids COOP issues with window.opener)
     ai_allowed = check_ai_allowed_for_user(user)
     target_origin = web_opts[:origin] || "https://clippster.app"
 
@@ -442,31 +442,12 @@ defmodule ClippsterServerWeb.AuthController do
       beta_activated: user.beta_activated
     })
 
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head><title>Authentication Successful</title></head>
-    <body>
-      <p>Authentication successful. This window will close automatically.</p>
-      <script>
-        if (window.opener) {
-          window.opener.postMessage({
-            type: 'google-auth-success',
-            token: #{Jason.encode!(token)},
-            user: #{user_json}
-          }, #{Jason.encode!(target_origin)});
-          window.close();
-        } else {
-          document.body.innerHTML = '<p>Authentication successful! You can close this window.</p>';
-        }
-      </script>
-    </body>
-    </html>
-    """
+    params = URI.encode_query(%{
+      "token" => token,
+      "user" => user_json
+    })
 
-    conn
-    |> put_resp_content_type("text/html")
-    |> send_resp(200, html)
+    redirect(conn, external: "#{target_origin}/auth/google/callback?#{params}")
   end
 
   defp send_auth_success_html(conn, token, user, _web_opts) do
@@ -493,33 +474,10 @@ defmodule ClippsterServerWeb.AuthController do
   end
 
   defp send_auth_error_html(conn, error_message, %{web: true} = web_opts) do
-    # Web mode: render HTML that posts error to opener window
+    # Web mode: redirect to the origin's callback page with error (avoids COOP issues)
     target_origin = web_opts[:origin] || "https://clippster.app"
-
-    html = """
-    <!DOCTYPE html>
-    <html>
-    <head><title>Authentication Failed</title></head>
-    <body>
-      <p>Authentication failed. This window will close automatically.</p>
-      <script>
-        if (window.opener) {
-          window.opener.postMessage({
-            type: 'google-auth-error',
-            error: #{Jason.encode!(error_message)}
-          }, #{Jason.encode!(target_origin)});
-          window.close();
-        } else {
-          document.body.innerHTML = '<p>Authentication failed: #{error_message}</p>';
-        }
-      </script>
-    </body>
-    </html>
-    """
-
-    conn
-    |> put_resp_content_type("text/html")
-    |> send_resp(200, html)
+    params = URI.encode_query(%{"error" => error_message})
+    redirect(conn, external: "#{target_origin}/auth/google/callback?#{params}")
   end
 
   defp send_auth_error_html(conn, error_message, _web_opts) do

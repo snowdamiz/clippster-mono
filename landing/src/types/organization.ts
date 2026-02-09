@@ -84,9 +84,13 @@ export interface ServerOrganizationCreatorProfile {
   name: string
   description?: string | null
   profile_image_url?: string | null
+  intro_id?: number | null
+  outro_id?: number | null
+  watermark_id?: number | null
   watermark_settings?: Record<string, unknown> | null
   platform_links?: ServerOrganizationPlatformLink[]
   assignments?: ServerProfileAssignment[]
+  assigned_count?: number
   inserted_at?: string
   updated_at?: string
 }
@@ -139,6 +143,7 @@ export interface SocialAccount {
   is_active: boolean
   token_expires_at?: string | null
   inserted_at?: string
+  assignments?: SocialAccountAssignment[]
 }
 
 export interface SocialAccountAssignment {
