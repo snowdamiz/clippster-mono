@@ -1,6 +1,7 @@
 <template>
   <div class="relative inline-block w-full">
     <button
+      type="button"
       ref="triggerRef"
       @click="toggleDropdown"
       class="w-full px-3 py-2 bg-background/50 border border-input rounded-md text-left flex items-center justify-between hover:border-primary/50 transition-colors text-sm"

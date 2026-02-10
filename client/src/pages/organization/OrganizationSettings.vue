@@ -310,6 +310,20 @@
                 <span class="org-settings__toggle-handle"></span>
               </button>
             </div>
+            <div class="org-settings__restrictions-item">
+              <div class="org-settings__restrictions-item-info">
+                <div class="org-settings__restrictions-item-title">Allow hiring browse</div>
+                <div class="org-settings__restrictions-item-desc">Browse companies hiring on Clippster</div>
+              </div>
+              <button
+                type="button"
+                class="org-settings__toggle"
+                :class="{ 'org-settings__toggle--active': editData.restriction_defaults?.allow_hiring_browse }"
+                @click="toggleRestriction('allow_hiring_browse')"
+              >
+                <span class="org-settings__toggle-handle"></span>
+              </button>
+            </div>
           </div>
         </div>
       </section>
@@ -468,6 +482,7 @@
       allow_clipper_profile: false,
       allow_personal_social: true,
       allow_clip_deletion: false,
+      allow_hiring_browse: true,
       force_org_watermark: true,
       require_clip_approval: false,
       clips_visible_to_admins: true,
@@ -499,6 +514,7 @@
             allow_clipper_profile: restrictionDefaults.allow_clipper_profile === true,
             allow_personal_social: restrictionDefaults.allow_personal_social !== false,
             allow_clip_deletion: restrictionDefaults.allow_clip_deletion === true,
+            allow_hiring_browse: restrictionDefaults.allow_hiring_browse !== false,
             force_org_watermark: restrictionDefaults.force_org_watermark !== false,
             require_clip_approval: restrictionDefaults.require_clip_approval === true,
             clips_visible_to_admins: restrictionDefaults.clips_visible_to_admins !== false,
@@ -523,6 +539,7 @@
       editData.value.restriction_defaults.allow_clipper_profile !== (orgRestrictionDefaults.allow_clipper_profile === true) ||
       editData.value.restriction_defaults.allow_personal_social !== (orgRestrictionDefaults.allow_personal_social !== false) ||
       editData.value.restriction_defaults.allow_clip_deletion !== (orgRestrictionDefaults.allow_clip_deletion === true) ||
+      editData.value.restriction_defaults.allow_hiring_browse !== (orgRestrictionDefaults.allow_hiring_browse !== false) ||
       editData.value.restriction_defaults.force_org_watermark !== (orgRestrictionDefaults.force_org_watermark !== false) ||
       editData.value.restriction_defaults.require_clip_approval !== (orgRestrictionDefaults.require_clip_approval === true);
     

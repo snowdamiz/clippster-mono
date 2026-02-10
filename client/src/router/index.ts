@@ -398,6 +398,11 @@ const router = createRouter({
           component: () => import('@/pages/organization/OrganizationClippers.vue'),
         },
         {
+          path: 'hiring',
+          name: 'org-hiring',
+          component: () => import('@/pages/organization/OrganizationHiring.vue'),
+        },
+        {
           path: 'shared',
           name: 'org-shared',
           component: () => import('@/pages/organization/OrganizationShared.vue'),

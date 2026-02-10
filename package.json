@@ -10,7 +10,7 @@
     "tauri": "cd client && yarn tauri dev",
     "build": "yarn setup:binaries && cd client && yarn tauri build",
     "setup:binaries": "node scripts/setup-binaries.mjs",
-    "dev": "yarn setup:binaries && concurrently \"yarn server\" \"yarn tauri\" --names \"server,client\" --prefix-colors \"blue,magenta\"",
+    "dev": "yarn setup:binaries && concurrently \"yarn server\" \"yarn tauri\" \"yarn landing\" --names \"server,client,landing\" --prefix-colors \"blue,magenta,cyan\"",
     "prepare": "husky",
     "format": "cd client && prettier --write \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:check": "cd client && prettier --check \"src/**/*.{vue,js,ts,json,css,scss,md}\"",

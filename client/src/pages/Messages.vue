@@ -243,6 +243,11 @@
       isLoadingMembers.value = true;
       members.value = [];
 
+      if (organizations.value.length === 0) {
+        // No organizations — initialize messaging without org scope (global conversations only)
+        await messagingStore.initialize();
+      }
+
       for (const org of organizations.value) {
         try {
           const membersResponse = await api.get<{
@@ -850,16 +855,12 @@
                         'message-bubble--deleted': !!message.deletedAt,
                       }"
                     >
-                      <!-- Sender Name (for group chats) -->
+                      <!-- Sender Name -->
                       <div
-                        v-if="
-                          message.senderId !== authStore.user?.id &&
-                          message.sender &&
-                          messagingStore.activeConversation?.type !== 'direct'
-                        "
+                        v-if="message.senderId !== authStore.user?.id && message.sender"
                         class="message-bubble__sender"
                       >
-                        {{ (message.sender as any).displayName || (message.sender as any).display_name || 'Unknown' }}
+                        {{ message.sender.displayName || 'Unknown' }}
                       </div>
 
                       <!-- Edit Mode -->
@@ -890,13 +891,19 @@
                       <!-- Meta Info -->
                       <div class="message-bubble__meta">
                         <span class="message-bubble__time">
-                          {{ formatMessageTime((message as any).insertedAt || (message as any).inserted_at) }}
+                          {{ formatMessageTime(message.insertedAt) }}
+                        </span>
+                        <span v-if="message.editedAt && !message.deletedAt" class="message-bubble__edited">
+                          edited
                         </span>
                         <span
-                          v-if="((message as any).editedAt || (message as any).edited_at) && !message.deletedAt"
-                          class="message-bubble__edited"
+                          v-if="message.senderId === authStore.user?.id && !message.deletedAt"
+                          class="message-bubble__status"
+                          :class="{
+                            'message-bubble__status--read': message.readBy && message.readBy.length > 1,
+                          }"
                         >
-                          edited
+                          {{ message.readBy && message.readBy.length > 1 ? '• Read' : '• Sent' }}
                         </span>
                       </div>
 
@@ -1960,7 +1967,7 @@
   }
 
   .message-bubble--sent {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
     color: white;
     border-bottom-right-radius: 4px;
   }
@@ -2009,6 +2016,14 @@
     opacity: 0.7;
   }
 
+  .message-bubble--sent .message-bubble__time,
+  .message-bubble--sent .message-bubble__edited {
+    color: white;
+    opacity: 1;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
   .message-bubble__edited {
     font-size: 0.625rem;
     opacity: 0.7;
@@ -2016,6 +2031,20 @@
 
   .message-bubble__edited::before {
     content: '• ';
+  }
+
+  .message-bubble__status {
+    font-size: 0.625rem;
+    opacity: 1;
+    color: white;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+
+  .message-bubble__status--read {
+    color: #fef08a;
+    opacity: 1;
+    font-weight: 700;
   }
 
   /* Message Edit */
@@ -2184,7 +2213,7 @@
     justify-content: center;
     width: 44px;
     height: 44px;
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
     color: white;
     border: none;
     border-radius: 12px;

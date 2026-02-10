@@ -403,7 +403,7 @@ export function OrgClippers() {
 
                     {/* Action Buttons */}
                     <div className="cl-card__actions">
-                      <button className="cl-card__action-btn cl-card__action-btn--message" onClick={() => toast.success(`Opening chat with ${clipper.display_name}`)}><MessageCircle className="w-3.5 h-3.5" />Message</button>
+                      <a href={`/dashboard/org/${organizationId}/messages?to=${clipper.user_id}`} className="cl-card__action-btn cl-card__action-btn--message" style={{ textDecoration: 'none' }}><MessageCircle className="w-3.5 h-3.5" />Message</a>
                       <button className="cl-card__action-btn cl-card__action-btn--invite" onClick={() => openInviteDialog(clipper)}><Send className="w-3.5 h-3.5" />Invite</button>
                     </div>
                   </div>

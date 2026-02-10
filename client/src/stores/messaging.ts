@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import {
   listConversations,
+  listAllConversations,
   getMessages,
   sendMessage as apiSendMessage,
   editMessage as apiEditMessage,
@@ -80,14 +81,14 @@ export const useMessagingStore = defineStore('messaging', () => {
   /**
    * Initialize the messaging store for an organization.
    */
-  async function initialize(orgId: number) {
+  async function initialize(orgId?: number) {
     const authStore = useAuthStore();
     if (!authStore.user?.id || !authStore.token) {
       console.warn('[MessagingStore] Cannot initialize: not authenticated');
       return;
     }
 
-    currentOrgId.value = orgId;
+    currentOrgId.value = orgId ?? null;
     isLoading.value = true;
 
     try {
@@ -104,11 +105,19 @@ export const useMessagingStore = defineStore('messaging', () => {
         conversations.value.set(conversation.id, conversation);
       });
 
+      messagingSocket.setOnMessageReadNotification((event) => {
+        handleReadReceipt(event.conversationId, event.userId);
+      });
+
       // Load conversations
       await loadConversations(orgId);
 
       // Load unread counts
-      await loadUnreadCounts(orgId);
+      if (orgId) {
+        await loadUnreadCounts(orgId);
+      } else {
+        totalUnread.value = await getTotalUnread();
+      }
     } catch (error) {
       console.error('[MessagingStore] Failed to initialize:', error);
     } finally {
@@ -119,9 +128,14 @@ export const useMessagingStore = defineStore('messaging', () => {
   /**
    * Load conversations for an organization.
    */
-  async function loadConversations(orgId: number) {
+  async function loadConversations(orgId?: number) {
     try {
-      const convList = await listConversations(orgId);
+      let convList;
+      if (orgId) {
+        convList = await listConversations(orgId);
+      } else {
+        convList = await listAllConversations();
+      }
       conversations.value.clear();
       for (const conv of convList) {
         conversations.value.set(conv.id, conv);
@@ -168,8 +182,8 @@ export const useMessagingStore = defineStore('messaging', () => {
       onMessageEdited: (message) => handleMessageEdited(conversationId, message),
       onMessageDeleted: (event) => handleMessageDeleted(conversationId, event.messageId),
       onTyping: (event) => handleTyping(conversationId, event.userId),
-      onRead: () => {
-        // Could update read receipts UI here
+      onRead: (event) => {
+        handleReadReceipt(conversationId, event.userId);
       },
     });
 
@@ -519,6 +533,23 @@ export const useMessagingStore = defineStore('messaging', () => {
       if (index !== -1) {
         // Mark as deleted rather than removing
         msgs[index] = { ...msgs[index], deletedAt: new Date().toISOString() };
+        messages.value.set(conversationId, [...msgs]);
+      }
+    }
+  }
+
+  function handleReadReceipt(conversationId: number, userId: number) {
+    const msgs = messages.value.get(conversationId);
+    if (msgs) {
+      let changed = false;
+      for (const msg of msgs) {
+        if (!msg.readBy) msg.readBy = [];
+        if (!msg.readBy.includes(userId)) {
+          msg.readBy = [...msg.readBy, userId];
+          changed = true;
+        }
+      }
+      if (changed) {
         messages.value.set(conversationId, [...msgs]);
       }
     }

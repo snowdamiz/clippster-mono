@@ -257,6 +257,7 @@
   const userOrganizations = ref<any[]>([]);
   const avatarFailed = ref(false);
   let balanceRefreshInterval: ReturnType<typeof setInterval> | null = null;
+  let unreadRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
   // ===== Computed Properties =====
   const totalUnreadMessages = computed(() => messagingStore.totalUnread);
@@ -416,6 +417,7 @@
         permissionsStore.fetchRestrictions();
         // Refresh live counts now that we're authenticated (to get org profiles)
         liveStatusStore.refreshCreators();
+        messagingStore.fetchTotalUnread();
       } else {
         userOrganizations.value = [];
         permissionsStore.reset();
@@ -447,12 +449,26 @@
 
     // Start polling for live status (both monitored streamers and creator profiles)
     liveStatusStore.startPollingAll();
+
+    // Fetch total unread messages for sidebar badge and poll every 30s
+    if (authStore.isAuthenticated) {
+      messagingStore.fetchTotalUnread();
+    }
+    unreadRefreshInterval = setInterval(() => {
+      if (authStore.isAuthenticated) {
+        messagingStore.fetchTotalUnread();
+      }
+    }, 30000);
   });
 
   onUnmounted(() => {
     if (balanceRefreshInterval) {
       clearInterval(balanceRefreshInterval);
       balanceRefreshInterval = null;
+    }
+    if (unreadRefreshInterval) {
+      clearInterval(unreadRefreshInterval);
+      unreadRefreshInterval = null;
     }
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
     

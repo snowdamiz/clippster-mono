@@ -729,6 +729,34 @@ defmodule ClippsterServerWeb.Router do
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 
     # ============================================================================
+    # Hiring Posts - Clipper Browsing
+    # ============================================================================
+    get("/hiring-posts", HiringController, :index)
+    get("/hiring-posts/:id", HiringController, :show)
+    post("/hiring-posts/:id/apply", HiringController, :apply)
+    get("/user/hiring-applications", HiringController, :my_applications)
+
+    # ============================================================================
+    # Hiring Posts - Organization Management
+    # ============================================================================
+    get("/organizations/:organization_id/hiring-post", HiringController, :show_org_post)
+    post("/organizations/:organization_id/hiring-post", HiringController, :save_org_post)
+    delete("/organizations/:organization_id/hiring-post", HiringController, :delete_org_post)
+    get("/organizations/:organization_id/hiring-post/applications", HiringController, :list_applications)
+
+    post(
+      "/organizations/:organization_id/hiring-post/applications/:app_id/accept",
+      HiringController,
+      :accept_application
+    )
+
+    post(
+      "/organizations/:organization_id/hiring-post/applications/:app_id/reject",
+      HiringController,
+      :reject_application
+    )
+
+    # ============================================================================
     # Campaigns - Organization Management Routes
     # ============================================================================
 
