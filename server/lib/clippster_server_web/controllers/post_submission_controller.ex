@@ -432,6 +432,149 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   # Private Functions
   # ============================================================================
 
+  defp publish_to_platform(submission, %{platform: "twitter"} = account, params) do
+    Logger.info("[PostSubmission] Starting Twitter publish for submission #{submission.id} (two-step flow)")
+    Logger.info("[PostSubmission] Media URL: #{params["media_url"]}")
+    Logger.info("[PostSubmission] Platform User ID: #{account.platform_user_id}")
+
+    # PulseKit: Log async task start
+    pulse_capture(%{
+      type: "post.publish.task_start",
+      level: :info,
+      message: "Async publish task started for submission #{submission.id}",
+      metadata: %{
+        submission_id: submission.id,
+        account_id: account.id,
+        platform: account.platform,
+        platform_user_id: account.platform_user_id,
+        media_url: params["media_url"],
+        media_type: params["media_type"]
+      },
+      tags: %{platform: account.platform, action: "task_start"}
+    })
+
+    access_token = SocialAccount.get_access_token(account)
+
+    if is_nil(access_token) or access_token == "" do
+      Logger.error("[PostSubmission] No access token found for account #{account.id}")
+      pulse_capture(%{
+        type: "post.publish.error",
+        level: :error,
+        message: "No access token available for account #{account.id}",
+        metadata: %{
+          submission_id: submission.id,
+          account_id: account.id,
+          platform: account.platform,
+          error: "no_access_token"
+        },
+        tags: %{platform: account.platform, action: "publish_error", error_type: "no_token"}
+      })
+      Social.mark_post_failed(submission, "No access token available")
+    else
+      Logger.info("[PostSubmission] Access token available (length: #{String.length(access_token)})")
+
+      publish_opts = %{
+        filename: "video.mp4",
+        ig_user_id: account.platform_user_id
+      }
+
+      # Step 1: Upload media
+      Logger.info("[PostSubmission] Twitter: uploading media for submission #{submission.id}")
+      pulse_capture(%{
+        type: "post.publish.twitter_upload",
+        level: :info,
+        message: "Uploading media to Twitter for submission #{submission.id}",
+        metadata: %{
+          submission_id: submission.id,
+          platform: account.platform,
+          media_type: params["media_type"]
+        },
+        tags: %{platform: account.platform, action: "twitter_upload"}
+      })
+
+      case Platform.call("twitter", :publish_media, [access_token, params["media_url"], publish_opts]) do
+        {:ok, %{media_id: media_id}} ->
+          # Step 2: Create tweet with media_id
+          Logger.info("[PostSubmission] Twitter: creating tweet with media_id #{media_id}")
+          pulse_capture(%{
+            type: "post.publish.twitter_create_tweet",
+            level: :info,
+            message: "Creating tweet with media_id #{media_id} for submission #{submission.id}",
+            metadata: %{
+              submission_id: submission.id,
+              platform: account.platform,
+              media_id: media_id,
+              has_caption: params["caption"] != nil && params["caption"] != ""
+            },
+            tags: %{platform: account.platform, action: "twitter_create_tweet"}
+          })
+
+          case Platform.call("twitter", :create_tweet, [access_token, params["caption"] || "", [media_ids: [media_id]]]) do
+            {:ok, result} ->
+              Logger.info("[PostSubmission] Twitter tweet created successfully! Post ID: #{result.post_id}")
+              pulse_capture(%{
+                type: "post.publish.success",
+                level: :info,
+                message: "Successfully published submission #{submission.id}",
+                metadata: %{
+                  submission_id: submission.id,
+                  platform: account.platform,
+                  post_id: result.post_id,
+                  post_url: result.post_url
+                },
+                tags: %{platform: account.platform, action: "publish_success"}
+              })
+              # Update submission with post details
+              Social.mark_post_published(submission, %{
+                post_id: result.post_id,
+                post_url: result.post_url,
+                posted_at: DateTime.utc_now()
+              })
+
+            {:error, reason} ->
+              error_msg = if is_binary(reason), do: reason, else: inspect(reason)
+              Logger.error("[PostSubmission] Twitter tweet creation failed: #{error_msg}")
+              pulse_capture(%{
+                type: "post.publish.failed",
+                level: :error,
+                message: "Failed to create tweet for submission #{submission.id}: #{error_msg}",
+                metadata: %{
+                  submission_id: submission.id,
+                  account_id: account.id,
+                  platform: account.platform,
+                  media_id: media_id,
+                  error: error_msg,
+                  error_raw: inspect(reason)
+                },
+                tags: %{platform: account.platform, action: "publish_failed"}
+              })
+              Social.mark_post_failed(submission, error_msg)
+          end
+
+        {:error, reason} ->
+          error_msg = if is_binary(reason), do: reason, else: inspect(reason)
+          Logger.error("[PostSubmission] Twitter media upload failed: #{error_msg}")
+          pulse_capture(%{
+            type: "post.publish.failed",
+            level: :error,
+            message: "Failed to upload media for submission #{submission.id}: #{error_msg}",
+            metadata: %{
+              submission_id: submission.id,
+              account_id: account.id,
+              platform: account.platform,
+              platform_user_id: account.platform_user_id,
+              media_url: params["media_url"],
+              media_type: params["media_type"],
+              error: error_msg,
+              error_raw: inspect(reason)
+            },
+            tags: %{platform: account.platform, action: "publish_failed"}
+          })
+          Social.mark_post_failed(submission, error_msg)
+      end
+    end
+  end
+
   defp publish_to_platform(submission, account, params) do
     Logger.info("[PostSubmission] Starting publish for submission #{submission.id} to #{account.platform}")
     Logger.info("[PostSubmission] Media URL: #{params["media_url"]}")
