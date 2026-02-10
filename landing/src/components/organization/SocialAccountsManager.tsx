@@ -14,11 +14,21 @@ function getPlatformGradient(platform: string) {
   if (platform === 'instagram') return 'from-purple-500 to-pink-500'
   if (platform === 'tiktok') return 'from-zinc-900 to-zinc-700'
   if (platform === 'youtube') return 'from-red-500 to-red-600'
+  if (platform === 'twitter') return 'from-zinc-800 to-zinc-900'
   return 'from-cyan-500 to-cyan-700'
+}
+
+function XIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className}>
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+    </svg>
+  )
 }
 
 function getPlatformIcon(platform: string) {
   if (platform === 'instagram') return Instagram
+  if (platform === 'twitter') return XIcon
   return Globe
 }
 
@@ -169,8 +179,8 @@ function AssignmentsDialog({ account, open, onClose, organizationId, members, on
     <Dialog open={open} onClose={onClose} title="Manage Access" maxWidth="max-w-lg">
       <div className="space-y-4">
         <div className="flex items-center gap-3 pb-3 border-b border-zinc-800">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br ${getPlatformGradient(account.platform)}/20 border border-pink-500/30`}>
-            <Instagram className="w-5 h-5 text-pink-400" />
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br ${getPlatformGradient(account.platform)}/20 border border-white/10`}>
+            {(() => { const Icon = getPlatformIcon(account.platform); return <Icon className="w-5 h-5 text-white" /> })()}
           </div>
           <div>
             <p className="text-sm font-medium text-white">@{account.username}</p>
@@ -307,10 +317,10 @@ export function SocialAccountsManager() {
 
   if (accounts.length === 0) return (
     <EmptyState
-      icon={Instagram}
+      icon={Globe}
       title="No Accounts Connected"
-      description="Connect your Instagram account to start publishing clips directly"
-      action={isAdmin && <Button onClick={() => toast.info('Use the desktop app to connect Instagram via OAuth')}><Plus className="w-4 h-4" /> Connect Account</Button>}
+      description="Connect your social media accounts to start publishing clips directly"
+      action={isAdmin && <Button onClick={() => toast.info('Go to the Social Accounts page to connect accounts')}><Plus className="w-4 h-4" /> Connect Account</Button>}
     />
   )
 

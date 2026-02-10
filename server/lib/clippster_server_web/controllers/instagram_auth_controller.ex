@@ -24,43 +24,52 @@ defmodule ClippsterServerWeb.InstagramAuthController do
   @instagram_scopes "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_messages,instagram_business_manage_comments,instagram_business_manage_insights"
 
   @doc """
-  Start Instagram OAuth flow (for Tauri desktop apps).
+  Start Instagram OAuth flow.
 
   GET /api/auth/instagram/start
 
   Required params:
   - organization_id: The organization to connect the account to
-  - callback_port: The local port for the Tauri callback server
   - auth_token: The user's JWT auth token
+  - callback_port: The local port for the Tauri callback server (desktop)
+    OR
+  - web_redirect_uri: The web URL to redirect to after OAuth (web app)
 
   Redirects user to Instagram authorization.
   """
+  def start_oauth(conn, %{"organization_id" => org_id, "web_redirect_uri" => web_redirect_uri, "auth_token" => auth_token}) do
+    start_oauth_flow(conn, org_id, auth_token, {:web, web_redirect_uri})
+  end
+
   def start_oauth(conn, %{"organization_id" => org_id, "callback_port" => callback_port, "auth_token" => auth_token}) do
-    # Verify the auth token and get the user
+    start_oauth_flow(conn, org_id, auth_token, {:tauri, callback_port})
+  end
+
+  def start_oauth(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(%{success: false, error: "Missing required parameters"})
+  end
+
+  defp start_oauth_flow(conn, org_id, auth_token, callback_target) do
     case Accounts.verify_token(auth_token) do
       {:ok, user} ->
-        # Verify user is an admin of the organization
         if Organizations.is_admin?(org_id, user.id) do
           config = Application.get_env(:clippster_server, :instagram, [])
           app_id = config[:app_id]
 
           if is_nil(app_id) do
-            redirect_with_error(conn, callback_port, "Instagram API not configured")
+            redirect_with_error(conn, callback_target, "Instagram API not configured")
           else
-            # Build server callback URL
             server_callback_url = ClippsterServerWeb.Endpoint.url() <> "/api/auth/instagram/callback"
 
-            # Create state with all necessary info
-            state = %{
-              org_id: org_id,
-              callback_port: callback_port,
-              user_id: user.id,
-              timestamp: System.system_time(:second)
-            }
-            |> Jason.encode!()
-            |> Base.url_encode64(padding: false)
+            state_map = case callback_target do
+              {:tauri, port} -> %{org_id: org_id, callback_port: port, user_id: user.id, timestamp: System.system_time(:second)}
+              {:web, uri} -> %{org_id: org_id, web_redirect_uri: uri, user_id: user.id, timestamp: System.system_time(:second)}
+            end
 
-            # Build Instagram authorization URL
+            state = state_map |> Jason.encode!() |> Base.url_encode64(padding: false)
+
             auth_url = "https://www.instagram.com/oauth/authorize?" <>
               URI.encode_query(%{
                 "client_id" => app_id,
@@ -73,18 +82,12 @@ defmodule ClippsterServerWeb.InstagramAuthController do
             redirect(conn, external: auth_url)
           end
         else
-          redirect_with_error(conn, callback_port, "Only organization admins can connect Instagram accounts")
+          redirect_with_error(conn, callback_target, "Only organization admins can connect Instagram accounts")
         end
 
       {:error, _reason} ->
-        redirect_with_error(conn, callback_port, "Invalid or expired authentication token")
+        redirect_with_error(conn, callback_target, "Invalid or expired authentication token")
     end
-  end
-
-  def start_oauth(conn, _params) do
-    conn
-    |> put_status(400)
-    |> json(%{success: false, error: "Missing required parameters"})
   end
 
   @doc """
@@ -100,22 +103,24 @@ defmodule ClippsterServerWeb.InstagramAuthController do
   """
   def oauth_callback(conn, %{"code" => code, "state" => state_encoded}) do
     case decode_state(state_encoded) do
-      {:ok, %{"org_id" => org_id, "callback_port" => callback_port, "user_id" => user_id}} ->
-        # Verify state is not too old (10 minutes)
-        case decode_state(state_encoded) do
-          {:ok, %{"timestamp" => timestamp}} when is_integer(timestamp) ->
+      {:ok, state_map} ->
+        callback_target = extract_callback_target(state_map)
+        org_id = state_map["org_id"]
+        user_id = state_map["user_id"]
+
+        case state_map do
+          %{"timestamp" => timestamp} when is_integer(timestamp) ->
             if System.system_time(:second) - timestamp > 600 do
-              redirect_with_error(conn, callback_port, "Authentication session expired")
+              redirect_with_error(conn, callback_target, "Authentication session expired")
             else
-              process_oauth_callback(conn, code, org_id, callback_port, user_id)
+              process_oauth_callback(conn, code, org_id, callback_target, user_id)
             end
 
           _ ->
-            process_oauth_callback(conn, code, org_id, callback_port, user_id)
+            process_oauth_callback(conn, code, org_id, callback_target, user_id)
         end
 
       {:error, _reason} ->
-        # Can't redirect to callback if state is invalid
         conn
         |> put_status(400)
         |> text("Invalid state parameter. Please try again.")
@@ -123,7 +128,6 @@ defmodule ClippsterServerWeb.InstagramAuthController do
   end
 
   def oauth_callback(conn, %{"error" => error} = params) do
-    # User denied access or other error
     error_description = params["error_description"] || params["error_reason"] || error
 
     case params["state"] do
@@ -134,8 +138,8 @@ defmodule ClippsterServerWeb.InstagramAuthController do
 
       state_encoded ->
         case decode_state(state_encoded) do
-          {:ok, %{"callback_port" => callback_port}} ->
-            redirect_with_error(conn, callback_port, error_description)
+          {:ok, state_map} ->
+            redirect_with_error(conn, extract_callback_target(state_map), error_description)
 
           _ ->
             conn
@@ -151,29 +155,25 @@ defmodule ClippsterServerWeb.InstagramAuthController do
     |> text("Invalid callback parameters")
   end
 
-  defp process_oauth_callback(conn, code, org_id, callback_port, user_id) do
+  defp process_oauth_callback(conn, code, org_id, callback_target, user_id) do
     config = Application.get_env(:clippster_server, :instagram, [])
     app_id = config[:app_id]
     app_secret = config[:app_secret]
     server_callback_url = ClippsterServerWeb.Endpoint.url() <> "/api/auth/instagram/callback"
 
-    # Get the user
     case Accounts.get_user(user_id) do
       nil ->
-        redirect_with_error(conn, callback_port, "User not found")
+        redirect_with_error(conn, callback_target, "User not found")
 
       user ->
-        # Exchange code for tokens
         case Instagram.exchange_code(code, %{
           app_id: app_id,
           app_secret: app_secret,
           redirect_uri: server_callback_url
         }) do
           {:ok, token_data} ->
-            # Get user profile with the access token
             case Instagram.get_user_profile(token_data.access_token) do
               {:ok, profile} ->
-                # Create or update the social account
                 account_attrs = %{
                   platform: "instagram",
                   platform_user_id: profile.user_id,
@@ -186,31 +186,31 @@ defmodule ClippsterServerWeb.InstagramAuthController do
 
                 case Social.create_social_account(org_id, account_attrs, user) do
                   {:ok, account} ->
-                    redirect_with_success(conn, callback_port, account)
+                    redirect_with_success(conn, callback_target, account)
 
                   {:error, %Ecto.Changeset{} = changeset} ->
                     if has_unique_constraint_error?(changeset) do
                       case Social.update_existing_account(org_id, "instagram", profile.user_id, account_attrs, user) do
                         {:ok, account} ->
-                          redirect_with_success(conn, callback_port, account)
+                          redirect_with_success(conn, callback_target, account)
 
                         {:error, reason} ->
-                          redirect_with_error(conn, callback_port, format_error(reason))
+                          redirect_with_error(conn, callback_target, format_error(reason))
                       end
                     else
-                      redirect_with_error(conn, callback_port, format_error(changeset))
+                      redirect_with_error(conn, callback_target, format_error(changeset))
                     end
 
                   {:error, reason} ->
-                    redirect_with_error(conn, callback_port, format_error(reason))
+                    redirect_with_error(conn, callback_target, format_error(reason))
                 end
 
               {:error, reason} ->
-                redirect_with_error(conn, callback_port, "Failed to get profile: #{format_error(reason)}")
+                redirect_with_error(conn, callback_target, "Failed to get profile: #{format_error(reason)}")
             end
 
           {:error, reason} ->
-            redirect_with_error(conn, callback_port, "Failed to exchange code: #{format_error(reason)}")
+            redirect_with_error(conn, callback_target, "Failed to exchange code: #{format_error(reason)}")
         end
     end
   end
@@ -228,10 +228,18 @@ defmodule ClippsterServerWeb.InstagramAuthController do
     end
   end
 
-  defp redirect_with_success(conn, callback_port, account) do
+  defp extract_callback_target(state_map) do
+    case state_map do
+      %{"web_redirect_uri" => uri} -> {:web, uri}
+      %{"callback_port" => port} -> {:tauri, port}
+    end
+  end
+
+  defp redirect_with_success(conn, callback_target, account) do
     params = URI.encode_query(%{
       "success" => "true",
       "account_id" => account.id,
+      "platform" => "instagram",
       "platform_user_id" => account.platform_user_id,
       "username" => account.username,
       "display_name" => account.display_name || "",
@@ -239,16 +247,26 @@ defmodule ClippsterServerWeb.InstagramAuthController do
       "connected_at" => DateTime.to_iso8601(account.connected_at)
     })
 
-    redirect(conn, external: "http://localhost:#{callback_port}/instagram-callback?#{params}")
+    case callback_target do
+      {:tauri, port} ->
+        redirect(conn, external: "http://localhost:#{port}/instagram-callback?#{params}")
+      {:web, uri} ->
+        redirect(conn, external: "#{uri}?#{params}")
+    end
   end
 
-  defp redirect_with_error(conn, callback_port, error_message) do
+  defp redirect_with_error(conn, callback_target, error_message) do
     params = URI.encode_query(%{
       "success" => "false",
       "error" => error_message
     })
 
-    redirect(conn, external: "http://localhost:#{callback_port}/instagram-callback?#{params}")
+    case callback_target do
+      {:tauri, port} ->
+        redirect(conn, external: "http://localhost:#{port}/instagram-callback?#{params}")
+      {:web, uri} ->
+        redirect(conn, external: "#{uri}?#{params}")
+    end
   end
 
   @doc """

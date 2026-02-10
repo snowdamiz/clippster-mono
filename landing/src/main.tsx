@@ -20,6 +20,7 @@ const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage').
 const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })))
 const AcceptInvitationPage = lazy(() => import('./pages/auth/AcceptInvitationPage').then(m => ({ default: m.AcceptInvitationPage })))
 const GoogleCallbackPage = lazy(() => import('./pages/auth/GoogleCallbackPage').then(m => ({ default: m.GoogleCallbackPage })))
+const OAuthCallbackPage = lazy(() => import('./pages/auth/OAuthCallbackPage').then(m => ({ default: m.OAuthCallbackPage })))
 
 // Dashboard layout
 const DashboardLayout = lazy(() => import('./layouts/DashboardLayout').then(m => ({ default: m.DashboardLayout })))
@@ -70,6 +71,7 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
                 <Route path="/invite/:token" element={<AcceptInvitationPage />} />
                 <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
+                <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
 
                 {/* Protected dashboard routes */}
                 <Route

@@ -24,41 +24,50 @@ defmodule ClippsterServerWeb.TwitterAuthController do
   @twitter_scopes "tweet.read tweet.write users.read media.write offline.access"
 
   @doc """
-  Start X OAuth flow (for Tauri desktop apps).
+  Start X OAuth flow.
 
   GET /api/auth/twitter/start
 
   Required params:
   - organization_id: The organization to connect the account to
-  - callback_port: The local port for the Tauri callback server
   - auth_token: The user's JWT auth token
+  - callback_port: The local port for the Tauri callback server (desktop)
+    OR
+  - web_redirect_uri: The web URL to redirect to after OAuth (web app)
 
   Redirects user to X authorization with PKCE code_challenge.
   """
+  def start_oauth(conn, %{"organization_id" => org_id, "web_redirect_uri" => web_redirect_uri, "auth_token" => auth_token}) do
+    start_oauth_flow(conn, org_id, auth_token, {:web, web_redirect_uri})
+  end
+
   def start_oauth(conn, %{"organization_id" => org_id, "callback_port" => callback_port, "auth_token" => auth_token}) do
-    # Verify the auth token and get the user
+    start_oauth_flow(conn, org_id, auth_token, {:tauri, callback_port})
+  end
+
+  def start_oauth(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(%{success: false, error: "Missing required parameters"})
+  end
+
+  defp start_oauth_flow(conn, org_id, auth_token, callback_target) do
     case Accounts.verify_token(auth_token) do
       {:ok, user} ->
-        # Verify user is an admin of the organization
         if Organizations.is_admin?(org_id, user.id) do
           config = Application.get_env(:clippster_server, :twitter_oauth, [])
           client_id = config[:client_id]
 
           if is_nil(client_id) do
-            redirect_with_error(conn, callback_port, "X OAuth not configured")
+            redirect_with_error(conn, callback_target, "X OAuth not configured")
           else
-            # Build server callback URL
             server_callback_url = ClippsterServerWeb.Endpoint.url() <> "/api/auth/twitter/callback"
 
-            # Create state with all necessary info
-            state = %{
-              org_id: org_id,
-              callback_port: callback_port,
-              user_id: user.id,
-              timestamp: System.system_time(:second)
-            }
+            state = case callback_target do
+              {:tauri, port} -> %{org_id: org_id, callback_port: port, user_id: user.id, timestamp: System.system_time(:second)}
+              {:web, uri} -> %{org_id: org_id, web_redirect_uri: uri, user_id: user.id, timestamp: System.system_time(:second)}
+            end
 
-            # Call Twitter.authorize_url which handles PKCE generation and state encoding
             auth_url = Twitter.authorize_url(%{
               client_id: client_id,
               redirect_uri: server_callback_url,
@@ -69,18 +78,12 @@ defmodule ClippsterServerWeb.TwitterAuthController do
             redirect(conn, external: auth_url)
           end
         else
-          redirect_with_error(conn, callback_port, "Only organization admins can connect X accounts")
+          redirect_with_error(conn, callback_target, "Only organization admins can connect X accounts")
         end
 
       {:error, _reason} ->
-        redirect_with_error(conn, callback_port, "Invalid or expired authentication token")
+        redirect_with_error(conn, callback_target, "Invalid or expired authentication token")
     end
-  end
-
-  def start_oauth(conn, _params) do
-    conn
-    |> put_status(400)
-    |> json(%{success: false, error: "Missing required parameters"})
   end
 
   @doc """
@@ -97,22 +100,24 @@ defmodule ClippsterServerWeb.TwitterAuthController do
   """
   def oauth_callback(conn, %{"code" => code, "state" => state_encoded}) do
     case decode_state(state_encoded) do
-      {:ok, %{"org_id" => org_id, "callback_port" => callback_port, "user_id" => user_id, "code_verifier" => code_verifier}} ->
-        # Verify state is not too old (10 minutes)
-        case decode_state(state_encoded) do
-          {:ok, %{"timestamp" => timestamp}} when is_integer(timestamp) ->
+      {:ok, %{"code_verifier" => code_verifier} = state_map} ->
+        callback_target = extract_callback_target(state_map)
+        org_id = state_map["org_id"]
+        user_id = state_map["user_id"]
+
+        case state_map do
+          %{"timestamp" => timestamp} when is_integer(timestamp) ->
             if System.system_time(:second) - timestamp > 600 do
-              redirect_with_error(conn, callback_port, "Authentication session expired")
+              redirect_with_error(conn, callback_target, "Authentication session expired")
             else
-              process_oauth_callback(conn, code, org_id, callback_port, user_id, code_verifier)
+              process_oauth_callback(conn, code, org_id, callback_target, user_id, code_verifier)
             end
 
           _ ->
-            process_oauth_callback(conn, code, org_id, callback_port, user_id, code_verifier)
+            process_oauth_callback(conn, code, org_id, callback_target, user_id, code_verifier)
         end
 
       {:error, _reason} ->
-        # Can't redirect to callback if state is invalid
         conn
         |> put_status(400)
         |> text("Invalid state parameter. Please try again.")
@@ -120,7 +125,6 @@ defmodule ClippsterServerWeb.TwitterAuthController do
   end
 
   def oauth_callback(conn, %{"error" => error} = params) do
-    # User denied access or other error
     error_description = params["error_description"] || params["error_reason"] || error
 
     case params["state"] do
@@ -131,8 +135,8 @@ defmodule ClippsterServerWeb.TwitterAuthController do
 
       state_encoded ->
         case decode_state(state_encoded) do
-          {:ok, %{"callback_port" => callback_port}} ->
-            redirect_with_error(conn, callback_port, error_description)
+          {:ok, state_map} ->
+            redirect_with_error(conn, extract_callback_target(state_map), error_description)
 
           _ ->
             conn
@@ -148,19 +152,17 @@ defmodule ClippsterServerWeb.TwitterAuthController do
     |> text("Invalid callback parameters")
   end
 
-  defp process_oauth_callback(conn, code, org_id, callback_port, user_id, code_verifier) do
+  defp process_oauth_callback(conn, code, org_id, callback_target, user_id, code_verifier) do
     config = Application.get_env(:clippster_server, :twitter_oauth, [])
     client_id = config[:client_id]
     client_secret = config[:client_secret]
     server_callback_url = ClippsterServerWeb.Endpoint.url() <> "/api/auth/twitter/callback"
 
-    # Get the user
     case Accounts.get_user(user_id) do
       nil ->
-        redirect_with_error(conn, callback_port, "User not found")
+        redirect_with_error(conn, callback_target, "User not found")
 
       user ->
-        # Exchange code for tokens with PKCE code_verifier
         case Twitter.exchange_code(code, %{
           client_id: client_id,
           client_secret: client_secret,
@@ -168,10 +170,8 @@ defmodule ClippsterServerWeb.TwitterAuthController do
           code_verifier: code_verifier
         }) do
           {:ok, token_data} ->
-            # Get user profile with the access token
             case Twitter.get_user_profile(token_data.access_token) do
               {:ok, profile} ->
-                # Create or update the social account
                 account_attrs = %{
                   platform: "twitter",
                   platform_user_id: profile.user_id,
@@ -185,31 +185,31 @@ defmodule ClippsterServerWeb.TwitterAuthController do
 
                 case Social.create_social_account(org_id, account_attrs, user) do
                   {:ok, account} ->
-                    redirect_with_success(conn, callback_port, account)
+                    redirect_with_success(conn, callback_target, account)
 
                   {:error, %Ecto.Changeset{} = changeset} ->
                     if has_unique_constraint_error?(changeset) do
                       case Social.update_existing_account(org_id, "twitter", profile.user_id, account_attrs, user) do
                         {:ok, account} ->
-                          redirect_with_success(conn, callback_port, account)
+                          redirect_with_success(conn, callback_target, account)
 
                         {:error, reason} ->
-                          redirect_with_error(conn, callback_port, format_error(reason))
+                          redirect_with_error(conn, callback_target, format_error(reason))
                       end
                     else
-                      redirect_with_error(conn, callback_port, format_error(changeset))
+                      redirect_with_error(conn, callback_target, format_error(changeset))
                     end
 
                   {:error, reason} ->
-                    redirect_with_error(conn, callback_port, format_error(reason))
+                    redirect_with_error(conn, callback_target, format_error(reason))
                 end
 
               {:error, reason} ->
-                redirect_with_error(conn, callback_port, "Failed to get profile: #{format_error(reason)}")
+                redirect_with_error(conn, callback_target, "Failed to get profile: #{format_error(reason)}")
             end
 
           {:error, reason} ->
-            redirect_with_error(conn, callback_port, "Failed to exchange code: #{format_error(reason)}")
+            redirect_with_error(conn, callback_target, "Failed to exchange code: #{format_error(reason)}")
         end
     end
   end
@@ -227,10 +227,18 @@ defmodule ClippsterServerWeb.TwitterAuthController do
     end
   end
 
-  defp redirect_with_success(conn, callback_port, account) do
+  defp extract_callback_target(state_map) do
+    case state_map do
+      %{"web_redirect_uri" => uri} -> {:web, uri}
+      %{"callback_port" => port} -> {:tauri, port}
+    end
+  end
+
+  defp redirect_with_success(conn, callback_target, account) do
     params = URI.encode_query(%{
       "success" => "true",
       "account_id" => account.id,
+      "platform" => "twitter",
       "platform_user_id" => account.platform_user_id,
       "username" => account.username,
       "display_name" => account.display_name || "",
@@ -238,16 +246,26 @@ defmodule ClippsterServerWeb.TwitterAuthController do
       "connected_at" => DateTime.to_iso8601(account.connected_at)
     })
 
-    redirect(conn, external: "http://localhost:#{callback_port}/twitter-callback?#{params}")
+    case callback_target do
+      {:tauri, port} ->
+        redirect(conn, external: "http://localhost:#{port}/twitter-callback?#{params}")
+      {:web, uri} ->
+        redirect(conn, external: "#{uri}?#{params}")
+    end
   end
 
-  defp redirect_with_error(conn, callback_port, error_message) do
+  defp redirect_with_error(conn, callback_target, error_message) do
     params = URI.encode_query(%{
       "success" => "false",
       "error" => error_message
     })
 
-    redirect(conn, external: "http://localhost:#{callback_port}/twitter-callback?#{params}")
+    case callback_target do
+      {:tauri, port} ->
+        redirect(conn, external: "http://localhost:#{port}/twitter-callback?#{params}")
+      {:web, uri} ->
+        redirect(conn, external: "#{uri}?#{params}")
+    end
   end
 
   # Private helpers
