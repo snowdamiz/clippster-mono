@@ -683,6 +683,7 @@ generate_proxy_file,
             auth::open_instagram_auth_window,
             auth::poll_instagram_auth_result,
             auth::start_user_instagram_oauth,
+            auth::start_user_twitter_oauth,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,

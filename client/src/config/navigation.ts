@@ -135,15 +135,15 @@ export const navigationItems: NavigationItem[] = [
     group: 'manage',
     restrictedHidden: true, // Hidden for restricted accounts
   },
-
-  // System group - admin and utilities (pinned at bottom)
   {
     name: 'Affiliate',
     path: '/affiliate',
     icon: Handshake,
-    group: 'system',
+    group: 'manage',
     affiliateOnly: true,
   },
+
+  // System group - admin and utilities (pinned at bottom)
   {
     name: 'Admin',
     path: '/admin',

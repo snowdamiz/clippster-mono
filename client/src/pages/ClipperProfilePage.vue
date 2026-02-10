@@ -338,33 +338,33 @@
 
           <!-- Campaigns -->
           <template v-if="activeTab === 'campaigns'">
-            <div class="earnings-bar">
-              <div class="earnings-item earnings-item--earned">
-                <DollarSign />
-                <div>
-                  <span class="earnings-item__value">${{ formatAmount(earningsSummary.total_earned) }}</span>
-                  <span class="earnings-item__label">Total Earned</span>
+            <div class="posts-stats-grid">
+              <div class="posts-stat-card posts-stat-card--green">
+                <div class="posts-stat-card__icon"><DollarSign /></div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">${{ formatAmount(earningsSummary.total_earned) }}</span>
+                  <span class="posts-stat-card__label">Total Earned</span>
                 </div>
               </div>
-              <div class="earnings-item earnings-item--pending">
-                <Clock />
-                <div>
-                  <span class="earnings-item__value">${{ formatAmount(earningsSummary.pending) }}</span>
-                  <span class="earnings-item__label">Pending</span>
+              <div class="posts-stat-card posts-stat-card--amber">
+                <div class="posts-stat-card__icon"><Clock /></div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">${{ formatAmount(earningsSummary.pending) }}</span>
+                  <span class="posts-stat-card__label">Pending</span>
                 </div>
               </div>
-              <div class="earnings-item">
-                <Upload />
-                <div>
-                  <span class="earnings-item__value">{{ earningsSummary.total_submissions }}</span>
-                  <span class="earnings-item__label">Submissions</span>
+              <div class="posts-stat-card posts-stat-card--purple">
+                <div class="posts-stat-card__icon"><Upload /></div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">{{ earningsSummary.total_submissions }}</span>
+                  <span class="posts-stat-card__label">Submissions</span>
                 </div>
               </div>
-              <div class="earnings-item">
-                <CheckCircle />
-                <div>
-                  <span class="earnings-item__value">{{ earningsSummary.verified_submissions }}</span>
-                  <span class="earnings-item__label">Verified</span>
+              <div class="posts-stat-card posts-stat-card--cyan">
+                <div class="posts-stat-card__icon"><CheckCircle /></div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">{{ earningsSummary.verified_submissions }}</span>
+                  <span class="posts-stat-card__label">Verified</span>
                 </div>
               </div>
             </div>
@@ -558,9 +558,47 @@
               <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
             </div>
             <template v-else>
+              <!-- Hiring Stats -->
+              <div class="posts-stats-grid">
+                <div class="posts-stat-card posts-stat-card--cyan">
+                  <div class="posts-stat-card__icon"><Briefcase /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ myHiringApplications.length }}</span>
+                    <span class="posts-stat-card__label">Applications</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--green">
+                  <div class="posts-stat-card__icon"><CheckCircle /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ myHiringApplications.filter(a => a.status === 'accepted').length }}</span>
+                    <span class="posts-stat-card__label">Hired</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--amber">
+                  <div class="posts-stat-card__icon"><Clock /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ myHiringApplications.filter(a => a.status === 'pending').length }}</span>
+                    <span class="posts-stat-card__label">Pending</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--purple">
+                  <div class="posts-stat-card__icon"><Megaphone /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ hiringPosts.length }}</span>
+                    <span class="posts-stat-card__label">Open Positions</span>
+                  </div>
+                </div>
+              </div>
+
               <!-- My Applications -->
-              <div v-if="myHiringApplications.length" class="hiring-tab__section">
-                <h3 class="hiring-tab__section-title">My Applications</h3>
+              <section v-if="myHiringApplications.length" class="hiring-tab__section-card">
+                <div class="section__header">
+                  <div class="section__header-icon section__header-icon--cyan"><FileVideo /></div>
+                  <div class="section__header-text">
+                    <h2 class="section-title">My Applications</h2>
+                    <p class="section-subtitle">Your submitted hiring applications</p>
+                  </div>
+                </div>
                 <div class="hiring-tab__apps-list">
                   <div v-for="app in myHiringApplications" :key="app.id" class="hiring-tab__app-card">
                     <div class="hiring-tab__app-header">
@@ -583,68 +621,76 @@
                     </div>
                   </div>
                 </div>
-              </div>
+              </section>
 
               <!-- Browse Hiring Posts -->
-              <h3 class="hiring-tab__section-title">Companies Hiring</h3>
-
-              <!-- Filters -->
-              <div class="hiring-tab__filters">
-                <select v-model="hiringFilters.payment_type" class="hiring-tab__filter-select" @change="loadHiringPosts">
-                  <option value="">All Payment Types</option>
-                  <option v-for="pt in HIRING_PAYMENT_TYPES" :key="pt.value" :value="pt.value">{{ pt.label }}</option>
-                </select>
-              </div>
-
-              <div v-if="!hiringPosts.length" class="hiring-tab__empty">
-                <Briefcase class="hiring-tab__empty-icon" />
-                <p>No organizations are currently hiring. Check back later!</p>
-              </div>
-
-              <div v-else class="hiring-tab__grid">
-                <div v-for="post in hiringPosts" :key="post.id" class="hiring-tab__card">
-                  <div class="hiring-tab__card-header">
-                    <img v-if="post.organization?.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
-                    <Building2 v-else class="hiring-tab__org-logo-placeholder" />
-                    <div class="hiring-tab__card-org">
-                      <div class="hiring-tab__card-org-name">{{ post.organization?.name }}</div>
-                      <div class="hiring-tab__card-title">{{ post.title }}</div>
-                    </div>
+              <section class="hiring-tab__section-card">
+                <div class="section__header">
+                  <div class="section__header-icon section__header-icon--green"><Briefcase /></div>
+                  <div class="section__header-text">
+                    <h2 class="section-title">Companies Hiring</h2>
+                    <p class="section-subtitle">Browse open positions from organizations</p>
                   </div>
-
-                  <p v-if="post.description" class="hiring-tab__card-desc">{{ post.description }}</p>
-
-                  <div class="hiring-tab__card-meta">
-                    <span v-if="post.payment_type" class="hiring-tab__card-badge hiring-tab__card-badge--pay">
-                      {{ getHiringPaymentTypeLabel(post.payment_type) }}{{ post.payment_details ? `: ${post.payment_details}` : '' }}
-                    </span>
-                    <span v-if="post.clipper_slots" class="hiring-tab__card-badge">
-                      {{ post.clipper_slots_filled }}/{{ post.clipper_slots }} clippers
-                    </span>
-                    <span v-if="post.experience_level" class="hiring-tab__card-badge">
-                      {{ getExperienceLevelLabel(post.experience_level) }}+
-                    </span>
-                  </div>
-
-                  <div v-if="post.content_types?.length" class="hiring-tab__card-tags">
-                    <span v-for="t in post.content_types.slice(0, 4)" :key="t" class="hiring-tab__mini-tag">{{ getSpecialtyTagLabel(t) }}</span>
-                  </div>
-
-                  <div v-if="post.platforms?.length" class="hiring-tab__card-tags">
-                    <span v-for="p in post.platforms" :key="p" class="hiring-tab__mini-tag">{{ getHiringPlatformLabel(p) }}</span>
-                  </div>
-
-                  <button
-                    class="hiring-tab__apply-btn"
-                    :class="{ 'hiring-tab__apply-btn--applied': post.has_applied }"
-                    :disabled="post.has_applied || applyingTo === post.id"
-                    @click="openApplyDialog(post)"
-                  >
-                    <Loader2 v-if="applyingTo === post.id" class="hiring-tab__apply-spinner" />
-                    {{ post.has_applied ? 'Applied' : 'Apply' }}
-                  </button>
                 </div>
-              </div>
+
+                <!-- Filters -->
+                <div class="hiring-tab__filters">
+                  <select v-model="hiringFilters.payment_type" class="hiring-tab__filter-select" @change="loadHiringPosts">
+                    <option value="">All Payment Types</option>
+                    <option v-for="pt in HIRING_PAYMENT_TYPES" :key="pt.value" :value="pt.value">{{ pt.label }}</option>
+                  </select>
+                </div>
+
+                <div v-if="!hiringPosts.length" class="hiring-tab__empty">
+                  <Briefcase class="hiring-tab__empty-icon" />
+                  <p>No organizations are currently hiring. Check back later!</p>
+                </div>
+
+                <div v-else class="hiring-tab__grid">
+                  <div v-for="post in hiringPosts" :key="post.id" class="hiring-tab__card">
+                    <div class="hiring-tab__card-header">
+                      <img v-if="post.organization?.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
+                      <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      <div class="hiring-tab__card-org">
+                        <div class="hiring-tab__card-org-name">{{ post.organization?.name }}</div>
+                        <div class="hiring-tab__card-title">{{ post.title }}</div>
+                      </div>
+                    </div>
+
+                    <p v-if="post.description" class="hiring-tab__card-desc">{{ post.description }}</p>
+
+                    <div class="hiring-tab__card-meta">
+                      <span v-if="post.payment_type" class="hiring-tab__card-badge hiring-tab__card-badge--pay">
+                        {{ getHiringPaymentTypeLabel(post.payment_type) }}{{ post.payment_details ? `: ${post.payment_details}` : '' }}
+                      </span>
+                      <span v-if="post.clipper_slots" class="hiring-tab__card-badge">
+                        {{ post.clipper_slots_filled }}/{{ post.clipper_slots }} clippers
+                      </span>
+                      <span v-if="post.experience_level" class="hiring-tab__card-badge">
+                        {{ getExperienceLevelLabel(post.experience_level) }}+
+                      </span>
+                    </div>
+
+                    <div v-if="post.content_types?.length" class="hiring-tab__card-tags">
+                      <span v-for="t in post.content_types.slice(0, 4)" :key="t" class="hiring-tab__mini-tag">{{ getSpecialtyTagLabel(t) }}</span>
+                    </div>
+
+                    <div v-if="post.platforms?.length" class="hiring-tab__card-tags">
+                      <span v-for="p in post.platforms" :key="p" class="hiring-tab__mini-tag">{{ getHiringPlatformLabel(p) }}</span>
+                    </div>
+
+                    <button
+                      class="hiring-tab__apply-btn"
+                      :class="{ 'hiring-tab__apply-btn--applied': post.has_applied }"
+                      :disabled="post.has_applied || applyingTo === post.id"
+                      @click="openApplyDialog(post)"
+                    >
+                      <Loader2 v-if="applyingTo === post.id" class="hiring-tab__apply-spinner" />
+                      {{ post.has_applied ? 'Applied' : 'Apply' }}
+                    </button>
+                  </div>
+                </div>
+              </section>
             </template>
 
             <!-- Apply Dialog -->
@@ -678,6 +724,31 @@
               <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
             </div>
             <template v-else-if="affiliateInfo && affiliateDashboard">
+              <!-- Sign-up Stats -->
+              <div class="posts-stats-grid" v-if="affiliateDashboard && affiliateDashboard.breakdown">
+                <div class="posts-stat-card posts-stat-card--cyan">
+                  <div class="posts-stat-card__icon"><UserPlus /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ affiliateDashboard.breakdown.first_subscription?.count || 0 }}</span>
+                    <span class="posts-stat-card__label">First-time Sign-ups</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--purple">
+                  <div class="posts-stat-card__icon"><RefreshCw /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ affiliateDashboard.breakdown.recurring?.count || 0 }}</span>
+                    <span class="posts-stat-card__label">Recurring Sign-ups</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--green">
+                  <div class="posts-stat-card__icon"><TrendingUp /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ getAffiliateTotalSignups() }}</span>
+                    <span class="posts-stat-card__label">Total Sign-ups</span>
+                  </div>
+                </div>
+              </div>
+
               <!-- Referral Link -->
               <div class="aff-tab__link-card">
                 <div class="aff-tab__link-header">
@@ -823,7 +894,7 @@
                 <button
                   class="platform-dialog__close"
                   @click="showPlatformSelectionDialog = false"
-                  :disabled="connectingInstagram"
+                  :disabled="connectingPlatform"
                   title="Close"
                 >
                   <X :size="18" />
@@ -843,7 +914,7 @@
                     :key="platform.id"
                     class="platform-option"
                     :class="{ 'platform-option--disabled': !platform.available }"
-                    :disabled="!platform.available || connectingInstagram"
+                    :disabled="!platform.available || connectingPlatform"
                     @click="connectPlatform(platform.id)"
                   >
                     <div class="platform-option__icon" :class="platform.iconClass">
@@ -854,7 +925,7 @@
                       <span v-if="!platform.available" class="platform-option__badge">Coming Soon</span>
                     </div>
                     <Loader2
-                      v-if="connectingInstagram && selectedPlatform === platform.id"
+                      v-if="connectingPlatform && selectedPlatform === platform.id"
                       class="platform-option__spinner"
                     />
                   </button>
@@ -865,7 +936,7 @@
               <div class="platform-dialog__footer">
                 <button
                   @click="showPlatformSelectionDialog = false"
-                  :disabled="connectingInstagram"
+                  :disabled="connectingPlatform"
                   class="platform-dialog__btn platform-dialog__btn--secondary"
                 >
                   Cancel
@@ -1082,6 +1153,7 @@
     AlertTriangle,
     Clock,
     Users,
+    UserPlus,
     X,
     BarChart3,
     Heart,
@@ -1134,6 +1206,13 @@
     type UserPost,
     type UserAnalyticsSummary,
   } from '@/services/userInstagramApi';
+  import {
+    startUserTwitterOAuth,
+    listUserTwitterAccounts,
+    disconnectUserTwitterAccount,
+    isTwitterTokenExpiringSoon,
+    type UserTwitterAccount,
+  } from '@/services/userTwitterApi';
   import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
   import {
     listPublicHiringPosts, applyToHiringPost, listMyHiringApplications,
@@ -1424,6 +1503,13 @@
     return map[type] || type;
   };
 
+  const getAffiliateTotalSignups = () => {
+    if (!affiliateDashboard.value?.breakdown) return 0;
+    const firstTime = affiliateDashboard.value.breakdown.first_subscription?.count || 0;
+    const recurring = affiliateDashboard.value.breakdown.recurring?.count || 0;
+    return firstTime + recurring;
+  };
+
   const loadPostsAnalytics = async () => {
     loadingPosts.value = true;
     try {
@@ -1456,15 +1542,18 @@
   const publishThumbnailUrl = ref('');
 
   const connectingInstagram = ref(false);
+  const connectingTwitter = ref(false);
+  const connectingPlatform = computed(() => connectingInstagram.value || connectingTwitter.value);
   const selectedPlatform = ref<string | null>(null);
   const selectedAccountForPosts = ref<UserInstagramAccount | null>(null);
   const editingPaymentMethod = ref<ClipperPaymentMethod | null>(null);
   const savingPaymentMethod = ref(false);
   const deleting = ref(false);
   const deleteType = ref<'social account' | 'payment method'>('social account');
-  const deleteTarget = ref<UserInstagramAccount | ClipperPaymentMethod | null>(null);
+  const deleteTarget = ref<UserInstagramAccount | UserTwitterAccount | ClipperPaymentMethod | null>(null);
 
   let cleanupInstagramAuth: (() => void) | null = null;
+  let cleanupTwitterAuth: (() => void) | null = null;
 
   const availablePlatforms = [
     {
@@ -1486,7 +1575,7 @@
       name: 'X (Twitter)',
       icon: markRaw(Twitter),
       iconClass: 'platform-card__icon--x',
-      available: false,
+      available: true,
     },
     {
       id: 'youtube',
@@ -1500,7 +1589,7 @@
   const paymentMethodForm = reactive({ method_type: '', is_default: false, details: {} as Record<string, string> });
 
   const getPlatformIcon = (platform: string) => {
-    const icons: Record<string, any> = { tiktok: Music2, instagram: Instagram, x: Twitter, youtube: Youtube };
+    const icons: Record<string, any> = { tiktok: Music2, instagram: Instagram, x: Twitter, twitter: Twitter, youtube: Youtube };
     return icons[platform] || Globe;
   };
 
@@ -1509,6 +1598,7 @@
       instagram: 'list-item__icon--instagram',
       tiktok: 'list-item__icon--tiktok',
       x: 'list-item__icon--x',
+      twitter: 'list-item__icon--x',
       youtube: 'list-item__icon--youtube',
     };
     return classes[platform] || '';
@@ -1519,6 +1609,7 @@
       tiktok: 'platform--tiktok',
       instagram: 'platform--instagram',
       x: 'platform--x',
+      twitter: 'platform--x',
       youtube: 'platform--youtube',
     };
     return classes[platform] || '';
@@ -1529,6 +1620,7 @@
       instagram: 'Instagram',
       tiktok: 'TikTok',
       x: 'X (Twitter)',
+      twitter: 'X (Twitter)',
       youtube: 'YouTube Shorts',
     };
     return names[platform] || platform;
@@ -1572,10 +1664,16 @@
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
     try {
-      const response = await listUserInstagramAccounts();
-      if (response.success) socialAccounts.value = response.accounts as any[];
+      const [igResponse, twResponse] = await Promise.all([
+        listUserInstagramAccounts(),
+        listUserTwitterAccounts(),
+      ]);
+      const accounts: any[] = [];
+      if (igResponse.success) accounts.push(...igResponse.accounts);
+      if (twResponse.success) accounts.push(...twResponse.accounts);
+      socialAccounts.value = accounts;
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to load Instagram accounts' });
+      toast({ title: 'Error', description: 'Failed to load social accounts' });
     } finally {
       loadingSocialAccounts.value = false;
     }
@@ -1602,6 +1700,26 @@
         console.error('Failed to connect Instagram:', error);
         toast({ title: 'Error', description: 'Failed to connect Instagram' });
         connectingInstagram.value = false;
+        selectedPlatform.value = null;
+      }
+    } else if (platformId === 'x') {
+      connectingTwitter.value = true;
+      try {
+        cleanupTwitterAuth = await startUserTwitterOAuth((result) => {
+          if (result.success && result.account) {
+            toast({ title: 'Success', description: `X account @${result.account.username} connected` });
+            loadSocialAccounts();
+            showPlatformSelectionDialog.value = false;
+          } else if (result.error) {
+            toast({ title: 'Error', description: result.error });
+          }
+          connectingTwitter.value = false;
+          selectedPlatform.value = null;
+        });
+      } catch (error) {
+        console.error('Failed to connect X:', error);
+        toast({ title: 'Error', description: 'Failed to connect X' });
+        connectingTwitter.value = false;
         selectedPlatform.value = null;
       }
     } else {
@@ -1640,7 +1758,7 @@
     }
   };
 
-  const confirmDeleteSocialAccount = (account: UserInstagramAccount) => {
+  const confirmDeleteSocialAccount = (account: UserInstagramAccount | UserTwitterAccount | any) => {
     deleteType.value = 'social account';
     deleteTarget.value = account;
     showDeleteDialog.value = true;
@@ -1717,10 +1835,15 @@
     if (!deleteTarget.value) return;
     deleting.value = true;
     try {
-      const response =
-        deleteType.value === 'social account'
-          ? await disconnectUserInstagramAccount((deleteTarget.value as UserInstagramAccount).id)
-          : await deletePaymentMethod((deleteTarget.value as ClipperPaymentMethod).id);
+      let response;
+      if (deleteType.value === 'social account') {
+        const account = deleteTarget.value as any;
+        response = account.platform === 'twitter'
+          ? await disconnectUserTwitterAccount(account.id)
+          : await disconnectUserInstagramAccount(account.id);
+      } else {
+        response = await deletePaymentMethod((deleteTarget.value as ClipperPaymentMethod).id);
+      }
       if (response.success) {
         toast({ title: 'Deleted', description: `${deleteType.value} disconnected` });
         showDeleteDialog.value = false;
@@ -2577,6 +2700,11 @@
   .posts-stat-card--green .posts-stat-card__icon {
     background: rgba(16, 185, 129, 0.15);
     color: #10b981;
+  }
+
+  .posts-stat-card--amber .posts-stat-card__icon {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
   }
 
   .posts-stat-card__content {
@@ -4024,8 +4152,8 @@
   .aff-tab__link-card {
     padding: 1.25rem;
     border-radius: 10px;
-    border: 1px solid rgba(168, 85, 247, 0.2);
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(59, 130, 246, 0.05) 100%);
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    background: var(--sidebar-hover, rgba(255, 255, 255, 0.02));
     margin-bottom: 1rem;
   }
 
@@ -4224,10 +4352,12 @@
   .aff-tab__save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
   /* ===== Hiring Tab ===== */
-  .hiring-tab__section { margin-bottom: 1.5rem; }
-  .hiring-tab__section-title {
-    font-size: 1rem; font-weight: 600; color: var(--sidebar-text);
-    margin: 0 0 0.75rem; display: flex; align-items: center; gap: 0.5rem;
+  .hiring-tab__section-card {
+    display: flex; flex-direction: column; gap: 1rem;
+    padding: 1.25rem; border-radius: 10px;
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    background: var(--sidebar-hover, rgba(255, 255, 255, 0.02));
+    margin-bottom: 1rem;
   }
   .hiring-tab__apps-list { display: flex; flex-direction: column; gap: 0.5rem; }
   .hiring-tab__app-card {
@@ -4248,7 +4378,7 @@
   .hiring-tab__status--accepted { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
   .hiring-tab__status--rejected { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
 
-  .hiring-tab__filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  .hiring-tab__filters { display: flex; gap: 0.5rem; }
   .hiring-tab__filter-select {
     padding: 0.375rem 0.75rem; border-radius: 6px;
     border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);

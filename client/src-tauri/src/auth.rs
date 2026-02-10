@@ -103,18 +103,44 @@ pub struct InstagramAccount {
     pub connected_at: String,
 }
 
+/// Twitter OAuth result from the backend
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TwitterAuthResult {
+    pub success: bool,
+    #[serde(default)]
+    pub account: Option<TwitterAccount>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TwitterAccount {
+    pub id: i64,
+    pub platform: String,
+    pub platform_user_id: String,
+    pub username: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub profile_image_url: Option<String>,
+    pub is_active: bool,
+    pub connected_at: String,
+}
+
 pub static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static GOOGLE_AUTH_RESULT: Lazy<Arc<Mutex<Option<GoogleAuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static STRIPE_PAYMENT_RESULT: Lazy<Arc<Mutex<Option<StripePaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static EMAIL_VERIFICATION_RESULT: Lazy<Arc<Mutex<Option<EmailVerificationResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static INSTAGRAM_AUTH_RESULT: Lazy<Arc<Mutex<Option<InstagramAuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+pub static TWITTER_AUTH_RESULT: Lazy<Arc<Mutex<Option<TwitterAuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static AUTH_SERVER_PORT: u16 = 48274;
 pub static PAYMENT_SERVER_PORT: u16 = 48275;
 pub static GOOGLE_AUTH_SERVER_PORT: u16 = 54321;
 pub static STRIPE_SERVER_PORT: u16 = 48276;
 pub static EMAIL_VERIFICATION_SERVER_PORT: u16 = 54322;
 pub static INSTAGRAM_AUTH_SERVER_PORT: u16 = 54323;
+pub static TWITTER_AUTH_SERVER_PORT: u16 = 54324;
 
 #[tauri::command]
 pub async fn open_wallet_auth_window(app: tauri::AppHandle, api_base: Option<String>) -> Result<(), String> {
@@ -841,5 +867,167 @@ pub fn start_instagram_callback_server(app: tauri::AppHandle) {
 
         println!("Starting Instagram auth callback server on port {}", INSTAGRAM_AUTH_SERVER_PORT);
         warp::serve(routes).run(([127, 0, 0, 1], INSTAGRAM_AUTH_SERVER_PORT)).await;
+    });
+}
+
+#[tauri::command]
+pub async fn start_user_twitter_oauth(
+    app: tauri::AppHandle,
+    api_base: String,
+    auth_token: String,
+) -> Result<(), String> {
+    // Clear any previous auth result
+    *TWITTER_AUTH_RESULT.lock().unwrap() = None;
+
+    // Start local callback server
+    start_twitter_callback_server(app.clone());
+
+    // Build the user Twitter OAuth initiation URL
+    let auth_url = format!(
+        "{}/api/auth/user-twitter/start?callback_port={}&auth_token={}",
+        api_base,
+        TWITTER_AUTH_SERVER_PORT,
+        urlencoding::encode(&auth_token)
+    );
+
+    tauri_plugin_opener::open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+pub fn start_twitter_callback_server(app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
+        return; // Server already running
+    }
+
+    tokio::spawn(async move {
+        let twitter_auth_result = TWITTER_AUTH_RESULT.clone();
+        let app_handle = app.clone();
+
+        // POST callback endpoint for Twitter OAuth result
+        let twitter_auth_result_post = twitter_auth_result.clone();
+        let app_handle_post = app_handle.clone();
+        let twitter_callback_post = warp::path("twitter-callback")
+            .and(warp::post())
+            .and(warp::body::json())
+            .map(move |result: TwitterAuthResult| {
+                println!("[Twitter Auth] Received callback result: {:?}", result);
+                
+                // Store the result
+                *twitter_auth_result_post.lock().unwrap() = Some(result.clone());
+
+                // Emit event to frontend
+                let _ = app_handle_post.emit("twitter-auth-complete", result);
+
+                warp::reply::json(&serde_json::json!({
+                    "success": true,
+                    "message": "Twitter authentication received. You can close this tab."
+                }))
+            });
+
+        // GET callback endpoint for redirect from backend (shows success/error page)
+        let twitter_auth_result_get = twitter_auth_result.clone();
+        let app_handle_get = app_handle.clone();
+        let twitter_callback_get = warp::path("twitter-callback")
+            .and(warp::get())
+            .and(warp::query::<std::collections::HashMap<String, String>>())
+            .map(move |params: std::collections::HashMap<String, String>| {
+                let success = params.get("success").map(|s| s == "true").unwrap_or(false);
+                let error = params.get("error").cloned();
+                
+                // Parse account data from query params if present
+                let account = if success {
+                    Some(TwitterAccount {
+                        id: params.get("account_id").and_then(|s| s.parse().ok()).unwrap_or(0),
+                        platform: "twitter".to_string(),
+                        platform_user_id: params.get("platform_user_id").cloned().unwrap_or_default(),
+                        username: params.get("username").cloned().unwrap_or_default(),
+                        display_name: params.get("display_name").cloned(),
+                        profile_image_url: params.get("profile_image_url").cloned(),
+                        is_active: true,
+                        connected_at: params.get("connected_at").cloned().unwrap_or_default(),
+                    })
+                } else {
+                    None
+                };
+
+                let result = TwitterAuthResult {
+                    success,
+                    account,
+                    error: error.clone(),
+                };
+
+                println!("[Twitter Auth] Received GET callback: {:?}", result);
+
+                // Store the result
+                *twitter_auth_result_get.lock().unwrap() = Some(result.clone());
+
+                // Emit event to frontend
+                let _ = app_handle_get.emit("twitter-auth-complete", result);
+
+                // Return HTML page
+                let html = if success {
+                    r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Twitter Connected</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #0a0a0a; color: #fff; }
+        .container { text-align: center; padding: 2rem; }
+        .icon { font-size: 4rem; margin-bottom: 1rem; }
+        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+        p { color: #888; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">✓</div>
+        <h1>Twitter Account Connected!</h1>
+        <p>You can close this tab and return to the app.</p>
+    </div>
+</body>
+</html>"#.to_string()
+                } else {
+                    let error_msg = error.unwrap_or_else(|| "Unknown error".to_string());
+                    format!(r#"<!DOCTYPE html>
+<html>
+<head>
+    <title>Connection Failed</title>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #0a0a0a; color: #fff; }}
+        .container {{ text-align: center; padding: 2rem; }}
+        .icon {{ font-size: 4rem; margin-bottom: 1rem; color: #ef4444; }}
+        h1 {{ font-size: 1.5rem; margin-bottom: 0.5rem; }}
+        p {{ color: #888; }}
+        .error {{ color: #ef4444; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">✗</div>
+        <h1>Connection Failed</h1>
+        <p class="error">{}</p>
+        <p>Please close this tab and try again.</p>
+    </div>
+</body>
+</html>"#, error_msg)
+                };
+                warp::reply::html(html)
+            });
+
+        // CORS configuration
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "POST", "OPTIONS"])
+            .allow_headers(vec!["Content-Type"]);
+
+        let routes = twitter_callback_post.or(twitter_callback_get).with(cors);
+
+        println!("Starting Twitter auth callback server on port {}", TWITTER_AUTH_SERVER_PORT);
+        warp::serve(routes).run(([127, 0, 0, 1], TWITTER_AUTH_SERVER_PORT)).await;
     });
 }
