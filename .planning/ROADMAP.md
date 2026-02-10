@@ -33,10 +33,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. X access tokens refresh automatically before 2-hour expiry without user intervention
   5. User can disconnect an X account and remove all stored tokens
 
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD during phase planning
+- [ ] 01-01-PLAN.md — Twitter Platform module with OAuth 2.0 PKCE + runtime config
+- [ ] 01-02-PLAN.md — Auth controllers, router routes, and TokenRefreshWorker update
 
 ### Phase 2: Chunked Video Upload
 **Goal**: System can upload video clips to X using chunked upload with async processing validation
@@ -103,7 +104,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. OAuth 2.0 PKCE Authentication | 0/TBD | Not started | - |
+| 1. OAuth 2.0 PKCE Authentication | 0/2 | Planning complete | - |
 | 2. Chunked Video Upload | 0/TBD | Not started | - |
 | 3. Tweet Creation & Scheduling | 0/TBD | Not started | - |
 | 4. Rate Limiting & Reliability | 0/TBD | Not started | - |
