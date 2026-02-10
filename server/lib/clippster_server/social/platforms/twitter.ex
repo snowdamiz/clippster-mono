@@ -24,6 +24,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
   @x_authorize_url "https://x.com/i/oauth2/authorize"
   @x_token_url "https://api.x.com/2/oauth2/token"
   @x_users_me_url "https://api.x.com/2/users/me"
+  @tweets_url "https://api.x.com/2/tweets"
 
   # HTTP timeout configuration - X API can be slow
   @http_timeout 30_000  # 30 seconds
@@ -227,6 +228,42 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
     end
   end
 
+  @doc """
+  Creates a tweet with optional media attachments.
+
+  ## Parameters
+    - access_token: OAuth 2.0 access token
+    - text: Tweet text (max 280 characters)
+    - opts: Optional parameters
+      - :media_ids - List of media IDs from publish_media/3
+
+  ## Returns
+    - {:ok, %{post_id: String.t(), post_url: String.t()}}
+    - {:error, term()}
+  """
+  def create_tweet(access_token, text, opts \\ []) do
+    Logger.info("[Twitter] Creating tweet...")
+
+    body = build_tweet_body(text, opts)
+    headers = [
+      {"Authorization", "Bearer #{access_token}"},
+      {"Content-Type", "application/json"}
+    ]
+
+    case HTTPoison.post(@tweets_url, body, headers, @http_options) do
+      {:ok, %HTTPoison.Response{status_code: 201, body: response_body}} ->
+        handle_tweet_success(response_body, access_token)
+
+      {:ok, %HTTPoison.Response{status_code: status, body: response_body}} ->
+        Logger.error("[Twitter] Tweet creation failed: #{status} - #{response_body}")
+        {:error, extract_error(response_body, :tweet_creation_failed)}
+
+      {:error, reason} ->
+        Logger.error("[Twitter] HTTP error during tweet creation: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
   @impl true
   def get_insights(_access_token, _post_id) do
     # Stub implementation - Phase 3 will implement this
@@ -334,6 +371,52 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
 
   defp maybe_add_opt(opts, _key, nil), do: opts
   defp maybe_add_opt(opts, key, value), do: Keyword.put(opts, key, value)
+
+  # ============================================================================
+  # Tweet Creation Helpers
+  # ============================================================================
+
+  # Build JSON body for tweet creation
+  defp build_tweet_body(text, opts) do
+    body = %{"text" => text}
+
+    body =
+      case opts[:media_ids] do
+        nil -> body
+        [] -> body
+        media_ids when is_list(media_ids) -> Map.put(body, "media", %{"media_ids" => media_ids})
+      end
+
+    Jason.encode!(body)
+  end
+
+  # Handle successful tweet creation response
+  defp handle_tweet_success(response_body, access_token) do
+    case Jason.decode(response_body) do
+      {:ok, %{"data" => %{"id" => post_id}}} ->
+        # Construct post URL using username from profile
+        post_url =
+          case get_user_profile(access_token) do
+            {:ok, %{username: username}} ->
+              "https://x.com/#{username}/status/#{post_id}"
+
+            {:error, _reason} ->
+              # Fallback to /i/ URL if profile fetch fails
+              Logger.warning("[Twitter] Profile fetch failed, using /i/ URL format")
+              "https://x.com/i/status/#{post_id}"
+          end
+
+        Logger.info("[Twitter] Tweet created successfully: #{post_url}")
+        {:ok, %{post_id: post_id, post_url: post_url}}
+
+      {:ok, %{"errors" => errors}} ->
+        error_message = extract_error_from_errors(errors)
+        {:error, error_message}
+
+      _ ->
+        {:error, :invalid_response}
+    end
+  end
 
   # ============================================================================
   # Analytics Functions (twitterapi.io - preserved from original implementation)
