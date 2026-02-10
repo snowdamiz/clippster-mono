@@ -11,18 +11,18 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 3 of 4 (Tweet Creation & Scheduling)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-02-09 — Phase 2 complete (Chunked Video Upload verified)
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-02-10 — Plan 03-01 complete (Tweet Creation Foundation)
 
-Progress: [█████░░░░░] 50% (Phase 1-2 complete, Phase 3 next)
+Progress: [██████░░░░] 62.5% (Phase 1-2 complete, Phase 3 plan 1 of 2 complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 4
-- Average duration: 2.5 minutes
-- Total execution time: 0.17 hours
+- Total plans completed: 5
+- Average duration: 2.4 minutes
+- Total execution time: 0.20 hours
 
 **By Phase:**
 
@@ -30,9 +30,10 @@ Progress: [█████░░░░░] 50% (Phase 1-2 complete, Phase 3 next
 |-------|-------|-------|----------|
 | 01 | 2 | 5.6m | 2.8m |
 | 02 | 2 | 5.5m | 2.8m |
+| 03 | 1 | 1.9m | 1.9m |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2.5m), 01-02 (3.1m), 02-01 (4.2m), 02-02 (1.3m)
+- Last 5 plans: 01-02 (3.1m), 02-01 (4.2m), 02-02 (1.3m), 03-01 (1.9m)
 - Trend: Improving
 
 *Updated after each plan completion*
@@ -54,8 +55,11 @@ Recent decisions affecting current work:
 - 02-01: Poll STATUS synchronously with check_after_secs respect (not GenServer) for simpler request-scoped workflow
 - 02-01: Skip FFmpeg codec validation for MVP - rely on X API processing validation
 - 02-01: Use v2 endpoint exclusively (api.x.com/2/media/upload), not deprecated v1.1
-- [Phase 02-02]: 6-hour R2 presigned URL expiry for X processing delays
-- [Phase 02-02]: Return media_id only from publish_media (X separates upload from tweet creation)
+- 02-02: 6-hour R2 presigned URL expiry for X processing delays
+- 02-02: Return media_id only from publish_media (X separates upload from tweet creation)
+- 03-01: Use get_user_profile/1 fallback to /i/ URL for post_url construction (more reliable URL generation even if profile API unavailable)
+- 03-01: Enforce 280-char limit at schema level for Twitter (catches validation errors early in UX flow)
+- 03-01: Support optional media_ids in create_tweet/3 (flexible API for text-only and media tweets)
 
 ### Pending Todos
 
@@ -67,6 +71,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-09
-Stopped at: Phase 2 complete, verified, ready for Phase 3 planning
+Last session: 2026-02-10
+Stopped at: Completed 03-01-PLAN.md (Tweet Creation Foundation)
 Resume file: None
