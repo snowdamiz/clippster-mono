@@ -14,7 +14,7 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{PostSubmission, SocialAccount, Platform}
+  alias ClippsterServer.Social.{PostSubmission, SocialAccount, Platform, TwitterDuplicateDetector}
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.ClipperSocialAccount
 
@@ -354,29 +354,44 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   defp do_publish(%PostSubmission{platform: "twitter"} = post, account, access_token) do
     Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to Twitter (two-step flow)")
 
-    publish_opts = %{
-      filename: "video.mp4",
-      ig_user_id: get_platform_user_id(account)
-    }
+    # Check for duplicate content before publishing
+    account_id = get_account_id(post)
+    caption = post.caption || ""
 
-    # Step 1: Upload media
-    Logger.info("[ScheduledPostWorker] Twitter: uploading media for post #{post.id}")
-    case Platform.call("twitter", :publish_media, [access_token, post.media_url, publish_opts]) do
-      {:ok, %{media_id: media_id}} ->
-        # Step 2: Create tweet with media_id
-        Logger.info("[ScheduledPostWorker] Twitter: creating tweet with media_id #{media_id}")
-        case Platform.call("twitter", :create_tweet, [access_token, post.caption || "", [media_ids: [media_id]]]) do
-          {:ok, result} ->
-            handle_publish_success(post, result)
+    case TwitterDuplicateDetector.check_duplicate(account_id, caption, []) do
+      {:ok, _content_hash} ->
+        # No duplicate, proceed with publish
+        publish_opts = %{
+          filename: "video.mp4",
+          ig_user_id: get_platform_user_id(account)
+        }
+
+        # Step 1: Upload media
+        Logger.info("[ScheduledPostWorker] Twitter: uploading media for post #{post.id}")
+        case Platform.call("twitter", :publish_media, [access_token, post.media_url, publish_opts]) do
+          {:ok, %{media_id: media_id}} ->
+            # Step 2: Create tweet with media_id
+            Logger.info("[ScheduledPostWorker] Twitter: creating tweet with media_id #{media_id}")
+            case Platform.call("twitter", :create_tweet, [access_token, caption, [media_ids: [media_id]]]) do
+              {:ok, result} ->
+                # Store content hash with media_id for accurate future duplicate detection
+                final_content_hash = TwitterDuplicateDetector.generate_hash(caption, [media_id])
+                handle_publish_success(post, result, final_content_hash)
+
+              {:error, reason} ->
+                error_type = classify_error(reason)
+                handle_publish_failure(post, inspect(reason), error_type)
+            end
 
           {:error, reason} ->
             error_type = classify_error(reason)
             handle_publish_failure(post, inspect(reason), error_type)
         end
 
-      {:error, reason} ->
-        error_type = classify_error(reason)
-        handle_publish_failure(post, inspect(reason), error_type)
+      {:error, :duplicate_content, existing_post} ->
+        # Duplicate detected, fail permanently
+        error_msg = "Duplicate content detected (matches post #{existing_post.id} from #{existing_post.inserted_at})"
+        handle_publish_failure(post, error_msg, :permanent)
     end
   end
 
@@ -404,7 +419,11 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   defp get_platform_user_id(%ClipperSocialAccount{platform_user_id: id}), do: id
   defp get_platform_user_id(_), do: nil
 
-  defp handle_publish_success(%PostSubmission{} = post, result) do
+  defp get_account_id(%PostSubmission{} = post) do
+    post.organization_social_account_id || post.user_social_account_id
+  end
+
+  defp handle_publish_success(%PostSubmission{} = post, result, content_hash \\ nil) do
     Logger.info("[ScheduledPostWorker] Successfully published post #{post.id}")
 
     pulse_capture(%{
@@ -420,11 +439,15 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
       tags: %{platform: post.platform, action: "scheduled_success"}
     })
 
-    Social.mark_post_published(post, %{
+    attrs = %{
       post_id: result.post_id,
       post_url: result.post_url,
       posted_at: DateTime.utc_now()
-    })
+    }
+
+    attrs = if content_hash, do: Map.put(attrs, :content_hash, content_hash), else: attrs
+
+    Social.mark_post_published(post, attrs)
 
     :ok
   end

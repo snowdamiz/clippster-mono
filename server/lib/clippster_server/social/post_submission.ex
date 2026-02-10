@@ -39,6 +39,7 @@ defmodule ClippsterServer.Social.PostSubmission do
     field :manual_override, :boolean, default: false
     field :status, :string, default: "pending"
     field :error_message, :string
+    field :content_hash, :string
 
     # Scheduling fields
     field :scheduled_at, :utc_datetime
@@ -208,7 +209,7 @@ defmodule ClippsterServer.Social.PostSubmission do
   """
   def publish_changeset(submission, attrs) do
     submission
-    |> cast(attrs, [:post_id, :post_url, :posted_at])
+    |> cast(attrs, [:post_id, :post_url, :posted_at, :content_hash])
     |> validate_required([:post_id])
     |> put_change(:status, "published")
     |> put_posted_at()

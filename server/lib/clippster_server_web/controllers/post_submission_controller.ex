@@ -8,7 +8,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{SocialAccount, Platform}
+  alias ClippsterServer.Social.{SocialAccount, Platform, TwitterDuplicateDetector}
   alias ClippsterServer.Organizations
 
   plug ClippsterServerWeb.AuthPlug
@@ -473,13 +473,19 @@ defmodule ClippsterServerWeb.PostSubmissionController do
     else
       Logger.info("[PostSubmission] Access token available (length: #{String.length(access_token)})")
 
-      publish_opts = %{
-        filename: "video.mp4",
-        ig_user_id: account.platform_user_id
-      }
+      # Check for duplicate content before publishing
+      caption = params["caption"] || ""
 
-      # Step 1: Upload media
-      Logger.info("[PostSubmission] Twitter: uploading media for submission #{submission.id}")
+      case TwitterDuplicateDetector.check_duplicate(account.id, caption, []) do
+        {:ok, _content_hash} ->
+          # No duplicate, proceed with publish
+          publish_opts = %{
+            filename: "video.mp4",
+            ig_user_id: account.platform_user_id
+          }
+
+          # Step 1: Upload media
+          Logger.info("[PostSubmission] Twitter: uploading media for submission #{submission.id}")
       pulse_capture(%{
         type: "post.publish.twitter_upload",
         level: :info,
@@ -524,11 +530,13 @@ defmodule ClippsterServerWeb.PostSubmissionController do
                 },
                 tags: %{platform: account.platform, action: "publish_success"}
               })
-              # Update submission with post details
+              # Update submission with post details and content hash
+              final_content_hash = TwitterDuplicateDetector.generate_hash(caption, [media_id])
               Social.mark_post_published(submission, %{
                 post_id: result.post_id,
                 post_url: result.post_url,
-                posted_at: DateTime.utc_now()
+                posted_at: DateTime.utc_now(),
+                content_hash: final_content_hash
               })
 
             {:error, reason} ->
@@ -569,6 +577,26 @@ defmodule ClippsterServerWeb.PostSubmissionController do
               error_raw: inspect(reason)
             },
             tags: %{platform: account.platform, action: "publish_failed"}
+          })
+          Social.mark_post_failed(submission, error_msg)
+      end
+
+        {:error, :duplicate_content, existing_post} ->
+          # Duplicate detected
+          error_msg = "This content has already been posted to X. Duplicate posts are not allowed within 24 hours. (Matches post #{existing_post.id})"
+          Logger.warning("[PostSubmission] Duplicate content detected for submission #{submission.id}: #{error_msg}")
+          pulse_capture(%{
+            type: "post.publish.duplicate",
+            level: :warning,
+            message: "Duplicate content detected for submission #{submission.id}",
+            metadata: %{
+              submission_id: submission.id,
+              account_id: account.id,
+              platform: account.platform,
+              existing_post_id: existing_post.id,
+              error: error_msg
+            },
+            tags: %{platform: account.platform, action: "duplicate_detected"}
           })
           Social.mark_post_failed(submission, error_msg)
       end
