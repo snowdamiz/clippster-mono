@@ -81,6 +81,8 @@ defmodule ClippsterServer.MixProject do
       {:certifi, "~> 2.12"},
       # PulseKit error tracking and event monitoring
       {:pulsekit, "~> 1.0"},
+      # Retry logic for transient failures
+      {:retry, "~> 0.19"},
       # Code quality analysis
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]
