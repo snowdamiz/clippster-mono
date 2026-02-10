@@ -23,6 +23,8 @@ export class EditorCore {
 	public readonly audio: AudioManager;
 	public readonly selection: SelectionManager;
 
+	private _previewCanvas: HTMLCanvasElement | null = null;
+
 	private constructor() {
 		this.command = new CommandManager();
 		this.playback = new PlaybackManager(this);
@@ -35,6 +37,14 @@ export class EditorCore {
 		this.audio = new AudioManager(this);
 		this.selection = new SelectionManager(this);
 		this.save.start();
+	}
+
+	setPreviewCanvas(canvas: HTMLCanvasElement | null): void {
+		this._previewCanvas = canvas;
+	}
+
+	getPreviewCanvas(): HTMLCanvasElement | null {
+		return this._previewCanvas;
 	}
 
 	static getInstance(): EditorCore {

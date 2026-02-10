@@ -17,3 +17,4 @@ export { UpdateElementKeyframesCommand } from "./update-element-keyframes";
 export { ExtractAudioCommand } from "./extract-audio";
 export { UpdateCaptionElementCommand } from "./update-caption-element";
 export type { CaptionElementUpdatable } from "./update-caption-element";
+export { FreezeFrameCommand } from "./freeze-frame";

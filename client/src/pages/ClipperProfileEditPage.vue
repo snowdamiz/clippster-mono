@@ -527,7 +527,7 @@
     bio: '',
     avatar_url: '',
     slug: '',
-    is_public: false,
+    is_public: true,
     looking_for_work: false,
     experience_level: '',
     specialty_tags: [],

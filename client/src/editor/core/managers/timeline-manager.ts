@@ -32,6 +32,7 @@ import {
 	UpdateElementKeyframesCommand,
 	ExtractAudioCommand,
 	UpdateCaptionElementCommand,
+	FreezeFrameCommand,
 } from "../../lib/commands/timeline";
 import type { UpdatableElementProps } from "../../lib/commands/timeline";
 import type { InsertElementParams } from "../../lib/commands/timeline/element/insert-element";
@@ -183,6 +184,23 @@ export class TimelineManager {
 		const command = new SplitElementsCommand(elements, splitTime, retainSide);
 		this.editor.command.execute({ command });
 		return command.getRightSideElements();
+	}
+
+	freezeFrame({
+		trackId,
+		elementId,
+		splitTime,
+		mediaId,
+		freezeDuration,
+	}: {
+		trackId: string;
+		elementId: string;
+		splitTime: number;
+		mediaId: string;
+		freezeDuration?: number;
+	}): void {
+		const command = new FreezeFrameCommand(trackId, elementId, splitTime, mediaId, freezeDuration);
+		this.editor.command.execute({ command });
 	}
 
 	getTotalDuration(): number {

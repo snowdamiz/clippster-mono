@@ -132,6 +132,11 @@ export const ACTIONS = {
 		description: "Extract audio from video clip",
 		category: "editing",
 	},
+	"freeze-frame": {
+		description: "Freeze frame at playhead",
+		category: "editing",
+		defaultShortcuts: ["shift+f"],
+	},
 	"toggle-bookmark": {
 		description: "Toggle bookmark at playhead",
 		category: "timeline",

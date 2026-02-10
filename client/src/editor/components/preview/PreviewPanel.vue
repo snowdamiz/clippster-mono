@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, shallowRef } from "vue";
+import { ref, computed, watch, shallowRef, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -58,6 +58,14 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 let lastFrame = -1;
 let lastScene: any = null;
 let rendering = false;
+
+// Register canvas on editor core so freeze-frame can capture it
+watch(canvasRef, (canvas) => {
+	editor.setPreviewCanvas(canvas);
+});
+onUnmounted(() => {
+	editor.setPreviewCanvas(null);
+});
 
 const activeProject = computed(() => {
 	void version.value;

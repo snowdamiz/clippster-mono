@@ -17,6 +17,7 @@ import {
 	CopyPlus,
 	MousePointerClick,
 	Gauge,
+	Snowflake,
 } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -346,6 +347,18 @@ function handleSetSpeed(speed: number) {
 							</button>
 						</div>
 					</div>
+				</template>
+
+				<!-- Freeze frame (video/image only) -->
+				<template v-if="isVideoElement || elementType === 'image'">
+					<button
+						class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+						@click="doAction('freeze-frame')"
+					>
+						<Snowflake class="size-3.5" />
+						Freeze frame
+						<span class="ml-auto text-zinc-500">Shift+F</span>
+					</button>
 				</template>
 
 				<!-- Extract audio (video only) -->

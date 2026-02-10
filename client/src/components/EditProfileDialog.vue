@@ -660,7 +660,7 @@
     bio: '',
     avatar_url: '',
     slug: '',
-    is_public: false,
+    is_public: true,
     looking_for_work: false,
     experience_level: '',
     specialty_tags: [],
@@ -675,7 +675,7 @@
 
   // Computed properties for Switch components (better reactivity)
   const isPublicModel = computed({
-    get: () => profile.is_public ?? false,
+    get: () => profile.is_public ?? true,
     set: (val: boolean) => {
       profile.is_public = val;
     },
@@ -702,7 +702,7 @@
       bio: '',
       avatar_url: '',
       slug: '',
-      is_public: false,
+      is_public: true,
       looking_for_work: false,
       experience_level: '',
       specialty_tags: [],
