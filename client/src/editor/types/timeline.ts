@@ -288,7 +288,39 @@ export type CaptionPresetId =
 	| "boxed"
 	| "typewriter"
 	| "minimal"
-	| "gradient-pop";
+	| "gradient-pop"
+	// Single-word styles
+	| "single-bold"
+	| "single-yellow"
+	| "single-red"
+	| "single-green"
+	| "single-cyan"
+	| "single-pink"
+	| "single-orange"
+	| "single-purple"
+	| "single-boxed"
+	| "single-glow"
+	| "single-outline"
+	| "single-gradient"
+	| "single-shadow"
+	// Multi-line / phrase styles
+	| "hormozi"
+	| "ali-abdaal"
+	| "mr-beast"
+	| "comic"
+	| "retro"
+	| "elegant"
+	| "fire"
+	| "ice"
+	| "pastel"
+	| "glitch"
+	| "thick-stroke"
+	| "drop-shadow"
+	| "highlight-box"
+	| "underline-pop"
+	| "gradient-blue"
+	| "gradient-sunset"
+	| "gradient-neon";
 
 export interface CaptionElement extends BaseTimelineElement {
 	type: "caption";

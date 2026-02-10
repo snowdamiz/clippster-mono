@@ -97,6 +97,13 @@ export function useElementSelection() {
 		editor.selection.setSelectedElements({ elements: rangeElements });
 	}
 
+	function selectAllInTrack({ trackId }: { trackId: string }) {
+		const track = editor.timeline.getTrackById({ trackId });
+		if (!track) return;
+		const elements = track.elements.map((e) => ({ trackId, elementId: e.id }));
+		editor.selection.setSelectedElements({ elements });
+	}
+
 	function handleElementClick({
 		trackId,
 		elementId,
@@ -127,5 +134,6 @@ export function useElementSelection() {
 		handleElementClick,
 		rippleSelect,
 		rangeSelect,
+		selectAllInTrack,
 	};
 }

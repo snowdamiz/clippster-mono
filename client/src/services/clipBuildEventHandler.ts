@@ -56,67 +56,121 @@ async function copyTranscriptToClipSegments(clipId: string, projectId: string): 
     
     // Extract only the relevant portion for this clip based on start_time and end_time
     let clipTranscript = transcript.text;
+    let clipRawJson: string | null = null;
     const startTime = clip.start_time || 0;
     const endTime = clip.end_time || clip.duration || 0;
     
-    // Use transcript_segments table to get time-based segments
+    // Extract word-level timing data from raw_json and build clip-specific raw_json
+    // with times offset to 0-based (relative to clip start)
     try {
-      const db = await getDatabase();
-      const segments = await db.select<Array<{ text: string; start_time: number; end_time: number }>>(
-        `SELECT text, start_time, end_time 
-         FROM transcript_segments 
-         WHERE transcript_id = ? 
-         AND start_time < ? 
-         AND end_time > ?
-         ORDER BY segment_index`,
-        [transcript.id, endTime, startTime]
-      );
+      const transcriptData = JSON.parse(transcript.raw_json);
+      console.log(`[GlobalClipBuildHandler] Parsed raw_json, keys: ${Object.keys(transcriptData).join(', ')}`);
       
-      if (segments.length > 0) {
-        clipTranscript = segments.map(s => s.text).join(' ');
-        console.log(`[GlobalClipBuildHandler] Extracted ${segments.length} transcript segments for clip time range ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
-      } else {
-        console.log(`[GlobalClipBuildHandler] No transcript segments in DB, trying to parse raw_json...`);
-        
-        // Try to parse raw_json as fallback
-        try {
-          const transcriptData = JSON.parse(transcript.raw_json);
-          console.log(`[GlobalClipBuildHandler] Parsed raw_json, keys: ${Object.keys(transcriptData).join(', ')}`);
-          
-          // Check for segments array (Whisper format)
-          if (transcriptData.segments && Array.isArray(transcriptData.segments)) {
-            const clipSegments = transcriptData.segments.filter((seg: any) => {
-              const segStart = seg.start || 0;
-              const segEnd = seg.end || 0;
-              return segStart < endTime && segEnd > startTime;
-            });
-            
-            if (clipSegments.length > 0) {
-              clipTranscript = clipSegments.map((s: any) => s.text || '').join(' ');
-              console.log(`[GlobalClipBuildHandler] Extracted ${clipSegments.length} segments from raw_json for time range ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
-            } else {
-              console.log(`[GlobalClipBuildHandler] No segments in time range, checking first/last segment times...`);
-              if (transcriptData.segments.length > 0) {
-                const firstSeg = transcriptData.segments[0];
-                const lastSeg = transcriptData.segments[transcriptData.segments.length - 1];
-                console.log(`[GlobalClipBuildHandler] First segment: ${firstSeg.start}s, Last segment: ${lastSeg.end}s, Clip range: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
-              }
-            }
-          }
-        } catch (parseError) {
-          console.warn(`[GlobalClipBuildHandler] Failed to parse raw_json:`, parseError);
-        }
-        
-        if (clipTranscript === transcript.text) {
-          console.log(`[GlobalClipBuildHandler] Using full transcript as fallback (${clipTranscript.length} chars)`);
+      const clipData: any = {};
+      
+      // Extract words in the clip's time range and offset to 0-based
+      if (transcriptData.words && Array.isArray(transcriptData.words)) {
+        const clipWords = transcriptData.words
+          .filter((w: any) => (w.start ?? 0) >= startTime && (w.start ?? 0) < endTime)
+          .map((w: any) => ({
+            ...w,
+            start: (w.start ?? 0) - startTime,
+            end: (w.end ?? 0) - startTime,
+          }));
+        if (clipWords.length > 0) {
+          clipData.words = clipWords;
+          console.log(`[GlobalClipBuildHandler] Extracted ${clipWords.length} words for clip time range`);
         }
       }
-    } catch (segmentError) {
-      console.warn(`[GlobalClipBuildHandler] Failed to query transcript segments:`, segmentError);
-      // Fall back to full transcript
+      
+      // Extract segments in the clip's time range and offset to 0-based
+      if (transcriptData.segments && Array.isArray(transcriptData.segments)) {
+        const clipSegments = transcriptData.segments
+          .filter((seg: any) => (seg.start ?? 0) < endTime && (seg.end ?? 0) > startTime)
+          .map((seg: any) => {
+            const offsetSeg = {
+              ...seg,
+              start: Math.max(0, (seg.start ?? 0) - startTime),
+              end: (seg.end ?? 0) - startTime,
+            };
+            // Also offset words within segments if present
+            if (seg.words && Array.isArray(seg.words)) {
+              offsetSeg.words = seg.words
+                .filter((w: any) => (w.start ?? 0) >= startTime && (w.start ?? 0) < endTime)
+                .map((w: any) => ({
+                  ...w,
+                  start: (w.start ?? 0) - startTime,
+                  end: (w.end ?? 0) - startTime,
+                }));
+            }
+            return offsetSeg;
+          });
+        
+        if (clipSegments.length > 0) {
+          clipData.segments = clipSegments;
+          clipTranscript = clipSegments.map((s: any) => s.text || '').join(' ');
+          console.log(`[GlobalClipBuildHandler] Extracted ${clipSegments.length} segments from raw_json for time range ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
+        }
+      }
+      
+      // Build the clip-specific raw_json if we extracted any data
+      if (clipData.words || clipData.segments) {
+        clipRawJson = JSON.stringify(clipData);
+        console.log(`[GlobalClipBuildHandler] Built clip raw_json: ${clipRawJson.length} chars`);
+      }
+    } catch (parseError) {
+      console.warn(`[GlobalClipBuildHandler] Failed to parse raw_json:`, parseError);
     }
     
-    console.log(`[GlobalClipBuildHandler] Clip-specific transcript: ${clipTranscript.length} characters`);
+    // Fallback: try transcript_segments table if we didn't get data from raw_json
+    if (clipTranscript === transcript.text || !clipRawJson) {
+      try {
+        const db = await getDatabase();
+        const segments = await db.select<Array<{ text: string; start_time: number; end_time: number }>>(
+          `SELECT text, start_time, end_time 
+           FROM transcript_segments 
+           WHERE transcript_id = ? 
+           AND start_time < ? 
+           AND end_time > ?
+           ORDER BY segment_index`,
+          [transcript.id, endTime, startTime]
+        );
+        
+        if (segments.length > 0) {
+          clipTranscript = segments.map(s => s.text).join(' ');
+          console.log(`[GlobalClipBuildHandler] Extracted ${segments.length} transcript segments for clip time range ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
+
+          // Build clipRawJson from transcript_segments if raw_json didn't cover the range
+          if (!clipRawJson) {
+            const synthSegments = segments.map(s => {
+              const segStart = Math.max(0, s.start_time - startTime);
+              const segEnd = s.end_time - startTime;
+              const words = (s.text || '').trim().split(/\s+/).filter(Boolean);
+              const duration = segEnd - segStart;
+              const wordDur = words.length > 0 ? duration / words.length : 0;
+              return {
+                start: segStart,
+                end: segEnd,
+                text: s.text,
+                words: words.map((w: string, i: number) => ({
+                  word: w,
+                  start: segStart + i * wordDur,
+                  end: segStart + (i + 1) * wordDur,
+                })),
+              };
+            });
+            clipRawJson = JSON.stringify({ segments: synthSegments });
+            console.log(`[GlobalClipBuildHandler] Built clip raw_json from transcript_segments: ${clipRawJson.length} chars`);
+          }
+        } else {
+          console.log(`[GlobalClipBuildHandler] Using full transcript as fallback (${clipTranscript.length} chars)`);
+        }
+      } catch (segmentError) {
+        console.warn(`[GlobalClipBuildHandler] Failed to query transcript segments:`, segmentError);
+      }
+    }
+    
+    console.log(`[GlobalClipBuildHandler] Clip-specific transcript: ${clipTranscript.length} characters, raw_json: ${clipRawJson ? 'yes' : 'no'}`);
     
     // Calculate audio peaks for the clip
     let audioPeaksJson: string | null = null;
@@ -187,16 +241,17 @@ async function copyTranscriptToClipSegments(clipId: string, projectId: string): 
     if (existingSegments.length > 0) {
       console.log(`[GlobalClipBuildHandler] Clip already has ${existingSegments.length} segments, updating instead of creating new`);
       
-      // Update the first segment with new transcript and audio peaks
+      // Update the first segment with new transcript, raw_json, and audio peaks
       await db.execute(
         `UPDATE clip_segments 
-         SET transcript = ?, audio_peaks = ?
+         SET transcript = ?, transcript_raw_json = ?, audio_peaks = ?
          WHERE clip_version_id = ? AND segment_index = 0`,
-        [clipTranscript, audioPeaksJson, actualVersionId]
+        [clipTranscript, clipRawJson, audioPeaksJson, actualVersionId]
       );
       
       const peaksInfo = audioPeaksJson ? ` + ${JSON.parse(audioPeaksJson).length} audio peaks` : '';
-      console.log(`[GlobalClipBuildHandler] ✅ Updated existing clip segment (${clipTranscript.length} chars${peaksInfo})`);
+      const rawJsonInfo = clipRawJson ? ' + word-level timing' : '';
+      console.log(`[GlobalClipBuildHandler] ✅ Updated existing clip segment (${clipTranscript.length} chars${rawJsonInfo}${peaksInfo})`);
       return;
     }
     
@@ -205,13 +260,14 @@ async function copyTranscriptToClipSegments(clipId: string, projectId: string): 
     const segmentDuration = endTime - startTime;
     
     await db.execute(
-      `INSERT INTO clip_segments (id, clip_version_id, segment_index, start_time, end_time, duration, transcript, audio_peaks, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [segmentId, actualVersionId, 0, startTime, endTime, segmentDuration, clipTranscript, audioPeaksJson, now]
+      `INSERT INTO clip_segments (id, clip_version_id, segment_index, start_time, end_time, duration, transcript, transcript_raw_json, audio_peaks, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [segmentId, actualVersionId, 0, startTime, endTime, segmentDuration, clipTranscript, clipRawJson, audioPeaksJson, now]
     );
     
     const peaksInfo = audioPeaksJson ? ` + ${JSON.parse(audioPeaksJson).length} audio peaks` : '';
-    console.log(`[GlobalClipBuildHandler] ✅ Successfully copied transcript to clip segment (${clipTranscript.length} chars${peaksInfo})`);
+    const rawJsonInfo = clipRawJson ? ' + word-level timing' : '';
+    console.log(`[GlobalClipBuildHandler] ✅ Successfully copied transcript to clip segment (${clipTranscript.length} chars${rawJsonInfo}${peaksInfo})`);
   } catch (error) {
     console.error(`[GlobalClipBuildHandler] Error copying transcript:`, error);
     throw error;

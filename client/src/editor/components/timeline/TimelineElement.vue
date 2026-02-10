@@ -63,7 +63,7 @@ const hasAudio = computed(() => mediaSupportsAudio({ media: mediaAsset.value }))
 
 const snappingRef = computed(() => props.snappingEnabled);
 
-const { handleResizeStart, resizing, currentStartTime, currentDuration, rippleShifts: localRippleShifts } =
+const { handleResizeStart, resizing, currentTrimStart, currentStartTime, currentDuration, rippleShifts: localRippleShifts } =
 	useTimelineElementResize({
 		element: toRef(props, "element"),
 		track: toRef(props, "track"),
@@ -79,7 +79,36 @@ watch(localRippleShifts, (shifts) => {
 
 const isResizing = computed(() => resizing.value !== null);
 
+// During resize, the inner content keeps its ORIGINAL width so the filmstrip/waveform
+// stays at the correct scale. The container clips the excess via overflow:hidden.
+// For left-edge resize, the content also shifts left to reveal the new trim point.
+const contentOffsetPx = computed(() => {
+	const rs = resizing.value;
+	if (!rs || rs.side !== 'left') return 0;
+	const trimDelta = currentTrimStart.value - rs.initialTrimStart;
+	return -(trimDelta * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel);
+});
+const contentWidthPx = computed(() => {
+	const rs = resizing.value;
+	if (!rs) return null; // null = use default 100%
+	return rs.initialDuration * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel;
+});
+
 const isBeingDragged = computed(() => props.dragState.elementId === props.element.id);
+
+// Check if this element is a selected sibling during a multi-element drag
+// (not the dragged element itself, but selected on the same track)
+const isSelectedSiblingDrag = computed(() => {
+	if (!props.dragState.isDragging || isBeingDragged.value) return false;
+	if (props.dragState.trackId !== props.track.id) return false;
+	if (!props.isSelected) return false;
+	// Confirm multiple elements on this track are selected
+	const sameTrackCount = selectedElements.value.filter(
+		(sel) => sel.trackId === props.track.id,
+	).length;
+	return sameTrackCount > 1;
+});
+
 const dragOffsetY = computed(() =>
 	isBeingDragged.value && props.dragState.isDragging
 		? props.dragState.currentMouseY - props.dragState.startMouseY
@@ -89,6 +118,11 @@ const dragOffsetY = computed(() =>
 const elementStartTime = computed(() => {
 	if (isBeingDragged.value && props.dragState.isDragging) {
 		return props.dragState.currentTime;
+	}
+	// Multi-element drag: shift selected siblings by the same time delta
+	if (isSelectedSiblingDrag.value) {
+		const timeDelta = props.dragState.currentTime - props.dragState.startElementTime;
+		return Math.max(0, props.element.startTime + timeDelta);
 	}
 	const shifted = props.rippleShifts?.get(props.element.id);
 	if (shifted !== undefined) {
@@ -247,7 +281,13 @@ function onContextAction(action: string) {
 				@mousedown="emit('elementMouseDown', $event, element)"
 				@contextmenu.prevent="emit('elementContextMenu', $event, element)"
 			>
-				<div class="absolute inset-0 flex h-full items-center">
+				<div
+					class="absolute inset-0 flex h-full items-center"
+					:style="{
+						width: contentWidthPx !== null ? `${contentWidthPx}px` : '100%',
+						transform: contentOffsetPx !== 0 ? `translateX(${contentOffsetPx}px)` : undefined,
+					}"
+				>
 					<!-- Text element -->
 					<div v-if="element.type === 'text'" class="size-full" />
 

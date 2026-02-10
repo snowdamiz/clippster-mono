@@ -7,6 +7,7 @@ import type {
 	AudioElement,
 	StickerElement,
 	EffectElement,
+	CaptionElement,
 	Transform,
 	ColorAdjustments,
 	FlipState,
@@ -34,12 +35,17 @@ export type UpdatableEffectProps = Partial<
 	Pick<EffectElement, "enabled" | "intensity" | "params">
 >;
 
+export type UpdatableCaptionProps = Partial<
+	Pick<CaptionElement, "opacity" | "transform" | "hidden">
+>;
+
 export type UpdatableElementProps =
 	| UpdatableVideoProps
 	| UpdatableImageProps
 	| UpdatableAudioProps
 	| UpdatableStickerProps
-	| UpdatableEffectProps;
+	| UpdatableEffectProps
+	| UpdatableCaptionProps;
 
 export class UpdateElementCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;

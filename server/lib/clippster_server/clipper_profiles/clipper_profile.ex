@@ -18,7 +18,7 @@ defmodule ClippsterServer.ClipperProfiles.ClipperProfile do
     field :bio, :string
     field :avatar_url, :string
     field :slug, :string
-    field :is_public, :boolean, default: false
+    field :is_public, :boolean, default: true
     field :looking_for_work, :boolean, default: false
     field :experience_level, :string
     field :specialty_tags, {:array, :string}, default: []

@@ -1,5 +1,6 @@
 import type { TimelineTrack, VideoElement, ImageElement, EffectElement, CaptionElement } from "../types/timeline";
 import type { MediaAsset } from "../types/assets";
+import type { Transition } from "../types/transitions";
 import { RootNode } from "./nodes/root-node";
 import { VideoNode } from "./nodes/video-node";
 import { ImageNode } from "./nodes/image-node";
@@ -9,9 +10,11 @@ import { ColorNode } from "./nodes/color-node";
 import { EffectNode } from "./nodes/effect-node";
 import { CaptionNode } from "./nodes/caption-node";
 import { BlurBackgroundNode } from "./nodes/blur-background-node";
+import { TransitionNode } from "./nodes/transition-node";
 import type { TBackground, TCanvasSize } from "../types/project";
 import { DEFAULT_BLUR_INTENSITY } from "../constants/project-constants";
 import { isMainTrack } from "../lib/timeline";
+import type { BaseNode } from "./nodes/base-node";
 
 export type BuildSceneParams = {
 	canvasSize: TCanvasSize;
@@ -19,10 +22,11 @@ export type BuildSceneParams = {
 	mediaAssets: MediaAsset[];
 	duration: number;
 	background: TBackground;
+	transitions?: Transition[];
 };
 
 export function buildScene(params: BuildSceneParams) {
-	const { tracks, mediaAssets, duration, canvasSize, background } = params;
+	const { tracks, mediaAssets, duration, canvasSize, background, transitions } = params;
 
 	const rootNode = new RootNode({ duration });
 	const mediaMap = new Map(mediaAssets.map((m) => [m.id, m]));
@@ -38,7 +42,15 @@ export function buildScene(params: BuildSceneParams) {
 
 	const orderedTracksBottomToTop = orderedTracksTopToBottom.slice().reverse();
 
-	const contentNodes = [];
+	// Build a lookup of transitions by targetElementId for quick access
+	const transitionByTarget = new Map<string, Transition>();
+	if (transitions) {
+		for (const t of transitions) {
+			transitionByTarget.set(t.targetElementId, t);
+		}
+	}
+
+	const contentNodes: BaseNode[] = [];
 
 	for (const track of orderedTracksBottomToTop) {
 		const elements = track.elements
@@ -49,6 +61,12 @@ export function buildScene(params: BuildSceneParams) {
 				return a.id.localeCompare(b.id);
 			});
 
+		// Build a map of elementId → render node for this track (for transition pairing)
+		const elementNodeMap = new Map<string, BaseNode>();
+		// Track which element IDs are consumed by transitions (skip adding them individually)
+		const consumedByTransition = new Set<string>();
+
+		// First pass: build all nodes for this track
 		for (const element of elements) {
 			if (element.type === "video" || element.type === "image") {
 				const mediaAsset = mediaMap.get(element.mediaId);
@@ -56,62 +74,99 @@ export function buildScene(params: BuildSceneParams) {
 					continue;
 				}
 
+				let node: BaseNode | null = null;
 				if (mediaAsset.type === "video") {
 					const videoEl = element as VideoElement;
-					contentNodes.push(
-						new VideoNode({
-							mediaId: mediaAsset.id,
-							elementId: videoEl.id,
-							url: mediaAsset.url,
-							file: mediaAsset.file,
-							duration: videoEl.duration,
-							timeOffset: videoEl.startTime,
-							trimStart: videoEl.trimStart,
-							trimEnd: videoEl.trimEnd,
-							opacity: videoEl.opacity,
-							transform: videoEl.transform,
-							flip: videoEl.flip,
-							crop: videoEl.crop,
-							colorAdjustments: videoEl.colorAdjustments,
-							speed: videoEl.speed,
-							fadeIn: videoEl.fadeIn,
-							fadeOut: videoEl.fadeOut,
-							keyframes: videoEl.keyframes,
-							effects: videoEl.effects,
-							chromakey: videoEl.chromakey,
-							animationIn: videoEl.animationIn,
-							animationOut: videoEl.animationOut,
-							animationLoop: videoEl.animationLoop,
-						}),
-					);
+					node = new VideoNode({
+						mediaId: mediaAsset.id,
+						elementId: videoEl.id,
+						url: mediaAsset.url,
+						file: mediaAsset.file,
+						duration: videoEl.duration,
+						timeOffset: videoEl.startTime,
+						trimStart: videoEl.trimStart,
+						trimEnd: videoEl.trimEnd,
+						opacity: videoEl.opacity,
+						transform: videoEl.transform,
+						flip: videoEl.flip,
+						crop: videoEl.crop,
+						colorAdjustments: videoEl.colorAdjustments,
+						speed: videoEl.speed,
+						fadeIn: videoEl.fadeIn,
+						fadeOut: videoEl.fadeOut,
+						keyframes: videoEl.keyframes,
+						effects: videoEl.effects,
+						chromakey: videoEl.chromakey,
+						animationIn: videoEl.animationIn,
+						animationOut: videoEl.animationOut,
+						animationLoop: videoEl.animationLoop,
+					});
 				}
 				if (mediaAsset.type === "image") {
 					const imageEl = element as ImageElement;
-					contentNodes.push(
-						new ImageNode({
-							url: mediaAsset.url,
-							duration: imageEl.duration,
-							timeOffset: imageEl.startTime,
-							trimStart: imageEl.trimStart,
-							trimEnd: imageEl.trimEnd,
-							opacity: imageEl.opacity,
-							transform: imageEl.transform,
-							flip: imageEl.flip,
-							crop: imageEl.crop,
-							colorAdjustments: imageEl.colorAdjustments,
-							fadeIn: imageEl.fadeIn,
-							fadeOut: imageEl.fadeOut,
-							keyframes: imageEl.keyframes,
-							effects: imageEl.effects,
-							chromakey: imageEl.chromakey,
-							animationIn: imageEl.animationIn,
-							animationOut: imageEl.animationOut,
-							animationLoop: imageEl.animationLoop,
-						}),
-					);
+					node = new ImageNode({
+						url: mediaAsset.url,
+						duration: imageEl.duration,
+						timeOffset: imageEl.startTime,
+						trimStart: imageEl.trimStart,
+						trimEnd: imageEl.trimEnd,
+						opacity: imageEl.opacity,
+						transform: imageEl.transform,
+						flip: imageEl.flip,
+						crop: imageEl.crop,
+						colorAdjustments: imageEl.colorAdjustments,
+						fadeIn: imageEl.fadeIn,
+						fadeOut: imageEl.fadeOut,
+						keyframes: imageEl.keyframes,
+						effects: imageEl.effects,
+						chromakey: imageEl.chromakey,
+						animationIn: imageEl.animationIn,
+						animationOut: imageEl.animationOut,
+						animationLoop: imageEl.animationLoop,
+					});
+				}
+				if (node) {
+					elementNodeMap.set(element.id, node);
 				}
 			}
+		}
 
+		// Second pass: create TransitionNodes for adjacent pairs, then add remaining nodes
+		for (let i = 0; i < elements.length; i++) {
+			const element = elements[i];
+			const transition = transitionByTarget.get(element.id);
+
+			if (transition && transition.trackId === track.id && i > 0) {
+				// Find the outgoing element (the one before this in the sorted list)
+				const prevElement = elements[i - 1];
+				const outgoingNode = elementNodeMap.get(prevElement.id);
+				const incomingNode = elementNodeMap.get(element.id);
+
+				if (outgoingNode && incomingNode) {
+					const transitionNode = new TransitionNode({
+						type: transition.type,
+						duration: transition.duration,
+						transitionStart: element.startTime,
+					});
+					transitionNode.outgoingNode = outgoingNode;
+					transitionNode.incomingNode = incomingNode;
+					contentNodes.push(transitionNode);
+					consumedByTransition.add(prevElement.id);
+					consumedByTransition.add(element.id);
+				}
+			}
+		}
+
+		// Add non-transition video/image nodes
+		for (const element of elements) {
+			if ((element.type === "video" || element.type === "image") && !consumedByTransition.has(element.id)) {
+				const node = elementNodeMap.get(element.id);
+				if (node) contentNodes.push(node);
+			}
+		}
+
+		// Add non-video/image elements as before
+		for (const element of elements) {
 			if (element.type === "text") {
 				contentNodes.push(
 					new TextNode({

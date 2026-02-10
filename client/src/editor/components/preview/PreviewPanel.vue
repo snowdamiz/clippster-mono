@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, shallowRef } from "vue";
+import { ref, computed, watch, shallowRef, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -59,6 +59,14 @@ let lastFrame = -1;
 let lastScene: any = null;
 let rendering = false;
 
+// Register canvas on editor core so freeze-frame can capture it
+watch(canvasRef, (canvas) => {
+	editor.setPreviewCanvas(canvas);
+});
+onUnmounted(() => {
+	editor.setPreviewCanvas(null);
+});
+
 const activeProject = computed(() => {
 	void version.value;
 	return editor.project.getActive();
@@ -99,6 +107,16 @@ const mediaAssets = computed(() => {
 	return editor.media.getAssets();
 });
 
+const sceneTransitions = computed(() => {
+	void version.value;
+	try {
+		const scene = editor.scenes.getActiveScene();
+		return scene?.transitions ?? [];
+	} catch {
+		return [];
+	}
+});
+
 // When in crop mode, strip crop from the selected element so canvas shows full frame
 const sceneTracks = computed((): TimelineTrack[] => {
 	const raw = tracks.value;
@@ -116,7 +134,7 @@ const sceneTracks = computed((): TimelineTrack[] => {
 });
 
 watch(
-	[sceneTracks, mediaAssets, background, canvasWidth, canvasHeight],
+	[sceneTracks, mediaAssets, background, canvasWidth, canvasHeight, sceneTransitions],
 	() => {
 		if (!activeProject.value) return;
 		const duration = editor.timeline.getTotalDuration();
@@ -126,10 +144,11 @@ watch(
 			duration,
 			canvasSize: { width: canvasWidth.value, height: canvasHeight.value },
 			background: background.value,
+			transitions: sceneTransitions.value,
 		});
 		editor.renderer.setRenderTree({ renderTree });
 	},
-	{ deep: true, immediate: true },
+	{ immediate: true },
 );
 
 // RAF render loop

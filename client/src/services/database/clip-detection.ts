@@ -627,8 +627,8 @@ export async function persistClipDetectionResults(
             const segment = detectionResults.transcript.segments[i];
             await createTranscriptSegment(
               transcriptId,
-              segment.start_time || 0,
-              segment.end_time || 0,
+              segment.start_time || segment.start || 0,
+              segment.end_time || segment.end || 0,
               segment.text || '',
               i
             );

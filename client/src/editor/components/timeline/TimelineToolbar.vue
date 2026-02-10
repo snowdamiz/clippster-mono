@@ -244,6 +244,16 @@ function handleAction(action: string, event?: MouseEvent) {
 					<TooltipContent>Crop video/image (C)</TooltipContent>
 				</Tooltip>
 
+				<!-- Freeze Frame -->
+				<Tooltip>
+					<TooltipTrigger as-child>
+						<Button variant="ghost" size="icon" @click="handleAction('freeze-frame', $event)">
+							<Snowflake class="size-4" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Freeze frame (Shift+F)</TooltipContent>
+				</Tooltip>
+
 				<div class="mx-1 h-6 w-px bg-white/10" />
 
 				<!-- Bookmark -->

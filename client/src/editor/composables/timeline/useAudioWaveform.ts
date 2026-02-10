@@ -138,16 +138,21 @@ export function useAudioWaveform({
 			// Source duration = timeline duration * speed
 			const sourceDuration = duration * speed;
 
+			// Use element volume as gain multiplier so waveform visually reflects volume
+			const volume = el.type === "audio" ? ((el as AudioElement).volume ?? 1) : ((el as VideoElement).volume ?? 1);
+
 			const peaks = await waveformService.getPeaksForRange(audioUrl, {
 				startTime: trimStart,
 				endTime: trimStart + sourceDuration,
 				pixelWidth: requestedPeaks,
-				gainMultiplier: 1.0,
+				gainMultiplier: volume,
 			});
 
 			if (!peaks || peaks.length === 0) return;
 
-			const normalizedPeaks = normalizePeaks(peaks);
+			// Only normalize when at full volume — at reduced volume the waveform
+			// should look quieter to give visual feedback
+			const normalizedPeaks = volume >= 1 ? normalizePeaks(peaks) : peaks;
 
 			// Calculate playhead ratio relative to this element
 			// currentTime is global timeline time; element occupies [startTime, startTime + duration]
@@ -235,9 +240,14 @@ export function useAudioWaveform({
 		{ immediate: true },
 	);
 
-	// Re-render when waveform data loads, zoom changes, playhead moves, or element width changes
+	// Re-render when waveform data loads, zoom changes, playhead moves, element width changes, or volume changes
 	watch(
-		[isLoaded, zoomLevel, currentTime, elementWidth],
+		[isLoaded, zoomLevel, currentTime, elementWidth, () => {
+			const el = element.value;
+			if (el.type === "audio") return (el as AudioElement).volume;
+			if (el.type === "video") return (el as VideoElement).volume;
+			return 1;
+		}],
 		([loaded]) => {
 			if (loaded) {
 				nextTick(() => {

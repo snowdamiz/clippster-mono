@@ -13,6 +13,20 @@ interface FilmstripFrame {
 	objectUrl: string;
 }
 
+// Shared reusable canvas for bitmap→blob conversion.
+// Avoids creating a new GPU-backed canvas per frame, which crashes WKWebView on macOS.
+let sharedConversionCanvas: HTMLCanvasElement | null = null;
+function getConversionCanvas(width: number, height: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null {
+	if (!sharedConversionCanvas) {
+		sharedConversionCanvas = document.createElement("canvas");
+	}
+	sharedConversionCanvas.width = width;
+	sharedConversionCanvas.height = height;
+	const ctx = sharedConversionCanvas.getContext("2d");
+	if (!ctx) return null;
+	return { canvas: sharedConversionCanvas, ctx };
+}
+
 export function useFilmstrip({
 	element,
 	mediaAsset,
@@ -105,6 +119,9 @@ export function useFilmstrip({
 			currentController.abort();
 		}
 
+		// Revoke old object URLs to free memory before starting new extraction
+		revokeAllUrls();
+
 		isLoading.value = true;
 
 		// Collect new frames progressively
@@ -116,16 +133,16 @@ export function useFilmstrip({
 			file: asset.file,
 			timestamps,
 			onFrame: (timestamp: number, bitmap: ImageBitmap) => {
-				// Create a canvas to convert bitmap to an object URL for CSS background-image
-				const canvas = document.createElement("canvas");
-				canvas.width = bitmap.width;
-				canvas.height = bitmap.height;
-				const ctx = canvas.getContext("2d");
-				if (ctx) {
-					ctx.drawImage(bitmap, 0, 0);
-				}
-				canvas.toBlob((blob) => {
-					if (!blob) return;
+				// Skip if this extraction was already cancelled
+				if (currentController?.signal.aborted) return;
+
+				// Reuse a single shared canvas to avoid creating GPU-backed canvases per frame
+				// (WKWebView on macOS has a hard limit on canvas contexts and will crash)
+				const conversion = getConversionCanvas(bitmap.width, bitmap.height);
+				if (!conversion) return;
+				conversion.ctx.drawImage(bitmap, 0, 0);
+				conversion.canvas.toBlob((blob) => {
+					if (!blob || currentController?.signal.aborted) return;
 					const objectUrl = URL.createObjectURL(blob);
 					objectUrls.add(objectUrl);
 					newFrames.push({ timestamp, bitmap, objectUrl });

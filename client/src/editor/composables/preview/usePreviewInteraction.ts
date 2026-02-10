@@ -14,6 +14,7 @@ import type {
 	TimelineTrack,
 	TimelineElement,
 	TextElement,
+	CaptionElement,
 	Transform,
 } from "../../types/timeline";
 import { isMainTrack } from "../../lib/timeline";
@@ -86,6 +87,11 @@ export function usePreviewInteraction({
 
 	const dragState = ref<DragState | null>(null);
 	const hoveredElementId = ref<string | null>(null);
+
+	// Center alignment guides — visible when element position snaps to center
+	const showCenterGuideX = ref(false); // vertical line (element centered horizontally)
+	const showCenterGuideY = ref(false); // horizontal line (element centered vertically)
+	const CENTER_SNAP_THRESHOLD = 6; // pixels in canvas coords
 
 	const tracks = computed(() => {
 		void version.value;
@@ -226,6 +232,52 @@ export function usePreviewInteraction({
 
 			width = Math.max(textW + padX * 2, 40) * transform.scale;
 			height = Math.max(textH + padY * 2, 20) * transform.scale;
+		} else if (element.type === "caption") {
+			const captionEl = element as CaptionElement;
+			const fontSize = captionEl.fontSize ?? 48;
+			const maxPerLine = captionEl.maxWordsPerLine ?? 4;
+			const lineHeight = captionEl.lineHeight ?? 1.3;
+			const letterSpacing = captionEl.letterSpacing ?? 0;
+			const fontWeight = captionEl.fontWeight === "bold" || Number(captionEl.fontWeight) >= 700 ? "bold" : captionEl.fontWeight || "normal";
+			const fontStyle = captionEl.fontStyle === "italic" ? "italic" : "normal";
+			const fontFamily = captionEl.fontFamily ?? "Montserrat";
+
+			const ctx = getMeasureCtx();
+			ctx.font = `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}", sans-serif`;
+
+			// Estimate bounding box from the longest line of words
+			// Caption lines contain words; we measure the widest visual line
+			let maxLineW = 0;
+			let totalVisualLines = 0;
+			for (const line of captionEl.lines) {
+				const words = line.words ?? [];
+				// Words are split into visual lines of maxPerLine each
+				for (let i = 0; i < words.length; i += maxPerLine) {
+					const chunk = words.slice(i, i + maxPerLine);
+					let lineW = 0;
+					for (let j = 0; j < chunk.length; j++) {
+						const text = chunk[j].word;
+						lineW += ctx.measureText(text).width + letterSpacing * text.length;
+						if (j < chunk.length - 1) lineW += ctx.measureText(" ").width + letterSpacing;
+					}
+					if (lineW > maxLineW) maxLineW = lineW;
+					totalVisualLines++;
+				}
+			}
+
+			// Fallback: if no lines/words, use a reasonable default
+			if (totalVisualLines === 0) {
+				totalVisualLines = 1;
+				maxLineW = fontSize * 4;
+			}
+
+			const textW = maxLineW;
+			const textH = fontSize * lineHeight * totalVisualLines;
+			const padX = 16;
+			const padY = 12;
+
+			width = Math.max(textW + padX * 2, 60) * transform.scale;
+			height = Math.max(textH + padY * 2, 30) * transform.scale;
 		} else if (element.type === "sticker") {
 			const baseSize = 200;
 			width = baseSize * transform.scale;
@@ -363,12 +415,20 @@ export function usePreviewInteraction({
 		const deltaY = pos.y - ds.startCanvasY;
 
 		if (ds.type === "move") {
+			let newX = ds.originalTransform.position.x + deltaX;
+			let newY = ds.originalTransform.position.y + deltaY;
+
+			// Snap to center when close
+			const snappedX = Math.abs(newX) < CENTER_SNAP_THRESHOLD;
+			const snappedY = Math.abs(newY) < CENTER_SNAP_THRESHOLD;
+			if (snappedX) newX = 0;
+			if (snappedY) newY = 0;
+			showCenterGuideX.value = snappedX;
+			showCenterGuideY.value = snappedY;
+
 			const newTransform: Transform = {
 				...ds.originalTransform,
-				position: {
-					x: ds.originalTransform.position.x + deltaX,
-					y: ds.originalTransform.position.y + deltaY,
-				},
+				position: { x: newX, y: newY },
 			};
 			applyTransform(ds.trackId, ds.elementId, newTransform);
 		} else if (ds.type === "resize") {
@@ -470,6 +530,8 @@ export function usePreviewInteraction({
 			}
 		}
 		dragState.value = null;
+		showCenterGuideX.value = false;
+		showCenterGuideY.value = false;
 		document.removeEventListener("mousemove", handleMouseMove);
 		document.removeEventListener("mouseup", handleMouseUp);
 	}
@@ -511,6 +573,8 @@ export function usePreviewInteraction({
 		selectedBounds,
 		dragState,
 		hoveredElementId,
+		showCenterGuideX,
+		showCenterGuideY,
 		screenToCanvas,
 		canvasToScreen,
 		handleCanvasMouseDown,

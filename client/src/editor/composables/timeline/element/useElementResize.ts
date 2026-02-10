@@ -4,7 +4,7 @@
  */
 import { ref, watch, onUnmounted, type Ref } from "vue";
 import type { TimelineElement, TimelineTrack } from "../../../types/timeline";
-import { snapTimeToFrame } from "../../../lib/time";
+import { snapTimeToFrame } from "../../../lib/time";  // used in handleResizeEnd for final commit
 import { EditorCore } from "../../../core";
 import { useTimelineSnapping, type SnapPoint } from "../useTimelineSnapping";
 
@@ -107,9 +107,9 @@ export function useTimelineElementResize({
 		const rs = resizing.value;
 		if (!rs) return;
 
-		const activeProject = editor.project.getActive();
-		const projectFps = activeProject?.settings?.fps ?? 30;
-		const minDurationSeconds = 1 / projectFps;
+		// Use a very small minimum so the user can trim as finely as they want.
+		// Frame-snapping only happens on commit (handleResizeEnd), not during drag.
+		const minDurationSeconds = 0.01;
 
 		const deltaX = clientX - rs.startX;
 		let deltaTime = deltaX / (50 * zoomLevel.value);
@@ -146,17 +146,17 @@ export function useTimelineElementResize({
 			const prevEnd = getPreviousElementEnd();
 
 			if (calculated >= 0 && calculated <= maxAllowed) {
-				const newTrimStart = snapTimeToFrame({ time: Math.min(maxAllowed, calculated), fps: projectFps });
+				const newTrimStart = Math.min(maxAllowed, calculated);
 				const trimDelta = newTrimStart - rs.initialTrimStart;
-				let newStartTime = snapTimeToFrame({ time: rs.initialStartTime + trimDelta, fps: projectFps });
-				let newDuration = snapTimeToFrame({ time: rs.initialDuration - trimDelta, fps: projectFps });
+				let newStartTime = rs.initialStartTime + trimDelta;
+				let newDuration = rs.initialDuration - trimDelta;
 
 				// Clamp: don't extend past previous element
 				if (newStartTime < prevEnd) {
 					const clampedDelta = rs.initialStartTime - prevEnd;
 					newStartTime = prevEnd;
-					newDuration = snapTimeToFrame({ time: rs.initialDuration + clampedDelta, fps: projectFps });
-					currentTrimStart.value = trimStartVal = snapTimeToFrame({ time: rs.initialTrimStart - clampedDelta, fps: projectFps });
+					newDuration = rs.initialDuration + clampedDelta;
+					currentTrimStart.value = trimStartVal = rs.initialTrimStart - clampedDelta;
 				} else {
 					currentTrimStart.value = trimStartVal = newTrimStart;
 				}
@@ -167,21 +167,19 @@ export function useTimelineElementResize({
 					const extensionAmount = Math.abs(calculated);
 					const maxExtension = Math.min(rs.initialStartTime, rs.initialStartTime - prevEnd);
 					const actualExtension = Math.min(extensionAmount, maxExtension);
-					const newStartTime = snapTimeToFrame({ time: rs.initialStartTime - actualExtension, fps: projectFps });
-					const newDuration = snapTimeToFrame({ time: rs.initialDuration + actualExtension, fps: projectFps });
 
 					currentTrimStart.value = trimStartVal = 0;
-					currentStartTime.value = startTimeVal = newStartTime;
-					currentDuration.value = durationVal = newDuration;
+					currentStartTime.value = startTimeVal = rs.initialStartTime - actualExtension;
+					currentDuration.value = durationVal = rs.initialDuration + actualExtension;
 				} else {
 					const trimDelta = 0 - rs.initialTrimStart;
-					let newStartTime = snapTimeToFrame({ time: rs.initialStartTime + trimDelta, fps: projectFps });
-					let newDuration = snapTimeToFrame({ time: rs.initialDuration - trimDelta, fps: projectFps });
+					let newStartTime = rs.initialStartTime + trimDelta;
+					let newDuration = rs.initialDuration - trimDelta;
 
 					// Clamp: don't extend past previous element
 					if (newStartTime < prevEnd) {
 						newStartTime = prevEnd;
-						newDuration = snapTimeToFrame({ time: rs.initialStartTime + rs.initialDuration - prevEnd, fps: projectFps });
+						newDuration = rs.initialStartTime + rs.initialDuration - prevEnd;
 					}
 
 					currentTrimStart.value = trimStartVal = 0;
@@ -197,25 +195,22 @@ export function useTimelineElementResize({
 				if (canExtendElementDuration()) {
 					const extensionNeeded = Math.abs(newTrimEnd);
 					const baseDuration = rs.initialDuration + rs.initialTrimEnd;
-					const newDuration = snapTimeToFrame({ time: baseDuration + extensionNeeded, fps: projectFps });
 
-					currentDuration.value = durationVal = newDuration;
+					currentDuration.value = durationVal = baseDuration + extensionNeeded;
 					currentTrimEnd.value = trimEndVal = 0;
 				} else {
 					const extensionToLimit = rs.initialTrimEnd;
-					const newDuration = snapTimeToFrame({ time: rs.initialDuration + extensionToLimit, fps: projectFps });
 
-					currentDuration.value = durationVal = newDuration;
+					currentDuration.value = durationVal = rs.initialDuration + extensionToLimit;
 					currentTrimEnd.value = trimEndVal = 0;
 				}
 			} else {
 				const maxTrimEnd = sourceDuration - rs.initialTrimStart - minDurationSeconds;
 				const clampedTrimEnd = Math.min(maxTrimEnd, Math.max(0, newTrimEnd));
-				const finalTrimEnd = snapTimeToFrame({ time: clampedTrimEnd, fps: projectFps });
-				const trimDelta = finalTrimEnd - rs.initialTrimEnd;
-				const newDuration = snapTimeToFrame({ time: rs.initialDuration - trimDelta, fps: projectFps });
+				const trimDelta = clampedTrimEnd - rs.initialTrimEnd;
+				const newDuration = rs.initialDuration - trimDelta;
 
-				currentTrimEnd.value = trimEndVal = finalTrimEnd;
+				currentTrimEnd.value = trimEndVal = clampedTrimEnd;
 				currentDuration.value = durationVal = newDuration;
 			}
 		}
@@ -250,31 +245,30 @@ export function useTimelineElementResize({
 		const rs = resizing.value;
 		if (!rs) return;
 
-		const trimStartChanged = trimStartVal !== rs.initialTrimStart;
-		const trimEndChanged = trimEndVal !== rs.initialTrimEnd;
-		const startTimeChanged = startTimeVal !== rs.initialStartTime;
-		const durationChanged = durationVal !== rs.initialDuration;
+		// Snap final values to frame boundaries on commit for clean frame-aligned edits
+		const activeProject = editor.project.getActive();
+		const projectFps = activeProject?.settings?.fps ?? 30;
+		const finalTrimStart = snapTimeToFrame({ time: trimStartVal, fps: projectFps });
+		const finalTrimEnd = snapTimeToFrame({ time: trimEndVal, fps: projectFps });
+		const finalStartTime = snapTimeToFrame({ time: startTimeVal, fps: projectFps });
+		const finalDuration = snapTimeToFrame({ time: durationVal, fps: projectFps });
 
-		if (trimStartChanged || trimEndChanged) {
+		const trimStartChanged = finalTrimStart !== rs.initialTrimStart;
+		const trimEndChanged = finalTrimEnd !== rs.initialTrimEnd;
+		const startTimeChanged = finalStartTime !== rs.initialStartTime;
+		const durationChanged = finalDuration !== rs.initialDuration;
+
+		const anyChanged = trimStartChanged || trimEndChanged || startTimeChanged || durationChanged;
+
+		if (anyChanged) {
+			// Commit all resize changes atomically via a single command
+			// to avoid intermediate states (e.g. trimStart changed but duration not yet)
 			editor.timeline.updateElementTrim({
 				elementId: element.value.id,
-				trimStart: trimStartVal,
-				trimEnd: trimEndVal,
-			});
-		}
-
-		if (startTimeChanged) {
-			editor.timeline.updateElementStartTime({
-				elements: [{ trackId: track.value.id, elementId: element.value.id }],
-				startTime: startTimeVal,
-			});
-		}
-
-		if (durationChanged) {
-			editor.timeline.updateElementDuration({
-				trackId: track.value.id,
-				elementId: element.value.id,
-				duration: durationVal,
+				trimStart: finalTrimStart,
+				trimEnd: finalTrimEnd,
+				startTime: startTimeChanged ? finalStartTime : undefined,
+				duration: durationChanged ? finalDuration : undefined,
 			});
 		}
 
