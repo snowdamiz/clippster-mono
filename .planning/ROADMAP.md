@@ -13,7 +13,7 @@ Add direct posting to X (Twitter) via official X API v2 with OAuth 2.0 PKCE auth
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: OAuth 2.0 PKCE Authentication** - Connect X accounts and manage tokens ✓
-- [ ] **Phase 2: Chunked Video Upload** - Upload and process video media for X
+- [x] **Phase 2: Chunked Video Upload** - Upload and process video media for X ✓
 - [ ] **Phase 3: Tweet Creation & Scheduling** - Post clips to X immediately or scheduled
 - [ ] **Phase 4: Rate Limiting & Reliability** - Production-grade error handling and quota management
 
@@ -56,8 +56,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — VideoValidator and TwitterChunkedUpload modules (INIT/APPEND/FINALIZE/STATUS)
-- [ ] 02-02-PLAN.md — Wire publish_media/3, add media.write scope, R2 presigned URL integration
+- [x] 02-01-PLAN.md — VideoValidator and TwitterChunkedUpload modules (INIT/APPEND/FINALIZE/STATUS)
+- [x] 02-02-PLAN.md — Wire publish_media/3, add media.write scope, R2 presigned URL integration
 
 ### Phase 3: Tweet Creation & Scheduling
 **Goal**: Users can post clips to X immediately or schedule for future times with full post tracking
@@ -106,6 +106,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. OAuth 2.0 PKCE Authentication | 2/2 | ✓ Complete | 2026-02-09 |
-| 2. Chunked Video Upload | 0/2 | Planning complete | - |
+| 2. Chunked Video Upload | 2/2 | ✓ Complete | 2026-02-09 |
 | 3. Tweet Creation & Scheduling | 0/TBD | Not started | - |
 | 4. Rate Limiting & Reliability | 0/TBD | Not started | - |
