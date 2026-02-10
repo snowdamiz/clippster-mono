@@ -51,7 +51,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 const tracksContainerHeight = { min: 0, max: 800 };
 
 const { editor, version } = useEditor();
-const { clearElementSelection, setElementSelection, selectedElements } = useElementSelection();
+const { clearElementSelection, setElementSelection, selectedElements, selectAllInTrack } = useElementSelection();
 
 // Context menu state
 const contextMenuPos = ref<{ x: number; y: number } | null>(null);
@@ -59,6 +59,7 @@ const contextMenuElement = ref<{ trackId: string; elementId: string } | null>(nu
 
 function handleContextMenu(params: { event: MouseEvent; element: { id: string }; track: { id: string } }) {
 	params.event.preventDefault();
+	params.event.stopPropagation();
 	contextMenuPos.value = { x: params.event.clientX, y: params.event.clientY };
 	contextMenuElement.value = { trackId: params.track.id, elementId: params.element.id };
 }
@@ -478,7 +479,11 @@ function closeKeyframePopup() {
 								>
 									<div class="flex min-w-0 flex-1 items-center justify-between gap-0.5">
 										<div class="flex flex-col min-w-0">
-											<span class="text-zinc-500 text-[10px] capitalize truncate">{{ track.name }}</span>
+											<span
+												class="text-zinc-500 text-[10px] capitalize truncate cursor-pointer hover:text-zinc-300 transition-colors"
+												title="Select all elements in track"
+												@click="selectAllInTrack({ trackId: track.id })"
+											>{{ track.name }}</span>
 											<button
 												v-if="'isMain' in track && track.isMain"
 												class="flex items-center gap-0.5 rounded px-0.5 py-0 text-[8px] text-primary/80 hover:text-primary hover:bg-white/5 w-fit"

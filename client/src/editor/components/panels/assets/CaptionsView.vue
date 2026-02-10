@@ -2,7 +2,7 @@
 import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { CAPTION_PRESETS, getPresetById } from "../../../constants/caption-constants";
-import type { CaptionPreset } from "../../../constants/caption-constants";
+import type { CaptionPreset, CaptionPresetCategory } from "../../../constants/caption-constants";
 import { buildCaptionElement } from "../../../lib/timeline/element-utils";
 import type { CaptionLine, CaptionWord, CaptionPresetId, VideoElement, UploadAudioElement } from "../../../types/timeline";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,29 @@ const error = ref<string | null>(null);
 
 const selectedPreset = computed(() => getPresetById(selectedPresetId.value));
 
+// ── Category filter for preset grid ──
+const CATEGORY_LABELS: Record<CaptionPresetCategory, string> = {
+	"single-word": "Single Word",
+	classic: "Classic",
+	creator: "Creator",
+	colorful: "Colorful",
+	effects: "Effects",
+};
+const CATEGORY_ORDER: CaptionPresetCategory[] = ["single-word", "classic", "creator", "colorful", "effects"];
+const activeCategory = ref<CaptionPresetCategory | "all">("all");
+
+const groupedPresets = computed(() => {
+	if (activeCategory.value !== "all") {
+		const cat = activeCategory.value as CaptionPresetCategory;
+		return [{ category: cat, label: CATEGORY_LABELS[cat], presets: CAPTION_PRESETS.filter(p => p.category === cat) }];
+	}
+	return CATEGORY_ORDER.map(cat => ({
+		category: cat,
+		label: CATEGORY_LABELS[cat],
+		presets: CAPTION_PRESETS.filter(p => p.category === cat),
+	})).filter(g => g.presets.length > 0);
+});
+
 const hasCaptionTrack = computed(() => {
 	return editor.timeline.getTracks().some((t) => t.type === "caption");
 });
@@ -24,37 +47,67 @@ const hasCaptionTrack = computed(() => {
 function applyPreset(preset: CaptionPreset) {
 	selectedPresetId.value = preset.id;
 
-	// If captions already exist, update their style
+	const styleUpdates = {
+		presetId: preset.id,
+		highlightStyle: preset.highlightStyle,
+		highlightColor: preset.highlightColor,
+		color: preset.color,
+		backgroundColor: preset.backgroundColor,
+		fontSize: preset.fontSize,
+		fontFamily: preset.fontFamily,
+		fontWeight: preset.fontWeight,
+		fontStyle: preset.fontStyle,
+		letterSpacing: preset.letterSpacing,
+		lineHeight: preset.lineHeight,
+		stroke: preset.stroke,
+		shadow: preset.shadow,
+		glow: preset.glow,
+		gradient: preset.gradient,
+		maxWordsPerLine: preset.maxWordsPerLine,
+	};
+
+	// If captions already exist, update their style (and re-group lines if maxWordsPerLine changed)
 	const tracks = editor.timeline.getTracks();
 	for (const track of tracks) {
 		if (track.type !== "caption") continue;
 		for (const el of track.elements) {
 			if (el.type !== "caption") continue;
-			editor.timeline.updateCaptionElement({
-				trackId: track.id,
-				elementId: el.id,
-				updates: {
-					presetId: preset.id,
-					highlightStyle: preset.highlightStyle,
-					highlightColor: preset.highlightColor,
-					color: preset.color,
-					backgroundColor: preset.backgroundColor,
-					fontSize: preset.fontSize,
-					fontFamily: preset.fontFamily,
-					fontWeight: preset.fontWeight,
-					fontStyle: preset.fontStyle,
-					letterSpacing: preset.letterSpacing,
-					lineHeight: preset.lineHeight,
-					stroke: preset.stroke,
-					shadow: preset.shadow,
-					glow: preset.glow,
-					gradient: preset.gradient,
-					maxWordsPerLine: preset.maxWordsPerLine,
-				},
-			});
+			const captionEl = el as import("../../../types/timeline").CaptionElement;
+
+			if (captionEl.maxWordsPerLine !== preset.maxWordsPerLine) {
+				// Re-group words into new lines with the new maxWordsPerLine
+				const allWords = captionEl.lines.flatMap(l => l.words);
+				if (allWords.length === 0) {
+					editor.timeline.updateCaptionElement({ trackId: track.id, elementId: el.id, updates: styleUpdates });
+					continue;
+				}
+				const newMaxPerLine = preset.maxWordsPerLine;
+				const newLines: CaptionLine[] = [];
+				for (let i = 0; i < allWords.length; i += newMaxPerLine) {
+					const chunk = allWords.slice(i, i + newMaxPerLine);
+					newLines.push({
+						text: chunk.map(w => w.word).join(" "),
+						words: chunk,
+						startTime: chunk[0].start,
+						endTime: chunk[chunk.length - 1].end,
+					});
+				}
+				editor.timeline.updateCaptionElement({
+					trackId: track.id,
+					elementId: el.id,
+					updates: { ...styleUpdates, lines: newLines } as any,
+				});
+			} else {
+				editor.timeline.updateCaptionElement({ trackId: track.id, elementId: el.id, updates: styleUpdates });
+			}
 		}
 	}
 }
+
+// Silence gap threshold in seconds — if the gap between two consecutive words
+// exceeds this, we split into separate caption elements so the timeline shows
+// a visible gap and no captions appear on screen during silence.
+const SILENCE_GAP_THRESHOLD = 0.6;
 
 function groupWordsIntoLines(
 	words: CaptionWord[],
@@ -74,6 +127,26 @@ function groupWordsIntoLines(
 	return lines;
 }
 
+// Split a flat word array into "speech segments" separated by silence gaps.
+// Each segment is a contiguous run of words with no inter-word gap exceeding
+// the threshold. This ensures the timeline has gaps where nobody is talking.
+function splitWordsBySilence(words: CaptionWord[]): CaptionWord[][] {
+	if (words.length === 0) return [];
+	const segments: CaptionWord[][] = [];
+	let current: CaptionWord[] = [words[0]];
+
+	for (let i = 1; i < words.length; i++) {
+		const gap = words[i].start - words[i - 1].end;
+		if (gap > SILENCE_GAP_THRESHOLD) {
+			segments.push(current);
+			current = [];
+		}
+		current.push(words[i]);
+	}
+	if (current.length > 0) segments.push(current);
+	return segments;
+}
+
 function generateCaptionElements(words: CaptionWord[]) {
 	if (words.length === 0) {
 		error.value = "No words found in transcript data.";
@@ -82,26 +155,29 @@ function generateCaptionElements(words: CaptionWord[]) {
 
 	const preset = selectedPreset.value;
 	const maxPerLine = preset.maxWordsPerLine;
-
-	// Group words into caption lines
-	const lines = groupWordsIntoLines(words, maxPerLine);
-	if (lines.length === 0) return;
-
-	// Group lines into caption elements (each element = one screen of text)
-	// Each element shows one or two lines at a time
 	const linesPerElement = 2;
-	const elements: { lines: CaptionLine[]; start: number; end: number }[] = [];
 
-	for (let i = 0; i < lines.length; i += linesPerElement) {
-		const group = lines.slice(i, i + linesPerElement);
-		elements.push({
-			lines: group,
-			start: group[0].startTime,
-			end: group[group.length - 1].endTime,
-		});
+	// 1. Split words into speech segments separated by silence gaps
+	const speechSegments = splitWordsBySilence(words);
+
+	// 2. For each speech segment, group words → lines → elements
+	const allElements: { lines: CaptionLine[]; start: number; end: number }[] = [];
+
+	for (const segWords of speechSegments) {
+		const lines = groupWordsIntoLines(segWords, maxPerLine);
+		if (lines.length === 0) continue;
+
+		for (let i = 0; i < lines.length; i += linesPerElement) {
+			const group = lines.slice(i, i + linesPerElement);
+			allElements.push({
+				lines: group,
+				start: group[0].startTime,
+				end: group[group.length - 1].endTime,
+			});
+		}
 	}
 
-	// Remove existing caption tracks first
+	// 3. Remove existing caption tracks first
 	const existingTracks = editor.timeline.getTracks();
 	for (const track of existingTracks) {
 		if (track.type === "caption") {
@@ -109,8 +185,9 @@ function generateCaptionElements(words: CaptionWord[]) {
 		}
 	}
 
-	// Insert each caption element
-	for (const elem of elements) {
+	// 4. Insert each caption element — gaps between elements will be visible
+	//    on the timeline and no captions will render during those gaps.
+	for (const elem of allElements) {
 		const captionEl = buildCaptionElement({
 			lines: elem.lines,
 			startTime: elem.start,
@@ -327,43 +404,59 @@ function handleRemoveCaptions() {
 		<!-- Preset Grid -->
 		<div class="space-y-2">
 			<h3 class="text-xs font-medium text-zinc-400 uppercase tracking-wider">Style Presets</h3>
-			<div class="grid grid-cols-2 gap-2">
+
+			<!-- Category filter pills -->
+			<div class="flex flex-wrap gap-1">
 				<button
-					v-for="preset in CAPTION_PRESETS"
-					:key="preset.id"
-					class="group relative flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-all hover:border-white/20 hover:bg-white/5"
-					:class="
-						selectedPresetId === preset.id
-							? 'border-sky-500/50 bg-sky-500/10'
-							: 'border-white/10 bg-white/[0.02]'
-					"
-					@click="applyPreset(preset)"
-				>
-					<!-- Preview text -->
-					<div
-						class="flex h-10 w-full items-center justify-center rounded-md text-sm font-bold"
-						:style="{
-							color: preset.color,
-							fontFamily: preset.fontFamily,
-							fontWeight: preset.fontWeight,
-							textShadow:
-								preset.stroke
+					class="rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors"
+					:class="activeCategory === 'all' ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
+					@click="activeCategory = 'all'"
+				>All</button>
+				<button
+					v-for="cat in CATEGORY_ORDER"
+					:key="cat"
+					class="rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors"
+					:class="activeCategory === cat ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
+					@click="activeCategory = cat"
+				>{{ CATEGORY_LABELS[cat] }}</button>
+			</div>
+
+			<!-- Grouped preset sections -->
+			<div v-for="group in groupedPresets" :key="group.category" class="space-y-1.5">
+				<span class="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">{{ group.label }}</span>
+				<div class="grid grid-cols-2 gap-2">
+					<button
+						v-for="preset in group.presets"
+						:key="preset.id"
+						class="group relative flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-all hover:border-white/20 hover:bg-white/5"
+						:class="selectedPresetId === preset.id ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 bg-white/[0.02]'"
+						@click="applyPreset(preset)"
+					>
+						<div
+							class="flex h-10 w-full items-center justify-center rounded-md font-bold"
+							:class="preset.maxWordsPerLine === 1 ? 'text-base' : 'text-sm'"
+							:style="{
+								color: preset.color === 'transparent' ? (preset.stroke?.color || '#FFFFFF') : preset.color,
+								fontFamily: preset.fontFamily,
+								fontWeight: preset.fontWeight,
+								fontStyle: preset.fontStyle,
+								letterSpacing: preset.letterSpacing + 'px',
+								textShadow: preset.stroke
 									? `0 0 0 transparent, -1px -1px 0 ${preset.stroke.color}, 1px -1px 0 ${preset.stroke.color}, -1px 1px 0 ${preset.stroke.color}, 1px 1px 0 ${preset.stroke.color}`
 									: preset.shadow
 										? `${preset.shadow.offsetX}px ${preset.shadow.offsetY}px ${preset.shadow.blur}px ${preset.shadow.color}`
-										: 'none',
-							backgroundColor: preset.backgroundColor !== 'transparent' ? preset.backgroundColor : undefined,
-						}"
-					>
-						<span
-							:style="{
-								color: preset.highlightStyle !== 'none' ? preset.highlightColor : preset.color,
+										: preset.glow
+											? `0 0 ${preset.glow.intensity}px ${preset.glow.color}`
+											: 'none',
+								backgroundColor: preset.backgroundColor !== 'transparent' ? preset.backgroundColor : undefined,
 							}"
-						>Hello</span>
-						<span class="ml-1">World</span>
-					</div>
-					<span class="text-[10px] text-zinc-400 group-hover:text-zinc-300">{{ preset.name }}</span>
-				</button>
+						>
+							<span :style="{ color: preset.highlightStyle !== 'none' ? preset.highlightColor : (preset.color === 'transparent' ? (preset.stroke?.color || '#FFFFFF') : preset.color) }">{{ preset.maxWordsPerLine === 1 ? 'Word' : 'Hello' }}</span>
+							<span v-if="preset.maxWordsPerLine > 1" class="ml-1">World</span>
+						</div>
+						<span class="text-[10px] text-zinc-400 group-hover:text-zinc-300 truncate w-full">{{ preset.name }}</span>
+					</button>
+				</div>
 			</div>
 		</div>
 

@@ -1,2 +1,8 @@
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+[env]
+FFMPEG_DIR = { value = "C:\\vcpkg\\installed\\x64-windows", force = true }
+FFMPEG_PKG_CONFIG_PATH = { value = "C:\\vcpkg\\installed\\x64-windows\\lib\\pkgconfig", force = true }
+VCPKG_ROOT = "C:\\vcpkg"
+VCPKGRS_DYNAMIC = "1"

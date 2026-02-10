@@ -103,6 +103,7 @@ export function useElementInteraction({
 	const {
 		isElementSelected,
 		selectElement,
+		selectedElements,
 		handleElementClick: handleSelectionClick,
 	} = useElementSelection();
 
@@ -117,6 +118,7 @@ export function useElementInteraction({
 	let pendingDrag: PendingDragState | null = null;
 	let lastMouseX = 0;
 	let mouseDownLocation: { x: number; y: number } | null = null;
+	let wasAlreadySelectedOnMouseDown = false;
 
 	function getDragDropTarget({
 		clientX,
@@ -348,7 +350,20 @@ export function useElementInteraction({
 			return;
 		}
 
-		if (dropTarget.isNewTrack) {
+		// Check if multiple elements on the same track are selected (batch move)
+		const sameTrackSelected = selectedElements.value.filter(
+			(sel) => sel.trackId === ds.trackId,
+		);
+		const timeDelta = snappedTime - ds.startElementTime;
+
+		if (sameTrackSelected.length > 1 && !dropTarget.isNewTrack) {
+			// Batch move: shift all selected elements on this track by the same delta
+			editor.timeline.moveElementsBatch({
+				trackId: ds.trackId,
+				elementIds: sameTrackSelected.map((sel) => sel.elementId),
+				timeDelta,
+			});
+		} else if (dropTarget.isNewTrack) {
 			const newTrackId = generateUUID();
 			editor.timeline.moveElement({
 				sourceTrackId: ds.trackId,
@@ -444,12 +459,20 @@ export function useElementInteraction({
 			return;
 		}
 
-		event.stopPropagation();
+			event.stopPropagation();
 		mouseDownLocation = { x: event.clientX, y: event.clientY };
 
 		const isMultiSelect = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+		const alreadySelected = isElementSelected({ trackId: track.id, elementId: element.id });
+		wasAlreadySelectedOnMouseDown = alreadySelected;
+
 		if (isMultiSelect) {
 			handleSelectionClick({ trackId: track.id, elementId: element.id, isMultiKey: true, isAltKey: event.altKey, isShiftKey: event.shiftKey });
+		} else if (!alreadySelected) {
+			// Only select this single element if it wasn't already selected.
+			// If it IS already selected (e.g. part of a track-wide selection),
+			// keep the multi-selection intact so dragging moves them all.
+			selectElement({ trackId: track.id, elementId: element.id });
 		}
 
 		const clickOffset = getClickOffsetTime({
@@ -491,9 +514,25 @@ export function useElementInteraction({
 
 		if (event.metaKey || event.ctrlKey || event.shiftKey) return;
 
-		const alreadySelected = isElementSelected({ trackId: track.id, elementId: element.id });
-		if (!alreadySelected) {
-			selectElement({ trackId: track.id, elementId: element.id });
+		// On plain click (no drag), always collapse to single element selection.
+		// This handles: clicking an unselected element, or clicking one element
+		// in a multi-selection to narrow it down to just that element.
+		selectElement({ trackId: track.id, elementId: element.id });
+
+		// If the element was already selected before this click, seek the playhead
+		// to the click position (like clicking empty track area).
+		if (wasAlreadySelectedOnMouseDown) {
+			const scrollContainer = tracksScrollRef.value;
+			if (scrollContainer) {
+				const containerRect = scrollContainer.getBoundingClientRect();
+				const clickTime = getMouseTimeFromClientX({
+					clientX: event.clientX,
+					containerRect,
+					zoomLevel: zoomLevel.value,
+					scrollLeft: scrollContainer.scrollLeft,
+				});
+				editor.playback.seek({ time: clickTime });
+			}
 		}
 	}
 

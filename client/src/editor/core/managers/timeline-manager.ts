@@ -27,6 +27,7 @@ import {
 	PasteCommand,
 	UpdateElementStartTimeCommand,
 	MoveElementCommand,
+	MoveElementsBatchCommand,
 	ChangeSpeedCommand,
 	UpdateElementKeyframesCommand,
 	ExtractAudioCommand,
@@ -134,6 +135,19 @@ export class TimelineManager {
 			newStartTime,
 			createTrack,
 		);
+		this.editor.command.execute({ command });
+	}
+
+	moveElementsBatch({
+		trackId,
+		elementIds,
+		timeDelta,
+	}: {
+		trackId: string;
+		elementIds: string[];
+		timeDelta: number;
+	}): void {
+		const command = new MoveElementsBatchCommand(trackId, elementIds, timeDelta);
 		this.editor.command.execute({ command });
 	}
 

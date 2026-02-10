@@ -9,6 +9,7 @@ export { UpdateTextElementCommand } from "./update-text-element";
 export { ToggleElementsVisibilityCommand } from "./toggle-elements-visibility";
 export { ToggleElementsMutedCommand } from "./toggle-elements-muted";
 export { MoveElementCommand } from "./move-elements";
+export { MoveElementsBatchCommand } from "./move-elements-batch";
 export { UpdateElementCommand } from "./update-element";
 export type { UpdatableElementProps } from "./update-element";
 export { ChangeSpeedCommand } from "./change-speed";
