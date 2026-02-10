@@ -13,6 +13,7 @@ export interface UserRestrictions {
   allowClipperProfile: boolean;
   allowPersonalSocial: boolean;
   allowClipDeletion: boolean;
+  allowHiringBrowse: boolean;
   forceOrgWatermark: boolean;
   requireClipApproval: boolean;
   
@@ -31,6 +32,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     allowClipperProfile: true,
     allowPersonalSocial: true,
     allowClipDeletion: true,
+    allowHiringBrowse: true,
     forceOrgWatermark: false,
     requireClipApproval: false,
     allowedCreatorIds: 'all',
@@ -47,6 +49,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
   const allowClipperProfile = computed(() => restrictions.value.allowClipperProfile);
   const allowPersonalSocial = computed(() => restrictions.value.allowPersonalSocial);
   const allowClipDeletion = computed(() => restrictions.value.allowClipDeletion);
+  const allowHiringBrowse = computed(() => restrictions.value.allowHiringBrowse);
   const forceOrgWatermark = computed(() => restrictions.value.forceOrgWatermark);
   const requireClipApproval = computed(() => restrictions.value.requireClipApproval);
 
@@ -70,6 +73,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
           allowClipperProfile: data.restrictions?.allow_clipper_profile ?? true,
           allowPersonalSocial: data.restrictions?.allow_personal_social ?? true,
           allowClipDeletion: data.restrictions?.allow_clip_deletion ?? true,
+          allowHiringBrowse: data.restrictions?.allow_hiring_browse ?? true,
           forceOrgWatermark: data.restrictions?.force_org_watermark ?? false,
           requireClipApproval: data.restrictions?.require_clip_approval ?? false,
           allowedCreatorIds: data.allowed_creator_ids || 'all',
@@ -89,6 +93,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
         allowClipperProfile: true,
         allowPersonalSocial: true,
         allowClipDeletion: true,
+        allowHiringBrowse: true,
         forceOrgWatermark: false,
         requireClipApproval: false,
         allowedCreatorIds: 'all',
@@ -120,6 +125,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
       allowClipperProfile: true,
       allowPersonalSocial: true,
       allowClipDeletion: true,
+      allowHiringBrowse: true,
       forceOrgWatermark: false,
       requireClipApproval: false,
       allowedCreatorIds: 'all',
@@ -141,6 +147,7 @@ export const usePermissionsStore = defineStore('permissions', () => {
     allowClipperProfile,
     allowPersonalSocial,
     allowClipDeletion,
+    allowHiringBrowse,
     forceOrgWatermark,
     requireClipApproval,
     

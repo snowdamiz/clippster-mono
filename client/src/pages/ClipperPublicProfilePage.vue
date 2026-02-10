@@ -5,6 +5,7 @@
       :description="profile?.bio || ''"
       :show-header="true"
       :icon="UserCircle"
+      :breadcrumbs="breadcrumbs"
     >
       <template #actions>
         <div v-if="profile" class="profile-header-actions">
@@ -336,7 +337,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue';
+  import { ref, computed, onMounted } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import {
     UserCircle,
@@ -398,6 +399,28 @@
 
   const loading = ref(true);
   const profile = ref<ClipperProfile | null>(null);
+
+  const breadcrumbs = computed(() => {
+    const from = route.query.from as string | undefined;
+    if (!from) return undefined;
+    const crumbs: { label: string; path?: string }[] = [];
+    if (from.includes('/organization/')) {
+      crumbs.push({ label: 'Organizations', path: '/organizations' });
+      if (from.includes('/hiring')) {
+        crumbs.push({ label: 'Hiring', path: from });
+      } else if (from.includes('/campaigns')) {
+        crumbs.push({ label: 'Campaigns', path: from });
+      } else {
+        crumbs.push({ label: 'Back', path: from });
+      }
+    } else if (from.includes('/clippers')) {
+      crumbs.push({ label: 'Clipper Directory', path: '/clippers' });
+    } else {
+      crumbs.push({ label: 'Back', path: from });
+    }
+    crumbs.push({ label: profile.value?.display_name || 'Profile' });
+    return crumbs;
+  });
 
   // Endorsement dialog state
   const showEndorsementDialog = ref(false);

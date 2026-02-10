@@ -21,6 +21,7 @@ defmodule ClippsterServer.Organizations.Organization do
       "allow_clipper_profile" => false,
       "allow_personal_social" => true,
       "allow_clip_deletion" => false,
+      "allow_hiring_browse" => true,
       "force_org_watermark" => true,
       "require_clip_approval" => false,
       "clips_visible_to_admins" => true

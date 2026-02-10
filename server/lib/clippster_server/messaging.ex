@@ -366,6 +366,29 @@ defmodule ClippsterServer.Messaging do
   end
 
   @doc """
+  Gets unread counts for all conversations for a user (not org-scoped).
+  """
+  def get_unread_counts_for_user(user_id) do
+    Conversation
+    |> join(:inner, [c], p in ConversationParticipant,
+      on: p.conversation_id == c.id and p.user_id == ^user_id
+    )
+    |> join(:left, [c, p], m in Message,
+      on: m.conversation_id == c.id and m.sender_id != ^user_id
+    )
+    |> join(:left, [c, p, m], rs in MessageReadStatus,
+      on: rs.message_id == m.id and rs.user_id == ^user_id
+    )
+    |> where([c, p, m, rs], is_nil(p.left_at))
+    |> where([c, p, m, rs], is_nil(rs.id))
+    |> where([c, p, m, rs], is_nil(m.deleted_at))
+    |> group_by([c, p, m, rs], c.id)
+    |> select([c, p, m, rs], {c.id, count(m.id)})
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  @doc """
   Gets total unread count across all organizations for a user.
   """
   def get_total_unread_count(user_id) do

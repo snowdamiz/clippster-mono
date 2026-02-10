@@ -394,8 +394,9 @@ defmodule ClippsterServerWeb.MessagingController do
   def list_all_conversations(conn, _params) do
     user_id = conn.assigns.current_user.id
     conversations = Messaging.list_conversations_for_user(user_id)
+    unread_counts = Messaging.get_unread_counts_for_user(user_id)
 
-    json(conn, %{data: MessagingJSON.conversations(conversations)})
+    json(conn, %{data: MessagingJSON.conversations_with_unread(conversations, unread_counts)})
   end
 
   @doc """

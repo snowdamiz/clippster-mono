@@ -552,6 +552,126 @@
             </section>
           </template>
 
+          <!-- Hiring Tab -->
+          <template v-if="activeTab === 'hiring'">
+            <div v-if="loadingHiringPosts" class="loading-rows">
+              <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
+            </div>
+            <template v-else>
+              <!-- My Applications -->
+              <div v-if="myHiringApplications.length" class="hiring-tab__section">
+                <h3 class="hiring-tab__section-title">My Applications</h3>
+                <div class="hiring-tab__apps-list">
+                  <div v-for="app in myHiringApplications" :key="app.id" class="hiring-tab__app-card">
+                    <div class="hiring-tab__app-header">
+                      <img v-if="app.hiring_post?.organization?.logo_url" :src="app.hiring_post.organization.logo_url" class="hiring-tab__org-logo" />
+                      <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      <div class="hiring-tab__app-info">
+                        <div class="hiring-tab__app-org">{{ app.hiring_post?.organization?.name || 'Organization' }}</div>
+                        <div class="hiring-tab__app-title">{{ app.hiring_post?.title }}</div>
+                      </div>
+                      <span
+                        class="hiring-tab__status"
+                        :class="{
+                          'hiring-tab__status--pending': app.status === 'pending',
+                          'hiring-tab__status--accepted': app.status === 'accepted',
+                          'hiring-tab__status--rejected': app.status === 'rejected',
+                        }"
+                      >
+                        {{ app.status === 'accepted' ? 'Hired!' : app.status }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Browse Hiring Posts -->
+              <h3 class="hiring-tab__section-title">Companies Hiring</h3>
+
+              <!-- Filters -->
+              <div class="hiring-tab__filters">
+                <select v-model="hiringFilters.payment_type" class="hiring-tab__filter-select" @change="loadHiringPosts">
+                  <option value="">All Payment Types</option>
+                  <option v-for="pt in HIRING_PAYMENT_TYPES" :key="pt.value" :value="pt.value">{{ pt.label }}</option>
+                </select>
+              </div>
+
+              <div v-if="!hiringPosts.length" class="hiring-tab__empty">
+                <Briefcase class="hiring-tab__empty-icon" />
+                <p>No organizations are currently hiring. Check back later!</p>
+              </div>
+
+              <div v-else class="hiring-tab__grid">
+                <div v-for="post in hiringPosts" :key="post.id" class="hiring-tab__card">
+                  <div class="hiring-tab__card-header">
+                    <img v-if="post.organization?.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
+                    <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                    <div class="hiring-tab__card-org">
+                      <div class="hiring-tab__card-org-name">{{ post.organization?.name }}</div>
+                      <div class="hiring-tab__card-title">{{ post.title }}</div>
+                    </div>
+                  </div>
+
+                  <p v-if="post.description" class="hiring-tab__card-desc">{{ post.description }}</p>
+
+                  <div class="hiring-tab__card-meta">
+                    <span v-if="post.payment_type" class="hiring-tab__card-badge hiring-tab__card-badge--pay">
+                      {{ getHiringPaymentTypeLabel(post.payment_type) }}{{ post.payment_details ? `: ${post.payment_details}` : '' }}
+                    </span>
+                    <span v-if="post.clipper_slots" class="hiring-tab__card-badge">
+                      {{ post.clipper_slots_filled }}/{{ post.clipper_slots }} clippers
+                    </span>
+                    <span v-if="post.experience_level" class="hiring-tab__card-badge">
+                      {{ getExperienceLevelLabel(post.experience_level) }}+
+                    </span>
+                  </div>
+
+                  <div v-if="post.content_types?.length" class="hiring-tab__card-tags">
+                    <span v-for="t in post.content_types.slice(0, 4)" :key="t" class="hiring-tab__mini-tag">{{ getSpecialtyTagLabel(t) }}</span>
+                  </div>
+
+                  <div v-if="post.platforms?.length" class="hiring-tab__card-tags">
+                    <span v-for="p in post.platforms" :key="p" class="hiring-tab__mini-tag">{{ getHiringPlatformLabel(p) }}</span>
+                  </div>
+
+                  <button
+                    class="hiring-tab__apply-btn"
+                    :class="{ 'hiring-tab__apply-btn--applied': post.has_applied }"
+                    :disabled="post.has_applied || applyingTo === post.id"
+                    @click="openApplyDialog(post)"
+                  >
+                    <Loader2 v-if="applyingTo === post.id" class="hiring-tab__apply-spinner" />
+                    {{ post.has_applied ? 'Applied' : 'Apply' }}
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <!-- Apply Dialog -->
+            <Dialog v-model:open="showApplyDialog">
+              <DialogContent class="hiring-tab__dialog">
+                <DialogHeader>
+                  <DialogTitle>Apply to {{ applyTarget?.organization?.name }}</DialogTitle>
+                  <DialogDescription>
+                    {{ applyTarget?.title }}
+                  </DialogDescription>
+                </DialogHeader>
+                <div class="hiring-tab__dialog-body">
+                  <label class="hiring-tab__dialog-label">Message (optional)</label>
+                  <textarea v-model="applyMessage" class="hiring-tab__dialog-textarea" rows="4" placeholder="Tell them why you'd be a great fit..." />
+                  <p class="hiring-tab__dialog-note">Your clipper profile will be shared with this organization.</p>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" @click="showApplyDialog = false">Cancel</Button>
+                  <Button @click="submitApplication" :disabled="applyingTo !== null">
+                    <Loader2 v-if="applyingTo !== null" class="hiring-tab__apply-spinner" />
+                    Submit Application
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </template>
+
           <!-- Affiliate Tab -->
           <template v-if="activeTab === 'affiliate'">
             <div v-if="loadingAffiliate" class="loading-rows">
@@ -972,6 +1092,8 @@
     Link2,
     Copy,
     Check,
+    Briefcase,
+    Building2,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
@@ -1012,7 +1134,12 @@
     type UserPost,
     type UserAnalyticsSummary,
   } from '@/services/userInstagramApi';
-  import { getMyClipperProfile, type ClipperProfile } from '@/services/clipperProfilesApi';
+  import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
+  import {
+    listPublicHiringPosts, applyToHiringPost, listMyHiringApplications,
+    PAYMENT_TYPES as HIRING_PAYMENT_TYPES, getPaymentTypeLabel as getHiringPaymentTypeLabel,
+    type HiringPost, type HiringApplication,
+  } from '@/services/hiringApi';
   import {
     listMyCampaigns,
     listMySubmissions,
@@ -1032,9 +1159,11 @@
     type AffiliatePayout,
   } from '@/services/affiliateApi';
   import { useAuthStore } from '@/stores/auth';
+  import { usePermissionsStore } from '@/stores/permissions';
 
   const { toast } = useToast();
   const authStore = useAuthStore();
+  const permissionsStore = usePermissionsStore();
 
   const tabs = computed(() => {
     const base = [
@@ -1044,6 +1173,9 @@
       { id: 'campaigns', label: 'Campaigns', icon: markRaw(Megaphone) },
       { id: 'posts', label: 'Posts', icon: markRaw(BarChart3) },
     ];
+    if (permissionsStore.allowHiringBrowse) {
+      base.push({ id: 'hiring', label: 'Hiring', icon: markRaw(Briefcase) });
+    }
     if (authStore.user?.is_affiliate || clipperProfile.value?.is_affiliate) {
       base.push({ id: 'affiliate', label: 'Affiliate', icon: markRaw(Handshake) });
     }
@@ -1094,6 +1226,74 @@
     return `https://clippster.app/?ref=${affiliateInfo.value.referral_code}`;
   });
 
+  // Hiring Tab State
+  const loadingHiringPosts = ref(false);
+  const hiringPosts = ref<HiringPost[]>([]);
+  const myHiringApplications = ref<HiringApplication[]>([]);
+  const hiringFilters = ref({ payment_type: '' });
+  const showApplyDialog = ref(false);
+  const applyTarget = ref<HiringPost | null>(null);
+  const applyMessage = ref('');
+  const applyingTo = ref<number | null>(null);
+
+  function getHiringPlatformLabel(value: string): string {
+    const PREFERRED_PLATFORMS = [
+      { value: 'tiktok', label: 'TikTok' }, { value: 'youtube', label: 'YouTube' },
+      { value: 'instagram', label: 'Instagram' }, { value: 'twitter', label: 'Twitter/X' },
+      { value: 'kick', label: 'Kick' }, { value: 'twitch', label: 'Twitch' },
+      { value: 'facebook', label: 'Facebook' },
+    ];
+    return PREFERRED_PLATFORMS.find((p) => p.value === value)?.label || value;
+  }
+
+  async function loadHiringPosts() {
+    loadingHiringPosts.value = true;
+    try {
+      const filters: Record<string, any> = {};
+      if (hiringFilters.value.payment_type) filters.payment_type = hiringFilters.value.payment_type;
+      const [postsRes, appsRes] = await Promise.all([
+        listPublicHiringPosts(filters),
+        listMyHiringApplications(),
+      ]);
+      if (postsRes.success) hiringPosts.value = postsRes.hiring_posts;
+      if (appsRes.success) myHiringApplications.value = appsRes.applications;
+    } catch (err) {
+      console.error('Failed to load hiring posts:', err);
+    } finally {
+      loadingHiringPosts.value = false;
+    }
+  }
+
+  function openApplyDialog(post: HiringPost) {
+    applyTarget.value = post;
+    applyMessage.value = '';
+    showApplyDialog.value = true;
+  }
+
+  async function submitApplication() {
+    if (!applyTarget.value) return;
+    applyingTo.value = applyTarget.value.id;
+    try {
+      const res = await applyToHiringPost(applyTarget.value.id, applyMessage.value);
+      if (res.success) {
+        toast({ title: 'Application submitted!', description: 'The organization will review your profile.' });
+        showApplyDialog.value = false;
+        // Mark as applied locally
+        const idx = hiringPosts.value.findIndex(p => p.id === applyTarget.value!.id);
+        if (idx >= 0) hiringPosts.value[idx].has_applied = true;
+        // Refresh my applications
+        const appsRes = await listMyHiringApplications();
+        if (appsRes.success) myHiringApplications.value = appsRes.applications;
+      } else {
+        toast({ title: 'Error', description: res.error || 'Failed to apply', type: 'error' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Failed to apply', type: 'error' });
+    } finally {
+      applyingTo.value = null;
+    }
+  }
+
   // Posts Analytics State
   const loadingPosts = ref(false);
   const postsAnalytics = ref<UserAnalyticsSummary | null>(null);
@@ -1121,6 +1321,9 @@
     (newTab) => {
       if (newTab === 'posts' && userPosts.value.length === 0) {
         loadPostsAnalytics();
+      }
+      if (newTab === 'hiring' && !hiringPosts.value.length) {
+        loadHiringPosts();
       }
       if (newTab === 'affiliate' && !affiliateDashboard.value) {
         loadAffiliateData();
@@ -4019,6 +4222,92 @@
 
   .aff-tab__save-btn:hover { opacity: 0.9; }
   .aff-tab__save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ===== Hiring Tab ===== */
+  .hiring-tab__section { margin-bottom: 1.5rem; }
+  .hiring-tab__section-title {
+    font-size: 1rem; font-weight: 600; color: var(--sidebar-text);
+    margin: 0 0 0.75rem; display: flex; align-items: center; gap: 0.5rem;
+  }
+  .hiring-tab__apps-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .hiring-tab__app-card {
+    padding: 0.75rem 1rem; border-radius: 8px;
+    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
+  }
+  .hiring-tab__app-header { display: flex; align-items: center; gap: 0.75rem; }
+  .hiring-tab__org-logo { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+  .hiring-tab__org-logo-placeholder { width: 32px; height: 32px; color: var(--sidebar-text-muted); flex-shrink: 0; }
+  .hiring-tab__app-info { flex: 1; min-width: 0; }
+  .hiring-tab__app-org { font-size: 0.75rem; color: var(--sidebar-text-muted); }
+  .hiring-tab__app-title { font-size: 0.875rem; font-weight: 600; color: var(--sidebar-text); }
+  .hiring-tab__status {
+    padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.625rem;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0;
+  }
+  .hiring-tab__status--pending { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+  .hiring-tab__status--accepted { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+  .hiring-tab__status--rejected { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+  .hiring-tab__filters { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+  .hiring-tab__filter-select {
+    padding: 0.375rem 0.75rem; border-radius: 6px;
+    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
+    color: var(--sidebar-text); font-size: 0.8125rem; cursor: pointer;
+  }
+
+  .hiring-tab__empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 3rem 1rem; color: var(--sidebar-text-muted);
+  }
+  .hiring-tab__empty-icon { width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.4; }
+
+  .hiring-tab__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0.75rem; }
+  .hiring-tab__card {
+    padding: 1rem; border-radius: 10px;
+    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
+    display: flex; flex-direction: column; gap: 0.625rem;
+  }
+  .hiring-tab__card-header { display: flex; align-items: center; gap: 0.75rem; }
+  .hiring-tab__card-org { flex: 1; min-width: 0; }
+  .hiring-tab__card-org-name { font-size: 0.75rem; color: var(--sidebar-text-muted); }
+  .hiring-tab__card-title { font-size: 0.9375rem; font-weight: 600; color: var(--sidebar-text); }
+  .hiring-tab__card-desc {
+    font-size: 0.8125rem; color: var(--sidebar-text-muted); line-height: 1.5;
+    margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .hiring-tab__card-meta { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+  .hiring-tab__card-badge {
+    padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.6875rem;
+    background: rgba(255, 255, 255, 0.06); color: var(--sidebar-text-muted);
+  }
+  .hiring-tab__card-badge--pay { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+  .hiring-tab__card-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  .hiring-tab__mini-tag {
+    padding: 0.0625rem 0.375rem; border-radius: 9999px; font-size: 0.625rem;
+    background: rgba(255, 255, 255, 0.04); color: var(--sidebar-text-muted);
+  }
+  .hiring-tab__apply-btn {
+    display: flex; align-items: center; justify-content: center; gap: 0.375rem;
+    padding: 0.5rem; border-radius: 6px; border: none;
+    background: #22d3ee; color: #0a0a0b; font-size: 0.8125rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s; margin-top: auto;
+  }
+  .hiring-tab__apply-btn:hover:not(:disabled) { opacity: 0.9; }
+  .hiring-tab__apply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .hiring-tab__apply-btn--applied { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+  .hiring-tab__apply-spinner { width: 1rem; height: 1rem; animation: spin 1s linear infinite; }
+
+  .hiring-tab__dialog { max-width: 480px; }
+  .hiring-tab__dialog-body { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.5rem 0; }
+  .hiring-tab__dialog-label { font-size: 0.8125rem; font-weight: 600; color: var(--sidebar-text); }
+  .hiring-tab__dialog-textarea {
+    padding: 0.625rem 0.875rem; border-radius: 8px;
+    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
+    color: var(--sidebar-text); font-size: 0.875rem; font-family: inherit;
+    resize: vertical; min-height: 80px;
+  }
+  .hiring-tab__dialog-textarea:focus { outline: none; border-color: #22d3ee; }
+  .hiring-tab__dialog-note { font-size: 0.75rem; color: var(--sidebar-text-muted); margin: 0; }
 </style>
 
 <!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->

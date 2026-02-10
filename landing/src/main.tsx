@@ -36,6 +36,8 @@ const OrgShared = lazy(() => import('./pages/dashboard/OrgShared').then(m => ({ 
 const OrgCampaigns = lazy(() => import('./pages/dashboard/OrgCampaigns').then(m => ({ default: m.OrgCampaigns })))
 const OrgClippers = lazy(() => import('./pages/dashboard/OrgClippers').then(m => ({ default: m.OrgClippers })))
 const OrgPosts = lazy(() => import('./pages/dashboard/OrgPosts').then(m => ({ default: m.OrgPosts })))
+const OrgHiring = lazy(() => import('./pages/dashboard/OrgHiring').then(m => ({ default: m.OrgHiring })))
+const OrgMessages = lazy(() => import('./pages/dashboard/OrgMessages').then(m => ({ default: m.OrgMessages })))
 
 function LoadingFallback() {
   return (
@@ -90,6 +92,8 @@ createRoot(document.getElementById('root')!).render(
                   <Route path="campaigns" element={<OrgCampaigns />} />
                   <Route path="clippers" element={<OrgClippers />} />
                   <Route path="posts" element={<OrgPosts />} />
+                  <Route path="hiring" element={<OrgHiring />} />
+                  <Route path="messages" element={<OrgMessages />} />
                 </Route>
               </Routes>
             </Suspense>

@@ -177,6 +177,7 @@
     Loader2,
     AlertTriangle,
     Film,
+    Briefcase,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
@@ -250,6 +251,14 @@
       icon: MessageCircle,
       route: '/messages',
       color: 'sky',
+    },
+    {
+      id: 'hiring',
+      title: 'Hiring',
+      description: 'Create a hiring post to recruit clippers',
+      icon: Briefcase,
+      route: `/organization/${organizationId.value}/hiring`,
+      color: 'orange',
     },
   ]);
 

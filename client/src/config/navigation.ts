@@ -127,7 +127,6 @@ export const navigationItems: NavigationItem[] = [
     path: '/messages',
     icon: MessageCircle,
     group: 'manage',
-    orgMember: true, // Show for any user who is a member of at least one organization
   },
   {
     name: 'Billing',
