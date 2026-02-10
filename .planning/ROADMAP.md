@@ -53,10 +53,11 @@ Plans:
   4. System polls video processing status until succeeded or failed before marking media ready
   5. System handles upload failures with proper error messages visible to user
 
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD during phase planning
+- [ ] 02-01-PLAN.md — VideoValidator and TwitterChunkedUpload modules (INIT/APPEND/FINALIZE/STATUS)
+- [ ] 02-02-PLAN.md — Wire publish_media/3, add media.write scope, R2 presigned URL integration
 
 ### Phase 3: Tweet Creation & Scheduling
 **Goal**: Users can post clips to X immediately or schedule for future times with full post tracking
@@ -105,6 +106,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. OAuth 2.0 PKCE Authentication | 2/2 | ✓ Complete | 2026-02-09 |
-| 2. Chunked Video Upload | 0/TBD | Not started | - |
+| 2. Chunked Video Upload | 0/2 | Planning complete | - |
 | 3. Tweet Creation & Scheduling | 0/TBD | Not started | - |
 | 4. Rate Limiting & Reliability | 0/TBD | Not started | - |
