@@ -90,6 +90,14 @@ defmodule ClippsterServerWeb.Router do
     get("/auth/user-instagram/callback", UserInstagramAuthController, :oauth_callback)
     # The client obtains tokens via FB.login() and sends them to POST /social-accounts
 
+    # X (Twitter) OAuth routes (for Tauri desktop app)
+    get("/auth/twitter/start", TwitterAuthController, :start_oauth)
+    get("/auth/twitter/callback", TwitterAuthController, :oauth_callback)
+
+    # User X (Twitter) OAuth routes (for individual users/clippers)
+    get("/auth/user-twitter/start", UserTwitterAuthController, :start_oauth)
+    get("/auth/user-twitter/callback", UserTwitterAuthController, :oauth_callback)
+
     # Email authentication routes
     post("/auth/email/register", EmailAuthController, :register)
     post("/auth/email/verify-otp", EmailAuthController, :verify_otp)
