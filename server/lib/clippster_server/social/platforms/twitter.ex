@@ -44,7 +44,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
     # Build authorization URL with PKCE
     client_id = opts[:client_id] || raise "client_id required"
     redirect_uri = opts[:redirect_uri] || raise "redirect_uri required"
-    scope = opts[:scope] || "tweet.read tweet.write users.read offline.access"
+    scope = opts[:scope] || "tweet.read tweet.write users.read media.write offline.access"
     state = opts[:state] || %{}
 
     # Merge code_verifier into state for later retrieval

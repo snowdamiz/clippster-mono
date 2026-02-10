@@ -21,7 +21,7 @@ defmodule ClippsterServerWeb.TwitterAuthController do
   alias ClippsterServer.Accounts
 
   # X OAuth scopes for posting and reading
-  @twitter_scopes "tweet.read tweet.write users.read offline.access"
+  @twitter_scopes "tweet.read tweet.write users.read media.write offline.access"
 
   @doc """
   Start X OAuth flow (for Tauri desktop apps).
