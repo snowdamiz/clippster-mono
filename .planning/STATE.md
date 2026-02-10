@@ -11,18 +11,18 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 4 of 4 (Rate Limiting & Reliability)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-02-09 — Phase 3 complete (Tweet Creation & Scheduling verified)
+Plan: 1 of 2 in current phase
+Status: Executing
+Last activity: 2026-02-09 — Plan 04-01 complete (X API Reliability Infrastructure)
 
-Progress: [███████░░░] 75% (Phase 1-3 complete, Phase 4 next)
+Progress: [████████░░] 87.5% (Phase 1-3 complete, Phase 4: 1/2 complete)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 6
-- Average duration: 2.2 minutes
-- Total execution time: 0.22 hours
+- Total plans completed: 7
+- Average duration: 2.3 minutes
+- Total execution time: 0.38 hours
 
 **By Phase:**
 
@@ -31,10 +31,11 @@ Progress: [███████░░░] 75% (Phase 1-3 complete, Phase 4 next
 | 01 | 2 | 5.6m | 2.8m |
 | 02 | 2 | 5.5m | 2.8m |
 | 03 | 2 | 3.6m | 1.8m |
+| 04 | 1 | 3.4m | 3.4m |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (4.2m), 02-02 (1.3m), 03-01 (1.9m), 03-02 (1.7m)
-- Trend: Improving
+- Last 5 plans: 02-02 (1.3m), 03-01 (1.9m), 03-02 (1.7m), 04-01 (3.4m)
+- Trend: Stable
 
 *Updated after each plan completion*
 
@@ -60,6 +61,8 @@ Recent decisions affecting current work:
 - 03-01: Use get_user_profile/1 fallback to /i/ URL for post_url construction (more reliable URL generation even if profile API unavailable)
 - 03-01: Enforce 280-char limit at schema level for Twitter (catches validation errors early in UX flow)
 - 03-01: Support optional media_ids in create_tweet/3 (flexible API for text-only and media tweets)
+- [Phase 04-01]: Track rate limits per-endpoint and per-social-account (not global) for accurate X API quota tracking
+- [Phase 04-01]: Retry transient errors (429/5xx) with 60s max delay and 5min timeout; return permanent errors (400/401/403/404) immediately
 
 ### Pending Todos
 
@@ -72,5 +75,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-09
-Stopped at: Phase 3 complete, verified, ready for Phase 4 planning
+Stopped at: Completed 04-01-PLAN.md (X API Reliability Infrastructure)
 Resume file: None
