@@ -103,7 +103,7 @@ Each task was committed atomically:
 1. **Task 1: Create TwitterDuplicateDetector and wire TwitterApiClient** - `70f4a70` (feat)
 2. **Task 2: Wire duplicate check and content_hash storage into publishing flows** - `0d281c3` (feat)
 
-**Plan metadata:** (will be added after state updates)
+**Plan metadata:** `3806260` (docs: complete plan)
 
 ## Files Created/Modified
 
