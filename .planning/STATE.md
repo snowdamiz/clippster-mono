@@ -11,29 +11,29 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 ## Current Position
 
 Phase: 2 of 4 (Chunked Video Upload)
-Plan: 1 of TBD in current phase
+Plan: 2 of TBD in current phase
 Status: In progress
-Last activity: 2026-02-10 — Phase 2 Plan 1 complete (Core Upload Modules)
+Last activity: 2026-02-10 — Phase 2 Plan 2 complete (Twitter Platform Integration)
 
 Progress: [██░░░░░░░░] 25% (Phase 1 complete, Phase 2 in progress)
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
-- Average duration: 3.0 minutes
-- Total execution time: 0.14 hours
+- Total plans completed: 4
+- Average duration: 2.5 minutes
+- Total execution time: 0.17 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 01 | 2 | 5.6m | 2.8m |
-| 02 | 1 | 4.2m | 4.2m |
+| 02 | 2 | 5.5m | 2.8m |
 
 **Recent Trend:**
-- Last 5 plans: 01-01 (2.5m), 01-02 (3.1m), 02-01 (4.2m)
-- Trend: Stable
+- Last 5 plans: 01-01 (2.5m), 01-02 (3.1m), 02-01 (4.2m), 02-02 (1.3m)
+- Trend: Improving
 
 *Updated after each plan completion*
 
@@ -54,6 +54,8 @@ Recent decisions affecting current work:
 - 02-01: Poll STATUS synchronously with check_after_secs respect (not GenServer) for simpler request-scoped workflow
 - 02-01: Skip FFmpeg codec validation for MVP - rely on X API processing validation
 - 02-01: Use v2 endpoint exclusively (api.x.com/2/media/upload), not deprecated v1.1
+- [Phase 02-02]: 6-hour R2 presigned URL expiry for X processing delays
+- [Phase 02-02]: Return media_id only from publish_media (X separates upload from tweet creation)
 
 ### Pending Todos
 
@@ -66,5 +68,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-10
-Stopped at: Completed 02-01-PLAN.md (Core Upload Modules)
+Stopped at: Completed 02-02-PLAN.md (Twitter Platform Integration)
 Resume file: None
