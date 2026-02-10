@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: OAuth 2.0 PKCE Authentication** - Connect X accounts and manage tokens ✓
 - [x] **Phase 2: Chunked Video Upload** - Upload and process video media for X ✓
-- [ ] **Phase 3: Tweet Creation & Scheduling** - Post clips to X immediately or scheduled
+- [x] **Phase 3: Tweet Creation & Scheduling** - Post clips to X immediately or scheduled ✓
 - [ ] **Phase 4: Rate Limiting & Reliability** - Production-grade error handling and quota management
 
 ## Phase Details
@@ -77,8 +77,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — Twitter.create_tweet/3 and platform-specific caption validation
-- [ ] 03-02-PLAN.md — Wire two-step Twitter posting into ScheduledPostWorker and PostSubmissionController
+- [x] 03-01-PLAN.md — Twitter.create_tweet/3 and platform-specific caption validation
+- [x] 03-02-PLAN.md — Wire two-step Twitter posting into ScheduledPostWorker and PostSubmissionController
 
 ### Phase 4: Rate Limiting & Reliability
 **Goal**: System handles X API rate limits, retries transient failures, and prevents duplicate posts
@@ -108,5 +108,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. OAuth 2.0 PKCE Authentication | 2/2 | ✓ Complete | 2026-02-09 |
 | 2. Chunked Video Upload | 2/2 | ✓ Complete | 2026-02-09 |
-| 3. Tweet Creation & Scheduling | 0/2 | In progress | - |
+| 3. Tweet Creation & Scheduling | 2/2 | ✓ Complete | 2026-02-09 |
 | 4. Rate Limiting & Reliability | 0/TBD | Not started | - |
