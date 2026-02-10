@@ -871,6 +871,44 @@ pub fn start_instagram_callback_server(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+pub async fn open_twitter_auth_window(
+    app: tauri::AppHandle,
+    api_base: String,
+    organization_id: String,
+    auth_token: String,
+) -> Result<(), String> {
+    // Clear any previous auth result
+    *TWITTER_AUTH_RESULT.lock().unwrap() = None;
+
+    // Start local callback server
+    start_twitter_callback_server(app.clone());
+
+    // Build the Twitter OAuth initiation URL for organizations
+    let auth_url = format!(
+        "{}/api/auth/twitter/start?organization_id={}&callback_port={}&auth_token={}",
+        api_base,
+        urlencoding::encode(&organization_id),
+        TWITTER_AUTH_SERVER_PORT,
+        urlencoding::encode(&auth_token)
+    );
+
+    tauri_plugin_opener::open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn poll_twitter_auth_result() -> Result<Option<TwitterAuthResult>, String> {
+    let result = TWITTER_AUTH_RESULT.lock().unwrap().clone();
+    if result.is_some() {
+        // Clear after retrieval
+        *TWITTER_AUTH_RESULT.lock().unwrap() = None;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
 pub async fn start_user_twitter_oauth(
     app: tauri::AppHandle,
     api_base: String,
