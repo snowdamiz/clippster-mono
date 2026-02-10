@@ -229,6 +229,20 @@ const router = createRouter({
         },
       ],
     },
+    // Content Calendar
+    {
+      path: '/calendar',
+      name: 'calendar',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'calendar-home',
+          component: () => import('@/pages/ContentCalendar.vue'),
+        },
+      ],
+    },
     // Legacy redirects for old platform routes
     {
       path: '/pumpfun',

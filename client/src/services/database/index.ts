@@ -32,3 +32,4 @@ export * from './video-editor-projects';
 export * from './video-editor-edits';
 export * from './watermark-presets';
 export * from './watermarks';
+export * from './vod-presets';

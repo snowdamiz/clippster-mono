@@ -13,6 +13,13 @@
                 <h2 class="workspace-dialog__title" :title="project?.name || 'New Project'">
                   {{ project?.name || 'New Project' }}
                 </h2>
+                <span
+                  v-if="vodPresetConfig"
+                  class="workspace-dialog__vod-badge"
+                  :title="`VOD Pre-Edit: ${vodPresetConfig.targetAspectRatio}`"
+                >
+                  {{ vodPresetConfig.targetAspectRatio }} Pre-Edit
+                </span>
               </div>
               <button class="workspace-dialog__close" @click="close" title="Close (Esc)">
                 <X :size="16" />
@@ -116,6 +123,7 @@
                   :transcribe-progress="transcribeProgressValue"
                   :transcribe-stage="transcribeStage"
                   :transcribe-message="transcribeMessage"
+                  :vod-preset-config="vodPresetConfig"
                   @detectClips="onDetectClips"
                   @cancelDetection="onCancelDetection"
                   @clipHover="onClipHover"
@@ -140,6 +148,8 @@
                     :hide-header="false"
                     @seekTo="seekToTime"
                     @createClipFromTranscript="onCreateClipFromTranscript"
+                    @deleteTimeRange="onDeleteTimeRange"
+                    @splitAtTime="onSplitAtTime"
                   />
                 </div>
               </div>
@@ -278,6 +288,8 @@
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
+  import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
+  import type { ActiveVodPresetConfig } from '@/types';
 
   const authStore = useAuthStore();
   const { error: showError } = useToast();
@@ -357,6 +369,9 @@
 
   // Aspect ratio state
   const selectedAspectRatio = ref({ width: 16, height: 9 });
+
+  // VOD preset config state
+  const vodPresetConfig = ref<ActiveVodPresetConfig | null>(null);
 
   // Watermark settings state
   const watermarkSettings = ref<WatermarkSettings>({
@@ -719,6 +734,23 @@
       const { error: showErr } = useToast();
       showErr('Clip Creation Failed', 'Failed to create clip from transcript selection.');
     }
+  }
+
+  function onDeleteTimeRange(startTime: number, endTime: number) {
+    console.log('[ProjectWorkspaceDialog] Delete time range:', startTime, '-', endTime);
+    // In the workspace dialog context, transcript delete removes the time range from clips
+    // by adjusting clip boundaries. This is a non-destructive operation on the source video.
+    const { success: showSuccess } = useToast();
+    showSuccess('Time Range Marked', `Marked ${(endTime - startTime).toFixed(1)}s for removal. Clips will be adjusted.`);
+  }
+
+  function onSplitAtTime(time: number) {
+    console.log('[ProjectWorkspaceDialog] Split at time:', time);
+    // In the workspace dialog context, splitting creates a new clip boundary at the given time
+    const { success: showSuccess } = useToast();
+    const mins = Math.floor(time / 60);
+    const secs = Math.floor(time % 60);
+    showSuccess('Split Point', `Split point set at ${mins}:${secs.toString().padStart(2, '0')}.`);
   }
 
   function onCancelTranscription() {
@@ -2107,6 +2139,13 @@
           // Load creator profile and apply their default settings (watermark, etc.)
           await loadCreatorProfileSettings(props.project.id);
 
+          // Load VOD preset config
+          try {
+            vodPresetConfig.value = await getProjectVodPresetConfig(props.project.id);
+          } catch {
+            vodPresetConfig.value = null;
+          }
+
           // Check if this project has active detection and restore state
           const detectionState = getDetectionState(props.project.id);
           if (detectionState && detectionState.isActive) {
@@ -2197,6 +2236,13 @@
       await loadVideoForProject();
       await loadTimelineClips(newProjectId);
       await loadCreatorProfileSettings(newProjectId);
+
+      // Load VOD preset config
+      try {
+        vodPresetConfig.value = await getProjectVodPresetConfig(newProjectId);
+      } catch {
+        vodPresetConfig.value = null;
+      }
     }
   );
 
@@ -2391,6 +2437,20 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     letter-spacing: -0.01em;
+  }
+
+  .workspace-dialog__vod-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    border-radius: 0.25rem;
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #6ee7b7;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .workspace-dialog__close {

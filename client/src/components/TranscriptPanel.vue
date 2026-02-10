@@ -104,6 +104,41 @@
         </div>
       </div>
 
+      <!-- Strikethrough Toolbar -->
+      <div class="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/20">
+        <button
+          @click="strikethroughMode = !strikethroughMode"
+          :class="[
+            'flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded transition-colors border',
+            strikethroughMode
+              ? 'bg-red-500/20 text-red-400 border-red-500/30'
+              : 'bg-muted/30 text-muted-foreground border-border/40 hover:text-foreground hover:bg-muted/50',
+          ]"
+          :title="strikethroughMode ? 'Exit strikethrough mode' : 'Strikethrough mode — click words to mark for removal'"
+        >
+          <Strikethrough class="h-3 w-3" />
+          {{ strikethroughMode ? 'Marking...' : 'Mark' }}
+        </button>
+        <template v-if="strikethroughCount > 0">
+          <span class="text-[10px] text-red-400/80 tabular-nums">{{ strikethroughCount }} marked</span>
+          <button
+            @click="clearStrikethrough"
+            class="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground bg-muted/30 rounded transition-colors"
+            title="Clear all marks"
+          >
+            <Undo2 class="h-2.5 w-2.5" />
+          </button>
+          <button
+            @click="commitStrikethrough"
+            class="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-red-400 hover:text-red-300 bg-red-500/15 hover:bg-red-500/25 rounded transition-colors border border-red-500/20"
+            title="Delete all marked words (ripple-delete from timeline)"
+          >
+            <Trash2 class="h-2.5 w-2.5" />
+            Delete Marked
+          </button>
+        </template>
+      </div>
+
       <!-- Transcript content -->
       <div ref="transcriptContent" class="flex-1 overflow-y-auto custom-scrollbar relative mt-3">
         <!-- Floating Selection Toolbar -->
@@ -126,7 +161,25 @@
                 title="Create clip from selection"
               >
                 <Scissors class="h-3 w-3" />
-                Create Clip
+                Clip
+              </button>
+              <!-- Split button -->
+              <button
+                @click.stop="splitAtWordBoundary(selectionStartIndex)"
+                class="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded transition-colors border border-blue-500/20"
+                title="Split video at selection start"
+              >
+                <SplitSquareHorizontal class="h-3 w-3" />
+                Split
+              </button>
+              <!-- Delete button -->
+              <button
+                @click.stop="deleteSelectedWords"
+                class="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors border border-red-500/20"
+                title="Delete selected words (ripple-delete from timeline)"
+              >
+                <Trash2 class="h-3 w-3" />
+                Delete
               </button>
               <!-- Close button -->
               <button
@@ -176,7 +229,7 @@
 <script setup lang="ts">
   import { ref, computed, watch, nextTick, onUnmounted, onMounted } from 'vue';
   import { useTranscriptData } from '../composables/useTranscriptData';
-  import { Loader2, FileText, Search, ChevronUp, ChevronDown, X as XIcon, Scissors, Film } from 'lucide-vue-next';
+  import { Loader2, FileText, Search, ChevronUp, ChevronDown, X as XIcon, Scissors, Film, Strikethrough, Trash2, SplitSquareHorizontal, Undo2 } from 'lucide-vue-next';
 
   interface Props {
     projectId?: string | null;
@@ -196,6 +249,8 @@
   interface Emits {
     (e: 'seekVideo', time: number): void;
     (e: 'createClipFromTranscript', startTime: number, endTime: number, transcriptText: string): void;
+    (e: 'deleteTimeRange', startTime: number, endTime: number): void;
+    (e: 'splitAtTime', time: number): void;
   }
 
   const emit = defineEmits<Emits>();
@@ -218,6 +273,11 @@
   const selectionEndIndex = ref(-1);
   const showSelectionToolbar = ref(false);
   const selectionToolbarPos = ref({ top: 0, left: 0 });
+
+  // Strikethrough mode state
+  const strikethroughMode = ref(false);
+  const strikethroughIndices = ref<Set<number>>(new Set());
+  const strikethroughCount = computed(() => strikethroughIndices.value.size);
 
   // Search state - internal query for when header is shown, prop for when hidden
   const internalSearchQuery = ref('');
@@ -422,6 +482,11 @@
 
   // Get CSS classes for a word based on its state relative to currentTime
   function getWordClasses(word: any, index: number): string {
+    // Strikethrough takes highest priority
+    if (strikethroughIndices.value.has(index)) {
+      return 'line-through text-red-400/60 bg-red-500/10 border border-red-500/20';
+    }
+
     // Determine the basic state (current, spoken, future) first
     let stateClasses = '';
     if (currentWordIndex.value === -1 || props.currentTime === undefined || props.duration === 0) {
@@ -575,8 +640,86 @@
     clearWordSelection();
   }
 
+  // ===== Strikethrough Mode =====
+
+  function toggleStrikethroughWord(index: number) {
+    if (strikethroughIndices.value.has(index)) {
+      strikethroughIndices.value.delete(index);
+    } else {
+      strikethroughIndices.value.add(index);
+    }
+    strikethroughIndices.value = new Set(strikethroughIndices.value);
+  }
+
+  function clearStrikethrough() {
+    strikethroughIndices.value = new Set();
+  }
+
+  function commitStrikethrough() {
+    if (strikethroughIndices.value.size === 0 || !transcriptData.value) return;
+
+    const sorted = Array.from(strikethroughIndices.value).sort((a, b) => a - b);
+    const ranges: { start: number; end: number }[] = [];
+    let rangeStart = sorted[0];
+    let rangeEnd = sorted[0];
+
+    for (let i = 1; i < sorted.length; i++) {
+      if (sorted[i] === rangeEnd + 1) {
+        rangeEnd = sorted[i];
+      } else {
+        ranges.push({ start: rangeStart, end: rangeEnd });
+        rangeStart = sorted[i];
+        rangeEnd = sorted[i];
+      }
+    }
+    ranges.push({ start: rangeStart, end: rangeEnd });
+
+    // Emit delete for each contiguous range (in reverse to preserve indices)
+    for (let i = ranges.length - 1; i >= 0; i--) {
+      const range = ranges[i];
+      const words = transcriptData.value.words;
+      const startWord = words[range.start];
+      const endWord = words[range.end];
+      if (startWord && endWord) {
+        emit('deleteTimeRange', getWordStart(startWord), getWordEnd(endWord));
+      }
+    }
+
+    strikethroughIndices.value = new Set();
+    strikethroughMode.value = false;
+  }
+
+  // ===== Delete Selected Words =====
+
+  function deleteSelectedWords() {
+    if (selectionStartIndex.value === -1 || selectionEndIndex.value === -1 || !transcriptData.value) return;
+    const words = transcriptData.value.words;
+    const startWord = words[selectionStartIndex.value];
+    const endWord = words[selectionEndIndex.value];
+    if (startWord && endWord) {
+      emit('deleteTimeRange', getWordStart(startWord), getWordEnd(endWord));
+    }
+    clearWordSelection();
+  }
+
+  // ===== Split at Cursor =====
+
+  function splitAtWordBoundary(index: number) {
+    if (!transcriptData.value || index <= 0 || index >= transcriptData.value.words.length) return;
+    const word = transcriptData.value.words[index];
+    if (word) {
+      emit('splitAtTime', getWordStart(word));
+    }
+  }
+
   // Word editing functions
   function onWordClick(word: any, index: number) {
+    // Strikethrough mode: toggle word
+    if (strikethroughMode.value) {
+      toggleStrikethroughWord(index);
+      return;
+    }
+
     // Only seek if not currently editing
     if (editingWordIndex.value === -1) {
       // Prevent autoscroll completely after manual click

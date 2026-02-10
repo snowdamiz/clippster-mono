@@ -1120,6 +1120,22 @@ pub struct StickerSettings {
     pub per_ratio_configs: Option<std::collections::HashMap<String, StickerRatioConfig>>,
 }
 
+/// Layout overlay settings for VOD preset overlays (borders, dividers, decorative elements)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayoutOverlaySettings {
+    pub id: String,
+    pub image_path: String,  // Local file path to uploaded PNG
+    pub x: f64,              // 0-100 percentage position (center-based)
+    pub y: f64,              // 0-100 percentage position (center-based)
+    pub width: f64,          // 0-100 percentage of target frame width
+    pub height: f64,         // 0-100 percentage of target frame height
+    pub opacity: f64,        // 0-100
+    pub rotation: f64,       // degrees
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
 /// Clip watermark ratio config for per-aspect-ratio positioning
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

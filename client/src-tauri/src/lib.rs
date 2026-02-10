@@ -583,6 +583,12 @@ pub fn run() {
                             sql: include_str!("../migrations/082_add_opencut_editor_projects.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 83,
+                            description: "add_vod_presets",
+                            sql: include_str!("../migrations/083_add_vod_presets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),

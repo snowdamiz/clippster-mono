@@ -211,6 +211,15 @@
                   <span>{{ getChildCount(project.id) }} Parts</span>
                 </div>
 
+                <!-- VOD Preset Badge -->
+                <div
+                  v-if="hasVodPreset(project.id)"
+                  class="project-card__preset-badge"
+                >
+                  <LayoutDashboard class="project-card__badge-icon" />
+                  <span>{{ vodPresetConfigs[project.id]?.targetAspectRatio }} Pre-Edit</span>
+                </div>
+
                 <!-- Thumbnail background with vignette -->
                 <div
                   v-if="getThumbnailUrl(project.id)"
@@ -355,6 +364,16 @@
                     @click.stop="startTranscription(project)"
                   >
                     <FileText class="project-card__action-icon" />
+                  </button>
+
+                  <button
+                    v-if="hasDirectVideos(project.id) || hasChildren(project.id)"
+                    class="project-card__action-btn"
+                    :class="{ 'project-card__action-btn--preset-active': hasVodPreset(project.id) }"
+                    title="Pre-Edit VOD"
+                    @click.stop="openVodPresetEditor(project)"
+                  >
+                    <LayoutDashboard class="project-card__action-icon" />
                   </button>
 
                   <button class="project-card__action-btn" title="Edit" @click.stop="editProject(project)">
@@ -699,6 +718,7 @@
                         :prompts="folderPrompts"
                         :transcript-data="null"
                         :show-adjust-clip-button="true"
+                        :vod-preset-config="folderProject ? vodPresetConfigs[folderProject.id] || null : null"
                         @play-clip="onClipsTabPlayClip"
                         @delete-clip="deleteFolderClip"
                         @edit-clip="onClipsTabEditClip"
@@ -1216,6 +1236,19 @@
 
     <!-- Auth Modal -->
     <AuthModal v-model="showAuthModal" />
+
+    <!-- VOD Preset Editor -->
+    <VodPresetEditor
+      v-model="showVodPresetEditor"
+      :project-id="vodPresetProject?.id || ''"
+      :initial-config="vodPresetInitialConfig"
+      :creator-profile-id="vodPresetProject?.creator_profile_id"
+      :thumbnail-url="vodPresetProject ? thumbnailCache.get(vodPresetProject.id) : null"
+      :video-path="vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.file_path || null"
+      :video-duration="vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.duration || 0"
+      @confirm="onVodPresetConfirmed"
+      @clear="onVodPresetCleared"
+    />
   </PageLayout>
 </template>
 
@@ -1258,6 +1291,7 @@
     AlertTriangle,
     Info,
     FileText,
+    LayoutDashboard,
   } from 'lucide-vue-next';
   import {
     getAllProjects,
@@ -1329,6 +1363,13 @@
   const { gates } = useSubscriptionGate();
   import { utf8ToBase64 } from '@/utils/encoding';
   import { save } from '@tauri-apps/plugin-dialog';
+  import VodPresetEditor from '@/components/VodPresetEditor.vue';
+  import {
+    setProjectVodPreset,
+    clearProjectVodPreset,
+    getProjectVodPresetConfig,
+  } from '@/services/database/vod-presets';
+  import type { ActiveVodPresetConfig } from '@/types';
 
   const projects = ref<Project[]>([]);
   const loading = ref(true);
@@ -1393,6 +1434,67 @@
   const totalTranscribeDuration = ref(0);
   const projectTranscriptStatus = ref<Record<string, boolean>>({});
   const activeTranscriptions = ref<Set<string>>(new Set());
+
+  // VOD Preset Editor state
+  const showVodPresetEditor = ref(false);
+  const vodPresetProject = ref<Project | null>(null);
+  const vodPresetInitialConfig = ref<ActiveVodPresetConfig | null>(null);
+  const vodPresetConfigs = ref<Record<string, ActiveVodPresetConfig>>({});
+
+  function hasVodPreset(projectId: string): boolean {
+    return !!vodPresetConfigs.value[projectId];
+  }
+
+  async function openVodPresetEditor(project: Project) {
+    vodPresetProject.value = project;
+    // Load existing config
+    try {
+      const config = await getProjectVodPresetConfig(project.id);
+      vodPresetInitialConfig.value = config;
+    } catch (e) {
+      console.warn('[Projects] Failed to load VOD preset config:', e);
+      vodPresetInitialConfig.value = null;
+    }
+    showVodPresetEditor.value = true;
+  }
+
+  async function onVodPresetConfirmed(config: ActiveVodPresetConfig) {
+    if (!vodPresetProject.value) return;
+    const projectId = vodPresetProject.value.id;
+    try {
+      await setProjectVodPreset(projectId, config.presetId, config);
+      vodPresetConfigs.value[projectId] = config;
+      success('VOD pre-edit settings applied');
+    } catch (e) {
+      console.error('[Projects] Failed to save VOD preset:', e);
+      error('Failed to save pre-edit settings');
+    }
+  }
+
+  async function onVodPresetCleared() {
+    if (!vodPresetProject.value) return;
+    const projectId = vodPresetProject.value.id;
+    try {
+      await clearProjectVodPreset(projectId);
+      delete vodPresetConfigs.value[projectId];
+      success('VOD pre-edit settings removed');
+    } catch (e) {
+      console.error('[Projects] Failed to clear VOD preset:', e);
+      error('Failed to remove pre-edit settings');
+    }
+  }
+
+  async function loadVodPresetConfigs() {
+    for (const project of projects.value) {
+      if (project.active_vod_preset_config) {
+        try {
+          vodPresetConfigs.value[project.id] = JSON.parse(project.active_vod_preset_config);
+        } catch {
+          // ignore parse errors
+        }
+      }
+    }
+  }
 
   // Filter state
   const searchQuery = ref('');
@@ -1628,6 +1730,9 @@
       // Load transcript statuses for all projects (non-blocking)
       const allProjectIds = projects.value.map((p) => p.id);
       loadTranscriptStatuses(allProjectIds);
+
+      // Load VOD preset configs from project data
+      loadVodPresetConfigs();
     } catch (error) {
       console.error('Failed to load projects:', error);
     } finally {
@@ -3607,6 +3712,7 @@
         textOverlays: null, // No text overlays from folder view
         stickers: null, // No stickers from folder view
         clipWatermarks: null, // No clip watermarks from folder view
+        layoutOverlays: null, // Layout overlays passed via VOD preset in ClipsTab
       });
 
       success('Build started', 'Your clip is being built in the background.');
@@ -5639,6 +5745,25 @@
     animation: spin 0.8s linear infinite;
   }
 
+  .project-card__preset-badge {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border-radius: 0.375rem;
+    backdrop-filter: blur(8px);
+    z-index: 5;
+    background-color: rgba(16, 185, 129, 0.3);
+    color: #6ee7b7;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
   @keyframes spin {
     from {
       transform: rotate(0deg);
@@ -5928,6 +6053,15 @@
 
   .project-card__action-btn--transcribed:hover {
     background-color: #22c55e;
+  }
+
+  .project-card__action-btn--preset-active {
+    background-color: rgba(16, 185, 129, 0.9);
+    color: white;
+  }
+
+  .project-card__action-btn--preset-active:hover {
+    background-color: #10b981;
   }
 
   .project-card__action-btn:hover {

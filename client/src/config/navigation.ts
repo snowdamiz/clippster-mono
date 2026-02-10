@@ -16,6 +16,7 @@ import {
   Megaphone,
   Wand2,
   Handshake,
+  CalendarDays,
 } from 'lucide-vue-next';
 
 export type NavigationGroup = 'browse' | 'create' | 'manage' | 'system';
@@ -127,6 +128,13 @@ export const navigationItems: NavigationItem[] = [
     path: '/messages',
     icon: MessageCircle,
     group: 'manage',
+  },
+  {
+    name: 'Calendar',
+    path: '/calendar',
+    icon: CalendarDays,
+    group: 'manage',
+    restrictedHidden: true,
   },
   {
     name: 'Billing',

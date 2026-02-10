@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings, ClipWatermarkSettings, ManualFramingConfig, SegmentFramingConfigs};
+use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings, ClipWatermarkSettings, ManualFramingConfig, SegmentFramingConfigs, LayoutOverlaySettings};
 use super::effect_renderer::{ClipEffectSettings, build_effects_filter_chain};
 use super::audio_effect_renderer::{AudioEffectSettings, build_audio_effects_filter_chain};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
@@ -268,6 +268,7 @@ pub async fn build_clip_internal_simple(
     clip_watermarks: Option<Vec<ClipWatermarkSettings>>,
     clip_effects: Option<Vec<ClipEffectSettings>>,
     audio_effects: Option<Vec<AudioEffectSettings>>,
+    _layout_overlays: Option<Vec<LayoutOverlaySettings>>,
     cancel_rx: CancellationToken
 ) -> Result<ClipBuildResult, String> {
 
