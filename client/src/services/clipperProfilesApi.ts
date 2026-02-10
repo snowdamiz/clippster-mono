@@ -27,6 +27,7 @@ export interface ClipperProfile {
   channel_links: ChannelLink[];
   portfolio_clips: PortfolioClip[];
   badges: Badge[];
+  is_affiliate: boolean;
   endorsements?: Endorsement[];
   user?: {
     id: number;

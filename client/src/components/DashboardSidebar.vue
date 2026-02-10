@@ -301,6 +301,10 @@
       if (item.name === 'Admin' || item.name === 'Bug Report') {
         return false;
       }
+      // Check affiliate-only items
+      if (item.affiliateOnly) {
+        return authStore.user?.is_affiliate === true;
+      }
       // Check admin-only items
       if (item.adminOnly) {
         return authStore.user?.is_admin === true;

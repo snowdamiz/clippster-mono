@@ -39,6 +39,9 @@ defmodule ClippsterServer.Accounts.User do
     field :stripe_subscription_id, :string
     field :stripe_customer_id, :string
 
+    # Affiliate referral tracking
+    field :referred_by_affiliate_id, :integer
+
     timestamps(type: :utc_datetime)
   end
 
@@ -183,6 +186,14 @@ defmodule ClippsterServer.Accounts.User do
     user
     |> change()
     |> put_change(:beta_activated, true)
+  end
+
+  @doc """
+  Changeset for setting affiliate referral on signup.
+  """
+  def referral_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:referred_by_affiliate_id])
   end
 
   @doc """
