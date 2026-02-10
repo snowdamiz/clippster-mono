@@ -5,6 +5,7 @@ defmodule ClippsterServerWeb.StripeController do
   alias ClippsterServer.Organizations
   alias ClippsterServer.Subscriptions
   alias ClippsterServer.PromoCodes
+  alias ClippsterServer.Affiliates
 
   @doc """
   Creates a Stripe Checkout session for purchasing a credit pack.
@@ -414,6 +415,14 @@ defmodule ClippsterServerWeb.StripeController do
             {:ok, _result} ->
               IO.puts("[Stripe Webhook] Renewed subscription for user #{user.id}")
 
+              # Record affiliate recurring commission
+              amount_total = invoice["amount_paid"] || Map.get(invoice, :amount_paid) || 0
+              amount_usd = Decimal.div(Decimal.new(amount_total), Decimal.new(100))
+              case Affiliates.record_recurring_commission(user.id, amount_usd) do
+                {:ok, _} -> IO.puts("[Stripe Webhook] Recorded affiliate recurring commission for user #{user.id}")
+                _ -> :ok
+              end
+
             {:error, reason} ->
               IO.puts("[Stripe Webhook] Failed to renew subscription: #{inspect(reason)}")
           end
@@ -464,6 +473,9 @@ defmodule ClippsterServerWeb.StripeController do
                 "[Stripe Webhook] Expired subscription for user #{user.id} due to payment failure"
               )
 
+              # Cancel pending affiliate commissions
+              Affiliates.cancel_pending_commissions(user.id)
+
             {:error, reason} ->
               IO.puts("[Stripe Webhook] Failed to expire subscription: #{inspect(reason)}")
           end
@@ -505,6 +517,9 @@ defmodule ClippsterServerWeb.StripeController do
         case Subscriptions.expire_subscription(user.id) do
           {:ok, _user} ->
             IO.puts("[Stripe Webhook] Expired subscription for user #{user.id}")
+
+            # Cancel pending affiliate commissions
+            Affiliates.cancel_pending_commissions(user.id)
 
             # Cancel any active promo redemptions for this subscription
             case PromoCodes.get_redemption_by_subscription(stripe_subscription_id) do
@@ -617,6 +632,13 @@ defmodule ClippsterServerWeb.StripeController do
           end
         end
 
+        # Record affiliate signup commission
+        amount = get_subscription_amount(tier)
+        case Affiliates.record_signup_commission(user_id_int, tier, amount) do
+          {:ok, _} -> IO.puts("[Stripe Webhook] Recorded affiliate signup commission for user #{user_id_int}")
+          _ -> :ok
+        end
+
       {:error, reason} ->
         IO.puts("[Stripe Webhook] Failed to create subscription: #{inspect(reason)}")
     end
@@ -678,6 +700,14 @@ defmodule ClippsterServerWeb.StripeController do
     case Credits.create_stripe_transaction(attrs) do
       {:ok, _transaction} ->
         IO.puts("[Stripe Webhook] Transaction created and credits added for user #{user_id}")
+
+        # Record affiliate credit pack commission
+        user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
+        credit_amount = parse_decimal(amount_usd) || Decimal.div(Decimal.new(amount_total || 0), Decimal.new(100))
+        case Affiliates.record_credit_pack_commission(user_id_int, credit_amount) do
+          {:ok, _} -> IO.puts("[Stripe Webhook] Recorded affiliate credit pack commission for user #{user_id}")
+          _ -> :ok
+        end
 
       {:error, :already_processed} ->
         IO.puts("[Stripe Webhook] Transaction already processed for session #{session_id}")
@@ -819,6 +849,12 @@ defmodule ClippsterServerWeb.StripeController do
         IO.puts("[Stripe Webhook] Failed to add org addon: #{inspect(reason)}")
     end
   end
+
+  # Map subscription tier to approximate USD amount for commission calculation
+  defp get_subscription_amount("starter"), do: Decimal.new("9.99")
+  defp get_subscription_amount("creator"), do: Decimal.new("24.99")
+  defp get_subscription_amount("pro"), do: Decimal.new("49.99")
+  defp get_subscription_amount(_), do: Decimal.new("0")
 
   defp get_metadata_value(metadata, key) when is_map(metadata) do
     # Handle both string and atom keys

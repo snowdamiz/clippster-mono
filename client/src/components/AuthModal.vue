@@ -368,7 +368,7 @@
 
 <script setup lang="ts">
   import { onMounted, onUnmounted, watch, ref } from 'vue';
-  import { useRouter } from 'vue-router';
+  import { useRouter, useRoute } from 'vue-router';
   import {
     X,
     Zap,
@@ -396,12 +396,24 @@
 
   const authStore = useAuthStore();
   const router = useRouter();
+  const route = useRoute();
   const authMethod = ref<'wallet' | 'google' | 'email' | null>(null);
   const currentView = ref<'signin' | 'signup' | 'verify-otp' | 'forgot-password' | 'reset-sent'>('signin');
   const email = ref('');
   const password = ref('');
   const confirmPassword = ref('');
   const otpCode = ref('');
+  const referralCode = ref<string | null>(null);
+
+  // Capture referral code from URL on mount
+  const captureReferralCode = () => {
+    const ref = route.query.ref as string || localStorage.getItem('referral_code');
+    if (ref) {
+      referralCode.value = ref;
+      localStorage.setItem('referral_code', ref);
+    }
+  };
+  captureReferralCode();
   const successMessage = ref('');
   const resendCooldown = ref(0);
   const otpInput = ref<HTMLInputElement | null>(null);
@@ -417,8 +429,9 @@
   const connectWallet = async () => {
     authMethod.value = 'wallet';
     successMessage.value = '';
-    const result = await authStore.authenticateWithWallet();
+    const result = await authStore.authenticateWithWallet(referralCode.value);
     if (result.success) {
+      localStorage.removeItem('referral_code');
       close();
       redirectAfterLogin(result.user);
     }
@@ -427,8 +440,9 @@
   const authenticateWithGoogle = async () => {
     authMethod.value = 'google';
     successMessage.value = '';
-    const result = await authStore.authenticateWithGoogle();
+    const result = await authStore.authenticateWithGoogle(referralCode.value);
     if (result.success) {
+      localStorage.removeItem('referral_code');
       close();
       redirectAfterLogin(result.user);
     }
@@ -454,7 +468,7 @@
     }
 
     successMessage.value = '';
-    const result = await authStore.registerWithEmail(email.value, password.value);
+    const result = await authStore.registerWithEmail(email.value, password.value, referralCode.value);
 
     if (result.success) {
       currentView.value = 'verify-otp';

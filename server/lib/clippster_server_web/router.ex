@@ -842,6 +842,16 @@ defmodule ClippsterServerWeb.Router do
     )
   end
 
+  # Affiliate user routes (authenticated)
+  scope "/api", ClippsterServerWeb do
+    pipe_through(:api_auth)
+
+    get("/affiliate/dashboard", AffiliateController, :my_dashboard)
+    get("/affiliate/referrals", AffiliateController, :my_referrals)
+    get("/affiliate/payouts", AffiliateController, :my_payouts)
+    put("/affiliate/settings", AffiliateController, :update_settings)
+  end
+
   # Admin-only routes
   scope "/api", ClippsterServerWeb do
     pipe_through(:api_admin)
@@ -887,6 +897,17 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin waitlist management
     get("/admin/waitlist", WaitlistController, :index)
+
+    # Admin affiliate management
+    get("/admin/affiliates", AffiliateController, :list_affiliates)
+    post("/admin/affiliates", AffiliateController, :create_affiliate)
+    get("/admin/affiliates/overview", AffiliateController, :admin_overview)
+    get("/admin/affiliates/payouts", AffiliateController, :pending_payouts)
+    get("/admin/affiliates/:id", AffiliateController, :show_affiliate)
+    put("/admin/affiliates/:id", AffiliateController, :update_affiliate)
+    post("/admin/affiliates/:id/deactivate", AffiliateController, :deactivate)
+    post("/admin/affiliates/:id/activate", AffiliateController, :activate)
+    post("/admin/affiliates/:id/payout", AffiliateController, :record_payout)
 
     # Admin organization application management
     get("/admin/organization-applications", OrganizationApplicationController, :index)

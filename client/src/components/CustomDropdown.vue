@@ -88,33 +88,33 @@
     const viewportHeight = window.innerHeight;
     const spacing = 4;
 
-    const spaceBelow = viewportHeight - rect.bottom;
-    const spaceAbove = rect.top;
+    const spaceBelow = viewportHeight - rect.bottom - spacing;
+    const spaceAbove = rect.top - spacing;
 
-    // Default to below
-    let top = rect.bottom + spacing;
-    let maxHeight = Math.min(300, spaceBelow - spacing);
+    // Decide direction: open above if not enough room below and more room above
+    const openAbove = spaceBelow < 150 && spaceAbove > spaceBelow;
 
-    // If space below is too small (e.g. < 150px) and space above is larger, go above
-    if (spaceBelow < 150 && spaceAbove > spaceBelow) {
-      // To position above correctly without knowing exact height, we can use bottom positioning
-      // But our style object expects top.
-      // We can measure the dropdown after it renders.
-      // For now, let's just use the constrained below positioning or simplistic above.
-      // Let's just maximize space below for now to be safe and simple
-      // If we really need above, we'd calculate: top = rect.top - height - spacing
+    if (openAbove) {
+      const maxHeight = Math.min(300, spaceAbove);
+      dropdownPosition.value = {
+        top: 'auto',
+        left: `${rect.left}px`,
+        width: 'auto',
+        minWidth: `${rect.width}px`,
+        maxHeight: `${maxHeight}px`,
+      };
+    } else {
+      const maxHeight = Math.min(300, spaceBelow);
+      dropdownPosition.value = {
+        top: `${rect.bottom + spacing}px`,
+        left: `${rect.left}px`,
+        width: 'auto',
+        minWidth: `${rect.width}px`,
+        maxHeight: `${maxHeight}px`,
+      };
     }
 
-    dropdownPosition.value = {
-      top: `${top}px`,
-      left: `${rect.left}px`,
-      width: 'auto',
-      minWidth: `${rect.width}px`,
-      maxHeight: `${maxHeight}px`,
-    };
-
-    // Now that we've set initial, let's check if we should flip to above
-    // We need nextTick to check dropdownRef height if we were to flip
+    return openAbove;
   }
 
   function toggleDropdown() {
@@ -122,22 +122,16 @@
       isOpen.value = false;
     } else {
       isOpen.value = true;
-      // Calculate position immediately
-      updatePosition();
-      // And recalculate after render to be precise if needed (e.g. for "above" positioning)
+      const openAbove = updatePosition();
+      // After render, position above precisely using actual dropdown height
       nextTick(() => {
-        if (dropdownRef.value && triggerRef.value) {
-          const dropdownRect = dropdownRef.value.getBoundingClientRect();
+        if (openAbove && dropdownRef.value && triggerRef.value) {
           const triggerRect = triggerRef.value.getBoundingClientRect();
-          const viewportHeight = window.innerHeight;
-
-          // If dropdown goes off screen bottom, flip it to above if there is space
-          if (dropdownRect.bottom > viewportHeight && triggerRect.top > dropdownRect.height) {
-            dropdownPosition.value = {
-              ...dropdownPosition.value,
-              top: `${triggerRect.top - dropdownRect.height - 4}px`,
-            };
-          }
+          const dropdownHeight = dropdownRef.value.offsetHeight;
+          dropdownPosition.value = {
+            ...dropdownPosition.value,
+            top: `${triggerRect.top - dropdownHeight - 4}px`,
+          };
         }
       });
     }

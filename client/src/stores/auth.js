@@ -106,7 +106,7 @@ export const useAuthStore = defineStore('auth', {
       return await response.json();
     },
 
-    async authenticateWithWallet() {
+    async authenticateWithWallet(referralCode = null) {
       this.loading = true;
       this.error = null;
 
@@ -156,15 +156,18 @@ export const useAuthStore = defineStore('auth', {
         });
 
         // Verify signature with backend
+        const verifyBody = {
+          signature: result.signature,
+          public_key: result.public_key,
+          message: result.message,
+          nonce: result.nonce,
+        };
+        if (referralCode) verifyBody.referral_code = referralCode;
+
         const verifyResponse = await fetch(`${API_BASE}/api/auth/verify`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            signature: result.signature,
-            public_key: result.public_key,
-            message: result.message,
-            nonce: result.nonce,
-          }),
+          body: JSON.stringify(verifyBody),
         });
 
         if (!verifyResponse.ok) {
@@ -211,13 +214,16 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    async authenticateWithGoogle() {
+    async authenticateWithGoogle(referralCode = null) {
       this.loading = true;
       this.error = null;
 
       try {
-        // Open Google OAuth in browser via Tauri
-        await invoke('open_google_auth_window', { apiBase: API_BASE });
+        // Open Google OAuth in browser via Tauri, passing referral code if present
+        const googleApiBase = referralCode
+          ? `${API_BASE}?referral_code=${encodeURIComponent(referralCode)}`
+          : API_BASE;
+        await invoke('open_google_auth_window', { apiBase: googleApiBase });
 
         // Listen for auth result via Tauri event or polling
         const result = await new Promise((resolve, reject) => {
@@ -304,15 +310,18 @@ export const useAuthStore = defineStore('auth', {
      * Register a new user with email and password.
      * Sends verification email with OTP code.
      */
-    async registerWithEmail(email, password) {
+    async registerWithEmail(email, password, referralCode = null) {
       this.loading = true;
       this.error = null;
 
       try {
+        const body = { email, password };
+        if (referralCode) body.referral_code = referralCode;
+
         const response = await fetch(`${API_BASE}/api/auth/email/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
+          body: JSON.stringify(body),
         });
 
         const data = await response.json();

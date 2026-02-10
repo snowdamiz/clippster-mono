@@ -15,6 +15,7 @@ import {
   Receipt,
   Megaphone,
   Wand2,
+  Handshake,
 } from 'lucide-vue-next';
 
 export type NavigationGroup = 'browse' | 'create' | 'manage' | 'system';
@@ -33,6 +34,7 @@ export interface NavigationItem {
   orgMember?: boolean; // Show for any organization member
   action?: 'dialog'; // New property to handle dialog actions instead of routing
   restrictedHidden?: boolean; // Hide for restricted accounts
+  affiliateOnly?: boolean; // Only show for affiliate users
 }
 
 export const navigationGroups: Record<NavigationGroup, { label: string; order: number }> = {
@@ -136,6 +138,13 @@ export const navigationItems: NavigationItem[] = [
   },
 
   // System group - admin and utilities (pinned at bottom)
+  {
+    name: 'Affiliate',
+    path: '/affiliate',
+    icon: Handshake,
+    group: 'system',
+    affiliateOnly: true,
+  },
   {
     name: 'Admin',
     path: '/admin',

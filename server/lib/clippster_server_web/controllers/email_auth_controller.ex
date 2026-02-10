@@ -4,14 +4,17 @@ defmodule ClippsterServerWeb.EmailAuthController do
   alias ClippsterServer.Accounts
   alias ClippsterServer.Organizations
   alias ClippsterServer.Auth.TokenGenerator
+  alias ClippsterServer.Affiliates
 
   @email_verification_callback_port 54322
 
   @doc """
   Register a new user with email and password.
   """
-  def register(conn, %{"email" => email, "password" => password}) do
-    case Accounts.register_with_email(email, password) do
+  def register(conn, %{"email" => email, "password" => password} = params) do
+    referral_code = params["referral_code"]
+
+    case Accounts.register_with_email(email, password, referral_code) do
       {:ok, _user} ->
         json(conn, %{
           success: true,
@@ -68,7 +71,8 @@ defmodule ClippsterServerWeb.EmailAuthController do
                 account_type: user.account_type,
                 owned_organization_id: user.owned_organization_id,
                 created_by_organization_id: user.created_by_organization_id,
-                ai_allowed: ai_allowed
+                ai_allowed: ai_allowed,
+                is_affiliate: Affiliates.is_affiliate?(user.id)
               }
             })
 
@@ -180,7 +184,8 @@ defmodule ClippsterServerWeb.EmailAuthController do
                 account_type: user.account_type,
                 owned_organization_id: user.owned_organization_id,
                 created_by_organization_id: user.created_by_organization_id,
-                ai_allowed: ai_allowed
+                ai_allowed: ai_allowed,
+                is_affiliate: Affiliates.is_affiliate?(user.id)
               }
             })
 

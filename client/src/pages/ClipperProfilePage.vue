@@ -54,6 +54,10 @@
                   <span class="available-badge__dot"></span>
                   Available
                 </span>
+                <span v-if="clipperProfile?.is_affiliate" class="affiliate-badge">
+                  <Handshake :size="12" class="affiliate-badge__icon" />
+                  Affiliate
+                </span>
                 <button
                   v-if="clipperProfile?.slug && clipperProfile?.is_public"
                   class="view-public-btn"
@@ -547,6 +551,136 @@
               </div>
             </section>
           </template>
+
+          <!-- Affiliate Tab -->
+          <template v-if="activeTab === 'affiliate'">
+            <div v-if="loadingAffiliate" class="loading-rows">
+              <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
+            </div>
+            <template v-else-if="affiliateInfo && affiliateDashboard">
+              <!-- Referral Link -->
+              <div class="aff-tab__link-card">
+                <div class="aff-tab__link-header">
+                  <Link2 class="aff-tab__link-icon" />
+                  <span class="aff-tab__link-label">Your Referral Link</span>
+                  <span class="aff-tab__status" :class="`aff-tab__status--${affiliateInfo.status}`">{{ affiliateInfo.status }}</span>
+                </div>
+                <div class="aff-tab__link-row">
+                  <code class="aff-tab__link-url">{{ affiliateReferralUrl }}</code>
+                  <button class="aff-tab__copy-btn" @click="copyAffiliateLink">
+                    <Copy v-if="!affCopied" :size="14" />
+                    <Check v-else :size="14" class="aff-tab__copy-ok" />
+                    {{ affCopied ? 'Copied!' : 'Copy' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Stats -->
+              <div class="posts-stats-grid">
+                <div class="posts-stat-card posts-stat-card--cyan">
+                  <div class="posts-stat-card__icon"><TrendingUp /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">${{ affiliateDashboard.this_month.total.toFixed(2) }}</span>
+                    <span class="posts-stat-card__label">This Month</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--purple">
+                  <div class="posts-stat-card__icon"><BarChart3 /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">${{ affiliateDashboard.three_months.total.toFixed(2) }}</span>
+                    <span class="posts-stat-card__label">Last 3 Months</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--pink">
+                  <div class="posts-stat-card__icon"><Heart /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">${{ affiliateDashboard.ytd.total.toFixed(2) }}</span>
+                    <span class="posts-stat-card__label">Year to Date</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--green">
+                  <div class="posts-stat-card__icon"><DollarSign /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">${{ affiliateDashboard.all_time.total.toFixed(2) }}</span>
+                    <span class="posts-stat-card__label">All Time</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Recent Referrals -->
+              <section class="section">
+                <div class="section__header">
+                  <div class="section__header-icon section__header-icon--cyan"><Handshake /></div>
+                  <div class="section__header-text">
+                    <h2 class="section-title">Recent Referrals</h2>
+                    <p class="section-subtitle">Commission earned from referred users</p>
+                  </div>
+                </div>
+                <div v-if="affiliateReferrals.length === 0" class="empty-state">
+                  <Handshake class="empty-state__icon" />
+                  <p class="empty-state__title">No referrals yet</p>
+                  <p class="empty-state__text">Share your link to start earning commissions</p>
+                </div>
+                <div v-else class="aff-tab__table-wrapper">
+                  <table class="aff-tab__table">
+                    <thead>
+                      <tr>
+                        <th class="aff-tab__th">Date</th>
+                        <th class="aff-tab__th">Type</th>
+                        <th class="aff-tab__th">Amount</th>
+                        <th class="aff-tab__th">Commission</th>
+                        <th class="aff-tab__th">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="r in affiliateReferrals" :key="r.id" class="aff-tab__row">
+                        <td class="aff-tab__td">{{ formatDate(r.inserted_at) }}</td>
+                        <td class="aff-tab__td"><span class="aff-tab__event-badge">{{ formatAffEventType(r.event_type) }}</span></td>
+                        <td class="aff-tab__td">${{ r.amount_usd.toFixed(2) }}</td>
+                        <td class="aff-tab__td aff-tab__td--green">${{ r.commission_usd.toFixed(2) }}</td>
+                        <td class="aff-tab__td"><span class="aff-tab__ref-status" :class="`aff-tab__ref-status--${r.status}`">{{ r.status }}</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <!-- Payout Settings -->
+              <section class="section">
+                <div class="section__header">
+                  <div class="section__header-icon section__header-icon--green"><Wallet /></div>
+                  <div class="section__header-text">
+                    <h2 class="section-title">Payout Settings</h2>
+                    <p class="section-subtitle">Configure how you receive commissions</p>
+                  </div>
+                </div>
+                <div class="aff-tab__settings">
+                  <div class="aff-tab__field">
+                    <label class="aff-tab__label">Payout Method</label>
+                    <CustomDropdown
+                      v-model="affSettingsForm.payout_method"
+                      :options="payoutMethodOptions"
+                      placeholder="Select method..."
+                      class="aff-tab__dropdown"
+                      trigger-class="aff-tab__dropdown-trigger"
+                    />
+                  </div>
+                  <div v-if="affSettingsForm.payout_method === 'crypto'" class="aff-tab__field">
+                    <label class="aff-tab__label">Solana USDC Address</label>
+                    <input v-model="affSettingsForm.solana_usdc_address" type="text" class="aff-tab__input" placeholder="Enter your Solana USDC address" />
+                  </div>
+                  <div v-if="affSettingsForm.payout_method === 'paypal'" class="aff-tab__field">
+                    <label class="aff-tab__label">PayPal Email</label>
+                    <input v-model="affSettingsForm.paypal_email" type="email" class="aff-tab__input" placeholder="Enter your PayPal email" />
+                  </div>
+                  <button class="aff-tab__save-btn" :disabled="savingAffSettings" @click="saveAffiliateSettings">
+                    <Loader2 v-if="savingAffSettings" :size="14" class="animate-spin" />
+                    Save Settings
+                  </button>
+                </div>
+              </section>
+            </template>
+          </template>
         </main>
       </div>
     </PageLayout>
@@ -834,6 +968,10 @@
     TrendingUp,
     FileVideo,
     RefreshCw,
+    Handshake,
+    Link2,
+    Copy,
+    Check,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
@@ -884,16 +1022,33 @@
     type EarningsSummary,
   } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
+  import {
+    getMyDashboard,
+    getMyReferrals,
+    getMyPayouts,
+    updateMySettings,
+    type AffiliateDashboard,
+    type AffiliateReferral,
+    type AffiliatePayout,
+  } from '@/services/affiliateApi';
+  import { useAuthStore } from '@/stores/auth';
 
   const { toast } = useToast();
+  const authStore = useAuthStore();
 
-  const tabs = [
-    { id: 'leaderboard', label: 'Leaderboard', icon: markRaw(Trophy) },
-    { id: 'accounts', label: 'Accounts', icon: markRaw(Share2) },
-    { id: 'payments', label: 'Payments', icon: markRaw(Wallet) },
-    { id: 'campaigns', label: 'Campaigns', icon: markRaw(Megaphone) },
-    { id: 'posts', label: 'Posts', icon: markRaw(BarChart3) },
-  ];
+  const tabs = computed(() => {
+    const base = [
+      { id: 'leaderboard', label: 'Leaderboard', icon: markRaw(Trophy) },
+      { id: 'accounts', label: 'Accounts', icon: markRaw(Share2) },
+      { id: 'payments', label: 'Payments', icon: markRaw(Wallet) },
+      { id: 'campaigns', label: 'Campaigns', icon: markRaw(Megaphone) },
+      { id: 'posts', label: 'Posts', icon: markRaw(BarChart3) },
+    ];
+    if (authStore.user?.is_affiliate || clipperProfile.value?.is_affiliate) {
+      base.push({ id: 'affiliate', label: 'Affiliate', icon: markRaw(Handshake) });
+    }
+    return base;
+  });
 
   const activeTab = ref('leaderboard');
   const clipperProfile = ref<ClipperProfile | null>(null);
@@ -920,6 +1075,25 @@
   const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
   const avatarLoadError = ref(false);
 
+  // Affiliate State
+  const loadingAffiliate = ref(false);
+  const affiliateInfo = ref<{ id: number; referral_code: string; status: string; payout_method: string | null; solana_usdc_address: string | null; paypal_email: string | null } | null>(null);
+  const affiliateDashboard = ref<AffiliateDashboard | null>(null);
+  const affiliateReferrals = ref<AffiliateReferral[]>([]);
+  const affiliatePayouts = ref<AffiliatePayout[]>([]);
+  const affCopied = ref(false);
+  const savingAffSettings = ref(false);
+  const affSettingsForm = reactive({ payout_method: '', solana_usdc_address: '', paypal_email: '' });
+  const payoutMethodOptions = [
+    { value: 'crypto', label: 'Crypto (Solana USDC)' },
+    { value: 'paypal', label: 'PayPal' },
+  ];
+
+  const affiliateReferralUrl = computed(() => {
+    if (!affiliateInfo.value) return '';
+    return `https://clippster.app/?ref=${affiliateInfo.value.referral_code}`;
+  });
+
   // Posts Analytics State
   const loadingPosts = ref(false);
   const postsAnalytics = ref<UserAnalyticsSummary | null>(null);
@@ -941,12 +1115,15 @@
     }
   );
 
-  // Load posts analytics when posts tab is selected
+  // Load tab data when tab changes
   watch(
     () => activeTab.value,
     (newTab) => {
       if (newTab === 'posts' && userPosts.value.length === 0) {
         loadPostsAnalytics();
+      }
+      if (newTab === 'affiliate' && !affiliateDashboard.value) {
+        loadAffiliateData();
       }
     }
   );
@@ -986,6 +1163,62 @@
     } finally {
       loadingLeaderboard.value = false;
     }
+  };
+
+  const loadAffiliateData = async () => {
+    loadingAffiliate.value = true;
+    try {
+      const [dashRes, refRes, payRes] = await Promise.all([
+        getMyDashboard(),
+        getMyReferrals(),
+        getMyPayouts(),
+      ]);
+      if (dashRes.success) {
+        affiliateInfo.value = dashRes.affiliate!;
+        affiliateDashboard.value = dashRes.dashboard!;
+        affSettingsForm.payout_method = dashRes.affiliate?.payout_method || '';
+        affSettingsForm.solana_usdc_address = dashRes.affiliate?.solana_usdc_address || '';
+        affSettingsForm.paypal_email = dashRes.affiliate?.paypal_email || '';
+      }
+      if (refRes.success) affiliateReferrals.value = refRes.referrals;
+      if (payRes.success) affiliatePayouts.value = payRes.payouts;
+    } catch (e: any) {
+      toast({ title: 'Error', description: 'Failed to load affiliate data' });
+    } finally {
+      loadingAffiliate.value = false;
+    }
+  };
+
+  const copyAffiliateLink = async () => {
+    try {
+      await navigator.clipboard.writeText(affiliateReferralUrl.value);
+      affCopied.value = true;
+      setTimeout(() => { affCopied.value = false; }, 2000);
+    } catch {
+      affCopied.value = false;
+    }
+  };
+
+  const saveAffiliateSettings = async () => {
+    savingAffSettings.value = true;
+    try {
+      const res = await updateMySettings({
+        payout_method: affSettingsForm.payout_method || undefined,
+        solana_usdc_address: affSettingsForm.solana_usdc_address || undefined,
+        paypal_email: affSettingsForm.paypal_email || undefined,
+      });
+      if (res.success) toast({ title: 'Saved', description: 'Payout settings updated' });
+      else toast({ title: 'Error', description: res.error || 'Failed to save' });
+    } catch {
+      toast({ title: 'Error', description: 'Failed to save settings' });
+    } finally {
+      savingAffSettings.value = false;
+    }
+  };
+
+  const formatAffEventType = (type: string) => {
+    const map: Record<string, string> = { first_subscription: 'Signup', recurring: 'Recurring', credit_pack: 'Credit Pack' };
+    return map[type] || type;
   };
 
   const loadPostsAnalytics = async () => {
@@ -1527,6 +1760,24 @@
     height: 5px;
     background: #10b981;
     border-radius: 50%;
+  }
+
+  .affiliate-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background: rgba(168, 85, 247, 0.12);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: #a855f7;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .affiliate-badge__icon {
+    flex-shrink: 0;
   }
 
   .view-public-btn,
@@ -3565,6 +3816,209 @@
     width: 14px;
     height: 14px;
   }
+
+  /* ===== Affiliate Tab ===== */
+  .aff-tab__link-card {
+    padding: 1.25rem;
+    border-radius: 10px;
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    background: linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(59, 130, 246, 0.05) 100%);
+    margin-bottom: 1rem;
+  }
+
+  .aff-tab__link-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .aff-tab__link-icon {
+    width: 18px;
+    height: 18px;
+    color: #a855f7;
+  }
+
+  .aff-tab__link-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .aff-tab__status {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-left: auto;
+  }
+
+  .aff-tab__status--active { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+  .aff-tab__status--suspended { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+  .aff-tab__status--deactivated { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+
+  .aff-tab__link-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .aff-tab__link-url {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    background: rgba(0, 0, 0, 0.3);
+    color: #a855f7;
+    font-family: monospace;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .aff-tab__copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    background: #7c3aed;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+
+  .aff-tab__copy-btn:hover { opacity: 0.9; }
+  .aff-tab__copy-ok { color: #22c55e; }
+
+  .aff-tab__table-wrapper {
+    border-radius: 10px;
+    border: 1px solid var(--sidebar-border);
+    overflow-x: auto;
+  }
+
+  .aff-tab__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .aff-tab__th {
+    padding: 0.625rem 0.875rem;
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--sidebar-hover);
+    white-space: nowrap;
+  }
+
+  .aff-tab__row {
+    border-top: 1px solid var(--sidebar-border);
+    transition: background 0.15s;
+  }
+
+  .aff-tab__row:hover { background: var(--sidebar-hover); }
+
+  .aff-tab__td {
+    padding: 0.625rem 0.875rem;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+  }
+
+  .aff-tab__td--green { color: #22c55e; }
+
+  .aff-tab__event-badge {
+    font-size: 0.75rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .aff-tab__ref-status {
+    display: inline-block;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 9999px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .aff-tab__ref-status--pending { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+  .aff-tab__ref-status--confirmed { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+  .aff-tab__ref-status--paid { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+  .aff-tab__ref-status--cancelled { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+
+  .aff-tab__settings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 400px;
+  }
+
+  .aff-tab__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .aff-tab__label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+  }
+
+  .aff-tab__input {
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    outline: none;
+    transition: border-color 150ms ease;
+  }
+
+  .aff-tab__input:focus {
+    border-color: #a855f7;
+    box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.15);
+  }
+
+  .aff-tab__dropdown-trigger {
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    color: var(--sidebar-text) !important;
+    font-size: 0.875rem !important;
+  }
+
+  .aff-tab__save-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.625rem 1rem;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    background: #7c3aed;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    width: fit-content;
+  }
+
+  .aff-tab__save-btn:hover { opacity: 0.9; }
+  .aff-tab__save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 
 <!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->

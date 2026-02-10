@@ -7,6 +7,7 @@ export interface AuthUser {
   name?: string
   avatar_url?: string
   is_admin: boolean
+  is_affiliate?: boolean
   account_type?: 'personal' | 'organization'
   owned_organization_id?: string | null
   created_by_organization_id?: number | null
@@ -55,14 +56,14 @@ export interface OrganizationResult {
 export interface AuthActions {
   // Existing methods
   requestChallenge(): Promise<any>
-  authenticateWithWallet(): Promise<AuthResult>
-  authenticateWithGoogle(): Promise<AuthResult>
+  authenticateWithWallet(referralCode?: string | null): Promise<AuthResult>
+  authenticateWithGoogle(referralCode?: string | null): Promise<AuthResult>
   getClientId(): Promise<string>
   logout(): Promise<void>
   checkAuth(): Promise<boolean>
   
   // Email auth methods
-  registerWithEmail(email: string, password: string): Promise<AuthResult>
+  registerWithEmail(email: string, password: string, referralCode?: string | null): Promise<AuthResult>
   verifyEmailOtp(email: string, otp: string): Promise<AuthResult>
   loginWithEmail(email: string, password: string): Promise<AuthResult>
   resendVerificationEmail(email: string): Promise<AuthResult>

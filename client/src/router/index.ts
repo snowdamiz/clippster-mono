@@ -311,6 +311,30 @@ const router = createRouter({
           name: 'admin-org-applications',
           component: () => import('@/pages/admin/AdminOrgApplications.vue'),
         },
+        {
+          path: 'affiliates',
+          name: 'admin-affiliates',
+          component: () => import('@/pages/admin/AdminAffiliates.vue'),
+        },
+        {
+          path: 'affiliates/:id',
+          name: 'admin-affiliate-detail',
+          component: () => import('@/pages/admin/AdminAffiliateDetail.vue'),
+        },
+      ],
+    },
+    // Affiliate dashboard (authenticated, affiliate users only)
+    {
+      path: '/affiliate',
+      name: 'affiliate-dashboard',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true },
+      children: [
+        {
+          path: '',
+          name: 'affiliate-home',
+          component: () => import('@/pages/AffiliateDashboard.vue'),
+        },
       ],
     },
     // Legacy login route - redirect to home (auth is handled via AuthModal)
