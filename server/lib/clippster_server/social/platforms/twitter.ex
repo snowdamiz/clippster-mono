@@ -16,6 +16,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
   require Logger
 
   alias ClippsterServer.Social.TwitterChunkedUpload
+  alias ClippsterServer.Social.TwitterApiClient
   alias ClippsterServer.Storage
 
   @behaviour ClippsterServer.Social.Platform
@@ -93,7 +94,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
       {"Authorization", auth_header}
     ]
 
-    case HTTPoison.post(@x_token_url, body, headers, @http_options) do
+    case TwitterApiClient.post(@x_token_url, body, headers, endpoint: "/2/oauth2/token", http_options: @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
         case Jason.decode(response_body) do
           {:ok, %{"access_token" => access_token} = data} ->
@@ -145,7 +146,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
         {"Authorization", auth_header}
       ]
 
-      case HTTPoison.post(@x_token_url, body, headers, @http_options) do
+      case TwitterApiClient.post(@x_token_url, body, headers, endpoint: "/2/oauth2/token", http_options: @http_options) do
         {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
           case Jason.decode(response_body) do
             {:ok, %{"access_token" => access_token} = data} ->
@@ -184,7 +185,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
       {"Authorization", "Bearer #{access_token}"}
     ]
 
-    case HTTPoison.get(url, headers, @http_options) do
+    case TwitterApiClient.get(url, headers, endpoint: "/2/users/me", http_options: @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
           {:ok, %{"data" => user_data}} ->
@@ -250,7 +251,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
       {"Content-Type", "application/json"}
     ]
 
-    case HTTPoison.post(@tweets_url, body, headers, @http_options) do
+    case TwitterApiClient.post(@tweets_url, body, headers, endpoint: "/2/tweets", http_options: @http_options) do
       {:ok, %HTTPoison.Response{status_code: 201, body: response_body}} ->
         handle_tweet_success(response_body, access_token)
 
