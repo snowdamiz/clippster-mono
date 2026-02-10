@@ -657,11 +657,13 @@
                 <div class="aff-tab__settings">
                   <div class="aff-tab__field">
                     <label class="aff-tab__label">Payout Method</label>
-                    <select v-model="affSettingsForm.payout_method" class="aff-tab__select">
-                      <option value="">Select method...</option>
-                      <option value="crypto">Crypto (Solana USDC)</option>
-                      <option value="paypal">PayPal</option>
-                    </select>
+                    <CustomDropdown
+                      v-model="affSettingsForm.payout_method"
+                      :options="payoutMethodOptions"
+                      placeholder="Select method..."
+                      class="aff-tab__dropdown"
+                      trigger-class="aff-tab__dropdown-trigger"
+                    />
                   </div>
                   <div v-if="affSettingsForm.payout_method === 'crypto'" class="aff-tab__field">
                     <label class="aff-tab__label">Solana USDC Address</label>
@@ -1042,7 +1044,7 @@
       { id: 'campaigns', label: 'Campaigns', icon: markRaw(Megaphone) },
       { id: 'posts', label: 'Posts', icon: markRaw(BarChart3) },
     ];
-    if (authStore.user?.is_affiliate) {
+    if (authStore.user?.is_affiliate || clipperProfile.value?.is_affiliate) {
       base.push({ id: 'affiliate', label: 'Affiliate', icon: markRaw(Handshake) });
     }
     return base;
@@ -1082,6 +1084,10 @@
   const affCopied = ref(false);
   const savingAffSettings = ref(false);
   const affSettingsForm = reactive({ payout_method: '', solana_usdc_address: '', paypal_email: '' });
+  const payoutMethodOptions = [
+    { value: 'crypto', label: 'Crypto (Solana USDC)' },
+    { value: 'paypal', label: 'PayPal' },
+  ];
 
   const affiliateReferralUrl = computed(() => {
     if (!affiliateInfo.value) return '';
@@ -3971,8 +3977,7 @@
     color: var(--sidebar-text-muted);
   }
 
-  .aff-tab__input,
-  .aff-tab__select {
+  .aff-tab__input {
     padding: 0.625rem 0.875rem;
     font-size: 0.875rem;
     background-color: var(--sidebar-hover);
@@ -3983,15 +3988,17 @@
     transition: border-color 150ms ease;
   }
 
-  .aff-tab__input:focus,
-  .aff-tab__select:focus {
+  .aff-tab__input:focus {
     border-color: #a855f7;
     box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.15);
   }
 
-  .aff-tab__select option {
-    background: var(--sidebar-surface);
-    color: var(--sidebar-text);
+  .aff-tab__dropdown-trigger {
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    color: var(--sidebar-text) !important;
+    font-size: 0.875rem !important;
   }
 
   .aff-tab__save-btn {
