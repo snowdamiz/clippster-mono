@@ -74,10 +74,11 @@ Plans:
   5. User can retry a failed X post from the post history
   6. User can see X post status, post URL, and posted timestamp for successful posts
 
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD during phase planning
+- [ ] 03-01-PLAN.md — Twitter.create_tweet/3 and platform-specific caption validation
+- [ ] 03-02-PLAN.md — Wire two-step Twitter posting into ScheduledPostWorker and PostSubmissionController
 
 ### Phase 4: Rate Limiting & Reliability
 **Goal**: System handles X API rate limits, retries transient failures, and prevents duplicate posts
@@ -107,5 +108,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. OAuth 2.0 PKCE Authentication | 2/2 | ✓ Complete | 2026-02-09 |
 | 2. Chunked Video Upload | 2/2 | ✓ Complete | 2026-02-09 |
-| 3. Tweet Creation & Scheduling | 0/TBD | Not started | - |
+| 3. Tweet Creation & Scheduling | 0/2 | In progress | - |
 | 4. Rate Limiting & Reliability | 0/TBD | Not started | - |
