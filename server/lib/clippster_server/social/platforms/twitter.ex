@@ -15,6 +15,9 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
 
   require Logger
 
+  alias ClippsterServer.Social.TwitterChunkedUpload
+  alias ClippsterServer.Storage
+
   @behaviour ClippsterServer.Social.Platform
 
   # X OAuth 2.0 endpoints
@@ -209,9 +212,19 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
   end
 
   @impl true
-  def publish_media(_access_token, _media_url, _opts) do
-    # Stub implementation - Phase 2 will implement this
-    {:error, :not_implemented}
+  def publish_media(access_token, media_url, opts) do
+    Logger.info("[Twitter] Publishing media from URL: #{media_url}")
+
+    with {:ok, accessible_url} <- maybe_generate_presigned_url(media_url),
+         {:ok, video_binary} <- fetch_video_binary(accessible_url),
+         {:ok, media_id} <- upload_video(access_token, video_binary, opts) do
+      Logger.info("[Twitter] Media published successfully: media_id=#{media_id}")
+      {:ok, %{media_id: media_id}}
+    else
+      {:error, reason} = error ->
+        Logger.error("[Twitter] Failed to publish media: #{inspect(reason)}")
+        error
+    end
   end
 
   @impl true
@@ -259,6 +272,68 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
     end
   end
   defp extract_error_from_errors(_), do: "Profile fetch failed"
+
+  # ============================================================================
+  # Media Upload Helpers
+  # ============================================================================
+
+  # Generate presigned URL for R2-hosted videos (6-hour expiry for X processing)
+  defp maybe_generate_presigned_url(media_url) do
+    if String.contains?(media_url, ".r2.cloudflarestorage.com") do
+      Logger.info("[Twitter] Generating presigned URL for R2 video (6-hour expiry)")
+
+      case Storage.presigned_url(media_url, expires_in: 21_600) do
+        {:ok, presigned_url} ->
+          Logger.info("[Twitter] Presigned URL generated successfully")
+          {:ok, presigned_url}
+
+        {:error, reason} ->
+          Logger.warning("[Twitter] Presigned URL generation failed: #{inspect(reason)}, trying original URL")
+          {:ok, media_url}
+      end
+    else
+      {:ok, media_url}
+    end
+  end
+
+  # Fetch video binary from URL with 120-second timeout
+  defp fetch_video_binary(url) do
+    Logger.info("[Twitter] Fetching video from URL...")
+
+    http_options = [
+      timeout: 120_000,
+      recv_timeout: 120_000,
+      follow_redirect: true
+    ]
+
+    case HTTPoison.get(url, [], http_options) do
+      {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
+        size_mb = Float.round(byte_size(body) / 1_024 / 1_024, 2)
+        Logger.info("[Twitter] Video downloaded successfully: #{size_mb} MB")
+        {:ok, body}
+
+      {:ok, %HTTPoison.Response{status_code: status}} ->
+        Logger.error("[Twitter] Video download failed: HTTP #{status}")
+        {:error, {:download_failed, status}}
+
+      {:error, %HTTPoison.Error{reason: reason}} ->
+        Logger.error("[Twitter] Video download failed: #{inspect(reason)}")
+        {:error, {:download_failed, reason}}
+    end
+  end
+
+  # Upload video via TwitterChunkedUpload
+  defp upload_video(access_token, video_binary, opts) do
+    upload_opts = []
+    |> maybe_add_opt(:filename, opts[:filename])
+    |> maybe_add_opt(:duration_seconds, opts[:duration_seconds])
+
+    Logger.info("[Twitter] Starting chunked upload...")
+    TwitterChunkedUpload.upload_video(access_token, video_binary, upload_opts)
+  end
+
+  defp maybe_add_opt(opts, _key, nil), do: opts
+  defp maybe_add_opt(opts, key, value), do: Keyword.put(opts, key, value)
 
   # ============================================================================
   # Analytics Functions (twitterapi.io - preserved from original implementation)
