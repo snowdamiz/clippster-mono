@@ -350,6 +350,37 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     end
   end
 
+  # Twitter-specific publish: two-step flow (upload media, then create tweet)
+  defp do_publish(%PostSubmission{platform: "twitter"} = post, account, access_token) do
+    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to Twitter (two-step flow)")
+
+    publish_opts = %{
+      filename: "video.mp4",
+      ig_user_id: get_platform_user_id(account)
+    }
+
+    # Step 1: Upload media
+    Logger.info("[ScheduledPostWorker] Twitter: uploading media for post #{post.id}")
+    case Platform.call("twitter", :publish_media, [access_token, post.media_url, publish_opts]) do
+      {:ok, %{media_id: media_id}} ->
+        # Step 2: Create tweet with media_id
+        Logger.info("[ScheduledPostWorker] Twitter: creating tweet with media_id #{media_id}")
+        case Platform.call("twitter", :create_tweet, [access_token, post.caption || "", [media_ids: [media_id]]]) do
+          {:ok, result} ->
+            handle_publish_success(post, result)
+
+          {:error, reason} ->
+            error_type = classify_error(reason)
+            handle_publish_failure(post, inspect(reason), error_type)
+        end
+
+      {:error, reason} ->
+        error_type = classify_error(reason)
+        handle_publish_failure(post, inspect(reason), error_type)
+    end
+  end
+
+  # Default platform publish: single-step flow (Instagram and others)
   defp do_publish(%PostSubmission{} = post, account, access_token) do
     Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to #{post.platform}")
 
