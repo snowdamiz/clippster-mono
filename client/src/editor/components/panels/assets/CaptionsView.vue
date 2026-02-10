@@ -4,9 +4,9 @@ import { useEditor } from "../../../composables/useEditor";
 import { CAPTION_PRESETS, getPresetById } from "../../../constants/caption-constants";
 import type { CaptionPreset } from "../../../constants/caption-constants";
 import { buildCaptionElement } from "../../../lib/timeline/element-utils";
-import type { CaptionLine, CaptionWord, CaptionPresetId } from "../../../types/timeline";
+import type { CaptionLine, CaptionWord, CaptionPresetId, VideoElement, UploadAudioElement } from "../../../types/timeline";
 import { Button } from "@/components/ui/button";
-import { Loader2, Captions, Sparkles, Upload } from "lucide-vue-next";
+import { Loader2, Captions } from "lucide-vue-next";
 
 const { editor } = useEditor();
 
@@ -14,8 +14,6 @@ const selectedPresetId = ref<CaptionPresetId>("karaoke");
 const isProcessing = ref(false);
 const processingStep = ref("");
 const error = ref<string | null>(null);
-const transcriptSource = ref<"project" | "upload" | null>(null);
-const importedWords = ref<CaptionWord[]>([]);
 
 const selectedPreset = computed(() => getPresetById(selectedPresetId.value));
 
@@ -146,122 +144,172 @@ function generateCaptionElements(words: CaptionWord[]) {
 	error.value = null;
 }
 
-async function handleLoadFromProject() {
+async function handleGenerateSubtitles() {
 	try {
 		isProcessing.value = true;
 		error.value = null;
-		processingStep.value = "Loading transcript from project...";
-		transcriptSource.value = "project";
+		processingStep.value = "Collecting audio from timeline...";
 
-		// Get the active project metadata to find the source project ID
 		const activeProject = editor.project.getActive();
 		if (!activeProject) {
-			error.value = "No active project. Open a project first.";
+			error.value = "No active project.";
 			return;
 		}
-
-		// Try to load transcript data from the project's clip source
 		const projectId = activeProject.metadata.id;
 
-		// Import database functions dynamically
-		const { getTranscriptByProjectId } = await import(
-			"@/services/database/transcripts"
-		);
-		const { getVideoEditorSourcesByProjectId } = await import(
-			"@/services/database/video-editor-projects"
-		);
+		const tracks = editor.timeline.getTracks();
+		const mediaAssets = editor.media.getAssets();
 
-		// Get sources to find the original clip and its parent project
-		const sources = await getVideoEditorSourcesByProjectId(projectId);
-		const firstSource = sources[0];
+		console.log("[CaptionsView] Tracks:", tracks.map(t => ({ type: t.type, elements: t.elements.length })));
+		console.log("[CaptionsView] Media assets:", mediaAssets.map(a => ({ id: a.id, name: a.name, type: a.type, filePath: a.filePath, url: a.url?.substring(0, 60) })));
 
-		if (!firstSource) {
-			error.value = "No video sources found in this project.";
-			return;
-		}
+		// Collect elements that contain speech:
+		// - Video elements (always have speech)
+		// - Upload audio elements (user-extracted audio, likely speech)
+		// - NOT library audio (music/sfx)
+		const speechElements: Array<{
+			filePath: string;
+			timelineStart: number;
+			trimStart: number;
+			duration: number;
+		}> = [];
 
-		// Find the source project ID through the clip chain
-		let sourceProjectId: string | null = null;
-
-		if (firstSource.source_type === "clip" && firstSource.source_id) {
-			// Source is a clip — get the clip's parent project
-			const { getClip } = await import("@/services/database");
-			const clip = await getClip(firstSource.source_id);
-			if (clip?.project_id) {
-				sourceProjectId = clip.project_id;
+		for (const track of tracks) {
+			if (track.type === "video") {
+				for (const el of track.elements) {
+					const videoEl = el as VideoElement;
+					const asset = mediaAssets.find((a) => a.id === videoEl.mediaId);
+					console.log("[CaptionsView] Video element:", videoEl.mediaId, "asset:", asset?.name, "filePath:", asset?.filePath);
+					if (asset?.filePath) {
+						speechElements.push({
+							filePath: asset.filePath,
+							timelineStart: videoEl.startTime,
+							trimStart: videoEl.trimStart,
+							duration: videoEl.duration,
+						});
+					} else if (asset?.url) {
+						// filePath may not be set — try to get it from the video editor source
+						speechElements.push({
+							filePath: asset.url,
+							timelineStart: videoEl.startTime,
+							trimStart: videoEl.trimStart,
+							duration: videoEl.duration,
+						});
+						console.log("[CaptionsView] Using asset.url as fallback:", asset.url.substring(0, 80));
+					}
+				}
+			} else if (track.type === "audio") {
+				for (const el of track.elements) {
+					if (el.type === "audio" && (el as UploadAudioElement).sourceType === "upload") {
+						const uploadEl = el as UploadAudioElement;
+						const asset = mediaAssets.find((a) => a.id === uploadEl.mediaId);
+						if (asset?.filePath) {
+							speechElements.push({
+								filePath: asset.filePath,
+								timelineStart: uploadEl.startTime,
+								trimStart: uploadEl.trimStart,
+								duration: uploadEl.duration,
+							});
+						}
+					}
+				}
 			}
-		} else if (firstSource.source_type === "raw_video" && firstSource.source_id) {
-			// Source is a raw video — get its parent project
-			const { getRawVideo } = await import("@/services/database");
-			const rawVideo = await getRawVideo(firstSource.source_id);
-			if (rawVideo?.project_id) {
-				sourceProjectId = rawVideo.project_id;
+		}
+
+		if (speechElements.length === 0) {
+			error.value = "No video or audio tracks found on the timeline.";
+			return;
+		}
+
+		console.log("[CaptionsView] Found", speechElements.length, "speech elements to transcribe");
+
+		const { parseTranscriptToWords } = await import("@/utils/timelineUtils");
+		const api = (await import("@/services/api")).default;
+
+		let allWords: CaptionWord[] = [];
+
+		for (let i = 0; i < speechElements.length; i++) {
+			const elem = speechElements[i];
+			processingStep.value = `Transcribing ${i + 1}/${speechElements.length}...`;
+
+			try {
+				let file: File;
+				if (elem.filePath.startsWith("blob:") || elem.filePath.startsWith("http")) {
+					const resp = await fetch(elem.filePath);
+					const blob = await resp.blob();
+					file = new File([blob], "audio.mp4", { type: blob.type || "video/mp4" });
+				} else {
+					// Filesystem path — read via Tauri video server (same as tauri-storage-adapter)
+					const { invoke } = await import("@tauri-apps/api/core");
+					let port: number;
+					try { port = await invoke<number>("get_video_server_port"); } catch { port = 8642; }
+					const serverUrl = `http://localhost:${port}/video/${btoa(elem.filePath)}`;
+					const resp = await fetch(serverUrl);
+					if (!resp.ok) throw new Error(`Video server returned ${resp.status} for ${elem.filePath}`);
+					const blob = await resp.blob();
+					file = new File([blob], "audio.mp4", { type: blob.type || "video/mp4" });
+				}
+				console.log("[CaptionsView] Read file:", elem.filePath.substring(0, 80), "size:", file.size);
+
+				const formData = new FormData();
+				formData.append("audio", file);
+				formData.append("project_id", projectId);
+				formData.append("duration", (elem.trimStart + elem.duration).toString());
+
+				const response = await api.post("/clips/transcribe", formData, {
+					headers: { "Content-Type": "multipart/form-data" },
+					timeout: 120000,
+				});
+
+				if (response.data.success && response.data.transcript) {
+					const rawJson = JSON.stringify(response.data.transcript);
+					const words = parseTranscriptToWords(rawJson);
+
+					// Whisper returns 0-based times relative to file start.
+					// Filter to the trimmed region and offset to timeline position.
+					const trimEnd = elem.trimStart + elem.duration;
+					for (const w of words) {
+						if (w.start >= elem.trimStart && w.start < trimEnd) {
+							allWords.push({
+								word: w.word,
+								start: w.start - elem.trimStart + elem.timelineStart,
+								end: w.end - elem.trimStart + elem.timelineStart,
+								confidence: w.confidence,
+							});
+						}
+					}
+				}
+			} catch (err: any) {
+				console.warn("[CaptionsView] Failed to transcribe element:", err?.message || err);
 			}
 		}
 
-		if (!sourceProjectId) {
-			error.value =
-				"No source project linked. Use 'Transcribe' to generate captions for uploaded videos.";
+		if (allWords.length === 0) {
+			error.value = "Transcription returned no words. Check that the video has speech audio.";
 			return;
 		}
 
-		processingStep.value = "Extracting word timings...";
+		// Sort by timeline time and deduplicate
+		allWords.sort((a, b) => a.start - b.start);
+		allWords = allWords.filter((w, i, arr) => {
+			if (i === 0) return true;
+			return !(Math.abs(w.start - arr[i - 1].start) < 0.01 && w.word === arr[i - 1].word);
+		});
 
-		const transcript = await getTranscriptByProjectId(sourceProjectId);
-		if (!transcript || !transcript.raw_json) {
-			error.value =
-				"No transcript found for the source project. Transcribe the video first in the Project Workspace.";
-			return;
-		}
+		console.log("[CaptionsView] Total words:", allWords.length);
+		console.log("[CaptionsView] First 5:", allWords.slice(0, 5).map(w => `"${w.word}" ${w.start.toFixed(2)}-${w.end.toFixed(2)}`));
+		console.log("[CaptionsView] Last 5:", allWords.slice(-5).map(w => `"${w.word}" ${w.start.toFixed(2)}-${w.end.toFixed(2)}`));
 
-		// Parse words from transcript
-		const { parseTranscriptToWords } = await import(
-			"@/utils/timelineUtils"
-		);
-		const words = parseTranscriptToWords(transcript.raw_json);
-
-		if (words.length === 0) {
-			error.value = "Transcript has no word-level timing data.";
-			return;
-		}
-
-		// Convert to CaptionWord format — adjust times relative to clip start
-		// The clip was extracted starting at some offset in the VOD
-		const clipOffset = firstSource.trim_start || 0;
-
-		const captionWords: CaptionWord[] = words
-			.filter((w) => {
-				// Only include words that fall within the clip's time range
-				const adjustedStart = w.start - clipOffset;
-				const clipDuration = firstSource.end_time - firstSource.start_time;
-				return adjustedStart >= 0 && adjustedStart < clipDuration;
-			})
-			.map((w) => ({
-				word: w.word,
-				start: w.start - clipOffset,
-				end: w.end - clipOffset,
-				confidence: w.confidence,
-			}));
-
-		importedWords.value = captionWords;
-		processingStep.value = `Found ${captionWords.length} words. Generating captions...`;
-
-		generateCaptionElements(captionWords);
+		processingStep.value = `Found ${allWords.length} words. Generating captions...`;
+		generateCaptionElements(allWords);
 		processingStep.value = "";
 	} catch (err) {
-		console.error("[CaptionsView] Failed to load transcript:", err);
-		error.value =
-			err instanceof Error ? err.message : "An unexpected error occurred";
+		console.error("[CaptionsView] Failed to generate subtitles:", err);
+		error.value = err instanceof Error ? err.message : "An unexpected error occurred";
 	} finally {
 		isProcessing.value = false;
 		processingStep.value = "";
 	}
-}
-
-async function handleTranscribeUpload() {
-	error.value =
-		"Upload transcription costs $0.30/minute. This will be connected to the transcription API. For now, use clips from projects that already have transcripts.";
-	transcriptSource.value = "upload";
 }
 
 function handleRemoveCaptions() {
@@ -271,7 +319,6 @@ function handleRemoveCaptions() {
 			editor.timeline.removeTrack({ trackId: track.id });
 		}
 	}
-	importedWords.value = [];
 }
 </script>
 
@@ -323,30 +370,22 @@ function handleRemoveCaptions() {
 		<!-- Divider -->
 		<div class="border-t border-white/5" />
 
-		<!-- Generate Captions -->
+		<!-- Generate Subtitles -->
 		<div class="space-y-3">
-			<h3 class="text-xs font-medium text-zinc-400 uppercase tracking-wider">Generate Captions</h3>
+			<h3 class="text-xs font-medium text-zinc-400 uppercase tracking-wider">Generate</h3>
 
-			<Button
-				class="w-full justify-start gap-2"
-				variant="outline"
+			<button
+				class="flex w-full items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 text-sm font-medium text-sky-300 hover:bg-sky-500/20 disabled:opacity-50 transition-colors"
 				:disabled="isProcessing"
-				@click="handleLoadFromProject"
+				@click="handleGenerateSubtitles"
 			>
-				<Sparkles class="size-4 shrink-0" />
-				<span class="truncate">{{ isProcessing && transcriptSource === 'project' ? processingStep : 'From project transcript' }}</span>
-				<Loader2 v-if="isProcessing && transcriptSource === 'project'" class="ml-auto size-4 animate-spin shrink-0" />
-			</Button>
-
-			<Button
-				class="w-full justify-start gap-2"
-				variant="outline"
-				:disabled="isProcessing"
-				@click="handleTranscribeUpload"
-			>
-				<Upload class="size-4 shrink-0" />
-				<span class="truncate">Transcribe video ($0.30/min)</span>
-			</Button>
+				<Loader2 v-if="isProcessing" class="size-4 animate-spin shrink-0" />
+				<Captions v-else class="size-4 shrink-0" />
+				<span class="truncate">{{ isProcessing ? processingStep : 'Generate Subtitles' }}</span>
+			</button>
+			<p class="text-[10px] text-zinc-500 leading-relaxed">
+				Transcribes speech from video and audio tracks on the timeline. Music tracks are excluded.
+			</p>
 		</div>
 
 		<!-- Error -->

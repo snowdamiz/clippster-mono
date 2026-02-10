@@ -6,7 +6,6 @@ import { ref, watch, onUnmounted, computed, type Ref } from "vue";
 import { useEditor } from "../../useEditor";
 import { useElementSelection } from "./useElementSelection";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
-import { snapTimeToFrame } from "../../../lib/time";
 import { computeDropTarget } from "../../../lib/timeline/drop-utils";
 import { generateUUID } from "../../../utils/id";
 import { useTimelineSnapping, type SnapPoint } from "../useTimelineSnapping";
@@ -234,7 +233,6 @@ export function useElementInteraction({
 					scrollLeft,
 				});
 				const adjustedTime = Math.max(0, mouseTime - pendingDrag.clickOffsetTime);
-				const snappedTime = snapTimeToFrame({ time: adjustedTime, fps: activeProject.settings.fps });
 
 				dragState.value = {
 					isDragging: true,
@@ -244,7 +242,7 @@ export function useElementInteraction({
 					startMouseY: pendingDrag.startMouseY,
 					startElementTime: pendingDrag.startElementTime,
 					clickOffsetTime: pendingDrag.clickOffsetTime,
-					currentTime: snappedTime,
+					currentTime: adjustedTime,
 					currentMouseY: clientY,
 				};
 				startedDragThisEvent = true;
@@ -275,8 +273,7 @@ export function useElementInteraction({
 			scrollLeft,
 		});
 		const adjustedTime = Math.max(0, mouseTime - ds.clickOffsetTime);
-		const fps = activeProject.settings.fps;
-		const frameSnappedTime = snapTimeToFrame({ time: adjustedTime, fps });
+		const frameSnappedTime = adjustedTime;
 
 		const sourceTrack = tracks.value.find(({ id }) => id === ds.trackId);
 		const movingElement = sourceTrack?.elements.find(({ id }) => id === ds.elementId);

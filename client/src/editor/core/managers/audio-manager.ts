@@ -30,6 +30,8 @@ export class AudioManager {
 	private lastIsPlaying = false;
 	private lastVolume = 1;
 	private unsubscribers: Array<() => void> = [];
+	private nativeBuffers = new Map<string, AudioBuffer>();
+	private nativeFailedKeys = new Set<string>();
 
 	constructor(private editor: EditorCore) {
 		this.lastVolume = this.editor.playback.getVolume();
@@ -172,7 +174,10 @@ export class AudioManager {
 			if (clip.startTime > windowEnd) continue;
 
 			this.activeClipIds.add(clip.id);
-			void this.runClipIterator({ clip, startTime: currentTime, sessionId: this.playbackSessionId });
+			this.runClipIterator({ clip, startTime: currentTime, sessionId: this.playbackSessionId })
+				.catch((err) => {
+					console.warn(`[AudioManager] Audio playback failed for clip ${clip.id}:`, err);
+				});
 		}
 	}
 
@@ -210,8 +215,15 @@ export class AudioManager {
 		if (!audioContext) return;
 
 		const sink = await this.getAudioSink({ clip });
-		if (!sink || !this.editor.playback.getIsPlaying()) return;
+		if (!this.editor.playback.getIsPlaying()) return;
 		if (sessionId !== this.playbackSessionId) return;
+
+		// If mediabunny sink is unavailable (e.g. codec not supported on this platform),
+		// fall back to native Web Audio API decoding
+		if (!sink) {
+			await this.runNativeFallback({ clip, startTime, sessionId });
+			return;
+		}
 
 		const clipStart = clip.startTime;
 		const clipEnd = clip.startTime + clip.duration;
@@ -296,6 +308,105 @@ export class AudioManager {
 		// the set is cleared on stopPlayback anyway
 	}
 
+	/**
+	 * Native Web Audio API fallback for when mediabunny can't decode the audio.
+	 * Uses the browser's built-in decodeAudioData which supports codecs that
+	 * WebCodecs may not (e.g. AAC on macOS WKWebView).
+	 */
+	private async runNativeFallback({
+		clip,
+		startTime,
+		sessionId,
+	}: {
+		clip: AudioClipSource;
+		startTime: number;
+		sessionId: number;
+	}): Promise<void> {
+		const audioContext = this.ensureAudioContext();
+		if (!audioContext) return;
+
+		// Skip if we already know this source can't be decoded natively either
+		if (this.nativeFailedKeys.has(clip.sourceKey)) return;
+
+		let audioBuffer = this.nativeBuffers.get(clip.sourceKey);
+		if (!audioBuffer) {
+			try {
+				const arrayBuffer = await clip.file.arrayBuffer();
+				audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+				this.nativeBuffers.set(clip.sourceKey, audioBuffer);
+				console.log(`[AudioManager] Native fallback: decoded audio for ${clip.sourceKey}`);
+			} catch (err) {
+				console.warn(`[AudioManager] Native fallback also failed for ${clip.sourceKey}:`, err);
+				this.nativeFailedKeys.add(clip.sourceKey);
+				return;
+			}
+		}
+
+		if (!this.editor.playback.getIsPlaying()) return;
+		if (sessionId !== this.playbackSessionId) return;
+
+		const clipEnd = clip.startTime + clip.duration;
+		const iteratorStartTime = Math.max(startTime, clip.startTime);
+
+		// Calculate where in the source audio to start
+		const sourceOffset = clip.trimStart + (iteratorStartTime - clip.startTime) * (clip.speed ?? 1);
+		const remainingDuration = clipEnd - iteratorStartTime;
+
+		if (remainingDuration <= 0) return;
+
+		// Per-clip GainNode for volume + fade envelope
+		const clipGain = audioContext.createGain();
+		clipGain.gain.value = clip.volume;
+		clipGain.connect(this.masterGain ?? audioContext.destination);
+
+		const node = audioContext.createBufferSource();
+		node.buffer = audioBuffer;
+
+		if (clip.speed !== 1) {
+			node.playbackRate.value = clip.speed;
+		}
+
+		node.connect(clipGain);
+
+		// Schedule the node to start at the correct audio context time
+		const contextStartTime =
+			this.playbackStartContextTime +
+			(iteratorStartTime - this.playbackStartTime);
+
+		if (contextStartTime >= audioContext.currentTime) {
+			node.start(contextStartTime, sourceOffset, remainingDuration * (clip.speed ?? 1));
+		} else {
+			const offset = audioContext.currentTime - contextStartTime;
+			if (offset < remainingDuration) {
+				node.start(audioContext.currentTime, sourceOffset + offset * (clip.speed ?? 1), (remainingDuration - offset) * (clip.speed ?? 1));
+			} else {
+				return;
+			}
+		}
+
+		// Apply fade in/out
+		const elapsedInClip = iteratorStartTime - clip.startTime;
+		const actualStart = Math.max(contextStartTime, audioContext.currentTime);
+		if (clip.fadeIn > 0 && elapsedInClip < clip.fadeIn) {
+			const fadeProgress = elapsedInClip / clip.fadeIn;
+			clipGain.gain.setValueAtTime(clip.volume * fadeProgress, actualStart);
+			const fadeRemaining = clip.fadeIn - elapsedInClip;
+			clipGain.gain.linearRampToValueAtTime(clip.volume, actualStart + fadeRemaining);
+		}
+		const timeUntilEnd = clipEnd - iteratorStartTime;
+		if (clip.fadeOut > 0) {
+			const fadeOutStart = actualStart + Math.max(0, timeUntilEnd - clip.fadeOut);
+			clipGain.gain.setValueAtTime(clip.volume, fadeOutStart);
+			clipGain.gain.linearRampToValueAtTime(0, actualStart + timeUntilEnd);
+		}
+
+		this.queuedSources.add(node);
+		node.addEventListener("ended", () => {
+			node.disconnect();
+			this.queuedSources.delete(node);
+		});
+	}
+
 	private waitUntilCaughtUp({
 		timelineTime,
 		targetAhead,
@@ -332,6 +443,8 @@ export class AudioManager {
 		}
 		this.inputs.clear();
 		this.sinks.clear();
+		this.nativeBuffers.clear();
+		this.nativeFailedKeys.clear();
 	}
 
 	private async getAudioSink({
@@ -353,12 +466,19 @@ export class AudioManager {
 				return null;
 			}
 
+			const decodable = await audioTrack.canDecode();
+			if (!decodable) {
+				console.warn(`[AudioManager] Audio track not decodable for clip ${clip.sourceKey}, skipping`);
+				input.dispose();
+				return null;
+			}
+
 			const sink = new AudioBufferSink(audioTrack);
 			this.inputs.set(clip.sourceKey, input);
 			this.sinks.set(clip.sourceKey, sink);
 			return sink;
 		} catch (error) {
-			console.warn("Failed to initialize audio sink:", error);
+			console.warn("[AudioManager] Failed to initialize audio sink:", error);
 			return null;
 		}
 	}

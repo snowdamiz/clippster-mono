@@ -99,6 +99,16 @@ const mediaAssets = computed(() => {
 	return editor.media.getAssets();
 });
 
+const sceneTransitions = computed(() => {
+	void version.value;
+	try {
+		const scene = editor.scenes.getActiveScene();
+		return scene?.transitions ?? [];
+	} catch {
+		return [];
+	}
+});
+
 // When in crop mode, strip crop from the selected element so canvas shows full frame
 const sceneTracks = computed((): TimelineTrack[] => {
 	const raw = tracks.value;
@@ -116,7 +126,7 @@ const sceneTracks = computed((): TimelineTrack[] => {
 });
 
 watch(
-	[sceneTracks, mediaAssets, background, canvasWidth, canvasHeight],
+	[sceneTracks, mediaAssets, background, canvasWidth, canvasHeight, sceneTransitions],
 	() => {
 		if (!activeProject.value) return;
 		const duration = editor.timeline.getTotalDuration();
@@ -126,10 +136,11 @@ watch(
 			duration,
 			canvasSize: { width: canvasWidth.value, height: canvasHeight.value },
 			background: background.value,
+			transitions: sceneTransitions.value,
 		});
 		editor.renderer.setRenderTree({ renderTree });
 	},
-	{ deep: true, immediate: true },
+	{ immediate: true },
 );
 
 // RAF render loop

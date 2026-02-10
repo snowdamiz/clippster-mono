@@ -809,14 +809,17 @@ export function useEffectPreviews(effectTypes: string[]) {
 		canvas.height = THUMB_H;
 		const ctx = canvas.getContext("2d")!;
 
+		const result: Record<string, string> = {};
 		for (const effectType of effectTypes) {
 			// Draw fresh scene
 			ctx.clearRect(0, 0, THUMB_W, THUMB_H);
 			drawSampleScene(ctx, THUMB_W, THUMB_H);
 			// Apply effect
 			applyEffectToCanvas(ctx, effectType, THUMB_W, THUMB_H);
-			previews.value[effectType] = canvas.toDataURL("image/png");
+			result[effectType] = canvas.toDataURL("image/png");
 		}
+		// Assign all at once to trigger a single reactive update
+		previews.value = result;
 	});
 
 	return previews;
@@ -835,11 +838,14 @@ export function useTransitionPreviews(transitionTypes: string[]) {
 		canvas.height = THUMB_H;
 		const ctx = canvas.getContext("2d")!;
 
+		const result: Record<string, string> = {};
 		for (const transitionType of transitionTypes) {
 			ctx.clearRect(0, 0, THUMB_W, THUMB_H);
 			renderTransitionPreview(ctx, transitionType, THUMB_W, THUMB_H);
-			previews.value[transitionType] = canvas.toDataURL("image/png");
+			result[transitionType] = canvas.toDataURL("image/png");
 		}
+		// Assign all at once to trigger a single reactive update
+		previews.value = result;
 	});
 
 	return previews;

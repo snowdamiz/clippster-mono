@@ -61,14 +61,18 @@ export class TimelineManager {
 		elementId,
 		trimStart,
 		trimEnd,
+		startTime,
+		duration,
 		pushHistory = true,
 	}: {
 		elementId: string;
 		trimStart: number;
 		trimEnd: number;
+		startTime?: number;
+		duration?: number;
 		pushHistory?: boolean;
 	}): void {
-		const command = new UpdateElementTrimCommand(elementId, trimStart, trimEnd);
+		const command = new UpdateElementTrimCommand(elementId, trimStart, trimEnd, startTime, duration);
 		if (pushHistory) {
 			this.editor.command.execute({ command });
 		} else {

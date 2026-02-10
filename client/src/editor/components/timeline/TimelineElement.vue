@@ -63,7 +63,7 @@ const hasAudio = computed(() => mediaSupportsAudio({ media: mediaAsset.value }))
 
 const snappingRef = computed(() => props.snappingEnabled);
 
-const { handleResizeStart, resizing, currentStartTime, currentDuration, rippleShifts: localRippleShifts } =
+const { handleResizeStart, resizing, currentTrimStart, currentStartTime, currentDuration, rippleShifts: localRippleShifts } =
 	useTimelineElementResize({
 		element: toRef(props, "element"),
 		track: toRef(props, "track"),
@@ -78,6 +78,21 @@ watch(localRippleShifts, (shifts) => {
 }, { deep: true });
 
 const isResizing = computed(() => resizing.value !== null);
+
+// During resize, the inner content keeps its ORIGINAL width so the filmstrip/waveform
+// stays at the correct scale. The container clips the excess via overflow:hidden.
+// For left-edge resize, the content also shifts left to reveal the new trim point.
+const contentOffsetPx = computed(() => {
+	const rs = resizing.value;
+	if (!rs || rs.side !== 'left') return 0;
+	const trimDelta = currentTrimStart.value - rs.initialTrimStart;
+	return -(trimDelta * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel);
+});
+const contentWidthPx = computed(() => {
+	const rs = resizing.value;
+	if (!rs) return null; // null = use default 100%
+	return rs.initialDuration * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * props.zoomLevel;
+});
 
 const isBeingDragged = computed(() => props.dragState.elementId === props.element.id);
 const dragOffsetY = computed(() =>
@@ -247,7 +262,13 @@ function onContextAction(action: string) {
 				@mousedown="emit('elementMouseDown', $event, element)"
 				@contextmenu.prevent="emit('elementContextMenu', $event, element)"
 			>
-				<div class="absolute inset-0 flex h-full items-center">
+				<div
+					class="absolute inset-0 flex h-full items-center"
+					:style="{
+						width: contentWidthPx !== null ? `${contentWidthPx}px` : '100%',
+						transform: contentOffsetPx !== 0 ? `translateX(${contentOffsetPx}px)` : undefined,
+					}"
+				>
 					<!-- Text element -->
 					<div v-if="element.type === 'text'" class="size-full" />
 

@@ -1009,8 +1009,9 @@
       }
     }
 
-    // NOTE: Thumbnail generation is handled by Projects.vue to prevent duplicate FFmpeg processes
-    // Do NOT call generateMissingThumbnails() here - it causes 50+ FFmpeg processes to spawn
+    // Generate missing thumbnails sequentially (one at a time) for clips without built_thumbnail_path.
+    // This covers cases where ProjectWorkspaceDialog is opened directly without going through Projects.vue.
+    generateMissingThumbnails();
   }
 
   // Load which clips are already part of a video editor project
@@ -1060,14 +1061,23 @@
     }
   }
 
+  // Flag to prevent concurrent thumbnail generation runs
+  let thumbnailGenerationInProgress = false;
+
   // Generate thumbnails for clips that don't have built_thumbnail_path set
   // This handles manual clips and clips where thumbnail generation failed during detection
+  // Processes ONE clip at a time to prevent spawning too many FFmpeg processes
   async function generateMissingThumbnails() {
+    // Prevent concurrent runs
+    if (thumbnailGenerationInProgress) return;
+
     const clipsWithoutThumbnails = props.clips.filter(
       (clip) => !clip.built_thumbnail_path && !clipThumbnailCache.value.has(clip.id)
     );
 
     if (clipsWithoutThumbnails.length === 0) return;
+
+    thumbnailGenerationInProgress = true;
 
     const { invoke } = await import('@tauri-apps/api/core');
     const { getRawVideosByProjectId, updateClipBuildStatus } = await import('@/services/database');
@@ -1085,66 +1095,70 @@
       clipsByProject.get(projectId)!.push(clip);
     }
 
-    if (clipsByProject.size === 0) return;
+    if (clipsByProject.size === 0) {
+      thumbnailGenerationInProgress = false;
+      return;
+    }
 
     let hasNewThumbnails = false;
 
-    // Process each project's clips with the correct video
-    for (const [projectId, projectClips] of clipsByProject) {
-      // Get the raw video for this project
-      let rawVideos;
-      try {
-        rawVideos = await getRawVideosByProjectId(projectId);
-      } catch (err) {
-        console.warn(`[ClipsTab] Failed to get raw videos for project ${projectId}:`, err);
-        continue;
+    try {
+      // Process each project's clips with the correct video
+      for (const [projectId, projectClips] of clipsByProject) {
+        // Get the raw video for this project
+        let rawVideos;
+        try {
+          rawVideos = await getRawVideosByProjectId(projectId);
+        } catch (err) {
+          console.warn(`[ClipsTab] Failed to get raw videos for project ${projectId}:`, err);
+          continue;
+        }
+
+        if (!rawVideos || rawVideos.length === 0) {
+          console.warn(`[ClipsTab] No raw videos found for project ${projectId}, skipping thumbnails`);
+          continue;
+        }
+
+        const videoPath = rawVideos[0].file_path;
+
+        // Generate thumbnails ONE AT A TIME to prevent spawning too many FFmpeg processes
+        for (const clip of projectClips) {
+          try {
+            const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
+
+            // Generate thumbnail at clip start time
+            const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+              videoPath: videoPath,
+              timestampSeconds: startTime + 0.5, // Slightly after start for better frame
+              outputFilename: `clip_${clip.id}`,
+            });
+
+            // Load the generated thumbnail into cache
+            const dataUrl = await invoke<string>('read_file_as_data_url', {
+              filePath: thumbnailPath,
+            });
+            clipThumbnailCache.value.set(clip.id, dataUrl);
+            hasNewThumbnails = true;
+
+            // Trigger Vue reactivity after each thumbnail so they appear incrementally
+            clipThumbnailCache.value = new Map(clipThumbnailCache.value);
+
+            // Persist to database (non-blocking)
+            updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
+              builtThumbnailPath: thumbnailPath,
+            }).catch((err) => {
+              console.warn(`[ClipsTab] Failed to persist thumbnail path for clip ${clip.id}:`, err);
+            });
+          } catch (err) {
+            console.warn(`[ClipsTab] Failed to generate thumbnail for clip ${clip.id}:`, err);
+          }
+        }
       }
-
-      if (!rawVideos || rawVideos.length === 0) {
-        console.warn(`[ClipsTab] No raw videos found for project ${projectId}, skipping thumbnails`);
-        continue;
-      }
-
-      const videoPath = rawVideos[0].file_path;
-
-      // Generate thumbnails in parallel (max 3 at a time to avoid overloading)
-      const batchSize = 3;
-      for (let i = 0; i < projectClips.length; i += batchSize) {
-        const batch = projectClips.slice(i, i + batchSize);
-        await Promise.all(
-          batch.map(async (clip) => {
-            try {
-              const startTime = clip.current_version_start_time ?? clip.start_time ?? 0;
-
-              // Generate thumbnail at clip start time
-              const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-                videoPath: videoPath,
-                timestampSeconds: startTime + 0.5, // Slightly after start for better frame
-                outputFilename: `clip_${clip.id}`,
-              });
-
-              // Load the generated thumbnail into cache
-              const dataUrl = await invoke<string>('read_file_as_data_url', {
-                filePath: thumbnailPath,
-              });
-              clipThumbnailCache.value.set(clip.id, dataUrl);
-              hasNewThumbnails = true;
-
-              // Persist to database (non-blocking)
-              updateClipBuildStatus(clip.id, clip.build_status || 'pending', {
-                builtThumbnailPath: thumbnailPath,
-              }).catch((err) => {
-                console.warn(`[ClipsTab] Failed to persist thumbnail path for clip ${clip.id}:`, err);
-              });
-            } catch (err) {
-              console.warn(`[ClipsTab] Failed to generate thumbnail for clip ${clip.id}:`, err);
-            }
-          })
-        );
-      }
+    } finally {
+      thumbnailGenerationInProgress = false;
     }
 
-    // Trigger Vue reactivity if we generated new thumbnails
+    // Final reactivity trigger in case the incremental ones were batched
     if (hasNewThumbnails) {
       clipThumbnailCache.value = new Map(clipThumbnailCache.value);
     }
@@ -2036,6 +2050,8 @@
               end_time: endTime,
               duration: endTime - startTime,
               transcript: null,
+              transcript_raw_json: null,
+              audio_peaks: null,
               created_at: Date.now(),
             },
           ];

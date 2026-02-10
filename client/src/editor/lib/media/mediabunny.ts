@@ -1,5 +1,5 @@
 import { Input, ALL_FORMATS, BlobSource, AudioBufferSink } from "mediabunny";
-import { collectAudioMixSources } from "../../lib/media/audio";
+import { collectAudioMixSources, createAudioContext } from "../../lib/media/audio";
 import type { TimelineTrack } from "../../types/timeline";
 import type { MediaAsset } from "../../types/assets";
 
@@ -137,6 +137,15 @@ async function decodeAndMixAudioSource({
 	const audioTrack = await input.getPrimaryAudioTrack();
 	if (!audioTrack) return;
 
+	// Check if mediabunny can decode this audio codec (may fail on macOS WKWebView)
+	const decodable = await audioTrack.canDecode();
+	if (!decodable) {
+		console.warn("[mediabunny] Audio track not decodable via WebCodecs, using native fallback");
+		input.dispose();
+		await decodeAndMixNativeFallback({ source, mixBuffers, totalSamples });
+		return;
+	}
+
 	const sink = new AudioBufferSink(audioTrack);
 	const trimEnd = source.trimStart + source.duration;
 
@@ -169,6 +178,54 @@ async function decodeAndMixAudioSource({
 			}
 		}
 	}
+}
+
+/**
+ * Native Web Audio API fallback for decoding and mixing audio when
+ * mediabunny's WebCodecs-based decoder can't handle the codec
+ * (e.g. AAC on macOS WKWebView).
+ */
+async function decodeAndMixNativeFallback({
+	source,
+	mixBuffers,
+	totalSamples,
+}: {
+	source: {
+		file: File;
+		startTime: number;
+		duration: number;
+		trimStart: number;
+	};
+	mixBuffers: Float32Array[];
+	totalSamples: number;
+}): Promise<void> {
+	const audioContext = createAudioContext();
+	const arrayBuffer = await source.file.arrayBuffer();
+	const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+
+	const trimStartSample = Math.floor(source.trimStart * audioBuffer.sampleRate);
+	const durationSamples = Math.floor(source.duration * audioBuffer.sampleRate);
+	const resampleRatio = SAMPLE_RATE / audioBuffer.sampleRate;
+	const resampledLength = Math.floor(durationSamples * resampleRatio);
+	const outputStartSample = Math.floor(source.startTime * SAMPLE_RATE);
+
+	for (let ch = 0; ch < NUM_CHANNELS; ch++) {
+		const sourceChannel = Math.min(ch, audioBuffer.numberOfChannels - 1);
+		const channelData = audioBuffer.getChannelData(sourceChannel);
+		const outputChannel = mixBuffers[ch];
+
+		for (let i = 0; i < resampledLength; i++) {
+			const outputIdx = outputStartSample + i;
+			if (outputIdx < 0 || outputIdx >= totalSamples) continue;
+
+			const sourceIdx = trimStartSample + Math.floor(i / resampleRatio);
+			if (sourceIdx < channelData.length) {
+				outputChannel[outputIdx] += channelData[sourceIdx];
+			}
+		}
+	}
+
+	await audioContext.close();
 }
 
 function createWavBlob({ samples }: { samples: Float32Array }): Blob {

@@ -25,7 +25,6 @@ export function useEditor() {
 			editor.scenes.subscribe(handleChange),
 			editor.project.subscribe(handleChange),
 			editor.media.subscribe(handleChange),
-			editor.renderer.subscribe(handleChange),
 			editor.selection.subscribe(handleChange),
 		];
 	});
