@@ -22,7 +22,7 @@ export const ImpactEffects: React.FC<ImpactEffectsProps> = ({ track, children })
   
   // Debug logging
   if (activeEffects.length > 0 && frame % 30 === 0) {
-    console.log('[ImpactEffects] Active effects:', activeEffects.map(e => e.type), 'at time:', currentTime.toFixed(2));
+    console.log('[ImpactEffects] Active effects:', activeEffects.map((e: { type: string }) => e.type), 'at time:', currentTime.toFixed(2));
   }
   
   // Calculate all effect values

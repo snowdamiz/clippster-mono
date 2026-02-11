@@ -12,6 +12,7 @@ export interface Project {
   creator_profile_id: string | null; // Direct link to creator profile (for local video imports)
   active_vod_preset_id: string | null; // Reference to saved VOD preset
   active_vod_preset_config: string | null; // JSON snapshot of applied VOD preset config
+  selected_branding_profile_id: string | null; // Selected global branding profile
   created_at: number;
   updated_at: number;
 }
@@ -541,6 +542,7 @@ export interface CreatorProfile {
   intro_ratio_settings: string | null; // JSON string of RatioAssetMap for intros
   outro_ratio_settings: string | null; // JSON string of RatioAssetMap for outros
   auto_dvr_enabled?: number | boolean; // Auto DVR toggle (default off)
+  scope: 'streamer' | 'global'; // 'streamer' = tied to platform links, 'global' = universal branding
   user_id: string | null;
   created_at: number;
   updated_at: number;

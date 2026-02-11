@@ -1328,6 +1328,7 @@
   import { useLivestreamMonitoring } from '@/composables/useLivestreamMonitoring';
   import { useVideoOperations } from '@/composables/useVideoOperations';
   import { useDownloads } from '@/composables/useDownloads';
+  import { resolveBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import PageLayout from '@/components/PageLayout.vue';
   import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
@@ -3368,11 +3369,11 @@
     folderCreatorWatermarkSettings.value = null;
     folderCreatorProfile.value = null;
 
-    // Look up creator profile for this clip's project
+    // Look up branding profile for this clip's project (streamer, global, or user-selected)
     try {
       // Use the parent project ID (folder) or the segment's project ID
       const projectId = clip.project_id || clip.segment_id;
-      const profile = await getCreatorProfileByProjectId(projectId);
+      const profile = await resolveBrandingProfile(projectId);
 
       if (profile) {
         console.log('[Projects] Found creator profile for folder build:', profile.name);

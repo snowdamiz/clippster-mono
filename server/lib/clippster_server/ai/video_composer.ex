@@ -11,7 +11,7 @@ defmodule ClippsterServer.AI.VideoComposer do
   @default_fps 30
   @default_duration 10
   @openrouter_url "https://openrouter.ai/api/v1/chat/completions"
-  @model "anthropic/claude-opus-4.6"
+  @model "anthropic/claude-sonnet-4"
 
   # ---------------------------------------------------------------------------
   # Public API
@@ -197,6 +197,8 @@ defmodule ClippsterServer.AI.VideoComposer do
     #{if ctx.style, do: "Style: #{ctx.style}", else: ""}
     #{ctx.intensity_context}
     #{ctx.caption_context}
+    #{ctx.reference_context}
+    #{ctx.media_analysis_context}
     """
 
     case call_openrouter(system_prompt, user_prompt, api_key, max_tokens: 4096) do
@@ -561,9 +563,13 @@ defmodule ClippsterServer.AI.VideoComposer do
 
     intensity = Map.get(extra_options || %{}, "intensity")
     caption_style = Map.get(extra_options || %{}, "captionStyle")
+    reference_analysis = Map.get(extra_options || %{}, "reference_analysis")
+    media_analysis = Map.get(extra_options || %{}, "media_analysis")
 
     intensity_context = build_intensity_context(intensity)
     caption_context = build_caption_context(caption_style)
+    reference_context = build_reference_context(reference_analysis)
+    media_analysis_context = build_media_analysis_context(media_analysis)
 
     %{
       prompt: prompt,
@@ -576,9 +582,35 @@ defmodule ClippsterServer.AI.VideoComposer do
       height: height,
       existing_composition: existing_composition,
       intensity_context: intensity_context,
-      caption_context: caption_context
+      caption_context: caption_context,
+      reference_context: reference_context,
+      media_analysis_context: media_analysis_context
     }
   end
+
+  defp build_reference_context(nil), do: ""
+  defp build_reference_context(ref) when is_map(ref) do
+    """
+    ## REFERENCE STYLE PROFILE
+    Match this reference style as closely as possible:
+    #{Jason.encode!(ref, pretty: true)}
+
+    Use the exact color palette, similar motion types, matching typography style, and equivalent pacing.
+    """
+  end
+  defp build_reference_context(_), do: ""
+
+  defp build_media_analysis_context(nil), do: ""
+  defp build_media_analysis_context(analysis) when is_list(analysis) and length(analysis) > 0 do
+    """
+    ## MEDIA CONTENT ANALYSIS
+    AI vision analysis of each uploaded image:
+    #{Jason.encode!(analysis, pretty: true)}
+
+    Use this to order images intelligently, match effects to content, and use dominant colors.
+    """
+  end
+  defp build_media_analysis_context(_), do: ""
 
   defp build_intensity_context(intensity) do
     if intensity do

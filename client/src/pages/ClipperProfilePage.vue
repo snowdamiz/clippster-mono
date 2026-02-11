@@ -1838,7 +1838,7 @@
       let response;
       if (deleteType.value === 'social account') {
         const account = deleteTarget.value as any;
-        response = account.platform === 'twitter'
+        response = (account.platform === 'x' || account.platform === 'twitter')
           ? await disconnectUserTwitterAccount(account.id)
           : await disconnectUserInstagramAccount(account.id);
       } else {

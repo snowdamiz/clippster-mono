@@ -1,6 +1,44 @@
 import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { ManualFramingConfig, WatermarkSettings, LayoutOverlay, VodPreset, ActiveVodPresetConfig } from '../../types';
 
+// Self-healing: ensure vod_presets table and project columns exist
+let vodColumnsVerified = false;
+async function ensureVodPresetSchema(db: any) {
+  if (vodColumnsVerified) return;
+  try {
+    // Ensure vod_presets table exists
+    await db.execute(`CREATE TABLE IF NOT EXISTS vod_presets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      creator_profile_id TEXT,
+      target_aspect_ratio TEXT NOT NULL,
+      framing_config TEXT,
+      layout_overlays TEXT,
+      watermark_mode TEXT NOT NULL DEFAULT 'creator',
+      custom_watermark_settings TEXT,
+      user_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY (creator_profile_id) REFERENCES creator_profiles(id) ON DELETE SET NULL
+    )`);
+
+    // Ensure project columns exist
+    const columns = (await db.select('PRAGMA table_info(projects)')) as { name: string }[];
+    const colNames = columns.map((c: { name: string }) => c.name);
+    if (!colNames.includes('active_vod_preset_id')) {
+      await db.execute('ALTER TABLE projects ADD COLUMN active_vod_preset_id TEXT');
+      console.log('[vod-presets] Added active_vod_preset_id column to projects');
+    }
+    if (!colNames.includes('active_vod_preset_config')) {
+      await db.execute('ALTER TABLE projects ADD COLUMN active_vod_preset_config TEXT');
+      console.log('[vod-presets] Added active_vod_preset_config column to projects');
+    }
+    vodColumnsVerified = true;
+  } catch (e) {
+    console.error('[vod-presets] ensureVodPresetSchema failed:', e);
+  }
+}
+
 // Database row type (snake_case from SQLite)
 interface VodPresetRow {
   id: string;
@@ -41,6 +79,7 @@ export async function createVodPreset(preset: {
   customWatermarkSettings?: WatermarkSettings | null;
 }): Promise<string> {
   const db = await getDatabase();
+  await ensureVodPresetSchema(db);
   const id = generateId();
   const now = timestamp();
   const userId = getCurrentUserId();
@@ -82,6 +121,7 @@ export async function updateVodPreset(
   }
 ): Promise<void> {
   const db = await getDatabase();
+  await ensureVodPresetSchema(db);
   const now = timestamp();
 
   const setClauses: string[] = [];
@@ -125,17 +165,20 @@ export async function updateVodPreset(
 
 export async function deleteVodPreset(id: string): Promise<void> {
   const db = await getDatabase();
+  await ensureVodPresetSchema(db);
   await db.execute('DELETE FROM vod_presets WHERE id = ?', [id]);
 }
 
 export async function getVodPreset(id: string): Promise<VodPreset | null> {
   const db = await getDatabase();
+  await ensureVodPresetSchema(db);
   const rows = await db.select<VodPresetRow[]>('SELECT * FROM vod_presets WHERE id = ?', [id]);
   return rows.length > 0 ? rowToVodPreset(rows[0]) : null;
 }
 
 export async function getAllVodPresets(): Promise<VodPreset[]> {
   const db = await getDatabase();
+  await ensureVodPresetSchema(db);
   const userId = getCurrentUserId();
 
   if (userId === null) {
@@ -154,6 +197,7 @@ export async function getAllVodPresets(): Promise<VodPreset[]> {
 
 export async function getVodPresetsByCreator(creatorProfileId: string): Promise<VodPreset[]> {
   const db = await getDatabase();
+  await ensureVodPresetSchema(db);
   const rows = await db.select<VodPresetRow[]>(
     'SELECT * FROM vod_presets WHERE creator_profile_id = ? ORDER BY updated_at DESC',
     [creatorProfileId]
@@ -163,6 +207,7 @@ export async function getVodPresetsByCreator(creatorProfileId: string): Promise<
 
 export async function getVodPresetsUnlinked(): Promise<VodPreset[]> {
   const db = await getDatabase();
+  await ensureVodPresetSchema(db);
   const userId = getCurrentUserId();
 
   if (userId === null) {
@@ -185,8 +230,8 @@ export async function setProjectVodPreset(
   configSnapshot: ActiveVodPresetConfig
 ): Promise<void> {
   const db = await getDatabase();
+  await ensureVodPresetSchema(db);
   const now = timestamp();
-
   await db.execute(
     'UPDATE projects SET active_vod_preset_id = ?, active_vod_preset_config = ?, updated_at = ? WHERE id = ?',
     [presetId, JSON.stringify(configSnapshot), now, projectId]
@@ -195,6 +240,7 @@ export async function setProjectVodPreset(
 
 export async function clearProjectVodPreset(projectId: string): Promise<void> {
   const db = await getDatabase();
+  await ensureVodPresetSchema(db);
   const now = timestamp();
 
   await db.execute(
@@ -207,6 +253,7 @@ export async function getProjectVodPresetConfig(
   projectId: string
 ): Promise<ActiveVodPresetConfig | null> {
   const db = await getDatabase();
+  await ensureVodPresetSchema(db);
   const rows = await db.select<{ active_vod_preset_config: string | null }[]>(
     'SELECT active_vod_preset_config FROM projects WHERE id = ?',
     [projectId]

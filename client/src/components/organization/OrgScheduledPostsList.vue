@@ -291,21 +291,7 @@ import {
   type ScheduledPost,
 } from '@/services/schedulingApi';
 
-interface ExtendedScheduledPost extends ScheduledPost {
-  submitted_by?: {
-    id: number;
-    email: string;
-    name?: string;
-  } | null;
-  creator_profile?: {
-    id: number;
-    name: string;
-  } | null;
-  campaign?: {
-    id: number;
-    name: string;
-  } | null;
-}
+type ExtendedScheduledPost = ScheduledPost;
 
 const props = defineProps<{
   organizationId: string | number;

@@ -8,13 +8,31 @@
     >
       <template #actions>
         <div class="creators-actions">
+          <div class="creators-tabs">
+            <button
+              class="creators-tab"
+              :class="{ 'creators-tab--active': activeTab === 'streamer' }"
+              @click="activeTab = 'streamer'"
+            >
+              <Users :size="14" />
+              Streamer Profiles
+            </button>
+            <button
+              class="creators-tab"
+              :class="{ 'creators-tab--active': activeTab === 'global' }"
+              @click="activeTab = 'global'"
+            >
+              <Paintbrush :size="14" />
+              Global Branding
+            </button>
+          </div>
           <div class="creators-search">
             <Search class="creators-search__icon" />
             <Input v-model="searchQuery" class="creators-search__input" placeholder="Search creators..." />
           </div>
           <Button size="sm" class="creators-add-btn" @click="openCreateDialog">
             <Plus class="creators-add-btn__icon" />
-            Add Creator
+            {{ activeTab === 'global' ? 'Add Global Profile' : 'Add Creator' }}
           </Button>
         </div>
       </template>
@@ -640,6 +658,15 @@
             <p class="creators__no-results-title">No creators found</p>
             <p class="creators__no-results-text">No results for "{{ searchQuery }}"</p>
           </div>
+
+          <!-- No profiles for this tab -->
+          <div v-else-if="filteredCreators.length === 0 && !searchQuery && creators.length > 0" class="creators__no-results">
+            <component :is="activeTab === 'global' ? Paintbrush : Users" class="creators__no-results-icon" />
+            <p class="creators__no-results-title">{{ activeTab === 'global' ? 'No global branding profiles' : 'No streamer profiles' }}</p>
+            <p class="creators__no-results-text">
+              {{ activeTab === 'global' ? 'Create a global branding profile to apply universal branding across all your content.' : 'Add a streamer profile to start managing their VODs and live monitoring.' }}
+            </p>
+          </div>
         </div>
 
           <!-- Empty State -->
@@ -661,6 +688,7 @@
       :show="showProfileDialog"
       mode="local"
       :creator="creatorToEdit"
+      :scope="profileDialogScope"
       @close="closeProfileDialog"
       @saved="handleCreatorSaved"
     />
@@ -727,6 +755,8 @@
     updateMonitoredStreamer,
     createMonitoredStreamer,
     updatePlatformLink,
+    getAllGlobalProfiles,
+    getAllStreamerProfiles,
     type CreatorProfileWithLinks,
   } from '@/services/database';
   import {
@@ -762,6 +792,7 @@
     Activity,
     HardDrive,
     Link,
+    Paintbrush,
   } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useLivestreamStore } from '@/stores/livestream';
@@ -964,16 +995,25 @@
     return creators.value.filter((c) => isCreatorMonitored(c)).length;
   });
 
-  // Filtered creators based on search
+  // Filtered creators based on active tab scope and search
   const filteredCreators = computed(() => {
-    if (!searchQuery.value.trim()) return creators.value;
-    const query = searchQuery.value.toLowerCase();
-    return creators.value.filter((creator) => {
-      if (creator.name.toLowerCase().includes(query)) return true;
-      return creator.platform_links.some(
-        (link) => link.display_name?.toLowerCase().includes(query) || link.platform_id.toLowerCase().includes(query)
-      );
+    // First filter by scope (activeTab)
+    let result = creators.value.filter((creator) => {
+      return (creator.scope || 'streamer') === activeTab.value;
     });
+
+    // Then filter by search query
+    if (searchQuery.value.trim()) {
+      const query = searchQuery.value.toLowerCase();
+      result = result.filter((creator) => {
+        if (creator.name.toLowerCase().includes(query)) return true;
+        return creator.platform_links.some(
+          (link) => link.display_name?.toLowerCase().includes(query) || link.platform_id.toLowerCase().includes(query)
+        );
+      });
+    }
+
+    return result;
   });
 
   // Sorted creators: alphabetically A-Z by name
@@ -1331,6 +1371,7 @@
         created_at: new Date(link.inserted_at).getTime(),
         monitored_streamer_id: null,
       })),
+      scope: ((profile as any).scope as 'streamer' | 'global') || 'streamer',
       isOrgProfile: true,
       organization_id: profile.organization_id,
       organization_name: profile.organization_name,
@@ -1489,12 +1530,26 @@
     return 'IDLE';
   }
 
+  const activeTab = ref<'streamer' | 'global'>('streamer');
+  const profileDialogScope = ref<'streamer' | 'global'>('streamer');
+
   function openCreateDialog() {
     if (!authStore.isAuthenticated) {
       showAuthModal.value = true;
       return;
     }
     creatorToEdit.value = null;
+    profileDialogScope.value = activeTab.value;
+    showProfileDialog.value = true;
+  }
+
+  function openCreateGlobalDialog() {
+    if (!authStore.isAuthenticated) {
+      showAuthModal.value = true;
+      return;
+    }
+    creatorToEdit.value = null;
+    profileDialogScope.value = 'global';
     showProfileDialog.value = true;
   }
 
@@ -1758,6 +1813,42 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+  }
+
+  .creators-tabs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 8px;
+    padding: 2px;
+    margin-right: 4px;
+  }
+
+  .creators-tab {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary, #94a3b8);
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .creators-tab:hover {
+    color: var(--text-primary, #e2e8f0);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .creators-tab--active {
+    color: var(--text-primary, #e2e8f0);
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .creators-search {

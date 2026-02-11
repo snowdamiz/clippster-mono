@@ -294,6 +294,10 @@ export {
   getCreatorProfileByMonitoredStreamer,
   getCreatorProfileByProjectId,
   getCreatorProfileByPlatformId,
+  getAllGlobalProfiles,
+  getAllStreamerProfiles,
+  setProjectBrandingProfile,
+  getProjectBrandingProfileId,
 } from './database/creator-profiles';
 
 // Audio settings exports

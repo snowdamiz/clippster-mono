@@ -29,6 +29,22 @@ async function ensureRatioSettingsColumns(db: any) {
   }
 }
 
+async function ensureScopeColumn(db: any) {
+  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
+  const hasScope = columns.some((c: { name: string }) => c.name === 'scope');
+  if (!hasScope) {
+    await db.execute("ALTER TABLE creator_profiles ADD COLUMN scope TEXT NOT NULL DEFAULT 'streamer'");
+  }
+}
+
+async function ensureSelectedBrandingColumn(db: any) {
+  const columns = (await db.select('PRAGMA table_info(projects)')) as { name: string }[];
+  const has = columns.some((c: { name: string }) => c.name === 'selected_branding_profile_id');
+  if (!has) {
+    await db.execute('ALTER TABLE projects ADD COLUMN selected_branding_profile_id TEXT REFERENCES creator_profiles(id) ON DELETE SET NULL');
+  }
+}
+
 // ==================== Creator Profiles ====================
 
 export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]> {
@@ -36,6 +52,7 @@ export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]
   await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
+  await ensureScopeColumn(db);
   const userId = getCurrentUserId();
 
   // Get all profiles for current user
@@ -86,6 +103,7 @@ export async function getCreatorProfile(id: string): Promise<CreatorProfileWithL
   await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
+  await ensureScopeColumn(db);
 
   const profiles = await db.select<CreatorProfile[]>(
     'SELECT * FROM creator_profiles WHERE id = ?',
@@ -139,19 +157,21 @@ export async function createCreatorProfile(
   introOutroSettings?: string | null,
   autoDvrEnabled: boolean = false,
   introRatioSettings?: string | null,
-  outroRatioSettings?: string | null
+  outroRatioSettings?: string | null,
+  scope: 'streamer' | 'global' = 'streamer'
 ): Promise<string> {
   const db = await getDatabase();
   await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
+  await ensureScopeColumn(db);
   const id = generateId();
   const now = timestamp();
   const userId = getCurrentUserId();
 
   await db.execute(
-    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, intro_outro_settings, auto_dvr_enabled, intro_ratio_settings, outro_ratio_settings, user_id, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, intro_outro_settings, auto_dvr_enabled, intro_ratio_settings, outro_ratio_settings, scope, user_id, created_at, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -165,6 +185,7 @@ export async function createCreatorProfile(
       autoDvrEnabled ? 1 : 0,
       introRatioSettings || null,
       outroRatioSettings || null,
+      scope,
       userId,
       now,
       now,
@@ -188,12 +209,14 @@ export async function updateCreatorProfile(
     intro_ratio_settings: string | null;
     outro_ratio_settings: string | null;
     auto_dvr_enabled: number | boolean;
+    scope: 'streamer' | 'global';
   }>
 ): Promise<void> {
   const db = await getDatabase();
   await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
+  await ensureScopeColumn(db);
   const fields: string[] = [];
   const values: any[] = [];
 
@@ -252,6 +275,11 @@ export async function updateCreatorProfile(
     values.push(updates.auto_dvr_enabled ? 1 : 0);
   }
 
+  if (updates.scope !== undefined) {
+    fields.push('scope = ?');
+    values.push(updates.scope);
+  }
+
   if (fields.length === 0) {
     return;
   }
@@ -267,6 +295,104 @@ export async function deleteCreatorProfile(id: string): Promise<void> {
   const db = await getDatabase();
   // Platform links will be cascade deleted
   await db.execute('DELETE FROM creator_profiles WHERE id = ?', [id]);
+}
+
+// ==================== Global Branding Profiles ====================
+
+export async function getAllGlobalProfiles(): Promise<CreatorProfileWithLinks[]> {
+  const db = await getDatabase();
+  await ensureAutoDvrColumn(db);
+  await ensureIntroOutroSettingsColumn(db);
+  await ensureRatioSettingsColumns(db);
+  await ensureScopeColumn(db);
+  const userId = getCurrentUserId();
+
+  let profiles: CreatorProfile[];
+  if (userId === null) {
+    profiles = await db.select<CreatorProfile[]>(
+      "SELECT * FROM creator_profiles WHERE scope = 'global' AND user_id IS NULL ORDER BY created_at DESC"
+    );
+  } else {
+    profiles = await db.select<CreatorProfile[]>(
+      "SELECT * FROM creator_profiles WHERE scope = 'global' AND (user_id = ? OR user_id IS NULL) ORDER BY created_at DESC",
+      [userId]
+    );
+  }
+
+  // Global profiles don't need platform links, but return them for interface consistency
+  return profiles.map((profile) => ({
+    ...profile,
+    auto_dvr_enabled: profile.auto_dvr_enabled ?? 0,
+    platform_links: [],
+  }));
+}
+
+export async function getAllStreamerProfiles(): Promise<CreatorProfileWithLinks[]> {
+  const db = await getDatabase();
+  await ensureAutoDvrColumn(db);
+  await ensureIntroOutroSettingsColumn(db);
+  await ensureRatioSettingsColumns(db);
+  await ensureScopeColumn(db);
+  const userId = getCurrentUserId();
+
+  let profiles: CreatorProfile[];
+  if (userId === null) {
+    profiles = await db.select<CreatorProfile[]>(
+      "SELECT * FROM creator_profiles WHERE scope = 'streamer' AND user_id IS NULL ORDER BY created_at DESC"
+    );
+  } else {
+    profiles = await db.select<CreatorProfile[]>(
+      "SELECT * FROM creator_profiles WHERE scope = 'streamer' AND (user_id = ? OR user_id IS NULL) ORDER BY created_at DESC",
+      [userId]
+    );
+  }
+
+  const profileIds = profiles.map((p) => p.id);
+  if (profileIds.length === 0) return [];
+
+  const placeholders = profileIds.map(() => '?').join(',');
+  const links = await db.select<CreatorPlatformLink[]>(
+    `SELECT * FROM creator_platform_links WHERE creator_profile_id IN (${placeholders}) ORDER BY is_primary DESC, created_at ASC`,
+    profileIds
+  );
+
+  const linksByProfile = new Map<string, CreatorPlatformLink[]>();
+  for (const link of links) {
+    const existing = linksByProfile.get(link.creator_profile_id) || [];
+    existing.push(link);
+    linksByProfile.set(link.creator_profile_id, existing);
+  }
+
+  return profiles.map((profile) => ({
+    ...profile,
+    auto_dvr_enabled: profile.auto_dvr_enabled ?? 0,
+    platform_links: linksByProfile.get(profile.id) || [],
+  }));
+}
+
+export async function setProjectBrandingProfile(
+  projectId: string,
+  brandingProfileId: string | null
+): Promise<void> {
+  const db = await getDatabase();
+  await ensureSelectedBrandingColumn(db);
+  const now = timestamp();
+  await db.execute(
+    'UPDATE projects SET selected_branding_profile_id = ?, updated_at = ? WHERE id = ?',
+    [brandingProfileId, now, projectId]
+  );
+}
+
+export async function getProjectBrandingProfileId(
+  projectId: string
+): Promise<string | null> {
+  const db = await getDatabase();
+  await ensureSelectedBrandingColumn(db);
+  const results = await db.select<{ selected_branding_profile_id: string | null }[]>(
+    'SELECT selected_branding_profile_id FROM projects WHERE id = ?',
+    [projectId]
+  );
+  return results[0]?.selected_branding_profile_id || null;
 }
 
 // ==================== Platform Links ====================

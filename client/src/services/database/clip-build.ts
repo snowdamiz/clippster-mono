@@ -183,7 +183,7 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
         const segments = await db.select<any[]>(
           `
           SELECT id, clip_version_id, segment_index, start_time, end_time,
-                 duration, transcript, created_at
+                 duration, transcript, transcript_raw_json, audio_peaks, created_at
           FROM clip_segments
           WHERE clip_version_id = ?
           ORDER BY segment_index
@@ -199,6 +199,8 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
           end_time: seg.end_time,
           duration: seg.duration,
           transcript: seg.transcript,
+          transcript_raw_json: seg.transcript_raw_json || null,
+          audio_peaks: seg.audio_peaks || null,
           created_at: seg.created_at,
         }));
       }

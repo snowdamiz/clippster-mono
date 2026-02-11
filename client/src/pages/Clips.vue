@@ -548,7 +548,7 @@
                                 <span>Open in Video Editor</span>
                               </button>
 
-                              <!-- Publish to Instagram -->
+                              <!-- Publish -->
                               <button
                                 class="folder-dialog-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
                                 @click.stop="
@@ -556,8 +556,8 @@
                                   closeFolderDialogActionMenu();
                                 "
                               >
-                                <Instagram class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
-                                <span>Publish to Instagram</span>
+                                <Share2 class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
+                                <span>Publish</span>
                               </button>
 
                               <!-- Divider -->
@@ -657,17 +657,39 @@
       @confirm="bulkDeleteFolderDialogBuildsConfirmed"
     />
 
-    <!-- Publish Destination Dialog -->
+    <!-- Dialog 1: Platform Selection -->
+    <PlatformSelectDialog
+      :open="showPlatformSelectDialog"
+      @close="showPlatformSelectDialog = false"
+      @selectPlatform="onPlatformSelected"
+    />
+
+    <!-- Dialog 2: Publish Destination (personal vs org) -->
     <PublishDestinationDialog
       :open="showOrgSelectDialog"
+      :platform="selectedPlatform"
       @close="showOrgSelectDialog = false"
       @selectPersonal="onPersonalAccountSelected"
       @selectOrganization="onOrganizationSelected"
     />
 
-    <!-- Publish to Instagram Dialog -->
+    <!-- Dialog 3a: Instagram Publish -->
     <InstagramPublishDialog
       :open="showPublishDialog"
+      :organization-id="selectedOrganization?.id"
+      :organization-name="selectedOrganization?.name"
+      :media-url="publishMediaUrl"
+      :thumbnail-url="publishThumbnailUrl"
+      :media-type="'video'"
+      :is-admin="isAdminOfSelectedOrg"
+      :creator-profiles="publishCreatorProfiles"
+      @close="onPublishDialogClose"
+      @published="onPublished"
+    />
+
+    <!-- Dialog 3b: Twitter/X Publish -->
+    <TwitterPublishDialog
+      :open="showTwitterPublishDialog"
       :organization-id="selectedOrganization?.id"
       :organization-name="selectedOrganization?.name"
       :media-url="publishMediaUrl"
@@ -892,7 +914,7 @@
     AlertCircle,
     Play,
     Download,
-    Instagram,
+    Share2,
     Clock,
     Loader2,
     ExternalLink,
@@ -925,8 +947,10 @@
   import PaginationFooter from '@/components/PaginationFooter.vue';
   import BuildCard from '@/components/BuildCard.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
+  import PlatformSelectDialog from '@/components/PlatformSelectDialog.vue';
   import PublishDestinationDialog from '@/components/PublishDestinationDialog.vue';
   import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
+  import TwitterPublishDialog from '@/components/TwitterPublishDialog.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
@@ -1026,11 +1050,14 @@
   const workspaceProject = ref<Project | null>(null);
   const workspaceInitialClipId = ref<string | null>(null);
 
-  // Instagram publish state
+  // Publish state (3-dialog flow)
   const authStore = useAuthStore();
   const router = useRouter();
+  const showPlatformSelectDialog = ref(false);
   const showOrgSelectDialog = ref(false);
   const showPublishDialog = ref(false);
+  const showTwitterPublishDialog = ref(false);
+  const selectedPlatform = ref<'instagram' | 'twitter'>('instagram');
   const publishingBuild = ref<{ build: ClipBuild; filePath: string; thumbnailUrl: string | null } | null>(null);
   const selectedOrganization = ref<{ id: string | number; name: string; role: string } | null>(null);
   const publishMediaUrl = ref('');
@@ -2598,14 +2625,23 @@
   }
 
   // ============================================================================
-  // Instagram Publishing Functions
+  // Publishing Functions (3-Dialog Flow)
   // ============================================================================
 
   /**
-   * Initiate the publish flow. First show org selection dialog.
+   * Initiate the publish flow. Step 1: Show platform selection dialog.
    */
   function initiatePublish(build: ClipBuild, filePath: string, thumbnailUrl: string | null) {
     publishingBuild.value = { build, filePath, thumbnailUrl };
+    showPlatformSelectDialog.value = true;
+  }
+
+  /**
+   * Handle platform selection from Dialog 1. Step 2: Show destination dialog.
+   */
+  function onPlatformSelected(platform: 'instagram' | 'twitter') {
+    selectedPlatform.value = platform;
+    showPlatformSelectDialog.value = false;
     showOrgSelectDialog.value = true;
   }
 
@@ -2679,8 +2715,12 @@
       // 4. No creator profiles for personal publishing
       publishCreatorProfiles.value = [];
 
-      // 5. Open the publish dialog without organization context
-      showPublishDialog.value = true;
+      // 5. Open the platform-specific publish dialog without organization context
+      if (selectedPlatform.value === 'twitter') {
+        showTwitterPublishDialog.value = true;
+      } else {
+        showPublishDialog.value = true;
+      }
     } catch (error) {
       console.error('Failed to prepare for publishing:', error);
       showErrorToast('Upload Failed', error instanceof Error ? error.message : 'Failed to upload video');
@@ -2746,8 +2786,12 @@
         publishCreatorProfiles.value = [];
       }
 
-      // 5. Open the publish dialog
-      showPublishDialog.value = true;
+      // 5. Open the platform-specific publish dialog
+      if (selectedPlatform.value === 'twitter') {
+        showTwitterPublishDialog.value = true;
+      } else {
+        showPublishDialog.value = true;
+      }
     } catch (error) {
       console.error('Failed to prepare for publishing:', error);
       showErrorToast('Upload Failed', error instanceof Error ? error.message : 'Failed to upload video');
@@ -2761,6 +2805,7 @@
    */
   function onPublishDialogClose() {
     showPublishDialog.value = false;
+    showTwitterPublishDialog.value = false;
     publishingBuild.value = null;
     publishMediaUrl.value = '';
     publishThumbnailUrl.value = '';
@@ -2771,7 +2816,8 @@
    * Handle successful publish
    */
   function onPublished(_post: unknown) {
-    showSuccessToast('Published!', 'Your clip is being published to Instagram.');
+    const platformName = selectedPlatform.value === 'twitter' ? 'X' : 'Instagram';
+    showSuccessToast('Published!', `Your clip is being published to ${platformName}.`);
     onPublishDialogClose();
   }
 

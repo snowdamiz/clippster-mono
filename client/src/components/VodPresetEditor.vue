@@ -1,42 +1,30 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10001]">
+      <div v-if="modelValue" class="vod-preset-dialog__overlay" @click.self="close">
         <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl w-full max-w-5xl mx-4 border border-white/10 max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
-          >
+          <div class="vod-preset-dialog">
             <!-- Top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-emerald-500 via-blue-500 to-violet-500 flex-shrink-0" />
+            <div class="vod-preset-dialog__accent" />
 
             <!-- Header -->
-            <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-900/50">
-              <div class="flex items-center gap-3">
-                <div
-                  class="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 flex items-center justify-center border border-emerald-500/30"
-                >
-                  <LayoutDashboardIcon class="h-5 w-5 text-emerald-400" />
-                </div>
-                <div>
-                  <h2 class="text-lg font-semibold text-white">VOD Pre-Edit Settings</h2>
-                  <p class="text-xs text-zinc-400">
-                    Configure aspect ratio, framing, overlays &amp; watermark before clip detection
-                  </p>
-                </div>
-              </div>
-              <button
-                @click="close"
-                class="p-2 hover:bg-zinc-800 rounded-xl transition-colors border border-zinc-800"
-                title="Close"
-              >
-                <XIcon class="h-5 w-5 text-zinc-400 hover:text-white" />
+            <div class="vod-preset-dialog__header">
+              <button class="vod-preset-dialog__close" @click="close" title="Close">
+                <XIcon :size="18" />
               </button>
+              <div class="vod-preset-dialog__icon">
+                <LayoutDashboardIcon :size="24" />
+              </div>
+              <h2 class="vod-preset-dialog__title">VOD Pre-Edit Settings</h2>
+              <p class="vod-preset-dialog__subtitle">
+                Configure aspect ratio, framing, overlays &amp; watermark before clip detection
+              </p>
             </div>
 
             <!-- Main Content - Scrollable -->
-            <div class="flex-1 overflow-y-auto">
+            <div class="vod-preset-dialog__content">
               <!-- Section 1: Aspect Ratio & Template -->
-              <div class="px-5 py-4 border-b border-zinc-800/50">
+              <div class="vod-preset-dialog__section">
                 <div class="flex items-center gap-2 mb-3">
                   <RatioIcon class="w-4 h-4 text-blue-400" />
                   <h3 class="text-sm font-semibold text-white">Aspect Ratio & Template</h3>
@@ -88,7 +76,7 @@
               </div>
 
               <!-- Section 2: Framing -->
-              <div class="px-5 py-4 border-b border-zinc-800/50">
+              <div class="vod-preset-dialog__section">
                 <div class="flex items-center justify-between mb-3">
                   <div class="flex items-center gap-2">
                     <CropIcon class="w-4 h-4 text-violet-400" />
@@ -126,7 +114,7 @@
               </div>
 
               <!-- Section 3: Layout Overlays -->
-              <div class="px-5 py-4 border-b border-zinc-800/50">
+              <div class="vod-preset-dialog__section">
                 <div class="flex items-center justify-between mb-3">
                   <div class="flex items-center gap-2">
                     <LayersIcon class="w-4 h-4 text-amber-400" />
@@ -202,7 +190,7 @@
               </div>
 
               <!-- Section 4: Watermark -->
-              <div class="px-5 py-4">
+              <div class="vod-preset-dialog__section vod-preset-dialog__section--last">
                 <div class="flex items-center gap-2 mb-3">
                   <StampIcon class="w-4 h-4 text-pink-400" />
                   <h3 class="text-sm font-semibold text-white">Watermark</h3>
@@ -267,9 +255,9 @@
             </div>
 
             <!-- Footer -->
-            <div class="flex items-center justify-between px-5 py-4 border-t border-zinc-800 bg-zinc-900/50">
-              <div class="text-xs text-zinc-500">
-                Target: <span class="text-zinc-300 font-medium">{{ selectedAspectRatio }}</span>
+            <div class="vod-preset-dialog__footer">
+              <div class="vod-preset-dialog__footer-info">
+                Target: <span class="font-medium" style="color: var(--sidebar-text)">{{ selectedAspectRatio }}</span>
                 <span v-if="framingRegions.length > 0" class="ml-2">
                   · {{ framingRegions.length }} region{{ framingRegions.length !== 1 ? 's' : '' }}
                 </span>
@@ -281,25 +269,22 @@
                 <button
                   v-if="hasExistingConfig"
                   @click="clearPreset"
-                  class="px-4 py-2 text-sm font-medium text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-lg transition-colors"
+                  class="vod-preset-dialog__btn vod-preset-dialog__btn--danger"
                 >
                   Remove Pre-Edit
                 </button>
                 <button
                   @click="close"
-                  class="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
+                  class="vod-preset-dialog__btn vod-preset-dialog__btn--secondary"
                 >
                   Cancel
                 </button>
                 <button
                   @click="confirmConfig"
-                  class="flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-lg transition-all relative overflow-hidden group bg-gradient-to-r from-emerald-600 to-blue-600 text-white hover:from-emerald-500 hover:to-blue-500"
+                  class="vod-preset-dialog__btn vod-preset-dialog__btn--primary"
                 >
-                  <div
-                    class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-                  />
-                  <CheckIcon class="h-4 w-4 relative" />
-                  <span class="relative">Apply Pre-Edit</span>
+                  <CheckIcon :size="16" />
+                  Apply Pre-Edit
                 </button>
               </div>
             </div>
@@ -662,6 +647,188 @@
 </script>
 
 <style scoped>
+  /* ===== Overlay ===== */
+  .vod-preset-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+  }
+
+  /* ===== Dialog Container ===== */
+  .vod-preset-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 960px;
+    margin: 1rem;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ===== Accent Bar ===== */
+  .vod-preset-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .vod-preset-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .vod-preset-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .vod-preset-dialog__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .vod-preset-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .vod-preset-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .vod-preset-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content Area ===== */
+  .vod-preset-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .vod-preset-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .vod-preset-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .vod-preset-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== Sections ===== */
+  .vod-preset-dialog__section {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .vod-preset-dialog__section--last {
+    border-bottom: none;
+  }
+
+  /* ===== Footer ===== */
+  .vod-preset-dialog__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+    gap: 1rem;
+  }
+
+  .vod-preset-dialog__footer-info {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  /* ===== Buttons ===== */
+  .vod-preset-dialog__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .vod-preset-dialog__btn--primary {
+    background-color: var(--sidebar-accent);
+    color: #fff;
+    border-color: var(--sidebar-accent);
+  }
+
+  .vod-preset-dialog__btn--primary:hover {
+    filter: brightness(1.15);
+  }
+
+  .vod-preset-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border-color: var(--sidebar-border);
+  }
+
+  .vod-preset-dialog__btn--secondary:hover {
+    background-color: var(--sidebar-border);
+  }
+
+  .vod-preset-dialog__btn--danger {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+
+  .vod-preset-dialog__btn--danger:hover {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+  }
+
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
     transition: opacity 0.3s ease;

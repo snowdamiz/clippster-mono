@@ -36,6 +36,7 @@ import type {
 } from "@/services/database/video-editor-edits";
 import { getClip } from "@/services/database/clips";
 import { getCreatorProfileByProjectId } from "@/services/database/creator-profiles";
+import { resolveBrandingProfile } from "@/composables/useBrandingProfileSelection";
 import { useBrandingConfig } from "../composables/useBrandingConfig";
 
 const DEFAULT_TRANSFORM: Transform = {
@@ -347,9 +348,9 @@ async function resolveAndInitBranding(sources: VideoEditorSource[]): Promise<voi
 			return;
 		}
 
-		const profile = await getCreatorProfileByProjectId(clip.project_id);
+		const profile = await resolveBrandingProfile(clip.project_id);
 		if (!profile) {
-			console.log("[bridge] No creator profile found for project:", clip.project_id);
+			console.log("[bridge] No branding profile found for project:", clip.project_id);
 			return;
 		}
 

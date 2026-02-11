@@ -211,6 +211,109 @@ export interface ExportProgress {
 }
 
 // Imported clip data with full edit information
+// AI Chat Session types
+export type ChatSessionStatus = 'discovery' | 'generating' | 'generated' | 'refining' | 'completed';
+
+export interface AIChatSession {
+  id: number;
+  status: ChatSessionStatus;
+  media_items: AIVideoMediaItem[];
+  composition: AIVideoComposition | null;
+  refinement_round: number;
+  refinement_messages_used: number;
+  max_refinement_rounds: number;
+  max_messages_per_round: number;
+  style_context: Record<string, any>;
+  reference_analysis: ReferenceStyleProfile | null;
+  media_analysis: MediaAnalysis[] | null;
+  reference_url: string | null;
+  messages: AIChatMessage[];
+  inserted_at: string;
+  updated_at: string;
+}
+
+export interface AIChatMessage {
+  id: number;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  metadata: Record<string, any> | null;
+  inserted_at: string;
+}
+
+export interface ChatResponse {
+  message: string;
+  ready_to_generate: boolean;
+  summary: GenerationSummary | null;
+}
+
+export interface RefinementResponse {
+  message: string;
+  apply_changes: boolean;
+  change_description: string | null;
+}
+
+export interface GenerationSummary {
+  description: string;
+  style: string;
+  duration: number;
+  aspectRatio: string;
+  captionStyle: string;
+  intensity: number;
+  colorPalette: string[];
+  keyFeatures: string[];
+}
+
+export interface ReferenceStyleProfile {
+  colorPalette: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    text: string;
+    gradients: string[];
+  };
+  typography: {
+    headingStyle: string;
+    bodyStyle: string;
+    captionStyle: string;
+    animationStyle: string;
+  };
+  motionStyle: {
+    pacing: string;
+    cutFrequency: string;
+    cameraMotion: string[];
+    transitionTypes: string[];
+    energyLevel: number;
+  };
+  visualEffects: {
+    backgroundType: string;
+    overlayEffects: string[];
+    borderStyles: string[];
+    shadowStyles: string[];
+  };
+  layout: {
+    contentPlacement: string;
+    textPosition: string;
+    imagePresentation: string;
+  };
+  mood: string;
+  genre: string;
+  summary: string;
+}
+
+export interface MediaAnalysis {
+  index: number;
+  path: string;
+  contentType: string;
+  dominantColors: string[];
+  textContent: string;
+  brandElements: string;
+  layout: string;
+  suggestedDuration: number;
+  suggestedEffects: string;
+  suggestedOrder: number;
+}
+
 export interface ImportedClipData {
   id: string;
   name: string;

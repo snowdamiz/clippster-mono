@@ -8,6 +8,7 @@ defmodule ClippsterServerWeb.UserPostsController do
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.{ClipperSocialAccount, UserPost}
   alias ClippsterServer.Social.Platforms.Instagram
+  alias ClippsterServer.Social.Platforms.Twitter
 
   @doc """
   Publish a post to user's Instagram account.
@@ -59,6 +60,74 @@ defmodule ClippsterServerWeb.UserPostsController do
         conn
         |> put_status(404)
         |> json(%{success: false, error: "Account not found"})
+
+      {:error, :missing_param, param} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Missing required parameter: #{param}"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(500)
+        |> json(%{success: false, error: inspect(reason)})
+    end
+  end
+
+  @doc """
+  Publish a post to user's X (Twitter) account.
+
+  POST /api/user/twitter/publish
+  """
+  def publish_twitter(conn, params) do
+    user = conn.assigns.current_user
+
+    with {:ok, account_id} <- get_required_param(params, "account_id"),
+         {:ok, media_url} <- get_required_param(params, "media_url"),
+         {:ok, account} <- get_user_account(user.id, account_id),
+         :ok <- validate_platform(account, "twitter"),
+         {:ok, post_data} <- publish_to_twitter(account, media_url, params) do
+
+      post_attrs = %{
+        user_id: user.id,
+        clipper_social_account_id: account.id,
+        platform: "twitter",
+        post_id: post_data.post_id,
+        post_url: post_data.post_url,
+        caption: params["caption"],
+        media_url: media_url,
+        thumbnail_url: params["thumbnail_url"],
+        media_type: params["media_type"] || "video",
+        status: "published"
+      }
+
+      case Campaigns.create_user_post(user, post_attrs) do
+        {:ok, post} ->
+          conn
+          |> put_status(201)
+          |> json(%{
+            success: true,
+            post: serialize_post(post),
+            message: "Published to X successfully"
+          })
+
+        {:error, changeset} ->
+          conn
+          |> put_status(422)
+          |> json(%{
+            success: false,
+            error: extract_changeset_error(changeset)
+          })
+      end
+    else
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Account not found"})
+
+      {:error, :wrong_platform} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Account is not a Twitter/X account"})
 
       {:error, :missing_param, param} ->
         conn
@@ -270,6 +339,14 @@ defmodule ClippsterServerWeb.UserPostsController do
     end
   end
 
+  defp validate_platform(account, expected_platform) do
+    if account.platform == expected_platform do
+      :ok
+    else
+      {:error, :wrong_platform}
+    end
+  end
+
   defp get_user_account(user_id, account_id) do
     account = Campaigns.get_social_account(account_id)
 
@@ -303,6 +380,21 @@ defmodule ClippsterServerWeb.UserPostsController do
     }
 
     Instagram.publish_media(access_token, media_url, opts)
+  end
+
+  defp publish_to_twitter(account, media_url, params) do
+    access_token = ClipperSocialAccount.get_access_token(account)
+    caption = params["caption"] || ""
+
+    opts = %{
+      filename: "video.mp4",
+      media_type: params["media_type"] || "video"
+    }
+
+    with {:ok, %{media_id: media_id}} <- Twitter.publish_media(access_token, media_url, opts),
+         {:ok, tweet_data} <- Twitter.create_tweet(access_token, caption, media_ids: [media_id]) do
+      {:ok, %{post_id: tweet_data.post_id, post_url: tweet_data.post_url}}
+    end
   end
 
   defp fetch_insights(account, post) do

@@ -15,9 +15,10 @@ import {
   XCircle,
   AlertCircle,
   Send,
+  Link2,
 } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
-import { listScheduledPosts, listOrgScheduledPosts, type ScheduledPost } from '@/services/schedulingApi';
+import { listScheduledPosts, listOrgScheduledPosts, listExternalPosts, type ScheduledPost, type ExternalPostSubmission } from '@/services/schedulingApi';
 import { listOrganizationCampaigns, listMyCampaigns, type Campaign } from '@/services/campaignApi';
 
 // ── State ──
@@ -27,6 +28,7 @@ const error = ref<string | null>(null);
 
 const scheduledPosts = ref<ScheduledPost[]>([]);
 const campaigns = ref<Campaign[]>([]);
+const externalSubmissions = ref<ExternalPostSubmission[]>([]);
 
 // Calendar state
 const currentDate = ref(new Date());
@@ -97,11 +99,11 @@ interface CalendarEvent {
   id: string;
   title: string;
   date: Date;
-  type: 'scheduled-post' | 'campaign-start' | 'campaign-end';
+  type: 'scheduled-post' | 'campaign-start' | 'campaign-end' | 'external-submission';
   status?: string;
   platform?: string;
   color: string;
-  data: ScheduledPost | Campaign;
+  data: ScheduledPost | Campaign | ExternalPostSubmission;
 }
 
 const calendarEvents = computed((): CalendarEvent[] => {
@@ -123,6 +125,29 @@ const calendarEvents = computed((): CalendarEvent[] => {
       platform: post.platform,
       color: getPostStatusColor(post.status),
       data: post,
+    });
+  }
+
+  // External post submissions (use inserted_at = submission time)
+  for (const sub of externalSubmissions.value) {
+    const dateStr = sub.inserted_at;
+    if (!dateStr) continue;
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) continue;
+
+    const creatorName = sub.creator_profile?.name;
+    const submitterName = sub.submitted_by?.name || sub.submitted_by?.email || 'Unknown';
+    const titlePrefix = creatorName ? `[${creatorName}] ` : '';
+
+    events.push({
+      id: `ext-${sub.id}`,
+      title: `${titlePrefix}${sub.platform} link by ${submitterName}`,
+      date,
+      type: 'external-submission',
+      status: sub.status,
+      platform: sub.platform,
+      color: getExternalStatusColor(sub.status),
+      data: sub,
     });
   }
 
@@ -229,6 +254,27 @@ function getPlatformIcon(platform: string) {
   }
 }
 
+function getExternalStatusColor(status: string): string {
+  switch (status) {
+    case 'approved':
+      return 'bg-emerald-500';
+    case 'pending':
+      return 'bg-violet-500';
+    case 'rejected':
+      return 'bg-red-500';
+    default:
+      return 'bg-violet-500';
+  }
+}
+
+function getPostContextLabel(post: ScheduledPost): string {
+  const parts: string[] = [];
+  if (post.organization?.name) parts.push(post.organization.name);
+  if (post.creator_profile?.name) parts.push(post.creator_profile.name);
+  if (post.submitted_by?.name) parts.push(`by ${post.submitted_by.name}`);
+  return parts.join(' · ');
+}
+
 function formatEventTime(date: Date): string {
   return date.toLocaleTimeString('default', { hour: 'numeric', minute: '2-digit' });
 }
@@ -269,6 +315,7 @@ async function loadData() {
     const results = await Promise.allSettled([
       loadScheduledPosts(),
       loadCampaigns(),
+      loadExternalSubmissions(),
     ]);
 
     const errors = results
@@ -299,6 +346,20 @@ async function loadScheduledPosts() {
     }
   } catch (err) {
     console.warn('[ContentCalendar] Failed to load scheduled posts:', err);
+  }
+}
+
+async function loadExternalSubmissions() {
+  try {
+    const orgId = authStore.user?.owned_organization_id;
+    if (orgId) {
+      const response = await listExternalPosts(Number(orgId));
+      if (response.success && response.submissions) {
+        externalSubmissions.value = response.submissions;
+      }
+    }
+  } catch (err) {
+    console.warn('[ContentCalendar] Failed to load external submissions:', err);
   }
 }
 
@@ -352,7 +413,9 @@ const stats = computed(() => {
     e.date.getMonth() === currentMonth.value && e.date.getFullYear() === currentYear.value
   ).length;
 
-  return { upcoming, published, activeCampaigns, thisMonthEvents };
+  const linkSubmissions = externalSubmissions.value.length;
+
+  return { upcoming, published, activeCampaigns, thisMonthEvents, linkSubmissions };
 });
 
 // ── Lifecycle ──
@@ -413,6 +476,10 @@ onMounted(() => {
       <div class="flex items-center gap-1.5">
         <div class="w-2 h-2 rounded-full bg-orange-500" />
         <span class="text-[11px] text-zinc-400">{{ stats.activeCampaigns }} active campaigns</span>
+      </div>
+      <div v-if="stats.linkSubmissions > 0" class="flex items-center gap-1.5">
+        <div class="w-2 h-2 rounded-full bg-violet-500" />
+        <span class="text-[11px] text-zinc-400">{{ stats.linkSubmissions }} link submissions</span>
       </div>
       <div class="flex-1" />
       <span class="text-[11px] text-zinc-500">{{ stats.thisMonthEvents }} events this month</span>
@@ -521,6 +588,7 @@ onMounted(() => {
                 class="flex items-center gap-1 px-1 py-px rounded text-[9px] truncate"
                 :class="[
                   event.type === 'scheduled-post' ? 'bg-blue-500/10 text-blue-300' :
+                  event.type === 'external-submission' ? 'bg-violet-500/10 text-violet-300' :
                   event.type === 'campaign-start' ? 'bg-emerald-500/10 text-emerald-300' :
                   'bg-red-500/10 text-red-300'
                 ]"
@@ -573,12 +641,13 @@ onMounted(() => {
                 class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs border transition-colors hover:bg-white/5 cursor-default"
                 :class="[
                   event.type === 'scheduled-post' ? 'bg-blue-500/10 border-blue-500/20 text-blue-300' :
+                  event.type === 'external-submission' ? 'bg-violet-500/10 border-violet-500/20 text-violet-300' :
                   event.type === 'campaign-start' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' :
                   'bg-red-500/10 border-red-500/20 text-red-300'
                 ]"
               >
                 <component
-                  :is="event.type === 'scheduled-post' ? getPlatformIcon((event.data as ScheduledPost).platform) : Megaphone"
+                  :is="event.type === 'scheduled-post' ? getPlatformIcon((event.data as ScheduledPost).platform) : event.type === 'external-submission' ? getPlatformIcon((event.data as ExternalPostSubmission).platform) : Megaphone"
                   class="size-3 shrink-0"
                 />
                 <span class="truncate max-w-[200px]">{{ event.title }}</span>
@@ -616,6 +685,7 @@ onMounted(() => {
             class="rounded-lg border p-3 space-y-2"
             :class="[
               event.type === 'scheduled-post' ? 'bg-blue-500/5 border-blue-500/15' :
+              event.type === 'external-submission' ? 'bg-violet-500/5 border-violet-500/15' :
               event.type === 'campaign-start' ? 'bg-emerald-500/5 border-emerald-500/15' :
               'bg-red-500/5 border-red-500/15'
             ]"
@@ -626,11 +696,12 @@ onMounted(() => {
               <span class="text-[10px] font-medium uppercase tracking-wider"
                 :class="[
                   event.type === 'scheduled-post' ? 'text-blue-400' :
+                  event.type === 'external-submission' ? 'text-violet-400' :
                   event.type === 'campaign-start' ? 'text-emerald-400' :
                   'text-red-400'
                 ]"
               >
-                {{ event.type === 'scheduled-post' ? 'Scheduled Post' : event.type === 'campaign-start' ? 'Campaign Start' : 'Campaign Deadline' }}
+                {{ event.type === 'scheduled-post' ? 'Scheduled Post' : event.type === 'external-submission' ? 'Link Submission' : event.type === 'campaign-start' ? 'Campaign Start' : 'Campaign Deadline' }}
               </span>
             </div>
 
@@ -660,11 +731,70 @@ onMounted(() => {
                   'text-zinc-400'
                 ]">{{ (event.data as ScheduledPost).status }}</span>
               </div>
+              <!-- Creator / Org context -->
+              <p
+                v-if="getPostContextLabel(event.data as ScheduledPost)"
+                class="text-[10px] text-cyan-400/80 truncate"
+              >
+                {{ getPostContextLabel(event.data as ScheduledPost) }}
+              </p>
               <p
                 v-if="(event.data as ScheduledPost).caption"
                 class="text-[10px] text-zinc-500 leading-relaxed line-clamp-3"
               >
                 {{ (event.data as ScheduledPost).caption }}
+              </p>
+            </template>
+
+            <!-- External submission details -->
+            <template v-if="event.type === 'external-submission'">
+              <div class="flex items-center gap-2">
+                <component :is="getPlatformIcon((event.data as ExternalPostSubmission).platform)" class="size-3 text-zinc-400" />
+                <span class="text-[10px] text-zinc-400 capitalize">{{ (event.data as ExternalPostSubmission).platform }}</span>
+                <div class="flex-1" />
+                <span class="text-[10px] capitalize" :class="[
+                  (event.data as ExternalPostSubmission).status === 'approved' ? 'text-emerald-400' :
+                  (event.data as ExternalPostSubmission).status === 'rejected' ? 'text-red-400' :
+                  'text-violet-400'
+                ]">{{ (event.data as ExternalPostSubmission).status }}</span>
+              </div>
+              <!-- Creator profile -->
+              <p
+                v-if="(event.data as ExternalPostSubmission).creator_profile?.name"
+                class="text-[10px] text-cyan-400/80 truncate"
+              >
+                {{ (event.data as ExternalPostSubmission).creator_profile?.name }}
+              </p>
+              <!-- Submitted by -->
+              <p
+                v-if="(event.data as ExternalPostSubmission).submitted_by"
+                class="text-[10px] text-zinc-500"
+              >
+                Submitted by {{ (event.data as ExternalPostSubmission).submitted_by?.name || (event.data as ExternalPostSubmission).submitted_by?.email }}
+              </p>
+              <!-- Author username -->
+              <p
+                v-if="(event.data as ExternalPostSubmission).author_username"
+                class="text-[10px] text-zinc-500"
+              >
+                @{{ (event.data as ExternalPostSubmission).author_username }}
+              </p>
+              <!-- Post URL -->
+              <a
+                v-if="(event.data as ExternalPostSubmission).post_url"
+                :href="(event.data as ExternalPostSubmission).post_url"
+                target="_blank"
+                class="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                <Link2 class="size-3" />
+                View post
+              </a>
+              <!-- Caption -->
+              <p
+                v-if="(event.data as ExternalPostSubmission).caption"
+                class="text-[10px] text-zinc-500 leading-relaxed line-clamp-3"
+              >
+                {{ (event.data as ExternalPostSubmission).caption }}
               </p>
             </template>
 

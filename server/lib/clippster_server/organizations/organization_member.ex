@@ -14,6 +14,8 @@ defmodule ClippsterServer.Organizations.OrganizationMember do
 
     belongs_to :organization, ClippsterServer.Organizations.Organization
     belongs_to :user, ClippsterServer.Accounts.User
+    belongs_to :branding_profile, ClippsterServer.Organizations.OrganizationCreatorProfile,
+      foreign_key: :branding_profile_id
 
     timestamps(type: :utc_datetime)
   end
@@ -83,6 +85,15 @@ defmodule ClippsterServer.Organizations.OrganizationMember do
   def update_restriction_overrides_changeset(member, attrs) do
     member
     |> cast(attrs, [:restriction_overrides, :is_restricted])
+  end
+
+  @doc """
+  Changeset for updating a member's default branding profile.
+  """
+  def update_branding_profile_changeset(member, attrs) do
+    member
+    |> cast(attrs, [:branding_profile_id])
+    |> foreign_key_constraint(:branding_profile_id)
   end
 end
 

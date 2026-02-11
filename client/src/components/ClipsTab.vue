@@ -952,6 +952,9 @@
   });
 
   // Load thumbnails when clips change
+  // Flag to prevent concurrent thumbnail generation runs
+  let thumbnailGenerationInProgress = false;
+
   watch(
     () => props.clips,
     (newClips, oldClips) => {
@@ -1073,9 +1076,6 @@
       console.warn('[ClipsTab] Failed to load video editor project membership:', error);
     }
   }
-
-  // Flag to prevent concurrent thumbnail generation runs
-  let thumbnailGenerationInProgress = false;
 
   // Generate thumbnails for clips that don't have built_thumbnail_path set
   // This handles manual clips and clips where thumbnail generation failed during detection

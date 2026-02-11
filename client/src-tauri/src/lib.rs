@@ -573,8 +573,8 @@ pub fn run() {
                         },
                         tauri_plugin_sql::Migration {
                             version: 81,
-                            description: "add_source_start_time_to_audio_tracks",
-                            sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            description: "add_audio_peaks_to_segments",
+                            sql: include_str!("../migrations/081_add_audio_peaks_to_segments.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
@@ -589,11 +589,46 @@ pub fn run() {
                             sql: include_str!("../migrations/083_add_vod_presets.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 84,
+                            description: "add_global_branding_profiles",
+                            sql: include_str!("../migrations/084_add_global_branding_profiles.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 85,
+                            description: "add_campaign_id_to_clips",
+                            sql: include_str!("../migrations/085_add_campaign_id_to_clips.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 86,
+                            description: "add_source_start_time_to_audio_tracks",
+                            sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 87,
+                            description: "add_transcript_raw_json_to_clip_segments",
+                            sql: include_str!("../migrations/083_add_transcript_raw_json_to_clip_segments.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 88,
+                            description: "add_layer_to_editor_tables",
+                            sql: include_str!("../migrations/088_add_layer_to_editor_tables.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 89,
+                            description: "add_project_media",
+                            sql: include_str!("../migrations/069_add_project_media.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
         )
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -673,6 +708,11 @@ cleanup_completed_download,
 check_file_exists,
 validate_video_file,
 generate_proxy_file,
+
+// File utility commands
+commands::file_utils::get_file_info,
+commands::file_utils::get_media_metadata,
+commands::file_utils::generate_video_thumbnail,
 
 // Auth commands
             auth::open_wallet_auth_window,

@@ -19,6 +19,7 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
     field :profile_image_url, :string
     field :watermark_settings, :map
     field :intro_outro_settings, :map
+    field :scope, :string, default: "streamer"
 
     belongs_to :organization, Organization
     belongs_to :intro, OrganizationAsset, foreign_key: :intro_id
@@ -50,9 +51,11 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
       :outro_id,
       :watermark_id,
       :watermark_settings,
-      :intro_outro_settings
+      :intro_outro_settings,
+      :scope
     ])
     |> validate_required([:organization_id, :name])
+    |> validate_inclusion(:scope, ["streamer", "global"])
     |> validate_length(:name, min: 1, max: 255)
     |> validate_length(:description, max: 1000)
     |> foreign_key_constraint(:organization_id)
@@ -74,8 +77,10 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
       :outro_id,
       :watermark_id,
       :watermark_settings,
-      :intro_outro_settings
+      :intro_outro_settings,
+      :scope
     ])
+    |> validate_inclusion(:scope, ["streamer", "global"])
     |> validate_length(:name, min: 1, max: 255)
     |> validate_length(:description, max: 1000)
     |> foreign_key_constraint(:intro_id)
