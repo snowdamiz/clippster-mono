@@ -437,7 +437,7 @@ pub async fn build_clip_internal_simple(
             
             // Resolve intro/outro for this aspect ratio
             // Priority: per-ratio settings -> global intro/outro -> none
-            let (effective_intro_path, effective_intro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
+            let (effective_intro_path, _effective_intro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
                 if let Some((ratio_intro_path, ratio_intro_duration)) = per_ratio.get(&aspect_ratio_str) {
                     (ratio_intro_path.clone(), *ratio_intro_duration)
                 } else {
@@ -447,7 +447,7 @@ pub async fn build_clip_internal_simple(
                 (intro_path.as_ref().map(|s| s.to_string()), intro_duration)
             };
             
-            let (effective_outro_path, effective_outro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
+            let (effective_outro_path, _effective_outro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
                 if let Some((ratio_outro_path, ratio_outro_duration)) = per_ratio.get(&aspect_ratio_str) {
                     (ratio_outro_path.clone(), *ratio_outro_duration)
                 } else {

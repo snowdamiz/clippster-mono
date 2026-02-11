@@ -825,6 +825,10 @@ generate_proxy_file,
 
     // HLS commands
     hls::start_hls_recording,
+    hls::stop_hls_recording,
+    hls::cleanup_hls_recordings,
+    hls::get_recording_output_dir,
+    hls::get_hls_segments,
 
 // Video Editor Export commands
 video_editor_export::export_video_editor_project_simple,

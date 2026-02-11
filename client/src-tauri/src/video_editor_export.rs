@@ -32,6 +32,7 @@ pub struct VideoSource {
 
     pub trim_start: Option<f64>,
     
+    #[allow(dead_code)] // Deserialized from frontend but not used in export filters (duration is computed from end_time - start_time)
     pub trim_end: Option<f64>,
 
     pub opacity: Option<f64>,
