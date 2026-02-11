@@ -239,7 +239,7 @@ defmodule ClippsterServerWeb.AIChatController do
 
                 case VideoComposer.generate(
                   refinement_prompt, media, style, nil, aspect_ratio,
-                  session.composition, %{}, api_key
+                  user, session.composition, %{}
                 ) do
                   {:ok, new_composition} ->
                     {:ok, session} = ChatSessions.save_composition(session, new_composition)

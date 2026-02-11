@@ -49,17 +49,20 @@ defmodule ClippsterServer.AI.ChatComposer do
     "summary": null
   }
 
-  When ready_to_generate is true, include a summary:
+  When ready_to_generate is true, include a summary. The "style" field MUST be one of these presets:
+  "hype", "professional", "gaming", "cinematic", "tutorial", "vlog", "music_video", "product"
+  Pick the best match based on the conversation. Default to "product" if unsure.
+
   {
     "message": "Here's what I'll create for you...",
     "ready_to_generate": true,
     "summary": {
       "description": "Brief description of the video",
-      "style": "detected or chosen style",
+      "style": "product",
       "duration": 30,
       "aspectRatio": "16:9",
       "captionStyle": "bold_tiktok",
-      "intensity": 0.6,
+      "intensity": 0.7,
       "colorPalette": ["#hex1", "#hex2", "#hex3"],
       "keyFeatures": ["feature1", "feature2"]
     }

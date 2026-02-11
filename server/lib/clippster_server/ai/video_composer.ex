@@ -85,6 +85,9 @@ defmodule ClippsterServer.AI.VideoComposer do
         # Build base media tracks deterministically (no AI needed)
         base_media_tracks = build_base_media_tracks(ctx, scenes)
 
+        # Build guaranteed ambient tracks (background particles, neon borders)
+        ambient_tracks = build_ambient_tracks(scenes)
+
         # Phase 2: Generate OVERLAY tracks for each scene (text, camera, effects, transitions)
         all_overlay_tracks = Enum.reduce_while(scenes, {:ok, []}, fn scene, {:ok, acc} ->
           case generate_scene_overlay_tracks(ctx, scene, scenes, api_key) do
@@ -95,8 +98,8 @@ defmodule ClippsterServer.AI.VideoComposer do
 
         case all_overlay_tracks do
           {:ok, overlay_tracks} ->
-            # Phase 3: Merge base media + overlay tracks into final composition
-            {:ok, build_final_composition(ctx, base_media_tracks ++ overlay_tracks)}
+            # Phase 3: Merge base media + ambient + overlay tracks into final composition
+            {:ok, build_final_composition(ctx, base_media_tracks ++ ambient_tracks ++ overlay_tracks)}
           {:error, reason} ->
             {:error, reason}
         end
@@ -116,6 +119,9 @@ defmodule ClippsterServer.AI.VideoComposer do
         # Build base media tracks deterministically (no AI needed)
         base_media_tracks = build_base_media_tracks(ctx, scenes)
 
+        # Build guaranteed ambient tracks (background particles, neon borders)
+        ambient_tracks = build_ambient_tracks(scenes)
+
         # Phase 2: Generate OVERLAY tracks for each scene, streaming progress
         result = Enum.reduce_while(Enum.with_index(scenes), {:ok, []}, fn {scene, idx}, {:ok, acc} ->
           case generate_scene_overlay_tracks(ctx, scene, scenes, api_key) do
@@ -130,7 +136,7 @@ defmodule ClippsterServer.AI.VideoComposer do
 
         case result do
           {:ok, overlay_tracks} ->
-            composition = build_final_composition(ctx, base_media_tracks ++ overlay_tracks)
+            composition = build_final_composition(ctx, base_media_tracks ++ ambient_tracks ++ overlay_tracks)
             send_fn.(%{event: "complete", data: %{composition: composition}})
             {:ok, composition}
           {:error, reason} ->
@@ -273,6 +279,12 @@ defmodule ClippsterServer.AI.VideoComposer do
       |> Enum.with_index()
       |> Enum.map(fn {path, media_idx} ->
         media_type = detect_media_type(path, media_items)
+        
+        # Add a default slow zoom or pan for variety (static video is boring)
+        motion_types = ["slowZoom", "dollyPan"]
+        motion_type = Enum.random(motion_types)
+        motion_dir = Enum.random(["in", "out", "left", "right"])
+        
         %{
           "id" => "s#{scene_index}-#{media_type}-#{media_idx}",
           "type" => media_type,
@@ -284,11 +296,67 @@ defmodule ClippsterServer.AI.VideoComposer do
           "properties" => %{
             "x" => 50,
             "y" => 50,
-            "scale" => 1,
-            "opacity" => 1
+            "scale" => 0.9, # Leave room for borders
+            "opacity" => 1,
+            "effects" => [
+              %{
+                "type" => motion_type,
+                "startTime" => scene_start,
+                "endTime" => scene_end,
+                "intensity" => 0.15,
+                "direction" => motion_dir
+              }
+            ]
           }
         }
       end)
+    end)
+  end
+
+  # Build guaranteed ambient overlay tracks for every scene so there is always
+  # visual depth even if the AI overlay generation is sparse.
+  defp build_ambient_tracks(scenes) do
+    accent = Enum.random(["#00D4FF", "#FF6B35", "#A855F7", "#22D3EE", "#F43F5E", "#10B981"])
+
+    Enum.flat_map(Enum.with_index(scenes), fn {scene, idx} ->
+      scene_start = Map.get(scene, "startTime", 0)
+      scene_end   = Map.get(scene, "endTime", scene_start + 5)
+
+      [
+        # Mesh gradient background on layer 15 (rich animated gradient, cinematic depth)
+        %{
+          "id" => "amb-bg-#{idx}",
+          "type" => "motionGraphic",
+          "name" => "Ambient BG #{idx + 1}",
+          "startTime" => scene_start,
+          "endTime" => scene_end,
+          "layer" => 15,
+          "properties" => %{
+            "motionGraphic" => %{
+              "templateId" => "meshGradientBg",
+              "customColors" => [accent, "#ec4899", "#06b6d4", "#000000"],
+              "text" => ""
+            }
+          }
+        },
+        # Neon frame border on layer 17 (foreground accent)
+        %{
+          "id" => "amb-frame-#{idx}",
+          "type" => "motionGraphic",
+          "name" => "Ambient Frame #{idx + 1}",
+          "startTime" => scene_start,
+          "endTime" => scene_end,
+          "layer" => 17,
+          "properties" => %{
+            "motionGraphic" => %{
+              "templateId" => "neonFrame",
+              "customColors" => [accent],
+              "intensity" => 0.5,
+              "text" => ""
+            }
+          }
+        }
+      ]
     end)
   end
 
@@ -355,7 +423,7 @@ defmodule ClippsterServer.AI.VideoComposer do
     Generate the OVERLAY tracks for Scene #{scene_index + 1} of the video.
 
     ## Scene Details
-    - Time range: #{scene_start}s to #{scene_end}s (#{scene_end - scene_start}s duration)
+    - Time range: #{scene_start}s to #{scene_end}s (#{Float.round((scene_end - scene_start) / 1, 1)}s duration)
     - Description: #{scene_desc}
     - Mood: #{mood}
     #{if transcript_segment != "", do: "- Transcript: #{transcript_segment}", else: ""}
@@ -369,14 +437,28 @@ defmodule ClippsterServer.AI.VideoComposer do
 
     #{ctx.intensity_context}
     #{ctx.caption_context}
+    #{ctx.reference_context}
+    #{ctx.media_analysis_context}
+
+    ## MANDATORY OUTPUT — You MUST generate ALL of these for this scene:
+    1. **1 cameraMotion track** — slowZoom, dollyPan, orbit, or punchZoom covering the full scene duration
+    2. **2+ motionGraphic tracks** — PRIORITIZE PREMIUM templates:
+       - heroGradientText (animated gradient hero title), glassMorphCard (frosted glass feature card),
+       - floatingMockup (3D floating product card), deviceMockup (3D app preview),
+       - featureShowcase (animated feature grid), sweepingLight (cinematic light streak on layer 18),
+       - animatedUnderline (text with expanding underline)
+       - Also: kineticText, animatedInfoCard, calloutBox, dataCounter, floatingBadge
+    3. **1+ text track** — Captions from transcript (exact words, 2-4 word chunks, 1-2s each) with bold styling (fontSize 56, fontWeight 800, stroke width 6)
+    4. **1 transition track** — At scene start (if not first scene) or end
+    5. **0-2 impactFX tracks** — flash/screenShake/particleBurst on audio peaks or excitement words
+    6. **1 sweepingLight track** — On layer 18 for cinematic light streak effect (at least on scene transitions)
 
     ## CRITICAL Rules for THIS Scene
     - DO NOT generate video or image tracks — those are already created separately
     - All track startTime/endTime MUST be within #{scene_start}s to #{scene_end}s
-    - Generate ONLY: text captions, camera motion, transitions, impact FX, motion graphics
     - Track IDs must be prefixed with "s#{scene_index}-" (e.g. "s#{scene_index}-txt-1", "s#{scene_index}-cam-1")
-    - If this is the first scene (#{scene_start}s), include an intro transition
-    - If this is the last scene (ends at #{ctx.duration}s), include an outro
+    - If this is the first scene (#{scene_start}s), include an intro transition (zoomIn or fade)
+    - If this is the last scene (ends at #{ctx.duration}s), include an outro transition (fade)
     #{if scene_index > 0, do: "- Add a transition at the start (#{scene_start}s) to blend with the previous scene", else: ""}
 
     ## Output Format
@@ -504,7 +586,7 @@ defmodule ClippsterServer.AI.VideoComposer do
         %{"role" => "user", "content" => user_prompt}
       ],
       "max_tokens" => max_tokens,
-      "temperature" => 0.5
+      "temperature" => 0.75
     }
 
     headers = [
@@ -759,21 +841,24 @@ defmodule ClippsterServer.AI.VideoComposer do
     # Build style-specific guidance if a preset style was selected
     style_guidance = case style do
       "hype" -> """
-      STYLE PRESET: Hype/Viral
-      - Fast-paced, high energy editing
-      - Bold captions (70-80% coverage), large text with black stroke
-      - Impact effects on every audio peak and excitement word
-      - Vibrant color grading: saturation 1.35, contrast 1.25
-      - Camera: handheldShake 0.06, frequent punchZoom
-      - Effect budget: 10-15 effects + 4-6 transitions
+      STYLE PRESET: Hype/Viral/Alex Hormozi Style
+      - FAST PACED: 0.5-1.5s per cut. High energy.
+      - KINETIC TYPOGRAPHY: Every spoken word must have a caption. Use 'kineticText' motion graphics for important phrases. Use 'heroGradientText' for the main title.
+      - FANCY TEXT: Use fontWeight 900, textCase uppercase, white with thick black stroke (width 6-8). Add 'glow' (intensity 10, color matching brand).
+      - COLOR PALETTE: Pick ONE bright accent color (e.g. #fbbf24 Yellow, #22d3ee Cyan, #a855f7 Purple) and use it for all emphasis text and graphics.
+      - CAMERA: Frequent 'punchZoom' on audio peaks. Continuous 'handheldShake' (intensity 0.05).
+      - IMPACT: flash + screenShake + particleBurst on every single audio peak > 0.6. Add 'sweepingLight' on scene transitions.
+      - LAYERING: Always have 4+ layers active (meshGradientBg + Media + Camera + Text + ImpactFX).
+      - BACKGROUNDS: Use 'meshGradientBg' on layer 15 instead of plain particleBackground for richer depth.
       """
       "professional" -> """
-      STYLE PRESET: Professional/Clean
-      - Polished, corporate aesthetic
-      - Clean captions (50-60% coverage), readable font
-      - Smooth slow zooms, minimal shake (0.03)
-      - Warm color grading: saturation 1.15, contrast 1.15
-      - Effect budget: 4-8 effects + 2-4 transitions
+      STYLE PRESET: Professional/Clean Corporate
+      - POLISHED & SPACED: 3-6s per scene.
+      - ELEGANT TEXT: Use 'Inter' or 'Montserrat'. fontSize 42, fontWeight 500, white with subtle shadow. No stroke.
+      - MOTION GRAPHICS: Use 'animatedInfoCard' and 'animatedDivider' to present facts.
+      - CAMERA: Smooth 'slowZoom' (in or out) on every scene. No shake.
+      - TRANSITIONS: Use 'fade' or 'blur' exclusively.
+      - COLOR: saturation 1.1, contrast 1.1.
       """
       "gaming" -> """
       STYLE PRESET: Gaming Montage
@@ -816,26 +901,39 @@ defmodule ClippsterServer.AI.VideoComposer do
       - Effect budget: 15-25 effects + 6-10 transitions
       """
       "product" -> """
-      STYLE PRESET: Product Showcase / SaaS Promo
-      - Premium, clean aesthetic with consistent visual identity
-      - Orbit camera motions, slow reveals, smooth transitions
-      - Rich motion graphics: titleCard, kineticText, animatedInfoCard, dataCounter, floatingBadge
-      - Professional color: saturation 1.15, contrast 1.15
-      - Effect budget: 10-15 effects + 4-6 transitions
-      
-      ABSOLUTE RULES — FOLLOW EXACTLY OR THE VIDEO WILL BE REJECTED:
-      1. COLOR LOCK: If the user specifies hex colors, copy them VERBATIM into every customColors array. Do NOT invent new colors. Do NOT substitute similar colors. Use the EXACT hex values from the prompt.
-      2. COUNTER VALUES: If the user specifies a dataCounter value like "0|Clips Made|", output EXACTLY "0" — do NOT change it to 100 or any other number. Copy the user's values character-for-character.
-      3. NO BLACK GAPS: Every second of the video must have visible content. If an image ends at time X, the next image or motion graphic must start at or before time X. Add particleBackground or gradientWave to fill any gaps.
-      4. USE ALL IMAGES: If the user provides N images, ALL N must appear as image tracks in the output. Do not skip any.
-      5. NEON BORDERS: Add neonFrame motion graphics around image showcase scenes for animated borders.
-      6. ANIMATED BACKGROUNDS: Use particleBackground and gradientWave liberally as background layers (layer 1 or 15) behind images — not just during transitions.
-      7. TEXT: Copy the user's customText strings EXACTLY. Do not rephrase, reword, or add words.
+      STYLE PRESET: Premium SaaS / Motion Graphics Promo (Astra Motion Style)
+      - **HIGH-END MOTION GRAPHICS**: Use 'glassMorphCard' for feature highlights, 'deviceMockup' for app/product shots, 'floatingMockup' for hero sections, 'featureShowcase' for feature grids, 'animatedInfoCard' for data points, 'dataCounter' for stats, 'logoReveal' for branding.
+      - **HERO TEXT**: Use 'heroGradientText' for the main title/hero text with animated gradient fill. Use 'kineticText' for secondary headlines.
+      - **CINEMATIC BACKGROUNDS**: Use 'meshGradientBg' on layer 15 for rich animated gradient backgrounds. Use 'sweepingLight' for cinematic light streaks on transitions.
+      - **3D PARALLAX**: Use 'orbit' or 'parallax' camera motion. Everything should feel like it's floating in 3D space.
+      - **LAYERING (MANDATORY — 5+ active layers per scene)**:
+        - Layer 15: 'meshGradientBg' (animated gradient background)
+        - Layer 17: 'neonFrame' (cinematic border with animated corners)
+        - Layer 0: Main Image/Video
+        - Layer 10-14: 'glassMorphCard', 'deviceMockup', 'floatingMockup', or 'heroGradientText'
+        - Layer 18: 'sweepingLight' (cinematic light streak)
+        - Layer 20+: impactFX (flash, radialGlow)
+      - **GLASS MORPHISM**: Use 'glassMorphCard' with frosted glass (backdrop-blur) for feature cards. This is the signature SaaS promo look.
+      - **FANCY TEXT**: Use 'heroGradientText' with animated gradient fills. Add 'animatedUnderline' for emphasis.
+      - **COLORS**: Pick a consistent brand color (e.g. #6366f1) and use it for ALL 'customColors' arrays across every template.
+      - **TRANSITIONS**: Use 'glitchTransition', 'zoomIn', or 'cube3D' between major sections.
+      - **PACE**: Professional but dynamic. 2-4s per scene. Every scene must feel alive with motion.
       """
-      _ -> if style && String.length(style) > 0 do
-        "STYLE HINT: #{style}"
+      _ -> if style && is_binary(style) && String.length(style) > 0 do
+        "STYLE HINT: #{style}. Default to motion-graphics-heavy editing with kineticText for headlines, particleBackground on layer 15, neonFrame on layer 17, and layered compositions with 3+ active layers per scene."
       else
-        "AUTO-DETECT: Analyze the transcript and media to determine the best editing style."
+        """
+        AUTO-DETECT STYLE — Default to Premium Motion Graphics:
+        - Use 'heroGradientText' for main titles, 'kineticText' for secondary headlines (pipe-separated words).
+        - Use 'glassMorphCard' for feature highlights, 'floatingMockup' for product shots.
+        - Use 'meshGradientBg' on layer 15 for rich animated gradient backgrounds.
+        - Use 'neonFrame' on layer 17 for cinematic borders.
+        - Use 'sweepingLight' for cinematic light streaks on transitions.
+        - Camera: mix of slowZoom, dollyPan, orbit. Never static.
+        - Transitions: glitchTransition, zoomIn, or fade between scenes.
+        - Text: fontSize 56, fontWeight 800, white, stroke width 6, glow intensity 8.
+        - ALWAYS have 5+ active layers per scene (gradient bg + border + content + text + effects).
+        """
       end
     end
 
@@ -863,15 +961,18 @@ defmodule ClippsterServer.AI.VideoComposer do
     5. Distribute effects across the ENTIRE duration — beginning, middle, AND end
     6. **COLOR CONSISTENCY**: If the user specifies colors in their prompt, use ONLY those colors throughout the entire video. If not specified, pick a cohesive 3-color palette (primary, secondary, accent) and stick to it for ALL tracks. Never use random colors per scene.
 
-    ### CRITICAL: VARIETY RULES (NEVER REPEAT THE SAME EFFECT)
-    - **NEVER use the same camera motion type more than 2 times in a row.** Alternate between slowZoom, dollyPan, handheldShake, orbit, parallax, dutchAngle, etc.
-    - **NEVER use the same transition type more than once in a row.** Cycle through fade, slideLeft, wipeRight, zoomIn, irisIn, etc.
-    - **Vary intensity across effects.** If one zoom is 0.3, the next should be 0.5 or 0.15 — not the same value.
-    - **Vary direction.** Alternate zoom in/out, pan left/right, slide up/down.
-    - **Each camera motion segment should be 3-8 seconds long**, not the entire video duration.
-    - **Mix calm and energetic sections.** A good edit has rhythm: build-up → peak → breathe → build-up → peak.
-    - Example good camera motion sequence: slowZoom(in) → dollyPan(right) → handheldShake → punchZoom → orbit → slowZoom(out) → parallax
-    - Example BAD camera motion (DO NOT DO THIS): slowZoom → slowZoom → slowZoom → slowZoom
+    ### CRITICAL: LAYERING & DEPTH RULES
+    - **NEVER leave a scene with just a single layer.** Professional videos always have depth.
+    - **Background (Layer 15)**: Use 'particleBackground' or 'gradientWave' at 0.3 opacity to add texture.
+    - **Main Content (Layer 0)**: The video or image.
+    - **Foreground Accents (Layer 17)**: Use 'neonFrame', 'floatingBadge', or 'animatedDivider'.
+    - **Top Overlays (Layer 10-14)**: Kinetic text, captions, or title cards.
+    - **Impact (Layer 20+)**: Short flashes or shakes on beat.
+
+    ### FANCY TEXT & KINETIC TYPOGRAPHY
+    - Use the 'kineticText' motion graphic template for major headlines. It animates word-by-word with spring physics.
+    - For regular text tracks, use 'gradient', 'glow', and 'stroke' properties liberally.
+    - Example Fancy Text: {"content":"EPIC REVEAL","gradient":{"enabled":true,"colors":["#fbbf24","#f59e0b"],"angle":45},"glow":{"intensity":12,"color":"#fbbf24"},"stroke":{"width":4,"color":"#000000"}}
 
     ### IDIOT-PROOF DEFAULTS
     If the user gives a vague or simple prompt (e.g. "make it look good", "edit this", "make it viral"):
@@ -974,11 +1075,16 @@ defmodule ClippsterServer.AI.VideoComposer do
     ### Image/Video track example:
     {"id":"img-1","type":"image","name":"Screenshot","source":{"type":"local","path":"EXACT_PATH"},"startTime":0,"endTime":10,"layer":0,"properties":{"x":50,"y":50,"scale":0.85,"opacity":1}}
 
-    ### Text track example (MUST nest under properties.text):
-    {"id":"txt-1","type":"text","name":"Caption","startTime":0,"endTime":3,"layer":10,"properties":{"x":50,"y":85,"text":{"content":"Your text here","fontFamily":"Inter, sans-serif","fontSize":56,"fontWeight":800,"color":"#ffffff","textAlign":"center","animation":{"type":"fade","duration":0.3},"stroke":{"width":6,"color":"#000000"}}}}
+    ### Kinetic Text example (Layer 10):
+    {"id":"mg-kt-1","type":"motionGraphic","name":"Kinetic Headline","startTime":0,"endTime":3,"layer":10,"properties":{"x":50,"y":50,"motionGraphic":{"templateId":"kineticText","customText":"STOP|MAKING|BORING|VIDEOS","customColors":["#ffffff","#fbbf24"],"springConfig":{"mass":1,"damping":12,"stiffness":120}}}}
 
-    ### Motion graphic track example (MUST nest under properties.motionGraphic):
-    {"id":"mg-1","type":"motionGraphic","name":"Title Card","startTime":0,"endTime":4,"layer":17,"properties":{"x":50,"y":50,"motionGraphic":{"templateId":"titleCard","customText":"Main Title|Subtitle","customColors":["rgba(0,0,0,0.8)","#ffffff"],"animationSpeed":1}}}
+    ### Complex Layered Scene example:
+    [
+      {"id":"bg-1","type":"motionGraphic","name":"Background","startTime":0,"endTime":5,"layer":15,"properties":{"motionGraphic":{"templateId":"particleBackground","customColors":["#1e1e2e"]}}},
+      {"id":"img-1","type":"image","name":"Product Shot","source":{"path":"..."},"startTime":0,"endTime":5,"layer":0,"properties":{"x":50,"y":50,"scale":0.8}},
+      {"id":"mg-frame","type":"motionGraphic","name":"Neon Border","startTime":0,"endTime":5,"layer":17,"properties":{"motionGraphic":{"templateId":"neonFrame","customColors":["#6366f1"]}}},
+      {"id":"mg-title","type":"motionGraphic","name":"Headlines","startTime":0.5,"endTime":4.5,"layer":10,"properties":{"x":50,"y":50,"motionGraphic":{"templateId":"kineticText","customText":"NEW|AI|WORKFLOW","customColors":["#ffffff","#6366f1"]}}}
+    ]
 
     ### Camera motion track example (MUST use properties.effects ARRAY):
     {"id":"cam-1","type":"cameraMotion","name":"Slow Zoom","startTime":0,"endTime":6,"layer":1,"properties":{"effects":[{"type":"slowZoom","startTime":0,"endTime":6,"intensity":0.3,"direction":"in"}]}}
@@ -1032,17 +1138,21 @@ defmodule ClippsterServer.AI.VideoComposer do
     - Vary camera motion types — never repeat the same type twice in a row
     - Vary transition types — never repeat the same type twice in a row
 
-    ### Audio Peak Rules
-    If audio peaks are provided:
-    - Amplitude > 0.7: flash + screenShake + radialGlow + particleBurst + punchZoom
-    - Amplitude 0.4-0.7: screenShake + radialGlow + punchZoom
-    - Amplitude 0.2-0.4: subtle slowZoom or dollyPan
+    ### CRITICAL: LAYERING & DEPTH RULES
+    - **NEVER leave a scene with just a single layer.** Professional videos always have depth.
+    - **Background (Layer 15)**: 'meshGradientBg' (animated gradient) or 'particleBackground' (bokeh particles). Auto-added but you can override.
+    - **Border (Layer 17)**: 'neonFrame' (cinematic border with animated corners). Auto-added.
+    - **Main Content (Layer 0)**: The video or image.
+    - **Premium Overlays (Layer 10-14)**: 'glassMorphCard' for frosted-glass feature cards, 'deviceMockup' for 3D app previews, 'floatingMockup' for floating product cards, 'heroGradientText' for gradient-filled hero titles, 'featureShowcase' for animated feature grids.
+    - **Accent (Layer 18)**: 'sweepingLight' for cinematic light streaks, 'animatedUnderline' for text emphasis.
+    - **Impact (Layer 20+)**: Short flashes or shakes on beat.
 
-    ### Caption Rules
-    - Use EXACT transcript words, broken into 2-4 word chunks
-    - Each caption: 1-2 seconds duration
-    - Position: x: 50, y: 85 (bottom center)
-    - Default style: fontSize 56, fontWeight 800, white with black stroke (width 6)
+    ### FANCY TEXT & KINETIC TYPOGRAPHY
+    - Use 'heroGradientText' for main hero titles (animated gradient fill, cinematic entrance).
+    - Use 'kineticText' for secondary headlines (staggered word reveals with 3D rotateX).
+    - Use 'glassMorphCard' for feature descriptions (frosted glass with backdrop-blur).
+    - Use 'animatedUnderline' for emphasized single-line text.
+    - For regular captions, use 'gradient', 'glow' (intensity 10-15), and 'stroke' (width 4-8).
 
     ### Safety Limits
     - Continuous shake: MAX 0.08 intensity
@@ -1055,34 +1165,76 @@ defmodule ClippsterServer.AI.VideoComposer do
     | 1-5 | cameraMotion | Zoom, pan, shake effects |
     | 6-9 | transition | Scene transitions |
     | 10-14 | text | Captions and text overlays |
-    | 15-19 | shape | Visual overlays (vignettes, gradients) |
+    | 10-19 | motionGraphic | Kinetic text, title cards, info cards, badges, counters |
     | 20+ | impactFX | Flash, shake, glow, particles |
 
     ⚠️ FORBIDDEN: Do NOT generate tracks with type "video" or "image". Those are handled separately.
+    ⚠️ Background (particleBackground) and border (neonFrame) tracks are ALREADY added automatically. Do NOT duplicate them.
 
     ## AVAILABLE EFFECTS
 
     **Camera Motion** (cameraMotion track, properties.effects array):
     Types: handheldShake, slowZoom, punchZoom, dollyPan, orbit, dutchAngle, impactShake, parallax
+    Fields: startTime, endTime, type, intensity (0.05-0.5), direction (in/out/left/right), easing
 
     **Transitions** (transition track, properties.transitions array):
     Types: cut, fade, slideLeft, slideRight, slideUp, slideDown, wipeLeft, wipeRight, zoomIn, zoomOut, irisIn, irisOut, glitchTransition, cube3D
+    Fields: time, type, duration (0.5-1.5s)
 
     **Impact FX** (impactFX track, properties.effects array):
     Types: flash, radialGlow, chromaticAberration, glitch, lensFlare, particleBurst, screenShake, freezeFrame, colorFlash, rgbSplit
+    Fields: time, type, duration (0.2-0.5s), intensity (0.3-0.8), color
 
-    **Text** (text track): content, fontFamily, fontSize, fontWeight, color, strokeWidth, strokeColor, textAlign, animation
-    **Motion Graphics** (motionGraphic track): templateId, variant, customText, customColors, animationSpeed
+    **Text** (text track, properties.text object):
+    Fields: content, fontFamily, fontSize (36-72), fontWeight (400-900), color, textAlign, animation ({type, duration}), stroke ({width, color}), glow ({intensity, color}), gradient ({enabled, colors, angle})
+
+    **Motion Graphics** (motionGraphic track, properties.motionGraphic object):
+    PREMIUM Templates (use these for high-end SaaS/promo look):
+    - glassMorphCard: Frosted glass card with backdrop-blur. customText: "Title|Description|CTA". 3D entrance.
+    - deviceMockup: 3D floating device/laptop frame. customText: "App Name". Continuous 3D rotation.
+    - meshGradientBg: Animated multi-color gradient background. customColors: ["#6366f1","#ec4899","#06b6d4","#000000"]. Use on layer 15.
+    - heroGradientText: Large text with animated gradient fill. customText: "HERO|SUBTITLE". Cinematic entrance.
+    - featureShowcase: Staggered grid of feature cards. customText: "Fast|Secure|Scalable|Beautiful".
+    - floatingMockup: 3D floating product card with glow. customText: "Product|Tagline|CTA Button".
+    - sweepingLight: Cinematic light streak across screen. Use on layer 18 for transitions.
+    - animatedUnderline: Text with expanding gradient underline. customText: "Emphasized Text".
+    Standard Templates: kineticText, titleCard, animatedInfoCard, dataCounter, calloutBox, floatingBadge, glitchTitle, splitReveal, gradientWave, animatedDivider, spotlightReveal, lowerThird, subscribeCTA, numberCounter
+    Fields: templateId, customText (pipe-separated: "WORD1|WORD2|WORD3"), customColors (array of hex), animationSpeed, springConfig ({mass, damping, stiffness})
 
     ## OUTPUT FORMAT
     Return ONLY a valid JSON object: {"tracks": [...]}
 
-    ### Track examples (overlay types only):
-    Text: {"id":"s0-txt-1","type":"text","name":"Caption","startTime":0,"endTime":2,"layer":10,"properties":{"x":50,"y":85,"text":{"content":"Words here","fontFamily":"Inter, sans-serif","fontSize":56,"fontWeight":800,"color":"#ffffff","textAlign":"center","animation":{"type":"fade","duration":0.3},"stroke":{"width":6,"color":"#000000"}}}}
-    Camera: {"id":"s0-cam-1","type":"cameraMotion","name":"Zoom","startTime":0,"endTime":5,"layer":1,"properties":{"effects":[{"type":"slowZoom","startTime":0,"endTime":5,"intensity":0.3,"direction":"in"}]}}
-    Impact: {"id":"s0-fx-1","type":"impactFX","name":"Flash","startTime":2,"endTime":2.5,"layer":20,"properties":{"effects":[{"type":"flash","time":2,"duration":0.3,"intensity":0.5}]}}
-    Transition: {"id":"s0-tr-1","type":"transition","name":"Fade","startTime":0,"endTime":1,"layer":6,"properties":{"transitions":[{"type":"fade","time":0,"duration":1}]}}
-    MotionGraphic: {"id":"s0-mg-1","type":"motionGraphic","name":"Title","startTime":0,"endTime":3,"layer":17,"properties":{"x":50,"y":50,"motionGraphic":{"templateId":"titleCard","customText":"Title","customColors":["#000000","#ffffff"],"animationSpeed":1}}}
+    ### Track examples (COPY THESE STRUCTURES EXACTLY):
+
+    KineticText (headline with staggered word animation):
+    {"id":"s0-mg-1","type":"motionGraphic","name":"Headline","startTime":0,"endTime":3,"layer":12,"properties":{"x":50,"y":30,"motionGraphic":{"templateId":"kineticText","customText":"STOP|MAKING|BORING|VIDEOS","customColors":["#ffffff","#fbbf24"],"springConfig":{"mass":1,"damping":12,"stiffness":120}}}}
+
+    Text caption (bold TikTok style):
+    {"id":"s0-txt-1","type":"text","name":"Caption","startTime":0,"endTime":2,"layer":10,"properties":{"x":50,"y":85,"text":{"content":"exact transcript words","fontFamily":"Inter, sans-serif","fontSize":56,"fontWeight":800,"color":"#ffffff","textAlign":"center","animation":{"type":"scale-in","duration":0.3},"stroke":{"width":6,"color":"#000000"},"glow":{"intensity":8,"color":"#fbbf24"}}}}
+
+    Camera motion:
+    {"id":"s0-cam-1","type":"cameraMotion","name":"Zoom","startTime":0,"endTime":5,"layer":1,"properties":{"effects":[{"type":"slowZoom","startTime":0,"endTime":5,"intensity":0.25,"direction":"in"}]}}
+
+    Impact FX combo (on audio peak):
+    {"id":"s0-fx-1","type":"impactFX","name":"Peak Hit","startTime":2,"endTime":2.5,"layer":20,"properties":{"effects":[{"type":"flash","time":2,"duration":0.3,"intensity":0.5},{"type":"screenShake","time":2,"duration":0.4,"intensity":0.4}]}}
+
+    Transition:
+    {"id":"s0-tr-1","type":"transition","name":"Fade In","startTime":0,"endTime":1,"layer":6,"properties":{"transitions":[{"type":"fade","time":0,"duration":1}]}}
+
+    AnimatedInfoCard (for facts/features):
+    {"id":"s0-mg-2","type":"motionGraphic","name":"Feature Card","startTime":1,"endTime":4,"layer":11,"properties":{"x":50,"y":60,"motionGraphic":{"templateId":"animatedInfoCard","customText":"10x Faster Editing","customColors":["#6366f1","#ffffff"],"animationSpeed":1}}}
+
+    GlassMorphCard (frosted glass feature card — PREMIUM):
+    {"id":"s0-mg-3","type":"motionGraphic","name":"Glass Card","startTime":0,"endTime":4,"layer":12,"properties":{"x":50,"y":50,"motionGraphic":{"templateId":"glassMorphCard","customText":"AI-Powered|Automatically detect and extract the best moments from any video|LEARN MORE","customColors":["#6366f1","#ffffff","#a855f7"]}}}
+
+    HeroGradientText (animated gradient hero title — PREMIUM):
+    {"id":"s0-mg-4","type":"motionGraphic","name":"Hero Title","startTime":0,"endTime":3,"layer":13,"properties":{"x":50,"y":40,"motionGraphic":{"templateId":"heroGradientText","customText":"THE FUTURE|OF VIDEO EDITING","customColors":["#6366f1","#ec4899","#f59e0b"]}}}
+
+    FloatingMockup (3D floating product card — PREMIUM):
+    {"id":"s0-mg-5","type":"motionGraphic","name":"Product Card","startTime":1,"endTime":5,"layer":11,"properties":{"x":50,"y":50,"motionGraphic":{"templateId":"floatingMockup","customText":"Clippster Pro|Create stunning videos in minutes|Get Started","customColors":["#6366f1","#ffffff","#0f0f1a"]}}}
+
+    SweepingLight (cinematic light streak — PREMIUM):
+    {"id":"s0-mg-6","type":"motionGraphic","name":"Light Sweep","startTime":0,"endTime":2,"layer":18,"properties":{"motionGraphic":{"templateId":"sweepingLight","customColors":["#ffffff","#6366f1"]}}}
 
     ### Critical Rules
     - ⚠️ NEVER generate "video" or "image" type tracks
@@ -1096,18 +1248,30 @@ defmodule ClippsterServer.AI.VideoComposer do
   end
 
   defp build_style_guidance(style) do
-    case style do
-      "hype" -> "STYLE: Hype/Viral — Fast-paced, bold captions, impact effects on peaks, vibrant colors"
-      "professional" -> "STYLE: Professional — Polished, clean captions, smooth zooms, warm color grade"
-      "gaming" -> "STYLE: Gaming — Dynamic camera, impact effects on action, bold captions"
-      "cinematic" -> "STYLE: Cinematic — Film-like, slow camera movements, rich color grade"
-      "tutorial" -> "STYLE: Tutorial — Clear pacing, clean captions, minimal effects"
-      "vlog" -> "STYLE: Vlog — Natural feel, subtle shake, warm tones"
-      "music_video" -> "STYLE: Music Video — Beat-synced, heavy transitions, creative effects"
-      "product" -> "STYLE: Product Showcase — Premium aesthetic, motion graphics, smooth reveals"
-      s when is_binary(s) and byte_size(s) > 0 -> "STYLE: #{s}"
-      _ -> "STYLE: Auto-detect from content"
+    base = case style do
+      "hype" ->
+        "STYLE: Hype/Viral/Hormozi. Use heroGradientText for main title, kineticText for secondary headlines. flash+screenShake+particleBurst on peaks. sweepingLight on transitions. Bold captions: fontSize 56, fontWeight 900, white, stroke 6-8, glow 10. Camera: punchZoom on peaks, handheldShake 0.05. Pick ONE accent color for all graphics."
+      "professional" ->
+        "STYLE: Professional/Corporate. Use animatedInfoCard for facts, animatedDivider between sections. Elegant text: fontSize 42, fontWeight 500, subtle shadow. Camera: slowZoom only. Transitions: fade. No shake."
+      "gaming" ->
+        "STYLE: Gaming Montage. Use kineticText for callouts, flash+screenShake on kills. Bold captions with glow. Camera: punchZoom+handheldShake. Neon accent colors."
+      "cinematic" ->
+        "STYLE: Cinematic. Slow deliberate camera (slowZoom, dollyPan). Use titleCard for scene intros. Letterbox feel. Rich shadows. Minimal but impactful effects."
+      "tutorial" ->
+        "STYLE: Tutorial. Use calloutBox for tips, animatedInfoCard for steps. Clean captions. Camera: gentle slowZoom. Minimal effects."
+      "vlog" ->
+        "STYLE: Vlog/Story. Natural handheldShake 0.04. Warm tones. Use floatingBadge for labels. Minimal effects, let content shine."
+      "music_video" ->
+        "STYLE: Music Video. Beat-synced transitions. Use glitchTitle, splitReveal, gradientWave. Heavy creative effects. Camera synced to rhythm."
+      "product" ->
+        "STYLE: Premium SaaS/Motion Graphics Promo. Use heroGradientText for hero titles, glassMorphCard for feature cards, deviceMockup for app previews, floatingMockup for product cards, featureShowcase for feature grids. meshGradientBg on layer 15. sweepingLight on layer 18. 3D parallax camera (orbit). Pick ONE brand color for all customColors."
+      s when is_binary(s) and byte_size(s) > 0 ->
+        "STYLE: #{s}"
+      _ ->
+        "STYLE: Auto-detect. Default to premium motion-graphics style: heroGradientText for titles, glassMorphCard for features, meshGradientBg backgrounds, sweepingLight accents, and 5+ layered compositions."
     end
+
+    base <> "\n\nMINIMUM REQUIREMENTS PER SCENE: At least 2 motionGraphic tracks (use PREMIUM templates: heroGradientText, glassMorphCard, floatingMockup, featureShowcase, deviceMockup, sweepingLight, animatedUnderline — plus kineticText, animatedInfoCard) + 1 cameraMotion track + 1 transition at scene boundaries. Never output a scene with fewer than 3 overlay tracks."
   end
 
   defp parse_composition_response_from_content(content, width, height, duration) do

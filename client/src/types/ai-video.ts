@@ -132,7 +132,15 @@ export type MotionGraphicTemplate =
   | 'gradientWave'
   | 'floatingBadge'
   | 'animatedDivider'
-  | 'spotlightReveal';
+  | 'spotlightReveal'
+  | 'glassMorphCard'
+  | 'deviceMockup'
+  | 'meshGradientBg'
+  | 'heroGradientText'
+  | 'featureShowcase'
+  | 'floatingMockup'
+  | 'sweepingLight'
+  | 'animatedUnderline';
 
 export interface KeyframeAnimation {
   keyframes: Keyframe[];
