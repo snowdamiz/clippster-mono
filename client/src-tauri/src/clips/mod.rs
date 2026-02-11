@@ -70,6 +70,7 @@ pub async fn build_clip_from_segments(
     clip_watermarks: Option<Vec<ClipWatermarkSettings>>,
     clip_effects: Option<Vec<ClipEffectSettings>>,
     audio_effects: Option<Vec<AudioEffectSettings>>,
+    layout_overlays: Option<Vec<LayoutOverlaySettings>>,
 ) -> Result<(), String> {
 
     println!("[Rust] build_clip_from_segments called with:");
@@ -105,6 +106,7 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   clip_effects count: {}", clip_effects.as_ref().map(|v| v.len()).unwrap_or(0));
     println!("[Rust]   audio_effects count: {}", audio_effects.as_ref().map(|v| v.len()).unwrap_or(0));
     println!("[Rust]   segment_framing_configs: {:?}", segment_framing_configs.as_ref().map(|c| c.keys().collect::<Vec<_>>()));
+    println!("[Rust]   layout_overlays count: {}", layout_overlays.as_ref().map(|v| v.len()).unwrap_or(0));
 
     // Check if clip is already being built and create cancellation token
     let cancel_rx = {
@@ -147,6 +149,7 @@ pub async fn build_clip_from_segments(
     let clip_effects_clone = clip_effects.clone();
     let audio_effects_clone = audio_effects.clone();
     let segment_framing_configs_clone = segment_framing_configs.clone();
+    let layout_overlays_clone = layout_overlays.clone();
 
     // Send initial progress
     let _ = app.emit("clip-build-progress", ClipBuildProgress {
@@ -197,6 +200,7 @@ pub async fn build_clip_from_segments(
             clip_watermarks_clone,
             clip_effects_clone,
             audio_effects_clone,
+            layout_overlays_clone,
             cancel_rx
         ).await {
             Ok(result) => {

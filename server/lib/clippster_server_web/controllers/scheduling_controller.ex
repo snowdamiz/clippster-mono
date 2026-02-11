@@ -876,6 +876,10 @@ defmodule ClippsterServerWeb.SchedulingController do
         impressions_count: post.impressions_count
       },
       social_account: serialize_social_account(post.organization_social_account || post.user_social_account),
+      creator_profile: serialize_creator_profile(post.organization_creator_profile),
+      organization: serialize_organization(post.organization),
+      submitted_by: serialize_user(post.submitted_by_user),
+      campaign: serialize_campaign(post.campaign),
       inserted_at: post.inserted_at,
       updated_at: post.updated_at
     }
@@ -933,6 +937,16 @@ defmodule ClippsterServerWeb.SchedulingController do
       email: user.email,
       name: user.name,
       avatar_url: user.avatar_url
+    }
+  end
+
+  defp serialize_organization(nil), do: nil
+  defp serialize_organization(%Ecto.Association.NotLoaded{}), do: nil
+  defp serialize_organization(org) do
+    %{
+      id: org.id,
+      name: org.name,
+      logo_url: org.logo_url
     }
   end
 

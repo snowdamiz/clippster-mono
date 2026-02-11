@@ -298,6 +298,8 @@ export interface MediaPanelProps {
   transcribeProgress?: number;
   transcribeStage?: string;
   transcribeMessage?: string;
+  // VOD preset config for pre-edit settings
+  vodPresetConfig?: ActiveVodPresetConfig | null;
 }
 
 // Reference type for intro/outro (matches database IntroOutro type)
@@ -1821,4 +1823,42 @@ export interface PhaserParams {
   depth: number; // 0-1
   stages?: number;
   feedback?: number;
+}
+
+// ==========================================
+// VOD Preset Types
+// ==========================================
+
+export interface LayoutOverlay {
+  id: string;
+  imagePath: string;           // Local file path to uploaded PNG
+  x: number;                   // 0-100 percentage position (center-based)
+  y: number;                   // 0-100 percentage position (center-based)
+  width: number;               // 0-100 percentage of target frame width
+  height: number;              // 0-100 percentage of target frame height
+  opacity: number;             // 0-100
+  rotation: number;            // degrees
+  label?: string;              // "Speaker Divider", etc.
+}
+
+export interface VodPreset {
+  id: string;
+  name: string;
+  creatorProfileId: string | null;
+  targetAspectRatio: string;
+  framingConfig: ManualFramingConfig | null;
+  layoutOverlays: LayoutOverlay[];
+  watermarkMode: 'creator' | 'custom' | 'none';
+  customWatermarkSettings: WatermarkSettings | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ActiveVodPresetConfig {
+  presetId: string | null;         // reference to saved preset (null if one-off)
+  targetAspectRatio: string;
+  framingConfig: ManualFramingConfig | null;
+  layoutOverlays: LayoutOverlay[];
+  watermarkMode: 'creator' | 'custom' | 'none';
+  customWatermarkSettings: WatermarkSettings | null;
 }

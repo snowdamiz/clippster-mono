@@ -569,7 +569,7 @@ defmodule ClippsterServer.Social do
         where: p.submitted_by_user_id == ^user_id,
         order_by: [desc: p.scheduled_at],
         limit: ^limit,
-        preload: [:user_social_account, :organization_social_account]
+        preload: [:user_social_account, :organization_social_account, :organization, :organization_creator_profile, :submitted_by_user, :campaign]
 
     query = if status, do: where(query, [p], p.status == ^status), else: query
 
@@ -591,7 +591,7 @@ defmodule ClippsterServer.Social do
         order_by: [desc: p.scheduled_at, desc: p.inserted_at],
         limit: ^limit,
         offset: ^offset,
-        preload: [:organization_social_account, :organization_creator_profile, :submitted_by_user, :campaign]
+        preload: [:organization_social_account, :organization_creator_profile, :submitted_by_user, :campaign, :organization]
 
     query = if status, do: where(query, [p], p.status == ^status), else: query
 

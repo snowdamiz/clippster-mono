@@ -144,7 +144,7 @@ defmodule ClippsterServerWeb.UserTwitterAuthController do
               {:ok, profile} ->
                 # Create or update the social account
                 account_attrs = %{
-                  platform: "twitter",
+                  platform: "x",
                   platform_user_id: profile.user_id,
                   username: profile.username,
                   display_name: profile.display_name,

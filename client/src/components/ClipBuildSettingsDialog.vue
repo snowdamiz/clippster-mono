@@ -822,6 +822,7 @@
     initialAspectRatios?: string[] | null;
     initialFramingMode?: 'auto' | 'manual' | null;
     initialFramingConfigs?: import('@/types').ManualFramingConfigs | null;
+    vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
   }>();
 
   const emit = defineEmits<{
@@ -841,6 +842,7 @@
     manualFramingConfig?: import('@/types').ManualFramingConfig;
     manualFramingConfigs?: import('@/types').ManualFramingConfigs;
     subtitleOverrides?: SubtitleOverrides;
+    layoutOverlays?: import('@/types').LayoutOverlay[];
   }
 
   // Re-export the IntroOutroItem type for use in other components
@@ -1032,10 +1034,13 @@
         // Reset to first step when dialog opens
         currentStep.value = 'platforms';
 
-        // Initialize from saved AspectTab settings if available, otherwise default to 16:9
+        // Initialize from saved AspectTab settings if available, then VOD preset, otherwise default to 16:9
         if (props.initialAspectRatios && props.initialAspectRatios.length > 0) {
           selectedRatios.value = [...props.initialAspectRatios];
           console.log('[ClipBuildSettingsDialog] Initialized aspect ratios from saved settings:', selectedRatios.value);
+        } else if (props.vodPresetConfig?.targetAspectRatio) {
+          selectedRatios.value = [props.vodPresetConfig.targetAspectRatio];
+          console.log('[ClipBuildSettingsDialog] Initialized aspect ratio from VOD preset:', selectedRatios.value);
         } else {
           selectedRatios.value = ['16:9'];
         }
@@ -1043,6 +1048,9 @@
         if (props.initialFramingMode) {
           framingMode.value = props.initialFramingMode;
           console.log('[ClipBuildSettingsDialog] Initialized framing mode from saved settings:', framingMode.value);
+        } else if (props.vodPresetConfig?.framingConfig) {
+          framingMode.value = 'manual';
+          console.log('[ClipBuildSettingsDialog] Initialized framing mode from VOD preset: manual');
         } else {
           framingMode.value = 'auto';
         }
@@ -1053,6 +1061,11 @@
             '[ClipBuildSettingsDialog] Initialized framing configs from saved settings:',
             Object.keys(manualFramingConfigs.value)
           );
+        } else if (props.vodPresetConfig?.framingConfig) {
+          // Apply VOD preset framing config for the target aspect ratio
+          const ratio = props.vodPresetConfig.targetAspectRatio;
+          manualFramingConfigs.value = { [ratio]: props.vodPresetConfig.framingConfig };
+          console.log('[ClipBuildSettingsDialog] Initialized framing configs from VOD preset for ratio:', ratio);
         } else {
           manualFramingConfigs.value = {};
         }
@@ -1478,6 +1491,9 @@
       manualFramingConfig: finalManualConfig ?? undefined,
       manualFramingConfigs: finalManualConfigs,
       subtitleOverrides: finalSubtitleOverrides,
+      layoutOverlays: props.vodPresetConfig?.layoutOverlays?.length
+        ? props.vodPresetConfig.layoutOverlays
+        : undefined,
     };
 
     console.log('[ClipBuildSettingsDialog] Emitting confirm with aspectRatios:', settings.aspectRatios);

@@ -16,6 +16,15 @@
             {{ clips.length > 0 ? `${clips.length} clip${clips.length !== 1 ? 's' : ''} detected` : 'No clips yet' }}
           </p>
         </div>
+        <span
+          v-if="vodPresetConfig"
+          class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold"
+          style="background-color: rgba(16, 185, 129, 0.15); color: #6ee7b7"
+          :title="`VOD Pre-Edit: ${vodPresetConfig.targetAspectRatio}`"
+        >
+          <LayoutDashboard class="w-2.5 h-2.5" />
+          {{ vodPresetConfig.targetAspectRatio }}
+        </span>
       </div>
 
       <!-- Compact Progress Bar (when detecting) - Hide during finalizing to show centered progress -->
@@ -622,6 +631,7 @@
       :initial-aspect-ratios="savedAspectRatios"
       :initial-framing-mode="savedFramingMode"
       :initial-framing-configs="savedFramingConfigs"
+      :vod-preset-config="vodPresetConfig"
       @confirm="onBuildConfirm"
     />
   </div>
@@ -654,6 +664,7 @@
     MoreVertical,
     Plus,
     Settings2,
+    LayoutDashboard,
   } from 'lucide-vue-next';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useInEditorClips } from '@/stores/useInEditorClips';
@@ -833,6 +844,7 @@
     hideHeader?: boolean;
     playOnCardClick?: boolean;
     showAdjustClipButton?: boolean;
+    vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
   }
 
   const props = withDefaults(defineProps<ClipsTabProps>(), {
@@ -857,6 +869,7 @@
     creatorProfile: null,
     videoThumbnailUrl: null,
     playOnCardClick: false,
+    vodPresetConfig: null,
     showAdjustClipButton: false,
   });
 
@@ -939,6 +952,9 @@
   });
 
   // Load thumbnails when clips change
+  // Flag to prevent concurrent thumbnail generation runs
+  let thumbnailGenerationInProgress = false;
+
   watch(
     () => props.clips,
     (newClips, oldClips) => {
@@ -1060,9 +1076,6 @@
       console.warn('[ClipsTab] Failed to load video editor project membership:', error);
     }
   }
-
-  // Flag to prevent concurrent thumbnail generation runs
-  let thumbnailGenerationInProgress = false;
 
   // Generate thumbnails for clips that don't have built_thumbnail_path set
   // This handles manual clips and clips where thumbnail generation failed during detection
@@ -2683,6 +2696,7 @@
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,
         clipWatermarks: clipWatermarksForExport,
+        layoutOverlays: settings.layoutOverlays || null,
       });
 
       console.log('[ClipsTab] Clip build started successfully');

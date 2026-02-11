@@ -136,6 +136,7 @@
       :creator-default-intro="props.creatorDefaultIntro"
       :creator-default-outro="props.creatorDefaultOutro"
       :hide-header="true"
+      :vod-preset-config="props.vodPresetConfig"
       @detect-clips="handleDetectClips"
       @cancel-detection="handleCancelDetection"
       @delete-clip="onDeleteClip"
@@ -194,6 +195,7 @@
     transcribeProgress: 0,
     transcribeStage: '',
     transcribeMessage: '',
+    vodPresetConfig: null,
   });
 
   const emit = defineEmits<MediaPanelEmits>();

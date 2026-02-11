@@ -91,7 +91,7 @@ export async function listUserTwitterAccounts(): Promise<{ success: boolean; acc
   return {
     ...response.data,
     accounts: (response.data.social_accounts || []).filter(
-      (acc: any) => acc.platform === 'twitter'
+      (acc: any) => acc.platform === 'x' || acc.platform === 'twitter'
     ),
   };
 }
@@ -102,6 +102,41 @@ export async function listUserTwitterAccounts(): Promise<{ success: boolean; acc
 export async function disconnectUserTwitterAccount(accountId: number): Promise<{ success: boolean; error?: string }> {
   const response = await api.delete(`/user/social-accounts/${accountId}`);
   return response.data;
+}
+
+// ============================================
+// Publishing API
+// ============================================
+
+export interface PublishToUserTwitterData {
+  account_id: number;
+  media_url: string;
+  caption?: string;
+  media_type?: string;
+  thumbnail_url?: string;
+}
+
+export interface PublishToUserTwitterResponse {
+  success: boolean;
+  post?: any;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Publish a post to user's personal X (Twitter) account.
+ */
+export async function publishToUserTwitter(data: PublishToUserTwitterData): Promise<PublishToUserTwitterResponse> {
+  try {
+    const response = await api.post<PublishToUserTwitterResponse>('/user/twitter/publish', data);
+    return response.data;
+  } catch (error: any) {
+    console.error('[UserTwitterApi] Failed to publish to X:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to publish to X',
+    };
+  }
 }
 
 // ============================================

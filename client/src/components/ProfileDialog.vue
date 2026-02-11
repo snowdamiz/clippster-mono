@@ -13,16 +13,23 @@
                 <X :size="18" />
               </button>
               <div class="org-dialog__icon org-dialog__icon--cyan">
-                <UserCircle :size="24" />
+                <Paintbrush v-if="formData.scope === 'global'" :size="24" />
+                <UserCircle v-else :size="24" />
               </div>
               <h2 class="org-dialog__title">
-                {{ isEditing ? 'Edit Creator Profile' : 'Create Creator Profile' }}
+                {{ formData.scope === 'global'
+                  ? (isEditing ? 'Edit Global Branding' : 'Create Global Branding')
+                  : (isEditing ? 'Edit Creator Profile' : 'Create Creator Profile')
+                }}
               </h2>
               <p class="org-dialog__subtitle">
-                {{
-                  isEditing
+                {{ formData.scope === 'global'
+                  ? (isEditing
+                    ? 'Update default branding applied to content without a creator profile'
+                    : 'Set default intro, outro, and watermark for content without a specific creator profile')
+                  : (isEditing
                     ? 'Update profile details and platform links'
-                    : 'Add a new creator with platform connections'
+                    : 'Add a new creator with platform connections')
                 }}
               </p>
             </div>
@@ -45,7 +52,7 @@
                       v-model="formData.name"
                       type="text"
                       required
-                      placeholder="Creator name"
+                      :placeholder="formData.scope === 'global' ? 'Branding profile name' : 'Creator name'"
                       class="org-dialog__input"
                     />
                   </div>
@@ -58,15 +65,15 @@
                     <textarea
                       v-model="formData.description"
                       rows="2"
-                      placeholder="Brief description of this creator..."
+                      :placeholder="formData.scope === 'global' ? 'e.g. Default branding for all content' : 'Brief description of this creator...'"
                       class="org-dialog__input org-dialog__textarea"
                     />
                   </div>
                 </div>
               </div>
 
-              <!-- Auto DVR Toggle -->
-              <div class="org-dialog__feature-card">
+              <!-- Auto DVR Toggle (hidden for global branding profiles) -->
+              <div v-if="formData.scope !== 'global'" class="org-dialog__feature-card">
                 <div class="org-dialog__feature-icon">
                   <Sparkles :size="16" />
                 </div>
@@ -81,8 +88,8 @@
                 </div>
               </div>
 
-              <!-- Platform Links Section -->
-              <div class="org-dialog__section">
+              <!-- Platform Links Section (hidden for global branding profiles) -->
+              <div v-if="formData.scope !== 'global'" class="org-dialog__section">
                 <div class="org-dialog__section-header">
                   <h3 class="org-dialog__section-title">Platform Links</h3>
                   <button type="button" @click="addPlatformLink" class="org-dialog__add-btn">
@@ -232,7 +239,10 @@
               <div class="org-dialog__section" @click.stop="openAssetDropdown = null">
                 <h3 class="org-dialog__section-title">Default Assets</h3>
                 <p class="org-dialog__section-desc">
-                  Configure default intro, outro, and watermark for this creator's content.
+                  {{ formData.scope === 'global'
+                    ? 'Configure the intro, outro, and watermark applied to all content without a specific creator profile.'
+                    : "Configure default intro, outro, and watermark for this creator's content."
+                  }}
                 </p>
 
                 <div class="org-dialog__section-items">
@@ -537,9 +547,9 @@
                     ? 'Saving...'
                     : fetchingProfileImage
                       ? 'Fetching Info...'
-                      : isEditing
-                        ? 'Update Profile'
-                        : 'Create Profile'
+                      : formData.scope === 'global'
+                        ? (isEditing ? 'Update Branding' : 'Create Branding')
+                        : (isEditing ? 'Update Profile' : 'Create Profile')
                 }}
               </button>
             </div>
@@ -589,6 +599,7 @@
     Users,
     Settings2,
     Sparkles,
+    Paintbrush,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
@@ -657,6 +668,8 @@
     profile?: ServerOrganizationCreatorProfile | null;
     // Local mode props
     creator?: CreatorProfileWithLinks | null;
+    // Scope for new profiles ('streamer' or 'global')
+    scope?: 'streamer' | 'global';
   }
 
   const props = defineProps<Props>();
@@ -713,6 +726,7 @@
     outro_ratio_settings: string | null;
     platformLinks: PlatformLinkInput[];
     auto_dvr_enabled: boolean;
+    scope: 'streamer' | 'global';
   }>({
     name: '',
     description: '',
@@ -725,6 +739,7 @@
     outro_ratio_settings: null,
     platformLinks: [],
     auto_dvr_enabled: false,
+    scope: 'streamer',
   });
 
   // Watermark position picker state
@@ -840,6 +855,7 @@
             intro_ratio_settings: (props.profile as any).intro_ratio_settings || null,
             outro_ratio_settings: (props.profile as any).outro_ratio_settings || null,
             auto_dvr_enabled: Boolean((props.profile as any).auto_dvr_enabled),
+            scope: ((props.profile as any).scope as 'streamer' | 'global') || props.scope || 'streamer',
             platformLinks: props.profile.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform as PlatformId,
@@ -863,6 +879,7 @@
             intro_ratio_settings: props.creator.intro_ratio_settings || null,
             outro_ratio_settings: props.creator.outro_ratio_settings || null,
             auto_dvr_enabled: Boolean((props.creator as any).auto_dvr_enabled),
+            scope: props.creator.scope || props.scope || 'streamer',
             platformLinks: props.creator.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform as PlatformId,
@@ -887,6 +904,7 @@
             outro_ratio_settings: null,
             platformLinks: [],
             auto_dvr_enabled: false,
+            scope: props.scope || 'streamer',
           };
         }
       }
@@ -1698,7 +1716,10 @@
         await processLink(props.creator.id, link);
       }
 
-      showSuccess('Creator Updated', `"${formData.value.name}" has been updated`);
+      showSuccess(
+        formData.value.scope === 'global' ? 'Branding Updated' : 'Creator Updated',
+        `"${formData.value.name}" has been updated`
+      );
     } else {
       // Create new creator
       const creatorId = await createCreatorProfile(
@@ -1712,7 +1733,8 @@
         formData.value.intro_outro_settings,
         formData.value.auto_dvr_enabled,
         formData.value.intro_ratio_settings,
-        formData.value.outro_ratio_settings
+        formData.value.outro_ratio_settings,
+        formData.value.scope
       );
 
       // Add platform links
@@ -1720,7 +1742,10 @@
         await processLink(creatorId, link);
       }
 
-      showSuccess('Creator Created', `"${formData.value.name}" has been added`);
+      showSuccess(
+        formData.value.scope === 'global' ? 'Branding Created' : 'Creator Created',
+        `"${formData.value.name}" has been added`
+      );
     }
 
     // Notify other components (like LiveClip.vue) about the new/updated monitoring data

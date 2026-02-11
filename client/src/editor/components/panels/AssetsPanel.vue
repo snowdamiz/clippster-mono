@@ -26,6 +26,7 @@ import FiltersView from "./assets/FiltersView.vue";
 import AdjustmentsView from "./assets/AdjustmentsView.vue";
 import TransitionsView from "./assets/TransitionsView.vue";
 import BrandingView from "./assets/BrandingView.vue";
+import TranscriptView from "./assets/TranscriptView.vue";
 
 const props = defineProps<{
 	activeTab: string;
@@ -348,6 +349,9 @@ function getMediaIcon(type: string) {
 
 		<!-- Adjustment view -->
 		<AdjustmentsView v-else-if="activeTab === 'adjustment'" />
+
+		<!-- Transcript view -->
+		<TranscriptView v-else-if="activeTab === 'transcript'" />
 
 		<!-- Branding view -->
 		<BrandingView v-else-if="activeTab === 'branding'" />

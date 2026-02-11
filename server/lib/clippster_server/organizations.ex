@@ -1108,6 +1108,17 @@ defmodule ClippsterServer.Organizations do
   end
 
   @doc """
+  Lists creator profiles for an organization filtered by scope.
+  """
+  def list_creator_profiles_by_scope(organization_id, scope) when scope in ["streamer", "global"] do
+    OrganizationCreatorProfile
+    |> where([p], p.organization_id == ^organization_id and p.scope == ^scope)
+    |> preload([:platform_links, :intro, :outro, :watermark, assignments: :user])
+    |> order_by([p], desc: p.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
   Gets a single creator profile by ID.
   """
   def get_creator_profile(id) do

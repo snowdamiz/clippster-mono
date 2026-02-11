@@ -18,11 +18,17 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
   List all creator profiles for an organization.
   GET /organizations/:organization_id/creator-profiles
   """
-  def index(conn, %{"organization_id" => org_id}) do
+  def index(conn, %{"organization_id" => org_id} = params) do
     user = conn.assigns.current_user
 
     if Organizations.is_member?(org_id, user.id) do
-      profiles = Organizations.list_creator_profiles(org_id)
+      profiles =
+        case params["scope"] do
+          scope when scope in ["streamer", "global"] ->
+            Organizations.list_creator_profiles_by_scope(org_id, scope)
+          _ ->
+            Organizations.list_creator_profiles(org_id)
+        end
 
       json(conn, %{
         success: true,
@@ -77,7 +83,8 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
       intro_id: parse_integer(params["intro_id"]),
       outro_id: parse_integer(params["outro_id"]),
       watermark_id: parse_integer(params["watermark_id"]),
-      watermark_settings: params["watermark_settings"]
+      watermark_settings: params["watermark_settings"],
+      scope: params["scope"]
     }
     |> Enum.reject(fn {_, v} -> is_nil(v) end)
     |> Enum.into(%{})
@@ -122,7 +129,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
       profile ->
         attrs = Map.take(params, [
           "name", "description", "profile_image_url",
-          "intro_id", "outro_id", "watermark_id", "watermark_settings"
+          "intro_id", "outro_id", "watermark_id", "watermark_settings", "scope"
         ])
         |> Enum.map(fn
           {"intro_id", v} -> {:intro_id, parse_integer(v)}
@@ -478,6 +485,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
       name: profile.name,
       description: profile.description,
       profile_image_url: maybe_presign_url(profile.profile_image_url),
+      scope: profile.scope,
       intro_id: profile.intro_id,
       outro_id: profile.outro_id,
       watermark_id: profile.watermark_id,

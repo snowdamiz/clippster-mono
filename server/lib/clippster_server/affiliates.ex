@@ -28,16 +28,16 @@ defmodule ClippsterServer.Affiliates do
 
   @doc """
   Updates an affiliate's settings/rates.
+  Accepts either an `%Affiliate{}` struct or an affiliate ID.
   """
+  def update_affiliate(affiliate_or_id, attrs)
+
   def update_affiliate(%Affiliate{} = affiliate, attrs) do
     affiliate
     |> Affiliate.update_changeset(attrs)
     |> Repo.update()
   end
 
-  @doc """
-  Updates an affiliate by ID.
-  """
   def update_affiliate(id, attrs) do
     case get_affiliate(id) do
       nil -> {:error, :not_found}

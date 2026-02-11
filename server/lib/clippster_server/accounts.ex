@@ -125,7 +125,7 @@ defmodule ClippsterServer.Accounts do
   end
 
   # Creates an OAuth user.
-  defp create_oauth_user(provider, provider_id, oauth_info, referral_code \\ nil) do
+  defp create_oauth_user(provider, provider_id, oauth_info, referral_code) do
     is_first_user = Repo.aggregate(User, :count) == 0
     affiliate_id = resolve_affiliate_id(referral_code)
 
@@ -268,7 +268,7 @@ defmodule ClippsterServer.Accounts do
     end
   end
 
-  defp do_register_with_email(email, password, referral_code \\ nil) do
+  defp do_register_with_email(email, password, referral_code) do
     is_first_user = Repo.aggregate(User, :count) == 0
     affiliate_id = resolve_affiliate_id(referral_code)
 

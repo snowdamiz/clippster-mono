@@ -176,6 +176,19 @@ defmodule ClippsterServerWeb.Router do
     get("/ai/compositions/:id", AIController, :get_composition)
     delete("/ai/compositions/:id", AIController, :delete_composition)
 
+    # AI reference analysis
+    post("/ai/reference/analyze", AIChatController, :analyze_reference)
+
+    # AI chat sessions (conversational video generation)
+    post("/ai/chat/sessions", AIChatController, :create_session)
+    get("/ai/chat/sessions/:id", AIChatController, :get_session)
+    post("/ai/chat/sessions/:id/message", AIChatController, :send_message)
+    post("/ai/chat/sessions/:id/generate", AIChatController, :trigger_generation)
+    post("/ai/chat/sessions/:id/refine", AIChatController, :send_refinement)
+    post("/ai/chat/sessions/:id/reference", AIChatController, :upload_reference)
+    post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
+    put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
+
     # Speaker detection and framing strategy
     post("/clips/:clip_id/analyze-speakers", SpeakerDetectionController, :analyze)
     post("/clips/:clip_id/classify-video", SpeakerDetectionController, :classify)
@@ -607,9 +620,10 @@ defmodule ClippsterServerWeb.Router do
     put("/user/payment-methods/:id", ClipperProfileController, :update_payment_method)
     delete("/user/payment-methods/:id", ClipperProfileController, :delete_payment_method)
 
-    # User Instagram posts (personal posting, not campaigns)
+    # User social media posts (personal posting, not campaigns)
     post("/user/posts/upload-media", UserPostsController, :upload_media)
     post("/user/instagram/publish", UserPostsController, :publish)
+    post("/user/twitter/publish", UserPostsController, :publish_twitter)
     get("/user/posts", UserPostsController, :index)
     get("/user/posts/analytics", UserPostsController, :analytics_summary)
     get("/user/posts/:id", UserPostsController, :show)

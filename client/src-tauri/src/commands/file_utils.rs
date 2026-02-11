@@ -1,47 +1,46 @@
-use serde::Serialize;
-use tauri::command;
+use std::path::Path;
+use tauri::AppHandle;
+use tauri_plugin_shell::ShellExt;
 
-#[derive(Debug, Serialize)]
+use crate::storage;
+
+/// Basic file information returned by get_file_info
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileInfo {
     pub name: String,
     pub size: u64,
     pub extension: String,
 }
 
-#[derive(Debug, Serialize)]
+/// Media metadata returned by get_media_metadata
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MediaMetadata {
     pub duration: f64,
-    pub width: u32,
-    pub height: u32,
-    pub codec: String,
-    pub bitrate: Option<u64>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
 }
 
-#[command]
+/// Get basic file info (name, size, extension) for any file path.
+#[tauri::command]
 pub async fn get_file_info(path: String) -> Result<FileInfo, String> {
-    use std::path::Path;
-    
-    let file_path = Path::new(&path);
-    
-    if !file_path.exists() {
-        return Err("File does not exist".to_string());
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("File does not exist: {}", path));
     }
-    
-    let metadata = std::fs::metadata(&path)
+
+    let metadata = std::fs::metadata(p)
         .map_err(|e| format!("Failed to read file metadata: {}", e))?;
-    
-    let name = file_path
+
+    let name = p
         .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("")
-        .to_string();
-    
-    let extension = file_path
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let extension = p
         .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_string();
-    
+        .map(|e| e.to_string_lossy().to_string().to_lowercase())
+        .unwrap_or_default();
+
     Ok(FileInfo {
         name,
         size: metadata.len(),
@@ -49,100 +48,132 @@ pub async fn get_file_info(path: String) -> Result<FileInfo, String> {
     })
 }
 
-#[command]
-pub async fn get_media_metadata(app: tauri::AppHandle, path: String) -> Result<MediaMetadata, String> {
-    use tauri_plugin_shell::ShellExt;
-    
-    let output = app.shell()
+/// Get media metadata (duration, width, height) for video or audio files using FFmpeg.
+#[tauri::command]
+pub async fn get_media_metadata(app: AppHandle, path: String) -> Result<MediaMetadata, String> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(format!("File does not exist: {}", path));
+    }
+
+    let output = app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
-        .args([
-            "-nostdin",
-            "-i", &path,
-            "-f", "null",
-            "-"
-        ])
+        .args(["-nostdin", "-i", &path, "-f", "null", "-"])
         .output()
         .await
-        .map_err(|e| format!("Failed to execute ffprobe: {}", e))?;
-    
+        .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
+
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     // Parse duration
-    let duration_re = regex::Regex::new(r"Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})")
-        .map_err(|e| format!("Regex error: {}", e))?;
-    
-    let duration = if let Some(caps) = duration_re.captures(&stderr) {
-        let hours: f64 = caps[1].parse().unwrap_or(0.0);
-        let minutes: f64 = caps[2].parse().unwrap_or(0.0);
-        let seconds: f64 = caps[3].parse().unwrap_or(0.0);
-        hours * 3600.0 + minutes * 60.0 + seconds
-    } else {
-        return Err("Could not parse duration".to_string());
-    };
-    
+    let duration = parse_duration_from_stderr(&stderr).unwrap_or(0.0);
+
     // Parse resolution
-    let resolution_re = regex::Regex::new(r"(\d{2,5})x(\d{2,5})")
-        .map_err(|e| format!("Regex error: {}", e))?;
-    
-    let (width, height) = if let Some(caps) = resolution_re.captures(&stderr) {
-        (
-            caps[1].parse().unwrap_or(0),
-            caps[2].parse().unwrap_or(0)
-        )
-    } else {
-        return Err("Could not parse resolution".to_string());
-    };
-    
-    // Parse codec
-    let codec = if stderr.contains("h264") {
-        "h264".to_string()
-    } else if stderr.contains("hevc") {
-        "hevc".to_string()
-    } else if stderr.contains("vp9") {
-        "vp9".to_string()
-    } else {
-        "unknown".to_string()
-    };
-    
+    let (width, height) = parse_resolution_from_stderr(&stderr);
+
     Ok(MediaMetadata {
         duration,
         width,
         height,
-        codec,
-        bitrate: None,
     })
 }
 
-#[command]
+/// Generate a thumbnail image from a video at a given timestamp.
+/// Returns the path to the generated thumbnail PNG.
+#[tauri::command]
 pub async fn generate_video_thumbnail(
-    app: tauri::AppHandle,
+    app: AppHandle,
     video_path: String,
-    output_path: String,
     timestamp: f64,
 ) -> Result<String, String> {
-    use tauri_plugin_shell::ShellExt;
-    
-    let output = app.shell()
+    let p = Path::new(&video_path);
+    if !p.exists() {
+        return Err(format!("Video file does not exist: {}", video_path));
+    }
+
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    let thumb_dir = paths.temp.join("thumbnails");
+    std::fs::create_dir_all(&thumb_dir)
+        .map_err(|e| format!("Failed to create thumbnail dir: {}", e))?;
+
+    // Generate a unique filename based on source path hash + timestamp
+    let hash = simple_hash(&video_path);
+    let thumb_path = thumb_dir.join(format!("thumb_{}_{}.png", hash, (timestamp * 1000.0) as u64));
+
+    // Return existing thumbnail if it exists
+    if thumb_path.exists() {
+        return Ok(thumb_path.to_string_lossy().to_string());
+    }
+
+    let thumb_path_str = thumb_path.to_string_lossy().to_string();
+
+    let output = app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
         .args([
-            "-nostdin",
-            "-ss", &timestamp.to_string(),
-            "-i", &video_path,
-            "-vframes", "1",
-            "-q:v", "2",
             "-y",
-            &output_path
+            "-ss",
+            &format!("{:.3}", timestamp),
+            "-i",
+            &video_path,
+            "-vframes",
+            "1",
+            "-q:v",
+            "5",
+            &thumb_path_str,
         ])
         .output()
         .await
-        .map_err(|e| format!("Failed to generate thumbnail: {}", e))?;
-    
-    if !output.status.success() {
+        .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
+
+    if !output.status.success() && !thumb_path.exists() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("FFmpeg error: {}", stderr));
+        return Err(format!("Thumbnail generation failed: {}", stderr));
     }
-    
-    Ok(output_path)
+
+    Ok(thumb_path_str)
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn parse_duration_from_stderr(stderr: &str) -> Option<f64> {
+    // Match "Duration: HH:MM:SS.ss"
+    let re = regex::Regex::new(r"Duration:\s*(\d+):(\d+):(\d+)\.(\d+)").ok()?;
+    let caps = re.captures(stderr)?;
+    let hours: f64 = caps.get(1)?.as_str().parse().ok()?;
+    let minutes: f64 = caps.get(2)?.as_str().parse().ok()?;
+    let seconds: f64 = caps.get(3)?.as_str().parse().ok()?;
+    let centiseconds: f64 = caps.get(4)?.as_str().parse().ok()?;
+    Some(hours * 3600.0 + minutes * 60.0 + seconds + centiseconds / 100.0)
+}
+
+fn parse_resolution_from_stderr(stderr: &str) -> (Option<u32>, Option<u32>) {
+    let re = match regex::Regex::new(r"(\d{2,5})x(\d{2,5})") {
+        Ok(r) => r,
+        Err(_) => return (None, None),
+    };
+    for line in stderr.lines() {
+        if line.contains("Video:") {
+            if let Some(caps) = re.captures(line) {
+                let w: Option<u32> = caps.get(1).and_then(|m| m.as_str().parse().ok());
+                let h: Option<u32> = caps.get(2).and_then(|m| m.as_str().parse().ok());
+                return (w, h);
+            }
+        }
+    }
+    (None, None)
+}
+
+fn simple_hash(s: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish()
 }
