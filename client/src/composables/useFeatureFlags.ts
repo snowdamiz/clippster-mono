@@ -4,6 +4,7 @@ import api from '@/services/api';
 // Feature flags state (shared across all components using this composable)
 const isLiveClipEnabled = ref(true); // Default to true until we fetch from server
 const isBetaModeEnabled = ref(false); // Default to false until we fetch from server
+const paymentProvider = ref<'stripe' | 'lemonsqueezy'>('stripe'); // Default to stripe
 const isLoading = ref(false);
 const lastFetchTime = ref<number | null>(null);
 const error = ref<string | null>(null);
@@ -44,6 +45,7 @@ export function useFeatureFlags() {
         const flags = response.data.feature_flags;
         isLiveClipEnabled.value = flags.live_clip_enabled ?? true;
         isBetaModeEnabled.value = flags.beta_mode_enabled ?? false;
+        paymentProvider.value = flags.payment_provider === 'lemonsqueezy' ? 'lemonsqueezy' : 'stripe';
         lastFetchTime.value = Date.now();
       }
     } catch (err) {
@@ -104,6 +106,30 @@ export function useFeatureFlags() {
   }
 
   /**
+   * Set the payment provider (admin only).
+   * Makes an API call to update the server-side setting.
+   */
+  async function setPaymentProvider(provider: 'stripe' | 'lemonsqueezy'): Promise<boolean> {
+    try {
+      const response = await api.put('/admin/settings/payment_provider', {
+        key: 'payment_provider',
+        value: provider,
+      });
+
+      if (response.data.success) {
+        paymentProvider.value = provider;
+        lastFetchTime.value = Date.now();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('[FeatureFlags] Failed to update payment_provider:', err);
+      error.value = err instanceof Error ? err.message : 'Failed to update setting';
+      return false;
+    }
+  }
+
+  /**
    * Initialize feature flags by fetching from server.
    * Call this once when the app starts.
    */
@@ -122,6 +148,7 @@ export function useFeatureFlags() {
     // State (readonly to prevent direct mutation)
     isLiveClipEnabled: readonly(isLiveClipEnabled),
     isBetaModeEnabled: readonly(isBetaModeEnabled),
+    paymentProvider: readonly(paymentProvider),
     isLoading: readonly(isLoading),
     error: readonly(error),
 
@@ -131,6 +158,7 @@ export function useFeatureFlags() {
     fetchFeatureFlags,
     setLiveClipEnabled,
     setBetaModeEnabled,
+    setPaymentProvider,
   };
 }
 
@@ -138,6 +166,7 @@ export function useFeatureFlags() {
 export const featureFlags = {
   isLiveClipEnabled,
   isBetaModeEnabled,
+  paymentProvider,
   isLoading,
   error,
 };

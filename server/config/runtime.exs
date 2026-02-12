@@ -47,6 +47,28 @@ config :clippster_server, :stripe,
   success_url: System.get_env("STRIPE_SUCCESS_URL") || "http://localhost:48276/stripe-success",
   cancel_url: System.get_env("STRIPE_CANCEL_URL") || "http://localhost:48276/stripe-cancel"
 
+# LemonSqueezy configuration (fallback payment provider)
+config :clippster_server, :lemonsqueezy,
+  api_key: System.get_env("LEMONSQUEEZY_API_KEY"),
+  store_id: System.get_env("LEMONSQUEEZY_STORE_ID"),
+  webhook_secret: System.get_env("LEMONSQUEEZY_WEBHOOK_SECRET"),
+  variant_starter: System.get_env("LEMONSQUEEZY_VARIANT_STARTER"),
+  variant_creator: System.get_env("LEMONSQUEEZY_VARIANT_CREATOR"),
+  variant_pro: System.get_env("LEMONSQUEEZY_VARIANT_PRO"),
+  # Organization base tiers
+  variant_enterprise_base: System.get_env("LEMONSQUEEZY_VARIANT_ENTERPRISE_BASE"),
+  variant_enterprise_ai: System.get_env("LEMONSQUEEZY_VARIANT_ENTERPRISE_AI"),
+  variant_enterprise_unlimited: System.get_env("LEMONSQUEEZY_VARIANT_ENTERPRISE_UNLIMITED"),
+  # Organization add-on tiers
+  variant_seats_5_ai: System.get_env("LEMONSQUEEZY_VARIANT_SEATS_5_AI"),
+  variant_seats_10_ai: System.get_env("LEMONSQUEEZY_VARIANT_SEATS_10_AI"),
+  variant_seats_20_ai: System.get_env("LEMONSQUEEZY_VARIANT_SEATS_20_AI"),
+  variant_seats_5: System.get_env("LEMONSQUEEZY_VARIANT_SEATS_5"),
+  variant_seats_10: System.get_env("LEMONSQUEEZY_VARIANT_SEATS_10"),
+  variant_seats_20: System.get_env("LEMONSQUEEZY_VARIANT_SEATS_20"),
+  success_url: System.get_env("LEMONSQUEEZY_SUCCESS_URL") || "http://localhost:48276/ls-success",
+  cancel_url: System.get_env("LEMONSQUEEZY_CANCEL_URL") || "http://localhost:48276/ls-cancel"
+
 # Resend email configuration (all environments)
 resend_api_key = System.get_env("RESEND_API_KEY")
 

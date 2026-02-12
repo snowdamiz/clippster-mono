@@ -198,6 +198,135 @@ defmodule ClippsterServer.OrganizationSubscriptions do
     end
   end
 
+  @doc """
+  Creates a base subscription via LemonSqueezy payment.
+  """
+  def create_lemonsqueezy_subscription(organization_id, tier, ls_subscription_id) do
+    tier_info = get_tier_info(tier)
+
+    unless tier_info do
+      {:error, :invalid_tier}
+    else
+      Repo.transaction(fn ->
+        org = Repo.get!(Organization, organization_id)
+
+        start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+        end_date = DateTime.add(start_date, @subscription_days, :day)
+
+        # Update organization subscription fields
+        {:ok, updated_org} = org
+          |> Organization.subscription_changeset(%{
+            subscription_status: "active",
+            subscription_tier: tier,
+            subscription_start_date: start_date,
+            subscription_end_date: end_date,
+            subscription_renewal_method: "lemonsqueezy",
+            max_seats: tier_info.seats,
+            monthly_credits: tier_info.monthly_credits
+          })
+          |> Repo.update()
+
+        # Create subscription history record
+        {:ok, subscription} = %OrganizationSubscription{}
+          |> OrganizationSubscription.create_changeset(%{
+            organization_id: organization_id,
+            subscription_type: "base",
+            tier: tier,
+            status: "active",
+            start_date: start_date,
+            end_date: end_date,
+            seats: tier_info.seats,
+            credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+            payment_method: "lemonsqueezy",
+            stripe_subscription_id: "ls_#{ls_subscription_id}",
+            amount_usd: Decimal.new(to_string(tier_info.usd))
+          })
+          |> Repo.insert()
+
+        # Grant monthly credits to organization pool
+        if tier_info.monthly_credits > 0 do
+          {:ok, _} = Organizations.add_organization_credits(organization_id, tier_info.monthly_credits)
+        end
+
+        IO.puts("[OrgSubscriptions] Created #{tier} LemonSqueezy subscription for org #{organization_id}")
+
+        %{organization: updated_org, subscription: subscription}
+      end)
+    end
+  end
+
+  @doc """
+  Adds an add-on via LemonSqueezy payment.
+  """
+  def add_addon_lemonsqueezy(organization_id, addon_tier, ls_subscription_id) do
+    addon_info = get_addon_info(addon_tier)
+    org = Repo.get!(Organization, organization_id)
+
+    cond do
+      is_nil(addon_info) ->
+        {:error, :invalid_addon_tier}
+
+      org.subscription_status != "active" ->
+        {:error, :no_active_base_subscription}
+
+      true ->
+        Repo.transaction(fn ->
+          start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+          end_date = org.subscription_end_date  # Align with base subscription
+
+          # Create addon record
+          {:ok, addon} = %OrganizationSubscriptionAddon{}
+            |> OrganizationSubscriptionAddon.create_changeset(%{
+              organization_id: organization_id,
+              addon_tier: addon_tier,
+              status: "active",
+              start_date: start_date,
+              end_date: end_date,
+              seats: addon_info.seats,
+              monthly_credits: addon_info.monthly_credits
+            })
+            |> Repo.insert()
+
+          # Update organization's max_seats and monthly_credits
+          new_max_seats = (org.max_seats || 0) + addon_info.seats
+          new_monthly_credits = (org.monthly_credits || 0) + addon_info.monthly_credits
+
+          {:ok, updated_org} = org
+            |> Organization.subscription_changeset(%{
+              max_seats: new_max_seats,
+              monthly_credits: new_monthly_credits
+            })
+            |> Repo.update()
+
+          # Create history record
+          {:ok, history} = %OrganizationSubscription{}
+            |> OrganizationSubscription.create_changeset(%{
+              organization_id: organization_id,
+              subscription_type: "addon",
+              tier: addon_tier,
+              status: "active",
+              start_date: start_date,
+              end_date: end_date,
+              seats: addon_info.seats,
+              credits_granted: Decimal.new(to_string(addon_info.monthly_credits)),
+              payment_method: "lemonsqueezy",
+              stripe_subscription_id: "ls_#{ls_subscription_id}",
+              amount_usd: Decimal.new(to_string(addon_info.usd))
+            })
+            |> Repo.insert()
+
+          # Grant credits immediately
+          if addon_info.monthly_credits > 0 do
+            {:ok, _} = Organizations.add_organization_credits(organization_id, addon_info.monthly_credits)
+          end
+
+          IO.puts("[OrgSubscriptions] Added #{addon_tier} LemonSqueezy addon for org #{organization_id}")
+
+          %{addon: addon, organization: updated_org, history: history}
+        end)
+    end
+  end
+
   # ============================================================================
   # Add-on Management
   # ============================================================================

@@ -8,11 +8,13 @@ defmodule ClippsterServer.AppSettings do
   # Known feature flag keys
   @live_clip_enabled_key "live_clip_enabled"
   @beta_mode_enabled_key "beta_mode_enabled"
+  @payment_provider_key "payment_provider"
 
   # Default values for feature flags
   @default_settings %{
     @live_clip_enabled_key => "true",
-    @beta_mode_enabled_key => "false"
+    @beta_mode_enabled_key => "false",
+    @payment_provider_key => "stripe"
   }
 
   @doc """
@@ -61,7 +63,8 @@ defmodule ClippsterServer.AppSettings do
   def get_feature_flags do
     %{
       live_clip_enabled: is_live_clip_enabled?(),
-      beta_mode_enabled: is_beta_mode_enabled?()
+      beta_mode_enabled: is_beta_mode_enabled?(),
+      payment_provider: get_payment_provider()
     }
   end
 
@@ -91,5 +94,20 @@ defmodule ClippsterServer.AppSettings do
   """
   def set_beta_mode_enabled(enabled) when is_boolean(enabled) do
     set_setting(@beta_mode_enabled_key, to_string(enabled))
+  end
+
+  @doc """
+  Get the active payment provider. Returns "stripe" or "lemonsqueezy".
+  """
+  def get_payment_provider do
+    provider = get_setting(@payment_provider_key)
+    if provider in ["stripe", "lemonsqueezy"], do: provider, else: "stripe"
+  end
+
+  @doc """
+  Set the active payment provider.
+  """
+  def set_payment_provider(provider) when provider in ["stripe", "lemonsqueezy"] do
+    set_setting(@payment_provider_key, provider)
   end
 end

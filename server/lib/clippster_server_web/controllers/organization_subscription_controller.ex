@@ -4,6 +4,8 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
   alias ClippsterServer.Organizations
   alias ClippsterServer.Accounts
   alias ClippsterServer.PromoCodes
+  alias ClippsterServer.AppSettings
+  alias ClippsterServer.LemonSqueezy
 
   @doc """
   GET /organizations/:id/subscription
@@ -145,80 +147,101 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
           nil
         end
 
-        _org = Organizations.get_organization(organization_id)
         user = Accounts.get_user(user_id)
 
-        # Create Stripe checkout session
-        stripe_secret_key = Application.get_env(:clippster_server, :stripe_secret_key)
+        case AppSettings.get_payment_provider() do
+          "lemonsqueezy" ->
+            # LemonSqueezy checkout
+            opts = if validated_promo, do: [discount_code: validated_promo.code], else: []
 
-        headers = [
-          {"Authorization", "Bearer #{stripe_secret_key}"},
-          {"Content-Type", "application/x-www-form-urlencoded"}
-        ]
+            case LemonSqueezy.create_org_checkout(org_id, tier, "base", user.email, opts) do
+              {:ok, %{url: url}} ->
+                json(conn, %{success: true, url: url})
 
-        success_url = "#{get_base_url()}/stripe-success?session_id={CHECKOUT_SESSION_ID}"
-        cancel_url = "#{get_base_url()}/organization/#{organization_id}/billing"
-
-        # Build form data
-        line_items = [
-          "line_items[0][price_data][currency]": "usd",
-          "line_items[0][price_data][product_data][name]": tier_info.name,
-          "line_items[0][price_data][product_data][description]": "#{tier_info.seats} seats, #{tier_info.monthly_credits} credits/month",
-          "line_items[0][price_data][unit_amount]": round(tier_info.usd * 100),
-          "line_items[0][price_data][recurring][interval]": "month",
-          "line_items[0][quantity]": 1,
-          mode: "subscription",
-          success_url: success_url,
-          cancel_url: cancel_url,
-          client_reference_id: "org_#{org_id}",
-          customer_email: user.email,
-          "metadata[organization_id]": org_id,
-          "metadata[subscription_tier]": tier,
-          "metadata[subscription_type]": "base",
-          "subscription_data[metadata][organization_id]": org_id,
-          "subscription_data[metadata][subscription_tier]": tier,
-          "subscription_data[metadata][subscription_type]": "base"
-        ]
-
-        # Add promo code to Stripe session if validated
-        line_items = if validated_promo && validated_promo.stripe_promo_code_id do
-          line_items ++
-            [
-              "discounts[0][promotion_code]": validated_promo.stripe_promo_code_id,
-              "metadata[promo_code_id]": validated_promo.id,
-              "metadata[promo_code]": validated_promo.code,
-              "subscription_data[metadata][promo_code_id]": validated_promo.id
-            ]
-        else
-          line_items
-        end
-
-        body = URI.encode_query(line_items)
-
-        case HTTPoison.post("https://api.stripe.com/v1/checkout/sessions", body, headers) do
-          {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
-            case Jason.decode(response_body) do
-              {:ok, %{"url" => url}} ->
+              {:error, :no_variant_configured} ->
                 conn
-                |> json(%{success: true, url: url})
+                |> put_status(:unprocessable_entity)
+                |> json(%{success: false, error: "Tier not configured for LemonSqueezy"})
 
-              _ ->
+              {:error, reason} ->
                 conn
                 |> put_status(:internal_server_error)
-                |> json(%{success: false, error: "Failed to parse Stripe response"})
+                |> json(%{success: false, error: "Failed to create checkout: #{inspect(reason)}"})
             end
 
-          {:ok, %HTTPoison.Response{body: error_body}} ->
-            IO.puts("[OrgSubscription] Stripe error: #{error_body}")
-            conn
-            |> put_status(:internal_server_error)
-            |> json(%{success: false, error: "Stripe checkout failed"})
+          _ ->
+            # Default to Stripe checkout
+            stripe_secret_key = Application.get_env(:clippster_server, :stripe_secret_key)
 
-          {:error, %HTTPoison.Error{reason: reason}} ->
-            IO.puts("[OrgSubscription] HTTP error: #{inspect(reason)}")
-            conn
-            |> put_status(:internal_server_error)
-            |> json(%{success: false, error: "Network error"})
+            headers = [
+              {"Authorization", "Bearer #{stripe_secret_key}"},
+              {"Content-Type", "application/x-www-form-urlencoded"}
+            ]
+
+            success_url = "#{get_base_url()}/stripe-success?session_id={CHECKOUT_SESSION_ID}"
+            cancel_url = "#{get_base_url()}/organization/#{organization_id}/billing"
+
+            # Build form data
+            line_items = [
+              "line_items[0][price_data][currency]": "usd",
+              "line_items[0][price_data][product_data][name]": tier_info.name,
+              "line_items[0][price_data][product_data][description]": "#{tier_info.seats} seats, #{tier_info.monthly_credits} credits/month",
+              "line_items[0][price_data][unit_amount]": round(tier_info.usd * 100),
+              "line_items[0][price_data][recurring][interval]": "month",
+              "line_items[0][quantity]": 1,
+              mode: "subscription",
+              success_url: success_url,
+              cancel_url: cancel_url,
+              client_reference_id: "org_#{org_id}",
+              customer_email: user.email,
+              "metadata[organization_id]": org_id,
+              "metadata[subscription_tier]": tier,
+              "metadata[subscription_type]": "base",
+              "subscription_data[metadata][organization_id]": org_id,
+              "subscription_data[metadata][subscription_tier]": tier,
+              "subscription_data[metadata][subscription_type]": "base"
+            ]
+
+            # Add promo code to Stripe session if validated
+            line_items = if validated_promo && validated_promo.stripe_promo_code_id do
+              line_items ++
+                [
+                  "discounts[0][promotion_code]": validated_promo.stripe_promo_code_id,
+                  "metadata[promo_code_id]": validated_promo.id,
+                  "metadata[promo_code]": validated_promo.code,
+                  "subscription_data[metadata][promo_code_id]": validated_promo.id
+                ]
+            else
+              line_items
+            end
+
+            body = URI.encode_query(line_items)
+
+            case HTTPoison.post("https://api.stripe.com/v1/checkout/sessions", body, headers) do
+              {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
+                case Jason.decode(response_body) do
+                  {:ok, %{"url" => url}} ->
+                    conn
+                    |> json(%{success: true, url: url})
+
+                  _ ->
+                    conn
+                    |> put_status(:internal_server_error)
+                    |> json(%{success: false, error: "Failed to parse Stripe response"})
+                end
+
+              {:ok, %HTTPoison.Response{body: error_body}} ->
+                IO.puts("[OrgSubscription] Stripe error: #{error_body}")
+                conn
+                |> put_status(:internal_server_error)
+                |> json(%{success: false, error: "Stripe checkout failed"})
+
+              {:error, %HTTPoison.Error{reason: reason}} ->
+                IO.puts("[OrgSubscription] HTTP error: #{inspect(reason)}")
+                conn
+                |> put_status(:internal_server_error)
+                |> json(%{success: false, error: "Network error"})
+            end
         end
       end
     end
@@ -265,75 +288,99 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
           end
 
           user = Accounts.get_user(user_id)
-          stripe_secret_key = Application.get_env(:clippster_server, :stripe_secret_key)
 
-          headers = [
-            {"Authorization", "Bearer #{stripe_secret_key}"},
-            {"Content-Type", "application/x-www-form-urlencoded"}
-          ]
+          case AppSettings.get_payment_provider() do
+            "lemonsqueezy" ->
+              # LemonSqueezy checkout for addon
+              opts = if validated_promo, do: [discount_code: validated_promo.code], else: []
 
-          success_url = "#{get_base_url()}/stripe-success?session_id={CHECKOUT_SESSION_ID}"
-          cancel_url = "#{get_base_url()}/organization/#{org_id}/billing"
+              case LemonSqueezy.create_org_checkout(org_id, addon_tier, "addon", user.email, opts) do
+                {:ok, %{url: url}} ->
+                  json(conn, %{success: true, url: url})
 
-          line_items = [
-            "line_items[0][price_data][currency]": "usd",
-            "line_items[0][price_data][product_data][name]": addon_info.name,
-            "line_items[0][price_data][product_data][description]": "#{addon_info.seats} seats, #{addon_info.monthly_credits} credits/month",
-            "line_items[0][price_data][unit_amount]": round(addon_info.usd * 100),
-            "line_items[0][price_data][recurring][interval]": "month",
-            "line_items[0][quantity]": 1,
-            mode: "subscription",
-            success_url: success_url,
-            cancel_url: cancel_url,
-            client_reference_id: "org_#{org_id}_addon",
-            customer_email: user.email,
-            "metadata[organization_id]": org_id,
-            "metadata[addon_tier]": addon_tier,
-            "metadata[subscription_type]": "addon",
-            "subscription_data[metadata][organization_id]": org_id,
-            "subscription_data[metadata][addon_tier]": addon_tier,
-            "subscription_data[metadata][subscription_type]": "addon"
-          ]
-
-          # Add promo code to Stripe session if validated
-          line_items = if validated_promo && validated_promo.stripe_promo_code_id do
-            line_items ++
-              [
-                "discounts[0][promotion_code]": validated_promo.stripe_promo_code_id,
-                "metadata[promo_code_id]": validated_promo.id,
-                "metadata[promo_code]": validated_promo.code,
-                "subscription_data[metadata][promo_code_id]": validated_promo.id
-              ]
-          else
-            line_items
-          end
-
-          body = URI.encode_query(line_items)
-
-          case HTTPoison.post("https://api.stripe.com/v1/checkout/sessions", body, headers) do
-            {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
-              case Jason.decode(response_body) do
-                {:ok, %{"url" => url}} ->
+                {:error, :no_variant_configured} ->
                   conn
-                  |> json(%{success: true, url: url})
+                  |> put_status(:unprocessable_entity)
+                  |> json(%{success: false, error: "Add-on tier not configured for LemonSqueezy"})
 
-                _ ->
+                {:error, reason} ->
                   conn
                   |> put_status(:internal_server_error)
-                  |> json(%{success: false, error: "Failed to parse Stripe response"})
+                  |> json(%{success: false, error: "Failed to create checkout: #{inspect(reason)}"})
               end
 
-            {:ok, %HTTPoison.Response{body: error_body}} ->
-              IO.puts("[OrgSubscription] Stripe addon error: #{error_body}")
-              conn
-              |> put_status(:internal_server_error)
-              |> json(%{success: false, error: "Stripe checkout failed"})
+            _ ->
+              # Default to Stripe checkout
+              stripe_secret_key = Application.get_env(:clippster_server, :stripe_secret_key)
 
-            {:error, %HTTPoison.Error{reason: reason}} ->
-              IO.puts("[OrgSubscription] HTTP error: #{inspect(reason)}")
-              conn
-              |> put_status(:internal_server_error)
-              |> json(%{success: false, error: "Network error"})
+              headers = [
+                {"Authorization", "Bearer #{stripe_secret_key}"},
+                {"Content-Type", "application/x-www-form-urlencoded"}
+              ]
+
+              success_url = "#{get_base_url()}/stripe-success?session_id={CHECKOUT_SESSION_ID}"
+              cancel_url = "#{get_base_url()}/organization/#{org_id}/billing"
+
+              line_items = [
+                "line_items[0][price_data][currency]": "usd",
+                "line_items[0][price_data][product_data][name]": addon_info.name,
+                "line_items[0][price_data][product_data][description]": "#{addon_info.seats} seats, #{addon_info.monthly_credits} credits/month",
+                "line_items[0][price_data][unit_amount]": round(addon_info.usd * 100),
+                "line_items[0][price_data][recurring][interval]": "month",
+                "line_items[0][quantity]": 1,
+                mode: "subscription",
+                success_url: success_url,
+                cancel_url: cancel_url,
+                client_reference_id: "org_#{org_id}_addon",
+                customer_email: user.email,
+                "metadata[organization_id]": org_id,
+                "metadata[addon_tier]": addon_tier,
+                "metadata[subscription_type]": "addon",
+                "subscription_data[metadata][organization_id]": org_id,
+                "subscription_data[metadata][addon_tier]": addon_tier,
+                "subscription_data[metadata][subscription_type]": "addon"
+              ]
+
+              # Add promo code to Stripe session if validated
+              line_items = if validated_promo && validated_promo.stripe_promo_code_id do
+                line_items ++
+                  [
+                    "discounts[0][promotion_code]": validated_promo.stripe_promo_code_id,
+                    "metadata[promo_code_id]": validated_promo.id,
+                    "metadata[promo_code]": validated_promo.code,
+                    "subscription_data[metadata][promo_code_id]": validated_promo.id
+                  ]
+              else
+                line_items
+              end
+
+              body = URI.encode_query(line_items)
+
+              case HTTPoison.post("https://api.stripe.com/v1/checkout/sessions", body, headers) do
+                {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
+                  case Jason.decode(response_body) do
+                    {:ok, %{"url" => url}} ->
+                      conn
+                      |> json(%{success: true, url: url})
+
+                    _ ->
+                      conn
+                      |> put_status(:internal_server_error)
+                      |> json(%{success: false, error: "Failed to parse Stripe response"})
+                  end
+
+                {:ok, %HTTPoison.Response{body: error_body}} ->
+                  IO.puts("[OrgSubscription] Stripe addon error: #{error_body}")
+                  conn
+                  |> put_status(:internal_server_error)
+                  |> json(%{success: false, error: "Stripe checkout failed"})
+
+                {:error, %HTTPoison.Error{reason: reason}} ->
+                  IO.puts("[OrgSubscription] HTTP error: #{inspect(reason)}")
+                  conn
+                  |> put_status(:internal_server_error)
+                  |> json(%{success: false, error: "Network error"})
+              end
           end
       end
     end

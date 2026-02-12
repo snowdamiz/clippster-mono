@@ -231,7 +231,7 @@
                             </svg>
                             <div class="subscribe-dialog__payment-btn-text">
                               <span class="subscribe-dialog__payment-btn-label">Pay with Card</span>
-                              <span class="subscribe-dialog__payment-btn-hint">Powered by Stripe</span>
+                              <span class="subscribe-dialog__payment-btn-hint">{{ paymentProvider === 'lemonsqueezy' ? 'Powered by LemonSqueezy' : 'Powered by Stripe' }}</span>
                             </div>
                           </div>
                         </button>
@@ -343,6 +343,7 @@ import { useAuthStore } from '@/stores/auth';
 import api from '@/services/api';
 import * as promoCodesApi from '@/services/promoCodesApi';
 import { useToast } from '@/composables/useToast';
+import { useFeatureFlags } from '@/composables/useFeatureFlags';
 
 interface SubscriptionPlan {
   id: string;
@@ -372,6 +373,7 @@ const emit = defineEmits<Emits>();
 
 const authStore = useAuthStore();
 const { success: showSuccess, error: showError } = useToast();
+const { paymentProvider } = useFeatureFlags();
 
 // State
 const paymentStep = ref<'confirm' | 'processing' | 'success' | 'error'>('confirm');

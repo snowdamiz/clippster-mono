@@ -69,6 +69,8 @@ defmodule ClippsterServer.MixProject do
       {:ueberauth_google, "~> 0.10"},
       # Stripe payments
       {:stripity_stripe, "~> 3.2"},
+      # LemonSqueezy payments (fallback provider)
+      {:lemon_ex, "~> 0.2.3"},
       # Password hashing for email auth (pure Elixir, no native deps needed)
       {:pbkdf2_elixir, "~> 2.0"},
       # Cloudflare R2 storage (S3-compatible)

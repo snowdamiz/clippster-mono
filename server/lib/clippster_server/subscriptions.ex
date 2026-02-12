@@ -108,6 +108,59 @@ defmodule ClippsterServer.Subscriptions do
   end
 
   @doc """
+  Creates a subscription via LemonSqueezy payment.
+  Similar to Stripe but with LemonSqueezy payment method.
+  """
+  def create_lemonsqueezy_subscription(user_id, tier, ls_subscription_id) do
+    tier_info = get_tier_info(tier)
+
+    unless tier_info do
+      {:error, :invalid_tier}
+    else
+      Repo.transaction(fn ->
+        user = Repo.get!(User, user_id)
+
+        start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+        end_date = DateTime.add(start_date, @subscription_days, :day)
+
+        # Update user subscription fields
+        {:ok, updated_user} = user
+          |> User.subscription_changeset(%{
+            subscription_status: "active",
+            subscription_tier: tier,
+            subscription_start_date: start_date,
+            subscription_end_date: end_date,
+            subscription_renewal_method: "lemonsqueezy"
+          })
+          |> Repo.update()
+
+        # Create subscription history record
+        {:ok, subscription} = %Subscription{}
+          |> Subscription.create_changeset(%{
+            user_id: user_id,
+            status: "active",
+            subscription_tier: tier,
+            start_date: start_date,
+            end_date: end_date,
+            hours_included: Decimal.new("0"),
+            credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+            payment_method: "lemonsqueezy",
+            stripe_subscription_id: "ls_#{ls_subscription_id}",
+            amount_usd: Decimal.new(to_string(tier_info.usd))
+          })
+          |> Repo.insert()
+
+        # Grant monthly credits
+        {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+
+        IO.puts("[Subscriptions] Created #{tier} LemonSqueezy subscription for user #{user_id}, granted #{tier_info.monthly_credits} credits")
+
+        %{user: updated_user, subscription: subscription}
+      end)
+    end
+  end
+
+  @doc """
   Creates a subscription via crypto payment.
   Similar to Stripe but with crypto payment method.
   """

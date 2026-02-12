@@ -114,21 +114,30 @@ defmodule ClippsterServerWeb.SubscriptionController do
   """
   def create_checkout(conn, %{"tier" => tier} = params) do
     require Logger
+    alias ClippsterServer.AppSettings
 
-    # Check if Stripe is configured
-    stripe_api_key = Application.get_env(:stripity_stripe, :api_key)
+    case AppSettings.get_payment_provider() do
+      "lemonsqueezy" ->
+        # Delegate to LemonSqueezy checkout
+        ClippsterServerWeb.LemonSqueezyController.create_checkout(conn, params)
 
-    if is_nil(stripe_api_key) or stripe_api_key == "" do
-      Logger.error("Stripe API key is not configured")
+      _ ->
+        # Default to Stripe
+        # Check if Stripe is configured
+        stripe_api_key = Application.get_env(:stripity_stripe, :api_key)
 
-      conn
-      |> put_status(503)
-      |> json(%{
-        success: false,
-        error: "Payment service is not configured. Please contact support."
-      })
-    else
-      create_checkout_with_stripe(conn, tier, Map.get(params, "promo_code"))
+        if is_nil(stripe_api_key) or stripe_api_key == "" do
+          Logger.error("Stripe API key is not configured")
+
+          conn
+          |> put_status(503)
+          |> json(%{
+            success: false,
+            error: "Payment service is not configured. Please contact support."
+          })
+        else
+          create_checkout_with_stripe(conn, tier, Map.get(params, "promo_code"))
+        end
     end
   end
 

@@ -115,6 +115,9 @@ defmodule ClippsterServerWeb.Router do
     # Stripe payment routes (webhook is public, no auth needed)
     post("/stripe/webhook", StripeController, :webhook)
 
+    # LemonSqueezy webhook (public, no auth needed - signature verified internally)
+    post("/webhooks/lemonsqueezy", LemonSqueezyController, :webhook)
+
     # Subscription tiers (public - for pricing display)
     get("/subscription/tiers", SubscriptionController, :get_tiers)
 

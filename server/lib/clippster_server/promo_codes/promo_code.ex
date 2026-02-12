@@ -23,6 +23,7 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
     field(:is_active, :boolean, default: true)
     field(:stripe_coupon_id, :string)
     field(:stripe_promo_code_id, :string)
+    field(:ls_discount_id, :string)
     field(:notes, :string)
 
     belongs_to(:created_by_admin, User, foreign_key: :created_by_admin_id, type: :id)
@@ -51,6 +52,7 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
       :is_active,
       :stripe_coupon_id,
       :stripe_promo_code_id,
+      :ls_discount_id,
       :notes,
       :created_by_admin_id
     ])

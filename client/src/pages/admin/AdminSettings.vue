@@ -107,6 +107,44 @@
         </div>
       </div>
 
+      <!-- Payment Provider -->
+      <div class="admin-settings__section">
+        <div class="admin-settings__section-header">
+          <h3 class="admin-settings__section-title">Payment Provider</h3>
+          <p class="admin-settings__section-desc">
+            Select the active payment provider for checkout. Changing this routes all new subscription checkouts through the selected provider.
+          </p>
+        </div>
+
+        <div class="admin-settings__providers">
+          <button
+            class="admin-settings__provider-btn"
+            :class="{ 'admin-settings__provider-btn--active': paymentProvider === 'stripe' }"
+            :disabled="updatingPaymentProvider"
+            @click="updatePaymentProvider('stripe')"
+          >
+            <Check v-if="paymentProvider === 'stripe'" class="admin-settings__provider-check" />
+            Stripe
+          </button>
+          <button
+            class="admin-settings__provider-btn admin-settings__provider-btn--ls"
+            :class="{ 'admin-settings__provider-btn--active admin-settings__provider-btn--ls-active': paymentProvider === 'lemonsqueezy' }"
+            :disabled="updatingPaymentProvider"
+            @click="updatePaymentProvider('lemonsqueezy')"
+          >
+            <Check v-if="paymentProvider === 'lemonsqueezy'" class="admin-settings__provider-check" />
+            LemonSqueezy
+          </button>
+        </div>
+
+        <div v-if="paymentProvider === 'lemonsqueezy'" class="admin-settings__provider-notice">
+          <p>
+            <strong>LemonSqueezy is active.</strong>
+            All new subscription checkouts will be processed through LemonSqueezy. Existing Stripe subscriptions remain unaffected.
+          </p>
+        </div>
+      </div>
+
       <!-- Platform Override Controls -->
       <div class="admin-settings__section">
         <div class="admin-settings__section-header">
@@ -144,21 +182,24 @@
 
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
-  import { Settings, Radio, KeyRound, Check, Loader2 } from 'lucide-vue-next';
+  import { Settings, Radio, KeyRound, Check, Loader2, CreditCard } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
 
   const {
     isLiveClipEnabled,
     isBetaModeEnabled,
+    paymentProvider,
     isLoading: featureFlagsLoading,
     fetchFeatureFlags,
     setLiveClipEnabled,
     setBetaModeEnabled,
+    setPaymentProvider,
   } = useFeatureFlags();
 
   const updatingLiveClipFlag = ref(false);
   const updatingBetaModeFlag = ref(false);
+  const updatingPaymentProvider = ref(false);
   const titleBarPlatformOverride = ref<string>('auto');
 
   const toggleLiveClipFeature = async () => {
@@ -182,6 +223,18 @@
       console.error('Error toggling Beta Mode feature:', err);
     } finally {
       updatingBetaModeFlag.value = false;
+    }
+  };
+
+  const updatePaymentProvider = async (provider: 'stripe' | 'lemonsqueezy') => {
+    if (paymentProvider.value === provider) return;
+    updatingPaymentProvider.value = true;
+    try {
+      await setPaymentProvider(provider);
+    } catch (err) {
+      console.error('Error updating payment provider:', err);
+    } finally {
+      updatingPaymentProvider.value = false;
     }
   };
 
@@ -541,6 +594,69 @@
 
   .admin-settings__platform-reset:hover {
     color: #bfdbfe;
+  }
+
+  /* Payment Provider */
+  .admin-settings__providers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .admin-settings__provider-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .admin-settings__provider-btn:hover {
+    background-color: rgba(63, 63, 70, 1);
+    color: white;
+  }
+
+  .admin-settings__provider-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .admin-settings__provider-btn--active {
+    background: linear-gradient(to right, #6366f1, #4f46e5);
+    color: white;
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+
+  .admin-settings__provider-btn--ls-active {
+    background: linear-gradient(to right, #eab308, #ca8a04);
+    color: #18181b;
+    border-color: rgba(234, 179, 8, 0.3);
+  }
+
+  .admin-settings__provider-check {
+    width: 12px;
+    height: 12px;
+    margin-right: 0.5rem;
+  }
+
+  .admin-settings__provider-notice {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    background-color: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    border-radius: 10px;
+  }
+
+  .admin-settings__provider-notice p {
+    font-size: 0.875rem;
+    color: #fde047;
+    margin: 0;
   }
 
   @keyframes spin {

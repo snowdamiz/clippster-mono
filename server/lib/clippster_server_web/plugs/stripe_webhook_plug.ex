@@ -10,8 +10,8 @@ defmodule ClippsterServerWeb.StripeWebhookPlug do
   def read_body(conn, opts) do
     {:ok, body, conn} = Plug.Conn.read_body(conn, opts)
     
-    # Only cache raw body for Stripe webhook endpoint
-    conn = if conn.request_path == "/api/stripe/webhook" do
+    # Cache raw body for webhook endpoints that need signature verification
+    conn = if conn.request_path in ["/api/stripe/webhook", "/api/webhooks/lemonsqueezy"] do
       Plug.Conn.assign(conn, :raw_body, body)
     else
       conn

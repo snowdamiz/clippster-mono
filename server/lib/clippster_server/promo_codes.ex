@@ -90,6 +90,8 @@ defmodule ClippsterServer.PromoCodes do
   Returns {:ok, promo_code} or {:error, changeset}.
   """
   def create_promo_code(attrs, admin_id) do
+    alias ClippsterServer.LemonSqueezy
+
     Repo.transaction(fn ->
       # Normalize and validate code
       attrs =
@@ -108,12 +110,28 @@ defmodule ClippsterServer.PromoCodes do
       with {:ok, promo} <- Repo.insert(changeset),
            {:ok, stripe_coupon_id} <- create_stripe_coupon(promo),
            {:ok, stripe_promo_code_id} <- create_stripe_promotion_code(promo, stripe_coupon_id) do
-        # Update promo code with Stripe IDs
+        # Sync to LemonSqueezy if configured
+        ls_discount_id =
+          if LemonSqueezy.configured?() do
+            opts = [max_redemptions: promo.max_redemptions]
+            opts = if promo.redeem_by, do: Keyword.put(opts, :expires_at, promo.redeem_by), else: opts
+            opts = if promo.duration_kind == "repeating", do: Keyword.put(opts, :duration_months, promo.duration_months), else: opts
+
+            case LemonSqueezy.create_discount(promo.percent_off, promo.code, promo.duration_kind, opts) do
+              {:ok, discount_id} -> discount_id
+              {:error, _reason} -> nil
+            end
+          else
+            nil
+          end
+
+        # Update promo code with Stripe IDs and LS discount ID
         {:ok, updated_promo} =
           promo
           |> PromoCode.create_changeset(%{
             stripe_coupon_id: stripe_coupon_id,
-            stripe_promo_code_id: stripe_promo_code_id
+            stripe_promo_code_id: stripe_promo_code_id,
+            ls_discount_id: ls_discount_id
           })
           |> Repo.update()
 
@@ -142,6 +160,8 @@ defmodule ClippsterServer.PromoCodes do
   Returns {:ok, promo_code} or {:error, changeset}.
   """
   def toggle_active(%PromoCode{} = promo, active?) do
+    alias ClippsterServer.LemonSqueezy
+
     Repo.transaction(fn ->
       # Update local
       {:ok, updated_promo} =
@@ -153,16 +173,42 @@ defmodule ClippsterServer.PromoCodes do
       if active? do
         # Reactivate in Stripe
         case activate_stripe_promotion_code(promo.stripe_promo_code_id) do
-          {:ok, _} -> updated_promo
+          {:ok, _} -> :ok
           {:error, reason} -> Repo.rollback(reason)
         end
       else
         # Deactivate in Stripe
         case deactivate_stripe_promotion_code(promo.stripe_promo_code_id) do
-          {:ok, _} -> updated_promo
+          {:ok, _} -> :ok
           {:error, reason} -> Repo.rollback(reason)
         end
       end
+
+      # Sync LemonSqueezy discount state (best-effort)
+      if LemonSqueezy.configured?() && promo.ls_discount_id do
+        if active? do
+          # Recreate the LS discount (LS doesn't have activate/deactivate)
+          opts = [max_redemptions: promo.max_redemptions]
+          opts = if promo.redeem_by, do: Keyword.put(opts, :expires_at, promo.redeem_by), else: opts
+          opts = if promo.duration_kind == "repeating", do: Keyword.put(opts, :duration_months, promo.duration_months), else: opts
+
+          case LemonSqueezy.create_discount(promo.percent_off, promo.code, promo.duration_kind, opts) do
+            {:ok, new_discount_id} ->
+              updated_promo
+              |> PromoCode.create_changeset(%{ls_discount_id: new_discount_id})
+              |> Repo.update()
+            {:error, _} -> :ok
+          end
+        else
+          # Delete the LS discount
+          LemonSqueezy.delete_discount(promo.ls_discount_id)
+          updated_promo
+          |> PromoCode.create_changeset(%{ls_discount_id: nil})
+          |> Repo.update()
+        end
+      end
+
+      updated_promo
     end)
   end
 
