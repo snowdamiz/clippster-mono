@@ -3,16 +3,34 @@ import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useOrganization } from '@/hooks/useOrganization'
 import { useToast } from '@/hooks/useToast'
 import { Button } from '@/components/ui/Button'
-import { Input } from '@/components/ui/Input'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { BuyCreditsModal } from '@/components/organization/BuyCreditsModal'
 import { SubscribeDialog } from '@/components/organization/SubscribeDialog'
 import { api } from '@/lib/api'
 import {
-  Wallet, Coins, TrendingUp, User, Users, Receipt, CreditCard, RefreshCw,
-  ChevronLeft, ChevronRight, Loader2, Plus, Clock, Download, Zap, Crown,
-  AlertCircle, CalendarCheck, Sparkles, Star, Check, Package, AlertTriangle,
+  Wallet,
+  Coins,
+  TrendingUp,
+  User,
+  Users,
+  Receipt,
+  CreditCard,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Plus,
+  Clock,
+  Download,
+  Zap,
+  Crown,
+  AlertCircle,
+  CalendarCheck,
+  Sparkles,
+  Star,
+  Check,
+  Package,
+  AlertTriangle
 } from 'lucide-react'
 
 type Tab = 'allocations' | 'history' | 'subscriptions'
@@ -28,11 +46,27 @@ interface SubscriptionTier {
 
 export function OrgBilling() {
   const {
-    loading, isAdmin, poolBalance, credits, members, myAllocation, subscription,
-    transactions, transactionsLoading, transactionsTotal, transactionsPage,
-    transactionsLoaded, totalTransactionPages, loadOrganization, loadTransactions,
-    formatAllocation, formatDate, hasActiveSubscription, organizationId, organization,
-    allocateCredits,
+    loading,
+    isAdmin,
+    poolBalance,
+    credits,
+    members,
+    myAllocation,
+    subscription,
+    transactions,
+    transactionsLoading,
+    transactionsTotal,
+    transactionsPage,
+    transactionsLoaded,
+    totalTransactionPages,
+    loadOrganization,
+    loadTransactions,
+    formatAllocation,
+    formatDate,
+    hasActiveSubscription,
+    organizationId,
+    organization,
+    allocateCredits
   } = useOrganization()
   const toast = useToast()
 
@@ -47,19 +81,30 @@ export function OrgBilling() {
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [cancelLoading, setCancelLoading] = useState(false)
-  const [selectedPlan, setSelectedPlan] = useState<{ id: string; name: string; price_usd: number; monthly_credits: number; seats: number | null } | null>(null)
+  const [selectedPlan, setSelectedPlan] = useState<{
+    id: string
+    name: string
+    price_usd: number
+    monthly_credits: number
+    seats: number | null
+  } | null>(null)
   const [selectedType, setSelectedType] = useState<'base' | 'addon'>('base')
 
-  useEffect(() => { loadOrganization() }, [loadOrganization])
+  useEffect(() => {
+    loadOrganization()
+  }, [loadOrganization])
 
   useEffect(() => {
     if (organizationId) {
-      api.get<any>(`/organizations/${organizationId}/subscription/tiers`).then(res => {
-        if (res.success) {
-          setBaseTiers(res.base_tiers || [])
-          setAddonTiers(res.addon_tiers || [])
-        }
-      }).catch(() => {})
+      api
+        .get<any>(`/organizations/${organizationId}/subscription/tiers`)
+        .then((res) => {
+          if (res.success) {
+            setBaseTiers(res.base_tiers || [])
+            setAddonTiers(res.addon_tiers || [])
+          }
+        })
+        .catch(() => {})
     }
   }, [organizationId])
 
@@ -68,7 +113,7 @@ export function OrgBilling() {
   const availableAddons = (() => {
     if (!subscription) return []
     const hasAiPlan = subscription.tier === 'enterprise_ai'
-    return addonTiers.filter(addon => hasAiPlan || !addon.requires_ai)
+    return addonTiers.filter((addon) => hasAiPlan || !addon.requires_ai)
   })()
 
   function getMemberInitials(member: any): string {
@@ -82,7 +127,7 @@ export function OrgBilling() {
     const minutes = allocations[userId]
     const result = await allocateCredits(userId, minutes)
     if (result.success) {
-      setAllocations(prev => ({ ...prev, [userId]: 0 }))
+      setAllocations((prev) => ({ ...prev, [userId]: 0 }))
     }
   }
 
@@ -97,7 +142,7 @@ export function OrgBilling() {
       name: plan.name,
       price_usd: plan.usd,
       monthly_credits: plan.monthly_credits,
-      seats: plan.seats,
+      seats: plan.seats
     })
     setSelectedType(type)
     setShowSubscriptionModal(true)
@@ -133,7 +178,12 @@ export function OrgBilling() {
   }
 
   function getPackLabel(packType: string) {
-    const labels: Record<string, string> = { small: 'Small Pack', medium: 'Medium Pack', large: 'Large Pack', xl: 'XL Pack' }
+    const labels: Record<string, string> = {
+      small: 'Small Pack',
+      medium: 'Medium Pack',
+      large: 'Large Pack',
+      xl: 'XL Pack'
+    }
     return labels[packType] || packType || 'Credit Purchase'
   }
 
@@ -143,11 +193,17 @@ export function OrgBilling() {
 
   if (loading) {
     return (
-      <PageLayout icon={Wallet} title="Billing & Credits" description="Manage your organization's credits and view payment history">
+      <PageLayout
+        icon={Wallet}
+        title="Billing & Credits"
+        description="Manage your organization's credits and view payment history"
+      >
         <div className="w-full max-w-[1200px] mx-auto p-6 space-y-6">
           <Skeleton className="h-6 w-64 rounded" />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[1, 2, 3].map(i => <Skeleton key={i} className="h-32 rounded-xl" />)}
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-32 rounded-xl" />
+            ))}
           </div>
           <Skeleton className="h-64 rounded-xl" />
         </div>
@@ -160,30 +216,41 @@ export function OrgBilling() {
       icon={Wallet}
       title="Billing & Credits"
       description="Manage your organization's credits and view payment history"
-      actions={isAdmin && <button onClick={() => setShowBuyModal(true)} className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-cyan-400 text-[#0a0a0b] border-none cursor-pointer transition-opacity duration-150 hover:opacity-90"><Plus className="w-3.5 h-3.5" /> Buy Credits</button>}
+      actions={
+        isAdmin && (
+          <button
+            onClick={() => setShowBuyModal(true)}
+            className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-cyan-400 text-[#0a0a0b] border-none cursor-pointer transition-opacity duration-150 hover:opacity-90"
+          >
+            <Plus className="w-3.5 h-3.5" /> Buy Credits
+          </button>
+        )
+      }
     >
       <div className="w-full max-w-[1200px] mx-auto p-6 flex flex-col gap-10">
         {/* Page Heading */}
         <div className="-mb-1">
-          <h1 className="text-2xl font-bold text-white tracking-tight m-0 mb-1.5">Billing, credits, and subscriptions</h1>
-          <p className="text-sm text-zinc-500 m-0 leading-relaxed">Monitor your credit pool, allocate to team members, and track payment history</p>
+          <h1 className="text-2xl font-bold text-white tracking-tight m-0 mb-1.5">
+            Billing, credits, and subscriptions
+          </h1>
+          <p className="text-sm text-zinc-500 m-0 leading-relaxed">
+            Monitor your credit pool, allocate to team members, and track payment history
+          </p>
         </div>
 
         {/* Tab Navigation (Admin Only) */}
         {isAdmin && (
           <nav className="flex gap-1 border-b border-zinc-800 -mb-1">
-            {([
+            {[
               { id: 'allocations' as Tab, label: 'Credits', icon: Users },
               { id: 'history' as Tab, label: 'History', icon: Clock },
-              { id: 'subscriptions' as Tab, label: 'Subscriptions', icon: Crown },
-            ]).map(t => (
+              { id: 'subscriptions' as Tab, label: 'Subscriptions', icon: Crown }
+            ].map((t) => (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={`flex items-center gap-[7px] px-3.5 py-2.5 bg-transparent border-none border-b-2 -mb-px text-xs font-medium cursor-pointer transition-all duration-150 ${
-                  tab === t.id
-                    ? 'text-white border-b-cyan-500'
-                    : 'text-zinc-500 border-b-transparent hover:text-white'
+                  tab === t.id ? 'text-white border-b-cyan-500' : 'text-zinc-500 border-b-transparent hover:text-white'
                 }`}
               >
                 <t.icon className="w-[15px] h-[15px]" />
@@ -213,7 +280,9 @@ export function OrgBilling() {
                   </div>
                   <div className="px-5 py-5">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-[2rem] font-bold text-emerald-500 tracking-tight leading-none tabular-nums">{credits.hoursRemaining}</span>
+                      <span className="text-[2rem] font-bold text-emerald-500 tracking-tight leading-none tabular-nums">
+                        {credits.hoursRemaining}
+                      </span>
                       <span className="text-sm text-zinc-500 font-medium">min</span>
                     </div>
                   </div>
@@ -235,7 +304,9 @@ export function OrgBilling() {
                   </div>
                   <div className="px-5 py-5">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-[2rem] font-bold text-white tracking-tight leading-none tabular-nums">{credits.hoursUsed}</span>
+                      <span className="text-[2rem] font-bold text-white tracking-tight leading-none tabular-nums">
+                        {credits.hoursUsed}
+                      </span>
                       <span className="text-sm text-zinc-500 font-medium">min</span>
                     </div>
                   </div>
@@ -257,7 +328,9 @@ export function OrgBilling() {
                   </div>
                   <div className="px-5 py-5">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-[2rem] font-bold text-cyan-400 tracking-tight leading-none tabular-nums">{formatAllocation(myAllocation?.hours_remaining)}</span>
+                      <span className="text-[2rem] font-bold text-cyan-400 tracking-tight leading-none tabular-nums">
+                        {formatAllocation(myAllocation?.hours_remaining)}
+                      </span>
                       <span className="text-sm text-zinc-500 font-medium">min</span>
                     </div>
                   </div>
@@ -272,7 +345,9 @@ export function OrgBilling() {
               </div>
               <div>
                 <h2 className="text-lg font-semibold text-white m-0 tracking-tight">Member Allocations</h2>
-                <p className="text-[0.8125rem] text-zinc-500 m-0 mt-0.5">Distribute credits to {members.length} team members</p>
+                <p className="text-[0.8125rem] text-zinc-500 m-0 mt-0.5">
+                  Distribute credits to {members.length} team members
+                </p>
               </div>
             </div>
 
@@ -281,39 +356,58 @@ export function OrgBilling() {
               <table className="w-full border-collapse table-fixed">
                 <thead>
                   <tr className="bg-black/20 border-b border-zinc-800">
-                    <th className="w-[30%] px-5 py-3.5 text-left text-[0.6875rem] font-semibold uppercase tracking-[0.05em] text-zinc-500">Member</th>
-                    <th className="w-[13%] px-5 py-3.5 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.05em] text-zinc-500">Allocated</th>
-                    <th className="w-[13%] px-5 py-3.5 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.05em] text-zinc-500">Used</th>
-                    <th className="w-[13%] px-5 py-3.5 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.05em] text-zinc-500">Remaining</th>
-                    <th className="w-[31%] px-5 py-3.5 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.05em] text-zinc-500">Add Credits</th>
+                    <th className="w-[30%] px-5 py-3.5 text-left text-[0.6875rem] font-semibold uppercase tracking-[0.05em] text-zinc-500">
+                      Member
+                    </th>
+                    <th className="w-[13%] px-5 py-3.5 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.05em] text-zinc-500">
+                      Allocated
+                    </th>
+                    <th className="w-[13%] px-5 py-3.5 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.05em] text-zinc-500">
+                      Used
+                    </th>
+                    <th className="w-[13%] px-5 py-3.5 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.05em] text-zinc-500">
+                      Remaining
+                    </th>
+                    <th className="w-[31%] px-5 py-3.5 text-right text-[0.6875rem] font-semibold uppercase tracking-[0.05em] text-zinc-500">
+                      Add Credits
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {members.map(member => (
-                    <tr key={member.id} className="border-b border-zinc-800 last:border-b-0 hover:bg-zinc-800/30 transition-colors duration-150">
+                  {members.map((member) => (
+                    <tr
+                      key={member.id}
+                      className="border-b border-zinc-800 last:border-b-0 hover:bg-zinc-800/30 transition-colors duration-150"
+                    >
                       <td className="px-5 py-4 align-middle">
                         <div className="flex items-center gap-3.5">
-                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center text-[0.6875rem] font-bold shrink-0 overflow-hidden ${
-                            member.user?.avatar_url && !failedAvatars.has(member.user_id)
-                              ? 'bg-transparent'
-                              : 'bg-gradient-to-br from-cyan-500 to-cyan-500/60 text-[#0a0a0b]'
-                          }`}>
+                          <div
+                            className={`w-9 h-9 rounded-lg flex items-center justify-center text-[0.6875rem] font-bold shrink-0 overflow-hidden ${
+                              member.user?.avatar_url && !failedAvatars.has(member.user_id)
+                                ? 'bg-transparent'
+                                : 'bg-gradient-to-br from-cyan-500 to-cyan-500/60 text-[#0a0a0b]'
+                            }`}
+                          >
                             {member.user?.avatar_url && !failedAvatars.has(member.user_id) ? (
                               <img
                                 src={member.user.avatar_url}
                                 alt={member.user?.name || member.user?.email || 'User'}
                                 className="w-full h-full object-cover"
                                 referrerPolicy="no-referrer"
-                                onError={() => setFailedAvatars(prev => new Set(prev).add(member.user_id))}
+                                onError={() => setFailedAvatars((prev) => new Set(prev).add(member.user_id))}
                               />
                             ) : (
                               <span>{getMemberInitials(member)}</span>
                             )}
                           </div>
                           <div className="min-w-0">
-                            <span className="block text-sm font-medium text-white truncate">{member.user?.name || member.user?.email}</span>
+                            <span className="block text-sm font-medium text-white truncate">
+                              {member.user?.name || member.user?.email}
+                            </span>
                             {member.user?.name && member.user?.email && (
-                              <span className="block text-[0.6875rem] text-zinc-500 truncate mt-0.5">{member.user.email}</span>
+                              <span className="block text-[0.6875rem] text-zinc-500 truncate mt-0.5">
+                                {member.user.email}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -342,7 +436,12 @@ export function OrgBilling() {
                             <input
                               type="number"
                               value={allocations[member.user_id] || ''}
-                              onChange={e => setAllocations(prev => ({ ...prev, [member.user_id]: parseFloat(e.target.value) || 0 }))}
+                              onChange={(e) =>
+                                setAllocations((prev) => ({
+                                  ...prev,
+                                  [member.user_id]: parseFloat(e.target.value) || 0
+                                }))
+                              }
                               min={0}
                               max={poolBalance}
                               step={0.5}
@@ -388,7 +487,9 @@ export function OrgBilling() {
                 <div>
                   <h2 className="text-lg font-semibold text-white m-0 tracking-tight">Payment History</h2>
                   <p className="text-[0.8125rem] text-zinc-500 m-0 mt-0.5">
-                    {transactionsTotal > 0 ? `${transactionsTotal} transactions recorded` : 'Track all credit purchases'}
+                    {transactionsTotal > 0
+                      ? `${transactionsTotal} transactions recorded`
+                      : 'Track all credit purchases'}
                   </p>
                 </div>
               </div>
@@ -399,7 +500,11 @@ export function OrgBilling() {
                     disabled={transactionsLoading}
                     className="flex items-center gap-2 px-4 py-2 text-[0.8125rem] font-medium text-white bg-zinc-800/50 border border-zinc-800 rounded-lg cursor-pointer transition-all duration-150 hover:bg-zinc-800 hover:border-white/10 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {transactionsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                    {transactionsLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Download className="w-4 h-4" />
+                    )}
                     <span>{transactionsLoading ? 'Loading...' : 'Load History'}</span>
                   </button>
                 ) : transactions.length > 0 ? (
@@ -422,14 +527,16 @@ export function OrgBilling() {
                   <Receipt className="w-7 h-7 text-cyan-400" />
                 </div>
                 <h3 className="text-base font-semibold text-white m-0 mb-1.5">No history loaded</h3>
-                <p className="text-sm text-zinc-500 m-0 max-w-[300px]">Click "Load History" to view your payment records</p>
+                <p className="text-sm text-zinc-500 m-0 max-w-[300px]">
+                  Click "Load History" to view your payment records
+                </p>
               </div>
             )}
 
             {/* Loading Skeleton */}
             {transactionsLoading && transactions.length === 0 && (
               <div className="flex flex-col bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
-                {[1, 2, 3].map(i => (
+                {[1, 2, 3].map((i) => (
                   <div key={i} className="flex items-center gap-4 px-5 py-5 border-b border-zinc-800 last:border-b-0">
                     <Skeleton className="w-11 h-11 rounded-[10px]" />
                     <div className="flex-1 flex flex-col gap-2">
@@ -449,7 +556,9 @@ export function OrgBilling() {
                   <Receipt className="w-7 h-7 text-cyan-400" />
                 </div>
                 <h3 className="text-base font-semibold text-white m-0 mb-1.5">No payment history</h3>
-                <p className="text-sm text-zinc-500 m-0 max-w-[300px]">Transactions will appear here after purchasing credits</p>
+                <p className="text-sm text-zinc-500 m-0 max-w-[300px]">
+                  Transactions will appear here after purchasing credits
+                </p>
               </div>
             )}
 
@@ -458,18 +567,29 @@ export function OrgBilling() {
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
                 <div className="max-h-[440px] overflow-y-auto">
                   {transactions.map((tx: any) => (
-                    <div key={tx.id} className="flex items-center gap-4 px-5 py-[1.125rem] border-b border-zinc-800 last:border-b-0 hover:bg-zinc-800/30 transition-colors duration-150">
-                      <div className={`w-11 h-11 rounded-[10px] flex items-center justify-center shrink-0 ${
-                        tx.payment_method === 'stripe'
-                          ? 'bg-indigo-500/10 text-indigo-400'
-                          : 'bg-violet-500/10 text-violet-400'
-                      }`}>
-                        {tx.payment_method === 'stripe' ? <CreditCard className="w-5 h-5" /> : <Wallet className="w-5 h-5" />}
+                    <div
+                      key={tx.id}
+                      className="flex items-center gap-4 px-5 py-[1.125rem] border-b border-zinc-800 last:border-b-0 hover:bg-zinc-800/30 transition-colors duration-150"
+                    >
+                      <div
+                        className={`w-11 h-11 rounded-[10px] flex items-center justify-center shrink-0 ${
+                          tx.payment_method === 'stripe'
+                            ? 'bg-indigo-500/10 text-indigo-400'
+                            : 'bg-violet-500/10 text-violet-400'
+                        }`}
+                      >
+                        {tx.payment_method === 'stripe' ? (
+                          <CreditCard className="w-5 h-5" />
+                        ) : (
+                          <Wallet className="w-5 h-5" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2.5">
                           <span className="text-[0.9375rem] font-medium text-white">{getPackLabel(tx.pack_type)}</span>
-                          <span className="text-[0.625rem] font-semibold uppercase tracking-[0.04em] px-2 py-1 rounded bg-emerald-500/10 text-emerald-400">{tx.status}</span>
+                          <span className="text-[0.625rem] font-semibold uppercase tracking-[0.04em] px-2 py-1 rounded bg-emerald-500/10 text-emerald-400">
+                            {tx.status}
+                          </span>
                         </div>
                         <div className="text-xs text-zinc-500 mt-1 flex items-center flex-wrap gap-1.5">
                           <span>{formatTransactionDate(tx.purchased_at)}</span>
@@ -484,8 +604,12 @@ export function OrgBilling() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <span className="block text-[0.9375rem] font-semibold text-white">${parseFloat(tx.amount_usd).toFixed(2)}</span>
-                        <span className="block text-xs font-semibold text-cyan-400 mt-0.5">+{parseFloat(tx.hours_purchased).toFixed(0)} min</span>
+                        <span className="block text-[0.9375rem] font-semibold text-white">
+                          ${parseFloat(tx.amount_usd).toFixed(2)}
+                        </span>
+                        <span className="block text-xs font-semibold text-cyan-400 mt-0.5">
+                          +{parseFloat(tx.hours_purchased).toFixed(0)} min
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -494,7 +618,9 @@ export function OrgBilling() {
                 {/* Pagination */}
                 {totalTransactionPages > 1 && (
                   <div className="flex items-center justify-between px-5 py-4 border-t border-zinc-800 bg-black/15">
-                    <span className="text-xs text-zinc-500">Page {transactionsPage} of {totalTransactionPages}</span>
+                    <span className="text-xs text-zinc-500">
+                      Page {transactionsPage} of {totalTransactionPages}
+                    </span>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => loadTransactions(transactionsPage - 1)}
@@ -524,28 +650,43 @@ export function OrgBilling() {
             {/* Subscription Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 -mt-2 mb-[3px]">
               {/* Current Plan Card */}
-              <div className={`relative flex bg-zinc-900/50 border rounded-[10px] overflow-hidden hover:border-white/10 hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)] transition-all duration-200 ${hasActiveSubscription ? 'border-zinc-800' : 'border-zinc-800'}`}>
-                <div className={`w-1 shrink-0 ${
-                  hasActiveSubscription && subscription?.status === 'active' ? 'bg-emerald-500' :
-                  subscription?.status === 'cancelled' ? 'bg-amber-400' : 'bg-zinc-800'
-                }`} />
+              <div
+                className={`relative flex bg-zinc-900/50 border rounded-[10px] overflow-hidden hover:border-white/10 hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)] transition-all duration-200 ${hasActiveSubscription ? 'border-zinc-800' : 'border-zinc-800'}`}
+              >
+                <div
+                  className={`w-1 shrink-0 ${
+                    hasActiveSubscription && subscription?.status === 'active'
+                      ? 'bg-emerald-500'
+                      : subscription?.status === 'cancelled'
+                        ? 'bg-amber-400'
+                        : 'bg-zinc-800'
+                  }`}
+                />
                 <div className="flex-1 flex flex-col">
                   <div className="flex items-center gap-3.5 px-5 py-4 border-b border-zinc-800">
-                    <div className={`flex items-center justify-center w-10 h-10 rounded-[10px] shrink-0 ${
-                      hasActiveSubscription ? 'bg-emerald-500/15 text-emerald-500' : 'bg-zinc-800/50 text-zinc-500'
-                    }`}>
+                    <div
+                      className={`flex items-center justify-center w-10 h-10 rounded-[10px] shrink-0 ${
+                        hasActiveSubscription ? 'bg-emerald-500/15 text-emerald-500' : 'bg-zinc-800/50 text-zinc-500'
+                      }`}
+                    >
                       {hasActiveSubscription ? <Crown className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-[0.9375rem] font-semibold text-white m-0 tracking-tight">Current Plan</h3>
-                      <p className="text-xs text-zinc-500 m-0 mt-0.5">{hasActiveSubscription ? subscription?.tier_name || 'Active' : 'No subscription'}</p>
+                      <p className="text-xs text-zinc-500 m-0 mt-0.5">
+                        {hasActiveSubscription ? subscription?.tier_name || 'Active' : 'No subscription'}
+                      </p>
                     </div>
                   </div>
                   <div className="px-5 py-5">
                     {hasActiveSubscription ? (
-                      <span className={`inline-block px-4 py-2 rounded-md text-sm font-semibold uppercase tracking-[0.05em] ${
-                        subscription?.status === 'active' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-amber-400/15 text-amber-400'
-                      }`}>
+                      <span
+                        className={`inline-block px-4 py-2 rounded-md text-sm font-semibold uppercase tracking-[0.05em] ${
+                          subscription?.status === 'active'
+                            ? 'bg-emerald-500/15 text-emerald-400'
+                            : 'bg-amber-400/15 text-amber-400'
+                        }`}
+                      >
                         {subscription?.status === 'active' ? 'Active' : 'Cancelled'}
                       </span>
                     ) : (
@@ -570,9 +711,13 @@ export function OrgBilling() {
                   </div>
                   <div className="px-5 py-5">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-[2rem] font-bold text-white tracking-tight leading-none tabular-nums">{subscription?.current_members || members.length || 0}</span>
+                      <span className="text-[2rem] font-bold text-white tracking-tight leading-none tabular-nums">
+                        {subscription?.current_members || members.length || 0}
+                      </span>
                       <span className="text-sm text-zinc-500 font-medium"> / </span>
-                      <span className="text-[2rem] font-bold text-zinc-600 tracking-tight leading-none tabular-nums">{subscription?.total_seats || '\u221E'}</span>
+                      <span className="text-[2rem] font-bold text-zinc-600 tracking-tight leading-none tabular-nums">
+                        {subscription?.total_seats || '\u221E'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -593,7 +738,9 @@ export function OrgBilling() {
                   </div>
                   <div className="px-5 py-5">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="text-[2rem] font-bold text-cyan-400 tracking-tight leading-none tabular-nums">{subscription?.total_monthly_credits?.toLocaleString() || 0}</span>
+                      <span className="text-[2rem] font-bold text-cyan-400 tracking-tight leading-none tabular-nums">
+                        {subscription?.total_monthly_credits?.toLocaleString() || 0}
+                      </span>
                       <span className="text-sm text-zinc-500 font-medium">min</span>
                     </div>
                   </div>
@@ -604,15 +751,23 @@ export function OrgBilling() {
             {/* Subscription Overview Card (if subscribed) */}
             {hasActiveSubscription && subscription && (
               <div className="relative flex bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden mb-8">
-                <div className={`w-1 shrink-0 ${subscription.status === 'active' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                <div
+                  className={`w-1 shrink-0 ${subscription.status === 'active' ? 'bg-emerald-500' : 'bg-amber-400'}`}
+                />
                 <div className="flex-1 flex flex-col">
                   <div className="flex items-center gap-4 px-6 py-5 border-b border-zinc-800">
                     <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-emerald-500/15 text-emerald-500">
-                      {subscription.status === 'active' ? <Crown className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
+                      {subscription.status === 'active' ? (
+                        <Crown className="w-6 h-6" />
+                      ) : (
+                        <AlertCircle className="w-6 h-6" />
+                      )}
                     </div>
                     <div className="flex-1">
                       <h3 className="text-lg font-bold text-white m-0">{subscription.tier_name || 'Subscription'}</h3>
-                      <p className="text-[0.8125rem] text-zinc-500 m-0 mt-1">{subscription.status === 'active' ? 'Active' : 'Cancelled'}</p>
+                      <p className="text-[0.8125rem] text-zinc-500 m-0 mt-1">
+                        {subscription.status === 'active' ? 'Active' : 'Cancelled'}
+                      </p>
                     </div>
                     {subscription.status === 'active' && isAdmin && (
                       <button
@@ -628,15 +783,21 @@ export function OrgBilling() {
                       <div className="flex items-center gap-3 p-4 bg-zinc-800/30 rounded-lg">
                         <Users className="w-5 h-5 text-cyan-400" />
                         <div className="flex flex-col">
-                          <span className="text-lg font-bold text-white">{subscription.current_members || 0} / {subscription.total_seats || '\u221E'}</span>
+                          <span className="text-lg font-bold text-white">
+                            {subscription.current_members || 0} / {subscription.total_seats || '\u221E'}
+                          </span>
                           <span className="text-[0.6875rem] text-zinc-500 uppercase tracking-[0.05em]">Seats Used</span>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 p-4 bg-zinc-800/30 rounded-lg">
                         <Zap className="w-5 h-5 text-cyan-400" />
                         <div className="flex flex-col">
-                          <span className="text-lg font-bold text-white">{subscription.total_monthly_credits?.toLocaleString() || 0}</span>
-                          <span className="text-[0.6875rem] text-zinc-500 uppercase tracking-[0.05em]">Credits/Month</span>
+                          <span className="text-lg font-bold text-white">
+                            {subscription.total_monthly_credits?.toLocaleString() || 0}
+                          </span>
+                          <span className="text-[0.6875rem] text-zinc-500 uppercase tracking-[0.05em]">
+                            Credits/Month
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -644,7 +805,9 @@ export function OrgBilling() {
                       <div className="flex items-center gap-2 text-[0.8125rem] text-zinc-500">
                         <CalendarCheck className="w-3.5 h-3.5" />
                         {subscription.status === 'active' ? (
-                          <span>Renews {formatDate(subscription.end_date)} ({subscription.days_remaining} days)</span>
+                          <span>
+                            Renews {formatDate(subscription.end_date)} ({subscription.days_remaining} days)
+                          </span>
                         ) : (
                           <span className="text-amber-400">Access until {formatDate(subscription.end_date)}</span>
                         )}
@@ -664,12 +827,14 @@ export function OrgBilling() {
                   </div>
                   <div>
                     <h2 className="text-lg font-semibold text-white m-0 tracking-tight">Choose Your Plan</h2>
-                    <p className="text-[0.8125rem] text-zinc-500 m-0 mt-0.5">Select a base subscription to get started</p>
+                    <p className="text-[0.8125rem] text-zinc-500 m-0 mt-0.5">
+                      Select a base subscription to get started
+                    </p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mt-6">
-                  {sortedBaseTiers.map(tier => (
+                  {sortedBaseTiers.map((tier) => (
                     <div
                       key={tier.id}
                       className={`relative flex flex-col bg-zinc-900/50 border rounded-xl overflow-hidden transition-all duration-200 hover:border-white/10 hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)] hover:-translate-y-0.5 ${
@@ -737,8 +902,11 @@ export function OrgBilling() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
-                  {availableAddons.map(addon => (
-                    <div key={addon.id} className="relative p-5 bg-zinc-900/50 border border-zinc-800 rounded-[10px] overflow-hidden transition-all duration-150 hover:border-white/10 hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)]">
+                  {availableAddons.map((addon) => (
+                    <div
+                      key={addon.id}
+                      className="relative p-5 bg-zinc-900/50 border border-zinc-800 rounded-[10px] overflow-hidden transition-all duration-150 hover:border-white/10 hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)]"
+                    >
                       {addon.requires_ai && (
                         <div className="absolute top-3 right-3 flex items-center gap-[5px] px-3 py-[7px] bg-gradient-to-br from-cyan-500 to-cyan-500/80 text-[#0a0a0b] text-[0.625rem] font-bold uppercase tracking-[0.05em] rounded-[5px] shadow-[0_2px_6px_rgba(6,182,212,0.25)]">
                           <Star className="w-[11px] h-[11px]" />
@@ -761,7 +929,12 @@ export function OrgBilling() {
                           </li>
                         )}
                       </ul>
-                      <Button size="sm" variant="secondary" onClick={() => selectSubscription(addon, 'addon')} className="w-full">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => selectSubscription(addon, 'addon')}
+                        className="w-full"
+                      >
                         Add to Plan
                       </Button>
                     </div>
@@ -813,13 +986,16 @@ export function OrgBilling() {
                   <AlertTriangle className="w-[26px] h-[26px]" />
                 </div>
                 <h2 className="text-[1.1875rem] font-bold text-white m-0">Cancel Subscription?</h2>
-                <p className="text-[0.8125rem] text-zinc-500 m-0 mt-1">Your organization will lose access after the current period ends</p>
+                <p className="text-[0.8125rem] text-zinc-500 m-0 mt-1">
+                  Your organization will lose access after the current period ends
+                </p>
               </div>
               <div className="flex flex-col gap-5">
                 <div className="p-[1.125rem] bg-zinc-800/30 rounded-lg text-[0.8125rem] text-zinc-500 leading-relaxed">
                   <p className="m-0 mb-2">
-                    Your subscription will remain active until <strong className="text-white">{formatDate(subscription?.end_date || '')}</strong>.
-                    After that, your organization will lose access to subscription features.
+                    Your subscription will remain active until{' '}
+                    <strong className="text-white">{formatDate(subscription?.end_date || '')}</strong>. After that, your
+                    organization will lose access to subscription features.
                   </p>
                   <p className="m-0 opacity-70">Your credits will remain in your organization pool.</p>
                 </div>

@@ -26,18 +26,20 @@ class MessagingSocket {
   private socket: Socket | null = null
   private userChannel: Channel | null = null
   private conversationChannels: Map<number, Channel> = new Map()
-  private _userId: number | null = null
 
   private onNewMessageNotification: NotificationHandler | null = null
   private onConversationCreated: ConversationHandler | null = null
   private onMessageReadNotification: ReadHandler | null = null
-  private conversationHandlers: Map<number, {
-    onNewMessage?: MessageHandler
-    onMessageEdited?: MessageHandler
-    onMessageDeleted?: DeleteHandler
-    onTyping?: TypingHandler
-    onRead?: ReadHandler
-  }> = new Map()
+  private conversationHandlers: Map<
+    number,
+    {
+      onNewMessage?: MessageHandler
+      onMessageEdited?: MessageHandler
+      onMessageDeleted?: DeleteHandler
+      onTyping?: TypingHandler
+      onRead?: ReadHandler
+    }
+  > = new Map()
 
   private getSocketUrl(): string {
     const apiUrl = import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'
@@ -53,17 +55,18 @@ class MessagingSocket {
         return
       }
 
-      this._userId = userId
       const socketUrl = this.getSocketUrl()
 
       this.socket = new Socket(socketUrl, {
         params: { token },
-        reconnectAfterMs: (tries: number) => Math.min(tries * 1000, 10000),
+        reconnectAfterMs: (tries: number) => Math.min(tries * 1000, 10000)
       })
 
       this.socket.onOpen(() => {
         console.log('[MessagingSocket] Connected')
-        this.joinUserChannel(userId).then(() => resolve()).catch(reject)
+        this.joinUserChannel(userId)
+          .then(() => resolve())
+          .catch(reject)
       })
 
       this.socket.onError((error: any) => {
@@ -90,7 +93,7 @@ class MessagingSocket {
       this.userChannel.on('new_message_notification', (payload: any) => {
         const notification: MessageNotification = {
           conversationId: payload.conversationId ?? payload.conversation_id,
-          message: normalizeMessage(payload.message ?? payload),
+          message: normalizeMessage(payload.message ?? payload)
         }
         this.onNewMessageNotification?.(notification)
       })
@@ -102,7 +105,7 @@ class MessagingSocket {
       this.userChannel.on('message_read_notification', (payload: any) => {
         this.onMessageReadNotification?.({
           userId: payload.user_id ?? payload.userId,
-          conversationId: payload.conversation_id ?? payload.conversationId,
+          conversationId: payload.conversation_id ?? payload.conversationId
         })
       })
 
@@ -119,13 +122,16 @@ class MessagingSocket {
     })
   }
 
-  joinConversation(conversationId: number, handlers?: {
-    onNewMessage?: MessageHandler
-    onMessageEdited?: MessageHandler
-    onMessageDeleted?: DeleteHandler
-    onTyping?: TypingHandler
-    onRead?: ReadHandler
-  }): Promise<void> {
+  joinConversation(
+    conversationId: number,
+    handlers?: {
+      onNewMessage?: MessageHandler
+      onMessageEdited?: MessageHandler
+      onMessageDeleted?: DeleteHandler
+      onTyping?: TypingHandler
+      onRead?: ReadHandler
+    }
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.socket) {
         reject(new Error('Socket not connected'))
@@ -164,7 +170,7 @@ class MessagingSocket {
         const h = this.conversationHandlers.get(conversationId)
         h?.onRead?.({
           userId: event.user_id ?? event.userId,
-          conversationId: event.conversation_id ?? event.conversationId,
+          conversationId: event.conversation_id ?? event.conversationId
         })
       })
 
@@ -202,7 +208,9 @@ class MessagingSocket {
       channel
         .push('new_message', { content })
         .receive('ok', (response: any) => resolve(normalizeMessage(response)))
-        .receive('error', (reason: unknown) => reject(new Error(`Failed to send: ${JSON.stringify(reason)}`)))
+        .receive('error', (reason: unknown) =>
+          reject(new Error(`Failed to send: ${JSON.stringify(reason)}`))
+        )
     })
   }
 
@@ -216,7 +224,9 @@ class MessagingSocket {
       channel
         .push('edit_message', { message_id: messageId, content })
         .receive('ok', (response: any) => resolve(normalizeMessage(response)))
-        .receive('error', (reason: unknown) => reject(new Error(`Failed to edit: ${JSON.stringify(reason)}`)))
+        .receive('error', (reason: unknown) =>
+          reject(new Error(`Failed to edit: ${JSON.stringify(reason)}`))
+        )
     })
   }
 
@@ -230,7 +240,9 @@ class MessagingSocket {
       channel
         .push('delete_message', { message_id: messageId })
         .receive('ok', () => resolve())
-        .receive('error', (reason: unknown) => reject(new Error(`Failed to delete: ${JSON.stringify(reason)}`)))
+        .receive('error', (reason: unknown) =>
+          reject(new Error(`Failed to delete: ${JSON.stringify(reason)}`))
+        )
     })
   }
 
@@ -268,7 +280,6 @@ class MessagingSocket {
     this.userChannel = null
     this.socket?.disconnect()
     this.socket = null
-    this._userId = null
     console.log('[MessagingSocket] Disconnected')
   }
 }

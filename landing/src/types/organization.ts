@@ -144,6 +144,7 @@ export interface SocialAccount {
   is_active: boolean
   token_expires_at?: string | null
   inserted_at?: string
+  connected_at?: string | null
   assignments?: SocialAccountAssignment[]
 }
 
