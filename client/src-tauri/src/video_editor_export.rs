@@ -151,6 +151,48 @@ pub struct EffectOverlay {
 
 #[derive(Debug, Deserialize)]
 
+pub struct BrandingWatermark {
+
+    pub image_path: String,
+
+    pub x: f64,
+
+    pub y: f64,
+
+    pub scale: f64,
+
+    pub opacity: f64,
+
+    pub is_full_frame: bool,
+
+}
+
+
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct BrandingOverlay {
+
+    pub image_path: String,
+
+    pub x: f64,
+
+    pub y: f64,
+
+    pub scale: f64,
+
+    pub opacity: f64,
+
+    pub rotation: f64,
+
+    pub is_full_frame: bool,
+
+}
+
+
+
+#[derive(Debug, Deserialize)]
+
 pub struct ExportConfig {
 
     pub video_sources: Vec<VideoSource>,
@@ -163,6 +205,9 @@ pub struct ExportConfig {
 
     pub effect_overlays: Option<Vec<EffectOverlay>>,
 
+    #[allow(dead_code)]
+    pub transitions: Option<Vec<serde_json::Value>>,
+
     pub output_path: String,
 
     pub total_duration: f64,
@@ -172,6 +217,22 @@ pub struct ExportConfig {
     pub height: i32,
 
     pub cover_timestamp: Option<f64>,
+
+    pub branding_watermark: Option<BrandingWatermark>,
+
+    pub branding_overlays: Option<Vec<BrandingOverlay>>,
+
+    #[allow(dead_code)]
+    pub intro_path: Option<String>,
+
+    #[allow(dead_code)]
+    pub intro_duration: Option<f64>,
+
+    #[allow(dead_code)]
+    pub outro_path: Option<String>,
+
+    #[allow(dead_code)]
+    pub outro_duration: Option<f64>,
 
 }
 
@@ -352,6 +413,42 @@ pub async fn export_video_editor_project(
         args.push("-i".to_string());
 
         args.push(sticker.image_path.clone());
+
+    }
+
+
+
+    // Add branding watermark input
+
+    if let Some(ref wm) = config.branding_watermark {
+
+        if std::path::Path::new(&wm.image_path).exists() {
+
+            args.push("-i".to_string());
+
+            args.push(wm.image_path.clone());
+
+        }
+
+    }
+
+
+
+    // Add branding overlay inputs
+
+    if let Some(ref overlays) = config.branding_overlays {
+
+        for overlay in overlays {
+
+            if std::path::Path::new(&overlay.image_path).exists() {
+
+                args.push("-i".to_string());
+
+                args.push(overlay.image_path.clone());
+
+            }
+
+        }
 
     }
 
@@ -1438,6 +1535,160 @@ pub async fn export_video_editor_project(
 
 
             video_stream = next_stream;
+
+        }
+
+    }
+
+
+
+    // Apply branding watermark overlay
+
+    let branding_input_offset = existing_input_count + config.text_overlays.len() + config.sticker_overlays.len();
+
+    let mut branding_input_idx = branding_input_offset;
+
+
+
+    if let Some(ref wm) = config.branding_watermark {
+
+        if std::path::Path::new(&wm.image_path).exists() {
+
+            let alpha = wm.opacity / 100.0;
+
+            let next_stream = format!("[vbw]");
+
+
+
+            if wm.is_full_frame {
+
+                filters.push(format!(
+
+                    "[{}:v]scale={}:{},format=rgba,colorchannelmixer=aa={}[bwm]",
+
+                    branding_input_idx, config.width, config.height, alpha
+
+                ));
+
+                filters.push(format!(
+
+                    "{}[bwm]overlay=0:0{}",
+
+                    video_stream, next_stream
+
+                ));
+
+            } else {
+
+                let pos_x = (wm.x / 100.0 * config.width as f64) as i32;
+
+                let pos_y = (wm.y / 100.0 * config.height as f64) as i32;
+
+                let scaled_width = (config.width as f64 * wm.scale / 100.0).round() as i32;
+
+
+
+                filters.push(format!(
+
+                    "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[bwm]",
+
+                    branding_input_idx, scaled_width, alpha
+
+                ));
+
+                filters.push(format!(
+
+                    "{}[bwm]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2){}",
+
+                    video_stream, pos_x, pos_y, next_stream
+
+                ));
+
+            }
+
+
+
+            video_stream = next_stream;
+
+            branding_input_idx += 1;
+
+            println!("[Rust] Applied branding watermark overlay");
+
+        }
+
+    }
+
+
+
+    // Apply branding layout overlays
+
+    if let Some(ref overlays) = config.branding_overlays {
+
+        for (i, overlay) in overlays.iter().enumerate() {
+
+            if !std::path::Path::new(&overlay.image_path).exists() { continue; }
+
+
+
+            let alpha = overlay.opacity / 100.0;
+
+            let next_stream = format!("[vbo{}]", i);
+
+
+
+            if overlay.is_full_frame {
+
+                filters.push(format!(
+
+                    "[{}:v]scale={}:{},format=rgba,colorchannelmixer=aa={}[bol{}]",
+
+                    branding_input_idx, config.width, config.height, alpha, i
+
+                ));
+
+                filters.push(format!(
+
+                    "{}[bol{}]overlay=0:0{}",
+
+                    video_stream, i, next_stream
+
+                ));
+
+            } else {
+
+                let pos_x = (overlay.x / 100.0 * config.width as f64) as i32;
+
+                let pos_y = (overlay.y / 100.0 * config.height as f64) as i32;
+
+                let scaled_width = (config.width as f64 * overlay.scale / 100.0).round() as i32;
+
+
+
+                filters.push(format!(
+
+                    "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[bol{}]",
+
+                    branding_input_idx, scaled_width, alpha, i
+
+                ));
+
+                filters.push(format!(
+
+                    "{}[bol{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2){}",
+
+                    video_stream, i, pos_x, pos_y, next_stream
+
+                ));
+
+            }
+
+
+
+            video_stream = next_stream;
+
+            branding_input_idx += 1;
+
+            println!("[Rust] Applied branding layout overlay {}", i);
 
         }
 

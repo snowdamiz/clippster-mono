@@ -198,7 +198,7 @@ const canvasBackground = computed(() => {
 });
 
 // Branding watermark overlay
-const { getWatermarkForCanvasSize } = useBrandingConfig();
+const { getWatermarkForCanvasSize, getOverlaysForCanvasSize } = useBrandingConfig();
 
 const brandingWatermark = computed(() => {
 	return getWatermarkForCanvasSize(canvasWidth.value, canvasHeight.value);
@@ -261,6 +261,70 @@ const brandingWatermarkStyle = computed(() => {
 		opacity: (wm.position.opacity ?? 100) / 100,
 	};
 });
+
+// Branding layout overlays preview
+const brandingOverlays = computed(() => {
+	return getOverlaysForCanvasSize(canvasWidth.value, canvasHeight.value) ?? [];
+});
+
+const brandingOverlayDataUrls = ref<Record<string, string>>({});
+const loadedOverlayIds = ref<Set<string>>(new Set());
+
+watch(
+	brandingOverlays,
+	async (overlays) => {
+		if (!overlays || overlays.length === 0) {
+			brandingOverlayDataUrls.value = {};
+			loadedOverlayIds.value = new Set();
+			return;
+		}
+
+		const newUrls: Record<string, string> = {};
+		const newIds = new Set<string>();
+
+		for (const overlay of overlays) {
+			newIds.add(overlay.id);
+			// Reuse cached data URL if already loaded
+			if (loadedOverlayIds.value.has(overlay.id) && brandingOverlayDataUrls.value[overlay.id]) {
+				newUrls[overlay.id] = brandingOverlayDataUrls.value[overlay.id];
+				continue;
+			}
+			try {
+				const dataUrl = await invoke<string>("read_file_as_data_url", {
+					filePath: overlay.imagePath,
+				});
+				newUrls[overlay.id] = dataUrl;
+			} catch (e) {
+				console.warn(`[PreviewPanel] Failed to load branding overlay ${overlay.id}:`, e);
+			}
+		}
+
+		brandingOverlayDataUrls.value = newUrls;
+		loadedOverlayIds.value = newIds;
+	},
+	{ immediate: true },
+);
+
+function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number; opacity: number; rotation: number; isFullFrameOverlay?: boolean }) {
+	if (overlay.isFullFrameOverlay) {
+		return {
+			left: "0",
+			top: "0",
+			width: "100%",
+			height: "100%",
+			opacity: (overlay.opacity ?? 100) / 100,
+		};
+	}
+
+	return {
+		left: `${overlay.x}%`,
+		top: `${overlay.y}%`,
+		transform: `translate(-50%, -50%) rotate(${overlay.rotation ?? 0}deg)`,
+		width: `${overlay.scale}%`,
+		height: "auto",
+		opacity: (overlay.opacity ?? 100) / 100,
+	};
+}
 </script>
 
 <template>
@@ -379,6 +443,16 @@ const brandingWatermarkStyle = computed(() => {
 					:src="brandingWatermarkDataUrl"
 					class="pointer-events-none absolute select-none"
 					:style="brandingWatermarkStyle"
+					draggable="false"
+				/>
+				<!-- Branding layout overlays -->
+				<img
+					v-for="overlay in brandingOverlays"
+					:key="overlay.id"
+					v-show="brandingOverlayDataUrls[overlay.id]"
+					:src="brandingOverlayDataUrls[overlay.id]"
+					class="pointer-events-none absolute select-none"
+					:style="getBrandingOverlayStyle(overlay)"
 					draggable="false"
 				/>
 			</div>

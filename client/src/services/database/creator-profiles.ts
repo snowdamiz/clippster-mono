@@ -37,6 +37,14 @@ async function ensureScopeColumn(db: any) {
   }
 }
 
+async function ensureLayoutOverlaysColumn(db: any) {
+  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
+  const has = columns.some((c: { name: string }) => c.name === 'layout_overlays');
+  if (!has) {
+    await db.execute('ALTER TABLE creator_profiles ADD COLUMN layout_overlays TEXT DEFAULT NULL');
+  }
+}
+
 async function ensureSelectedBrandingColumn(db: any) {
   const columns = (await db.select('PRAGMA table_info(projects)')) as { name: string }[];
   const has = columns.some((c: { name: string }) => c.name === 'selected_branding_profile_id');
@@ -53,6 +61,7 @@ export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);
+  await ensureLayoutOverlaysColumn(db);
   const userId = getCurrentUserId();
 
   // Get all profiles for current user
@@ -104,6 +113,7 @@ export async function getCreatorProfile(id: string): Promise<CreatorProfileWithL
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);
+  await ensureLayoutOverlaysColumn(db);
 
   const profiles = await db.select<CreatorProfile[]>(
     'SELECT * FROM creator_profiles WHERE id = ?',
@@ -158,20 +168,22 @@ export async function createCreatorProfile(
   autoDvrEnabled: boolean = false,
   introRatioSettings?: string | null,
   outroRatioSettings?: string | null,
-  scope: 'streamer' | 'global' = 'streamer'
+  scope: 'streamer' | 'global' = 'streamer',
+  layoutOverlays?: string | null
 ): Promise<string> {
   const db = await getDatabase();
   await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);
+  await ensureLayoutOverlaysColumn(db);
   const id = generateId();
   const now = timestamp();
   const userId = getCurrentUserId();
 
   await db.execute(
-    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, intro_outro_settings, auto_dvr_enabled, intro_ratio_settings, outro_ratio_settings, scope, user_id, created_at, updated_at) 
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO creator_profiles (id, name, description, profile_image_path, intro_id, outro_id, watermark_id, watermark_settings, intro_outro_settings, auto_dvr_enabled, intro_ratio_settings, outro_ratio_settings, scope, layout_overlays, user_id, created_at, updated_at) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       name,
@@ -186,6 +198,7 @@ export async function createCreatorProfile(
       introRatioSettings || null,
       outroRatioSettings || null,
       scope,
+      layoutOverlays || null,
       userId,
       now,
       now,
@@ -210,6 +223,7 @@ export async function updateCreatorProfile(
     outro_ratio_settings: string | null;
     auto_dvr_enabled: number | boolean;
     scope: 'streamer' | 'global';
+    layout_overlays: string | null;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -217,6 +231,7 @@ export async function updateCreatorProfile(
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);
+  await ensureLayoutOverlaysColumn(db);
   const fields: string[] = [];
   const values: any[] = [];
 
@@ -278,6 +293,11 @@ export async function updateCreatorProfile(
   if (updates.scope !== undefined) {
     fields.push('scope = ?');
     values.push(updates.scope);
+  }
+
+  if (updates.layout_overlays !== undefined) {
+    fields.push('layout_overlays = ?');
+    values.push(updates.layout_overlays);
   }
 
   if (fields.length === 0) {

@@ -1829,6 +1829,26 @@ export interface PhaserParams {
 // VOD Preset Types
 // ==========================================
 
+// Per-aspect-ratio position settings for a layout overlay
+export interface OverlayRatioPosition {
+  x: number;                   // 0-100 percentage position (center-based)
+  y: number;                   // 0-100 percentage position (center-based)
+  width: number;               // 0-100 percentage of target frame width
+  height: number;              // 0-100 percentage of target frame height
+  opacity: number;             // 0-100
+  rotation: number;            // degrees
+  scale: number;               // 0-100 percentage scale (like watermark)
+  isFullFrameOverlay?: boolean; // When true, position at 0,0 with 100% scale
+}
+
+// Per-aspect-ratio overlay configuration (null = disabled for that ratio)
+export interface PerRatioOverlaySettings {
+  '16:9': OverlayRatioPosition | null;
+  '9:16': OverlayRatioPosition | null;
+  '1:1': OverlayRatioPosition | null;
+  '4:5': OverlayRatioPosition | null;
+}
+
 export interface LayoutOverlay {
   id: string;
   imagePath: string;           // Local file path to uploaded PNG
@@ -1839,6 +1859,7 @@ export interface LayoutOverlay {
   opacity: number;             // 0-100
   rotation: number;            // degrees
   label?: string;              // "Speaker Divider", etc.
+  perRatioSettings?: PerRatioOverlaySettings | null; // Per-aspect-ratio position overrides
 }
 
 export interface VodPreset {

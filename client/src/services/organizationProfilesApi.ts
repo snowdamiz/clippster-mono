@@ -51,6 +51,7 @@ export interface ServerOrganizationCreatorProfile {
   outro_id: number | null;
   watermark_id: number | null;
   watermark_settings: Record<string, unknown> | null;
+  layout_overlays: Record<string, unknown>[] | null;
   intro: ServerOrganizationAssetRef | null;
   outro: ServerOrganizationAssetRef | null;
   watermark: ServerOrganizationAssetRef | null;
@@ -158,6 +159,7 @@ export async function createOrganizationCreatorProfile(
     watermark_id?: number | null;
     watermark_settings?: Record<string, unknown>;
     intro_outro_settings?: Record<string, unknown>;
+    layout_overlays?: Record<string, unknown>[] | null;
     scope?: 'streamer' | 'global';
   }
 ): Promise<ProfileResponse> {
@@ -192,6 +194,7 @@ export async function updateOrganizationCreatorProfile(
     watermark_id?: number | null;
     watermark_settings?: Record<string, unknown> | null;
     intro_outro_settings?: Record<string, unknown> | null;
+    layout_overlays?: Record<string, unknown>[] | null;
     scope?: 'streamer' | 'global';
   }
 ): Promise<ProfileResponse> {

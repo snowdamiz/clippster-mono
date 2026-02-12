@@ -2696,7 +2696,10 @@
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,
         clipWatermarks: clipWatermarksForExport,
-        layoutOverlays: settings.layoutOverlays || null,
+        layoutOverlays: settings.layoutOverlays
+          || (props.creatorProfile?.layout_overlays
+            ? JSON.parse(props.creatorProfile.layout_overlays)
+            : null),
       });
 
       console.log('[ClipsTab] Clip build started successfully');

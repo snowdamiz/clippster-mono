@@ -11,6 +11,7 @@ import type {
 	BrandingConfig,
 	BrandingWatermarkConfig,
 	BrandingIntroOutroConfig,
+	BrandingOverlayConfig,
 } from "../types/project";
 
 export const ASPECT_RATIOS: AspectRatioId[] = ["16:9", "9:16", "1:1", "4:5"];
@@ -28,6 +29,7 @@ function emptyBrandingConfig(): BrandingConfig {
 		watermarks: { "16:9": null, "9:16": null, "1:1": null, "4:5": null },
 		intros: { "16:9": null, "9:16": null, "1:1": null, "4:5": null },
 		outros: { "16:9": null, "9:16": null, "1:1": null, "4:5": null },
+		layoutOverlays: { "16:9": null, "9:16": null, "1:1": null, "4:5": null },
 	};
 }
 
@@ -84,6 +86,16 @@ function getWatermarkForCanvasSize(width: number, height: number): BrandingWater
 	const ratio = detectAspectRatio(width, height);
 	if (!ratio) return null;
 	return getActiveWatermark(ratio);
+}
+
+function getActiveOverlays(ratio: AspectRatioId): BrandingOverlayConfig[] | null {
+	return config.value.layoutOverlays[ratio] ?? null;
+}
+
+function getOverlaysForCanvasSize(width: number, height: number): BrandingOverlayConfig[] | null {
+	const ratio = detectAspectRatio(width, height);
+	if (!ratio) return null;
+	return getActiveOverlays(ratio);
 }
 
 /**
@@ -173,6 +185,54 @@ function initFromCreatorProfile(profile: CreatorProfileWithLinks): void {
 		}
 	}
 
+	// Parse layout overlays
+	if (profile.layout_overlays) {
+		try {
+			const overlays = typeof profile.layout_overlays === "string"
+				? JSON.parse(profile.layout_overlays)
+				: profile.layout_overlays;
+
+			if (Array.isArray(overlays)) {
+				// Overlays with perRatioSettings: resolve per-ratio configs
+				for (const ratio of ASPECT_RATIOS) {
+					const ratioOverlays: BrandingOverlayConfig[] = [];
+					for (const overlay of overlays) {
+						const ratioConfig = overlay.perRatioSettings?.[ratio];
+						if (ratioConfig) {
+							ratioOverlays.push({
+								id: overlay.id,
+								imagePath: overlay.imagePath,
+								x: ratioConfig.x ?? overlay.x ?? 50,
+								y: ratioConfig.y ?? overlay.y ?? 50,
+								scale: ratioConfig.scale ?? 20,
+								opacity: ratioConfig.opacity ?? overlay.opacity ?? 100,
+								rotation: ratioConfig.rotation ?? overlay.rotation ?? 0,
+								isFullFrameOverlay: ratioConfig.isFullFrameOverlay ?? false,
+								label: overlay.label,
+							});
+						} else if (!overlay.perRatioSettings) {
+							// No per-ratio settings: use flat overlay values for all ratios
+							ratioOverlays.push({
+								id: overlay.id,
+								imagePath: overlay.imagePath,
+								x: overlay.x ?? 50,
+								y: overlay.y ?? 50,
+								scale: overlay.width ?? 20,
+								opacity: overlay.opacity ?? 100,
+								rotation: overlay.rotation ?? 0,
+								isFullFrameOverlay: false,
+								label: overlay.label,
+							});
+						}
+					}
+					newConfig.layoutOverlays[ratio] = ratioOverlays.length > 0 ? ratioOverlays : null;
+				}
+			}
+		} catch (e) {
+			console.warn("[useBrandingConfig] Failed to parse layout_overlays:", e);
+		}
+	}
+
 	config.value = newConfig;
 }
 
@@ -181,7 +241,10 @@ function initFromCreatorProfile(profile: CreatorProfileWithLinks): void {
  */
 function initFromSavedConfig(saved: BrandingConfig): void {
 	creatorProfile.value = null;
-	config.value = saved;
+	config.value = {
+		...saved,
+		layoutOverlays: saved.layoutOverlays ?? { "16:9": null, "9:16": null, "1:1": null, "4:5": null },
+	};
 }
 
 /**
@@ -203,6 +266,8 @@ export function useBrandingConfig(): {
 	getActiveIntro: (ratio: AspectRatioId) => BrandingIntroOutroConfig | null;
 	getActiveOutro: (ratio: AspectRatioId) => BrandingIntroOutroConfig | null;
 	getWatermarkForCanvasSize: (width: number, height: number) => BrandingWatermarkConfig | null;
+	getActiveOverlays: (ratio: AspectRatioId) => BrandingOverlayConfig[] | null;
+	getOverlaysForCanvasSize: (width: number, height: number) => BrandingOverlayConfig[] | null;
 	initFromCreatorProfile: (profile: CreatorProfileWithLinks) => void;
 	initFromSavedConfig: (saved: BrandingConfig) => void;
 	reset: () => void;
@@ -219,6 +284,8 @@ export function useBrandingConfig(): {
 		getActiveIntro,
 		getActiveOutro,
 		getWatermarkForCanvasSize,
+		getActiveOverlays,
+		getOverlaysForCanvasSize,
 		initFromCreatorProfile,
 		initFromSavedConfig,
 		reset,

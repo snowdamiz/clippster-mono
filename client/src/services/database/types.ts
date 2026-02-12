@@ -542,6 +542,7 @@ export interface CreatorProfile {
   intro_ratio_settings: string | null; // JSON string of RatioAssetMap for intros
   outro_ratio_settings: string | null; // JSON string of RatioAssetMap for outros
   auto_dvr_enabled?: number | boolean; // Auto DVR toggle (default off)
+  layout_overlays: string | null; // JSON string of LayoutOverlay[]
   scope: 'streamer' | 'global'; // 'streamer' = tied to platform links, 'global' = universal branding
   user_id: string | null;
   created_at: number;
