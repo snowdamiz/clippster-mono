@@ -782,25 +782,23 @@ pub async fn build_single_segment_clip_with_settings(
             "-force_key_frames".to_string(), "expr:gte(t,0)".to_string(),
         ]);
         
-        let copy_audio = audio_filter_str.is_none();
+        // Add audio filter if present
+        if let Some(ref af) = audio_filter_str {
+            args.push("-af".to_string());
+            args.push(af.clone());
+        }
 
         // Add common parameters
         // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+        // Always re-encode audio to AAC with matching params so concat with intro/outro
+        // produces a uniform audio stream (prevents missing audio on social platforms)
         args.extend_from_slice(&[
             "-fps_mode".to_string(), "cfr".to_string(),
             "-r".to_string(), frame_rate.to_string(),
-        ]);
-        if copy_audio {
-            args.extend_from_slice(&[
-                "-c:a".to_string(), "copy".to_string(),
-            ]);
-        } else {
-            args.extend_from_slice(&[
-                "-c:a".to_string(), "aac".to_string(),
-                "-b:a".to_string(), "192k".to_string(),
-            ]);
-        }
-        args.extend_from_slice(&[
+            "-c:a".to_string(), "aac".to_string(),
+            "-b:a".to_string(), "192k".to_string(),
+            "-ar".to_string(), "48000".to_string(),
+            "-ac".to_string(), "2".to_string(),
             "-pix_fmt".to_string(), "yuv420p".to_string(),
             "-avoid_negative_ts".to_string(), "make_zero".to_string(),
             "-y".to_string(),
@@ -892,6 +890,7 @@ pub async fn build_single_segment_clip_with_settings(
                 "-safe", "0",
                 "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
                 "-c", "copy",
+                "-movflags", "+faststart",
                 "-avoid_negative_ts", "make_zero",
                 "-y",
                 concat_output_path.to_str().ok_or("Invalid output path")?,
@@ -1306,14 +1305,24 @@ pub async fn build_multi_segment_clip_with_settings(
             args.push(encoder.quality_param.clone());
             args.push(encoder.quality_value.clone());
             
+            // Force keyframe at start to prevent frozen/laggy frames at segment boundaries
+            args.extend_from_slice(&[
+                "-g".to_string(), "60".to_string(),
+                "-force_key_frames".to_string(), "expr:gte(t,0)".to_string(),
+            ]);
+            
             // Add audio parameters (mute if audio was extracted)
+            // Always re-encode to AAC so all segments have uniform codec for clean concat
             if mute_audio {
                 args.extend_from_slice(&[
                     "-an".to_string(), // No audio
                 ]);
             } else {
                 args.extend_from_slice(&[
-                    "-c:a".to_string(), "copy".to_string(),
+                    "-c:a".to_string(), "aac".to_string(),
+                    "-b:a".to_string(), "192k".to_string(),
+                    "-ar".to_string(), "48000".to_string(),
+                    "-ac".to_string(), "2".to_string(),
                 ]);
             }
             
@@ -1435,6 +1444,7 @@ pub async fn build_multi_segment_clip_with_settings(
             "-safe", "0",
             "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
             "-c", "copy",
+            "-movflags", "+faststart",
             "-avoid_negative_ts", "make_zero",
             "-y",
             concat_output_path.to_str().ok_or("Invalid output path")?,
@@ -1639,6 +1649,12 @@ pub async fn prepare_intro_outro_for_concat(
     args.push(encoder.quality_param.clone());
     args.push(encoder.quality_value.clone());
     
+    // Force keyframe at start to prevent frozen/laggy frames at concat boundaries
+    args.extend_from_slice(&[
+        "-g".to_string(), "60".to_string(),
+        "-force_key_frames".to_string(), "expr:gte(t,0)".to_string(),
+    ]);
+    
     // Add common parameters
     // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
     args.extend_from_slice(&[
@@ -1646,6 +1662,8 @@ pub async fn prepare_intro_outro_for_concat(
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
+        "-ar".to_string(), "48000".to_string(),
+        "-ac".to_string(), "2".to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
