@@ -343,6 +343,7 @@
               :mint-id="props.mintId"
               :is-temp-recording="viewer.state.value.isTempRecording"
               :streamer-id="props.streamerId"
+              :platform="props.platform"
               @close="showClipModal = false"
               @clip-created="handleClipCreated"
             />
@@ -731,7 +732,7 @@
       if (!effectiveProjectId && props.displayName && props.mintId) {
         // Create a new project for this clip
         try {
-          effectiveProjectId = await createLivestreamClipProject(props.displayName, props.mintId);
+          effectiveProjectId = await createLivestreamClipProject(props.displayName, props.mintId, props.platform);
           sessionProjectId.value = effectiveProjectId;
           console.log('[WatchDialog] Created project for quick clip:', effectiveProjectId);
         } catch (err) {
