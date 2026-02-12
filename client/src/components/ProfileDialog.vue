@@ -72,8 +72,8 @@
                 </div>
               </div>
 
-              <!-- Auto DVR Toggle (hidden for global branding profiles) -->
-              <div v-if="formData.scope !== 'global'" class="org-dialog__feature-card">
+              <!-- Auto DVR Toggle (hidden for org mode and global branding profiles) -->
+              <div v-if="mode === 'local' && formData.scope !== 'global'" class="org-dialog__feature-card">
                 <div class="org-dialog__feature-icon">
                   <Sparkles :size="16" />
                 </div>
@@ -313,16 +313,9 @@
                       >
                         <Settings2 :size="16" />
                       </button>
-                      <input
-                        ref="introFileInput"
-                        type="file"
-                        accept="video/mp4,video/webm,video/quicktime"
-                        class="org-dialog__hidden"
-                        @change="handleIntroUpload"
-                      />
                       <button
                         type="button"
-                        @click="introFileInput?.click()"
+                        @click="handleIntroUploadClick"
                         :disabled="uploadingIntro"
                         class="org-dialog__asset-upload"
                         title="Upload new intro"
@@ -405,16 +398,9 @@
                       >
                         <Settings2 :size="16" />
                       </button>
-                      <input
-                        ref="outroFileInput"
-                        type="file"
-                        accept="video/mp4,video/webm,video/quicktime"
-                        class="org-dialog__hidden"
-                        @change="handleOutroUpload"
-                      />
                       <button
                         type="button"
-                        @click="outroFileInput?.click()"
+                        @click="handleOutroUploadClick"
                         :disabled="uploadingOutro"
                         class="org-dialog__asset-upload"
                         title="Upload new outro"
@@ -630,6 +616,7 @@
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
+  import { readFile } from '@tauri-apps/plugin-fs';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
@@ -699,8 +686,6 @@
   const openAssetDropdown = ref<'intro' | 'outro' | 'watermark' | null>(null);
 
   // Upload state
-  const introFileInput = ref<HTMLInputElement | null>(null);
-  const outroFileInput = ref<HTMLInputElement | null>(null);
   const watermarkFileInput = ref<HTMLInputElement | null>(null);
   const uploadingIntro = ref(false);
   const uploadingOutro = ref(false);
@@ -1338,14 +1323,36 @@
     });
   }
 
-  async function handleIntroUpload(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
+  async function selectVideoFileNative(): Promise<File | null> {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      multiple: false,
+      filters: [
+        {
+          name: 'Video Files',
+          extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'],
+        },
+      ],
+    });
+    if (!selected || typeof selected !== 'string') return null;
 
+    const fileName = selected.split(/[\\\/]/).pop() || 'file';
+    const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
+    const mimeMap: Record<string, string> = {
+      mp4: 'video/mp4', mov: 'video/quicktime', avi: 'video/x-msvideo',
+      mkv: 'video/x-matroska', webm: 'video/webm', flv: 'video/x-flv',
+      wmv: 'video/x-ms-wmv', m4v: 'video/x-m4v',
+    };
+    const bytes = await readFile(selected);
+    return new File([bytes], fileName, { type: mimeMap[ext] || 'video/mp4' });
+  }
+
+  async function handleIntroUploadClick() {
     uploadingIntro.value = true;
     try {
       if (props.mode === 'organization' && props.organizationId) {
+        const file = await selectVideoFileNative();
+        if (!file) { uploadingIntro.value = false; return; }
         const metadata = await extractVideoMetadata(file);
         const response = await uploadOrganizationAsset(props.organizationId, file, 'intro', {
           name: file.name.replace(/\.[^/.]+$/, ''),
@@ -1354,7 +1361,6 @@
           width: metadata.width ?? undefined,
           height: metadata.height ?? undefined,
         });
-
         if (response.success && response.asset) {
           orgAssets.value.push(response.asset);
           formData.value.intro_id = response.asset.id;
@@ -1363,7 +1369,6 @@
           showError('Upload Failed', response.error || 'Failed to upload intro');
         }
       } else {
-        // Local mode
         pendingUploadType.value = 'intro';
         await uploadVideoAsset('intro');
       }
@@ -1373,18 +1378,15 @@
       pendingUploadType.value = null;
     } finally {
       uploadingIntro.value = false;
-      input.value = '';
     }
   }
 
-  async function handleOutroUpload(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-
+  async function handleOutroUploadClick() {
     uploadingOutro.value = true;
     try {
       if (props.mode === 'organization' && props.organizationId) {
+        const file = await selectVideoFileNative();
+        if (!file) { uploadingOutro.value = false; return; }
         const metadata = await extractVideoMetadata(file);
         const response = await uploadOrganizationAsset(props.organizationId, file, 'outro', {
           name: file.name.replace(/\.[^/.]+$/, ''),
@@ -1393,7 +1395,6 @@
           width: metadata.width ?? undefined,
           height: metadata.height ?? undefined,
         });
-
         if (response.success && response.asset) {
           orgAssets.value.push(response.asset);
           formData.value.outro_id = response.asset.id;
@@ -1402,7 +1403,6 @@
           showError('Upload Failed', response.error || 'Failed to upload outro');
         }
       } else {
-        // Local mode
         pendingUploadType.value = 'outro';
         await uploadVideoAsset('outro');
       }
@@ -1412,7 +1412,6 @@
       pendingUploadType.value = null;
     } finally {
       uploadingOutro.value = false;
-      input.value = '';
     }
   }
 
@@ -1541,6 +1540,7 @@
         watermark_id: formData.value.watermark_id as number | null,
         watermark_settings: formData.value.watermark_settings,
         intro_outro_settings: formData.value.intro_outro_settings ? JSON.parse(formData.value.intro_outro_settings) : null,
+        scope: formData.value.scope,
       });
 
       if (!response.success || !response.profile) {
@@ -1585,6 +1585,7 @@
         outro_id: formData.value.outro_id as number | null,
         watermark_id: formData.value.watermark_id as number | null,
         watermark_settings: formData.value.watermark_settings || undefined,
+        scope: formData.value.scope,
       });
 
       if (!response.success || !response.profile) {

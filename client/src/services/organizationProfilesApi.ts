@@ -158,6 +158,7 @@ export async function createOrganizationCreatorProfile(
     watermark_id?: number | null;
     watermark_settings?: Record<string, unknown>;
     intro_outro_settings?: Record<string, unknown>;
+    scope?: 'streamer' | 'global';
   }
 ): Promise<ProfileResponse> {
   try {
@@ -191,6 +192,7 @@ export async function updateOrganizationCreatorProfile(
     watermark_id?: number | null;
     watermark_settings?: Record<string, unknown> | null;
     intro_outro_settings?: Record<string, unknown> | null;
+    scope?: 'streamer' | 'global';
   }
 ): Promise<ProfileResponse> {
   try {
