@@ -90,7 +90,8 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Instagram, Twitter, Share2, ChevronRight, X } from 'lucide-vue-next';
+  import { Instagram, Share2, ChevronRight, X } from 'lucide-vue-next';
+  import XLogo from '@/components/icons/XLogo.vue';
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts } from '@/services/userInstagramApi';
   import { listUserTwitterAccounts } from '@/services/userTwitterApi';
@@ -102,7 +103,7 @@
     id: PlatformId;
     name: string;
     description: string;
-    icon: typeof Instagram;
+    icon: any;
     accountCount: number;
   }
 
@@ -138,7 +139,7 @@
         id: 'twitter',
         name: 'X (Twitter)',
         description: 'Post as Tweet',
-        icon: Twitter,
+        icon: XLogo,
         accountCount: twitterCount.value,
       });
     }
@@ -193,7 +194,7 @@
           if (result.success && result.accounts) {
             for (const account of result.accounts) {
               if (account.platform === 'instagram') orgIg++;
-              if (account.platform === 'twitter') orgTw++;
+              if (account.platform === 'twitter' || account.platform === 'x') orgTw++;
             }
           }
         }

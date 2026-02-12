@@ -18,7 +18,7 @@
                 <X :size="18" />
               </button>
               <div class="twitter-dialog__icon">
-                <Twitter :size="24" />
+                <XLogo :size="24" />
               </div>
               <h2 class="twitter-dialog__title">Publish to X</h2>
               <p class="twitter-dialog__subtitle">Share this clip to your connected X (Twitter) account</p>
@@ -187,7 +187,7 @@
               >
                 <Loader2 v-if="publishing" :size="16" class="twitter-dialog__spinner" />
                 <Calendar v-else-if="isScheduled" :size="16" />
-                <Twitter v-else :size="16" />
+                <XLogo v-else :size="16" />
                 {{ publishing ? (isScheduled ? 'Scheduling...' : 'Publishing...') : (isScheduled ? 'Schedule' : 'Post Now') }}
               </button>
             </div>
@@ -200,7 +200,8 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Twitter, FileVideo, Loader2, ChevronDown, Calendar, X, AlertCircle } from 'lucide-vue-next';
+  import { FileVideo, Loader2, ChevronDown, Calendar, X, AlertCircle } from 'lucide-vue-next';
+  import XLogo from '@/components/icons/XLogo.vue';
   import { useToast } from '@/composables/useToast';
   import { getMyAssignedAccounts, listSocialAccounts, publishPost, type SocialAccount } from '@/services/socialAccountsApi';
   import { listUserTwitterAccounts, publishToUserTwitter, type UserTwitterAccount } from '@/services/userTwitterApi';
@@ -310,7 +311,7 @@
         } catch {}
         const res = props.isAdmin ? await listSocialAccounts(props.organizationId) : await getMyAssignedAccounts(props.organizationId);
         if (res.success) {
-          orgAccounts.value = res.accounts.filter((a) => a.is_active && a.platform === 'twitter');
+          orgAccounts.value = res.accounts.filter((a) => a.is_active && (a.platform === 'twitter' || a.platform === 'x'));
         }
       }
       const pRes = await listUserTwitterAccounts();

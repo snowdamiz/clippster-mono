@@ -25,7 +25,7 @@ export interface UserInstagramAccount {
 
 export interface UserPost {
   id: number;
-  platform: 'instagram';
+  platform: 'instagram' | 'x' | 'tiktok' | 'youtube';
   post_id: string;
   post_url: string | null;
   caption: string | null;
@@ -40,7 +40,8 @@ export interface UserPost {
   reach_count: number;
   impressions_count: number;
   synced_at: string | null;
-  published_at: string;
+  inserted_at: string;
+  updated_at: string;
 }
 
 export interface PublishPostData {

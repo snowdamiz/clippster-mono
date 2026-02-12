@@ -2675,24 +2675,18 @@
 
     if (!publishingBuild.value) return;
 
-    // Show loading state
     isUploadingMedia.value = true;
 
     try {
-      // 1. Read the video file from disk as data URL
       const { filePath, thumbnailUrl } = publishingBuild.value;
       const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath });
       const fileName = filePath.split(/[/\\]/).pop() || 'video.mp4';
       const videoFile = dataUrlToFile(videoDataUrl, fileName);
 
-      // 2. Optionally read thumbnail
       let thumbnailFile: File | undefined;
       if (thumbnailUrl) {
         try {
-          // Try to load thumbnail from local path
           const thumbPath = thumbnailUrl.startsWith('file://') ? thumbnailUrl.replace('file://', '') : thumbnailUrl;
-
-          // Check if it's a local path (not a data URL or http)
           if (!thumbPath.startsWith('data:') && !thumbPath.startsWith('http')) {
             const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
             thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
@@ -2702,7 +2696,6 @@
         }
       }
 
-      // 3. Upload to user storage (not organization)
       const uploadResult = await uploadUserMediaForPost(videoFile, thumbnailFile);
 
       if (!uploadResult.success || !uploadResult.media_url) {
@@ -2711,11 +2704,8 @@
 
       publishMediaUrl.value = uploadResult.media_url;
       publishThumbnailUrl.value = uploadResult.thumbnail_url || thumbnailUrl || '';
-
-      // 4. No creator profiles for personal publishing
       publishCreatorProfiles.value = [];
 
-      // 5. Open the platform-specific publish dialog without organization context
       if (selectedPlatform.value === 'twitter') {
         showTwitterPublishDialog.value = true;
       } else {
@@ -2738,24 +2728,18 @@
 
     if (!publishingBuild.value) return;
 
-    // Show loading state
     isUploadingMedia.value = true;
 
     try {
-      // 1. Read the video file from disk as data URL
       const { filePath, thumbnailUrl } = publishingBuild.value;
       const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath });
       const fileName = filePath.split(/[/\\]/).pop() || 'video.mp4';
       const videoFile = dataUrlToFile(videoDataUrl, fileName);
 
-      // 2. Optionally read thumbnail
       let thumbnailFile: File | undefined;
       if (thumbnailUrl) {
         try {
-          // Try to load thumbnail from local path
           const thumbPath = thumbnailUrl.startsWith('file://') ? thumbnailUrl.replace('file://', '') : thumbnailUrl;
-
-          // Check if it's a local path (not a data URL or http)
           if (!thumbPath.startsWith('data:') && !thumbPath.startsWith('http')) {
             const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
             thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
@@ -2765,7 +2749,6 @@
         }
       }
 
-      // 3. Upload to R2 storage
       const uploadResult = await uploadMediaForPost(org.id, videoFile, thumbnailFile);
 
       if (!uploadResult.success || !uploadResult.media_url) {
@@ -2775,10 +2758,8 @@
       publishMediaUrl.value = uploadResult.media_url;
       publishThumbnailUrl.value = uploadResult.thumbnail_url || thumbnailUrl || '';
 
-      // 4. Load creator profiles for this user
       const profilesResult = await getMyAssignedCreatorProfiles();
       if (profilesResult.success) {
-        // Filter to only profiles from the selected organization
         publishCreatorProfiles.value = profilesResult.profiles
           .filter((p) => String(p.organization_id) === String(org.id))
           .map((p) => ({ id: p.id, name: p.name }));
@@ -2786,7 +2767,6 @@
         publishCreatorProfiles.value = [];
       }
 
-      // 5. Open the platform-specific publish dialog
       if (selectedPlatform.value === 'twitter') {
         showTwitterPublishDialog.value = true;
       } else {

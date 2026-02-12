@@ -32,8 +32,9 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
 
   alias ClippsterServer.Social.VideoValidator
 
-  # X API v2 media upload endpoint (NOT v1.1 upload.twitter.com)
-  @upload_url "https://api.x.com/2/media/upload"
+  # X API v2 media upload endpoints (separate endpoints per operation)
+  @base_url "https://api.x.com/2/media/upload"
+  @init_url "https://api.x.com/2/media/upload/initialize"
 
   # Upload configuration
   @chunk_size 1_024_000  # 1MB chunks (recommended by X)
@@ -62,7 +63,7 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
   def upload_video(access_token, video_binary, opts \\ []) do
     media_type = opts[:media_type] || "video/mp4"
 
-    with {:ok, _} <- VideoValidator.validate(video_binary, opts),
+    with :ok <- VideoValidator.validate(video_binary, opts),
          {:ok, media_id} <- init_upload(access_token, byte_size(video_binary), media_type),
          :ok <- append_chunks(access_token, media_id, video_binary),
          {:ok, processing_info} <- finalize_upload(access_token, media_id),
@@ -78,8 +79,7 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
   defp init_upload(access_token, total_bytes, media_type) do
     Logger.info("[TwitterUpload] INIT upload: #{total_bytes} bytes, type: #{media_type}")
 
-    body = URI.encode_query(%{
-      "command" => "INIT",
+    body = Jason.encode!(%{
       "media_type" => media_type,
       "total_bytes" => total_bytes,
       "media_category" => "tweet_video"
@@ -87,21 +87,31 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
 
     headers = [
       {"Authorization", "Bearer #{access_token}"},
-      {"Content-Type", "application/x-www-form-urlencoded"}
+      {"Content-Type", "application/json"}
     ]
 
-    http_options = [timeout: @http_timeout, recv_timeout: @http_timeout]
+    http_options = [timeout: @http_timeout, recv_timeout: @http_timeout, hackney: [pool: false]]
 
-    case HTTPoison.post(@upload_url, body, headers, http_options) do
+    case HTTPoison.post(@init_url, body, headers, http_options) do
       {:ok, %HTTPoison.Response{status_code: status, body: response_body}} when status in 200..299 ->
+        Logger.info("[TwitterUpload] INIT raw response: #{response_body}")
         case Jason.decode(response_body) do
-          {:ok, %{"media_id_string" => media_id}} ->
-            Logger.info("[TwitterUpload] INIT success: media_id=#{media_id}")
-            {:ok, media_id}
-
-          {:ok, response} ->
-            Logger.error("[TwitterUpload] INIT response missing media_id: #{inspect(response)}")
-            {:error, {:init_failed, :invalid_response}}
+          {:ok, parsed} ->
+            # v2 wraps in "data", extract the inner object
+            inner = Map.get(parsed, "data", parsed)
+            media_id = inner["media_id_string"] || inner["id"]
+            cond do
+              is_binary(media_id) && media_id != "" ->
+                Logger.info("[TwitterUpload] INIT success: media_id=#{media_id}")
+                {:ok, media_id}
+              is_integer(media_id) ->
+                media_id_str = Integer.to_string(media_id)
+                Logger.info("[TwitterUpload] INIT success: media_id=#{media_id_str}")
+                {:ok, media_id_str}
+              true ->
+                Logger.error("[TwitterUpload] INIT response missing media_id: #{inspect(parsed)}")
+                {:error, {:init_failed, :invalid_response}}
+            end
 
           {:error, decode_error} ->
             Logger.error("[TwitterUpload] INIT JSON decode error: #{inspect(decode_error)}")
@@ -147,33 +157,57 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
   end
 
   defp append_chunk(access_token, media_id, chunk_binary, segment_index) do
-    # Multipart form-data body
-    body = {:multipart, [
-      {"command", "APPEND"},
-      {"media_id", media_id},
-      {"segment_index", "#{segment_index}"},
-      {:file, chunk_binary, {"form-data", [name: "media"]}, []}
-    ]}
+    append_chunk_with_retry(access_token, media_id, chunk_binary, segment_index, 0)
+  end
 
-    headers = [
-      {"Authorization", "Bearer #{access_token}"}
-      # Do NOT set Content-Type -- HTTPoison sets it for multipart
-    ]
+  defp append_chunk_with_retry(_access_token, _media_id, _chunk_binary, segment_index, attempt) when attempt >= 3 do
+    Logger.error("[TwitterUpload] APPEND segment #{segment_index} failed after 3 retries")
+    {:error, {:append_failed, segment_index, :max_retries}}
+  end
 
-    http_options = [timeout: @append_timeout, recv_timeout: @append_timeout]
+  defp append_chunk_with_retry(access_token, media_id, chunk_binary, segment_index, attempt) do
+    append_url = "#{@base_url}/#{media_id}/append"
 
-    case HTTPoison.post(@upload_url, body, headers, http_options) do
-      {:ok, %HTTPoison.Response{status_code: status}} when status in [200, 202, 204] ->
-        :ok
+    # Write chunk to temp file — hackney's {:file, path} is the only reliable multipart format
+    tmp_dir = System.tmp_dir!()
+    tmp_path = Path.join(tmp_dir, "x_upload_#{media_id}_#{segment_index}_#{attempt}.tmp")
 
-      {:ok, %HTTPoison.Response{status_code: status, body: response_body}} ->
-        error = extract_error(response_body)
-        Logger.error("[TwitterUpload] APPEND segment #{segment_index} failed: status=#{status}, error=#{inspect(error)}")
-        {:error, {:append_failed, segment_index, status, error}}
+    try do
+      File.write!(tmp_path, chunk_binary)
 
-      {:error, reason} ->
-        Logger.error("[TwitterUpload] APPEND segment #{segment_index} HTTP error: #{inspect(reason)}")
-        {:error, {:append_failed, segment_index, reason}}
+      body = {:multipart, [
+        {"segment_index", "#{segment_index}"},
+        {:file, tmp_path, {"form-data", [name: "media", filename: "video.mp4"]}, [{"Content-Type", "application/octet-stream"}]}
+      ]}
+
+      headers = [
+        {"Authorization", "Bearer #{access_token}"}
+        # Do NOT set Content-Type -- HTTPoison sets it for multipart
+      ]
+
+      # Disable connection pooling to prevent :closed errors from stale connections
+      http_options = [timeout: @append_timeout, recv_timeout: @append_timeout, hackney: [pool: false]]
+
+      case HTTPoison.post(append_url, body, headers, http_options) do
+        {:ok, %HTTPoison.Response{status_code: status}} when status in [200, 202, 204] ->
+          :ok
+
+        {:ok, %HTTPoison.Response{status_code: status, body: response_body}} ->
+          error = extract_error(response_body)
+          Logger.error("[TwitterUpload] APPEND segment #{segment_index} failed: status=#{status}, error=#{inspect(error)}")
+          {:error, {:append_failed, segment_index, status, error}}
+
+        {:error, %HTTPoison.Error{reason: reason}} when reason in [:closed, :timeout, :connect_timeout] ->
+          Logger.warning("[TwitterUpload] APPEND segment #{segment_index} transient error: #{inspect(reason)}, retry #{attempt + 1}/3")
+          :timer.sleep(1000 * (attempt + 1))
+          append_chunk_with_retry(access_token, media_id, chunk_binary, segment_index, attempt + 1)
+
+        {:error, reason} ->
+          Logger.error("[TwitterUpload] APPEND segment #{segment_index} HTTP error: #{inspect(reason)}")
+          {:error, {:append_failed, segment_index, reason}}
+      end
+    after
+      File.rm(tmp_path)
     end
   end
 
@@ -184,29 +218,30 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
   defp finalize_upload(access_token, media_id) do
     Logger.info("[TwitterUpload] FINALIZE upload: media_id=#{media_id}")
 
-    body = URI.encode_query(%{
-      "command" => "FINALIZE",
-      "media_id" => media_id
-    })
+    finalize_url = "#{@base_url}/#{media_id}/finalize"
 
     headers = [
       {"Authorization", "Bearer #{access_token}"},
-      {"Content-Type", "application/x-www-form-urlencoded"}
+      {"Content-Type", "application/json"}
     ]
 
-    http_options = [timeout: @http_timeout, recv_timeout: @http_timeout]
+    http_options = [timeout: @http_timeout, recv_timeout: @http_timeout, hackney: [pool: false]]
 
-    case HTTPoison.post(@upload_url, body, headers, http_options) do
+    case HTTPoison.post(finalize_url, "{}", headers, http_options) do
       {:ok, %HTTPoison.Response{status_code: status, body: response_body}} when status in 200..299 ->
+        Logger.info("[TwitterUpload] FINALIZE raw response: #{response_body}")
         case Jason.decode(response_body) do
-          {:ok, %{"processing_info" => processing_info}} ->
-            Logger.info("[TwitterUpload] FINALIZE success: requires async processing")
-            {:ok, processing_info}
-
-          {:ok, _response} ->
-            # No processing_info means immediate success
-            Logger.info("[TwitterUpload] FINALIZE success: no async processing needed")
-            {:ok, nil}
+          {:ok, parsed} ->
+            # v2 wraps in "data"
+            inner = Map.get(parsed, "data", parsed)
+            processing_info = inner["processing_info"]
+            if processing_info do
+              Logger.info("[TwitterUpload] FINALIZE success: requires async processing")
+              {:ok, processing_info}
+            else
+              Logger.info("[TwitterUpload] FINALIZE success: no async processing needed")
+              {:ok, nil}
+            end
 
           {:error, decode_error} ->
             Logger.error("[TwitterUpload] FINALIZE JSON decode error: #{inspect(decode_error)}")
@@ -248,24 +283,31 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
       :timer.sleep(wait_seconds * 1000)
 
       case get_status(access_token, media_id) do
-        {:ok, %{"processing_info" => %{"state" => "succeeded"}}} ->
-          Logger.info("[TwitterUpload] STATUS succeeded after #{attempt + 1} attempts")
-          {:ok, :ready}
-
-        {:ok, %{"processing_info" => %{"state" => "failed"} = info}} ->
-          error = Map.get(info, "error", %{})
-          Logger.error("[TwitterUpload] STATUS failed: #{inspect(error)}")
-          {:error, {:processing_failed, error}}
-
-        {:ok, %{"processing_info" => %{"state" => state} = info}} when state in ["pending", "in_progress"] ->
-          next_check_after = Map.get(info, "check_after_secs", wait_seconds)
-          Logger.debug("[TwitterUpload] STATUS #{state}: attempt #{attempt + 1}/#{@max_poll_attempts}, next check in #{next_check_after}s")
-          do_poll(access_token, media_id, next_check_after, attempt + 1)
-
         {:ok, response} ->
-          Logger.warning("[TwitterUpload] STATUS unexpected response: #{inspect(response)}")
-          # Retry with same interval
-          do_poll(access_token, media_id, wait_seconds, attempt + 1)
+          # v2 wraps in "data", extract inner object
+          inner = Map.get(response, "data", response)
+          processing_info = inner["processing_info"]
+          state = processing_info && processing_info["state"]
+
+          case state do
+            "succeeded" ->
+              Logger.info("[TwitterUpload] STATUS succeeded after #{attempt + 1} attempts")
+              {:ok, :ready}
+
+            "failed" ->
+              error = Map.get(processing_info, "error", %{})
+              Logger.error("[TwitterUpload] STATUS failed: #{inspect(error)}")
+              {:error, {:processing_failed, error}}
+
+            s when s in ["pending", "in_progress"] ->
+              next_check_after = Map.get(processing_info, "check_after_secs", wait_seconds)
+              Logger.debug("[TwitterUpload] STATUS #{s}: attempt #{attempt + 1}/#{@max_poll_attempts}, next check in #{next_check_after}s")
+              do_poll(access_token, media_id, next_check_after, attempt + 1)
+
+            _ ->
+              Logger.warning("[TwitterUpload] STATUS unexpected response: #{inspect(response)}")
+              do_poll(access_token, media_id, wait_seconds, attempt + 1)
+          end
 
         {:error, reason} ->
           Logger.error("[TwitterUpload] STATUS check error: #{inspect(reason)}")
@@ -275,13 +317,13 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
   end
 
   defp get_status(access_token, media_id) do
-    url = "#{@upload_url}?command=STATUS&media_id=#{media_id}"
+    url = "#{@base_url}?media_id=#{media_id}"
 
     headers = [
       {"Authorization", "Bearer #{access_token}"}
     ]
 
-    http_options = [timeout: @http_timeout, recv_timeout: @http_timeout]
+    http_options = [timeout: @http_timeout, recv_timeout: @http_timeout, hackney: [pool: false]]
 
     case HTTPoison.get(url, headers, http_options) do
       {:ok, %HTTPoison.Response{status_code: status, body: response_body}} when status in 200..299 ->
@@ -305,10 +347,11 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
 
   defp extract_error(body) when is_binary(body) do
     case Jason.decode(body) do
+      {:ok, %{"detail" => detail}} -> detail
       {:ok, %{"error" => %{"message" => message}}} -> message
       {:ok, %{"error" => error}} when is_binary(error) -> error
       {:ok, %{"errors" => [%{"message" => message} | _]}} -> message
-      {:ok, response} -> response
+      {:ok, response} -> inspect(response)
       {:error, _} -> body
     end
   end
