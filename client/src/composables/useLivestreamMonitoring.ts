@@ -1107,10 +1107,16 @@ export function useLivestreamMonitoring() {
 
       // Use platform-aware live status check
       const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
-      await updateMonitoredStreamer(streamer.id, {
+      const streamerUpdates: Record<string, any> = {
         last_check_timestamp: Math.floor(Date.now() / 1000),
         is_currently_live: status.isLive ? 1 : 0,
-      });
+      };
+      // Persist profile image if we got one and the streamer doesn't have one yet
+      if (status.profileImageUrl && !streamer.profileImageUrl) {
+        streamerUpdates.profile_image_url = status.profileImageUrl;
+        streamer.profileImageUrl = status.profileImageUrl;
+      }
+      await updateMonitoredStreamer(streamer.id, streamerUpdates);
 
       const sessionActive = activeSessions.value.has(streamer.id);
       const hasDvrRecording = dvrSessions.value.has(streamer.id);
@@ -1150,7 +1156,8 @@ export function useLivestreamMonitoring() {
         streamer.id,
         streamer.mintId,
         streamer.displayName,
-        status.streamStartTimestamp ? Math.floor(status.streamStartTimestamp / 1000) : undefined
+        status.streamStartTimestamp ? Math.floor(status.streamStartTimestamp / 1000) : undefined,
+        streamer.platform
       );
 
       // Use the streamer's configured segment duration, defaulting to 5 minutes

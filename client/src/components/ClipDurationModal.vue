@@ -234,6 +234,7 @@
     mintId?: string; // Also used as session identifier for DVR mode
     isTempRecording?: boolean;
     streamerId?: string; // For campaign context lookup
+    platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual';
   }
 
   interface Emits {
@@ -389,7 +390,7 @@
       // Create a new project for this clip (first clip from temp/DVR recording)
       try {
         progressMessage.value = 'Creating project folder...';
-        effectiveProjectId = await createLivestreamClipProject(props.displayName, props.mintId);
+        effectiveProjectId = await createLivestreamClipProject(props.displayName, props.mintId, props.platform);
         createdProjectId.value = effectiveProjectId;
         console.log('[ClipModal] Created project for DVR/temp recording clip:', effectiveProjectId);
       } catch (err) {
