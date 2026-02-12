@@ -1120,20 +1120,62 @@ pub struct StickerSettings {
     pub per_ratio_configs: Option<std::collections::HashMap<String, StickerRatioConfig>>,
 }
 
+/// Per-aspect-ratio position config for a layout overlay
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OverlayRatioConfig {
+    #[serde(default = "default_50")]
+    pub x: f64,
+    #[serde(default = "default_50")]
+    pub y: f64,
+    #[serde(default)]
+    pub width: f64,
+    #[serde(default)]
+    pub height: f64,
+    #[serde(default = "default_100")]
+    pub opacity: f64,
+    #[serde(default)]
+    pub rotation: f64,
+    #[serde(default = "default_overlay_scale")]
+    pub scale: f64,
+    #[serde(default)]
+    pub is_full_frame_overlay: Option<bool>,
+}
+
+fn default_50() -> f64 { 50.0 }
+fn default_100() -> f64 { 100.0 }
+
 /// Layout overlay settings for VOD preset overlays (borders, dividers, decorative elements)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutOverlaySettings {
     pub id: String,
     pub image_path: String,  // Local file path to uploaded PNG
+    #[serde(default = "default_50")]
     pub x: f64,              // 0-100 percentage position (center-based)
+    #[serde(default = "default_50")]
     pub y: f64,              // 0-100 percentage position (center-based)
-    pub width: f64,          // 0-100 percentage of target frame width
-    pub height: f64,         // 0-100 percentage of target frame height
+    #[serde(default)]
+    pub width: f64,          // 0-100 percentage of target frame width (legacy)
+    #[serde(default)]
+    pub height: f64,         // 0-100 percentage of target frame height (legacy)
+    #[serde(default = "default_100")]
     pub opacity: f64,        // 0-100
+    #[serde(default)]
     pub rotation: f64,       // degrees
+    #[serde(default = "default_overlay_scale")]
+    pub scale: f64,          // 0-100 percentage scale (like watermark)
+    #[serde(default)]
+    pub is_full_frame_overlay: Option<bool>, // When true, position at 0,0 with 100% scale
     #[serde(default)]
     pub label: Option<String>,
+    /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
+    #[serde(default)]
+    pub per_ratio_settings: Option<std::collections::HashMap<String, OverlayRatioConfig>>,
+}
+
+fn default_overlay_scale() -> f64 {
+    20.0
 }
 
 /// Clip watermark ratio config for per-aspect-ratio positioning

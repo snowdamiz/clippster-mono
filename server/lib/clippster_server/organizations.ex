@@ -504,7 +504,17 @@ defmodule ClippsterServer.Organizations do
         case create_verified_user(email, password, organization_id, name) do
           {:ok, user} ->
             # Add as member - mark as restricted since account was created by org
-            {:ok, _member} = add_member_restricted(organization_id, user.id, role)
+            {:ok, member} = add_member_restricted(organization_id, user.id, role)
+
+            # Auto-assign global branding profile if one exists
+            case get_global_branding_profile(organization_id) do
+              %OrganizationCreatorProfile{id: profile_id} ->
+                member
+                |> OrganizationMember.update_branding_profile_changeset(%{branding_profile_id: profile_id})
+                |> Repo.update()
+
+              nil -> :ok
+            end
 
             # Initialize credit allocation
             {:ok, _allocation} = %MemberCreditAllocation{}
@@ -1108,6 +1118,28 @@ defmodule ClippsterServer.Organizations do
   end
 
   @doc """
+  Gets the global branding profile for an organization (if one exists).
+  Returns the first profile with scope "global", or nil.
+  """
+  def get_global_branding_profile(organization_id) do
+    OrganizationCreatorProfile
+    |> where([p], p.organization_id == ^organization_id and p.scope == "global")
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  @doc """
+  Assigns the global branding profile to all restricted (org-created) members
+  of the given organization. Skips non-restricted (invited/hired) members.
+  """
+  def assign_global_branding_to_restricted_members(organization_id, branding_profile_id) do
+    from(m in OrganizationMember,
+      where: m.organization_id == ^organization_id and m.is_restricted == true
+    )
+    |> Repo.update_all(set: [branding_profile_id: branding_profile_id])
+  end
+
+  @doc """
   Lists creator profiles for an organization filtered by scope.
   """
   def list_creator_profiles_by_scope(organization_id, scope) when scope in ["streamer", "global"] do
@@ -1148,6 +1180,11 @@ defmodule ClippsterServer.Organizations do
       |> Repo.insert()
       |> case do
         {:ok, profile} ->
+          # If this is a global branding profile, assign it to all existing restricted members
+          if profile.scope == "global" do
+            assign_global_branding_to_restricted_members(organization_id, profile.id)
+          end
+
           {:ok, get_creator_profile(profile.id)}
         error ->
           error
@@ -1168,6 +1205,11 @@ defmodule ClippsterServer.Organizations do
       |> Repo.update()
       |> case do
         {:ok, updated} ->
+          # If this is a global branding profile, ensure all restricted members point to it
+          if updated.scope == "global" do
+            assign_global_branding_to_restricted_members(updated.organization_id, updated.id)
+          end
+
           {:ok, get_creator_profile(updated.id)}
         error ->
           error

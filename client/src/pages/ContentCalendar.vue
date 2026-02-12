@@ -20,6 +20,7 @@ import {
 import { useAuthStore } from '@/stores/auth';
 import { listScheduledPosts, listOrgScheduledPosts, listExternalPosts, type ScheduledPost, type ExternalPostSubmission } from '@/services/schedulingApi';
 import { listOrganizationCampaigns, listMyCampaigns, type Campaign } from '@/services/campaignApi';
+import { listUserPosts, type UserPost } from '@/services/userInstagramApi';
 
 // ── State ──
 const authStore = useAuthStore();
@@ -29,6 +30,7 @@ const error = ref<string | null>(null);
 const scheduledPosts = ref<ScheduledPost[]>([]);
 const campaigns = ref<Campaign[]>([]);
 const externalSubmissions = ref<ExternalPostSubmission[]>([]);
+const userPosts = ref<UserPost[]>([]);
 
 // Calendar state
 const currentDate = ref(new Date());
@@ -125,6 +127,26 @@ const calendarEvents = computed((): CalendarEvent[] => {
       platform: post.platform,
       color: getPostStatusColor(post.status),
       data: post,
+    });
+  }
+
+  // User direct posts (published via publish_twitter / publish_instagram)
+  for (const post of userPosts.value) {
+    const dateStr = post.inserted_at;
+    if (!dateStr) continue;
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) continue;
+
+    const platformLabel = post.platform === 'x' ? 'X' : post.platform;
+    events.push({
+      id: `user-post-${post.id}`,
+      title: post.caption ? post.caption.substring(0, 40) : `${platformLabel} post`,
+      date,
+      type: 'scheduled-post',
+      status: post.status,
+      platform: post.platform === 'x' ? 'twitter' : post.platform,
+      color: getPostStatusColor(post.status),
+      data: post as any,
     });
   }
 
@@ -316,6 +338,7 @@ async function loadData() {
       loadScheduledPosts(),
       loadCampaigns(),
       loadExternalSubmissions(),
+      loadUserPosts(),
     ]);
 
     const errors = results
@@ -346,6 +369,17 @@ async function loadScheduledPosts() {
     }
   } catch (err) {
     console.warn('[ContentCalendar] Failed to load scheduled posts:', err);
+  }
+}
+
+async function loadUserPosts() {
+  try {
+    const response = await listUserPosts();
+    if (response.success && response.posts) {
+      userPosts.value = response.posts;
+    }
+  } catch (err) {
+    console.warn('[ContentCalendar] Failed to load user posts:', err);
   }
 }
 
@@ -405,7 +439,7 @@ const stats = computed(() => {
     return d > now && (p.status === 'scheduled' || p.status === 'pending');
   }).length;
 
-  const published = scheduledPosts.value.filter((p) => p.status === 'published').length;
+  const published = scheduledPosts.value.filter((p) => p.status === 'published').length + userPosts.value.filter((p) => p.status === 'published').length;
 
   const activeCampaigns = campaigns.value.filter((c) => c.status === 'active').length;
 

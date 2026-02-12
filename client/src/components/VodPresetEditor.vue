@@ -159,21 +159,22 @@
                       />
                       <div class="text-[10px] text-zinc-500 font-mono mt-0.5">
                         {{ overlay.x.toFixed(0) }}%, {{ overlay.y.toFixed(0) }}% · {{ overlay.width.toFixed(0) }}×{{ overlay.height.toFixed(0) }}% · {{ overlay.opacity }}% opacity
+                        <span v-if="overlayConfiguredRatioCount(overlay) > 0" class="text-amber-400 ml-1">
+                          · {{ overlayConfiguredRatioCount(overlay) }}/4 ratios
+                        </span>
                       </div>
                     </div>
 
                     <!-- Controls -->
                     <div class="flex items-center gap-1.5">
-                      <div class="flex items-center gap-1">
-                        <label class="text-[10px] text-zinc-500">Opacity</label>
-                        <input
-                          type="range"
-                          v-model.number="overlay.opacity"
-                          min="0"
-                          max="100"
-                          class="w-16 h-1 accent-amber-500"
-                        />
-                      </div>
+                      <button
+                        @click="openOverlayPositionPicker(idx)"
+                        class="px-2 py-1 text-[10px] font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded transition-colors"
+                        title="Configure position per aspect ratio"
+                      >
+                        <MoveIcon class="w-3 h-3 inline mr-0.5" />
+                        Position
+                      </button>
                       <button
                         @click="removeLayoutOverlay(idx)"
                         class="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors opacity-0 group-hover:opacity-100"
@@ -246,10 +247,84 @@
                 </div>
 
                 <!-- Custom Watermark Settings (only when mode is 'custom') -->
-                <div v-if="watermarkMode === 'custom' && !hasCreatorProfile" class="mt-3 p-3 bg-zinc-800/30 border border-zinc-700/30 rounded-lg">
-                  <p class="text-xs text-zinc-400 mb-2">
-                    Custom watermark settings will be applied during clip build. Configure position and opacity in the build dialog.
-                  </p>
+                <div v-if="watermarkMode === 'custom' && !hasCreatorProfile" class="mt-3 space-y-3">
+                  <!-- Watermark Image Selection -->
+                  <div class="p-3 bg-zinc-800/30 border border-zinc-700/30 rounded-lg">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-xs text-zinc-400">Watermark Image</span>
+                      <button
+                        @click="uploadCustomWatermark"
+                        :disabled="uploadingCustomWatermark"
+                        class="text-[10px] text-pink-400 hover:text-pink-300 transition-colors"
+                      >
+                        {{ uploadingCustomWatermark ? 'Uploading...' : '+ Upload New' }}
+                      </button>
+                    </div>
+                    <div class="relative">
+                      <button
+                        type="button"
+                        @click.stop="showCustomWatermarkDropdown = !showCustomWatermarkDropdown"
+                        class="w-full px-2.5 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-left flex items-center justify-between hover:border-zinc-600 transition-all text-xs text-zinc-300"
+                      >
+                        <div class="flex items-center gap-2">
+                          <div class="w-6 h-6 rounded bg-zinc-700 border border-zinc-600 flex items-center justify-center overflow-hidden flex-shrink-0">
+                            <img
+                              v-if="selectedCustomWatermarkPreview"
+                              :src="selectedCustomWatermarkPreview"
+                              class="max-w-full max-h-full object-contain"
+                              alt=""
+                            />
+                            <ImageIcon v-else class="w-3 h-3 text-zinc-500" />
+                          </div>
+                          <span class="truncate">{{ selectedCustomWatermarkName || 'Select watermark...' }}</span>
+                        </div>
+                        <ChevronDownIcon class="h-3.5 w-3.5 text-zinc-500 transition-transform flex-shrink-0 ml-1" :class="{ 'rotate-180': showCustomWatermarkDropdown }" />
+                      </button>
+
+                      <!-- Dropdown -->
+                      <div
+                        v-if="showCustomWatermarkDropdown"
+                        class="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-y-auto max-h-40"
+                        @click.stop
+                      >
+                        <button
+                          v-for="wm in customWatermarkList"
+                          :key="wm.id"
+                          @click="selectCustomWatermark(wm)"
+                          class="w-full text-left px-2.5 py-2 hover:bg-zinc-800 transition-colors text-xs flex items-center gap-2"
+                          :class="{ 'bg-pink-500/10 text-pink-300': selectedCustomWatermarkId === wm.id }"
+                        >
+                          <div class="w-6 h-6 rounded bg-zinc-800 border border-zinc-700 flex items-center justify-center overflow-hidden">
+                            <img
+                              v-if="customWatermarkPreviews[wm.id]"
+                              :src="customWatermarkPreviews[wm.id]"
+                              class="max-w-full max-h-full object-contain"
+                              alt=""
+                            />
+                            <ImageIcon v-else class="w-3 h-3 text-zinc-500" />
+                          </div>
+                          <span class="truncate text-zinc-300">{{ wm.name }}</span>
+                        </button>
+                        <div v-if="customWatermarkList.length === 0" class="px-2.5 py-3 text-xs text-center text-zinc-500">
+                          No watermarks available. Upload one above.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Position Configuration -->
+                  <div v-if="selectedCustomWatermarkId" class="flex items-center gap-2">
+                    <button
+                      @click="openWatermarkPositionPicker"
+                      class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-pink-400 hover:text-pink-300 bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 rounded-lg transition-colors"
+                    >
+                      <MoveIcon class="w-3.5 h-3.5" />
+                      Configure Position
+                    </button>
+                    <span v-if="watermarkConfiguredRatioCount > 0" class="text-[10px] text-pink-400">
+                      {{ watermarkConfiguredRatioCount }}/4 ratios
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -348,10 +423,33 @@
       </div>
     </Transition>
   </Teleport>
+
+  <!-- Watermark Position Picker Sub-Dialog -->
+  <WatermarkPositionPicker
+    :show="showWatermarkPositionPickerDialog"
+    :watermark-file-path="selectedCustomWatermarkFilePath"
+    :watermark-id="selectedCustomWatermarkId"
+    :watermark-width="selectedCustomWatermarkDimensions.width"
+    :watermark-height="selectedCustomWatermarkDimensions.height"
+    :settings="customWatermarkPositionSettings || undefined"
+    @close="showWatermarkPositionPickerDialog = false"
+    @save="handleWatermarkPositionSave"
+  />
+
+  <!-- Overlay Position Picker Sub-Dialog -->
+  <OverlayPositionPicker
+    :show="showOverlayPositionPickerDialog"
+    :overlay-image-path="activeOverlayForPosition?.imagePath || ''"
+    :overlay-label="activeOverlayForPosition?.label || ''"
+    :settings="activeOverlayForPosition?.perRatioSettings || undefined"
+    @close="showOverlayPositionPickerDialog = false"
+    @save="handleOverlayPositionSave"
+  />
 </template>
 
 <script setup lang="ts">
   import { ref, watch, computed, reactive } from 'vue';
+  import { invoke } from '@tauri-apps/api/core';
   import {
     LayoutDashboardIcon,
     XIcon,
@@ -367,8 +465,14 @@
     InfoIcon,
     RatioIcon,
     StampIcon,
+    MoveIcon,
+    ChevronDownIcon,
   } from 'lucide-vue-next';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
+  import WatermarkPositionPicker, { type CreatorWatermarkSettings } from './WatermarkPositionPicker.vue';
+  import OverlayPositionPicker from './OverlayPositionPicker.vue';
+  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
+  import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import type {
     ManualRegion,
     ManualFramingConfig,
@@ -376,6 +480,7 @@
     ActiveVodPresetConfig,
     VodPreset,
     WatermarkSettings,
+    PerRatioOverlaySettings,
   } from '@/types';
   import {
     getAllVodPresets,
@@ -437,6 +542,64 @@
 
   // Framing editor state
   const showFramingEditor = ref(false);
+
+  // Watermark operations
+  const { uploadWatermark } = useWatermarkOperations();
+
+  // Custom watermark state
+  const customWatermarkList = ref<WatermarkImage[]>([]);
+  const customWatermarkPreviews = reactive<Record<string, string>>({});
+  const selectedCustomWatermarkId = ref<string | null>(null);
+  const showCustomWatermarkDropdown = ref(false);
+  const uploadingCustomWatermark = ref(false);
+  const customWatermarkPositionSettings = ref<CreatorWatermarkSettings | null>(null);
+
+  // Watermark position picker dialog state
+  const showWatermarkPositionPickerDialog = ref(false);
+
+  // Overlay position picker dialog state
+  const showOverlayPositionPickerDialog = ref(false);
+  const activeOverlayIndex = ref<number>(-1);
+  const activeOverlayForPosition = computed(() => {
+    if (activeOverlayIndex.value < 0 || activeOverlayIndex.value >= layoutOverlays.value.length) return null;
+    return layoutOverlays.value[activeOverlayIndex.value];
+  });
+
+  // Computed watermark properties
+  const selectedCustomWatermarkPreview = computed(() => {
+    if (!selectedCustomWatermarkId.value) return null;
+    return customWatermarkPreviews[selectedCustomWatermarkId.value] || null;
+  });
+
+  const selectedCustomWatermarkName = computed(() => {
+    if (!selectedCustomWatermarkId.value) return null;
+    const wm = customWatermarkList.value.find((w) => w.id === selectedCustomWatermarkId.value);
+    return wm?.name || null;
+  });
+
+  const selectedCustomWatermarkFilePath = computed(() => {
+    if (!selectedCustomWatermarkId.value) return undefined;
+    const wm = customWatermarkList.value.find((w) => w.id === selectedCustomWatermarkId.value);
+    return wm?.file_path;
+  });
+
+  const selectedCustomWatermarkDimensions = computed(() => {
+    if (!selectedCustomWatermarkId.value) return { width: null, height: null };
+    const wm = customWatermarkList.value.find((w) => w.id === selectedCustomWatermarkId.value);
+    return { width: wm?.width ?? null, height: wm?.height ?? null };
+  });
+
+  const watermarkConfiguredRatioCount = computed(() => {
+    if (!customWatermarkPositionSettings.value) return 0;
+    const s = customWatermarkPositionSettings.value;
+    return [s['16:9'], s['9:16'], s['1:1'], s['4:5']].filter((v) => v !== null && v !== undefined).length;
+  });
+
+  function overlayConfiguredRatioCount(overlay: LayoutOverlay): number {
+    if (!overlay.perRatioSettings) return 0;
+    const s = overlay.perRatioSettings;
+    return [s['16:9'], s['9:16'], s['1:1'], s['4:5']].filter((v) => v !== null && v !== undefined).length;
+  }
 
   const hasCreatorProfile = computed(() => !!props.creatorProfileId);
   const hasExistingConfig = computed(() => !!props.initialConfig);
@@ -553,6 +716,144 @@
     }
   }
 
+  // ==========================================
+  // Custom Watermark Management
+  // ==========================================
+
+  async function loadCustomWatermarks() {
+    try {
+      customWatermarkList.value = await getAllWatermarkImages();
+      for (const wm of customWatermarkList.value) {
+        if (!customWatermarkPreviews[wm.id]) {
+          try {
+            const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: wm.file_path });
+            customWatermarkPreviews[wm.id] = dataUrl;
+          } catch (err) {
+            console.warn('[VodPresetEditor] Failed to load watermark preview:', wm.id, err);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[VodPresetEditor] Failed to load watermarks:', error);
+    }
+  }
+
+  function selectCustomWatermark(wm: WatermarkImage) {
+    selectedCustomWatermarkId.value = wm.id;
+    showCustomWatermarkDropdown.value = false;
+
+    // Update the customWatermarkSettings with the selected watermark ID
+    if (!customWatermarkSettings.value) {
+      customWatermarkSettings.value = {
+        enabled: true,
+        watermarkId: wm.id,
+        positionX: 12,
+        positionY: 92,
+        opacity: 80,
+        scale: 20,
+        width: wm.width ?? null,
+        height: wm.height ?? null,
+      };
+    } else {
+      customWatermarkSettings.value.watermarkId = wm.id;
+      customWatermarkSettings.value.enabled = true;
+      customWatermarkSettings.value.width = wm.width ?? null;
+      customWatermarkSettings.value.height = wm.height ?? null;
+    }
+  }
+
+  async function uploadCustomWatermark() {
+    if (uploadingCustomWatermark.value) return;
+    uploadingCustomWatermark.value = true;
+
+    try {
+      const result = await uploadWatermark();
+      if (result.success && result.watermarkId) {
+        await loadCustomWatermarks();
+        const newWm = customWatermarkList.value.find((w) => w.id === result.watermarkId);
+        if (newWm) {
+          selectCustomWatermark(newWm);
+        }
+      }
+    } catch (err) {
+      console.error('[VodPresetEditor] Failed to upload watermark:', err);
+    } finally {
+      uploadingCustomWatermark.value = false;
+    }
+  }
+
+  function openWatermarkPositionPicker() {
+    if (!selectedCustomWatermarkId.value) return;
+    showWatermarkPositionPickerDialog.value = true;
+  }
+
+  function handleWatermarkPositionSave(settings: CreatorWatermarkSettings) {
+    customWatermarkPositionSettings.value = settings;
+    showWatermarkPositionPickerDialog.value = false;
+
+    // Also update the customWatermarkSettings with per-ratio data
+    if (customWatermarkSettings.value) {
+      // Map CreatorWatermarkSettings to WatermarkSettings.perRatioSettings
+      customWatermarkSettings.value.perRatioSettings = {
+        '16:9': settings['16:9'] ? {
+          watermarkId: settings['16:9'].watermarkId,
+          position: settings['16:9'].position,
+        } : null,
+        '9:16': settings['9:16'] ? {
+          watermarkId: settings['9:16'].watermarkId,
+          position: settings['9:16'].position,
+        } : null,
+        '1:1': settings['1:1'] ? {
+          watermarkId: settings['1:1'].watermarkId,
+          position: settings['1:1'].position,
+        } : null,
+        '4:5': settings['4:5'] ? {
+          watermarkId: settings['4:5'].watermarkId,
+          position: settings['4:5'].position,
+        } : null,
+      };
+
+      // Update main position from the first enabled ratio
+      const firstEnabled = settings['16:9'] || settings['9:16'] || settings['1:1'] || settings['4:5'];
+      if (firstEnabled?.position) {
+        customWatermarkSettings.value.positionX = firstEnabled.position.x;
+        customWatermarkSettings.value.positionY = firstEnabled.position.y;
+        customWatermarkSettings.value.opacity = firstEnabled.position.opacity;
+        customWatermarkSettings.value.scale = firstEnabled.position.scale;
+        customWatermarkSettings.value.isFullFrameOverlay = firstEnabled.position.isFullFrameOverlay;
+      }
+    }
+  }
+
+  // ==========================================
+  // Overlay Position Management
+  // ==========================================
+
+  function openOverlayPositionPicker(idx: number) {
+    activeOverlayIndex.value = idx;
+    showOverlayPositionPickerDialog.value = true;
+  }
+
+  function handleOverlayPositionSave(settings: PerRatioOverlaySettings) {
+    if (activeOverlayIndex.value < 0 || activeOverlayIndex.value >= layoutOverlays.value.length) return;
+
+    const overlay = layoutOverlays.value[activeOverlayIndex.value];
+    overlay.perRatioSettings = settings;
+
+    // Also update the flat position fields from the first enabled ratio as defaults
+    const firstEnabled = settings['16:9'] || settings['9:16'] || settings['1:1'] || settings['4:5'];
+    if (firstEnabled) {
+      overlay.x = firstEnabled.x;
+      overlay.y = firstEnabled.y;
+      overlay.width = firstEnabled.width;
+      overlay.height = firstEnabled.height;
+      overlay.opacity = firstEnabled.opacity;
+      overlay.rotation = firstEnabled.rotation;
+    }
+
+    showOverlayPositionPickerDialog.value = false;
+  }
+
   // Save template
   async function saveTemplate() {
     if (!templateName.value.trim()) return;
@@ -628,6 +929,26 @@
             ? JSON.parse(JSON.stringify(props.initialConfig.customWatermarkSettings))
             : null;
           selectedTemplateId.value = props.initialConfig.presetId || '';
+
+          // Restore custom watermark selection from saved settings
+          if (customWatermarkSettings.value?.watermarkId) {
+            selectedCustomWatermarkId.value = customWatermarkSettings.value.watermarkId;
+          } else {
+            selectedCustomWatermarkId.value = null;
+          }
+
+          // Restore watermark position settings from perRatioSettings
+          if (customWatermarkSettings.value?.perRatioSettings) {
+            const prs = customWatermarkSettings.value.perRatioSettings;
+            customWatermarkPositionSettings.value = {
+              '16:9': prs['16:9'] ? { watermarkId: prs['16:9'].watermarkId, position: prs['16:9'].position } : null,
+              '9:16': prs['9:16'] ? { watermarkId: prs['9:16'].watermarkId, position: prs['9:16'].position } : null,
+              '1:1': prs['1:1'] ? { watermarkId: prs['1:1'].watermarkId, position: prs['1:1'].position } : null,
+              '4:5': prs['4:5'] ? { watermarkId: prs['4:5'].watermarkId, position: prs['4:5'].position } : null,
+            };
+          } else {
+            customWatermarkPositionSettings.value = null;
+          }
         } else {
           selectedAspectRatio.value = '9:16';
           framingRegions.value = [];
@@ -635,11 +956,17 @@
           watermarkMode.value = hasCreatorProfile.value ? 'creator' : 'none';
           customWatermarkSettings.value = null;
           selectedTemplateId.value = '';
+          selectedCustomWatermarkId.value = null;
+          customWatermarkPositionSettings.value = null;
         }
 
-        // Load templates and overlay previews
+        // Reset dropdown state
+        showCustomWatermarkDropdown.value = false;
+
+        // Load templates, overlay previews, and watermarks
         await loadTemplates();
         await loadOverlayPreviews();
+        await loadCustomWatermarks();
       }
     },
     { immediate: true }

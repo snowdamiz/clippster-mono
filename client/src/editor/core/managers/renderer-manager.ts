@@ -115,6 +115,16 @@ interface TauriBrandingWatermark {
 	is_full_frame: boolean;
 }
 
+interface TauriBrandingOverlay {
+	image_path: string;
+	x: number;
+	y: number;
+	scale: number;
+	opacity: number;
+	rotation: number;
+	is_full_frame: boolean;
+}
+
 interface TauriTransitionData {
 	transition_type: string;
 	duration: number;
@@ -134,6 +144,7 @@ interface TauriExportConfig {
 	height: number;
 	cover_timestamp: number | null;
 	branding_watermark: TauriBrandingWatermark | null;
+	branding_overlays: TauriBrandingOverlay[] | null;
 	intro_path: string | null;
 	intro_duration: number | null;
 	outro_path: string | null;
@@ -142,6 +153,7 @@ interface TauriExportConfig {
 
 interface BrandingExportData {
 	watermark: TauriBrandingWatermark | null;
+	overlays: TauriBrandingOverlay[] | null;
 	introPath: string | null;
 	introDuration: number | null;
 	outroPath: string | null;
@@ -428,6 +440,7 @@ export class RendererManager {
 			height: canvasSize.height,
 			cover_timestamp: coverTimestamp ?? null,
 			branding_watermark: brandingExport.watermark,
+			branding_overlays: brandingExport.overlays,
 			intro_path: brandingExport.introPath,
 			intro_duration: brandingExport.introDuration,
 			outro_path: brandingExport.outroPath,
@@ -672,6 +685,7 @@ export class RendererManager {
 	}): Promise<BrandingExportData> {
 		const result: BrandingExportData = {
 			watermark: null,
+			overlays: null,
 			introPath: null,
 			introDuration: null,
 			outroPath: null,
@@ -679,7 +693,7 @@ export class RendererManager {
 		};
 
 		try {
-			const { getWatermarkForCanvasSize, getActiveIntro, getActiveOutro } = useBrandingConfig();
+			const { getWatermarkForCanvasSize, getOverlaysForCanvasSize, getActiveIntro, getActiveOutro } = useBrandingConfig();
 
 			// Detect aspect ratio from canvas size
 			const ratioMap: Record<string, AspectRatioId> = {
@@ -705,6 +719,20 @@ export class RendererManager {
 						is_full_frame: wmConfig.position.isFullFrameOverlay ?? false,
 					};
 				}
+			}
+
+			// Resolve layout overlays
+			const overlayConfigs = getOverlaysForCanvasSize(canvasSize.width, canvasSize.height);
+			if (overlayConfigs && overlayConfigs.length > 0) {
+				result.overlays = overlayConfigs.map(oc => ({
+					image_path: oc.imagePath,
+					x: oc.x,
+					y: oc.y,
+					scale: oc.scale,
+					opacity: oc.opacity,
+					rotation: oc.rotation,
+					is_full_frame: oc.isFullFrameOverlay ?? false,
+				}));
 			}
 
 			if (!aspectRatio) {

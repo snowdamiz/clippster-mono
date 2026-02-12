@@ -19,11 +19,24 @@ export interface BrandingIntroOutroConfig {
 	duration?: number;
 }
 
+export interface BrandingOverlayConfig {
+	id: string;
+	imagePath: string;
+	x: number;
+	y: number;
+	scale: number;
+	opacity: number;
+	rotation: number;
+	isFullFrameOverlay?: boolean;
+	label?: string;
+}
+
 export interface BrandingConfig {
 	creatorProfileId?: string | null;
 	watermarks: Record<string, BrandingWatermarkConfig | null>;
 	intros: Record<string, BrandingIntroOutroConfig | null>;
 	outros: Record<string, BrandingIntroOutroConfig | null>;
+	layoutOverlays: Record<string, BrandingOverlayConfig[] | null>;
 }
 
 export type TBackground =

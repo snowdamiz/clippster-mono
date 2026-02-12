@@ -1354,6 +1354,7 @@
       outro_id: profile.outro_id ? `org-asset-${profile.outro_id}` : null,
       watermark_id: profile.watermark_id ? `org-asset-${profile.watermark_id}` : null,
       watermark_settings: profile.watermark_settings ? JSON.stringify(profile.watermark_settings) : null,
+      layout_overlays: profile.layout_overlays ? JSON.stringify(profile.layout_overlays) : null,
       intro_outro_settings: (profile as any).intro_outro_settings ? JSON.stringify((profile as any).intro_outro_settings) : null,
       intro_ratio_settings: (profile as any).intro_ratio_settings ? JSON.stringify((profile as any).intro_ratio_settings) : null,
       outro_ratio_settings: (profile as any).outro_ratio_settings ? JSON.stringify((profile as any).outro_ratio_settings) : null,

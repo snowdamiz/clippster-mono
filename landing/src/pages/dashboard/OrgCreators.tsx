@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/useToast'
 import type { ServerOrganizationCreatorProfile, OrganizationMember } from '@/types/organization'
 import {
   UserCircle, Plus, Users, Pencil, Trash2, Link2, MoreVertical,
-  Layers, X, Loader2, Play, SkipForward, Image as ImageIcon, Check, User
+  Layers, X, Loader2, Play, SkipForward, Image as ImageIcon, Check, User, Paintbrush
 } from 'lucide-react'
 
 function getPlatformIcon(platform: string): string {
@@ -50,6 +50,7 @@ export function OrgCreators() {
   // Profile dialog
   const [showProfileDialog, setShowProfileDialog] = useState(false)
   const [editProfile, setEditProfile] = useState<ServerOrganizationCreatorProfile | null>(null)
+  const [profileDialogScope, setProfileDialogScope] = useState<'streamer' | 'global'>('streamer')
 
   // Delete dialog
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
@@ -167,7 +168,10 @@ export function OrgCreators() {
 
   return (
     <PageLayout icon={UserCircle} title="Creator Profiles" description="Manage creator profiles and assign them to team members" actions={
-      isAdmin && <button onClick={() => { setEditProfile(null); setShowProfileDialog(true) }} className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-cyan-400 text-[#0a0a0b] border-none cursor-pointer transition-opacity duration-150 hover:opacity-90"><Plus className="w-3.5 h-3.5" /> Add Profile</button>
+      isAdmin && <div className="flex gap-2">
+        <button onClick={() => { setEditProfile(null); setProfileDialogScope('global'); setShowProfileDialog(true) }} className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-[#1f1f23] text-[#fafafa] border border-[#27272a] cursor-pointer transition-all duration-150 hover:bg-[#27272a]"><Paintbrush className="w-3.5 h-3.5" /> Global Branding</button>
+        <button onClick={() => { setEditProfile(null); setProfileDialogScope('streamer'); setShowProfileDialog(true) }} className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-cyan-400 text-[#0a0a0b] border-none cursor-pointer transition-opacity duration-150 hover:opacity-90"><Plus className="w-3.5 h-3.5" /> Add Profile</button>
+      </div>
     }>
       <div className="oc">
         {/* Page Heading */}
@@ -238,7 +242,10 @@ export function OrgCreators() {
                       )}
                     </div>
                     <div className="oc-card__info">
-                      <div className="oc-card__name">{profile.name}</div>
+                      <div className="oc-card__name" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {profile.name}
+                        {(profile as any).scope === 'global' && <span style={{ display: 'inline-flex', alignItems: 'center', padding: '0.125rem 0.5rem', fontSize: '0.625rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', borderRadius: '9999px', backgroundColor: 'rgba(139,92,246,0.15)', color: '#a78bfa', flexShrink: 0 }}>Global</span>}
+                      </div>
                       <div className="oc-card__desc">{profile.description || 'No description'}</div>
                     </div>
                     {isAdmin && (
@@ -256,7 +263,7 @@ export function OrgCreators() {
                             <button className="oc-dropdown__item" onClick={() => { openAssignmentDialogFor(profile); setOpenMenuId(null) }}>
                               <Users className="w-4 h-4" /><span>Manage Assignments</span>
                             </button>
-                            <button className="oc-dropdown__item oc-dropdown__item--edit" onClick={() => { setEditProfile(profile); setShowProfileDialog(true); setOpenMenuId(null) }}>
+                            <button className="oc-dropdown__item oc-dropdown__item--edit" onClick={() => { setEditProfile(profile); setProfileDialogScope(((profile as any).scope as 'streamer' | 'global') || 'streamer'); setShowProfileDialog(true); setOpenMenuId(null) }}>
                               <Pencil className="w-4 h-4" /><span>Edit Profile</span>
                             </button>
                             <div className="oc-dropdown__divider" />
@@ -334,14 +341,14 @@ export function OrgCreators() {
               <div className="oc-empty__icon-wrapper"><UserCircle className="w-8 h-8 text-cyan-400" /></div>
               <h3 className="oc-empty__title">No creator profiles yet</h3>
               <p className="oc-empty__text">Create profiles with platform links, intros, outros, and watermarks to assign to your team members.</p>
-              {isAdmin && <button onClick={() => setShowProfileDialog(true)} className="oc-empty__btn"><Plus className="w-[18px] h-[18px]" />Create First Profile</button>}
+              {isAdmin && <button onClick={() => { setProfileDialogScope('streamer'); setShowProfileDialog(true) }} className="oc-empty__btn"><Plus className="w-[18px] h-[18px]" />Create First Profile</button>}
             </div>
           )}
         </section>
       </div>
 
       {/* Profile Dialog */}
-      <ProfileDialog open={showProfileDialog} onClose={() => setShowProfileDialog(false)} onSuccess={loadCreatorProfiles} profile={editProfile} />
+      <ProfileDialog open={showProfileDialog} onClose={() => setShowProfileDialog(false)} onSuccess={loadCreatorProfiles} profile={editProfile} scope={profileDialogScope} />
 
       {/* Delete Profile Dialog */}
       {showDeleteDialog && createPortal(

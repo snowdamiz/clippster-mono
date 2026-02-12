@@ -3713,7 +3713,9 @@
         textOverlays: null, // No text overlays from folder view
         stickers: null, // No stickers from folder view
         clipWatermarks: null, // No clip watermarks from folder view
-        layoutOverlays: null, // Layout overlays passed via VOD preset in ClipsTab
+        layoutOverlays: folderCreatorProfile.value?.layout_overlays
+          ? JSON.parse(folderCreatorProfile.value.layout_overlays)
+          : null,
       });
 
       success('Build started', 'Your clip is being built in the background.');

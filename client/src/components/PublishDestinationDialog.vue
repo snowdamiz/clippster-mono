@@ -148,7 +148,8 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Instagram, Twitter, Building, ChevronRight, X, User } from 'lucide-vue-next';
+  import { Instagram, Building, ChevronRight, X, User } from 'lucide-vue-next';
+  import XLogo from '@/components/icons/XLogo.vue';
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
   import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
@@ -177,7 +178,7 @@
   const personalAccounts = ref<(UserInstagramAccount | UserTwitterAccount)[]>([]);
 
   const activePlatform = computed(() => props.platform || 'instagram');
-  const platformIcon = computed(() => activePlatform.value === 'twitter' ? Twitter : Instagram);
+  const platformIcon = computed(() => activePlatform.value === 'twitter' ? XLogo : Instagram);
   const platformLabel = computed(() => activePlatform.value === 'twitter' ? 'X (Twitter)' : 'Instagram');
 
   // Load both organizations and personal accounts when dialog opens

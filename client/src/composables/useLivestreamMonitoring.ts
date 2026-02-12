@@ -310,6 +310,8 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
     // Stop platform-specific recording
     if (streamer.platform === 'Kick') {
       await stopKickRecording(streamer.mintId);
+    } else if (streamer.platform === 'Twitch') {
+      await stopTwitchRecording(streamer.mintId);
     } else {
       // PumpFun - process any remaining DVR chunks before stopping
       const state = chunkAggregationState.get(streamer.id);
@@ -1012,9 +1014,11 @@ export function useLivestreamMonitoring() {
         }, 35000); // 35 seconds (Rust process timeout is 30s)
 
         try {
-          // For PumpFun, stop DVR recording; for Kick, stop the Node.js recorder
+          // Stop platform-specific recording
           if (session.platform === 'Kick') {
             await invoke('stop_kick_recording', { channelSlug: session.mintId });
+          } else if (session.platform === 'Twitch') {
+            await stopTwitchRecording(session.mintId);
           } else {
             // PumpFun - process any remaining DVR chunks before stopping
             const state = chunkAggregationState.get(id);
@@ -1158,6 +1162,16 @@ export function useLivestreamMonitoring() {
       if (streamer.platform === 'Kick') {
         await startKickRecording(
           streamer.mintId, // For Kick, mintId is the channel slug
+          streamer.id,
+          sessionInfo.sessionId,
+          segmentDuration
+        );
+      } else if (streamer.platform === 'Twitch') {
+        // Twitch recording - use yt-dlp/FFmpeg HLS (same approach as Kick)
+        // Segments are emitted via 'segment-ready' Tauri event from the Rust backend
+        console.log('[LiveMonitor] Starting Twitch recording via yt-dlp/FFmpeg');
+        await startTwitchRecording(
+          streamer.mintId, // For Twitch, mintId is the channel name
           streamer.id,
           sessionInfo.sessionId,
           segmentDuration

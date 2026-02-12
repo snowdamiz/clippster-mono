@@ -782,25 +782,23 @@ pub async fn build_single_segment_clip_with_settings(
             "-force_key_frames".to_string(), "expr:gte(t,0)".to_string(),
         ]);
         
-        let copy_audio = audio_filter_str.is_none();
+        // Add audio filter if present
+        if let Some(ref af) = audio_filter_str {
+            args.push("-af".to_string());
+            args.push(af.clone());
+        }
 
         // Add common parameters
         // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
+        // Always re-encode audio to AAC with matching params so concat with intro/outro
+        // produces a uniform audio stream (prevents missing audio on social platforms)
         args.extend_from_slice(&[
             "-fps_mode".to_string(), "cfr".to_string(),
             "-r".to_string(), frame_rate.to_string(),
-        ]);
-        if copy_audio {
-            args.extend_from_slice(&[
-                "-c:a".to_string(), "copy".to_string(),
-            ]);
-        } else {
-            args.extend_from_slice(&[
-                "-c:a".to_string(), "aac".to_string(),
-                "-b:a".to_string(), "192k".to_string(),
-            ]);
-        }
-        args.extend_from_slice(&[
+            "-c:a".to_string(), "aac".to_string(),
+            "-b:a".to_string(), "192k".to_string(),
+            "-ar".to_string(), "48000".to_string(),
+            "-ac".to_string(), "2".to_string(),
             "-pix_fmt".to_string(), "yuv420p".to_string(),
             "-avoid_negative_ts".to_string(), "make_zero".to_string(),
             "-y".to_string(),
@@ -892,6 +890,7 @@ pub async fn build_single_segment_clip_with_settings(
                 "-safe", "0",
                 "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
                 "-c", "copy",
+                "-movflags", "+faststart",
                 "-avoid_negative_ts", "make_zero",
                 "-y",
                 concat_output_path.to_str().ok_or("Invalid output path")?,
@@ -1306,14 +1305,24 @@ pub async fn build_multi_segment_clip_with_settings(
             args.push(encoder.quality_param.clone());
             args.push(encoder.quality_value.clone());
             
+            // Force keyframe at start to prevent frozen/laggy frames at segment boundaries
+            args.extend_from_slice(&[
+                "-g".to_string(), "60".to_string(),
+                "-force_key_frames".to_string(), "expr:gte(t,0)".to_string(),
+            ]);
+            
             // Add audio parameters (mute if audio was extracted)
+            // Always re-encode to AAC so all segments have uniform codec for clean concat
             if mute_audio {
                 args.extend_from_slice(&[
                     "-an".to_string(), // No audio
                 ]);
             } else {
                 args.extend_from_slice(&[
-                    "-c:a".to_string(), "copy".to_string(),
+                    "-c:a".to_string(), "aac".to_string(),
+                    "-b:a".to_string(), "192k".to_string(),
+                    "-ar".to_string(), "48000".to_string(),
+                    "-ac".to_string(), "2".to_string(),
                 ]);
             }
             
@@ -1435,6 +1444,7 @@ pub async fn build_multi_segment_clip_with_settings(
             "-safe", "0",
             "-i", concat_file.to_str().ok_or("Invalid concat file path")?,
             "-c", "copy",
+            "-movflags", "+faststart",
             "-avoid_negative_ts", "make_zero",
             "-y",
             concat_output_path.to_str().ok_or("Invalid output path")?,
@@ -1639,6 +1649,12 @@ pub async fn prepare_intro_outro_for_concat(
     args.push(encoder.quality_param.clone());
     args.push(encoder.quality_value.clone());
     
+    // Force keyframe at start to prevent frozen/laggy frames at concat boundaries
+    args.extend_from_slice(&[
+        "-g".to_string(), "60".to_string(),
+        "-force_key_frames".to_string(), "expr:gte(t,0)".to_string(),
+    ]);
+    
     // Add common parameters
     // Use -fps_mode cfr to ensure constant frame rate and prevent black frames at start
     args.extend_from_slice(&[
@@ -1646,6 +1662,8 @@ pub async fn prepare_intro_outro_for_concat(
         "-r".to_string(), frame_rate.to_string(),
         "-c:a".to_string(), "aac".to_string(),
         "-b:a".to_string(), "192k".to_string(),
+        "-ar".to_string(), "48000".to_string(),
+        "-ac".to_string(), "2".to_string(),
         "-pix_fmt".to_string(), "yuv420p".to_string(),
         "-avoid_negative_ts".to_string(), "make_zero".to_string(),
         "-y".to_string(),
@@ -3258,6 +3276,139 @@ pub async fn apply_clip_watermarks_to_video(
         .map_err(|e| format!("Failed to rename watermark output: {}", e))?;
     
     println!("[Rust] Clip watermarks applied successfully");
+    Ok(())
+}
+
+/// Apply layout overlays to a video file (from creator profile or VOD preset)
+/// These are static image overlays (borders, decorative elements) that cover the full clip duration
+pub async fn apply_layout_overlays_to_video(
+    app: &tauri::AppHandle,
+    input_path: &std::path::Path,
+    overlays: &[super::types::LayoutOverlaySettings],
+    aspect_ratio: &str,
+    quality: &str,
+) -> Result<(), String> {
+    if overlays.is_empty() {
+        return Ok(());
+    }
+
+    let video_info = get_video_info(app, input_path.to_str().ok_or("Invalid input path")?).await?;
+    let video_width = video_info.width as f64;
+    let video_height = video_info.height as f64;
+
+    let encoder = detect_hardware_encoder(app, quality).await;
+
+    let temp_output = input_path.with_extension("overlays.mp4");
+
+    let mut filter_parts: Vec<String> = Vec::new();
+    let mut input_count = 1;
+    let mut overlay_inputs: Vec<String> = Vec::new();
+
+    filter_parts.push("[0:v]null[base]".to_string());
+    let mut current_label = "base".to_string();
+
+    for (idx, overlay) in overlays.iter().enumerate() {
+        // Resolve per-ratio settings (like watermarks do with per_ratio_configs)
+        let (pos_x_pct, pos_y_pct, scale_val, alpha, is_full_frame) = if let Some(ref configs) = overlay.per_ratio_settings {
+            if let Some(config) = configs.get(aspect_ratio) {
+                let s = if config.scale > 0.0 { config.scale } else if config.width > 0.0 { config.width } else if overlay.scale > 0.0 { overlay.scale } else { overlay.width };
+                (config.x, config.y, s, config.opacity / 100.0, config.is_full_frame_overlay.unwrap_or(false))
+            } else {
+                let s = if overlay.scale > 0.0 { overlay.scale } else { overlay.width };
+                (overlay.x, overlay.y, s, overlay.opacity / 100.0, overlay.is_full_frame_overlay.unwrap_or(false))
+            }
+        } else {
+            let s = if overlay.scale > 0.0 { overlay.scale } else { overlay.width };
+            (overlay.x, overlay.y, s, overlay.opacity / 100.0, overlay.is_full_frame_overlay.unwrap_or(false))
+        };
+
+        let ovl_label = format!("ol{}", idx);
+        let next_label = format!("oo{}", idx);
+
+        let (ovl_filter, ovl_cmd) = if is_full_frame {
+            let f = format!(
+                "[{}:v]scale={}:{},format=rgba,colorchannelmixer=aa={}[{}]",
+                input_count, video_width as i32, video_height as i32, alpha, ovl_label
+            );
+            let o = format!(
+                "[{}][{}]overlay=0:0[{}]",
+                current_label, ovl_label, next_label
+            );
+            println!("[Rust] Layout overlay {} FULL-FRAME: {}x{}, alpha={}", idx, video_width as i32, video_height as i32, alpha);
+            (f, o)
+        } else {
+            let pos_x = (pos_x_pct / 100.0 * video_width) as i32;
+            let pos_y = (pos_y_pct / 100.0 * video_height) as i32;
+            let scaled_width = (video_width * scale_val / 100.0).round() as i32;
+
+            let f = format!(
+                "[{}:v]scale={}:-1,format=rgba,colorchannelmixer=aa={}[{}]",
+                input_count, scaled_width, alpha, ovl_label
+            );
+            let o = format!(
+                "[{}][{}]overlay=x={}-(overlay_w/2):y={}-(overlay_h/2)[{}]",
+                current_label, ovl_label, pos_x, pos_y, next_label
+            );
+            println!("[Rust] Layout overlay {} STANDARD: pos=({}, {}), scale={}, alpha={}", idx, pos_x, pos_y, scaled_width, alpha);
+            (f, o)
+        };
+
+        filter_parts.push(ovl_filter);
+        filter_parts.push(ovl_cmd);
+        current_label = next_label;
+
+        overlay_inputs.push(overlay.image_path.clone());
+        input_count += 1;
+    }
+
+    if filter_parts.len() <= 1 {
+        return Ok(());
+    }
+
+    let mut args = build_hwaccel_args(&encoder, true);
+
+    args.extend(vec![
+        "-i".to_string(), input_path.to_string_lossy().to_string(),
+    ]);
+
+    for path in &overlay_inputs {
+        args.push("-i".to_string());
+        args.push(path.clone());
+    }
+
+    let filter_complex = filter_parts.join(";");
+
+    args.extend(vec![
+        "-filter_complex".to_string(), filter_complex,
+        "-map".to_string(), format!("[{}]", current_label),
+        "-map".to_string(), "0:a?".to_string(),
+        "-c:v".to_string(), encoder.codec.clone(),
+    ]);
+
+    if let Some(preset) = &encoder.preset {
+        args.push("-preset".to_string());
+        args.push(preset.clone());
+    }
+
+    args.push(encoder.quality_param.clone());
+    args.push(encoder.quality_value.clone());
+
+    args.push("-c:a".to_string());
+    args.push("copy".to_string());
+    args.push("-y".to_string());
+    args.push(temp_output.to_string_lossy().to_string());
+
+    println!("[Rust] Applying {} layout overlays to video", overlays.len());
+
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+        .map_err(|e| format!("FFmpeg layout overlay failed: {}", e))?;
+
+    std::fs::remove_file(input_path)
+        .map_err(|e| format!("Failed to remove original file: {}", e))?;
+    std::fs::rename(&temp_output, input_path)
+        .map_err(|e| format!("Failed to rename overlay output: {}", e))?;
+
+    println!("[Rust] Layout overlays applied successfully");
     Ok(())
 }
 
