@@ -413,7 +413,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $ffmpegDevDir | Out-Null
           Write-Host "Downloading FFmpeg shared build for dev libraries..."
           $zipPath = "$env:RUNNER_TEMP/ffmpeg-shared.zip"
-          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n7.1-latest-win64-gpl-shared.zip" -OutFile $zipPath
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n8.0-latest-win64-gpl-shared-8.0.zip" -OutFile $zipPath
           Expand-Archive -Path $zipPath -DestinationPath $ffmpegDevDir -Force
           Remove-Item $zipPath
           $extractedDir = Get-ChildItem $ffmpegDevDir -Directory | Select-Object -First 1
@@ -451,9 +451,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          FFMPEG_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n7.1-latest-win64-gpl-shared
-          FFMPEG_INCLUDE_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n7.1-latest-win64-gpl-shared/include
-          FFMPEG_LIB_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n7.1-latest-win64-gpl-shared/lib
+          FFMPEG_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n8.0-latest-win64-gpl-shared-8.0
+          FFMPEG_INCLUDE_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n8.0-latest-win64-gpl-shared-8.0/include
+          FFMPEG_LIB_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-n8.0-latest-win64-gpl-shared-8.0/lib
         with:
           projectPath: client
           args: ${{ matrix.args }}
