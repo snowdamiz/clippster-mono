@@ -379,7 +379,13 @@ jobs:
       # Install FFmpeg development libraries for Rust compilation (ffmpeg-the-third crate)
       - name: Install FFmpeg dev libraries (macOS)
         if: matrix.platform == 'macos-latest'
-        run: brew install ffmpeg
+        run: |
+          brew install ffmpeg pkg-config
+          FFMPEG_PREFIX=$(brew --prefix ffmpeg)
+          echo "PKG_CONFIG_PATH=${FFMPEG_PREFIX}/lib/pkgconfig:$(brew --prefix)/lib/pkgconfig" >> $GITHUB_ENV
+          echo "FFMPEG_DIR=${FFMPEG_PREFIX}" >> $GITHUB_ENV
+          echo "FFmpeg installed at: ${FFMPEG_PREFIX}"
+          pkg-config --modversion libavcodec || echo "WARNING: pkg-config cannot find libavcodec"
 
       # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
       - name: Skip frontend rebuild (macOS)
