@@ -380,11 +380,22 @@ jobs:
       - name: Install FFmpeg dev libraries (macOS)
         if: matrix.platform == 'macos-latest'
         run: |
-          brew install ffmpeg pkg-config
-          FFMPEG_PREFIX=$(brew --prefix ffmpeg)
-          echo "PKG_CONFIG_PATH=${FFMPEG_PREFIX}/lib/pkgconfig:$(brew --prefix)/lib/pkgconfig" >> $GITHUB_ENV
+          if echo "${{ matrix.args }}" | grep -q "x86_64"; then
+            # Cross-compiling for x86_64 on ARM runner: install x86_64 Homebrew via Rosetta
+            echo "Installing x86_64 Homebrew for cross-compilation..."
+            NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            arch -x86_64 /usr/local/bin/brew install ffmpeg pkg-config
+            FFMPEG_PREFIX="/usr/local/opt/ffmpeg"
+            echo "PKG_CONFIG_PATH=${FFMPEG_PREFIX}/lib/pkgconfig:/usr/local/lib/pkgconfig" >> $GITHUB_ENV
+          else
+            # Native arm64 build
+            brew install ffmpeg pkg-config
+            FFMPEG_PREFIX=$(brew --prefix ffmpeg)
+            echo "PKG_CONFIG_PATH=${FFMPEG_PREFIX}/lib/pkgconfig:$(brew --prefix)/lib/pkgconfig" >> $GITHUB_ENV
+          fi
           echo "FFMPEG_DIR=${FFMPEG_PREFIX}" >> $GITHUB_ENV
           echo "FFmpeg installed at: ${FFMPEG_PREFIX}"
+          ls -la "${FFMPEG_PREFIX}/lib/" | head -10
           pkg-config --modversion libavcodec || echo "WARNING: pkg-config cannot find libavcodec"
 
       # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
