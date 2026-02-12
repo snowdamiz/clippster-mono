@@ -4,15 +4,37 @@ import { useOrganization } from '@/hooks/useOrganization'
 import { useAuth } from '@/hooks/useAuth'
 import { useOAuthPopup } from '@/hooks/useOAuthPopup'
 import { useToast } from '@/hooks/useToast'
-import { listSocialAccounts, deleteSocialAccount, updateSocialAccount, refreshAccountToken, assignSocialAccount, unassignSocialAccount } from '@/services/socialAccountsApi'
+import {
+  listSocialAccounts,
+  deleteSocialAccount,
+  updateSocialAccount,
+  refreshAccountToken,
+  assignSocialAccount,
+  unassignSocialAccount
+} from '@/services/socialAccountsApi'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { Dialog } from '@/components/ui/Dialog'
 import type { SocialAccount, OrganizationMember } from '@/types/organization'
 import {
-  Globe, Instagram, Youtube, Users, AlertTriangle, Zap, Link2,
-  Plus, RefreshCw, Clock, MoreVertical, XCircle, CheckCircle,
-  Trash2, X, Loader2, Search, Check
+  Globe,
+  Instagram,
+  Youtube,
+  Users,
+  AlertTriangle,
+  Zap,
+  Link2,
+  Plus,
+  RefreshCw,
+  Clock,
+  MoreVertical,
+  XCircle,
+  CheckCircle,
+  Trash2,
+  X,
+  Loader2,
+  Search,
+  Check
 } from 'lucide-react'
 
 /* ───── Helpers ───── */
@@ -31,7 +53,8 @@ function getPlatformIcon(platform: string) {
   return Globe
 }
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr?: string): string {
+  if (!dateStr) return ''
   const date = new Date(dateStr)
   const now = new Date()
   const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
@@ -51,7 +74,14 @@ function isTokenExpiringSoon(account: SocialAccount): boolean {
 
 /* ───── Account Actions ───── */
 
-function AccountActions({ account, isAdmin, onManageAssignments, onRefreshToken, onToggleActive, onDisconnect }: {
+function AccountActions({
+  account,
+  isAdmin,
+  onManageAssignments,
+  onRefreshToken,
+  onToggleActive,
+  onDisconnect
+}: {
   account: SocialAccount
   isAdmin: boolean
   onManageAssignments: (a: SocialAccount) => void
@@ -86,7 +116,9 @@ function AccountActions({ account, isAdmin, onManageAssignments, onRefreshToken,
         <button
           onClick={() => setOpen(!open)}
           className={`flex items-center justify-center w-8 h-8 bg-transparent border border-zinc-800 rounded-lg cursor-pointer transition-all duration-150 ${
-            open ? 'bg-zinc-800 border-white/[0.15] text-white' : 'text-zinc-500 hover:bg-zinc-800 hover:border-white/[0.15] hover:text-white'
+            open
+              ? 'bg-zinc-800 border-white/[0.15] text-white'
+              : 'text-zinc-500 hover:bg-zinc-800 hover:border-white/[0.15] hover:text-white'
           }`}
         >
           <MoreVertical className="w-4 h-4" />
@@ -95,7 +127,10 @@ function AccountActions({ account, isAdmin, onManageAssignments, onRefreshToken,
           <div className="absolute right-0 top-full mt-1 w-[180px] bg-zinc-900 backdrop-blur-xl border border-zinc-800 rounded-[10px] shadow-[0_10px_40px_rgba(0,0,0,0.4)] p-2 z-[9999]">
             <button
               className="w-full flex items-center gap-3 px-3 py-2.5 text-[0.8125rem] text-white bg-transparent border-none rounded-md cursor-pointer transition-all duration-150 text-left hover:bg-cyan-500/10 hover:text-cyan-400"
-              onClick={() => { onRefreshToken(account); setOpen(false) }}
+              onClick={() => {
+                onRefreshToken(account)
+                setOpen(false)
+              }}
             >
               <RefreshCw className="w-4 h-4" />
               <span>Refresh Token</span>
@@ -103,7 +138,10 @@ function AccountActions({ account, isAdmin, onManageAssignments, onRefreshToken,
             {account.is_active ? (
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 text-[0.8125rem] text-white bg-transparent border-none rounded-md cursor-pointer transition-all duration-150 text-left hover:bg-cyan-500/10 hover:text-cyan-400"
-                onClick={() => { onToggleActive(account, false); setOpen(false) }}
+                onClick={() => {
+                  onToggleActive(account, false)
+                  setOpen(false)
+                }}
               >
                 <XCircle className="w-4 h-4" />
                 <span>Deactivate</span>
@@ -111,7 +149,10 @@ function AccountActions({ account, isAdmin, onManageAssignments, onRefreshToken,
             ) : (
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 text-[0.8125rem] text-white bg-transparent border-none rounded-md cursor-pointer transition-all duration-150 text-left hover:bg-cyan-500/10 hover:text-cyan-400"
-                onClick={() => { onToggleActive(account, true); setOpen(false) }}
+                onClick={() => {
+                  onToggleActive(account, true)
+                  setOpen(false)
+                }}
               >
                 <CheckCircle className="w-4 h-4" />
                 <span>Activate</span>
@@ -120,7 +161,10 @@ function AccountActions({ account, isAdmin, onManageAssignments, onRefreshToken,
             <div className="my-2 border-t border-zinc-800" />
             <button
               className="w-full flex items-center gap-3 px-3 py-2.5 text-[0.8125rem] text-red-500 bg-transparent border-none rounded-md cursor-pointer transition-all duration-150 text-left hover:bg-red-500/10 hover:text-red-400"
-              onClick={() => { onDisconnect(account); setOpen(false) }}
+              onClick={() => {
+                onDisconnect(account)
+                setOpen(false)
+              }}
             >
               <Trash2 className="w-4 h-4" />
               <span>Disconnect</span>
@@ -134,7 +178,14 @@ function AccountActions({ account, isAdmin, onManageAssignments, onRefreshToken,
 
 /* ───── Assignments Dialog ───── */
 
-function AssignmentsDialog({ account, open, onClose, organizationId, members, onUpdated }: {
+function AssignmentsDialog({
+  account,
+  open,
+  onClose,
+  organizationId,
+  members,
+  onUpdated
+}: {
   account: SocialAccount
   open: boolean
   onClose: () => void
@@ -149,14 +200,14 @@ function AssignmentsDialog({ account, open, onClose, organizationId, members, on
 
   useEffect(() => {
     if (open && account.assignments) {
-      setAssignedIds(new Set(account.assignments.map(a => a.user_id)))
+      setAssignedIds(new Set(account.assignments.map((a) => a.user_id)))
     }
   }, [open, account])
 
-  const filteredMembers = members.filter(m => {
+  const filteredMembers = members.filter((m) => {
     if (!searchQuery) return true
     const q = searchQuery.toLowerCase()
-    return (m.user?.name?.toLowerCase().includes(q) || m.user?.email.toLowerCase().includes(q))
+    return m.user?.name?.toLowerCase().includes(q) || m.user?.email.toLowerCase().includes(q)
   })
 
   const toggleAssignment = async (userId: number, assign: boolean) => {
@@ -165,31 +216,52 @@ function AssignmentsDialog({ account, open, onClose, organizationId, members, on
       if (assign) {
         const res = await assignSocialAccount(organizationId, account.id, [userId])
         if (res.success) {
-          setAssignedIds(prev => new Set([...prev, userId]))
+          setAssignedIds((prev) => new Set([...prev, userId]))
           toast.success('Member assigned')
           onUpdated()
-        } else { toast.error(res.error || 'Failed to assign') }
+        } else {
+          toast.error(res.error || 'Failed to assign')
+        }
       } else {
         const res = await unassignSocialAccount(organizationId, account.id, userId)
         if (res.success) {
-          setAssignedIds(prev => { const s = new Set(prev); s.delete(userId); return s })
+          setAssignedIds((prev) => {
+            const s = new Set(prev)
+            s.delete(userId)
+            return s
+          })
           toast.success('Member unassigned')
           onUpdated()
-        } else { toast.error(res.error || 'Failed to unassign') }
+        } else {
+          toast.error(res.error || 'Failed to unassign')
+        }
       }
-    } catch { toast.error('Failed to update assignment') }
-    finally { setSaving(false) }
+    } catch {
+      toast.error('Failed to update assignment')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const getInitials = (name: string) =>
-    name.split(/[\s@]+/).map(p => p[0]).slice(0, 2).join('').toUpperCase()
+    name
+      .split(/[\s@]+/)
+      .map((p) => p[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase()
 
   return (
     <Dialog open={open} onClose={onClose} title="Manage Access" maxWidth="max-w-lg">
       <div className="space-y-4">
         <div className="flex items-center gap-3 pb-3 border-b border-zinc-800">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br ${getPlatformGradient(account.platform)}/20 border border-white/10`}>
-            {(() => { const Icon = getPlatformIcon(account.platform); return <Icon className="w-5 h-5 text-white" /> })()}
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br ${getPlatformGradient(account.platform)}/20 border border-white/10`}
+          >
+            {(() => {
+              const Icon = getPlatformIcon(account.platform)
+              return <Icon className="w-5 h-5 text-white" />
+            })()}
           </div>
           <div>
             <p className="text-sm font-medium text-white m-0">@{account.username}</p>
@@ -202,14 +274,14 @@ function AssignmentsDialog({ account, open, onClose, organizationId, members, on
           <input
             type="text"
             value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
+            onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search members..."
             className="w-full pl-10 pr-4 py-2.5 bg-zinc-900/80 border border-zinc-800 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all text-sm"
           />
         </div>
 
         <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
-          {filteredMembers.map(member => {
+          {filteredMembers.map((member) => {
             const assigned = assignedIds.has(member.user_id)
             return (
               <button
@@ -218,21 +290,29 @@ function AssignmentsDialog({ account, open, onClose, organizationId, members, on
                 disabled={saving}
                 className={`flex items-center gap-3 w-full p-3 rounded-xl border transition-colors text-left ${saving ? 'opacity-50 pointer-events-none' : ''} ${assigned ? 'border-zinc-700 bg-zinc-800/30' : 'border-zinc-800 hover:bg-zinc-800/50 hover:border-zinc-700'}`}
               >
-                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${assigned ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent' : 'border-zinc-600'}`}>
+                <div
+                  className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${assigned ? 'bg-gradient-to-r from-purple-500 to-pink-500 border-transparent' : 'border-zinc-600'}`}
+                >
                   {assigned && <Check className="w-3 h-3 text-white" />}
                 </div>
                 <div className="w-9 h-9 rounded-full bg-zinc-800 flex items-center justify-center shrink-0 border border-zinc-700 overflow-hidden">
                   {member.user?.avatar_url ? (
                     <img src={member.user.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover" />
                   ) : (
-                    <span className="text-xs font-medium text-zinc-400">{getInitials(member.user?.name || member.user?.email || '')}</span>
+                    <span className="text-xs font-medium text-zinc-400">
+                      {getInitials(member.user?.name || member.user?.email || '')}
+                    </span>
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-white truncate">{member.user?.name || member.user?.email}</div>
+                  <div className="text-sm font-medium text-white truncate">
+                    {member.user?.name || member.user?.email}
+                  </div>
                   {member.user?.name && <div className="text-xs text-zinc-500 truncate">{member.user.email}</div>}
                 </div>
-                <Badge variant={member.role === 'owner' ? 'owner' : member.role === 'admin' ? 'admin' : 'member'}>{member.role}</Badge>
+                <Badge variant={member.role === 'owner' ? 'owner' : member.role === 'admin' ? 'admin' : 'member'}>
+                  {member.role}
+                </Badge>
               </button>
             )
           })}
@@ -247,9 +327,13 @@ function AssignmentsDialog({ account, open, onClose, organizationId, members, on
         <div className="flex items-center justify-between pt-3 border-t border-zinc-800">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-pink-500" />
-            <span className="text-sm text-zinc-400">{assignedIds.size} member{assignedIds.size !== 1 ? 's' : ''} assigned</span>
+            <span className="text-sm text-zinc-400">
+              {assignedIds.size} member{assignedIds.size !== 1 ? 's' : ''} assigned
+            </span>
           </div>
-          <Button variant="secondary" size="sm" onClick={onClose}>Done</Button>
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Done
+          </Button>
         </div>
       </div>
     </Dialog>
@@ -258,7 +342,13 @@ function AssignmentsDialog({ account, open, onClose, organizationId, members, on
 
 /* ───── Delete Dialog ───── */
 
-function DeleteAccountDialog({ account, open, onClose, onConfirm, loading }: {
+function DeleteAccountDialog({
+  account,
+  open,
+  onClose,
+  onConfirm,
+  loading
+}: {
   account: SocialAccount | null
   open: boolean
   onClose: () => void
@@ -268,9 +358,14 @@ function DeleteAccountDialog({ account, open, onClose, onConfirm, loading }: {
   useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden'
-      const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape' && !loading) onClose() }
+      const handleEsc = (e: KeyboardEvent) => {
+        if (e.key === 'Escape' && !loading) onClose()
+      }
       document.addEventListener('keydown', handleEsc)
-      return () => { document.removeEventListener('keydown', handleEsc); document.body.style.overflow = '' }
+      return () => {
+        document.removeEventListener('keydown', handleEsc)
+        document.body.style.overflow = ''
+      }
     } else {
       document.body.style.overflow = ''
     }
@@ -391,7 +486,10 @@ export function OrgSocial() {
     }
   }
 
-  useEffect(() => { loadOrganization(); loadAccounts() }, [organizationId])
+  useEffect(() => {
+    loadOrganization()
+    loadAccounts()
+  }, [organizationId])
 
   const connectInstagram = () => {
     if (!organizationId || !token) return
@@ -430,17 +528,26 @@ export function OrgSocial() {
       if (result.success) {
         toast.success(`Account ${active ? 'activated' : 'deactivated'}`)
         loadAccounts()
-      } else { toast.error(result.error || 'Failed to update account') }
-    } catch { toast.error('Failed to update account') }
+      } else {
+        toast.error(result.error || 'Failed to update account')
+      }
+    } catch {
+      toast.error('Failed to update account')
+    }
   }
 
   const handleRefreshToken = async (account: SocialAccount) => {
     if (!organizationId) return
     try {
       const result = await refreshAccountToken(organizationId, account.id)
-      if (result.success) { toast.success('Token refresh initiated') }
-      else { toast.error(result.error || 'Failed to refresh token') }
-    } catch { toast.error('Failed to refresh token') }
+      if (result.success) {
+        toast.success('Token refresh initiated')
+      } else {
+        toast.error(result.error || 'Failed to refresh token')
+      }
+    } catch {
+      toast.error('Failed to refresh token')
+    }
   }
 
   const handleDelete = async () => {
@@ -449,7 +556,7 @@ export function OrgSocial() {
     try {
       const result = await deleteSocialAccount(organizationId, deleteTarget.id)
       if (result.success) {
-        setAccounts(prev => prev.filter(a => a.id !== deleteTarget.id))
+        setAccounts((prev) => prev.filter((a) => a.id !== deleteTarget.id))
         setDeleteTarget(null)
         toast.success('Account disconnected')
         loadOrganization()
@@ -469,7 +576,9 @@ export function OrgSocial() {
         {/* Page Heading */}
         <div className="mb-2">
           <h1 className="text-2xl font-bold text-white tracking-[-0.02em] m-0 mb-1.5">Social Accounts</h1>
-          <p className="text-sm text-zinc-500 m-0 leading-relaxed">Connect and manage social media platforms for your organization</p>
+          <p className="text-sm text-zinc-500 m-0 leading-relaxed">
+            Connect and manage social media platforms for your organization
+          </p>
         </div>
 
         {/* Quick Actions Section */}
@@ -488,12 +597,17 @@ export function OrgSocial() {
             {/* Instagram - Active */}
             <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/[0.02] border border-white/[0.06] rounded-[10px] transition-all duration-200 hover:border-white/[0.12] hover:bg-white/[0.04]">
               <div className="flex items-center gap-4">
-                <div className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0" style={{ background: 'linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)' }}>
+                <div
+                  className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0"
+                  style={{ background: 'linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)' }}
+                >
                   <Instagram className="w-[22px] h-[22px] text-white" />
                 </div>
                 <div className="flex flex-col gap-1">
                   <h3 className="text-[0.9375rem] font-semibold text-white m-0">Instagram</h3>
-                  <p className="text-[0.8125rem] text-zinc-500 m-0 leading-[1.4]">Connect your Instagram Business or Creator account to publish Reels directly</p>
+                  <p className="text-[0.8125rem] text-zinc-500 m-0 leading-[1.4]">
+                    Connect your Instagram Business or Creator account to publish Reels directly
+                  </p>
                 </div>
               </div>
               {isAdmin && (
@@ -517,9 +631,13 @@ export function OrgSocial() {
                 <div className="flex flex-col gap-1">
                   <h3 className="text-[0.9375rem] font-semibold text-white m-0 flex items-center gap-2">
                     TikTok
-                    <span className="text-[0.625rem] font-bold uppercase tracking-[0.05em] px-2 py-[3px] bg-purple-500/15 text-purple-400 rounded">Coming Soon</span>
+                    <span className="text-[0.625rem] font-bold uppercase tracking-[0.05em] px-2 py-[3px] bg-purple-500/15 text-purple-400 rounded">
+                      Coming Soon
+                    </span>
                   </h3>
-                  <p className="text-[0.8125rem] text-zinc-500 m-0 leading-[1.4]">Share your clips directly to TikTok</p>
+                  <p className="text-[0.8125rem] text-zinc-500 m-0 leading-[1.4]">
+                    Share your clips directly to TikTok
+                  </p>
                 </div>
               </div>
             </div>
@@ -533,9 +651,13 @@ export function OrgSocial() {
                 <div className="flex flex-col gap-1">
                   <h3 className="text-[0.9375rem] font-semibold text-white m-0 flex items-center gap-2">
                     YouTube Shorts
-                    <span className="text-[0.625rem] font-bold uppercase tracking-[0.05em] px-2 py-[3px] bg-purple-500/15 text-purple-400 rounded">Coming Soon</span>
+                    <span className="text-[0.625rem] font-bold uppercase tracking-[0.05em] px-2 py-[3px] bg-purple-500/15 text-purple-400 rounded">
+                      Coming Soon
+                    </span>
                   </h3>
-                  <p className="text-[0.8125rem] text-zinc-500 m-0 leading-[1.4]">Upload clips as YouTube Shorts automatically</p>
+                  <p className="text-[0.8125rem] text-zinc-500 m-0 leading-[1.4]">
+                    Upload clips as YouTube Shorts automatically
+                  </p>
                 </div>
               </div>
             </div>
@@ -591,18 +713,33 @@ export function OrgSocial() {
           {/* Loading State */}
           {loading && accounts.length === 0 && (
             <div className="flex flex-col gap-2">
-              {[1, 2].map(i => (
-                <div key={i} className="flex bg-zinc-900/50 border border-zinc-800 rounded-[10px] overflow-hidden pointer-events-none">
+              {[1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="flex bg-zinc-900/50 border border-zinc-800 rounded-[10px] overflow-hidden pointer-events-none"
+                >
                   <div className="w-[3px] shrink-0 bg-zinc-800" />
                   <div className="flex-1 flex items-center gap-4 p-3.5 px-4">
                     <div className="w-14 h-14 rounded-full bg-gradient-to-r from-white/10 via-white/20 to-white/10 bg-[length:200%_100%] animate-shimmer shrink-0" />
                     <div className="flex-1 flex flex-col gap-2">
-                      <div className="h-4 w-[120px] bg-gradient-to-r from-white/10 via-white/20 to-white/10 bg-[length:200%_100%] animate-shimmer rounded" style={{ animationDelay: '0.1s' }} />
-                      <div className="h-3 w-[180px] bg-gradient-to-r from-white/10 via-white/20 to-white/10 bg-[length:200%_100%] animate-shimmer rounded" style={{ animationDelay: '0.2s' }} />
+                      <div
+                        className="h-4 w-[120px] bg-gradient-to-r from-white/10 via-white/20 to-white/10 bg-[length:200%_100%] animate-shimmer rounded"
+                        style={{ animationDelay: '0.1s' }}
+                      />
+                      <div
+                        className="h-3 w-[180px] bg-gradient-to-r from-white/10 via-white/20 to-white/10 bg-[length:200%_100%] animate-shimmer rounded"
+                        style={{ animationDelay: '0.2s' }}
+                      />
                     </div>
                     <div className="flex gap-1.5">
-                      <div className="w-8 h-8 bg-gradient-to-r from-white/10 via-white/20 to-white/10 bg-[length:200%_100%] animate-shimmer rounded-lg" style={{ animationDelay: '0.3s' }} />
-                      <div className="w-8 h-8 bg-gradient-to-r from-white/10 via-white/20 to-white/10 bg-[length:200%_100%] animate-shimmer rounded-lg" style={{ animationDelay: '0.3s' }} />
+                      <div
+                        className="w-8 h-8 bg-gradient-to-r from-white/10 via-white/20 to-white/10 bg-[length:200%_100%] animate-shimmer rounded-lg"
+                        style={{ animationDelay: '0.3s' }}
+                      />
+                      <div
+                        className="w-8 h-8 bg-gradient-to-r from-white/10 via-white/20 to-white/10 bg-[length:200%_100%] animate-shimmer rounded-lg"
+                        style={{ animationDelay: '0.3s' }}
+                      />
                     </div>
                   </div>
                 </div>
@@ -626,7 +763,7 @@ export function OrgSocial() {
           {/* Accounts List */}
           {!loading && accounts.length > 0 && (
             <div className="flex flex-col gap-2">
-              {accounts.map(account => {
+              {accounts.map((account) => {
                 const PlatformIcon = getPlatformIcon(account.platform)
                 const gradient = getPlatformGradient(account.platform)
                 const expiring = isTokenExpiringSoon(account)
@@ -650,14 +787,22 @@ export function OrgSocial() {
                       {/* Avatar */}
                       <div className="relative w-14 h-14 shrink-0">
                         {account.profile_image_url ? (
-                          <img src={account.profile_image_url} alt={account.username} className="w-full h-full rounded-full object-cover" />
+                          <img
+                            src={account.profile_image_url}
+                            alt={account.username}
+                            className="w-full h-full rounded-full object-cover"
+                          />
                         ) : (
-                          <div className={`w-full h-full rounded-full flex items-center justify-center bg-gradient-to-br ${gradient}`}>
+                          <div
+                            className={`w-full h-full rounded-full flex items-center justify-center bg-gradient-to-br ${gradient}`}
+                          >
                             <PlatformIcon className="w-6 h-6 text-white" />
                           </div>
                         )}
                         {/* Platform badge */}
-                        <div className={`absolute -bottom-0.5 -right-0.5 w-[22px] h-[22px] rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center ring-2 ring-zinc-900`}>
+                        <div
+                          className={`absolute -bottom-0.5 -right-0.5 w-[22px] h-[22px] rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center ring-2 ring-zinc-900`}
+                        >
                           <PlatformIcon className="w-3 h-3 text-white" />
                         </div>
                       </div>
@@ -682,7 +827,9 @@ export function OrgSocial() {
                           )}
                         </div>
                         {account.display_name && (
-                          <p className="text-[0.8125rem] text-zinc-500 m-0 mb-1.5 leading-[1.4]">{account.display_name}</p>
+                          <p className="text-[0.8125rem] text-zinc-500 m-0 mb-1.5 leading-[1.4]">
+                            {account.display_name}
+                          </p>
                         )}
                         <div className="flex items-center flex-wrap gap-3">
                           <span className="flex items-center gap-1 text-[0.6875rem] text-zinc-500">
@@ -702,7 +849,12 @@ export function OrgSocial() {
                       <div className="hidden md:flex items-center gap-6 px-6 border-l border-zinc-800 shrink-0">
                         <div className="flex flex-col items-center gap-0.5 min-w-[60px]">
                           <Users className="w-4 h-4 text-zinc-500 mb-0.5" />
-                          <span className="text-base font-bold text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>{account.assignments?.length || 0}</span>
+                          <span
+                            className="text-base font-bold text-white"
+                            style={{ fontVariantNumeric: 'tabular-nums' }}
+                          >
+                            {account.assignments?.length || 0}
+                          </span>
                           <span className="text-[0.625rem] text-zinc-500 uppercase tracking-wide">Assigned</span>
                         </div>
                       </div>

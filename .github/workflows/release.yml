@@ -376,11 +376,31 @@ jobs:
 
           echo "=== All signing complete ==="
 
+      # Install FFmpeg development libraries for Rust compilation (ffmpeg-the-third crate)
+      - name: Install FFmpeg dev libraries (macOS)
+        if: matrix.platform == 'macos-latest'
+        run: brew install ffmpeg
+
       # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
       - name: Skip frontend rebuild (macOS)
         if: matrix.platform == 'macos-latest'
         run: |
           jq '.build.beforeBuildCommand = ""' client/src-tauri/tauri.conf.json > tmp.json && mv tmp.json client/src-tauri/tauri.conf.json
+
+      # Install FFmpeg development libraries for Rust compilation (Windows)
+      - name: Install FFmpeg dev libraries (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ffmpegDevDir = "client/src-tauri/ffmpeg-dev"
+          New-Item -ItemType Directory -Force -Path $ffmpegDevDir | Out-Null
+          Write-Host "Downloading FFmpeg shared build for dev libraries..."
+          $zipPath = "$env:RUNNER_TEMP/ffmpeg-shared.zip"
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip" -OutFile $zipPath
+          Expand-Archive -Path $zipPath -DestinationPath $ffmpegDevDir -Force
+          Remove-Item $zipPath
+          $extractedDir = Get-ChildItem $ffmpegDevDir -Directory | Select-Object -First 1
+          Write-Host "FFmpeg dev libs installed at: $($extractedDir.FullName)"
 
       - name: Skip frontend rebuild (Windows)
         if: matrix.platform == 'windows-latest'
@@ -414,6 +434,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          FFMPEG_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-master-latest-win64-gpl-shared
+          FFMPEG_INCLUDE_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-master-latest-win64-gpl-shared/include
+          FFMPEG_LIB_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-dev/ffmpeg-master-latest-win64-gpl-shared/lib
         with:
           projectPath: client
           args: ${{ matrix.args }}
