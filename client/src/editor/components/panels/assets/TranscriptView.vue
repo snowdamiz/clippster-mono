@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
-import type { VideoElement, UploadAudioElement } from "../../../types/timeline";
-import type { CaptionWord } from "../../../types/timeline";
+import type { VideoElement } from "../../../types/timeline";
 import {
 	FileText,
 	Loader2,
@@ -380,10 +379,21 @@ function onWordDoubleClick(word: TranscriptWord, index: number) {
 
 function saveWordEdit() {
 	if (editingWordIndex.value === -1) return;
+	const idx = editingWordIndex.value;
 	const newText = editingWordText.value.trim();
-	if (newText && words.value[editingWordIndex.value]) {
-		words.value[editingWordIndex.value].word = newText;
+
+	if (!newText && words.value[idx]) {
+		// Empty text = delete this word and ripple-delete its time range from the video
+		const word = words.value[idx];
+		editor.timeline.rippleDeleteTimeRange({
+			startTime: word.start,
+			endTime: word.end,
+		});
+		words.value.splice(idx, 1);
+	} else if (newText && words.value[idx]) {
+		words.value[idx].word = newText;
 	}
+
 	editingWordIndex.value = -1;
 	editingWordText.value = "";
 }
@@ -464,9 +474,14 @@ function splitAtWord(index: number) {
 // ── Delete words → ripple-delete ──
 function deleteSelectedWords() {
 	if (selectionStartIndex.value === -1 || selectionEndIndex.value === -1) return;
-	const startTime = words.value[selectionStartIndex.value].start;
-	const endTime = words.value[selectionEndIndex.value].end;
-	rippleDeleteTimeRange(startTime, endTime);
+	const startWord = words.value[selectionStartIndex.value];
+	const endWord = words.value[selectionEndIndex.value];
+	if (!startWord || !endWord) return;
+
+	editor.timeline.rippleDeleteTimeRange({
+		startTime: startWord.start,
+		endTime: endWord.end,
+	});
 
 	// Remove words from local state
 	words.value.splice(selectionStartIndex.value, selectionEndIndex.value - selectionStartIndex.value + 1);
@@ -493,12 +508,17 @@ function commitStrikethrough() {
 	}
 	ranges.push({ start: rangeStart, end: rangeEnd });
 
-	// Process ranges in reverse order to maintain indices
+	// Process ranges in reverse order to maintain word indices
 	for (let i = ranges.length - 1; i >= 0; i--) {
 		const range = ranges[i];
-		const startTime = words.value[range.start].start;
-		const endTime = words.value[range.end].end;
-		rippleDeleteTimeRange(startTime, endTime);
+		const startWord = words.value[range.start];
+		const endWord = words.value[range.end];
+		if (!startWord || !endWord) continue;
+
+		editor.timeline.rippleDeleteTimeRange({
+			startTime: startWord.start,
+			endTime: endWord.end,
+		});
 		words.value.splice(range.start, range.end - range.start + 1);
 	}
 
@@ -510,97 +530,6 @@ function clearStrikethrough() {
 	strikethroughIndices.value = new Set();
 }
 
-// Ripple-delete a time range from the timeline
-function rippleDeleteTimeRange(startTime: number, endTime: number) {
-	const deleteDuration = endTime - startTime;
-	const tracks = editor.timeline.getTracks();
-
-	for (const track of tracks) {
-		if (track.type !== "video") continue;
-
-		const elementsToProcess = [...track.elements].sort(
-			(a, b) => a.startTime - b.startTime
-		);
-
-		for (const el of elementsToProcess) {
-			const videoEl = el as VideoElement;
-			const elEnd = videoEl.startTime + videoEl.duration;
-
-			// Element is entirely within delete range → remove it
-			if (videoEl.startTime >= startTime && elEnd <= endTime) {
-				editor.timeline.deleteElements({
-					elements: [{ trackId: track.id, elementId: el.id }],
-				});
-				continue;
-			}
-
-			// Element spans the delete range start → trim duration to end before delete zone
-			if (videoEl.startTime < startTime && elEnd > startTime && elEnd <= endTime) {
-				const newDuration = startTime - videoEl.startTime;
-				editor.timeline.updateElementDuration({
-					trackId: track.id,
-					elementId: el.id,
-					duration: newDuration,
-				});
-				continue;
-			}
-
-			// Element spans the delete range end → trim start forward, shift left
-			if (videoEl.startTime >= startTime && videoEl.startTime < endTime && elEnd > endTime) {
-				const trimAmount = endTime - videoEl.startTime;
-				const newTrimStart = (videoEl.trimStart || 0) + trimAmount;
-				const newDuration = videoEl.duration - trimAmount;
-				editor.timeline.updateElementTrim({
-					elementId: el.id,
-					trimStart: newTrimStart,
-					trimEnd: 0,
-					startTime: startTime,
-					duration: newDuration,
-				});
-				continue;
-			}
-
-			// Element entirely contains delete range → split, then trim second part
-			if (videoEl.startTime < startTime && elEnd > endTime) {
-				// Split at startTime — returns the right-side elements
-				const rightSide = editor.timeline.splitElements({
-					elements: [{ trackId: track.id, elementId: el.id }],
-					splitTime: startTime,
-				});
-
-				if (rightSide.length > 0) {
-					const rightEl = rightSide[0];
-					// Re-read the element after split
-					const updatedTracks = editor.timeline.getTracks();
-					const updatedTrack = updatedTracks.find((t) => t.id === rightEl.trackId);
-					const secondPart = updatedTrack?.elements.find((e) => e.id === rightEl.elementId);
-					if (secondPart) {
-						const secondVideo = secondPart as VideoElement;
-						const trimAmount = endTime - secondVideo.startTime;
-						const newTrimStart = (secondVideo.trimStart || 0) + trimAmount;
-						const newDuration = secondVideo.duration - trimAmount;
-						editor.timeline.updateElementTrim({
-							elementId: secondPart.id,
-							trimStart: newTrimStart,
-							trimEnd: 0,
-							startTime: startTime,
-							duration: newDuration,
-						});
-					}
-				}
-				continue;
-			}
-
-			// Element is after delete range → ripple shift left
-			if (videoEl.startTime >= endTime) {
-				editor.timeline.updateElementStartTime({
-					elements: [{ trackId: track.id, elementId: el.id }],
-					startTime: videoEl.startTime - deleteDuration,
-				});
-			}
-		}
-	}
-}
 
 // ── Paragraph drag reorder ──
 function onParagraphDragStart(event: DragEvent, paragraphId: string) {

@@ -33,6 +33,7 @@ import {
 	ExtractAudioCommand,
 	UpdateCaptionElementCommand,
 	FreezeFrameCommand,
+	RippleDeleteTimeRangeCommand,
 } from "../../lib/commands/timeline";
 import type { UpdatableElementProps } from "../../lib/commands/timeline";
 import type { InsertElementParams } from "../../lib/commands/timeline/element/insert-element";
@@ -373,6 +374,17 @@ export class TimelineManager {
 
 	private notify(): void {
 		this.listeners.forEach((fn) => fn());
+	}
+
+	rippleDeleteTimeRange({
+		startTime,
+		endTime,
+	}: {
+		startTime: number;
+		endTime: number;
+	}): void {
+		const command = new RippleDeleteTimeRangeCommand(startTime, endTime);
+		this.editor.command.execute({ command });
 	}
 
 	updateTracks(newTracks: TimelineTrack[]): void {
