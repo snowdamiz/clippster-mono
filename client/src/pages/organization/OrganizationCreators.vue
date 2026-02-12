@@ -7,10 +7,16 @@
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Creator Profiles' }]"
   >
     <template #actions>
-      <button v-if="isAdmin" class="org-creators__action-btn" @click="openProfileDialog()">
-        <UserCircle class="org-creators__action-icon" />
-        Add Profile
-      </button>
+      <div v-if="isAdmin" style="display: flex; gap: 0.5rem;">
+        <button class="org-creators__action-btn org-creators__action-btn--global" @click="openProfileDialog(undefined, 'global')">
+          <Paintbrush class="org-creators__action-icon" />
+          Global Branding
+        </button>
+        <button class="org-creators__action-btn" @click="openProfileDialog()">
+          <UserCircle class="org-creators__action-icon" />
+          Add Profile
+        </button>
+      </div>
     </template>
 
     <div class="org-creators">
@@ -103,7 +109,10 @@
                 </div>
               </div>
               <div class="org-creators__header-info">
-                <div class="org-creators__name">{{ profile.name }}</div>
+                <div class="org-creators__name">
+                  {{ profile.name }}
+                  <span v-if="(profile as any).scope === 'global'" class="org-creators__scope-badge">Global</span>
+                </div>
                 <div class="org-creators__desc">{{ profile.description || 'No description' }}</div>
               </div>
               <!-- Actions Menu -->
@@ -273,6 +282,7 @@
       mode="organization"
       :organization-id="organizationId ?? ''"
       :profile="profileToEdit"
+      :scope="profileDialogScope"
       @close="closeProfileDialog"
       @saved="handleProfileSaved"
     />
@@ -378,6 +388,7 @@
     Loader2,
     MoreVertical,
     Layers,
+    Paintbrush,
     X,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
@@ -419,8 +430,11 @@
   const openProfileMenuId = ref<number | null>(null);
   const profileMenuButtonRefs = ref<Map<number, HTMLElement>>(new Map());
 
-  function openProfileDialog(profile?: ServerOrganizationCreatorProfile) {
+  const profileDialogScope = ref<'streamer' | 'global'>('streamer');
+
+  function openProfileDialog(profile?: ServerOrganizationCreatorProfile, scope?: 'streamer' | 'global') {
     profileToEdit.value = profile || null;
+    profileDialogScope.value = profile ? ((profile as any).scope || 'streamer') : (scope || 'streamer');
     showProfileDialog.value = true;
   }
 
@@ -626,6 +640,17 @@
 
   .org-creators__action-btn:hover:not(:disabled) {
     opacity: 0.9;
+  }
+
+  .org-creators__action-btn--global {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .org-creators__action-btn--global:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    opacity: 1;
   }
 
   .org-creators__action-btn:disabled {
@@ -938,6 +963,9 @@
   }
 
   .org-creators__name {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     font-size: 1rem;
     font-weight: 600;
     color: var(--sidebar-text);
@@ -945,6 +973,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.3;
+  }
+
+  .org-creators__scope-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-radius: 9999px;
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    flex-shrink: 0;
   }
 
   .org-creators__desc {

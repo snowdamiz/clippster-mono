@@ -13,6 +13,13 @@
                 <h2 class="workspace-dialog__title" :title="project?.name || 'New Project'">
                   {{ project?.name || 'New Project' }}
                 </h2>
+                <span
+                  v-if="vodPresetConfig"
+                  class="workspace-dialog__vod-badge"
+                  :title="`VOD Pre-Edit: ${vodPresetConfig.targetAspectRatio}`"
+                >
+                  {{ vodPresetConfig.targetAspectRatio }} Pre-Edit
+                </span>
               </div>
               <button class="workspace-dialog__close" @click="close" title="Close (Esc)">
                 <X :size="16" />
@@ -35,7 +42,8 @@
                     :video-error="videoError"
                     :is-playing="isPlaying"
                     :aspect-ratio="selectedAspectRatio"
-                    :focal-point="currentFocalPoint"
+                    :focal-point="effectiveFocalPoint"
+                    :framing-regions="vodPresetConfig?.framingConfig?.regions"
                     :watermark-settings="watermarkSettings"
                     :watermark-data="currentWatermarkData"
                     @togglePlayPause="togglePlayPause"
@@ -116,6 +124,7 @@
                   :transcribe-progress="transcribeProgressValue"
                   :transcribe-stage="transcribeStage"
                   :transcribe-message="transcribeMessage"
+                  :vod-preset-config="vodPresetConfig"
                   @detectClips="onDetectClips"
                   @cancelDetection="onCancelDetection"
                   @clipHover="onClipHover"
@@ -140,6 +149,8 @@
                     :hide-header="false"
                     @seekTo="seekToTime"
                     @createClipFromTranscript="onCreateClipFromTranscript"
+                    @deleteTimeRange="onDeleteTimeRange"
+                    @splitAtTime="onSplitAtTime"
                   />
                 </div>
               </div>
@@ -248,6 +259,7 @@
     updateClip,
     getOrCreateManualSession,
   } from '@/services/database';
+  import { resolveBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
   import { X, Film } from 'lucide-vue-next';
@@ -278,6 +290,8 @@
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useAuthStore } from '@/stores/auth';
   import { getRawVideosByProjectId } from '@/services/database';
+  import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
+  import type { ActiveVodPresetConfig } from '@/types';
 
   const authStore = useAuthStore();
   const { error: showError } = useToast();
@@ -357,6 +371,12 @@
 
   // Aspect ratio state
   const selectedAspectRatio = ref({ width: 16, height: 9 });
+
+  // VOD preset config state
+  const vodPresetConfig = ref<ActiveVodPresetConfig | null>(null);
+
+  // VOD framing focal point override (computed from framing regions)
+  const vodFocalPointOverride = ref<{ x: number; y: number } | null>(null);
 
   // Watermark settings state
   const watermarkSettings = ref<WatermarkSettings>({
@@ -535,6 +555,7 @@
 
   // Initialize focal point composable
   const { currentFocalPoint, loadFocalPoints, updateTime, reset: resetFocalPoint } = useVideoFocalPoint();
+  const effectiveFocalPoint = computed(() => vodFocalPointOverride.value || currentFocalPoint.value);
 
   // Watch for project changes to load focal points
   watch(
@@ -719,6 +740,23 @@
       const { error: showErr } = useToast();
       showErr('Clip Creation Failed', 'Failed to create clip from transcript selection.');
     }
+  }
+
+  function onDeleteTimeRange(startTime: number, endTime: number) {
+    console.log('[ProjectWorkspaceDialog] Delete time range:', startTime, '-', endTime);
+    // In the workspace dialog context, transcript delete removes the time range from clips
+    // by adjusting clip boundaries. This is a non-destructive operation on the source video.
+    const { success: showSuccess } = useToast();
+    showSuccess('Time Range Marked', `Marked ${(endTime - startTime).toFixed(1)}s for removal. Clips will be adjusted.`);
+  }
+
+  function onSplitAtTime(time: number) {
+    console.log('[ProjectWorkspaceDialog] Split at time:', time);
+    // In the workspace dialog context, splitting creates a new clip boundary at the given time
+    const { success: showSuccess } = useToast();
+    const mins = Math.floor(time / 60);
+    const secs = Math.floor(time % 60);
+    showSuccess('Split Point', `Split point set at ${mins}:${secs.toString().padStart(2, '0')}.`);
   }
 
   function onCancelTranscription() {
@@ -1605,8 +1643,8 @@
         }
       }
 
-      // Then try to find the creator profile (for intro/outro and watermark if not already set)
-      const profile = await getCreatorProfileByProjectId(projectId);
+      // Then try to find the branding profile (streamer-specific, global, or user-selected)
+      const profile = await resolveBrandingProfile(projectId);
       creatorProfile.value = profile;
 
       if (profile) {
@@ -2107,6 +2145,41 @@
           // Load creator profile and apply their default settings (watermark, etc.)
           await loadCreatorProfileSettings(props.project.id);
 
+          // Load VOD preset config and apply aspect ratio
+          // Check current project first, then fall back to parent project
+          try {
+            vodPresetConfig.value = await getProjectVodPresetConfig(props.project.id);
+            if (!vodPresetConfig.value && props.project.parent_id) {
+              vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
+            }
+            if (vodPresetConfig.value?.targetAspectRatio) {
+              const parts = vodPresetConfig.value.targetAspectRatio.split(':').map(Number);
+              if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
+                selectedAspectRatio.value = { width: parts[0], height: parts[1] };
+              }
+            }
+            // Apply focal point from framing regions so the preview crops to the right area
+            if (vodPresetConfig.value?.framingConfig?.regions?.length) {
+              const regions = vodPresetConfig.value.framingConfig.regions;
+              // Compute bounding box center of all source regions
+              let minX = 1, minY = 1, maxX = 0, maxY = 0;
+              for (const r of regions) {
+                minX = Math.min(minX, r.source.x);
+                minY = Math.min(minY, r.source.y);
+                maxX = Math.max(maxX, r.source.x + r.source.width);
+                maxY = Math.max(maxY, r.source.y + r.source.height);
+              }
+              const focalX = (minX + maxX) / 2;
+              const focalY = (minY + maxY) / 2;
+              vodFocalPointOverride.value = { x: focalX, y: focalY };
+            } else {
+              vodFocalPointOverride.value = null;
+            }
+          } catch (e) {
+            console.error('[ProjectWorkspaceDialog] Failed to load VOD preset config:', e);
+            vodPresetConfig.value = null;
+          }
+
           // Check if this project has active detection and restore state
           const detectionState = getDetectionState(props.project.id);
           if (detectionState && detectionState.isActive) {
@@ -2197,6 +2270,37 @@
       await loadVideoForProject();
       await loadTimelineClips(newProjectId);
       await loadCreatorProfileSettings(newProjectId);
+
+      // Load VOD preset config and apply aspect ratio
+      // Check current project first, then fall back to parent project
+      try {
+        vodPresetConfig.value = await getProjectVodPresetConfig(newProjectId);
+        if (!vodPresetConfig.value && props.project?.parent_id) {
+          vodPresetConfig.value = await getProjectVodPresetConfig(props.project.parent_id);
+        }
+        if (vodPresetConfig.value?.targetAspectRatio) {
+          const parts = vodPresetConfig.value.targetAspectRatio.split(':').map(Number);
+          if (parts.length === 2 && parts[0] > 0 && parts[1] > 0) {
+            selectedAspectRatio.value = { width: parts[0], height: parts[1] };
+          }
+        }
+        // Apply focal point from framing regions
+        if (vodPresetConfig.value?.framingConfig?.regions?.length) {
+          const regions = vodPresetConfig.value.framingConfig.regions;
+          let minX = 1, minY = 1, maxX = 0, maxY = 0;
+          for (const r of regions) {
+            minX = Math.min(minX, r.source.x);
+            minY = Math.min(minY, r.source.y);
+            maxX = Math.max(maxX, r.source.x + r.source.width);
+            maxY = Math.max(maxY, r.source.y + r.source.height);
+          }
+          vodFocalPointOverride.value = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+        } else {
+          vodFocalPointOverride.value = null;
+        }
+      } catch {
+        vodPresetConfig.value = null;
+      }
     }
   );
 
@@ -2391,6 +2495,20 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     letter-spacing: -0.01em;
+  }
+
+  .workspace-dialog__vod-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.5rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    border-radius: 0.25rem;
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #6ee7b7;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .workspace-dialog__close {

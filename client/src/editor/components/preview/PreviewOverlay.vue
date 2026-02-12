@@ -23,6 +23,8 @@ const {
 	selectedBounds,
 	dragState,
 	hoveredElementId,
+	showCenterGuideX,
+	showCenterGuideY,
 	handleCanvasMouseDown,
 	handleHandleMouseDown,
 	handleCanvasMouseMove,
@@ -35,6 +37,24 @@ const {
 const { isCropMode } = useEditorUIState();
 
 const overlayRef = ref<HTMLDivElement | null>(null);
+
+// Canvas center and size in screen (overlay) coordinates for guide lines
+const canvasScreenCenter = computed(() => {
+	const canvas = props.canvasRef;
+	if (!canvas) return { x: 0, y: 0 };
+	const rect = canvas.getBoundingClientRect();
+	return {
+		x: rect.width / 2,
+		y: rect.height / 2,
+	};
+});
+
+const canvasScreenSize = computed(() => {
+	const canvas = props.canvasRef;
+	if (!canvas) return { w: 0, h: 0 };
+	const rect = canvas.getBoundingClientRect();
+	return { w: rect.width, h: rect.height };
+});
 
 const HANDLE_SIZE = 10;
 const ROTATE_HANDLE_OFFSET = 30;
@@ -159,6 +179,35 @@ const cursorStyle = computed(() => {
 					stroke-dasharray="4 3"
 				/>
 			</g>
+		</svg>
+
+			<!-- Center alignment guides (CapCut style) -->
+		<svg
+			v-if="showCenterGuideX || showCenterGuideY"
+			class="pointer-events-none absolute inset-0 size-full overflow-visible"
+		>
+			<!-- Vertical center line (element is centered horizontally, x=0) -->
+			<line
+				v-if="showCenterGuideX"
+				:x1="canvasScreenCenter.x"
+				y1="0"
+				:x2="canvasScreenCenter.x"
+				:y2="canvasScreenSize.h"
+				stroke="#22d3ee"
+				stroke-width="1"
+				opacity="0.9"
+			/>
+			<!-- Horizontal center line (element is centered vertically, y=0) -->
+			<line
+				v-if="showCenterGuideY"
+				x1="0"
+				:y1="canvasScreenCenter.y"
+				:x2="canvasScreenSize.w"
+				:y2="canvasScreenCenter.y"
+				stroke="#22d3ee"
+				stroke-width="1"
+				opacity="0.9"
+			/>
 		</svg>
 
 		<!-- Crop overlay (shown in crop mode) -->

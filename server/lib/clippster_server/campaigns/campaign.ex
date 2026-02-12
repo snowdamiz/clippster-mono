@@ -36,6 +36,7 @@ defmodule ClippsterServer.Campaigns.Campaign do
 
     belongs_to :organization, Organization
     belongs_to :creator_profile, OrganizationCreatorProfile
+    belongs_to :branding_profile, OrganizationCreatorProfile, foreign_key: :branding_profile_id
     belongs_to :global_intro, OrganizationAsset, foreign_key: :global_intro_id
     belongs_to :global_outro, OrganizationAsset, foreign_key: :global_outro_id
     has_many :participants, CampaignParticipant
@@ -73,7 +74,8 @@ defmodule ClippsterServer.Campaigns.Campaign do
       :global_outro_id,
       :require_watermark,
       :require_intro,
-      :require_outro
+      :require_outro,
+      :branding_profile_id
     ])
     |> validate_required([:organization_id, :title])
     |> validate_length(:title, min: 3, max: 200)
@@ -89,6 +91,7 @@ defmodule ClippsterServer.Campaigns.Campaign do
     |> validate_dates()
     |> foreign_key_constraint(:organization_id)
     |> foreign_key_constraint(:creator_profile_id)
+    |> foreign_key_constraint(:branding_profile_id)
     |> foreign_key_constraint(:global_intro_id)
     |> foreign_key_constraint(:global_outro_id)
   end
@@ -118,7 +121,8 @@ defmodule ClippsterServer.Campaigns.Campaign do
       :global_outro_id,
       :require_watermark,
       :require_intro,
-      :require_outro
+      :require_outro,
+      :branding_profile_id
     ])
     |> validate_length(:title, min: 3, max: 200)
     |> validate_length(:description, max: 5000)
@@ -132,6 +136,7 @@ defmodule ClippsterServer.Campaigns.Campaign do
     |> validate_payment_methods()
     |> validate_dates()
     |> foreign_key_constraint(:creator_profile_id)
+    |> foreign_key_constraint(:branding_profile_id)
     |> foreign_key_constraint(:global_intro_id)
     |> foreign_key_constraint(:global_outro_id)
   end

@@ -179,6 +179,94 @@ export function useEditorActions() {
 		}
 	});
 
+	useActionHandler("freeze-frame", async () => {
+		const currentTime = editor.playback.getCurrentTime();
+		const tracks = editor.timeline.getTracks();
+
+		// Find the video element at the playhead (selected or auto-detected)
+		let targetTrackId: string | null = null;
+		let targetElementId: string | null = null;
+
+		if (selectedElements.value.length > 0) {
+			for (const sel of selectedElements.value) {
+				const track = tracks.find((t) => t.id === sel.trackId);
+				if (!track || track.type !== "video") continue;
+				const el = track.elements.find((e) => e.id === sel.elementId);
+				if (el && (el.type === "video" || el.type === "image")) {
+					const start = el.startTime;
+					const end = el.startTime + el.duration;
+					if (currentTime > start && currentTime < end) {
+						targetTrackId = sel.trackId;
+						targetElementId = sel.elementId;
+						break;
+					}
+				}
+			}
+		}
+
+		if (!targetTrackId || !targetElementId) {
+			const elementsAtTime = getElementsAtTime({ tracks, time: currentTime });
+			for (const ref of elementsAtTime) {
+				const track = tracks.find((t) => t.id === ref.trackId);
+				if (!track || track.type !== "video") continue;
+				const el = track.elements.find((e) => e.id === ref.elementId);
+				if (el && (el.type === "video" || el.type === "image")) {
+					targetTrackId = ref.trackId;
+					targetElementId = ref.elementId;
+					break;
+				}
+			}
+		}
+
+		if (!targetTrackId || !targetElementId) return;
+
+		// Capture the preview canvas as a PNG
+		const canvas = editor.getPreviewCanvas();
+		if (!canvas) {
+			console.warn("[FreezeFrame] No preview canvas available");
+			return;
+		}
+
+		const blob = await new Promise<Blob | null>((resolve) =>
+			canvas.toBlob((b) => resolve(b), "image/png"),
+		);
+		if (!blob) {
+			console.warn("[FreezeFrame] Failed to capture canvas");
+			return;
+		}
+
+		const file = new File([blob], `freeze-frame-${Date.now()}.png`, { type: "image/png" });
+
+		// Add as ephemeral media asset
+		const projectId = editor.project.getActive()?.metadata?.id;
+		if (!projectId) return;
+
+		await editor.media.addMediaAsset({
+			projectId,
+			asset: {
+				name: file.name,
+				type: "image",
+				file,
+				url: URL.createObjectURL(file),
+				width: canvas.width,
+				height: canvas.height,
+				ephemeral: true,
+			},
+		});
+
+		// Find the newly added asset (last one)
+		const assets = editor.media.getAssets();
+		const freezeAsset = assets[assets.length - 1];
+		if (!freezeAsset) return;
+
+		editor.timeline.freezeFrame({
+			trackId: targetTrackId,
+			elementId: targetElementId,
+			splitTime: currentTime,
+			mediaId: freezeAsset.id,
+		});
+	});
+
 	useActionHandler("toggle-bookmark", () => {
 		editor.scenes.toggleBookmark({ time: editor.playback.getCurrentTime() });
 	});

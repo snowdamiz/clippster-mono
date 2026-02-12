@@ -12,7 +12,7 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
   alias ClippsterServer.Social
   alias ClippsterServer.Social.{SocialAccount, Platform}
 
-  @default_interval :timer.hours(12)
+  @default_interval :timer.hours(1)
 
   # ============================================================================
   # Public API
@@ -43,13 +43,19 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
   @impl true
   def init(opts) do
     interval = Keyword.get(opts, :interval, @default_interval)
-    
+
     # Schedule first check after app starts
     if Keyword.get(opts, :start_immediately, true) do
       Process.send_after(self(), :refresh, :timer.minutes(5))
     end
 
-    Logger.info("[TokenRefreshWorker] Started with interval: #{div(interval, 3_600_000)} hours")
+    interval_display = if interval >= 3_600_000 do
+      "#{div(interval, 3_600_000)} hours"
+    else
+      "#{div(interval, 60_000)} minutes"
+    end
+
+    Logger.info("[TokenRefreshWorker] Started with interval: #{interval_display}")
 
     {:ok, %{interval: interval}}
   end
@@ -103,13 +109,31 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
   # Private Functions
   # ============================================================================
 
+  defp get_token_for_refresh(%SocialAccount{} = account) do
+    # Try refresh_token first (needed for X/Twitter single-use rotation)
+    case account.refresh_token_encrypted do
+      nil ->
+        # No refresh token available, use access token (Instagram pattern)
+        SocialAccount.get_access_token(account)
+      _encrypted ->
+        # Refresh token exists, try to decrypt it
+        case SocialAccount.get_refresh_token(account) do
+          {:ok, token} when is_binary(token) and token != "" -> token
+          token when is_binary(token) and token != "" -> token
+          _ -> SocialAccount.get_access_token(account)
+        end
+    end
+  end
+
   defp refresh_account_tokens(%SocialAccount{} = account) do
     Logger.info("[TokenRefreshWorker] Refreshing tokens for account #{account.id} (#{account.platform})")
 
-    access_token = SocialAccount.get_access_token(account)
+    # Some platforms (Instagram) refresh using access_token
+    # Others (Twitter/X) refresh using refresh_token
+    token_for_refresh = get_token_for_refresh(account)
 
     with {:ok, platform_module} <- Platform.get_platform_module(account.platform),
-         {:ok, new_tokens} <- platform_module.refresh_tokens(access_token) do
+         {:ok, new_tokens} <- platform_module.refresh_tokens(token_for_refresh) do
       
       # Calculate new expiry
       expires_at = if new_tokens[:expires_in] do

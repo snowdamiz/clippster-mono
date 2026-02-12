@@ -10,6 +10,9 @@ export interface Project {
   audio_settings: string | null; // JSON string of AudioSettings
   default_watermark_settings: string | null; // JSON string with watermark_id and watermark_settings from creator profile
   creator_profile_id: string | null; // Direct link to creator profile (for local video imports)
+  active_vod_preset_id: string | null; // Reference to saved VOD preset
+  active_vod_preset_config: string | null; // JSON snapshot of applied VOD preset config
+  selected_branding_profile_id: string | null; // Selected global branding profile
   created_at: number;
   updated_at: number;
 }
@@ -248,6 +251,7 @@ export interface ClipSegment {
   end_time: number;
   duration: number;
   transcript: string | null;
+  transcript_raw_json: string | null; // Word-level timing JSON (0-based times relative to clip start)
   audio_peaks: string | null; // JSON string of audio peak data
   created_at: number;
 }
@@ -538,6 +542,8 @@ export interface CreatorProfile {
   intro_ratio_settings: string | null; // JSON string of RatioAssetMap for intros
   outro_ratio_settings: string | null; // JSON string of RatioAssetMap for outros
   auto_dvr_enabled?: number | boolean; // Auto DVR toggle (default off)
+  layout_overlays: string | null; // JSON string of LayoutOverlay[]
+  scope: 'streamer' | 'global'; // 'streamer' = tied to platform links, 'global' = universal branding
   user_id: string | null;
   created_at: number;
   updated_at: number;

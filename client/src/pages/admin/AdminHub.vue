@@ -103,6 +103,28 @@
           </div>
         </section>
 
+        <!-- Revenue Section -->
+        <section class="admin-hub__section">
+          <h2 class="admin-hub__section-title">Revenue</h2>
+          <div class="admin-hub__grid">
+            <router-link v-for="tool in revenueTools" :key="tool.id" :to="tool.route" class="admin-hub__card">
+              <div class="admin-hub__card-content">
+                <div class="admin-hub__card-icon">
+                  <component :is="tool.icon" class="admin-hub__card-icon-svg" />
+                </div>
+                <div class="admin-hub__card-info">
+                  <h3 class="admin-hub__card-title">{{ tool.title }}</h3>
+                  <p class="admin-hub__card-desc">{{ tool.description }}</p>
+                </div>
+                <div class="admin-hub__card-stat" v-if="tool.stat !== undefined">
+                  <span class="admin-hub__card-stat-value">{{ tool.stat }}</span>
+                  <span class="admin-hub__card-stat-label">{{ tool.statLabel }}</span>
+                </div>
+              </div>
+            </router-link>
+          </div>
+        </section>
+
         <!-- System Section -->
         <section class="admin-hub__section">
           <h2 class="admin-hub__section-title">System</h2>
@@ -145,6 +167,7 @@
     Loader2,
     AlertTriangle,
     Percent,
+    Handshake,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
@@ -207,6 +230,16 @@
       description: 'Track key user actions and events',
       icon: BarChart3,
       route: '/admin/analytics',
+    },
+  ]);
+
+  const revenueTools = computed<Tool[]>(() => [
+    {
+      id: 'affiliates',
+      title: 'Affiliates',
+      description: 'Manage affiliate accounts, commissions, and payouts',
+      icon: Handshake,
+      route: '/admin/affiliates',
     },
   ]);
 

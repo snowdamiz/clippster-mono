@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useOrganization } from '@/hooks/useOrganization'
+import { useAuth } from '@/hooks/useAuth'
+import { useOAuthPopup } from '@/hooks/useOAuthPopup'
 import { useToast } from '@/hooks/useToast'
 import { listSocialAccounts, deleteSocialAccount, updateSocialAccount, refreshAccountToken, assignSocialAccount, unassignSocialAccount } from '@/services/socialAccountsApi'
 import { Button } from '@/components/ui/Button'
@@ -19,11 +21,13 @@ function getPlatformGradient(platform: string) {
   if (platform === 'instagram') return 'from-purple-500 to-pink-500'
   if (platform === 'tiktok') return 'from-zinc-900 to-zinc-700'
   if (platform === 'youtube') return 'from-red-500 to-red-600'
+  if (platform === 'twitter') return 'from-zinc-800 to-zinc-900'
   return 'from-cyan-500 to-cyan-700'
 }
 
 function getPlatformIcon(platform: string) {
   if (platform === 'instagram') return Instagram
+  if (platform === 'twitter') return XIcon
   return Globe
 }
 
@@ -184,8 +188,8 @@ function AssignmentsDialog({ account, open, onClose, organizationId, members, on
     <Dialog open={open} onClose={onClose} title="Manage Access" maxWidth="max-w-lg">
       <div className="space-y-4">
         <div className="flex items-center gap-3 pb-3 border-b border-zinc-800">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-pink-500/30">
-            <Instagram className="w-5 h-5 text-pink-400" />
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br ${getPlatformGradient(account.platform)}/20 border border-white/10`}>
+            {(() => { const Icon = getPlatformIcon(account.platform); return <Icon className="w-5 h-5 text-white" /> })()}
           </div>
           <div>
             <p className="text-sm font-medium text-white m-0">@{account.username}</p>
@@ -360,6 +364,8 @@ function XIcon({ className }: { className?: string }) {
 
 export function OrgSocial() {
   const { loadOrganization, organizationId, isAdmin, members } = useOrganization()
+  const { token } = useAuth()
+  const { openOAuth } = useOAuthPopup()
   const [accounts, setAccounts] = useState<SocialAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [connecting, setConnecting] = useState(false)
@@ -388,9 +394,33 @@ export function OrgSocial() {
   useEffect(() => { loadOrganization(); loadAccounts() }, [organizationId])
 
   const connectInstagram = () => {
+    if (!organizationId || !token) return
     setConnecting(true)
-    toast.info('Use the desktop app to connect Instagram via OAuth')
-    setConnecting(false)
+    openOAuth('instagram', organizationId, token, (result) => {
+      setConnecting(false)
+      if (result.success) {
+        toast.success(`Instagram account @${result.username} connected!`)
+        loadAccounts()
+        loadOrganization()
+      } else {
+        toast.error(result.error || 'Failed to connect Instagram')
+      }
+    })
+  }
+
+  const connectTwitter = () => {
+    if (!organizationId || !token) return
+    setConnecting(true)
+    openOAuth('twitter', organizationId, token, (result) => {
+      setConnecting(false)
+      if (result.success) {
+        toast.success(`X account @${result.username} connected!`)
+        loadAccounts()
+        loadOrganization()
+      } else {
+        toast.error(result.error || 'Failed to connect X')
+      }
+    })
   }
 
   const handleToggleActive = async (account: SocialAccount, active: boolean) => {
@@ -510,20 +540,27 @@ export function OrgSocial() {
               </div>
             </div>
 
-            {/* X (Twitter) - Coming Soon */}
-            <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/[0.02] border border-white/[0.06] rounded-[10px] opacity-50">
+            {/* X (Twitter) - Active */}
+            <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/[0.02] border border-white/[0.06] rounded-[10px] transition-all duration-200 hover:border-white/[0.12] hover:bg-white/[0.04]">
               <div className="flex items-center gap-4">
                 <div className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0 bg-black">
                   <XIcon className="w-[22px] h-[22px] text-white" />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-[0.9375rem] font-semibold text-white m-0 flex items-center gap-2">
-                    X (Twitter)
-                    <span className="text-[0.625rem] font-bold uppercase tracking-[0.05em] px-2 py-[3px] bg-purple-500/15 text-purple-400 rounded">Coming Soon</span>
-                  </h3>
+                  <h3 className="text-[0.9375rem] font-semibold text-white m-0">X (Twitter)</h3>
                   <p className="text-[0.8125rem] text-zinc-500 m-0 leading-[1.4]">Post your clips directly to X</p>
                 </div>
               </div>
+              {isAdmin && (
+                <button
+                  className="flex items-center gap-2 h-10 px-5 bg-gradient-to-br from-cyan-400 to-cyan-600 text-black border-none rounded-lg text-sm font-semibold cursor-pointer transition-all duration-150 shrink-0 hover:opacity-90 hover:-translate-y-px disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
+                  onClick={connectTwitter}
+                  disabled={connecting}
+                >
+                  {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  {connecting ? 'Connecting...' : 'Connect Account'}
+                </button>
+              )}
             </div>
           </div>
         </section>
@@ -577,7 +614,7 @@ export function OrgSocial() {
           {!loading && accounts.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 px-4 text-center bg-zinc-900/50 border border-dashed border-zinc-800 rounded-xl">
               <div className="w-16 h-16 rounded-2xl flex items-center justify-center bg-zinc-800 mb-5">
-                <Instagram className="w-8 h-8 text-cyan-400" />
+                <Globe className="w-8 h-8 text-cyan-400" />
               </div>
               <h3 className="text-lg font-semibold text-white m-0 mb-2">No accounts connected</h3>
               <p className="text-sm text-zinc-500 m-0 mb-6 max-w-[340px]">
@@ -615,8 +652,8 @@ export function OrgSocial() {
                         {account.profile_image_url ? (
                           <img src={account.profile_image_url} alt={account.username} className="w-full h-full rounded-full object-cover" />
                         ) : (
-                          <div className="w-full h-full rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #e6683c 0%, #bc1888 100%)' }}>
-                            <Instagram className="w-6 h-6 text-white" />
+                          <div className={`w-full h-full rounded-full flex items-center justify-center bg-gradient-to-br ${gradient}`}>
+                            <PlatformIcon className="w-6 h-6 text-white" />
                           </div>
                         )}
                         {/* Platform badge */}

@@ -13,16 +13,23 @@
                 <X :size="18" />
               </button>
               <div class="org-dialog__icon org-dialog__icon--cyan">
-                <UserCircle :size="24" />
+                <Paintbrush v-if="formData.scope === 'global'" :size="24" />
+                <UserCircle v-else :size="24" />
               </div>
               <h2 class="org-dialog__title">
-                {{ isEditing ? 'Edit Creator Profile' : 'Create Creator Profile' }}
+                {{ formData.scope === 'global'
+                  ? (isEditing ? 'Edit Global Branding' : 'Create Global Branding')
+                  : (isEditing ? 'Edit Creator Profile' : 'Create Creator Profile')
+                }}
               </h2>
               <p class="org-dialog__subtitle">
-                {{
-                  isEditing
+                {{ formData.scope === 'global'
+                  ? (isEditing
+                    ? 'Update default branding applied to content without a creator profile'
+                    : 'Set default intro, outro, and watermark for content without a specific creator profile')
+                  : (isEditing
                     ? 'Update profile details and platform links'
-                    : 'Add a new creator with platform connections'
+                    : 'Add a new creator with platform connections')
                 }}
               </p>
             </div>
@@ -45,7 +52,7 @@
                       v-model="formData.name"
                       type="text"
                       required
-                      placeholder="Creator name"
+                      :placeholder="formData.scope === 'global' ? 'Branding profile name' : 'Creator name'"
                       class="org-dialog__input"
                     />
                   </div>
@@ -58,15 +65,15 @@
                     <textarea
                       v-model="formData.description"
                       rows="2"
-                      placeholder="Brief description of this creator..."
+                      :placeholder="formData.scope === 'global' ? 'e.g. Default branding for all content' : 'Brief description of this creator...'"
                       class="org-dialog__input org-dialog__textarea"
                     />
                   </div>
                 </div>
               </div>
 
-              <!-- Auto DVR Toggle -->
-              <div class="org-dialog__feature-card">
+              <!-- Auto DVR Toggle (hidden for org mode and global branding profiles) -->
+              <div v-if="mode === 'local' && formData.scope !== 'global'" class="org-dialog__feature-card">
                 <div class="org-dialog__feature-icon">
                   <Sparkles :size="16" />
                 </div>
@@ -81,8 +88,8 @@
                 </div>
               </div>
 
-              <!-- Platform Links Section -->
-              <div class="org-dialog__section">
+              <!-- Platform Links Section (hidden for global branding profiles) -->
+              <div v-if="formData.scope !== 'global'" class="org-dialog__section">
                 <div class="org-dialog__section-header">
                   <h3 class="org-dialog__section-title">Platform Links</h3>
                   <button type="button" @click="addPlatformLink" class="org-dialog__add-btn">
@@ -232,7 +239,10 @@
               <div class="org-dialog__section" @click.stop="openAssetDropdown = null">
                 <h3 class="org-dialog__section-title">Default Assets</h3>
                 <p class="org-dialog__section-desc">
-                  Configure default intro, outro, and watermark for this creator's content.
+                  {{ formData.scope === 'global'
+                    ? 'Configure the intro, outro, and watermark applied to all content without a specific creator profile.'
+                    : "Configure default intro, outro, and watermark for this creator's content."
+                  }}
                 </p>
 
                 <div class="org-dialog__section-items">
@@ -303,16 +313,9 @@
                       >
                         <Settings2 :size="16" />
                       </button>
-                      <input
-                        ref="introFileInput"
-                        type="file"
-                        accept="video/mp4,video/webm,video/quicktime"
-                        class="org-dialog__hidden"
-                        @change="handleIntroUpload"
-                      />
                       <button
                         type="button"
-                        @click="introFileInput?.click()"
+                        @click="handleIntroUploadClick"
                         :disabled="uploadingIntro"
                         class="org-dialog__asset-upload"
                         title="Upload new intro"
@@ -395,16 +398,9 @@
                       >
                         <Settings2 :size="16" />
                       </button>
-                      <input
-                        ref="outroFileInput"
-                        type="file"
-                        accept="video/mp4,video/webm,video/quicktime"
-                        class="org-dialog__hidden"
-                        @change="handleOutroUpload"
-                      />
                       <button
                         type="button"
-                        @click="outroFileInput?.click()"
+                        @click="handleOutroUploadClick"
                         :disabled="uploadingOutro"
                         class="org-dialog__asset-upload"
                         title="Upload new outro"
@@ -513,6 +509,94 @@
                     </p>
                   </div>
                 </div>
+
+                <!-- Layout Overlays Section -->
+                <div class="org-dialog__asset-row">
+                  <div class="flex items-center justify-between w-full mb-1.5">
+                    <label class="org-dialog__asset-label" style="margin-bottom: 0">
+                      <Layers :size="14" class="inline mr-1 text-amber-400" />
+                      Layout Overlays
+                    </label>
+                    <button
+                      type="button"
+                      @click="addLayoutOverlay"
+                      :disabled="uploadingOverlay"
+                      class="org-dialog__asset-upload"
+                      title="Add overlay image"
+                    >
+                      <Loader2 v-if="uploadingOverlay" :size="14" class="org-dialog__spin" />
+                      <Plus v-else :size="14" />
+                      <span class="text-[10px] ml-0.5">Add</span>
+                    </button>
+                  </div>
+
+                  <!-- Overlay List -->
+                  <div v-if="formData.layout_overlays.length > 0" class="w-full space-y-1.5">
+                    <div
+                      v-for="(overlay, idx) in formData.layout_overlays"
+                      :key="overlay.id"
+                      class="flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-all group"
+                      style="background: var(--sidebar-hover); border-color: var(--sidebar-border)"
+                    >
+                      <!-- Thumbnail -->
+                      <div
+                        class="w-8 h-8 rounded flex-shrink-0 flex items-center justify-center overflow-hidden border"
+                        style="background: var(--sidebar-surface); border-color: var(--sidebar-border)"
+                      >
+                        <img
+                          v-if="overlayPreviews[overlay.id]"
+                          :src="overlayPreviews[overlay.id]"
+                          class="max-w-full max-h-full object-contain"
+                          alt=""
+                        />
+                        <Layers v-else :size="12" class="text-zinc-500" />
+                      </div>
+
+                      <!-- Label + Info -->
+                      <div class="flex-1 min-w-0">
+                        <input
+                          v-model="overlay.label"
+                          class="text-xs bg-transparent border-none outline-none w-full placeholder-zinc-600"
+                          style="color: var(--sidebar-text)"
+                          :placeholder="`Overlay ${idx + 1}`"
+                        />
+                        <div class="text-[10px] font-mono mt-0.5" style="color: var(--sidebar-text-muted)">
+                          {{ overlay.opacity }}% opacity
+                          <span v-if="overlayConfiguredRatioCount(overlay) > 0" class="text-amber-400 ml-1">
+                            · {{ overlayConfiguredRatioCount(overlay) }}/4 ratios
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- Controls -->
+                      <div class="flex items-center gap-1">
+                        <button
+                          type="button"
+                          @click="openOverlayPositionPicker(idx)"
+                          class="px-1.5 py-1 text-[10px] font-medium rounded transition-colors flex items-center gap-0.5"
+                          style="color: var(--sidebar-accent); background: rgba(var(--sidebar-accent-rgb, 6, 182, 212), 0.1)"
+                          title="Configure position per aspect ratio"
+                        >
+                          <Move :size="10" />
+                          Position
+                        </button>
+                        <button
+                          type="button"
+                          @click="removeLayoutOverlay(idx)"
+                          class="p-1 rounded transition-colors opacity-0 group-hover:opacity-100"
+                          style="color: var(--sidebar-text-muted)"
+                          title="Remove overlay"
+                        >
+                          <Trash2 :size="12" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p v-else class="text-[10px] w-full" style="color: var(--sidebar-text-muted)">
+                    No overlays added. Click + Add to upload an overlay image.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -537,9 +621,9 @@
                     ? 'Saving...'
                     : fetchingProfileImage
                       ? 'Fetching Info...'
-                      : isEditing
-                        ? 'Update Profile'
-                        : 'Create Profile'
+                      : formData.scope === 'global'
+                        ? (isEditing ? 'Update Branding' : 'Create Branding')
+                        : (isEditing ? 'Update Profile' : 'Create Profile')
                 }}
               </button>
             </div>
@@ -560,6 +644,16 @@
     :settings="formData.watermark_settings || undefined"
     @close="showWatermarkPositionPicker = false"
     @save="handleWatermarkSettingsSave"
+  />
+
+  <!-- Overlay Position Picker -->
+  <OverlayPositionPicker
+    :show="showOverlayPositionPicker"
+    :overlay-image-path="activeOverlayForPosition?.imagePath || ''"
+    :overlay-label="activeOverlayForPosition?.label || ''"
+    :settings="activeOverlayForPosition?.perRatioSettings || undefined"
+    @close="showOverlayPositionPicker = false"
+    @save="handleOverlayPositionSave"
   />
 
   <!-- Intro/Outro Ratio Picker -->
@@ -589,6 +683,9 @@
     Users,
     Settings2,
     Sparkles,
+    Paintbrush,
+    Layers,
+    Move,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
@@ -619,12 +716,16 @@
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
+  import { readFile } from '@tauri-apps/plugin-fs';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from './WatermarkPositionPicker.vue';
+  import OverlayPositionPicker from './OverlayPositionPicker.vue';
   import IntroOutroRatioPicker from './IntroOutroRatioPicker.vue';
   import type { RatioAssetMap } from '@/services/database/types';
+  import type { LayoutOverlay, PerRatioOverlaySettings } from '@/types';
+  import { invoke } from '@tauri-apps/api/core';
 
   type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
 
@@ -657,6 +758,8 @@
     profile?: ServerOrganizationCreatorProfile | null;
     // Local mode props
     creator?: CreatorProfileWithLinks | null;
+    // Scope for new profiles ('streamer' or 'global')
+    scope?: 'streamer' | 'global';
   }
 
   const props = defineProps<Props>();
@@ -686,8 +789,6 @@
   const openAssetDropdown = ref<'intro' | 'outro' | 'watermark' | null>(null);
 
   // Upload state
-  const introFileInput = ref<HTMLInputElement | null>(null);
-  const outroFileInput = ref<HTMLInputElement | null>(null);
   const watermarkFileInput = ref<HTMLInputElement | null>(null);
   const uploadingIntro = ref(false);
   const uploadingOutro = ref(false);
@@ -711,8 +812,10 @@
     intro_outro_settings: string | null;
     intro_ratio_settings: string | null;
     outro_ratio_settings: string | null;
+    layout_overlays: LayoutOverlay[];
     platformLinks: PlatformLinkInput[];
     auto_dvr_enabled: boolean;
+    scope: 'streamer' | 'global';
   }>({
     name: '',
     description: '',
@@ -723,12 +826,31 @@
     intro_outro_settings: null,
     intro_ratio_settings: null,
     outro_ratio_settings: null,
+    layout_overlays: [],
     platformLinks: [],
     auto_dvr_enabled: false,
+    scope: 'streamer',
   });
 
   // Watermark position picker state
   const showWatermarkPositionPicker = ref(false);
+
+  // Overlay state
+  const overlayPreviews = ref<Record<string, string>>({});
+  const showOverlayPositionPicker = ref(false);
+  const activeOverlayIndex = ref(-1);
+  const uploadingOverlay = ref(false);
+
+  const activeOverlayForPosition = computed(() => {
+    if (activeOverlayIndex.value < 0 || activeOverlayIndex.value >= formData.value.layout_overlays.length) return null;
+    return formData.value.layout_overlays[activeOverlayIndex.value];
+  });
+
+  function overlayConfiguredRatioCount(overlay: LayoutOverlay): number {
+    if (!overlay.perRatioSettings) return 0;
+    const s = overlay.perRatioSettings;
+    return [s['16:9'], s['9:16'], s['1:1'], s['4:5']].filter((v) => v !== null && v !== undefined).length;
+  }
 
   // Intro/Outro ratio picker state
   const showIntroOutroRatioPicker = ref(false);
@@ -839,7 +961,9 @@
             intro_outro_settings: (props.profile as any).intro_outro_settings || null,
             intro_ratio_settings: (props.profile as any).intro_ratio_settings || null,
             outro_ratio_settings: (props.profile as any).outro_ratio_settings || null,
+            layout_overlays: (props.profile.layout_overlays as unknown as LayoutOverlay[]) || [],
             auto_dvr_enabled: Boolean((props.profile as any).auto_dvr_enabled),
+            scope: ((props.profile as any).scope as 'streamer' | 'global') || props.scope || 'streamer',
             platformLinks: props.profile.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform as PlatformId,
@@ -862,7 +986,9 @@
             intro_outro_settings: props.creator.intro_outro_settings || null,
             intro_ratio_settings: props.creator.intro_ratio_settings || null,
             outro_ratio_settings: props.creator.outro_ratio_settings || null,
+            layout_overlays: props.creator.layout_overlays ? JSON.parse(props.creator.layout_overlays) : [],
             auto_dvr_enabled: Boolean((props.creator as any).auto_dvr_enabled),
+            scope: props.creator.scope || props.scope || 'streamer',
             platformLinks: props.creator.platform_links.map((link) => ({
               id: link.id,
               platform: link.platform as PlatformId,
@@ -885,10 +1011,15 @@
             intro_outro_settings: null,
             intro_ratio_settings: null,
             outro_ratio_settings: null,
+            layout_overlays: [],
             platformLinks: [],
             auto_dvr_enabled: false,
+            scope: props.scope || 'streamer',
           };
         }
+
+        // Load overlay previews
+        await loadAllOverlayPreviews();
       }
     }
   );
@@ -1186,6 +1317,92 @@
     return count;
   }
 
+  // ============================================
+  // Overlay Management Functions
+  // ============================================
+
+  async function loadOverlayPreview(overlay: LayoutOverlay) {
+    if (!overlay.imagePath) return;
+    try {
+      const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: overlay.imagePath });
+      overlayPreviews.value[overlay.id] = dataUrl;
+    } catch (err) {
+      console.warn('[ProfileDialog] Failed to load overlay preview:', overlay.id, err);
+    }
+  }
+
+  async function loadAllOverlayPreviews() {
+    overlayPreviews.value = {};
+    for (const overlay of formData.value.layout_overlays) {
+      await loadOverlayPreview(overlay);
+    }
+  }
+
+  async function addLayoutOverlay() {
+    if (uploadingOverlay.value) return;
+    uploadingOverlay.value = true;
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const result = await open({
+        multiple: false,
+        filters: [{ name: 'Images', extensions: ['png', 'svg', 'webp', 'jpg', 'jpeg'] }],
+      });
+      if (!result) return;
+      const filePath = result as string;
+
+      const newOverlay: LayoutOverlay = {
+        id: crypto.randomUUID(),
+        imagePath: filePath,
+        x: 50,
+        y: 50,
+        width: 100,
+        height: 10,
+        opacity: 100,
+        rotation: 0,
+        label: '',
+      };
+
+      formData.value.layout_overlays.push(newOverlay);
+      await loadOverlayPreview(newOverlay);
+    } catch (err) {
+      console.error('[ProfileDialog] Failed to add overlay:', err);
+    } finally {
+      uploadingOverlay.value = false;
+    }
+  }
+
+  function removeLayoutOverlay(index: number) {
+    const overlay = formData.value.layout_overlays[index];
+    if (overlay) {
+      delete overlayPreviews.value[overlay.id];
+    }
+    formData.value.layout_overlays.splice(index, 1);
+  }
+
+  function openOverlayPositionPicker(idx: number) {
+    activeOverlayIndex.value = idx;
+    showOverlayPositionPicker.value = true;
+  }
+
+  function handleOverlayPositionSave(settings: PerRatioOverlaySettings) {
+    if (activeOverlayIndex.value < 0 || activeOverlayIndex.value >= formData.value.layout_overlays.length) return;
+
+    const overlay = formData.value.layout_overlays[activeOverlayIndex.value];
+    overlay.perRatioSettings = settings;
+
+    const firstEnabled = settings['16:9'] || settings['9:16'] || settings['1:1'] || settings['4:5'];
+    if (firstEnabled) {
+      overlay.x = firstEnabled.x;
+      overlay.y = firstEnabled.y;
+      overlay.width = firstEnabled.width;
+      overlay.height = firstEnabled.height;
+      overlay.opacity = firstEnabled.opacity;
+      overlay.rotation = firstEnabled.rotation;
+    }
+
+    showOverlayPositionPicker.value = false;
+  }
+
   // Check if intro ratio settings are configured
   const hasIntroRatioConfig = computed((): boolean => {
     if (!formData.value.intro_ratio_settings) return false;
@@ -1320,14 +1537,36 @@
     });
   }
 
-  async function handleIntroUpload(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
+  async function selectVideoFileNative(): Promise<File | null> {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      multiple: false,
+      filters: [
+        {
+          name: 'Video Files',
+          extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'],
+        },
+      ],
+    });
+    if (!selected || typeof selected !== 'string') return null;
 
+    const fileName = selected.split(/[\\\/]/).pop() || 'file';
+    const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
+    const mimeMap: Record<string, string> = {
+      mp4: 'video/mp4', mov: 'video/quicktime', avi: 'video/x-msvideo',
+      mkv: 'video/x-matroska', webm: 'video/webm', flv: 'video/x-flv',
+      wmv: 'video/x-ms-wmv', m4v: 'video/x-m4v',
+    };
+    const bytes = await readFile(selected);
+    return new File([bytes], fileName, { type: mimeMap[ext] || 'video/mp4' });
+  }
+
+  async function handleIntroUploadClick() {
     uploadingIntro.value = true;
     try {
       if (props.mode === 'organization' && props.organizationId) {
+        const file = await selectVideoFileNative();
+        if (!file) { uploadingIntro.value = false; return; }
         const metadata = await extractVideoMetadata(file);
         const response = await uploadOrganizationAsset(props.organizationId, file, 'intro', {
           name: file.name.replace(/\.[^/.]+$/, ''),
@@ -1336,7 +1575,6 @@
           width: metadata.width ?? undefined,
           height: metadata.height ?? undefined,
         });
-
         if (response.success && response.asset) {
           orgAssets.value.push(response.asset);
           formData.value.intro_id = response.asset.id;
@@ -1345,7 +1583,6 @@
           showError('Upload Failed', response.error || 'Failed to upload intro');
         }
       } else {
-        // Local mode
         pendingUploadType.value = 'intro';
         await uploadVideoAsset('intro');
       }
@@ -1355,18 +1592,15 @@
       pendingUploadType.value = null;
     } finally {
       uploadingIntro.value = false;
-      input.value = '';
     }
   }
 
-  async function handleOutroUpload(event: Event) {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-
+  async function handleOutroUploadClick() {
     uploadingOutro.value = true;
     try {
       if (props.mode === 'organization' && props.organizationId) {
+        const file = await selectVideoFileNative();
+        if (!file) { uploadingOutro.value = false; return; }
         const metadata = await extractVideoMetadata(file);
         const response = await uploadOrganizationAsset(props.organizationId, file, 'outro', {
           name: file.name.replace(/\.[^/.]+$/, ''),
@@ -1375,7 +1609,6 @@
           width: metadata.width ?? undefined,
           height: metadata.height ?? undefined,
         });
-
         if (response.success && response.asset) {
           orgAssets.value.push(response.asset);
           formData.value.outro_id = response.asset.id;
@@ -1384,7 +1617,6 @@
           showError('Upload Failed', response.error || 'Failed to upload outro');
         }
       } else {
-        // Local mode
         pendingUploadType.value = 'outro';
         await uploadVideoAsset('outro');
       }
@@ -1394,7 +1626,6 @@
       pendingUploadType.value = null;
     } finally {
       uploadingOutro.value = false;
-      input.value = '';
     }
   }
 
@@ -1523,6 +1754,10 @@
         watermark_id: formData.value.watermark_id as number | null,
         watermark_settings: formData.value.watermark_settings,
         intro_outro_settings: formData.value.intro_outro_settings ? JSON.parse(formData.value.intro_outro_settings) : null,
+        layout_overlays: formData.value.layout_overlays.length > 0
+          ? (formData.value.layout_overlays as unknown as Record<string, unknown>[])
+          : null,
+        scope: formData.value.scope,
       });
 
       if (!response.success || !response.profile) {
@@ -1567,6 +1802,10 @@
         outro_id: formData.value.outro_id as number | null,
         watermark_id: formData.value.watermark_id as number | null,
         watermark_settings: formData.value.watermark_settings || undefined,
+        layout_overlays: formData.value.layout_overlays.length > 0
+          ? (formData.value.layout_overlays as unknown as Record<string, unknown>[])
+          : null,
+        scope: formData.value.scope,
       });
 
       if (!response.success || !response.profile) {
@@ -1683,6 +1922,9 @@
         intro_ratio_settings: formData.value.intro_ratio_settings,
         outro_ratio_settings: formData.value.outro_ratio_settings,
         auto_dvr_enabled: formData.value.auto_dvr_enabled ? 1 : 0,
+        layout_overlays: formData.value.layout_overlays.length > 0
+          ? JSON.stringify(formData.value.layout_overlays)
+          : null,
       });
 
       // Delete removed links
@@ -1698,7 +1940,10 @@
         await processLink(props.creator.id, link);
       }
 
-      showSuccess('Creator Updated', `"${formData.value.name}" has been updated`);
+      showSuccess(
+        formData.value.scope === 'global' ? 'Branding Updated' : 'Creator Updated',
+        `"${formData.value.name}" has been updated`
+      );
     } else {
       // Create new creator
       const creatorId = await createCreatorProfile(
@@ -1712,7 +1957,11 @@
         formData.value.intro_outro_settings,
         formData.value.auto_dvr_enabled,
         formData.value.intro_ratio_settings,
-        formData.value.outro_ratio_settings
+        formData.value.outro_ratio_settings,
+        formData.value.scope,
+        formData.value.layout_overlays.length > 0
+          ? JSON.stringify(formData.value.layout_overlays)
+          : null
       );
 
       // Add platform links
@@ -1720,7 +1969,10 @@
         await processLink(creatorId, link);
       }
 
-      showSuccess('Creator Created', `"${formData.value.name}" has been added`);
+      showSuccess(
+        formData.value.scope === 'global' ? 'Branding Created' : 'Creator Created',
+        `"${formData.value.name}" has been added`
+      );
     }
 
     // Notify other components (like LiveClip.vue) about the new/updated monitoring data

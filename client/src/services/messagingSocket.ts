@@ -1,4 +1,5 @@
 import { Socket, Channel } from 'phoenix';
+import { normalizeMessage, normalizeConversation } from './messagingApi';
 import type { Message, Conversation } from './messagingApi';
 
 // ============================================================================
@@ -39,6 +40,7 @@ class MessagingSocket {
   // Event handlers
   private onNewMessageNotification: NotificationHandler | null = null;
   private onConversationCreated: ConversationHandler | null = null;
+  private onMessageReadNotification: ReadHandler | null = null;
   private conversationHandlers: Map<number, {
     onNewMessage?: MessageHandler;
     onMessageEdited?: MessageHandler;
@@ -107,12 +109,23 @@ class MessagingSocket {
 
       this.userChannel = this.socket.channel(`messaging:user:${userId}`);
 
-      this.userChannel.on('new_message_notification', (payload: MessageNotification) => {
-        this.onNewMessageNotification?.(payload);
+      this.userChannel.on('new_message_notification', (payload: any) => {
+        const notification: MessageNotification = {
+          conversationId: payload.conversationId ?? payload.conversation_id,
+          message: normalizeMessage(payload.message ?? payload),
+        };
+        this.onNewMessageNotification?.(notification);
       });
 
-      this.userChannel.on('conversation_created', (payload: Conversation) => {
-        this.onConversationCreated?.(payload);
+      this.userChannel.on('conversation_created', (payload: any) => {
+        this.onConversationCreated?.(normalizeConversation(payload));
+      });
+
+      this.userChannel.on('message_read_notification', (payload: any) => {
+        this.onMessageReadNotification?.({
+          userId: payload.user_id ?? payload.userId,
+          conversationId: payload.conversation_id ?? payload.conversationId,
+        });
       });
 
       this.userChannel
@@ -155,14 +168,14 @@ class MessagingSocket {
 
       const channel = this.socket.channel(`messaging:conversation:${conversationId}`);
 
-      channel.on('new_message', (message: Message) => {
+      channel.on('new_message', (msg: any) => {
         const h = this.conversationHandlers.get(conversationId);
-        h?.onNewMessage?.(message);
+        h?.onNewMessage?.(normalizeMessage(msg));
       });
 
-      channel.on('message_edited', (message: Message) => {
+      channel.on('message_edited', (msg: any) => {
         const h = this.conversationHandlers.get(conversationId);
-        h?.onMessageEdited?.(message);
+        h?.onMessageEdited?.(normalizeMessage(msg));
       });
 
       channel.on('message_deleted', (event: { message_id: number }) => {
@@ -296,6 +309,13 @@ class MessagingSocket {
    */
   setOnConversationCreated(handler: ConversationHandler | null): void {
     this.onConversationCreated = handler;
+  }
+
+  /**
+   * Set handler for message read notifications (via user channel).
+   */
+  setOnMessageReadNotification(handler: ReadHandler | null): void {
+    this.onMessageReadNotification = handler;
   }
 
   /**

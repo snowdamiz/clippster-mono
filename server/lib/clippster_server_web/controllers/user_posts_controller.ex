@@ -5,9 +5,12 @@ defmodule ClippsterServerWeb.UserPostsController do
 
   use ClippsterServerWeb, :controller
 
+  require Logger
+
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.{ClipperSocialAccount, UserPost}
   alias ClippsterServer.Social.Platforms.Instagram
+  alias ClippsterServer.Social.Platforms.Twitter
 
   @doc """
   Publish a post to user's Instagram account.
@@ -70,6 +73,80 @@ defmodule ClippsterServerWeb.UserPostsController do
         |> put_status(500)
         |> json(%{success: false, error: inspect(reason)})
     end
+  end
+
+  @doc """
+  Publish a post to user's X (Twitter) account.
+
+  POST /api/user/twitter/publish
+  """
+  def publish_twitter(conn, params) do
+    user = conn.assigns.current_user
+
+    with {:ok, account_id} <- get_required_param(params, "account_id"),
+         {:ok, media_url} <- get_required_param(params, "media_url"),
+         {:ok, account} <- get_user_account(user.id, account_id),
+         :ok <- validate_platform(account, "twitter"),
+         {:ok, post_data} <- publish_to_twitter(account, media_url, params) do
+
+      post_attrs = %{
+        user_id: user.id,
+        clipper_social_account_id: account.id,
+        platform: "x",
+        post_id: post_data.post_id,
+        post_url: post_data.post_url,
+        caption: params["caption"],
+        media_url: media_url,
+        thumbnail_url: params["thumbnail_url"],
+        media_type: params["media_type"] || "video",
+        status: "published"
+      }
+
+      case Campaigns.create_user_post(user, post_attrs) do
+        {:ok, post} ->
+          conn
+          |> put_status(201)
+          |> json(%{
+            success: true,
+            post: serialize_post(post),
+            message: "Published to X successfully"
+          })
+
+        {:error, changeset} ->
+          conn
+          |> put_status(422)
+          |> json(%{
+            success: false,
+            error: extract_changeset_error(changeset)
+          })
+      end
+    else
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Account not found"})
+
+      {:error, :wrong_platform} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Account is not a Twitter/X account"})
+
+      {:error, :missing_param, param} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Missing required parameter: #{param}"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(500)
+        |> json(%{success: false, error: inspect(reason)})
+    end
+  rescue
+    e ->
+      Logger.error("[UserPosts] publish_twitter crashed: #{Exception.message(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}")
+      conn
+      |> put_status(500)
+      |> json(%{success: false, error: "Internal error: #{Exception.message(e)}"})
   end
 
   @doc """
@@ -270,6 +347,20 @@ defmodule ClippsterServerWeb.UserPostsController do
     end
   end
 
+  defp validate_platform(account, expected_platform) do
+    if platforms_match?(account.platform, expected_platform) do
+      :ok
+    else
+      {:error, :wrong_platform}
+    end
+  end
+
+  defp platforms_match?(actual, expected) when actual == expected, do: true
+  defp platforms_match?(actual, expected)
+       when actual in ["x", "twitter"] and expected in ["x", "twitter"],
+       do: true
+  defp platforms_match?(_, _), do: false
+
   defp get_user_account(user_id, account_id) do
     account = Campaigns.get_social_account(account_id)
 
@@ -305,6 +396,67 @@ defmodule ClippsterServerWeb.UserPostsController do
     Instagram.publish_media(access_token, media_url, opts)
   end
 
+  defp publish_to_twitter(account, media_url, params) do
+    {:ok, account} = maybe_refresh_twitter_token(account)
+    access_token = ClipperSocialAccount.get_access_token(account)
+    caption = params["caption"] || ""
+
+    opts = [
+      filename: "video.mp4",
+      media_type: params["media_type"] || "video"
+    ]
+
+    with {:ok, %{media_id: media_id}} <- Twitter.publish_media(access_token, media_url, opts),
+         {:ok, tweet_data} <- Twitter.create_tweet(access_token, caption, media_ids: [media_id]) do
+      {:ok, %{post_id: tweet_data.post_id, post_url: tweet_data.post_url}}
+    end
+  end
+
+  defp maybe_refresh_twitter_token(%ClipperSocialAccount{} = account) do
+    needs_refresh = account.token_expires_at == nil or ClipperSocialAccount.token_needs_refresh?(account)
+    if needs_refresh do
+      Logger.info("[UserPosts] X token needs refresh for account #{account.id}")
+      refresh_token = ClipperSocialAccount.get_refresh_token(account)
+
+      case Twitter.refresh_tokens(refresh_token) do
+        {:ok, new_tokens} ->
+          expires_at = if new_tokens[:expires_in] do
+            DateTime.utc_now()
+            |> DateTime.add(new_tokens[:expires_in], :second)
+            |> DateTime.truncate(:second)
+          else
+            nil
+          end
+
+          attrs = %{
+            access_token: new_tokens[:access_token],
+            token_expires_at: expires_at
+          }
+
+          attrs = if new_tokens[:refresh_token] do
+            Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
+          else
+            attrs
+          end
+
+          case Campaigns.update_social_account_tokens(account, attrs) do
+            {:ok, updated_account} ->
+              Logger.info("[UserPosts] Successfully refreshed X token for account #{account.id}")
+              {:ok, updated_account}
+            {:error, reason} ->
+              Logger.warning("[UserPosts] Failed to save refreshed X token: #{inspect(reason)}")
+              {:ok, account}
+          end
+
+        {:error, reason} ->
+          Logger.error("[UserPosts] Failed to refresh X token: #{inspect(reason)}")
+          {:error, {:token_refresh_failed, reason}}
+      end
+    else
+      {:ok, account}
+    end
+  end
+
   defp fetch_insights(account, post) do
     access_token = ClipperSocialAccount.get_access_token(account)
     Instagram.get_insights(access_token, post.post_id)
@@ -328,7 +480,9 @@ defmodule ClippsterServerWeb.UserPostsController do
       reach_count: post.reach_count,
       impressions_count: post.impressions_count,
       synced_at: post.synced_at,
-      published_at: post.inserted_at
+      published_at: post.inserted_at,
+      inserted_at: post.inserted_at,
+      updated_at: post.updated_at
     }
   end
 

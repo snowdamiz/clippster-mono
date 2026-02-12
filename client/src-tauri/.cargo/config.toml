@@ -2,12 +2,7 @@
 rustflags = ["-C", "target-feature=+crt-static"]
 
 [env]
-# vcpkg FFmpeg (stable 7.x release compatible with ffmpeg-the-third 4.0)
-FFMPEG_DIR = "C:/vcpkg/installed/x64-windows"
-FFMPEG_INCLUDE_DIR = "C:/vcpkg/installed/x64-windows/include"
-FFMPEG_LIB_DIR = "C:/vcpkg/installed/x64-windows/lib"
-FFMPEG_DLL_PATH = "C:/vcpkg/installed/x64-windows/bin"
-PKG_CONFIG_PATH = "C:/vcpkg/installed/x64-windows/lib/pkgconfig"
-PKG_CONFIG_LIBDIR = "C:/vcpkg/installed/x64-windows/lib/pkgconfig"
-# Bindgen needs MSVC/Windows SDK include paths for stddef.h, stdint.h
-BINDGEN_EXTRA_CLANG_ARGS = "-IC:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/include -IC:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt -IC:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared"
+FFMPEG_DIR = { value = "C:\\vcpkg\\installed\\x64-windows", force = true }
+FFMPEG_PKG_CONFIG_PATH = { value = "C:\\vcpkg\\installed\\x64-windows\\lib\\pkgconfig", force = true }
+VCPKG_ROOT = "C:\\vcpkg"
+VCPKGRS_DYNAMIC = "1"

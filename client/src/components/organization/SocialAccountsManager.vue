@@ -217,6 +217,7 @@
   import {
     listSocialAccounts,
     startInstagramOAuthPopup,
+    startTwitterOAuthPopup,
     updateSocialAccount,
     deleteSocialAccount,
     refreshAccountToken,
@@ -307,6 +308,17 @@
     } catch (error) {
       console.error('Failed to connect Instagram:', error);
       showToast(error instanceof Error ? error.message : 'Failed to connect Instagram.', 'error');
+      connecting.value = false;
+    }
+  }
+
+  async function connectTwitter() {
+    connecting.value = true;
+    try {
+      cleanupAuthListener = await startTwitterOAuthPopup(props.organizationId, handleAuthResult);
+    } catch (error) {
+      console.error('Failed to connect X:', error);
+      showToast(error instanceof Error ? error.message : 'Failed to connect X.', 'error');
       connecting.value = false;
     }
   }

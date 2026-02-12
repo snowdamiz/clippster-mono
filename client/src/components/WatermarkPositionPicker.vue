@@ -1,7 +1,7 @@
 <template>
   <Teleport to="body">
   <Transition name="modal">
-    <div v-if="show" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div v-if="show" class="fixed inset-0 z-[10002] flex items-center justify-center p-4">
       <div class="absolute inset-0 bg-black/70 backdrop-blur-[4px]" @click="$emit('close')"></div>
       <Transition name="dialog" appear>
         <div

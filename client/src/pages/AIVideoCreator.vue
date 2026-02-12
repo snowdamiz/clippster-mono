@@ -118,162 +118,29 @@
                     </div>
                   </template>
 
-                  <!-- ═══ AI PROMPT PANEL ═══ -->
+                  <!-- ═══ AI CHAT PANEL ═══ -->
                   <template v-if="activePanel === 'ai'">
-                    <div v-if="smartSuggestion" class="ai-smart-suggestion">
-                      <Sparkles :size="14" /> <span>{{ smartSuggestion }}</span>
-                    </div>
-
-                    <div class="ai-prompt-box">
-                      <textarea
-                        v-model="prompt"
-                        :placeholder="promptPlaceholder"
-                        class="ai-prompt-input"
-                        rows="5"
-                        @focus="onPromptFocus"
-                      />
-                      <div class="ai-prompt-footer">
-                        <div class="ai-tip-container">
-                          <span class="tip-label">TIP:</span>
-                          <span class="tip-text">{{ currentTip }}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      @click="handleGenerate"
-                      :disabled="!prompt.trim() || mediaItems.length === 0 || isGenerating"
-                      class="ai-generate-button"
-                    >
-                      <component :is="isGenerating ? Loader2 : Wand2" :size="18" :class="{ 'animate-spin': isGenerating }" />
-                      <span>{{ isGenerating ? generatingTip : (composition ? 'Refine with AI' : 'Generate') }}</span>
-                    </button>
-
-                    <div v-if="isGenerating" class="ai-generating-status">
-                      <!-- Progress bar -->
-                      <div class="scene-progress-bar">
-                        <div class="scene-progress-fill" :style="{ width: generationProgress + '%' }"></div>
-                      </div>
-
-                      <!-- Phase indicator -->
-                      <div v-if="generationPhase === 'planning'" class="scene-phase">
-                        <div class="status-pulse"></div>
-                        <span>Planning scenes...</span>
-                      </div>
-
-                      <!-- Scene-by-scene list -->
-                      <div v-else-if="generationScenes.length > 0" class="scene-list">
-                        <div class="scene-list-header">
-                          <span>{{ completedScenes }}/{{ generationScenes.length }} scenes</span>
-                        </div>
-                        <div
-                          v-for="scene in generationScenes"
-                          :key="scene.index"
-                          class="scene-item"
-                          :class="{
-                            'scene-item--pending': scene.status === 'pending',
-                            'scene-item--generating': scene.status === 'generating',
-                            'scene-item--complete': scene.status === 'complete',
-                            'scene-item--error': scene.status === 'error',
-                          }"
-                        >
-                          <div class="scene-item-indicator">
-                            <Loader2 v-if="scene.status === 'generating'" :size="12" class="animate-spin" />
-                            <Check v-else-if="scene.status === 'complete'" :size="12" />
-                            <AlertCircle v-else-if="scene.status === 'error'" :size="12" />
-                            <div v-else class="scene-dot"></div>
-                          </div>
-                          <div class="scene-item-info">
-                            <span class="scene-item-name">Scene {{ scene.index + 1 }}</span>
-                            <span class="scene-item-desc">{{ scene.description }}</span>
-                          </div>
-                          <span class="scene-item-time">{{ scene.startTime.toFixed(1) }}s–{{ scene.endTime.toFixed(1) }}s</span>
-                        </div>
-                      </div>
-
-                      <div v-else class="scene-phase">
-                        <div class="status-pulse"></div>
-                        <span>{{ loadingTip }}</span>
-                      </div>
-                    </div>
-
-                    <div v-if="generationError" class="ai-error-message">
-                      <AlertCircle :size="14" /> <span>{{ generationError }}</span>
-                    </div>
-
-                    <!-- Quick Actions -->
-                    <div v-if="composition" class="ai-control-section" style="margin-top: 0.75rem;">
-                      <div class="control-section-label">Quick Actions</div>
-                      <QuickActions :disabled="isGenerating" @action="handleQuickAction" />
-                    </div>
-
-                    <!-- Prompt Examples -->
-                    <div class="ai-control-section" style="margin-top: 0.5rem;">
-                      <button @click="showPromptExamples = !showPromptExamples" class="aiv-toggle-btn">
-                        <Lightbulb :size="14" />
-                        <span>{{ showPromptExamples ? 'Hide' : 'Show' }} Examples</span>
-                      </button>
-                      <div v-if="showPromptExamples" class="prompt-examples-list">
-                        <button
-                          v-for="example in promptExamples"
-                          :key="example.id"
-                          @click="usePromptExample(example.prompt)"
-                          class="example-item-btn"
-                        >
-                          <span class="example-icon">{{ example.icon }}</span>
-                          <div class="example-text">
-                            <div class="example-name">{{ example.name }}</div>
-                            <div class="example-desc">{{ example.description }}</div>
-                          </div>
-                        </button>
-                      </div>
-                    </div>
-                  </template>
-
-                  <!-- ═══ SETTINGS PANEL ═══ -->
-                  <template v-if="activePanel === 'settings'">
-                    <div class="ai-control-section">
-                      <div class="control-section-label">Style</div>
-                      <StylePresetSelector v-model="selectedStylePreset" />
-                    </div>
-
-                    <div class="ai-control-section">
-                      <div class="control-section-header">
-                        <span class="control-section-label">Effect Intensity</span>
-                        <span class="control-section-value">{{ Math.round(effectIntensity * 100) }}%</span>
-                      </div>
-                      <div class="intensity-slider-row">
-                        <span class="intensity-label">Subtle</span>
-                        <input type="range" v-model.number="effectIntensity" min="0" max="1" step="0.05" class="intensity-slider" />
-                        <span class="intensity-label">Intense</span>
-                      </div>
-                    </div>
-
-                    <div class="ai-control-section">
-                      <div class="control-section-label">Caption Style</div>
-                      <CaptionStylePicker v-model="captionStyle" />
-                    </div>
-                  </template>
-
-                  <!-- ═══ MOTION GRAPHICS PANEL ═══ -->
-                  <template v-if="activePanel === 'graphics'">
-                    <MotionGraphicsPanel
-                      v-if="composition"
-                      :current-time="currentTime"
-                      :composition-duration="composition.duration"
-                      @add="handleAddMotionGraphic"
+                    <AIChatPanel
+                      :messages="chatSession.messages.value"
+                      :is-sending="chatSession.isSending.value"
+                      :is-generating="chatSession.isGenerating.value"
+                      :is-refinement-mode="chatSession.isGenerated.value"
+                      :refinement-round="chatSession.refinementRound.value"
+                      :max-refinement-rounds="chatSession.maxRefinementRounds.value"
+                      :refinement-messages-remaining="chatSession.refinementMessagesRemaining.value"
+                      :error="chatSession.error.value"
+                      :generation-phase="chatSession.generationPhase.value"
+                      :scenes="chatSession.scenes.value"
+                      :completed-scenes="chatSession.completedScenes.value"
+                      :reference-analysis="chatSession.referenceAnalysis.value"
+                      :is-analyzing-reference="isAnalyzingReference"
+                      :reference-error="referenceError"
+                      @send="handleChatSend"
+                      @generate="handleChatGenerate"
+                      @clear-error="chatSession.clearError"
+                      @analyze-reference="handleAnalyzeReference"
+                      @remove-reference="handleRemoveReference"
                     />
-                    <p v-else class="aiv-panel__placeholder">Generate a composition first to add motion graphics.</p>
-                  </template>
-
-                  <!-- ═══ TRACKS PANEL ═══ -->
-                  <template v-if="activePanel === 'tracks'">
-                    <TrackEditor
-                      v-if="composition"
-                      :composition="composition"
-                      @update:composition="handleCompositionUpdate"
-                    />
-                    <p v-else class="aiv-panel__placeholder">Generate a composition first to edit tracks.</p>
                   </template>
 
                 </div>
@@ -293,21 +160,52 @@
                   @duration-change="handleDurationChange"
                   @playing-change="handlePlayingChange"
                 />
+                <!-- Generating overlay -->
+                <div v-else-if="isGenerating" class="preview-generating">
+                  <div class="generating-visual">
+                    <div class="generating-spinner">
+                      <Loader2 :size="48" class="animate-spin" />
+                    </div>
+                    <h3>Generating Your Video</h3>
+                    <p v-if="chatSession.generationPhase.value === 'planning'">Planning scenes...</p>
+                    <p v-else-if="chatSession.scenes.value.length > 0">{{ chatSession.completedScenes.value }}/{{ chatSession.scenes.value.length }} scenes complete</p>
+                    <p v-else>Processing...</p>
+                    <div class="generating-progress">
+                      <div class="generating-progress__bar">
+                        <div class="generating-progress__fill" :style="{ width: generatingProgress + '%' }"></div>
+                      </div>
+                      <span class="generating-progress__label">{{ generatingProgress }}%</span>
+                    </div>
+                    <div v-if="chatSession.scenes.value.length > 0" class="generating-scenes">
+                      <div
+                        v-for="scene in chatSession.scenes.value"
+                        :key="scene.index"
+                        class="generating-scene"
+                        :class="`generating-scene--${scene.status}`"
+                      >
+                        <Loader2 v-if="scene.status === 'generating'" :size="12" class="animate-spin" />
+                        <Check v-else-if="scene.status === 'complete'" :size="12" />
+                        <div v-else class="generating-scene__dot"></div>
+                        <span>Scene {{ scene.index + 1 }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div v-else class="preview-placeholder">
                   <div class="placeholder-visual">
                     <div class="visual-circle"><Wand2 :size="40" /></div>
                     <h3>AI Video Creator</h3>
                     <p v-if="mediaItems.length === 0">Start by adding media in the <strong>Media</strong> tab</p>
-                    <p v-else>Describe your video in the <strong>AI Prompt</strong> tab and hit Generate</p>
+                    <p v-else>Chat with AI in the <strong>AI Chat</strong> tab to describe your video</p>
                     <div class="placeholder-steps">
                       <div class="step" :class="{ 'step--done': mediaItems.length > 0 }">
                         <span class="step__num">1</span>
                         <span>Add Media</span>
                       </div>
                       <div class="step__arrow">→</div>
-                      <div class="step" :class="{ 'step--done': prompt.trim().length > 0 }">
+                      <div class="step" :class="{ 'step--done': chatSession.messages.value.length > 1 }">
                         <span class="step__num">2</span>
-                        <span>Write Prompt</span>
+                        <span>Chat with AI</span>
                       </div>
                       <div class="step__arrow">→</div>
                       <div class="step">
@@ -371,6 +269,32 @@
         <ClipPickerDialog v-model="showClipPicker" @select="handleClipsSelected" />
         <AssetPickerDialog v-model="showAssetPicker" @select="handleAssetsSelected" />
         <ExportDialog v-model="showExportDialog" :composition="composition" />
+
+        <!-- Credit Confirmation Dialog -->
+        <Teleport to="body">
+          <Transition name="modal">
+            <div v-if="creditConfirm.show" class="credit-confirm-overlay" @click.self="creditConfirm.show = false">
+              <div class="credit-confirm-dialog">
+                <div class="credit-confirm__icon">
+                  <Sparkles :size="24" />
+                </div>
+                <h3 class="credit-confirm__title">{{ creditConfirm.title }}</h3>
+                <p class="credit-confirm__desc">{{ creditConfirm.description }}</p>
+                <div class="credit-confirm__cost">
+                  <span class="credit-confirm__amount">{{ creditConfirm.cost }}</span>
+                  <span class="credit-confirm__unit">credits</span>
+                </div>
+                <div class="credit-confirm__actions">
+                  <button class="credit-confirm__btn credit-confirm__btn--cancel" @click="creditConfirm.show = false">Cancel</button>
+                  <button class="credit-confirm__btn credit-confirm__btn--confirm" @click="confirmCreditAction">
+                    <Sparkles :size="14" />
+                    <span>{{ creditConfirm.confirmLabel }}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </Teleport>
       </div>
     </Transition>
   </Teleport>
@@ -378,13 +302,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { 
-  Wand2, Plus, Upload, X, Play, Pause, Video, 
+  Wand2, Upload, X, Play, Pause, Video, 
   Music, Image as ImageIcon, Loader2, Download, 
-  AlertCircle, Lightbulb, Sparkles, ListMusic, FileText, Check,
-  Film, Sliders, Shapes, Layers, SkipBack, SkipForward
+  AlertCircle, Sparkles, ListMusic, FileText, Check,
+  Film, SkipBack, SkipForward
 } from 'lucide-vue-next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
@@ -393,22 +317,15 @@ import AITimeline from '@/components/ai-video/AITimeline.vue';
 import ClipPickerDialog from '@/components/ai-video/pickers/ClipPickerDialog.vue';
 import AssetPickerDialog from '@/components/ai-video/pickers/AssetPickerDialog.vue';
 import ExportDialog from '@/components/ai-video/ExportDialog.vue';
-import StylePresetSelector from '@/components/ai-video/StylePresetSelector.vue';
-import CaptionStylePicker from '@/components/ai-video/CaptionStylePicker.vue';
-import TrackEditor from '@/components/ai-video/TrackEditor.vue';
-import QuickActions from '@/components/ai-video/QuickActions.vue';
-import MotionGraphicsPanel from '@/components/ai-video/MotionGraphicsPanel.vue';
-import { useAIVideoGeneration } from '@/composables/useAIVideoGeneration';
-import type { AIVideoComposition, AIVideoMediaItem, AIVideoTrack, StylePreset, CaptionStylePreset } from '@/types/ai-video';
+import AIChatPanel from '@/components/ai-video/AIChatPanel.vue';
+import { useAIChatSession } from '@/composables/useAIChatSession';
+import type { AIVideoComposition, AIVideoMediaItem } from '@/types/ai-video';
 import api from '@/services/api';
 
 const router = useRouter();
 
 // Media library state
 const mediaItems = ref<AIVideoMediaItem[]>([]);
-const prompt = ref('');
-const showPromptExamples = ref(false);
-const promptFocused = ref(false);
 const transcriptGenerationStatus = ref<Map<string, { status: 'generating' | 'complete' | 'error', progress?: string }>>(new Map());
 
 // Transcript editing state
@@ -420,21 +337,34 @@ const showClipPicker = ref(false);
 const showAssetPicker = ref(false);
 const showExportDialog = ref(false);
 
-// Style & editing controls
-const selectedStylePreset = ref<StylePreset | null>(null);
-const effectIntensity = ref(0.5);
-const captionStyle = ref<CaptionStylePreset>('bold_tiktok');
+// Credit confirmation dialog
+const creditConfirm = ref<{
+  show: boolean;
+  title: string;
+  description: string;
+  cost: number;
+  confirmLabel: string;
+  action: 'generate' | 'refine';
+  refineMessage?: string;
+}>({
+  show: false,
+  title: '',
+  description: '',
+  cost: 0,
+  confirmLabel: '',
+  action: 'generate',
+});
 
 // Sidebar tab state
 const activePanel = ref<string>('media');
 
 const sidebarTabs = [
   { id: 'media', label: 'Media', shortLabel: 'Media', icon: Film },
-  { id: 'ai', label: 'AI Prompt', shortLabel: 'AI', icon: Sparkles },
-  { id: 'settings', label: 'Settings', shortLabel: 'Style', icon: Sliders },
-  { id: 'graphics', label: 'Motion Graphics', shortLabel: 'MoGfx', icon: Shapes },
-  { id: 'tracks', label: 'Tracks', shortLabel: 'Tracks', icon: Layers },
+  { id: 'ai', label: 'AI Chat', shortLabel: 'AI', icon: Sparkles },
 ];
+
+// AI Chat session
+const chatSession = useAIChatSession();
 
 const activePanelLabel = computed(() => {
   const tab = sidebarTabs.find(t => t.id === activePanel.value);
@@ -445,8 +375,14 @@ function togglePanel(id: string) {
   activePanel.value = activePanel.value === id ? '' : id;
 }
 
-// AI generation
-const { isGenerating, composition, error: generationError, generate, scenes: generationScenes, currentScene, completedScenes, generationPhase, progress: generationProgress } = useAIVideoGeneration();
+// AI generation — composition is driven by chat session
+const composition = computed(() => chatSession.composition.value);
+const isGenerating = computed(() => chatSession.isGenerating.value);
+const generatingProgress = computed(() => {
+  const total = chatSession.scenes.value.length;
+  if (total === 0) return 0;
+  return Math.round((chatSession.completedScenes.value / total) * 100);
+});
 
 // Detect aspect ratio from the primary video media's dimensions
 const detectedAspectRatio = computed<'16:9' | '9:16' | '1:1' | '4:5'>(() => {
@@ -495,55 +431,145 @@ function handlePlayingChange(playing: boolean) {
   isPlaying.value = playing;
 }
 
-async function handleGenerate() {
-  if (!prompt.value.trim() || isGenerating.value) return;
-  
+// Reference analysis state
+const isAnalyzingReference = ref(false);
+const referenceError = ref<string | null>(null);
+
+async function handleAnalyzeReference(url: string) {
+  if (!chatSession.session.value) return;
+  isAnalyzingReference.value = true;
+  referenceError.value = null;
   try {
-    const totalMediaDuration = mediaItems.value.reduce((sum, item) => sum + (item.duration || 0), 0);
-    const targetDuration = totalMediaDuration > 0 ? Math.min(totalMediaDuration, 120) : 30;
-    
-    await generate(prompt.value, mediaItems.value, {
-      aspectRatio: detectedAspectRatio.value,
-      duration: targetDuration,
-      stylePreset: selectedStylePreset.value || undefined,
-      intensity: effectIntensity.value,
-      captionStyle: captionStyle.value,
-      existingComposition: composition.value,
+    // Fetch the image, convert to base64, send to backend for analysis
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
+    const blob = await response.blob();
+    const reader = new FileReader();
+    const base64 = await new Promise<string>((resolve, reject) => {
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64Data = result.split(',')[1];
+        resolve(base64Data);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
     });
-    
-    prompt.value = '';
-  } catch (error) {
-    console.error('[AIVideoCreator] Generation failed:', error);
+
+    // Send to backend reference analysis endpoint
+    const res = await api.post('/ai/reference/analyze', {
+      image_base64: base64,
+      mime_type: blob.type || 'image/jpeg',
+    });
+
+    if (res.data?.style_profile) {
+      await chatSession.uploadReference(res.data.style_profile, url);
+    }
+  } catch (e: any) {
+    referenceError.value = e.message || 'Failed to analyze reference';
+    console.error('[AIVideoCreator] Reference analysis failed:', e);
+  } finally {
+    isAnalyzingReference.value = false;
   }
 }
 
-function handleQuickAction(actionId: string) {
-  const actionPrompts: Record<string, string> = {
-    add_captions: 'Add captions from the transcript throughout the entire video with good timing and styling.',
-    add_music: 'Add background music that fits the mood of the content.',
-    color_grade: 'Apply a professional color grade that enhances the visual quality.',
-    add_intro: 'Add a professional intro with a title card and smooth animation at the beginning.',
-    add_outro: 'Add an end screen with a call-to-action at the end of the video.',
-  };
-  
-  const actionPrompt = actionPrompts[actionId];
-  if (actionPrompt) {
-    prompt.value = actionPrompt;
-    handleGenerate();
+function handleRemoveReference() {
+  // Clear reference from session by uploading null
+  if (chatSession.session.value) {
+    chatSession.session.value.reference_analysis = null;
+    chatSession.session.value.reference_url = null;
+  }
+  referenceError.value = null;
+}
+
+// Chat handlers
+const GENERATE_INTENT_PATTERNS = /\b(generate|let'?s\s*(go|generate|do\s*it|create|make)|do\s*it|create\s*(it|the\s*video|my\s*video)|make\s*(it|the\s*video|my\s*video)|go\s*ahead|start\s*generat|yes\s*generate|ready\s*to\s*generate|build\s*it)\b/i;
+
+async function handleChatSend(message: string) {
+  if (chatSession.isGenerated.value) {
+    // In refinement mode — show credit confirmation
+    showRefineConfirmation(message);
+  } else if (chatSession.readyToGenerate.value && GENERATE_INTENT_PATTERNS.test(message)) {
+    // User wants to generate — show credit confirmation
+    showGenerateConfirmation();
+  } else if (!chatSession.readyToGenerate.value && GENERATE_INTENT_PATTERNS.test(message) && chatSession.messages.value.filter(m => m.role === 'user').length >= 1) {
+    // User wants to generate but AI hasn't flagged ready — show credit confirmation anyway
+    showGenerateConfirmation();
+  } else {
+    // In discovery mode
+    await chatSession.sendMessage(message);
   }
 }
 
-function handleCompositionUpdate(updated: AIVideoComposition) {
-  composition.value = updated;
-}
-
-function handleAddMotionGraphic(track: AIVideoTrack) {
-  if (!composition.value) return;
-  composition.value = {
-    ...composition.value,
-    tracks: [...composition.value.tracks, track],
+function showGenerateConfirmation() {
+  creditConfirm.value = {
+    show: true,
+    title: 'Generate Video',
+    description: 'AI will create a video composition based on your conversation. This will use credits from your balance.',
+    cost: 10,
+    confirmLabel: 'Generate',
+    action: 'generate',
   };
 }
+
+function showRefineConfirmation(message: string) {
+  creditConfirm.value = {
+    show: true,
+    title: 'Refine Video',
+    description: 'AI will modify your video based on your feedback. This will use credits from your balance.',
+    cost: 5,
+    confirmLabel: 'Refine',
+    action: 'refine',
+    refineMessage: message,
+  };
+}
+
+async function confirmCreditAction() {
+  const action = creditConfirm.value.action;
+  const refineMessage = creditConfirm.value.refineMessage;
+  creditConfirm.value.show = false;
+
+  if (action === 'generate') {
+    await executeGenerate();
+  } else if (action === 'refine' && refineMessage) {
+    await chatSession.refine(refineMessage);
+  }
+}
+
+async function handleChatGenerate() {
+  showGenerateConfirmation();
+}
+
+async function executeGenerate() {
+  // Ensure session exists
+  if (!chatSession.session.value) {
+    console.error('[AIVideoCreator] No session — creating one first');
+    try {
+      await chatSession.createSession(mediaItems.value);
+    } catch (e) {
+      console.error('[AIVideoCreator] Failed to create session:', e);
+      return;
+    }
+  }
+
+  // Sync media items to session before generating
+  try {
+    await chatSession.syncMedia(mediaItems.value);
+  } catch (e) {
+    console.warn('[AIVideoCreator] Failed to sync media:', e);
+  }
+
+  console.log('[AIVideoCreator] Starting generation with session:', chatSession.session.value?.id);
+  try {
+    await chatSession.generate({
+      aspectRatio: detectedAspectRatio.value,
+    });
+    console.log('[AIVideoCreator] Generation complete!');
+  } catch (error: any) {
+    console.error('[AIVideoCreator] Generation failed:', error?.message || error);
+  }
+}
+
+
 
 async function handleUpload() {
   try {
@@ -627,75 +653,19 @@ function getFileType(extension: string): 'video' | 'audio' | 'image' {
   return 'image';
 }
 
-function onPromptFocus() {
-  promptFocused.value = true;
-}
-
-const promptExamples = [
-  { id: 'hype', name: 'Hype Moment', icon: '🔥', description: 'Exciting highlights with bold effects', prompt: 'Create an exciting highlight with bold captions, slow zooms during build-up, and flash/shake effects on big moments. Boost colors for a viral TikTok style.' },
-  { id: 'professional', name: 'Professional', icon: '✨', description: 'Clean and polished look', prompt: 'Create a professional video with clean, readable captions at the bottom. Use smooth transitions and subtle camera zooms. Maintain a polished, corporate aesthetic.' },
-  { id: 'viral', name: 'Viral TikTok', icon: '📱', description: 'Fast-paced social media style', prompt: 'Transform this into a viral TikTok. Fast-paced movements, bold white captions with black strokes, and layered impact effects on every major transition.' },
-  { id: 'gaming', name: 'Gaming Highlight', icon: '🎮', description: 'Action-packed gaming clips', prompt: 'Generate a hype gaming montage. Add zoom effects on kills, screen shakes on eliminations, and glow effects on ultimate abilities. Position captions to highlight player callouts.' },
-  { id: 'kinetic', name: 'Kinetic Typography', icon: '💫', description: 'After Effects-style animated text', prompt: 'Create a kinetic typography video. Animate each word with spring physics — stagger word entrances with bouncy scale-in animations. Use 3D perspective card flips for section transitions. Add a gradient wave background and floating particle effects.' },
-  { id: 'infographic', name: 'Animated Infographic', icon: '📊', description: 'Data visualization with motion', prompt: 'Create an animated infographic. Use data counter rings that fill up with numbers, animated info cards that flip in with 3D transforms, and staggered list reveals. Add animated dividers between sections and a spotlight reveal at the start.' },
-  { id: 'product', name: 'Product Showcase', icon: '🎁', description: 'Premium product reveal', prompt: 'Create a premium product showcase. Start with a spotlight reveal, then use split reveal transitions between features. Add floating badges for key selling points, animated info cards for specs, and a glitch title for the product name. End with a subscribe CTA.' },
-];
-
-const smartSuggestion = computed(() => {
-  if (mediaItems.value.length === 0) return 'Add media to get started';
-  const generatingCount = Array.from(transcriptGenerationStatus.value.values()).filter(s => s.status === 'generating').length;
-  if (generatingCount > 0) return `⏳ Transcribing ${generatingCount} video${generatingCount > 1 ? 's' : ''}...`;
-  if (prompt.value.length === 0) return '💡 Use a template or describe your vision';
-  return null;
-});
-
-const promptPlaceholder = computed(() => {
-  if (mediaItems.value.length === 0) return 'First, add some media files...';
-  return 'Describe how you want your video to look...';
-});
-
-const tips = [
-  'Be specific: "Add a 0.5s flash on the big win"',
-  'Try: "Make the captions larger and gold colored"',
-  'Ask for: "Slow zoom in from 2s to 5s"',
-  'Iterate: "Now remove the screen shake"',
-  'Style: "Make it feel like a professional documentary"',
-  'Motion: "Add kinetic text with spring animations"',
-  'Effects: "Use a spotlight reveal and 3D card flips"',
-  'Data: "Show stats with animated counter rings"',
-];
-
-const currentTip = ref(tips[0]);
-let tipInterval: number | null = null;
-
-const loadingTips = ['Analyzing content...', 'Drafting composition...', 'Syncing captions...', 'Applying effects...', 'Finalizing JSON...'];
-const loadingTip = ref(loadingTips[0]);
-const generatingTip = ref('Generating...');
-
-watch(isGenerating, (val) => {
-  if (val) {
-    let i = 0;
-    tipInterval = window.setInterval(() => {
-      loadingTip.value = loadingTips[i % loadingTips.length];
-      i++;
-    }, 2500);
-  } else if (tipInterval) {
-    clearInterval(tipInterval);
+// Initialize chat session on mount
+onMounted(async () => {
+  try {
+    await chatSession.createSession(mediaItems.value);
+  } catch (e) {
+    console.error('[AIVideoCreator] Failed to create chat session:', e);
   }
 });
 
-onMounted(() => {
-  const rotationInterval = window.setInterval(() => {
-    const idx = tips.indexOf(currentTip.value);
-    currentTip.value = tips[(idx + 1) % tips.length];
-  }, 6000);
-  onUnmounted(() => clearInterval(rotationInterval));
-});
-
-function usePromptExample(p: string) {
-  prompt.value = p;
-  showPromptExamples.value = false;
-}
+// Sync media items to chat session when they change
+watch(mediaItems, (items) => {
+  chatSession.syncMedia(items);
+}, { deep: true });
 
 async function handleClipsSelected(clips: any[]) {
   console.log(`[AIVideoCreator] handleClipsSelected called with ${clips.length} clips`);
@@ -2005,6 +1975,234 @@ function saveTranscript() {
 .intensity-slider-row { display: flex; align-items: center; gap: 0.5rem; }
 .intensity-label { font-size: 0.5625rem; color: #52525b; white-space: nowrap; flex-shrink: 0; }
 .intensity-slider { flex: 1; height: 4px; accent-color: #0ea5e9; cursor: pointer; }
+
+/* ═══ Credit Confirmation Dialog ═══ */
+.credit-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  backdrop-filter: blur(4px);
+}
+
+.credit-confirm-dialog {
+  background: #1a1a1e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 28px 32px;
+  max-width: 360px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.credit-confirm__icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(139, 92, 246, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a78bfa;
+}
+
+.credit-confirm__title {
+  font-size: 18px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.95);
+  margin: 0;
+}
+
+.credit-confirm__desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  text-align: center;
+  margin: 0;
+  line-height: 1.5;
+}
+
+.credit-confirm__cost {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 20px;
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 10px;
+  margin: 4px 0;
+}
+
+.credit-confirm__amount {
+  font-size: 28px;
+  font-weight: 800;
+  color: #a78bfa;
+  font-variant-numeric: tabular-nums;
+}
+
+.credit-confirm__unit {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 500;
+}
+
+.credit-confirm__actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+}
+
+.credit-confirm__btn {
+  flex: 1;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.credit-confirm__btn--cancel {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.credit-confirm__btn--cancel:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.credit-confirm__btn--confirm {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.credit-confirm__btn--confirm:hover {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.4);
+}
+
+/* ═══ Generating Overlay ═══ */
+.preview-generating {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse at center, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
+}
+
+.generating-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  text-align: center;
+  max-width: 320px;
+}
+
+.generating-spinner {
+  color: #8b5cf6;
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.3)); }
+  50% { filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.6)); }
+}
+
+.generating-visual h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin: 0;
+}
+
+.generating-visual p {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0;
+}
+
+.generating-progress {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.generating-progress__bar {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.generating-progress__fill {
+  height: 100%;
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.generating-progress__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #a78bfa;
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.generating-scenes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+.generating-scene {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.generating-scene--generating {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+.generating-scene--complete {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+}
+
+.generating-scene__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+}
 
 /* ═══ Animations ═══ */
 @keyframes pulse {

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useOrganization } from '@/hooks/useOrganization'
@@ -17,8 +17,10 @@ import {
   Settings,
   Loader2,
   AlertTriangle,
+  Briefcase,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { getTotalUnread } from '@/services/messagingApi'
 
 interface Tool {
   id: string
@@ -133,10 +135,15 @@ export function OrgHub() {
     assetsLoaded,
     loadOrgAssets,
   } = useOrganization()
+  const [unreadMessages, setUnreadMessages] = useState(0)
 
   useEffect(() => {
     loadOrganization()
   }, [loadOrganization])
+
+  useEffect(() => {
+    getTotalUnread().then(setUnreadMessages).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!profilesLoaded) loadCreatorProfiles()
@@ -161,6 +168,22 @@ export function OrgHub() {
       route: `/dashboard/org/${id}/creators`,
       stat: creatorProfiles.length,
       statLabel: 'profiles',
+    },
+    {
+      id: 'hiring',
+      title: 'Hiring',
+      description: 'Create a hiring post to recruit clippers',
+      icon: Briefcase,
+      route: `/dashboard/org/${id}/hiring`,
+    },
+    {
+      id: 'messages',
+      title: 'Messages',
+      description: 'Team messaging and direct conversations',
+      icon: Send,
+      route: `/dashboard/org/${id}/messages`,
+      stat: unreadMessages || undefined,
+      statLabel: 'unread',
     },
   ]
 

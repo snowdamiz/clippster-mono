@@ -241,6 +241,16 @@ export async function getClipsWithVersionsByProjectId(
 ): Promise<ClipWithVersion[]> {
   const db = await getDatabase();
 
+  // Check for child projects (e.g., livestream segments stored under child projects)
+  const childProjects = await db.select<{ id: string }[]>(
+    `SELECT id FROM projects WHERE parent_id = ?`,
+    [projectId]
+  );
+
+  // Build list of project IDs to query: parent + all children
+  const projectIds = [projectId, ...childProjects.map((p) => p.id)];
+  const placeholders = projectIds.map(() => '?').join(', ');
+
   const clips = await db.select<any[]>(
     `SELECT
       c.*,
@@ -261,13 +271,13 @@ export async function getClipsWithVersionsByProjectId(
       s.run_color as session_run_color,
       s.prompt as session_prompt,
       (SELECT COUNT(*) + 1 FROM clip_detection_sessions s2
-       WHERE s2.project_id = ? AND s2.created_at < s.created_at) as run_number
+       WHERE s2.project_id = c.project_id AND s2.created_at < s.created_at) as run_number
      FROM clips c
      LEFT JOIN clip_versions cv ON c.current_version_id = cv.id
      LEFT JOIN clip_detection_sessions s ON c.detection_session_id = s.id
-     WHERE c.project_id = ?
+     WHERE c.project_id IN (${placeholders})
      ORDER BY COALESCE(cv.start_time, c.start_time) ASC`,
-    [projectId, projectId]
+    projectIds
   );
 
   // Load segments for each clip's current version
@@ -627,8 +637,8 @@ export async function persistClipDetectionResults(
             const segment = detectionResults.transcript.segments[i];
             await createTranscriptSegment(
               transcriptId,
-              segment.start_time || 0,
-              segment.end_time || 0,
+              segment.start_time || segment.start || 0,
+              segment.end_time || segment.end || 0,
               segment.text || '',
               i
             );

@@ -573,8 +573,8 @@ pub fn run() {
                         },
                         tauri_plugin_sql::Migration {
                             version: 81,
-                            description: "add_source_start_time_to_audio_tracks",
-                            sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            description: "add_audio_peaks_to_segments",
+                            sql: include_str!("../migrations/081_add_audio_peaks_to_segments.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
@@ -583,11 +583,52 @@ pub fn run() {
                             sql: include_str!("../migrations/082_add_opencut_editor_projects.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 83,
+                            description: "add_vod_presets",
+                            sql: include_str!("../migrations/083_add_vod_presets.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 84,
+                            description: "add_global_branding_profiles",
+                            sql: include_str!("../migrations/084_add_global_branding_profiles.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 85,
+                            description: "add_campaign_id_to_clips",
+                            sql: include_str!("../migrations/085_add_campaign_id_to_clips.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 86,
+                            description: "add_source_start_time_to_audio_tracks",
+                            sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 87,
+                            description: "add_transcript_raw_json_to_clip_segments",
+                            sql: include_str!("../migrations/083_add_transcript_raw_json_to_clip_segments.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 88,
+                            description: "add_layer_to_editor_tables",
+                            sql: include_str!("../migrations/088_add_layer_to_editor_tables.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 89,
+                            description: "add_project_media",
+                            sql: include_str!("../migrations/069_add_project_media.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
         )
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -668,6 +709,11 @@ check_file_exists,
 validate_video_file,
 generate_proxy_file,
 
+// File utility commands
+commands::file_utils::get_file_info,
+commands::file_utils::get_media_metadata,
+commands::file_utils::generate_video_thumbnail,
+
 // Auth commands
             auth::open_wallet_auth_window,
             auth::open_wallet_payment_window,
@@ -683,6 +729,9 @@ generate_proxy_file,
             auth::open_instagram_auth_window,
             auth::poll_instagram_auth_result,
             auth::start_user_instagram_oauth,
+            auth::open_twitter_auth_window,
+            auth::poll_twitter_auth_result,
+            auth::start_user_twitter_oauth,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,
@@ -816,6 +865,10 @@ generate_proxy_file,
 
     // HLS commands
     hls::start_hls_recording,
+    hls::stop_hls_recording,
+    hls::cleanup_hls_recordings,
+    hls::get_recording_output_dir,
+    hls::get_hls_segments,
 
 // Video Editor Export commands
 video_editor_export::export_video_editor_project_simple,

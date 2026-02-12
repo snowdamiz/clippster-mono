@@ -54,6 +54,10 @@
                   <span class="available-badge__dot"></span>
                   Available
                 </span>
+                <span v-if="clipperProfile?.is_affiliate" class="affiliate-badge">
+                  <Handshake :size="12" class="affiliate-badge__icon" />
+                  Affiliate
+                </span>
                 <button
                   v-if="clipperProfile?.slug && clipperProfile?.is_public"
                   class="view-public-btn"
@@ -334,33 +338,33 @@
 
           <!-- Campaigns -->
           <template v-if="activeTab === 'campaigns'">
-            <div class="earnings-bar">
-              <div class="earnings-item earnings-item--earned">
-                <DollarSign />
-                <div>
-                  <span class="earnings-item__value">${{ formatAmount(earningsSummary.total_earned) }}</span>
-                  <span class="earnings-item__label">Total Earned</span>
+            <div class="posts-stats-grid">
+              <div class="posts-stat-card posts-stat-card--green">
+                <div class="posts-stat-card__icon"><DollarSign /></div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">${{ formatAmount(earningsSummary.total_earned) }}</span>
+                  <span class="posts-stat-card__label">Total Earned</span>
                 </div>
               </div>
-              <div class="earnings-item earnings-item--pending">
-                <Clock />
-                <div>
-                  <span class="earnings-item__value">${{ formatAmount(earningsSummary.pending) }}</span>
-                  <span class="earnings-item__label">Pending</span>
+              <div class="posts-stat-card posts-stat-card--amber">
+                <div class="posts-stat-card__icon"><Clock /></div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">${{ formatAmount(earningsSummary.pending) }}</span>
+                  <span class="posts-stat-card__label">Pending</span>
                 </div>
               </div>
-              <div class="earnings-item">
-                <Upload />
-                <div>
-                  <span class="earnings-item__value">{{ earningsSummary.total_submissions }}</span>
-                  <span class="earnings-item__label">Submissions</span>
+              <div class="posts-stat-card posts-stat-card--purple">
+                <div class="posts-stat-card__icon"><Upload /></div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">{{ earningsSummary.total_submissions }}</span>
+                  <span class="posts-stat-card__label">Submissions</span>
                 </div>
               </div>
-              <div class="earnings-item">
-                <CheckCircle />
-                <div>
-                  <span class="earnings-item__value">{{ earningsSummary.verified_submissions }}</span>
-                  <span class="earnings-item__label">Verified</span>
+              <div class="posts-stat-card posts-stat-card--cyan">
+                <div class="posts-stat-card__icon"><CheckCircle /></div>
+                <div class="posts-stat-card__content">
+                  <span class="posts-stat-card__value">{{ earningsSummary.verified_submissions }}</span>
+                  <span class="posts-stat-card__label">Verified</span>
                 </div>
               </div>
             </div>
@@ -547,6 +551,327 @@
               </div>
             </section>
           </template>
+
+          <!-- Hiring Tab -->
+          <template v-if="activeTab === 'hiring'">
+            <div v-if="loadingHiringPosts" class="loading-rows">
+              <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
+            </div>
+            <template v-else>
+              <!-- Hiring Stats -->
+              <div class="posts-stats-grid">
+                <div class="posts-stat-card posts-stat-card--cyan">
+                  <div class="posts-stat-card__icon"><Briefcase /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ myHiringApplications.length }}</span>
+                    <span class="posts-stat-card__label">Applications</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--green">
+                  <div class="posts-stat-card__icon"><CheckCircle /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ myHiringApplications.filter(a => a.status === 'accepted').length }}</span>
+                    <span class="posts-stat-card__label">Hired</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--amber">
+                  <div class="posts-stat-card__icon"><Clock /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ myHiringApplications.filter(a => a.status === 'pending').length }}</span>
+                    <span class="posts-stat-card__label">Pending</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--purple">
+                  <div class="posts-stat-card__icon"><Megaphone /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ hiringPosts.length }}</span>
+                    <span class="posts-stat-card__label">Open Positions</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- My Applications -->
+              <section v-if="myHiringApplications.length" class="hiring-tab__section-card">
+                <div class="section__header">
+                  <div class="section__header-icon section__header-icon--cyan"><FileVideo /></div>
+                  <div class="section__header-text">
+                    <h2 class="section-title">My Applications</h2>
+                    <p class="section-subtitle">Your submitted hiring applications</p>
+                  </div>
+                </div>
+                <div class="hiring-tab__apps-list">
+                  <div v-for="app in myHiringApplications" :key="app.id" class="hiring-tab__app-card">
+                    <div class="hiring-tab__app-header">
+                      <img v-if="app.hiring_post?.organization?.logo_url" :src="app.hiring_post.organization.logo_url" class="hiring-tab__org-logo" />
+                      <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      <div class="hiring-tab__app-info">
+                        <div class="hiring-tab__app-org">{{ app.hiring_post?.organization?.name || 'Organization' }}</div>
+                        <div class="hiring-tab__app-title">{{ app.hiring_post?.title }}</div>
+                      </div>
+                      <span
+                        class="hiring-tab__status"
+                        :class="{
+                          'hiring-tab__status--pending': app.status === 'pending',
+                          'hiring-tab__status--accepted': app.status === 'accepted',
+                          'hiring-tab__status--rejected': app.status === 'rejected',
+                        }"
+                      >
+                        {{ app.status === 'accepted' ? 'Hired!' : app.status }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Browse Hiring Posts -->
+              <section class="hiring-tab__section-card">
+                <div class="section__header">
+                  <div class="section__header-icon section__header-icon--green"><Briefcase /></div>
+                  <div class="section__header-text">
+                    <h2 class="section-title">Companies Hiring</h2>
+                    <p class="section-subtitle">Browse open positions from organizations</p>
+                  </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="hiring-tab__filters">
+                  <select v-model="hiringFilters.payment_type" class="hiring-tab__filter-select" @change="loadHiringPosts">
+                    <option value="">All Payment Types</option>
+                    <option v-for="pt in HIRING_PAYMENT_TYPES" :key="pt.value" :value="pt.value">{{ pt.label }}</option>
+                  </select>
+                </div>
+
+                <div v-if="!hiringPosts.length" class="hiring-tab__empty">
+                  <Briefcase class="hiring-tab__empty-icon" />
+                  <p>No organizations are currently hiring. Check back later!</p>
+                </div>
+
+                <div v-else class="hiring-tab__grid">
+                  <div v-for="post in hiringPosts" :key="post.id" class="hiring-tab__card">
+                    <div class="hiring-tab__card-header">
+                      <img v-if="post.organization?.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
+                      <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                      <div class="hiring-tab__card-org">
+                        <div class="hiring-tab__card-org-name">{{ post.organization?.name }}</div>
+                        <div class="hiring-tab__card-title">{{ post.title }}</div>
+                      </div>
+                    </div>
+
+                    <p v-if="post.description" class="hiring-tab__card-desc">{{ post.description }}</p>
+
+                    <div class="hiring-tab__card-meta">
+                      <span v-if="post.payment_type" class="hiring-tab__card-badge hiring-tab__card-badge--pay">
+                        {{ getHiringPaymentTypeLabel(post.payment_type) }}{{ post.payment_details ? `: ${post.payment_details}` : '' }}
+                      </span>
+                      <span v-if="post.clipper_slots" class="hiring-tab__card-badge">
+                        {{ post.clipper_slots_filled }}/{{ post.clipper_slots }} clippers
+                      </span>
+                      <span v-if="post.experience_level" class="hiring-tab__card-badge">
+                        {{ getExperienceLevelLabel(post.experience_level) }}+
+                      </span>
+                    </div>
+
+                    <div v-if="post.content_types?.length" class="hiring-tab__card-tags">
+                      <span v-for="t in post.content_types.slice(0, 4)" :key="t" class="hiring-tab__mini-tag">{{ getSpecialtyTagLabel(t) }}</span>
+                    </div>
+
+                    <div v-if="post.platforms?.length" class="hiring-tab__card-tags">
+                      <span v-for="p in post.platforms" :key="p" class="hiring-tab__mini-tag">{{ getHiringPlatformLabel(p) }}</span>
+                    </div>
+
+                    <button
+                      class="hiring-tab__apply-btn"
+                      :class="{ 'hiring-tab__apply-btn--applied': post.has_applied }"
+                      :disabled="post.has_applied || applyingTo === post.id"
+                      @click="openApplyDialog(post)"
+                    >
+                      <Loader2 v-if="applyingTo === post.id" class="hiring-tab__apply-spinner" />
+                      {{ post.has_applied ? 'Applied' : 'Apply' }}
+                    </button>
+                  </div>
+                </div>
+              </section>
+            </template>
+
+            <!-- Apply Dialog -->
+            <Dialog v-model:open="showApplyDialog">
+              <DialogContent class="hiring-tab__dialog">
+                <DialogHeader>
+                  <DialogTitle>Apply to {{ applyTarget?.organization?.name }}</DialogTitle>
+                  <DialogDescription>
+                    {{ applyTarget?.title }}
+                  </DialogDescription>
+                </DialogHeader>
+                <div class="hiring-tab__dialog-body">
+                  <label class="hiring-tab__dialog-label">Message (optional)</label>
+                  <textarea v-model="applyMessage" class="hiring-tab__dialog-textarea" rows="4" placeholder="Tell them why you'd be a great fit..." />
+                  <p class="hiring-tab__dialog-note">Your clipper profile will be shared with this organization.</p>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" @click="showApplyDialog = false">Cancel</Button>
+                  <Button @click="submitApplication" :disabled="applyingTo !== null">
+                    <Loader2 v-if="applyingTo !== null" class="hiring-tab__apply-spinner" />
+                    Submit Application
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </template>
+
+          <!-- Affiliate Tab -->
+          <template v-if="activeTab === 'affiliate'">
+            <div v-if="loadingAffiliate" class="loading-rows">
+              <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
+            </div>
+            <template v-else-if="affiliateInfo && affiliateDashboard">
+              <!-- Sign-up Stats -->
+              <div class="posts-stats-grid" v-if="affiliateDashboard && affiliateDashboard.breakdown">
+                <div class="posts-stat-card posts-stat-card--cyan">
+                  <div class="posts-stat-card__icon"><UserPlus /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ affiliateDashboard.breakdown.first_subscription?.count || 0 }}</span>
+                    <span class="posts-stat-card__label">First-time Sign-ups</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--purple">
+                  <div class="posts-stat-card__icon"><RefreshCw /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ affiliateDashboard.breakdown.recurring?.count || 0 }}</span>
+                    <span class="posts-stat-card__label">Recurring Sign-ups</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--green">
+                  <div class="posts-stat-card__icon"><TrendingUp /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">{{ getAffiliateTotalSignups() }}</span>
+                    <span class="posts-stat-card__label">Total Sign-ups</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Referral Link -->
+              <div class="aff-tab__link-card">
+                <div class="aff-tab__link-header">
+                  <Link2 class="aff-tab__link-icon" />
+                  <span class="aff-tab__link-label">Your Referral Link</span>
+                  <span class="aff-tab__status" :class="`aff-tab__status--${affiliateInfo.status}`">{{ affiliateInfo.status }}</span>
+                </div>
+                <div class="aff-tab__link-row">
+                  <code class="aff-tab__link-url">{{ affiliateReferralUrl }}</code>
+                  <button class="aff-tab__copy-btn" @click="copyAffiliateLink">
+                    <Copy v-if="!affCopied" :size="14" />
+                    <Check v-else :size="14" class="aff-tab__copy-ok" />
+                    {{ affCopied ? 'Copied!' : 'Copy' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Stats -->
+              <div class="posts-stats-grid">
+                <div class="posts-stat-card posts-stat-card--cyan">
+                  <div class="posts-stat-card__icon"><TrendingUp /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">${{ affiliateDashboard.this_month.total.toFixed(2) }}</span>
+                    <span class="posts-stat-card__label">This Month</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--purple">
+                  <div class="posts-stat-card__icon"><BarChart3 /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">${{ affiliateDashboard.three_months.total.toFixed(2) }}</span>
+                    <span class="posts-stat-card__label">Last 3 Months</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--pink">
+                  <div class="posts-stat-card__icon"><Heart /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">${{ affiliateDashboard.ytd.total.toFixed(2) }}</span>
+                    <span class="posts-stat-card__label">Year to Date</span>
+                  </div>
+                </div>
+                <div class="posts-stat-card posts-stat-card--green">
+                  <div class="posts-stat-card__icon"><DollarSign /></div>
+                  <div class="posts-stat-card__content">
+                    <span class="posts-stat-card__value">${{ affiliateDashboard.all_time.total.toFixed(2) }}</span>
+                    <span class="posts-stat-card__label">All Time</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Recent Referrals -->
+              <section class="section">
+                <div class="section__header">
+                  <div class="section__header-icon section__header-icon--cyan"><Handshake /></div>
+                  <div class="section__header-text">
+                    <h2 class="section-title">Recent Referrals</h2>
+                    <p class="section-subtitle">Commission earned from referred users</p>
+                  </div>
+                </div>
+                <div v-if="affiliateReferrals.length === 0" class="empty-state">
+                  <Handshake class="empty-state__icon" />
+                  <p class="empty-state__title">No referrals yet</p>
+                  <p class="empty-state__text">Share your link to start earning commissions</p>
+                </div>
+                <div v-else class="aff-tab__table-wrapper">
+                  <table class="aff-tab__table">
+                    <thead>
+                      <tr>
+                        <th class="aff-tab__th">Date</th>
+                        <th class="aff-tab__th">Type</th>
+                        <th class="aff-tab__th">Amount</th>
+                        <th class="aff-tab__th">Commission</th>
+                        <th class="aff-tab__th">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="r in affiliateReferrals" :key="r.id" class="aff-tab__row">
+                        <td class="aff-tab__td">{{ formatDate(r.inserted_at) }}</td>
+                        <td class="aff-tab__td"><span class="aff-tab__event-badge">{{ formatAffEventType(r.event_type) }}</span></td>
+                        <td class="aff-tab__td">${{ r.amount_usd.toFixed(2) }}</td>
+                        <td class="aff-tab__td aff-tab__td--green">${{ r.commission_usd.toFixed(2) }}</td>
+                        <td class="aff-tab__td"><span class="aff-tab__ref-status" :class="`aff-tab__ref-status--${r.status}`">{{ r.status }}</span></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <!-- Payout Settings -->
+              <section class="section">
+                <div class="section__header">
+                  <div class="section__header-icon section__header-icon--green"><Wallet /></div>
+                  <div class="section__header-text">
+                    <h2 class="section-title">Payout Settings</h2>
+                    <p class="section-subtitle">Configure how you receive commissions</p>
+                  </div>
+                </div>
+                <div class="aff-tab__settings">
+                  <div class="aff-tab__field">
+                    <label class="aff-tab__label">Payout Method</label>
+                    <CustomDropdown
+                      v-model="affSettingsForm.payout_method"
+                      :options="payoutMethodOptions"
+                      placeholder="Select method..."
+                      class="aff-tab__dropdown"
+                      trigger-class="aff-tab__dropdown-trigger"
+                    />
+                  </div>
+                  <div v-if="affSettingsForm.payout_method === 'crypto'" class="aff-tab__field">
+                    <label class="aff-tab__label">Solana USDC Address</label>
+                    <input v-model="affSettingsForm.solana_usdc_address" type="text" class="aff-tab__input" placeholder="Enter your Solana USDC address" />
+                  </div>
+                  <div v-if="affSettingsForm.payout_method === 'paypal'" class="aff-tab__field">
+                    <label class="aff-tab__label">PayPal Email</label>
+                    <input v-model="affSettingsForm.paypal_email" type="email" class="aff-tab__input" placeholder="Enter your PayPal email" />
+                  </div>
+                  <button class="aff-tab__save-btn" :disabled="savingAffSettings" @click="saveAffiliateSettings">
+                    <Loader2 v-if="savingAffSettings" :size="14" class="animate-spin" />
+                    Save Settings
+                  </button>
+                </div>
+              </section>
+            </template>
+          </template>
         </main>
       </div>
     </PageLayout>
@@ -569,7 +894,7 @@
                 <button
                   class="platform-dialog__close"
                   @click="showPlatformSelectionDialog = false"
-                  :disabled="connectingInstagram"
+                  :disabled="connectingPlatform"
                   title="Close"
                 >
                   <X :size="18" />
@@ -589,7 +914,7 @@
                     :key="platform.id"
                     class="platform-option"
                     :class="{ 'platform-option--disabled': !platform.available }"
-                    :disabled="!platform.available || connectingInstagram"
+                    :disabled="!platform.available || connectingPlatform"
                     @click="connectPlatform(platform.id)"
                   >
                     <div class="platform-option__icon" :class="platform.iconClass">
@@ -600,7 +925,7 @@
                       <span v-if="!platform.available" class="platform-option__badge">Coming Soon</span>
                     </div>
                     <Loader2
-                      v-if="connectingInstagram && selectedPlatform === platform.id"
+                      v-if="connectingPlatform && selectedPlatform === platform.id"
                       class="platform-option__spinner"
                     />
                   </button>
@@ -611,7 +936,7 @@
               <div class="platform-dialog__footer">
                 <button
                   @click="showPlatformSelectionDialog = false"
-                  :disabled="connectingInstagram"
+                  :disabled="connectingPlatform"
                   class="platform-dialog__btn platform-dialog__btn--secondary"
                 >
                   Cancel
@@ -828,12 +1153,19 @@
     AlertTriangle,
     Clock,
     Users,
+    UserPlus,
     X,
     BarChart3,
     Heart,
     TrendingUp,
     FileVideo,
     RefreshCw,
+    Handshake,
+    Link2,
+    Copy,
+    Check,
+    Briefcase,
+    Building2,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
@@ -874,7 +1206,19 @@
     type UserPost,
     type UserAnalyticsSummary,
   } from '@/services/userInstagramApi';
-  import { getMyClipperProfile, type ClipperProfile } from '@/services/clipperProfilesApi';
+  import {
+    startUserTwitterOAuth,
+    listUserTwitterAccounts,
+    disconnectUserTwitterAccount,
+    isTwitterTokenExpiringSoon,
+    type UserTwitterAccount,
+  } from '@/services/userTwitterApi';
+  import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
+  import {
+    listPublicHiringPosts, applyToHiringPost, listMyHiringApplications,
+    PAYMENT_TYPES as HIRING_PAYMENT_TYPES, getPaymentTypeLabel as getHiringPaymentTypeLabel,
+    type HiringPost, type HiringApplication,
+  } from '@/services/hiringApi';
   import {
     listMyCampaigns,
     listMySubmissions,
@@ -884,16 +1228,38 @@
     type EarningsSummary,
   } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
+  import {
+    getMyDashboard,
+    getMyReferrals,
+    getMyPayouts,
+    updateMySettings,
+    type AffiliateDashboard,
+    type AffiliateReferral,
+    type AffiliatePayout,
+  } from '@/services/affiliateApi';
+  import { useAuthStore } from '@/stores/auth';
+  import { usePermissionsStore } from '@/stores/permissions';
 
   const { toast } = useToast();
+  const authStore = useAuthStore();
+  const permissionsStore = usePermissionsStore();
 
-  const tabs = [
-    { id: 'leaderboard', label: 'Leaderboard', icon: markRaw(Trophy) },
-    { id: 'accounts', label: 'Accounts', icon: markRaw(Share2) },
-    { id: 'payments', label: 'Payments', icon: markRaw(Wallet) },
-    { id: 'campaigns', label: 'Campaigns', icon: markRaw(Megaphone) },
-    { id: 'posts', label: 'Posts', icon: markRaw(BarChart3) },
-  ];
+  const tabs = computed(() => {
+    const base = [
+      { id: 'leaderboard', label: 'Leaderboard', icon: markRaw(Trophy) },
+      { id: 'accounts', label: 'Accounts', icon: markRaw(Share2) },
+      { id: 'payments', label: 'Payments', icon: markRaw(Wallet) },
+      { id: 'campaigns', label: 'Campaigns', icon: markRaw(Megaphone) },
+      { id: 'posts', label: 'Posts', icon: markRaw(BarChart3) },
+    ];
+    if (permissionsStore.allowHiringBrowse) {
+      base.push({ id: 'hiring', label: 'Hiring', icon: markRaw(Briefcase) });
+    }
+    if (authStore.user?.is_affiliate || clipperProfile.value?.is_affiliate) {
+      base.push({ id: 'affiliate', label: 'Affiliate', icon: markRaw(Handshake) });
+    }
+    return base;
+  });
 
   const activeTab = ref('leaderboard');
   const clipperProfile = ref<ClipperProfile | null>(null);
@@ -920,6 +1286,93 @@
   const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
   const avatarLoadError = ref(false);
 
+  // Affiliate State
+  const loadingAffiliate = ref(false);
+  const affiliateInfo = ref<{ id: number; referral_code: string; status: string; payout_method: string | null; solana_usdc_address: string | null; paypal_email: string | null } | null>(null);
+  const affiliateDashboard = ref<AffiliateDashboard | null>(null);
+  const affiliateReferrals = ref<AffiliateReferral[]>([]);
+  const affiliatePayouts = ref<AffiliatePayout[]>([]);
+  const affCopied = ref(false);
+  const savingAffSettings = ref(false);
+  const affSettingsForm = reactive({ payout_method: '', solana_usdc_address: '', paypal_email: '' });
+  const payoutMethodOptions = [
+    { value: 'crypto', label: 'Crypto (Solana USDC)' },
+    { value: 'paypal', label: 'PayPal' },
+  ];
+
+  const affiliateReferralUrl = computed(() => {
+    if (!affiliateInfo.value) return '';
+    return `https://clippster.app/?ref=${affiliateInfo.value.referral_code}`;
+  });
+
+  // Hiring Tab State
+  const loadingHiringPosts = ref(false);
+  const hiringPosts = ref<HiringPost[]>([]);
+  const myHiringApplications = ref<HiringApplication[]>([]);
+  const hiringFilters = ref({ payment_type: '' });
+  const showApplyDialog = ref(false);
+  const applyTarget = ref<HiringPost | null>(null);
+  const applyMessage = ref('');
+  const applyingTo = ref<number | null>(null);
+
+  function getHiringPlatformLabel(value: string): string {
+    const PREFERRED_PLATFORMS = [
+      { value: 'tiktok', label: 'TikTok' }, { value: 'youtube', label: 'YouTube' },
+      { value: 'instagram', label: 'Instagram' }, { value: 'twitter', label: 'Twitter/X' },
+      { value: 'kick', label: 'Kick' }, { value: 'twitch', label: 'Twitch' },
+      { value: 'facebook', label: 'Facebook' },
+    ];
+    return PREFERRED_PLATFORMS.find((p) => p.value === value)?.label || value;
+  }
+
+  async function loadHiringPosts() {
+    loadingHiringPosts.value = true;
+    try {
+      const filters: Record<string, any> = {};
+      if (hiringFilters.value.payment_type) filters.payment_type = hiringFilters.value.payment_type;
+      const [postsRes, appsRes] = await Promise.all([
+        listPublicHiringPosts(filters),
+        listMyHiringApplications(),
+      ]);
+      if (postsRes.success) hiringPosts.value = postsRes.hiring_posts;
+      if (appsRes.success) myHiringApplications.value = appsRes.applications;
+    } catch (err) {
+      console.error('Failed to load hiring posts:', err);
+    } finally {
+      loadingHiringPosts.value = false;
+    }
+  }
+
+  function openApplyDialog(post: HiringPost) {
+    applyTarget.value = post;
+    applyMessage.value = '';
+    showApplyDialog.value = true;
+  }
+
+  async function submitApplication() {
+    if (!applyTarget.value) return;
+    applyingTo.value = applyTarget.value.id;
+    try {
+      const res = await applyToHiringPost(applyTarget.value.id, applyMessage.value);
+      if (res.success) {
+        toast({ title: 'Application submitted!', description: 'The organization will review your profile.' });
+        showApplyDialog.value = false;
+        // Mark as applied locally
+        const idx = hiringPosts.value.findIndex(p => p.id === applyTarget.value!.id);
+        if (idx >= 0) hiringPosts.value[idx].has_applied = true;
+        // Refresh my applications
+        const appsRes = await listMyHiringApplications();
+        if (appsRes.success) myHiringApplications.value = appsRes.applications;
+      } else {
+        toast({ title: 'Error', description: res.error || 'Failed to apply', type: 'error' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message || 'Failed to apply', type: 'error' });
+    } finally {
+      applyingTo.value = null;
+    }
+  }
+
   // Posts Analytics State
   const loadingPosts = ref(false);
   const postsAnalytics = ref<UserAnalyticsSummary | null>(null);
@@ -941,12 +1394,18 @@
     }
   );
 
-  // Load posts analytics when posts tab is selected
+  // Load tab data when tab changes
   watch(
     () => activeTab.value,
     (newTab) => {
       if (newTab === 'posts' && userPosts.value.length === 0) {
         loadPostsAnalytics();
+      }
+      if (newTab === 'hiring' && !hiringPosts.value.length) {
+        loadHiringPosts();
+      }
+      if (newTab === 'affiliate' && !affiliateDashboard.value) {
+        loadAffiliateData();
       }
     }
   );
@@ -988,6 +1447,69 @@
     }
   };
 
+  const loadAffiliateData = async () => {
+    loadingAffiliate.value = true;
+    try {
+      const [dashRes, refRes, payRes] = await Promise.all([
+        getMyDashboard(),
+        getMyReferrals(),
+        getMyPayouts(),
+      ]);
+      if (dashRes.success) {
+        affiliateInfo.value = dashRes.affiliate!;
+        affiliateDashboard.value = dashRes.dashboard!;
+        affSettingsForm.payout_method = dashRes.affiliate?.payout_method || '';
+        affSettingsForm.solana_usdc_address = dashRes.affiliate?.solana_usdc_address || '';
+        affSettingsForm.paypal_email = dashRes.affiliate?.paypal_email || '';
+      }
+      if (refRes.success) affiliateReferrals.value = refRes.referrals;
+      if (payRes.success) affiliatePayouts.value = payRes.payouts;
+    } catch (e: any) {
+      toast({ title: 'Error', description: 'Failed to load affiliate data' });
+    } finally {
+      loadingAffiliate.value = false;
+    }
+  };
+
+  const copyAffiliateLink = async () => {
+    try {
+      await navigator.clipboard.writeText(affiliateReferralUrl.value);
+      affCopied.value = true;
+      setTimeout(() => { affCopied.value = false; }, 2000);
+    } catch {
+      affCopied.value = false;
+    }
+  };
+
+  const saveAffiliateSettings = async () => {
+    savingAffSettings.value = true;
+    try {
+      const res = await updateMySettings({
+        payout_method: affSettingsForm.payout_method || undefined,
+        solana_usdc_address: affSettingsForm.solana_usdc_address || undefined,
+        paypal_email: affSettingsForm.paypal_email || undefined,
+      });
+      if (res.success) toast({ title: 'Saved', description: 'Payout settings updated' });
+      else toast({ title: 'Error', description: res.error || 'Failed to save' });
+    } catch {
+      toast({ title: 'Error', description: 'Failed to save settings' });
+    } finally {
+      savingAffSettings.value = false;
+    }
+  };
+
+  const formatAffEventType = (type: string) => {
+    const map: Record<string, string> = { first_subscription: 'Signup', recurring: 'Recurring', credit_pack: 'Credit Pack' };
+    return map[type] || type;
+  };
+
+  const getAffiliateTotalSignups = () => {
+    if (!affiliateDashboard.value?.breakdown) return 0;
+    const firstTime = affiliateDashboard.value.breakdown.first_subscription?.count || 0;
+    const recurring = affiliateDashboard.value.breakdown.recurring?.count || 0;
+    return firstTime + recurring;
+  };
+
   const loadPostsAnalytics = async () => {
     loadingPosts.value = true;
     try {
@@ -1020,15 +1542,18 @@
   const publishThumbnailUrl = ref('');
 
   const connectingInstagram = ref(false);
+  const connectingTwitter = ref(false);
+  const connectingPlatform = computed(() => connectingInstagram.value || connectingTwitter.value);
   const selectedPlatform = ref<string | null>(null);
   const selectedAccountForPosts = ref<UserInstagramAccount | null>(null);
   const editingPaymentMethod = ref<ClipperPaymentMethod | null>(null);
   const savingPaymentMethod = ref(false);
   const deleting = ref(false);
   const deleteType = ref<'social account' | 'payment method'>('social account');
-  const deleteTarget = ref<UserInstagramAccount | ClipperPaymentMethod | null>(null);
+  const deleteTarget = ref<UserInstagramAccount | UserTwitterAccount | ClipperPaymentMethod | null>(null);
 
   let cleanupInstagramAuth: (() => void) | null = null;
+  let cleanupTwitterAuth: (() => void) | null = null;
 
   const availablePlatforms = [
     {
@@ -1050,7 +1575,7 @@
       name: 'X (Twitter)',
       icon: markRaw(Twitter),
       iconClass: 'platform-card__icon--x',
-      available: false,
+      available: true,
     },
     {
       id: 'youtube',
@@ -1064,7 +1589,7 @@
   const paymentMethodForm = reactive({ method_type: '', is_default: false, details: {} as Record<string, string> });
 
   const getPlatformIcon = (platform: string) => {
-    const icons: Record<string, any> = { tiktok: Music2, instagram: Instagram, x: Twitter, youtube: Youtube };
+    const icons: Record<string, any> = { tiktok: Music2, instagram: Instagram, x: Twitter, twitter: Twitter, youtube: Youtube };
     return icons[platform] || Globe;
   };
 
@@ -1073,6 +1598,7 @@
       instagram: 'list-item__icon--instagram',
       tiktok: 'list-item__icon--tiktok',
       x: 'list-item__icon--x',
+      twitter: 'list-item__icon--x',
       youtube: 'list-item__icon--youtube',
     };
     return classes[platform] || '';
@@ -1083,6 +1609,7 @@
       tiktok: 'platform--tiktok',
       instagram: 'platform--instagram',
       x: 'platform--x',
+      twitter: 'platform--x',
       youtube: 'platform--youtube',
     };
     return classes[platform] || '';
@@ -1093,6 +1620,7 @@
       instagram: 'Instagram',
       tiktok: 'TikTok',
       x: 'X (Twitter)',
+      twitter: 'X (Twitter)',
       youtube: 'YouTube Shorts',
     };
     return names[platform] || platform;
@@ -1136,10 +1664,16 @@
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
     try {
-      const response = await listUserInstagramAccounts();
-      if (response.success) socialAccounts.value = response.accounts as any[];
+      const [igResponse, twResponse] = await Promise.all([
+        listUserInstagramAccounts(),
+        listUserTwitterAccounts(),
+      ]);
+      const accounts: any[] = [];
+      if (igResponse.success) accounts.push(...igResponse.accounts);
+      if (twResponse.success) accounts.push(...twResponse.accounts);
+      socialAccounts.value = accounts;
     } catch (error) {
-      toast({ title: 'Error', description: 'Failed to load Instagram accounts' });
+      toast({ title: 'Error', description: 'Failed to load social accounts' });
     } finally {
       loadingSocialAccounts.value = false;
     }
@@ -1166,6 +1700,26 @@
         console.error('Failed to connect Instagram:', error);
         toast({ title: 'Error', description: 'Failed to connect Instagram' });
         connectingInstagram.value = false;
+        selectedPlatform.value = null;
+      }
+    } else if (platformId === 'x') {
+      connectingTwitter.value = true;
+      try {
+        cleanupTwitterAuth = await startUserTwitterOAuth((result) => {
+          if (result.success && result.account) {
+            toast({ title: 'Success', description: `X account @${result.account.username} connected` });
+            loadSocialAccounts();
+            showPlatformSelectionDialog.value = false;
+          } else if (result.error) {
+            toast({ title: 'Error', description: result.error });
+          }
+          connectingTwitter.value = false;
+          selectedPlatform.value = null;
+        });
+      } catch (error) {
+        console.error('Failed to connect X:', error);
+        toast({ title: 'Error', description: 'Failed to connect X' });
+        connectingTwitter.value = false;
         selectedPlatform.value = null;
       }
     } else {
@@ -1204,7 +1758,7 @@
     }
   };
 
-  const confirmDeleteSocialAccount = (account: UserInstagramAccount) => {
+  const confirmDeleteSocialAccount = (account: UserInstagramAccount | UserTwitterAccount | any) => {
     deleteType.value = 'social account';
     deleteTarget.value = account;
     showDeleteDialog.value = true;
@@ -1281,10 +1835,15 @@
     if (!deleteTarget.value) return;
     deleting.value = true;
     try {
-      const response =
-        deleteType.value === 'social account'
-          ? await disconnectUserInstagramAccount((deleteTarget.value as UserInstagramAccount).id)
-          : await deletePaymentMethod((deleteTarget.value as ClipperPaymentMethod).id);
+      let response;
+      if (deleteType.value === 'social account') {
+        const account = deleteTarget.value as any;
+        response = (account.platform === 'x' || account.platform === 'twitter')
+          ? await disconnectUserTwitterAccount(account.id)
+          : await disconnectUserInstagramAccount(account.id);
+      } else {
+        response = await deletePaymentMethod((deleteTarget.value as ClipperPaymentMethod).id);
+      }
       if (response.success) {
         toast({ title: 'Deleted', description: `${deleteType.value} disconnected` });
         showDeleteDialog.value = false;
@@ -1527,6 +2086,24 @@
     height: 5px;
     background: #10b981;
     border-radius: 50%;
+  }
+
+  .affiliate-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background: rgba(168, 85, 247, 0.12);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: #a855f7;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .affiliate-badge__icon {
+    flex-shrink: 0;
   }
 
   .view-public-btn,
@@ -2123,6 +2700,11 @@
   .posts-stat-card--green .posts-stat-card__icon {
     background: rgba(16, 185, 129, 0.15);
     color: #10b981;
+  }
+
+  .posts-stat-card--amber .posts-stat-card__icon {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
   }
 
   .posts-stat-card__content {
@@ -3565,6 +4147,297 @@
     width: 14px;
     height: 14px;
   }
+
+  /* ===== Affiliate Tab ===== */
+  .aff-tab__link-card {
+    padding: 1.25rem;
+    border-radius: 10px;
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    background: var(--sidebar-hover, rgba(255, 255, 255, 0.02));
+    margin-bottom: 1rem;
+  }
+
+  .aff-tab__link-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .aff-tab__link-icon {
+    width: 18px;
+    height: 18px;
+    color: #a855f7;
+  }
+
+  .aff-tab__link-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .aff-tab__status {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-left: auto;
+  }
+
+  .aff-tab__status--active { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+  .aff-tab__status--suspended { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+  .aff-tab__status--deactivated { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+
+  .aff-tab__link-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .aff-tab__link-url {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    background: rgba(0, 0, 0, 0.3);
+    color: #a855f7;
+    font-family: monospace;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .aff-tab__copy-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    background: #7c3aed;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+  }
+
+  .aff-tab__copy-btn:hover { opacity: 0.9; }
+  .aff-tab__copy-ok { color: #22c55e; }
+
+  .aff-tab__table-wrapper {
+    border-radius: 10px;
+    border: 1px solid var(--sidebar-border);
+    overflow-x: auto;
+  }
+
+  .aff-tab__table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .aff-tab__th {
+    padding: 0.625rem 0.875rem;
+    text-align: left;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--sidebar-hover);
+    white-space: nowrap;
+  }
+
+  .aff-tab__row {
+    border-top: 1px solid var(--sidebar-border);
+    transition: background 0.15s;
+  }
+
+  .aff-tab__row:hover { background: var(--sidebar-hover); }
+
+  .aff-tab__td {
+    padding: 0.625rem 0.875rem;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+  }
+
+  .aff-tab__td--green { color: #22c55e; }
+
+  .aff-tab__event-badge {
+    font-size: 0.75rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .aff-tab__ref-status {
+    display: inline-block;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 9999px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .aff-tab__ref-status--pending { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+  .aff-tab__ref-status--confirmed { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+  .aff-tab__ref-status--paid { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+  .aff-tab__ref-status--cancelled { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+
+  .aff-tab__settings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 400px;
+  }
+
+  .aff-tab__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .aff-tab__label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+  }
+
+  .aff-tab__input {
+    padding: 0.625rem 0.875rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    outline: none;
+    transition: border-color 150ms ease;
+  }
+
+  .aff-tab__input:focus {
+    border-color: #a855f7;
+    box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.15);
+  }
+
+  .aff-tab__dropdown-trigger {
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    color: var(--sidebar-text) !important;
+    font-size: 0.875rem !important;
+  }
+
+  .aff-tab__save-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.625rem 1rem;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    background: #7c3aed;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.15s;
+    width: fit-content;
+  }
+
+  .aff-tab__save-btn:hover { opacity: 0.9; }
+  .aff-tab__save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ===== Hiring Tab ===== */
+  .hiring-tab__section-card {
+    display: flex; flex-direction: column; gap: 1rem;
+    padding: 1.25rem; border-radius: 10px;
+    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
+    background: var(--sidebar-hover, rgba(255, 255, 255, 0.02));
+    margin-bottom: 1rem;
+  }
+  .hiring-tab__apps-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .hiring-tab__app-card {
+    padding: 0.75rem 1rem; border-radius: 8px;
+    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
+  }
+  .hiring-tab__app-header { display: flex; align-items: center; gap: 0.75rem; }
+  .hiring-tab__org-logo { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+  .hiring-tab__org-logo-placeholder { width: 32px; height: 32px; color: var(--sidebar-text-muted); flex-shrink: 0; }
+  .hiring-tab__app-info { flex: 1; min-width: 0; }
+  .hiring-tab__app-org { font-size: 0.75rem; color: var(--sidebar-text-muted); }
+  .hiring-tab__app-title { font-size: 0.875rem; font-weight: 600; color: var(--sidebar-text); }
+  .hiring-tab__status {
+    padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.625rem;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0;
+  }
+  .hiring-tab__status--pending { background: rgba(234, 179, 8, 0.15); color: #eab308; }
+  .hiring-tab__status--accepted { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+  .hiring-tab__status--rejected { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+  .hiring-tab__filters { display: flex; gap: 0.5rem; }
+  .hiring-tab__filter-select {
+    padding: 0.375rem 0.75rem; border-radius: 6px;
+    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
+    color: var(--sidebar-text); font-size: 0.8125rem; cursor: pointer;
+  }
+
+  .hiring-tab__empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 3rem 1rem; color: var(--sidebar-text-muted);
+  }
+  .hiring-tab__empty-icon { width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.4; }
+
+  .hiring-tab__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0.75rem; }
+  .hiring-tab__card {
+    padding: 1rem; border-radius: 10px;
+    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
+    display: flex; flex-direction: column; gap: 0.625rem;
+  }
+  .hiring-tab__card-header { display: flex; align-items: center; gap: 0.75rem; }
+  .hiring-tab__card-org { flex: 1; min-width: 0; }
+  .hiring-tab__card-org-name { font-size: 0.75rem; color: var(--sidebar-text-muted); }
+  .hiring-tab__card-title { font-size: 0.9375rem; font-weight: 600; color: var(--sidebar-text); }
+  .hiring-tab__card-desc {
+    font-size: 0.8125rem; color: var(--sidebar-text-muted); line-height: 1.5;
+    margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .hiring-tab__card-meta { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+  .hiring-tab__card-badge {
+    padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.6875rem;
+    background: rgba(255, 255, 255, 0.06); color: var(--sidebar-text-muted);
+  }
+  .hiring-tab__card-badge--pay { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+  .hiring-tab__card-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  .hiring-tab__mini-tag {
+    padding: 0.0625rem 0.375rem; border-radius: 9999px; font-size: 0.625rem;
+    background: rgba(255, 255, 255, 0.04); color: var(--sidebar-text-muted);
+  }
+  .hiring-tab__apply-btn {
+    display: flex; align-items: center; justify-content: center; gap: 0.375rem;
+    padding: 0.5rem; border-radius: 6px; border: none;
+    background: #22d3ee; color: #0a0a0b; font-size: 0.8125rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.15s; margin-top: auto;
+  }
+  .hiring-tab__apply-btn:hover:not(:disabled) { opacity: 0.9; }
+  .hiring-tab__apply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .hiring-tab__apply-btn--applied { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+  .hiring-tab__apply-spinner { width: 1rem; height: 1rem; animation: spin 1s linear infinite; }
+
+  .hiring-tab__dialog { max-width: 480px; }
+  .hiring-tab__dialog-body { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.5rem 0; }
+  .hiring-tab__dialog-label { font-size: 0.8125rem; font-weight: 600; color: var(--sidebar-text); }
+  .hiring-tab__dialog-textarea {
+    padding: 0.625rem 0.875rem; border-radius: 8px;
+    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
+    color: var(--sidebar-text); font-size: 0.875rem; font-family: inherit;
+    resize: vertical; min-height: 80px;
+  }
+  .hiring-tab__dialog-textarea:focus { outline: none; border-color: #22d3ee; }
+  .hiring-tab__dialog-note { font-size: 0.75rem; color: var(--sidebar-text-muted); margin: 0; }
 </style>
 
 <!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->

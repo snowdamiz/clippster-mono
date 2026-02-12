@@ -29,7 +29,7 @@ export interface SocialAccountAssignment {
 
 export interface SocialAccount {
   id: number;
-  platform: 'instagram' | 'tiktok' | 'twitter' | 'youtube';
+  platform: 'instagram' | 'tiktok' | 'twitter' | 'x' | 'youtube';
   platform_user_id: string;
   username: string;
   display_name: string | null;
@@ -695,6 +695,12 @@ import {
   type InstagramAuthResult,
 } from '@/lib/instagram-auth';
 
+import {
+  startTwitterOAuth,
+  onTwitterAuthComplete as onTauriTwitterAuthComplete,
+  type TwitterAuthResult,
+} from '@/lib/twitter-auth';
+
 /**
  * Get the API base URL
  */
@@ -753,6 +759,61 @@ export function onInstagramAuthComplete(
   }
 
   return onTauriInstagramAuthComplete((result: InstagramAuthResult) => {
+    callback({
+      success: result.success,
+      account: result.account as SocialAccount | undefined,
+      error: result.error,
+    });
+  });
+}
+
+// ============================================
+// X (Twitter) Connection via OAuth (Tauri OAuth)
+// ============================================
+
+/**
+ * Start X (Twitter) OAuth flow.
+ * For Tauri: Opens browser and handles OAuth via local callback server.
+ * Returns a cleanup function.
+ */
+export async function startTwitterOAuthPopup(
+  organizationId: string | number,
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): Promise<() => void> {
+  if (!isTauri()) {
+    throw new Error('X OAuth is only supported in the Tauri desktop app');
+  }
+
+  const apiBase = getApiBase();
+  const authToken = getAuthToken();
+
+  if (!authToken) {
+    throw new Error('You must be logged in to connect X');
+  }
+
+  return startTwitterOAuth(organizationId, apiBase, authToken, (result: TwitterAuthResult) => {
+    if (onResult) {
+      onResult({
+        success: result.success,
+        account: result.account as SocialAccount | undefined,
+        error: result.error,
+      });
+    }
+  });
+}
+
+/**
+ * Listen for X (Twitter) OAuth completion events.
+ * Returns cleanup function to remove listener.
+ */
+export function onTwitterAuthComplete(
+  callback: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): () => void {
+  if (!isTauri()) {
+    return () => {};
+  }
+
+  return onTauriTwitterAuthComplete((result: TwitterAuthResult) => {
     callback({
       success: result.success,
       account: result.account as SocialAccount | undefined,

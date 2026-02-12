@@ -5,6 +5,7 @@
       :description="profile?.bio || ''"
       :show-header="true"
       :icon="UserCircle"
+      :breadcrumbs="breadcrumbs"
     >
       <template #actions>
         <div v-if="profile" class="profile-header-actions">
@@ -62,6 +63,10 @@
                 <span v-if="profile.looking_for_work" class="available-badge">
                   <span class="available-badge__dot"></span>
                   Available
+                </span>
+                <span v-if="profile.is_affiliate" class="affiliate-badge">
+                  <Handshake :size="12" class="affiliate-badge__icon" />
+                  Affiliate
                 </span>
                 <div v-for="badge in profile.badges" :key="badge.id" class="profile-badge">
                   <Badge :class="getBadgeColor(badge.badge_type)">
@@ -332,7 +337,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue';
+  import { ref, computed, onMounted } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import {
     UserCircle,
@@ -359,6 +364,7 @@
     Globe,
     Link,
     Share2,
+    Handshake,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
@@ -393,6 +399,28 @@
 
   const loading = ref(true);
   const profile = ref<ClipperProfile | null>(null);
+
+  const breadcrumbs = computed(() => {
+    const from = route.query.from as string | undefined;
+    if (!from) return undefined;
+    const crumbs: { label: string; path?: string }[] = [];
+    if (from.includes('/organization/')) {
+      crumbs.push({ label: 'Organizations', path: '/organizations' });
+      if (from.includes('/hiring')) {
+        crumbs.push({ label: 'Hiring', path: from });
+      } else if (from.includes('/campaigns')) {
+        crumbs.push({ label: 'Campaigns', path: from });
+      } else {
+        crumbs.push({ label: 'Back', path: from });
+      }
+    } else if (from.includes('/clippers')) {
+      crumbs.push({ label: 'Clipper Directory', path: '/clippers' });
+    } else {
+      crumbs.push({ label: 'Back', path: from });
+    }
+    crumbs.push({ label: profile.value?.display_name || 'Profile' });
+    return crumbs;
+  });
 
   // Endorsement dialog state
   const showEndorsementDialog = ref(false);
@@ -677,6 +705,24 @@
     height: 5px;
     background: #10b981;
     border-radius: 50%;
+  }
+
+  .affiliate-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.5rem;
+    background: rgba(168, 85, 247, 0.12);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: #a855f7;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .affiliate-badge__icon {
+    flex-shrink: 0;
   }
 
   .profile-badge {

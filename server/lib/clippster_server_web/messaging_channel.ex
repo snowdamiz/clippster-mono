@@ -97,7 +97,13 @@ defmodule ClippsterServerWeb.MessagingChannel do
 
     case Messaging.mark_as_read(conversation_id, user_id) do
       {:ok, _} ->
+        # Broadcast on conversation channel (for users currently viewing this conversation)
         broadcast!(socket, "message_read", %{
+          user_id: user_id,
+          conversation_id: conversation_id
+        })
+        # Also broadcast to all participant user channels (for users not in the conversation)
+        broadcast_to_participants(conversation_id, "message_read_notification", %{
           user_id: user_id,
           conversation_id: conversation_id
         })

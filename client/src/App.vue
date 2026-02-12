@@ -10,7 +10,9 @@
   import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
   import MandatoryUpdateDialog from '@/components/MandatoryUpdateDialog.vue';
   import SubscriptionGate from '@/components/SubscriptionGate.vue';
+  import BrandingProfileSelector from '@/components/BrandingProfileSelector.vue';
   import { initDatabase, seedDefaultPrompt, seedGamingPrompt, seedGamblingPrompt, seedBreakingNewsPrompt, ensureOrganizationAssetColumns } from '@/services/database';
+  import { healSchema } from '@/services/database/schema-healing';
   import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
@@ -217,6 +219,9 @@
     try {
       await initDatabase();
 
+      // Ensure all expected columns exist (handles SQLite's lack of IF NOT EXISTS for ALTER TABLE)
+      await healSchema();
+
       // Seed default prompts if they don't exist (order matters for display)
       await seedDefaultPrompt();
       await seedGamingPrompt();
@@ -303,6 +308,9 @@
 
       <!-- Subscription Gate Dialog (triggered on protected actions) -->
       <SubscriptionGate />
+
+      <!-- Global Branding Profile Selector Dialog -->
+      <BrandingProfileSelector />
 
       <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
       <LivestreamWatchDialog

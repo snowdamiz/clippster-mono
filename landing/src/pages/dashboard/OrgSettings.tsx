@@ -23,6 +23,7 @@ const DEFAULT_RESTRICTIONS: Required<OrganizationRestrictionDefaults> = {
   allow_clipper_profile: false,
   allow_personal_social: true,
   allow_clip_deletion: false,
+  allow_hiring_browse: true,
   force_org_watermark: true,
   require_clip_approval: false,
   clips_visible_to_admins: true,
@@ -68,6 +69,7 @@ export function OrgSettings() {
           allow_clipper_profile: rd.allow_clipper_profile === true,
           allow_personal_social: rd.allow_personal_social !== false,
           allow_clip_deletion: rd.allow_clip_deletion === true,
+          allow_hiring_browse: rd.allow_hiring_browse !== false,
           force_org_watermark: rd.force_org_watermark !== false,
           require_clip_approval: rd.require_clip_approval === true,
           clips_visible_to_admins: rd.clips_visible_to_admins !== false,
@@ -92,6 +94,7 @@ export function OrgSettings() {
       editData.restriction_defaults.allow_clipper_profile !== (rd.allow_clipper_profile === true) ||
       editData.restriction_defaults.allow_personal_social !== (rd.allow_personal_social !== false) ||
       editData.restriction_defaults.allow_clip_deletion !== (rd.allow_clip_deletion === true) ||
+      editData.restriction_defaults.allow_hiring_browse !== (rd.allow_hiring_browse !== false) ||
       editData.restriction_defaults.force_org_watermark !== (rd.force_org_watermark !== false) ||
       editData.restriction_defaults.require_clip_approval !== (rd.require_clip_approval === true)
 
@@ -411,6 +414,12 @@ export function OrgSettings() {
                 desc="Connect their own social accounts"
                 active={editData.restriction_defaults.allow_personal_social}
                 onToggle={() => toggleRestriction('allow_personal_social')}
+              />
+              <RestrictionItem
+                title="Allow hiring browse"
+                desc="Browse companies hiring on Clippster"
+                active={editData.restriction_defaults.allow_hiring_browse}
+                onToggle={() => toggleRestriction('allow_hiring_browse')}
               />
             </div>
           </div>

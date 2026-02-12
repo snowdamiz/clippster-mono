@@ -75,6 +75,7 @@ export interface OrganizationRestrictionDefaults {
   allow_clipper_profile?: boolean;
   allow_personal_social?: boolean;
   allow_clip_deletion?: boolean;
+  allow_hiring_browse?: boolean;
   force_org_watermark?: boolean;
   require_clip_approval?: boolean;
   clips_visible_to_admins?: boolean;

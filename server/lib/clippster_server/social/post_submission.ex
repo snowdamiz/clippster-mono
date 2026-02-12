@@ -39,6 +39,7 @@ defmodule ClippsterServer.Social.PostSubmission do
     field :manual_override, :boolean, default: false
     field :status, :string, default: "pending"
     field :error_message, :string
+    field :content_hash, :string
 
     # Scheduling fields
     field :scheduled_at, :utc_datetime
@@ -208,7 +209,7 @@ defmodule ClippsterServer.Social.PostSubmission do
   """
   def publish_changeset(submission, attrs) do
     submission
-    |> cast(attrs, [:post_id, :post_url, :posted_at])
+    |> cast(attrs, [:post_id, :post_url, :posted_at, :content_hash])
     |> validate_required([:post_id])
     |> put_change(:status, "published")
     |> put_posted_at()
@@ -346,11 +347,22 @@ defmodule ClippsterServer.Social.PostSubmission do
   end
 
   defp validate_caption(changeset) do
+    platform = get_field(changeset, :platform)
     caption = get_field(changeset, :caption) || ""
     hashtag_count = Regex.scan(~r/#\w+/, caption) |> length()
 
+    max_length = case platform do
+      "twitter" -> 280
+      _ -> 2200
+    end
+
+    error_message = case platform do
+      "twitter" -> "Twitter captions limited to 280 characters"
+      _ -> "caption cannot exceed 2,200 characters"
+    end
+
     changeset
-    |> validate_length(:caption, max: 2200, message: "caption cannot exceed 2,200 characters")
+    |> validate_length(:caption, max: max_length, message: error_message)
     |> then(fn cs ->
       if hashtag_count > 30 do
         add_error(cs, :caption, "cannot have more than 30 hashtags")

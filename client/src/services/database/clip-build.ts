@@ -89,6 +89,16 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
   try {
     const db = await getDatabase();
 
+    // Check for child projects (e.g., livestream segments stored under child projects)
+    const childProjects = await db.select<{ id: string }[]>(
+      `SELECT id FROM projects WHERE parent_id = ?`,
+      [projectId]
+    );
+
+    // Build list of project IDs to query: parent + all children
+    const projectIds = [projectId, ...childProjects.map((p) => p.id)];
+    const placeholders = projectIds.map(() => '?').join(', ');
+
     const clips = await db.select<any[]>(
       `
       SELECT
@@ -113,7 +123,7 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
         CASE
           WHEN cds.id IS NOT NULL THEN (
             SELECT COUNT(*) + 1 FROM clip_detection_sessions s2
-            WHERE s2.project_id = ? AND s2.created_at < cds.created_at
+            WHERE s2.project_id = c.project_id AND s2.created_at < cds.created_at
           )
           ELSE NULL
         END as run_number,
@@ -122,10 +132,10 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
       LEFT JOIN projects p ON c.project_id = p.id
       LEFT JOIN clip_versions cv ON c.id = cv.clip_id
       LEFT JOIN clip_detection_sessions cds ON cv.session_id = cds.id
-      WHERE c.project_id = ?
+      WHERE c.project_id IN (${placeholders})
       ORDER BY COALESCE(cv.start_time, c.start_time) ASC
     `,
-      [projectId, projectId]
+      projectIds
     );
 
     // Filter to only include current versions (rn = 1) and convert to ClipWithVersion
@@ -183,7 +193,7 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
         const segments = await db.select<any[]>(
           `
           SELECT id, clip_version_id, segment_index, start_time, end_time,
-                 duration, transcript, created_at
+                 duration, transcript, transcript_raw_json, audio_peaks, created_at
           FROM clip_segments
           WHERE clip_version_id = ?
           ORDER BY segment_index
@@ -199,6 +209,8 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
           end_time: seg.end_time,
           duration: seg.duration,
           transcript: seg.transcript,
+          transcript_raw_json: seg.transcript_raw_json || null,
+          audio_peaks: seg.audio_peaks || null,
           created_at: seg.created_at,
         }));
       }

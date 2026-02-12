@@ -589,7 +589,7 @@ async fn run_kick_recorder(
         .arg("-f").arg("hls")          // HLS output format
         .arg("-hls_time").arg(hls_segment_seconds.to_string())
         .arg("-hls_list_size").arg("0")  // Keep all segments in playlist
-        .arg("-hls_flags").arg("append_list+omit_endlist")  // Live streaming flags
+        .arg("-hls_flags").arg("append_list+omit_endlist+temp_file")  // Live streaming flags + atomic writes
         .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
         .stdin(ytdlp_stdout_std)       // Pipe yt-dlp output to FFmpeg

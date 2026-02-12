@@ -17,11 +17,30 @@ export async function getOrganizationCreatorProfile(orgId: number, profileId: nu
   return api.get<{ success: boolean; profile?: ServerOrganizationCreatorProfile; error?: string }>(`/organizations/${orgId}/creator-profiles/${profileId}`)
 }
 
-export async function createOrganizationCreatorProfile(orgId: number, data: { name: string; description?: string }) {
+export async function createOrganizationCreatorProfile(orgId: number, data: {
+  name: string
+  description?: string | null
+  profile_image_url?: string | null
+  intro_id?: number | null
+  outro_id?: number | null
+  watermark_id?: number | null
+  watermark_settings?: Record<string, unknown> | null
+  scope?: 'streamer' | 'global'
+}) {
   return api.post<{ success: boolean; profile?: ServerOrganizationCreatorProfile; error?: string }>(`/organizations/${orgId}/creator-profiles`, data)
 }
 
-export async function updateOrganizationCreatorProfile(orgId: number, profileId: number, data: { name?: string; description?: string }) {
+export async function updateOrganizationCreatorProfile(orgId: number, profileId: number, data: {
+  name?: string
+  description?: string | null
+  profile_image_url?: string | null
+  intro_id?: number | null
+  outro_id?: number | null
+  watermark_id?: number | null
+  watermark_settings?: Record<string, unknown> | null
+  intro_outro_settings?: Record<string, unknown> | null
+  scope?: 'streamer' | 'global'
+}) {
   return api.put<{ success: boolean; profile?: ServerOrganizationCreatorProfile; error?: string }>(`/organizations/${orgId}/creator-profiles/${profileId}`, data)
 }
 
@@ -36,7 +55,7 @@ export async function uploadCreatorProfileImage(orgId: number, profileId: number
 }
 
 // Platform links
-export async function addPlatformLink(orgId: number, profileId: number, data: { platform: string; platform_id: string; display_name?: string; is_primary?: boolean }) {
+export async function addPlatformLink(orgId: number, profileId: number, data: { platform: string; platform_id: string; display_name?: string; profile_image_url?: string; is_primary?: boolean }) {
   return api.post<{ success: boolean; link?: ServerOrganizationPlatformLink; error?: string }>(`/organizations/${orgId}/creator-profiles/${profileId}/platform-links`, data)
 }
 

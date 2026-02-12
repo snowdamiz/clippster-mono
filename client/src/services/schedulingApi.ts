@@ -43,6 +43,26 @@ export interface ScheduledPost {
     display_name?: string;
     profile_image_url?: string;
   } | null;
+  creator_profile: {
+    id: number;
+    name: string;
+    profile_image_url?: string;
+  } | null;
+  organization: {
+    id: number;
+    name: string;
+    logo_url?: string;
+  } | null;
+  submitted_by: {
+    id: number;
+    email: string;
+    name?: string;
+    avatar_url?: string;
+  } | null;
+  campaign: {
+    id: number;
+    name: string;
+  } | null;
   inserted_at: string;
   updated_at: string;
 }

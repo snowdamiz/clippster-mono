@@ -4,6 +4,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   alias ClippsterServer.ClipperProfiles
   alias ClippsterServer.ClipperProfiles.{ClipperProfile, ClipperChannelLink, ClipperPortfolioClip}
   alias ClippsterServer.Storage
+  alias ClippsterServer.Affiliates
 
   # ============================================================================
   # Own Profile Endpoints
@@ -504,6 +505,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       channel_links: Enum.map(profile.channel_links || [], &serialize_channel_link/1),
       portfolio_clips: Enum.map(profile.portfolio_clips || [], &serialize_portfolio_clip/1),
       badges: Enum.map(profile.badges || [], &serialize_badge/1),
+      is_affiliate: Affiliates.is_affiliate?(profile.user_id),
       inserted_at: profile.inserted_at,
       updated_at: profile.updated_at
     }

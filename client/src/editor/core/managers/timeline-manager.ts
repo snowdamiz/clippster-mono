@@ -27,10 +27,13 @@ import {
 	PasteCommand,
 	UpdateElementStartTimeCommand,
 	MoveElementCommand,
+	MoveElementsBatchCommand,
 	ChangeSpeedCommand,
 	UpdateElementKeyframesCommand,
 	ExtractAudioCommand,
 	UpdateCaptionElementCommand,
+	FreezeFrameCommand,
+	RippleDeleteTimeRangeCommand,
 } from "../../lib/commands/timeline";
 import type { UpdatableElementProps } from "../../lib/commands/timeline";
 import type { InsertElementParams } from "../../lib/commands/timeline/element/insert-element";
@@ -61,14 +64,18 @@ export class TimelineManager {
 		elementId,
 		trimStart,
 		trimEnd,
+		startTime,
+		duration,
 		pushHistory = true,
 	}: {
 		elementId: string;
 		trimStart: number;
 		trimEnd: number;
+		startTime?: number;
+		duration?: number;
 		pushHistory?: boolean;
 	}): void {
-		const command = new UpdateElementTrimCommand(elementId, trimStart, trimEnd);
+		const command = new UpdateElementTrimCommand(elementId, trimStart, trimEnd, startTime, duration);
 		if (pushHistory) {
 			this.editor.command.execute({ command });
 		} else {
@@ -133,6 +140,19 @@ export class TimelineManager {
 		this.editor.command.execute({ command });
 	}
 
+	moveElementsBatch({
+		trackId,
+		elementIds,
+		timeDelta,
+	}: {
+		trackId: string;
+		elementIds: string[];
+		timeDelta: number;
+	}): void {
+		const command = new MoveElementsBatchCommand(trackId, elementIds, timeDelta);
+		this.editor.command.execute({ command });
+	}
+
 	toggleTrackMute({ trackId }: { trackId: string }): void {
 		const command = new ToggleTrackMuteCommand(trackId);
 		this.editor.command.execute({ command });
@@ -165,6 +185,23 @@ export class TimelineManager {
 		const command = new SplitElementsCommand(elements, splitTime, retainSide);
 		this.editor.command.execute({ command });
 		return command.getRightSideElements();
+	}
+
+	freezeFrame({
+		trackId,
+		elementId,
+		splitTime,
+		mediaId,
+		freezeDuration,
+	}: {
+		trackId: string;
+		elementId: string;
+		splitTime: number;
+		mediaId: string;
+		freezeDuration?: number;
+	}): void {
+		const command = new FreezeFrameCommand(trackId, elementId, splitTime, mediaId, freezeDuration);
+		this.editor.command.execute({ command });
 	}
 
 	getTotalDuration(): number {
@@ -337,6 +374,17 @@ export class TimelineManager {
 
 	private notify(): void {
 		this.listeners.forEach((fn) => fn());
+	}
+
+	rippleDeleteTimeRange({
+		startTime,
+		endTime,
+	}: {
+		startTime: number;
+		endTime: number;
+	}): void {
+		const command = new RippleDeleteTimeRangeCommand(startTime, endTime);
+		this.editor.command.execute({ command });
 	}
 
 	updateTracks(newTracks: TimelineTrack[]): void {

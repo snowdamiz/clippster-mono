@@ -2,12 +2,12 @@ use std::sync::{Arc, Mutex};
 use futures::future::join_all;
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings, ClipWatermarkSettings, ManualFramingConfig, SegmentFramingConfigs};
+use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings, ClipWatermarkSettings, ManualFramingConfig, SegmentFramingConfigs, LayoutOverlaySettings};
 use super::effect_renderer::{ClipEffectSettings, build_effects_filter_chain};
 use super::audio_effect_renderer::{AudioEffectSettings, build_audio_effects_filter_chain};
 use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
 use super::subtitle::{generate_ass_file, generate_text_overlay_ass_file, merge_text_overlays_into_ass};
-use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy, apply_stickers_to_video, apply_clip_watermarks_to_video, apply_rendered_text_overlays_to_video};
+use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy, apply_stickers_to_video, apply_clip_watermarks_to_video, apply_layout_overlays_to_video, apply_rendered_text_overlays_to_video};
 use super::font_manager::get_fonts_dir;
 use super::text_renderer::{render_text_overlay_to_png, partition_overlays};
 use super::{CancellationToken, is_build_cancelled};
@@ -151,7 +151,7 @@ async fn concatenate_videos(
     let output = app.shell()
         .sidecar("ffmpeg")
         .unwrap()
-        .args(["-nostdin", "-f", "concat", "-safe", "0", "-i", &concat_list_path.to_string_lossy(), "-c", "copy", "-y", &output_path.to_string_lossy()])
+        .args(["-nostdin", "-f", "concat", "-safe", "0", "-i", &concat_list_path.to_string_lossy(), "-c", "copy", "-movflags", "+faststart", "-y", &output_path.to_string_lossy()])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
@@ -268,6 +268,7 @@ pub async fn build_clip_internal_simple(
     clip_watermarks: Option<Vec<ClipWatermarkSettings>>,
     clip_effects: Option<Vec<ClipEffectSettings>>,
     audio_effects: Option<Vec<AudioEffectSettings>>,
+    layout_overlays: Option<Vec<LayoutOverlaySettings>>,
     cancel_rx: CancellationToken
 ) -> Result<ClipBuildResult, String> {
 
@@ -412,6 +413,7 @@ pub async fn build_clip_internal_simple(
         let text_overlays = text_overlays.clone();
         let stickers = stickers.clone();
         let clip_watermarks = clip_watermarks.clone();
+        let layout_overlays = layout_overlays.clone();
         let cancel_rx = cancel_rx.clone();
         async move {
             // Check for cancellation at the start of each task
@@ -436,7 +438,7 @@ pub async fn build_clip_internal_simple(
             
             // Resolve intro/outro for this aspect ratio
             // Priority: per-ratio settings -> global intro/outro -> none
-            let (effective_intro_path, effective_intro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
+            let (effective_intro_path, _effective_intro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
                 if let Some((ratio_intro_path, ratio_intro_duration)) = per_ratio.get(&aspect_ratio_str) {
                     (ratio_intro_path.clone(), *ratio_intro_duration)
                 } else {
@@ -446,7 +448,7 @@ pub async fn build_clip_internal_simple(
                 (intro_path.as_ref().map(|s| s.to_string()), intro_duration)
             };
             
-            let (effective_outro_path, effective_outro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
+            let (effective_outro_path, _effective_outro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
                 if let Some((ratio_outro_path, ratio_outro_duration)) = per_ratio.get(&aspect_ratio_str) {
                     (ratio_outro_path.clone(), *ratio_outro_duration)
                 } else {
@@ -845,6 +847,20 @@ pub async fn build_clip_internal_simple(
                         &app,
                         &output_path,
                         watermark_list,
+                        &aspect_ratio_str,
+                        &quality
+                    ).await?;
+                }
+            }
+
+            // Apply layout overlays if present (from creator profile or VOD preset)
+            if let Some(overlay_list) = layout_overlays.as_ref() {
+                if !overlay_list.is_empty() {
+                    println!("[Rust] Applying {} layout overlays to {} clip", overlay_list.len(), aspect_ratio_str);
+                    apply_layout_overlays_to_video(
+                        &app,
+                        &output_path,
+                        overlay_list,
                         &aspect_ratio_str,
                         &quality
                     ).await?;

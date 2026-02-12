@@ -98,6 +98,12 @@ config :clippster_server,
 config :clippster_server, :twitter,
   api_key: System.get_env("TWITTER_API_IO_KEY")
 
+# X (Twitter) OAuth 2.0 configuration (official X API for posting)
+config :clippster_server, :twitter_oauth,
+  client_id: System.get_env("TWITTER_CLIENT_ID"),
+  client_secret: System.get_env("TWITTER_CLIENT_SECRET"),
+  redirect_uri: System.get_env("TWITTER_REDIRECT_URI")
+
 # PulseKit error tracking and event monitoring
 pulsekit_key = System.get_env("PULSEKIT_CLIPPSTER_SERVER_KEY")
 pulsekit_endpoint = System.get_env("PULSEKIT_ENDPOINT") || "https://pulsekit.fly.dev"

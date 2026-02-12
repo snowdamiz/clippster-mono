@@ -678,19 +678,28 @@
       const wasLive = streamer.isCurrentlyLive;
       const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
       
-      streamers.value[index] = {
+      const updatedStreamer: Record<string, any> = {
         ...streamers.value[index],
         isLive: status.isLive,
         isCurrentlyLive: status.isLive,
         viewerCount: status.numParticipants,
         isCheckingLive: false,
       };
+      // Update profile image if we got one and the streamer doesn't have one yet
+      if (status.profileImageUrl && !streamer.profileImageUrl) {
+        updatedStreamer.profileImageUrl = status.profileImageUrl;
+      }
+      streamers.value[index] = updatedStreamer as ExtendedStreamer;
       
       // Persist live status to database
-      await updateMonitoredStreamer(streamer.id, {
+      const dbUpdates: Record<string, any> = {
         is_currently_live: status.isLive,
         last_check_timestamp: Date.now(),
-      });
+      };
+      if (status.profileImageUrl && !streamer.profileImageUrl) {
+        dbUpdates.profile_image_url = status.profileImageUrl;
+      }
+      await updateMonitoredStreamer(streamer.id, dbUpdates);
       
       // Dispatch global event if streamer just went live (offline → live transition)
       if (!wasLive && status.isLive) {
@@ -720,7 +729,8 @@
   async function refreshSingleStreamerMetadata(streamer: ExtendedStreamer) {
     const needsUpdate = 
       (streamer.platform === 'PumpFun' && (streamer.displayName === streamer.mintId || !streamer.profileImageUrl)) ||
-      (streamer.platform === 'Kick' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId));
+      (streamer.platform === 'Kick' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId)) ||
+      (streamer.platform === 'Twitch' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId));
 
     if (!needsUpdate) return;
 
@@ -731,6 +741,22 @@
 
         if (streamer.displayName === streamer.mintId && status.username) {
           updates.display_name = status.username;
+        }
+        if (!streamer.profileImageUrl && status.profileImageUrl) {
+          updates.profile_image_url = status.profileImageUrl;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await updateMonitoredStreamer(streamer.id, updates);
+          if (updates.display_name) streamer.displayName = updates.display_name;
+          if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+        }
+      } else if (streamer.platform === 'Twitch') {
+        const status = await checkTwitchLivestream(streamer.mintId);
+        const updates: any = {};
+
+        if (streamer.displayName === streamer.mintId && status.displayName) {
+          updates.display_name = status.displayName;
         }
         if (!streamer.profileImageUrl && status.profileImageUrl) {
           updates.profile_image_url = status.profileImageUrl;
@@ -781,7 +807,8 @@
     const needsUpdate = streamers.value.filter(
       (s) =>
         (s.platform === 'PumpFun' && (s.displayName === s.mintId || !s.profileImageUrl)) ||
-        (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId))
+        (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId)) ||
+        (s.platform === 'Twitch' && (!s.profileImageUrl || s.displayName === s.mintId))
     );
 
     if (needsUpdate.length === 0) return;

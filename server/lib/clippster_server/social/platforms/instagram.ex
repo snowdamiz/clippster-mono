@@ -489,25 +489,26 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
     end
   end
 
-  defp publish_video(access_token, ig_user_id, video_url, caption) do
-    container_url = "#{@instagram_graph_url}/#{ig_user_id}/media"
-    container_body = URI.encode_query(%{
-      "video_url" => video_url,
-      "caption" => caption,
-      "media_type" => "VIDEO",
-      "access_token" => access_token
-    })
-
-    case create_media_container(container_url, container_body) do
-      {:ok, container_id} ->
-        case wait_for_media_ready(access_token, container_id) do
-          :ok -> publish_container(access_token, ig_user_id, container_id, "video")
-          {:error, reason} -> {:error, reason}
-        end
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
+  # NOTE: Reserved for future video publishing implementation
+  # defp publish_video(access_token, ig_user_id, video_url, caption) do
+  #   container_url = "#{@instagram_graph_url}/#{ig_user_id}/media"
+  #   container_body = URI.encode_query(%{
+  #     "video_url" => video_url,
+  #     "caption" => caption,
+  #     "media_type" => "VIDEO",
+  #     "access_token" => access_token
+  #   })
+  #
+  #   case create_media_container(container_url, container_body) do
+  #     {:ok, container_id} ->
+  #       case wait_for_media_ready(access_token, container_id) do
+  #         :ok -> publish_container(access_token, ig_user_id, container_id, "video")
+  #         {:error, reason} -> {:error, reason}
+  #       end
+  #     {:error, reason} ->
+  #       {:error, reason}
+  #   end
+  # end
 
   defp publish_reel(access_token, ig_user_id, video_url, caption) do
     container_url = "#{@instagram_graph_url}/#{ig_user_id}/media"

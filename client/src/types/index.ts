@@ -298,6 +298,8 @@ export interface MediaPanelProps {
   transcribeProgress?: number;
   transcribeStage?: string;
   transcribeMessage?: string;
+  // VOD preset config for pre-edit settings
+  vodPresetConfig?: ActiveVodPresetConfig | null;
 }
 
 // Reference type for intro/outro (matches database IntroOutro type)
@@ -1821,4 +1823,63 @@ export interface PhaserParams {
   depth: number; // 0-1
   stages?: number;
   feedback?: number;
+}
+
+// ==========================================
+// VOD Preset Types
+// ==========================================
+
+// Per-aspect-ratio position settings for a layout overlay
+export interface OverlayRatioPosition {
+  x: number;                   // 0-100 percentage position (center-based)
+  y: number;                   // 0-100 percentage position (center-based)
+  width: number;               // 0-100 percentage of target frame width
+  height: number;              // 0-100 percentage of target frame height
+  opacity: number;             // 0-100
+  rotation: number;            // degrees
+  scale: number;               // 0-100 percentage scale (like watermark)
+  isFullFrameOverlay?: boolean; // When true, position at 0,0 with 100% scale
+}
+
+// Per-aspect-ratio overlay configuration (null = disabled for that ratio)
+export interface PerRatioOverlaySettings {
+  '16:9': OverlayRatioPosition | null;
+  '9:16': OverlayRatioPosition | null;
+  '1:1': OverlayRatioPosition | null;
+  '4:5': OverlayRatioPosition | null;
+}
+
+export interface LayoutOverlay {
+  id: string;
+  imagePath: string;           // Local file path to uploaded PNG
+  x: number;                   // 0-100 percentage position (center-based)
+  y: number;                   // 0-100 percentage position (center-based)
+  width: number;               // 0-100 percentage of target frame width
+  height: number;              // 0-100 percentage of target frame height
+  opacity: number;             // 0-100
+  rotation: number;            // degrees
+  label?: string;              // "Speaker Divider", etc.
+  perRatioSettings?: PerRatioOverlaySettings | null; // Per-aspect-ratio position overrides
+}
+
+export interface VodPreset {
+  id: string;
+  name: string;
+  creatorProfileId: string | null;
+  targetAspectRatio: string;
+  framingConfig: ManualFramingConfig | null;
+  layoutOverlays: LayoutOverlay[];
+  watermarkMode: 'creator' | 'custom' | 'none';
+  customWatermarkSettings: WatermarkSettings | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface ActiveVodPresetConfig {
+  presetId: string | null;         // reference to saved preset (null if one-off)
+  targetAspectRatio: string;
+  framingConfig: ManualFramingConfig | null;
+  layoutOverlays: LayoutOverlay[];
+  watermarkMode: 'creator' | 'custom' | 'none';
+  customWatermarkSettings: WatermarkSettings | null;
 }

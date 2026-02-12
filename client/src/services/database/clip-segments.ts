@@ -387,6 +387,8 @@ export async function insertClipSegment(
       end_time: endTime,
       duration,
       transcript,
+      transcript_raw_json: null,
+      audio_peaks: null,
       created_at: now,
     };
 

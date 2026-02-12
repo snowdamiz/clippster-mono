@@ -123,13 +123,13 @@
             >
               <div class="shrink-0 flex items-center justify-center rounded-[20px] overflow-hidden"
                    :class="[
-                     authStore.user?.avatar_url && !avatarFailed ? '' : 'bg-[var(--sidebar-accent)]',
+                     displayAvatar && !avatarFailed ? '' : 'bg-[var(--sidebar-accent)]',
                      isCollapsed ? 'w-6 h-6' : 'w-7 h-7'
                    ]">
                 <img
-                  v-if="authStore.user?.avatar_url && !avatarFailed"
-                  :src="authStore.user.avatar_url"
-                  :alt="authStore.user.name || authStore.email || 'User'"
+                  v-if="displayAvatar && !avatarFailed"
+                  :src="displayAvatar"
+                  :alt="displayName"
                   class="w-full h-full object-cover"
                   referrerpolicy="no-referrer"
                   @error="avatarFailed = true"
@@ -139,15 +139,15 @@
               <span
                 v-if="!isCollapsed"
                 class="flex-1 text-xs text-left whitespace-nowrap overflow-hidden text-ellipsis text-[var(--sidebar-text-muted)]"
-                :title="formattedAddress"
+                :title="displayName"
               >
-                {{ formattedAddress }}
+                {{ displayName }}
               </span>
               <ChevronRight v-if="!isCollapsed" class="w-3.5 h-3.5 text-[var(--sidebar-text-muted)] shrink-0" />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="right" align="end" :side-offset="12" class="sidebar-dropdown">
               <DropdownMenuLabel class="sidebar-dropdown__label">
-                {{ formattedAddress }}
+                {{ displayName }}
               </DropdownMenuLabel>
               <DropdownMenuSeparator class="sidebar-dropdown__separator" />
               <!-- Credits Display -->
@@ -220,6 +220,7 @@
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useSidebarState } from '@/composables/useSidebarState';
   import { getSortedNavigationGroups, type NavigationItem } from '@/config/navigation';
+  import { getMyClipperProfile, type ClipperProfile } from '@/services/clipperProfilesApi';
   import BugReportDialog from '@/components/BugReportDialog.vue';
   import {
     DropdownMenu,
@@ -256,7 +257,10 @@
   const showBugReportDialog = ref(false);
   const userOrganizations = ref<any[]>([]);
   const avatarFailed = ref(false);
+  const clipperProfile = ref<ClipperProfile | null>(null);
+  const loadingClipperProfile = ref(false);
   let balanceRefreshInterval: ReturnType<typeof setInterval> | null = null;
+  let unreadRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
   // ===== Computed Properties =====
   const totalUnreadMessages = computed(() => messagingStore.totalUnread);
@@ -277,8 +281,51 @@
     return formatAddress(authStore.walletAddress ?? '');
   });
 
+  // Display name and avatar from clipper profile, falling back to user info
+  const displayName = computed(() => {
+    if (clipperProfile.value?.display_name) {
+      return clipperProfile.value.display_name;
+    }
+    if (authStore.user?.name) {
+      return authStore.user.name;
+    }
+    return formattedAddress.value;
+  });
+
+  const displayAvatar = computed(() => {
+    if (clipperProfile.value?.avatar_url && !avatarFailed.value) {
+      return clipperProfile.value.avatar_url;
+    }
+    if (authStore.user?.avatar_url && !avatarFailed.value) {
+      return authStore.user.avatar_url;
+    }
+    return null;
+  });
+
   const userInitials = computed(() => {
     if (!authStore.isAuthenticated) return '';
+    
+    // Use clipper profile display name if available
+    if (clipperProfile.value?.display_name) {
+      const name = clipperProfile.value.display_name;
+      const parts = name.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return name.slice(0, 2).toUpperCase();
+    }
+    
+    // Use user name if available
+    if (authStore.user?.name) {
+      const name = authStore.user.name;
+      const parts = name.trim().split(/\s+/);
+      if (parts.length >= 2) {
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      }
+      return name.slice(0, 2).toUpperCase();
+    }
+    
+    // Fallback to email or wallet
     const email = authStore.email;
     if (email) {
       return email.slice(0, 2).toUpperCase();
@@ -300,6 +347,10 @@
       // Hide Admin and Bug Report from navigation - they're now in the profile dropdown
       if (item.name === 'Admin' || item.name === 'Bug Report') {
         return false;
+      }
+      // Check affiliate-only items
+      if (item.affiliateOnly) {
+        return authStore.user?.is_affiliate === true;
       }
       // Check admin-only items
       if (item.adminOnly) {
@@ -375,6 +426,25 @@
     }
   }
 
+  async function loadClipperProfile() {
+    if (!authStore.isAuthenticated) {
+      clipperProfile.value = null;
+      return;
+    }
+    
+    loadingClipperProfile.value = true;
+    try {
+      const result = await getMyClipperProfile();
+      if (result.success && result.profile) {
+        clipperProfile.value = result.profile;
+      }
+    } catch (error) {
+      console.error('Failed to load clipper profile:', error);
+    } finally {
+      loadingClipperProfile.value = false;
+    }
+  }
+
   async function fetchBalance() {
     if (!authStore.isAuthenticated) {
       hoursRemaining.value = 0;
@@ -409,11 +479,14 @@
     (isAuth) => {
       if (isAuth) {
         loadUserOrganizations();
+        loadClipperProfile();
         permissionsStore.fetchRestrictions();
         // Refresh live counts now that we're authenticated (to get org profiles)
         liveStatusStore.refreshCreators();
+        messagingStore.fetchTotalUnread();
       } else {
         userOrganizations.value = [];
+        clipperProfile.value = null;
         permissionsStore.reset();
       }
     },
@@ -423,6 +496,14 @@
   // Reset avatar failed state when user changes
   watch(
     () => authStore.user?.id,
+    () => {
+      avatarFailed.value = false;
+    }
+  );
+
+  // Reset avatar failed state when clipper profile changes
+  watch(
+    () => clipperProfile.value?.avatar_url,
     () => {
       avatarFailed.value = false;
     }
@@ -443,12 +524,26 @@
 
     // Start polling for live status (both monitored streamers and creator profiles)
     liveStatusStore.startPollingAll();
+
+    // Fetch total unread messages for sidebar badge and poll every 30s
+    if (authStore.isAuthenticated) {
+      messagingStore.fetchTotalUnread();
+    }
+    unreadRefreshInterval = setInterval(() => {
+      if (authStore.isAuthenticated) {
+        messagingStore.fetchTotalUnread();
+      }
+    }, 30000);
   });
 
   onUnmounted(() => {
     if (balanceRefreshInterval) {
       clearInterval(balanceRefreshInterval);
       balanceRefreshInterval = null;
+    }
+    if (unreadRefreshInterval) {
+      clearInterval(unreadRefreshInterval);
+      unreadRefreshInterval = null;
     }
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
     

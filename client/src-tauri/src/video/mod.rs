@@ -17,10 +17,6 @@ impl VideoFrameState {
             decoder_pool: Arc::new(Mutex::new(DecoderPool::new(200))),
         }
     }
-
-    pub fn decoder_pool(&self) -> Arc<Mutex<DecoderPool>> {
-        Arc::clone(&self.decoder_pool)
-    }
 }
 
 #[tauri::command]

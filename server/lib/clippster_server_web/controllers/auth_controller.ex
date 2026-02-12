@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.AuthController do
 
   alias ClippsterServer.Auth.{ChallengeStore, TokenGenerator}
   alias ClippsterServer.Accounts
+  alias ClippsterServer.Affiliates
 
   @sign_message_template """
   <%= domain %> wants you to sign in with your Solana account:
@@ -88,8 +89,9 @@ defmodule ClippsterServerWeb.AuthController do
          :ok <- verify_ed25519_signature(message, signature, public_key) do
       IO.puts("Signature verification successful!")
 
-      # Create or get user
-      {:ok, user} = Accounts.get_or_create_user(public_key)
+      # Create or get user (with optional referral code)
+      referral_code = Map.get(conn.params, "referral_code")
+      {:ok, user} = Accounts.get_or_create_user(public_key, referral_code)
 
       # Generate JWT token
       token_claims = %{
@@ -116,7 +118,8 @@ defmodule ClippsterServerWeb.AuthController do
               owned_organization_id: user.owned_organization_id,
               created_by_organization_id: user.created_by_organization_id,
               ai_allowed: ai_allowed,
-              beta_activated: user.beta_activated
+              beta_activated: user.beta_activated,
+              is_affiliate: Affiliates.is_affiliate?(user.id)
             }
           })
 
@@ -252,12 +255,15 @@ defmodule ClippsterServerWeb.AuthController do
       # Build Google OAuth authorization URL
       scope = "email profile"
 
-      # Encode web=true into state if this is a web request
+      # Encode web=true and referral_code into state if present
       web_mode = params["web"] == "true"
       web_origin = params["origin"]
-      state_data = if web_mode do
-        Jason.encode!(%{"nonce" => Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false), "web" => true, "origin" => web_origin})
-        |> Base.url_encode64(padding: false)
+      referral_code = params["referral_code"]
+      state_data = if web_mode or referral_code do
+        state_map = %{"nonce" => Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)}
+        state_map = if web_mode, do: Map.merge(state_map, %{"web" => true, "origin" => web_origin}), else: state_map
+        state_map = if referral_code, do: Map.put(state_map, "referral_code", referral_code), else: state_map
+        Jason.encode!(state_map) |> Base.url_encode64(padding: false)
       else
         :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
       end
@@ -312,7 +318,10 @@ defmodule ClippsterServerWeb.AuthController do
                 avatar_url: google_user["picture"]
               }
 
-              case Accounts.get_or_create_oauth_user("google", google_user["id"], oauth_info) do
+              # Extract referral code from OAuth state
+              oauth_referral_code = web_opts[:referral_code]
+
+              case Accounts.get_or_create_oauth_user("google", google_user["id"], oauth_info, oauth_referral_code) do
                 {:ok, user} ->
                   IO.puts("User created/retrieved: #{user.id}")
 
@@ -410,16 +419,20 @@ defmodule ClippsterServerWeb.AuthController do
     end
   end
 
-  defp parse_oauth_state(nil), do: %{web: false, origin: nil}
+  defp parse_oauth_state(nil), do: %{web: false, origin: nil, referral_code: nil}
   defp parse_oauth_state(state) do
     case Base.url_decode64(state, padding: false) do
       {:ok, json} ->
         case Jason.decode(json) do
-          {:ok, %{"web" => true, "origin" => origin}} -> %{web: true, origin: origin}
-          {:ok, %{"web" => true}} -> %{web: true, origin: nil}
-          _ -> %{web: false, origin: nil}
+          {:ok, decoded} ->
+            %{
+              web: Map.get(decoded, "web", false),
+              origin: Map.get(decoded, "origin"),
+              referral_code: Map.get(decoded, "referral_code")
+            }
+          _ -> %{web: false, origin: nil, referral_code: nil}
         end
-      _ -> %{web: false, origin: nil}
+      _ -> %{web: false, origin: nil, referral_code: nil}
     end
   end
 
@@ -556,7 +569,8 @@ defmodule ClippsterServerWeb.AuthController do
         owned_organization_id: user.owned_organization_id,
         created_by_organization_id: user.created_by_organization_id,
         ai_allowed: ai_allowed,
-        beta_activated: user.beta_activated
+        beta_activated: user.beta_activated,
+        is_affiliate: Affiliates.is_affiliate?(user.id)
       }
     })
   end

@@ -190,7 +190,8 @@ export async function createLivestreamSession(
   monitoredStreamerId: string,
   mintId: string,
   displayName: string,
-  streamStartTime?: number
+  streamStartTime?: number,
+  platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual'
 ): Promise<{ sessionId: string; projectId: string }> {
   const db = await getDatabase();
   const id = generateId();
@@ -225,8 +226,8 @@ export async function createLivestreamSession(
     } else {
       // Project was deleted, create a new one
       const projectName = `${displayName || mintId.slice(0, 6)} Live ${new Date().toLocaleString()}`;
-      const projectDescription = `PumpFun livestream for ${displayName} (${mintId})`;
-      projectId = await createProject(projectName, projectDescription, undefined, 'PumpFun');
+      const projectDescription = `${platform || 'PumpFun'} livestream for ${displayName} (${mintId})`;
+      projectId = await createProject(projectName, projectDescription, undefined, platform || 'PumpFun');
       console.log(
         '[LiveMonitor] Previous project was deleted, created new parent project:',
         projectId
@@ -235,8 +236,8 @@ export async function createLivestreamSession(
   } else {
     // Create a new parent project for this streamer
     const projectName = `${displayName || mintId.slice(0, 6)} Live ${new Date().toLocaleString()}`;
-    const projectDescription = `PumpFun livestream for ${displayName} (${mintId})`;
-    projectId = await createProject(projectName, projectDescription, undefined, 'PumpFun');
+    const projectDescription = `${platform || 'PumpFun'} livestream for ${displayName} (${mintId})`;
+    projectId = await createProject(projectName, projectDescription, undefined, platform || 'PumpFun');
     console.log('[LiveMonitor] Created new parent project:', projectId);
   }
 
@@ -471,14 +472,16 @@ export async function updateSegmentStatus(
  */
 export async function createLivestreamClipProject(
   displayName: string,
-  mintId: string
+  mintId: string,
+  platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual'
 ): Promise<string> {
   // Format date as YYYY-MM-DD
   const date = new Date();
   const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
   
   const projectName = `${displayName} - ${dateStr}`;
-  const projectDescription = `Clips from PumpFun livestream ${displayName} (${mintId})`;
+  const platformName = platform || 'PumpFun';
+  const projectDescription = `Clips from ${platformName} livestream ${displayName} (${mintId})`;
 
   // Reuse an existing project for this stream/day if it already exists
   const db = await getDatabase();
@@ -488,7 +491,7 @@ export async function createLivestreamClipProject(
     userId === null
       ? 'SELECT id FROM projects WHERE name = ? AND platform = ? AND user_id IS NULL LIMIT 1'
       : 'SELECT id FROM projects WHERE name = ? AND platform = ? AND (user_id = ? OR user_id IS NULL) LIMIT 1',
-    userId === null ? [projectName, 'PumpFun'] : [projectName, 'PumpFun', userId]
+    userId === null ? [projectName, platformName] : [projectName, platformName, userId]
   );
 
   if (existing[0]?.id) {
@@ -497,7 +500,7 @@ export async function createLivestreamClipProject(
   }
   
   // Use the existing createProject function
-  const projectId = await createProject(projectName, projectDescription, undefined, 'PumpFun');
+  const projectId = await createProject(projectName, projectDescription, undefined, platformName);
   
   console.log('[LiveMonitor] Created clip project for watch mode:', projectId, projectName);
   

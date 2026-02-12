@@ -711,8 +711,9 @@ class WaveformServiceImpl {
   private readonly MAX_CACHE_SIZE = 1000;
   private peakCacheAccessOrder: string[] = [];
 
-  private getPeakCacheKey(normalizedPath: string, startTime: number, endTime: number, pixelWidth: number): string {
-    return `${normalizedPath}:${startTime.toFixed(3)}:${endTime.toFixed(3)}:${pixelWidth}`;
+  private getPeakCacheKey(normalizedPath: string, startTime: number, endTime: number, pixelWidth: number, gainMultiplier?: number): string {
+    const gain = gainMultiplier ?? 1.0;
+    return `${normalizedPath}:${startTime.toFixed(3)}:${endTime.toFixed(3)}:${pixelWidth}:${gain.toFixed(2)}`;
   }
 
   private setPeakCache(key: string, peaks: WaveformPeak[]): void {
@@ -755,12 +756,13 @@ class WaveformServiceImpl {
     const normalizedPath = this.normalizePath(filePath);
     const mode = this.peakMode.get(normalizedPath);
 
-    // Generate cache key including pixel width for proper zoom caching
+    // Generate cache key including pixel width and gain for proper zoom/volume caching
     const cacheKey = this.getPeakCacheKey(
       normalizedPath,
       options.startTime,
       options.endTime,
-      options.pixelWidth
+      options.pixelWidth,
+      options.gainMultiplier
     );
 
     // Check cache first
@@ -857,7 +859,8 @@ class WaveformServiceImpl {
       normalizedPath,
       options.startTime,
       options.endTime,
-      options.pixelWidth
+      options.pixelWidth,
+      options.gainMultiplier
     );
     return this.getPeakFromCache(cacheKey);
   }

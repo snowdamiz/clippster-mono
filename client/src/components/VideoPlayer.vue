@@ -76,8 +76,9 @@
         ref="videoElementRef"
         :src="videoSrc && !videoSrc.includes('.m3u8') ? videoSrc : undefined"
         crossorigin="anonymous"
-        class="w-full h-full object-cover video-with-focal-point"
-        :style="{
+        class="w-full h-full video-with-focal-point"
+        :class="hasFramingRegions ? 'opacity-0' : 'object-cover'"
+        :style="hasFramingRegions ? {} : {
           objectPosition: `${focalPoint.x * 100}% ${focalPoint.y * 100}%`,
         }"
         @timeupdate="$emit('timeUpdate')"
@@ -88,6 +89,14 @@
         @loadstart="$emit('loadStart')"
         @canplay="$emit('canPlay')"
         data-testid="project-video"
+      />
+
+      <!-- Canvas-based multi-region framing preview -->
+      <canvas
+        v-if="hasFramingRegions && videoSrc && !videoLoading && !videoError"
+        ref="framingCanvasRef"
+        class="absolute inset-0 w-full h-full z-10 cursor-pointer"
+        @click="$emit('togglePlayPause')"
       />
 
       <!-- Subtitle Overlay -->
@@ -269,7 +278,7 @@
   import { Video, AlertTriangle, Play, Pause, Film, RotateCcw } from 'lucide-vue-next';
   import Hls from 'hls.js';
 
-  import type { WhisperSegment, WatermarkSettings, PerRatioWatermarkSettings } from '@/types';
+  import type { WhisperSegment, WatermarkSettings, PerRatioWatermarkSettings, ManualRegion } from '@/types';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -291,6 +300,7 @@
     watermarkSettings?: WatermarkSettings;
     watermarkData?: WatermarkData | null;
     audioGainDb?: number; // dB gain (-20 to +20) for audio playback preview
+    framingRegions?: ManualRegion[]; // Multi-region framing for VOD preset preview
   }
 
   interface WordInfo {
@@ -376,6 +386,7 @@
     }),
     watermarkData: null,
     audioGainDb: 0,
+    framingRegions: () => [],
   });
 
   interface Emits {
@@ -395,7 +406,89 @@
 
   const videoElementRef = ref<HTMLVideoElement | null>(null);
   const videoContainerRef = ref<HTMLElement | null>(null);
+  const framingCanvasRef = ref<HTMLCanvasElement | null>(null);
   const containerHeight = ref<number>(1080); // Default to 1080p height
+
+  // Multi-region framing
+  const hasFramingRegions = computed(() => (props.framingRegions?.length ?? 0) > 0);
+  let framingAnimationId: number | null = null;
+
+  function startFramingLoop() {
+    if (framingAnimationId !== null) return;
+    renderFramingFrame();
+  }
+
+  function stopFramingLoop() {
+    if (framingAnimationId !== null) {
+      cancelAnimationFrame(framingAnimationId);
+      framingAnimationId = null;
+    }
+  }
+
+  function renderFramingFrame() {
+    const canvas = framingCanvasRef.value;
+    const video = videoElementRef.value;
+    const regions = props.framingRegions;
+    if (!canvas || !video || !regions || regions.length === 0) {
+      framingAnimationId = null;
+      return;
+    }
+
+    // Size canvas to match container
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const cw = Math.round(rect.width * dpr);
+    const ch = Math.round(rect.height * dpr);
+
+    if (cw === 0 || ch === 0) {
+      framingAnimationId = requestAnimationFrame(renderFramingFrame);
+      return;
+    }
+
+    if (canvas.width !== cw || canvas.height !== ch) {
+      canvas.width = cw;
+      canvas.height = ch;
+    }
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) { framingAnimationId = null; return; }
+
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, cw, ch);
+
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (vw === 0 || vh === 0) {
+      framingAnimationId = requestAnimationFrame(renderFramingFrame);
+      return;
+    }
+
+    // Draw each region: source rect from video → output rect on canvas
+    for (const region of regions) {
+      const sx = region.source.x * vw;
+      const sy = region.source.y * vh;
+      const sw = region.source.width * vw;
+      const sh = region.source.height * vh;
+
+      const dx = region.output.x * cw;
+      const dy = region.output.y * ch;
+      const dw = region.output.width * cw;
+      const dh = region.output.height * ch;
+
+      ctx.drawImage(video, sx, sy, sw, sh, dx, dy, dw, dh);
+    }
+
+    framingAnimationId = requestAnimationFrame(renderFramingFrame);
+  }
+
+  // Start/stop framing loop based on regions, video, and canvas readiness
+  watch([hasFramingRegions, videoElementRef, framingCanvasRef], ([hasRegions, videoEl, canvasEl]) => {
+    if (hasRegions && videoEl && canvasEl) {
+      startFramingLoop();
+    } else {
+      stopFramingLoop();
+    }
+  }, { immediate: true });
 
   // HLS.js instance for HLS playback
   let hlsInstance: Hls | null = null;
@@ -1146,6 +1239,8 @@
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
+    // Cleanup framing loop
+    stopFramingLoop();
     // Cleanup HLS instance
     cleanupHls();
     // Cleanup audio resources

@@ -91,7 +91,7 @@
             </div>
           </div>
 
-          <div class="social-accounts__platform-connect social-accounts__platform-connect--disabled">
+          <div class="social-accounts__platform-connect">
             <div class="social-accounts__platform-info">
               <div class="social-accounts__platform-badge social-accounts__platform-badge--x">
                 <svg viewBox="0 0 24 24" fill="currentColor" class="social-accounts__platform-svg">
@@ -101,13 +101,20 @@
                 </svg>
               </div>
               <div class="social-accounts__platform-details">
-                <h3 class="social-accounts__platform-name">
-                  X (Twitter)
-                  <span class="social-accounts__coming-soon">Coming Soon</span>
-                </h3>
+                <h3 class="social-accounts__platform-name">X (Twitter)</h3>
                 <p class="social-accounts__platform-desc">Post your clips directly to X</p>
               </div>
             </div>
+            <button
+              v-if="isAdmin"
+              class="social-accounts__connect-btn"
+              @click="connectTwitter"
+              :disabled="connecting"
+            >
+              <Loader2 v-if="connecting" class="social-accounts__connect-spinner" />
+              <Plus v-else class="social-accounts__connect-icon" />
+              {{ connecting ? 'Connecting...' : 'Connect Account' }}
+            </button>
           </div>
         </div>
       </section>
@@ -430,6 +437,7 @@
   import {
     listSocialAccounts,
     startInstagramOAuthPopup,
+    startTwitterOAuthPopup,
     updateSocialAccount,
     deleteSocialAccount,
     refreshAccountToken,
@@ -551,6 +559,18 @@
     } catch (error) {
       console.error('Failed to connect Instagram:', error);
       showToast(error instanceof Error ? error.message : 'Failed to connect Instagram.', 'error');
+      connecting.value = false;
+    }
+  }
+
+  async function connectTwitter() {
+    if (!organizationId.value) return;
+    connecting.value = true;
+    try {
+      cleanupAuthListener = await startTwitterOAuthPopup(organizationId.value, handleAuthResult);
+    } catch (error) {
+      console.error('Failed to connect X:', error);
+      showToast(error instanceof Error ? error.message : 'Failed to connect X.', 'error');
       connecting.value = false;
     }
   }

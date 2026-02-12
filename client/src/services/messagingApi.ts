@@ -53,17 +53,75 @@ export interface UnreadCounts {
 }
 
 // ============================================================================
+// Normalization helpers (snake_case server response → camelCase)
+// ============================================================================
+
+function normalizeParticipant(p: any): Participant {
+  return {
+    id: p.id,
+    userId: p.userId ?? p.user_id,
+    role: p.role,
+    joinedAt: p.joinedAt ?? p.joined_at ?? '',
+    muted: p.muted ?? false,
+    user: p.user ? {
+      id: p.user.id,
+      displayName: p.user.displayName ?? p.user.display_name ?? '',
+      avatarUrl: p.user.avatarUrl ?? p.user.avatar_url ?? null,
+    } : null,
+  };
+}
+
+export function normalizeConversation(c: any): Conversation {
+  return {
+    id: c.id,
+    type: c.type,
+    name: c.name ?? null,
+    organizationId: c.organizationId ?? c.organization_id,
+    createdByUserId: c.createdByUserId ?? c.created_by_user_id,
+    lastMessageAt: c.lastMessageAt ?? c.last_message_at ?? null,
+    lastMessagePreview: c.lastMessagePreview ?? c.last_message_preview ?? null,
+    createdAt: c.createdAt ?? c.created_at ?? '',
+    participants: (c.participants || []).map(normalizeParticipant),
+    unreadCount: c.unreadCount ?? c.unread_count,
+    muted: c.muted ?? false,
+  };
+}
+
+export function normalizeMessage(m: any): Message {
+  return {
+    id: m.id,
+    conversationId: m.conversationId ?? m.conversation_id,
+    senderId: m.senderId ?? m.sender_id ?? null,
+    content: m.content ?? '',
+    messageType: m.messageType ?? m.message_type ?? 'text',
+    editedAt: m.editedAt ?? m.edited_at ?? null,
+    deletedAt: m.deletedAt ?? m.deleted_at ?? null,
+    insertedAt: m.insertedAt ?? m.inserted_at ?? '',
+    sender: m.sender ? {
+      id: m.sender.id,
+      displayName: m.sender.displayName ?? m.sender.display_name ?? '',
+      avatarUrl: m.sender.avatarUrl ?? m.sender.avatar_url ?? null,
+    } : null,
+    readBy: m.readBy ?? m.read_by ?? [],
+  };
+}
+
+// ============================================================================
 // Organization-scoped endpoints
 // ============================================================================
 
 /**
- * List all conversations for the current user in an organization.
+ * List all conversations for the current user (org-scoped + global).
  */
 export async function listConversations(orgId: number): Promise<Conversation[]> {
-  const response = await api.get<{ data: Conversation[] }>(
-    `/organizations/${orgId}/messaging/conversations`
-  );
-  return response.data.data;
+  const [orgResponse, globalResponse] = await Promise.all([
+    api.get<{ data: any[] }>(`/organizations/${orgId}/messaging/conversations`).catch(() => ({ data: { data: [] } })),
+    api.get<{ data: any[] }>('/me/conversations').catch(() => ({ data: { data: [] } })),
+  ]);
+  const merged = new Map<number, Conversation>();
+  for (const conv of (orgResponse.data.data || [])) merged.set(conv.id, normalizeConversation(conv));
+  for (const conv of (globalResponse.data.data || [])) merged.set(conv.id, normalizeConversation(conv));
+  return Array.from(merged.values());
 }
 
 /**
@@ -73,22 +131,22 @@ export async function createDirectConversation(
   orgId: number,
   userId: number
 ): Promise<Conversation> {
-  const response = await api.post<{ data: Conversation }>(
+  const response = await api.post<{ data: any }>(
     `/organizations/${orgId}/messaging/conversations/direct`,
     { user_id: userId }
   );
-  return response.data.data;
+  return normalizeConversation(response.data.data);
 }
 
 /**
  * Create a global direct conversation with another user (not scoped to an organization).
  */
 export async function createGlobalDirectConversation(userId: number): Promise<Conversation> {
-  const response = await api.post<{ data: Conversation }>(
+  const response = await api.post<{ data: any }>(
     '/messaging/conversations/global-direct',
     { user_id: userId }
   );
-  return response.data.data;
+  return normalizeConversation(response.data.data);
 }
 
 /**
@@ -99,22 +157,22 @@ export async function createGroupConversation(
   name: string,
   memberIds: number[]
 ): Promise<Conversation> {
-  const response = await api.post<{ data: Conversation }>(
+  const response = await api.post<{ data: any }>(
     `/organizations/${orgId}/messaging/conversations/group`,
     { name, member_ids: memberIds }
   );
-  return response.data.data;
+  return normalizeConversation(response.data.data);
 }
 
 /**
  * Create an announcement (admin/owner only).
  */
 export async function createAnnouncement(orgId: number, content: string): Promise<Conversation> {
-  const response = await api.post<{ data: Conversation }>(
+  const response = await api.post<{ data: any }>(
     `/organizations/${orgId}/messaging/conversations/announcement`,
     { content }
   );
-  return response.data.data;
+  return normalizeConversation(response.data.data);
 }
 
 /**
@@ -135,8 +193,8 @@ export async function getUnreadCounts(orgId: number): Promise<UnreadCounts> {
  * Get a specific conversation.
  */
 export async function getConversation(conversationId: number): Promise<Conversation> {
-  const response = await api.get<{ data: Conversation }>(`/conversations/${conversationId}`);
-  return response.data.data;
+  const response = await api.get<{ data: any }>(`/conversations/${conversationId}`);
+  return normalizeConversation(response.data.data);
 }
 
 /**
@@ -150,20 +208,20 @@ export async function getMessages(
   if (opts?.before) params.before = opts.before.toString();
   if (opts?.limit) params.limit = opts.limit.toString();
 
-  const response = await api.get<{ data: Message[] }>(`/conversations/${conversationId}/messages`, {
+  const response = await api.get<{ data: any[] }>(`/conversations/${conversationId}/messages`, {
     params,
   });
-  return response.data.data;
+  return (response.data.data || []).map(normalizeMessage);
 }
 
 /**
  * Send a message to a conversation.
  */
 export async function sendMessage(conversationId: number, content: string): Promise<Message> {
-  const response = await api.post<{ data: Message }>(`/conversations/${conversationId}/messages`, {
+  const response = await api.post<{ data: any }>(`/conversations/${conversationId}/messages`, {
     content,
   });
-  return response.data.data;
+  return normalizeMessage(response.data.data);
 }
 
 /**
@@ -174,11 +232,11 @@ export async function editMessage(
   messageId: number,
   content: string
 ): Promise<Message> {
-  const response = await api.put<{ data: Message }>(
+  const response = await api.put<{ data: any }>(
     `/conversations/${conversationId}/messages/${messageId}`,
     { content }
   );
-  return response.data.data;
+  return normalizeMessage(response.data.data);
 }
 
 /**
@@ -209,11 +267,11 @@ export async function toggleMute(conversationId: number): Promise<{ muted: boole
  * Add a participant to a group conversation.
  */
 export async function addParticipant(conversationId: number, userId: number): Promise<Participant> {
-  const response = await api.post<{ data: Participant }>(
+  const response = await api.post<{ data: any }>(
     `/conversations/${conversationId}/participants`,
     { user_id: userId }
   );
-  return response.data.data;
+  return normalizeParticipant(response.data.data);
 }
 
 /**
@@ -245,8 +303,8 @@ export async function deleteConversation(conversationId: number): Promise<void> 
  * List all conversations for the current user across all organizations.
  */
 export async function listAllConversations(): Promise<Conversation[]> {
-  const response = await api.get<{ data: Conversation[] }>('/me/conversations');
-  return response.data.data;
+  const response = await api.get<{ data: any[] }>('/me/conversations');
+  return (response.data.data || []).map(normalizeConversation);
 }
 
 /**

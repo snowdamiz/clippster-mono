@@ -90,6 +90,14 @@ defmodule ClippsterServerWeb.Router do
     get("/auth/user-instagram/callback", UserInstagramAuthController, :oauth_callback)
     # The client obtains tokens via FB.login() and sends them to POST /social-accounts
 
+    # X (Twitter) OAuth routes (for Tauri desktop app)
+    get("/auth/twitter/start", TwitterAuthController, :start_oauth)
+    get("/auth/twitter/callback", TwitterAuthController, :oauth_callback)
+
+    # User X (Twitter) OAuth routes (for individual users/clippers)
+    get("/auth/user-twitter/start", UserTwitterAuthController, :start_oauth)
+    get("/auth/user-twitter/callback", UserTwitterAuthController, :oauth_callback)
+
     # Email authentication routes
     post("/auth/email/register", EmailAuthController, :register)
     post("/auth/email/verify-otp", EmailAuthController, :verify_otp)
@@ -167,6 +175,19 @@ defmodule ClippsterServerWeb.Router do
     get("/ai/compositions", AIController, :list_compositions)
     get("/ai/compositions/:id", AIController, :get_composition)
     delete("/ai/compositions/:id", AIController, :delete_composition)
+
+    # AI reference analysis
+    post("/ai/reference/analyze", AIChatController, :analyze_reference)
+
+    # AI chat sessions (conversational video generation)
+    post("/ai/chat/sessions", AIChatController, :create_session)
+    get("/ai/chat/sessions/:id", AIChatController, :get_session)
+    post("/ai/chat/sessions/:id/message", AIChatController, :send_message)
+    post("/ai/chat/sessions/:id/generate", AIChatController, :trigger_generation)
+    post("/ai/chat/sessions/:id/refine", AIChatController, :send_refinement)
+    post("/ai/chat/sessions/:id/reference", AIChatController, :upload_reference)
+    post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
+    put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
 
     # Speaker detection and framing strategy
     post("/clips/:clip_id/analyze-speakers", SpeakerDetectionController, :analyze)
@@ -599,9 +620,10 @@ defmodule ClippsterServerWeb.Router do
     put("/user/payment-methods/:id", ClipperProfileController, :update_payment_method)
     delete("/user/payment-methods/:id", ClipperProfileController, :delete_payment_method)
 
-    # User Instagram posts (personal posting, not campaigns)
+    # User social media posts (personal posting, not campaigns)
     post("/user/posts/upload-media", UserPostsController, :upload_media)
     post("/user/instagram/publish", UserPostsController, :publish)
+    post("/user/twitter/publish", UserPostsController, :publish_twitter)
     get("/user/posts", UserPostsController, :index)
     get("/user/posts/analytics", UserPostsController, :analytics_summary)
     get("/user/posts/:id", UserPostsController, :show)
@@ -721,6 +743,34 @@ defmodule ClippsterServerWeb.Router do
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 
     # ============================================================================
+    # Hiring Posts - Clipper Browsing
+    # ============================================================================
+    get("/hiring-posts", HiringController, :index)
+    get("/hiring-posts/:id", HiringController, :show)
+    post("/hiring-posts/:id/apply", HiringController, :apply)
+    get("/user/hiring-applications", HiringController, :my_applications)
+
+    # ============================================================================
+    # Hiring Posts - Organization Management
+    # ============================================================================
+    get("/organizations/:organization_id/hiring-post", HiringController, :show_org_post)
+    post("/organizations/:organization_id/hiring-post", HiringController, :save_org_post)
+    delete("/organizations/:organization_id/hiring-post", HiringController, :delete_org_post)
+    get("/organizations/:organization_id/hiring-post/applications", HiringController, :list_applications)
+
+    post(
+      "/organizations/:organization_id/hiring-post/applications/:app_id/accept",
+      HiringController,
+      :accept_application
+    )
+
+    post(
+      "/organizations/:organization_id/hiring-post/applications/:app_id/reject",
+      HiringController,
+      :reject_application
+    )
+
+    # ============================================================================
     # Campaigns - Organization Management Routes
     # ============================================================================
 
@@ -834,6 +884,16 @@ defmodule ClippsterServerWeb.Router do
     )
   end
 
+  # Affiliate user routes (authenticated)
+  scope "/api", ClippsterServerWeb do
+    pipe_through(:api_auth)
+
+    get("/affiliate/dashboard", AffiliateController, :my_dashboard)
+    get("/affiliate/referrals", AffiliateController, :my_referrals)
+    get("/affiliate/payouts", AffiliateController, :my_payouts)
+    put("/affiliate/settings", AffiliateController, :update_settings)
+  end
+
   # Admin-only routes
   scope "/api", ClippsterServerWeb do
     pipe_through(:api_admin)
@@ -879,6 +939,17 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin waitlist management
     get("/admin/waitlist", WaitlistController, :index)
+
+    # Admin affiliate management
+    get("/admin/affiliates", AffiliateController, :list_affiliates)
+    post("/admin/affiliates", AffiliateController, :create_affiliate)
+    get("/admin/affiliates/overview", AffiliateController, :admin_overview)
+    get("/admin/affiliates/payouts", AffiliateController, :pending_payouts)
+    get("/admin/affiliates/:id", AffiliateController, :show_affiliate)
+    put("/admin/affiliates/:id", AffiliateController, :update_affiliate)
+    post("/admin/affiliates/:id/deactivate", AffiliateController, :deactivate)
+    post("/admin/affiliates/:id/activate", AffiliateController, :activate)
+    post("/admin/affiliates/:id/payout", AffiliateController, :record_payout)
 
     # Admin organization application management
     get("/admin/organization-applications", OrganizationApplicationController, :index)

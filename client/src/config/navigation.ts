@@ -15,6 +15,8 @@ import {
   Receipt,
   Megaphone,
   Wand2,
+  Handshake,
+  CalendarDays,
 } from 'lucide-vue-next';
 
 export type NavigationGroup = 'browse' | 'create' | 'manage' | 'system';
@@ -33,6 +35,7 @@ export interface NavigationItem {
   orgMember?: boolean; // Show for any organization member
   action?: 'dialog'; // New property to handle dialog actions instead of routing
   restrictedHidden?: boolean; // Hide for restricted accounts
+  affiliateOnly?: boolean; // Only show for affiliate users
 }
 
 export const navigationGroups: Record<NavigationGroup, { label: string; order: number }> = {
@@ -125,7 +128,13 @@ export const navigationItems: NavigationItem[] = [
     path: '/messages',
     icon: MessageCircle,
     group: 'manage',
-    orgMember: true, // Show for any user who is a member of at least one organization
+  },
+  {
+    name: 'Calendar',
+    path: '/calendar',
+    icon: CalendarDays,
+    group: 'manage',
+    restrictedHidden: true,
   },
   {
     name: 'Billing',
@@ -133,6 +142,13 @@ export const navigationItems: NavigationItem[] = [
     icon: Receipt,
     group: 'manage',
     restrictedHidden: true, // Hidden for restricted accounts
+  },
+  {
+    name: 'Affiliate',
+    path: '/affiliate',
+    icon: Handshake,
+    group: 'manage',
+    affiliateOnly: true,
   },
 
   // System group - admin and utilities (pinned at bottom)

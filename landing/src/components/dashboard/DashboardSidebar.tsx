@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { Link, useParams, useLocation, useNavigate } from 'react-router-dom'
 import {
   LayoutGrid,
@@ -12,9 +13,11 @@ import {
   CreditCard,
   Settings,
   LogOut,
+  MessageSquare,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { getTotalUnread } from '@/services/messagingApi'
 
 interface NavItem {
   label: string
@@ -34,6 +37,7 @@ const navGroups: NavGroup[] = [
       { label: 'Hub', icon: LayoutGrid, path: 'hub' },
       { label: 'Members', icon: Users, path: 'members' },
       { label: 'Creators', icon: UserCircle, path: 'creators' },
+      { label: 'Messages', icon: MessageSquare, path: 'messages' },
     ],
   },
   {
@@ -73,6 +77,16 @@ export function DashboardSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
+  const [unreadMessages, setUnreadMessages] = useState(0)
+
+  useEffect(() => {
+    if (!user) return
+    getTotalUnread().then(setUnreadMessages).catch(() => {})
+    const interval = setInterval(() => {
+      getTotalUnread().then(setUnreadMessages).catch(() => {})
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [user])
 
   function isActive(path: string): boolean {
     const fullPath = `/dashboard/org/${id}/${path}`
@@ -128,6 +142,11 @@ export function DashboardSidebar() {
                       >
                         <Icon className="w-[18px] h-[18px] shrink-0" />
                         <span className="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">{item.label}</span>
+                        {item.label === 'Messages' && unreadMessages > 0 && (
+                          <span className="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-[11px] font-semibold bg-red-500 text-white rounded-md">
+                            {unreadMessages > 99 ? '99+' : unreadMessages}
+                          </span>
+                        )}
                       </Link>
                     </li>
                   )

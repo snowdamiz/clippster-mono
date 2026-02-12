@@ -12,11 +12,11 @@
               <button class="dest-dialog__close" @click="$emit('close')" title="Close">
                 <X :size="18" />
               </button>
-              <div class="dest-dialog__icon">
-                <Instagram :size="24" />
+              <div :class="['dest-dialog__icon', platform === 'twitter' ? 'dest-dialog__icon--twitter' : '']">
+                <component :is="platformIcon" :size="24" />
               </div>
               <h2 class="dest-dialog__title">Where to Publish?</h2>
-              <p class="dest-dialog__subtitle">Choose an account or organization to publish under</p>
+              <p class="dest-dialog__subtitle">Choose an account or organization to publish your {{ platformLabel }} post</p>
             </div>
 
             <!-- Content -->
@@ -39,10 +39,10 @@
               <!-- Empty State -->
               <div v-else-if="personalAccounts.length === 0 && organizations.length === 0" class="dest-dialog__empty">
                 <div class="dest-dialog__empty-icon">
-                  <Instagram :size="28" />
+                  <component :is="platformIcon" :size="28" />
                 </div>
                 <h3 class="dest-dialog__empty-title">No Accounts Connected</h3>
-                <p class="dest-dialog__empty-text">Connect a personal Instagram account or join an organization to publish clips</p>
+                <p class="dest-dialog__empty-text">Connect a personal {{ platformLabel }} account or join an organization to publish clips</p>
               </div>
 
               <!-- Accounts & Organizations List -->
@@ -58,14 +58,14 @@
                       class="dest-dialog__item"
                       @click="selectPersonal()"
                     >
-                      <!-- Instagram Icon -->
-                      <div class="dest-dialog__avatar dest-dialog__avatar--instagram">
-                        <Instagram :size="20" />
+                      <!-- Platform Icon -->
+                      <div :class="['dest-dialog__avatar', `dest-dialog__avatar--${platform}`]">
+                        <component :is="platformIcon" :size="20" />
                       </div>
 
                       <!-- Info -->
                       <div class="dest-dialog__info">
-                        <div class="dest-dialog__name">Personal Instagram</div>
+                        <div class="dest-dialog__name">Personal {{ platformLabel }}</div>
                         <div class="dest-dialog__role-text">
                           {{ personalAccounts.length }} account{{ personalAccounts.length > 1 ? 's' : '' }} connected
                         </div>
@@ -147,10 +147,12 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch } from 'vue';
+  import { ref, computed, watch } from 'vue';
   import { Instagram, Building, ChevronRight, X, User } from 'lucide-vue-next';
+  import XLogo from '@/components/icons/XLogo.vue';
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
+  import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
 
   interface Organization {
     id: string | number;
@@ -161,6 +163,7 @@
 
   const props = defineProps<{
     open: boolean;
+    platform?: 'instagram' | 'twitter';
   }>();
 
   const emit = defineEmits<{
@@ -172,7 +175,11 @@
   const authStore = useAuthStore();
   const loading = ref(false);
   const organizations = ref<Organization[]>([]);
-  const personalAccounts = ref<UserInstagramAccount[]>([]);
+  const personalAccounts = ref<(UserInstagramAccount | UserTwitterAccount)[]>([]);
+
+  const activePlatform = computed(() => props.platform || 'instagram');
+  const platformIcon = computed(() => activePlatform.value === 'twitter' ? XLogo : Instagram);
+  const platformLabel = computed(() => activePlatform.value === 'twitter' ? 'X (Twitter)' : 'Instagram');
 
   // Load both organizations and personal accounts when dialog opens
   watch(
@@ -196,12 +203,21 @@
         organizations.value = [];
       }
 
-      // Load personal Instagram accounts
-      const accountsResult = await listUserInstagramAccounts();
-      if (accountsResult.success) {
-        personalAccounts.value = accountsResult.accounts.filter((a) => a.is_active);
+      // Load personal accounts based on platform
+      if (activePlatform.value === 'twitter') {
+        const accountsResult = await listUserTwitterAccounts();
+        if (accountsResult.success) {
+          personalAccounts.value = accountsResult.accounts.filter((a) => a.is_active);
+        } else {
+          personalAccounts.value = [];
+        }
       } else {
-        personalAccounts.value = [];
+        const accountsResult = await listUserInstagramAccounts();
+        if (accountsResult.success) {
+          personalAccounts.value = accountsResult.accounts.filter((a) => a.is_active);
+        } else {
+          personalAccounts.value = [];
+        }
       }
     } catch (error) {
       console.error('Failed to load publishing destinations:', error);
@@ -433,6 +449,20 @@
 
   .dest-dialog__avatar--instagram svg {
     color: white;
+  }
+
+  .dest-dialog__avatar--twitter {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .dest-dialog__avatar--twitter svg {
+    color: white;
+  }
+
+  .dest-dialog__icon--twitter {
+    background-color: rgba(29, 155, 240, 0.15);
+    color: #1d9bf0;
   }
 
   .dest-dialog__avatar--loading {

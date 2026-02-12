@@ -9,6 +9,7 @@ defmodule ClippsterServer.Accounts do
   alias ClippsterServer.Credits
   alias ClippsterServer.{Emails, Mailer, Analytics}
   alias ClippsterServer.Auth.TokenGenerator
+  alias ClippsterServer.Affiliates
 
   # OTP expires in 10 minutes
   @otp_expiry_minutes 10
@@ -68,9 +69,9 @@ defmodule ClippsterServer.Accounts do
   @doc """
   Creates or gets a user. If this is the first user, they are marked as admin.
   """
-  def get_or_create_user(wallet_address) do
+  def get_or_create_user(wallet_address, referral_code \\ nil) do
     case get_user_by_wallet(wallet_address) do
-      nil -> create_user(wallet_address)
+      nil -> create_user(wallet_address, referral_code)
       user -> {:ok, user}
     end
   end
@@ -79,8 +80,9 @@ defmodule ClippsterServer.Accounts do
   Creates a user. If this is the first user, they are marked as admin.
   New users automatically receive 60 free minutes of credits.
   """
-  def create_user(wallet_address) do
+  def create_user(wallet_address, referral_code \\ nil) do
     is_first_user = Repo.aggregate(User, :count) == 0
+    affiliate_id = resolve_affiliate_id(referral_code)
 
     Repo.transaction(fn ->
       # Create the user
@@ -90,6 +92,9 @@ defmodule ClippsterServer.Accounts do
           is_admin: is_first_user
         })
         |> Repo.insert!()
+
+      # Set affiliate referral if present
+      user = maybe_set_referral(user, affiliate_id)
 
       # Give new user 60 free minutes of credits
       {:ok, _user_credit} = Credits.add_credits(user.id, 60)
@@ -112,16 +117,17 @@ defmodule ClippsterServer.Accounts do
   If this is the first user, they are marked as admin.
   New users automatically receive 60 free minutes of credits.
   """
-  def get_or_create_oauth_user(provider, provider_id, oauth_info \\ %{}) do
+  def get_or_create_oauth_user(provider, provider_id, oauth_info \\ %{}, referral_code \\ nil) do
     case get_user_by_provider(provider, provider_id) do
-      nil -> create_oauth_user(provider, provider_id, oauth_info)
+      nil -> create_oauth_user(provider, provider_id, oauth_info, referral_code)
       user -> update_oauth_info(user, oauth_info)
     end
   end
 
   # Creates an OAuth user.
-  defp create_oauth_user(provider, provider_id, oauth_info) do
+  defp create_oauth_user(provider, provider_id, oauth_info, referral_code) do
     is_first_user = Repo.aggregate(User, :count) == 0
+    affiliate_id = resolve_affiliate_id(referral_code)
 
     Repo.transaction(fn ->
       user_attrs = %{
@@ -136,6 +142,9 @@ defmodule ClippsterServer.Accounts do
       user = %User{}
         |> User.oauth_changeset(user_attrs)
         |> Repo.insert!()
+
+      # Set affiliate referral if present
+      user = maybe_set_referral(user, affiliate_id)
 
       # Give new user 60 free minutes of credits
       {:ok, _user_credit} = Credits.add_credits(user.id, 60)
@@ -242,11 +251,11 @@ defmodule ClippsterServer.Accounts do
   Registers a new user with email and password.
   Generates verification OTP and magic link token, sends verification email.
   """
-  def register_with_email(email, password) do
+  def register_with_email(email, password, referral_code \\ nil) do
     # Check if email already exists
     case get_user_by_email(email) do
       nil ->
-        do_register_with_email(email, password)
+        do_register_with_email(email, password, referral_code)
 
       existing_user ->
         # Check if it's an email provider user who hasn't verified yet
@@ -259,8 +268,9 @@ defmodule ClippsterServer.Accounts do
     end
   end
 
-  defp do_register_with_email(email, password) do
+  defp do_register_with_email(email, password, referral_code) do
     is_first_user = Repo.aggregate(User, :count) == 0
+    affiliate_id = resolve_affiliate_id(referral_code)
 
     # Generate OTP and magic link token
     otp_code = generate_otp()
@@ -291,6 +301,9 @@ defmodule ClippsterServer.Accounts do
           email_verification_attempts: 0
         })
         |> Repo.update()
+
+      # Set affiliate referral if present
+      user = maybe_set_referral(user, affiliate_id)
 
       # Give new user 60 free minutes of credits
       {:ok, _user_credit} = Credits.add_credits(user.id, 60)
@@ -545,5 +558,30 @@ defmodule ClippsterServer.Accounts do
   defp password_reset_expired?(sent_at) do
     expiry = DateTime.add(sent_at, @password_reset_expiry_hours, :hour)
     DateTime.compare(DateTime.utc_now(), expiry) == :gt
+  end
+
+  # ============================================
+  # Affiliate Referral Helpers
+  # ============================================
+
+  defp resolve_affiliate_id(nil), do: nil
+  defp resolve_affiliate_id(""), do: nil
+
+  defp resolve_affiliate_id(referral_code) do
+    case Affiliates.get_affiliate_by_code(referral_code) do
+      %{id: id, status: "active"} -> id
+      _ -> nil
+    end
+  end
+
+  defp maybe_set_referral(user, nil), do: user
+
+  defp maybe_set_referral(user, affiliate_id) do
+    {:ok, updated_user} =
+      user
+      |> User.referral_changeset(%{referred_by_affiliate_id: affiliate_id})
+      |> Repo.update()
+
+    updated_user
   end
 end

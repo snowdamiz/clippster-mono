@@ -1,6 +1,7 @@
 import { Command } from "../../../../lib/commands/base-command";
 import type { TimelineTrack } from "../../../../types/timeline";
 import { EditorCore } from "../../../../core";
+import { shiftCaptionTimesAfter } from "../../../timeline/caption-sync";
 
 /**
  * Changes the speed of a timeline element, adjusts its duration, and
@@ -28,16 +29,21 @@ export class ChangeSpeedCommand extends Command {
 		const editor = EditorCore.getInstance();
 		this.savedState = editor.timeline.getTracks();
 
+		// Find the target element to compute delta before mapping
+		const targetTrack = this.savedState.find((t) => t.id === this.trackId);
+		const targetEl = targetTrack?.elements.find((el) => el.id === this.elementId);
+		if (!targetEl) {
+			editor.timeline.updateTracks(this.savedState);
+			return;
+		}
+
+		const oldSpeed: number = ("speed" in targetEl && typeof targetEl.speed === "number") ? targetEl.speed : 1;
+		const newDuration = targetEl.duration * oldSpeed / this.newSpeed;
+		const durationDelta = newDuration - targetEl.duration;
+		const oldEndTime = targetEl.startTime + targetEl.duration;
+
 		const updatedTracks = this.savedState.map((t) => {
 			if (t.id !== this.trackId) return t;
-
-			const targetEl = t.elements.find((el) => el.id === this.elementId);
-			if (!targetEl) return t;
-
-			const oldSpeed: number = ("speed" in targetEl && typeof targetEl.speed === "number") ? targetEl.speed : 1;
-			const newDuration = targetEl.duration * oldSpeed / this.newSpeed;
-			const durationDelta = newDuration - targetEl.duration;
-			const oldEndTime = targetEl.startTime + targetEl.duration;
 
 			const newElements = t.elements.map((el) => {
 				if (el.id === this.elementId) {
@@ -52,7 +58,17 @@ export class ChangeSpeedCommand extends Command {
 			return { ...t, elements: newElements } as typeof t;
 		});
 
-		editor.timeline.updateTracks(updatedTracks);
+		// Shift caption times when ripple-shifting
+		if (durationDelta !== 0) {
+			const finalTracks = shiftCaptionTimesAfter({
+				tracks: updatedTracks,
+				afterTime: oldEndTime,
+				delta: durationDelta,
+			});
+			editor.timeline.updateTracks(finalTracks);
+		} else {
+			editor.timeline.updateTracks(updatedTracks);
+		}
 	}
 
 	undo(): void {
