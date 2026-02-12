@@ -4,8 +4,22 @@ import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useOrganization } from '@/hooks/useOrganization'
 import { Skeleton } from '@/components/ui/Skeleton'
 import {
-  Settings, Save, Building2, Type, FileText, Sparkles, Zap, Shield, Archive,
-  CheckCircle, UserCircle, Upload, Loader2, AlertTriangle, Trash2, X,
+  Settings,
+  Save,
+  Building2,
+  Type,
+  FileText,
+  Sparkles,
+  Zap,
+  Shield,
+  Archive,
+  CheckCircle,
+  UserCircle,
+  Upload,
+  Loader2,
+  AlertTriangle,
+  Trash2,
+  X
 } from 'lucide-react'
 import type { OrganizationRestrictionDefaults } from '@/types/organization'
 
@@ -26,14 +40,12 @@ const DEFAULT_RESTRICTIONS: Required<OrganizationRestrictionDefaults> = {
   allow_hiring_browse: true,
   force_org_watermark: true,
   require_clip_approval: false,
-  clips_visible_to_admins: true,
+  clips_visible_to_admins: true
 }
 
 export function OrgSettings() {
-  const {
-    loading, organization, isOwner, isAdmin, loadOrganization,
-    updateOrganization, uploadLogo, deleteOrganization,
-  } = useOrganization()
+  const { loading, organization, isOwner, loadOrganization, updateOrganization, uploadLogo, deleteOrganization } =
+    useOrganization()
   const navigate = useNavigate()
 
   const logoInputRef = useRef<HTMLInputElement>(null)
@@ -43,7 +55,7 @@ export function OrgSettings() {
     name: '',
     description: '',
     settings: { allow_ai: true },
-    restriction_defaults: { ...DEFAULT_RESTRICTIONS },
+    restriction_defaults: { ...DEFAULT_RESTRICTIONS }
   })
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
@@ -51,7 +63,9 @@ export function OrgSettings() {
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('')
   const [deleting, setDeleting] = useState(false)
 
-  useEffect(() => { loadOrganization() }, [loadOrganization])
+  useEffect(() => {
+    loadOrganization()
+  }, [loadOrganization])
 
   // Populate edit form when organization data loads
   useEffect(() => {
@@ -72,14 +86,16 @@ export function OrgSettings() {
           allow_hiring_browse: rd.allow_hiring_browse !== false,
           force_org_watermark: rd.force_org_watermark !== false,
           require_clip_approval: rd.require_clip_approval === true,
-          clips_visible_to_admins: rd.clips_visible_to_admins !== false,
-        },
+          clips_visible_to_admins: rd.clips_visible_to_admins !== false
+        }
       })
     }
   }, [organization])
 
   // Reset logo load error when logo_url changes
-  useEffect(() => { setLogoLoadError(false) }, [organization?.logo_url])
+  useEffect(() => {
+    setLogoLoadError(false)
+  }, [organization?.logo_url])
 
   const hasChanges = useMemo(() => {
     if (!organization) return false
@@ -119,9 +135,9 @@ export function OrgSettings() {
   }
 
   function toggleRestriction(key: keyof typeof editData.restriction_defaults) {
-    setEditData(prev => ({
+    setEditData((prev) => ({
       ...prev,
-      restriction_defaults: { ...prev.restriction_defaults, [key]: !prev.restriction_defaults[key] },
+      restriction_defaults: { ...prev.restriction_defaults, [key]: !prev.restriction_defaults[key] }
     }))
   }
 
@@ -153,7 +169,11 @@ export function OrgSettings() {
 
   if (loading && !organization) {
     return (
-      <PageLayout icon={Settings} title="Organization Settings" description="Manage your organization profile and preferences">
+      <PageLayout
+        icon={Settings}
+        title="Organization Settings"
+        description="Manage your organization profile and preferences"
+      >
         <div className="w-full max-w-[900px] mx-auto p-6 space-y-8">
           <Skeleton className="h-6 w-64 rounded" />
           <Skeleton className="h-48 rounded-xl" />
@@ -169,22 +189,26 @@ export function OrgSettings() {
       icon={Settings}
       title="Organization Settings"
       description="Manage your organization profile and preferences"
-      actions={hasChanges && (
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-cyan-400 text-[#0a0a0b] border-none cursor-pointer transition-opacity duration-150 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-          {saving ? 'Saving...' : 'Save Changes'}
-        </button>
-      )}
+      actions={
+        hasChanges && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md bg-cyan-400 text-[#0a0a0b] border-none cursor-pointer transition-opacity duration-150 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        )
+      }
     >
       <div className="w-full max-w-[900px] mx-auto p-6 flex flex-col gap-8">
         {/* Page Heading */}
         <div className="mb-2">
           <h1 className="text-2xl font-bold text-white tracking-tight m-0 mb-1.5">Configure Organization</h1>
-          <p className="text-sm text-zinc-500 m-0 leading-relaxed">Update your organization's profile information and manage feature settings</p>
+          <p className="text-sm text-zinc-500 m-0 leading-relaxed">
+            Update your organization's profile information and manage feature settings
+          </p>
         </div>
 
         {/* ===== Organization Profile Section ===== */}
@@ -256,7 +280,7 @@ export function OrgSettings() {
                 </label>
                 <input
                   value={editData.name}
-                  onChange={e => setEditData(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) => setEditData((prev) => ({ ...prev, name: e.target.value }))}
                   type="text"
                   placeholder="Enter organization name"
                   className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white placeholder-zinc-600 transition-all duration-150 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/15"
@@ -273,7 +297,7 @@ export function OrgSettings() {
                 </label>
                 <textarea
                   value={editData.description}
-                  onChange={e => setEditData(prev => ({ ...prev, description: e.target.value }))}
+                  onChange={(e) => setEditData((prev) => ({ ...prev, description: e.target.value }))}
                   rows={3}
                   placeholder="A brief description of your organization..."
                   className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white placeholder-zinc-600 resize-y min-h-[100px] leading-relaxed transition-all duration-150 focus:outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/15"
@@ -297,28 +321,44 @@ export function OrgSettings() {
 
           <div
             className="bg-zinc-900/50 border border-zinc-800 rounded-xl cursor-pointer transition-all duration-200 hover:border-purple-500/30 hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)]"
-            onClick={() => setEditData(prev => ({ ...prev, settings: { ...prev.settings, allow_ai: !prev.settings.allow_ai } }))}
+            onClick={() =>
+              setEditData((prev) => ({ ...prev, settings: { ...prev.settings, allow_ai: !prev.settings.allow_ai } }))
+            }
           >
             <div className="flex items-start gap-4 p-5">
-              <div className={`flex items-center justify-center w-11 h-11 rounded-[10px] shrink-0 transition-all duration-200 ${
-                editData.settings.allow_ai ? 'bg-purple-500/15 text-purple-500' : 'bg-zinc-500/15 text-zinc-500'
-              }`}>
+              <div
+                className={`flex items-center justify-center w-11 h-11 rounded-[10px] shrink-0 transition-all duration-200 ${
+                  editData.settings.allow_ai ? 'bg-purple-500/15 text-purple-500' : 'bg-zinc-500/15 text-zinc-500'
+                }`}
+              >
                 <Zap className="w-[22px] h-[22px]" />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[0.9375rem] font-semibold text-white mb-1.5">Enable AI Features</div>
                 <div className="text-[0.8125rem] text-zinc-500 leading-relaxed mb-3">
-                  Allow members to use AI-powered features like auto-captions, clip finder, smart transcription, and more
+                  Allow members to use AI-powered features like auto-captions, clip finder, smart transcription, and
+                  more
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-zinc-800/50 text-zinc-500">Auto-Captions</span>
-                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-zinc-800/50 text-zinc-500">Clip Finder</span>
-                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-zinc-800/50 text-zinc-500">Smart Transcription</span>
+                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-zinc-800/50 text-zinc-500">
+                    Auto-Captions
+                  </span>
+                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-zinc-800/50 text-zinc-500">
+                    Clip Finder
+                  </span>
+                  <span className="inline-flex px-2 py-1 rounded-[5px] text-[0.6875rem] font-medium bg-zinc-800/50 text-zinc-500">
+                    Smart Transcription
+                  </span>
                 </div>
               </div>
               <Toggle
                 active={editData.settings.allow_ai}
-                onToggle={() => setEditData(prev => ({ ...prev, settings: { ...prev.settings, allow_ai: !prev.settings.allow_ai } }))}
+                onToggle={() =>
+                  setEditData((prev) => ({
+                    ...prev,
+                    settings: { ...prev.settings, allow_ai: !prev.settings.allow_ai }
+                  }))
+                }
               />
             </div>
           </div>
@@ -331,12 +371,19 @@ export function OrgSettings() {
               <Shield className="w-5 h-5" />
             </div>
             <div className="flex-1">
-              <h2 className="text-[1.0625rem] font-semibold text-white m-0 tracking-tight">Restricted Member Settings</h2>
-              <p className="text-xs text-zinc-500 m-0 mt-0.5">Default permissions for accounts created by your organization</p>
+              <h2 className="text-[1.0625rem] font-semibold text-white m-0 tracking-tight">
+                Restricted Member Settings
+              </h2>
+              <p className="text-xs text-zinc-500 m-0 mt-0.5">
+                Default permissions for accounts created by your organization
+              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}
+          >
             {/* AI & Detection Card */}
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5 flex flex-col gap-4">
               <div className="flex items-center gap-2.5 pb-3 border-b border-zinc-800">
@@ -446,11 +493,15 @@ export function OrgSettings() {
                 <div className="flex-1 min-w-[200px]">
                   <h4 className="text-[0.9375rem] font-semibold text-red-400 m-0 mb-1.5">Delete Organization</h4>
                   <p className="text-[0.8125rem] text-zinc-500 m-0 leading-relaxed">
-                    Permanently remove your organization and all of its contents. This action is not reversible — all data, members, and settings will be deleted.
+                    Permanently remove your organization and all of its contents. This action is not reversible — all
+                    data, members, and settings will be deleted.
                   </p>
                 </div>
                 <button
-                  onClick={() => { setDeleteConfirmInput(''); setShowDeleteConfirm(true) }}
+                  onClick={() => {
+                    setDeleteConfirmInput('')
+                    setShowDeleteConfirm(true)
+                  }}
                   disabled={deleting}
                   className="flex items-center gap-2 px-4 py-2.5 text-[0.8125rem] font-semibold bg-transparent text-red-400 border border-red-500/30 rounded-lg cursor-pointer transition-all duration-150 shrink-0 mt-2 hover:bg-red-500/10 hover:border-red-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
@@ -473,7 +524,12 @@ export function OrgSettings() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center" onClick={e => { if (e.target === e.currentTarget) setShowDeleteConfirm(false) }}>
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowDeleteConfirm(false)
+          }}
+        >
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowDeleteConfirm(false)} />
           <div className="relative bg-zinc-900 border border-zinc-800 rounded-xl w-full max-w-[440px] mx-4 max-h-[85vh] flex flex-col overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.4)]">
             {/* Red accent bar */}
@@ -517,7 +573,7 @@ export function OrgSettings() {
 
               <input
                 value={deleteConfirmInput}
-                onChange={e => setDeleteConfirmInput(e.target.value)}
+                onChange={(e) => setDeleteConfirmInput(e.target.value)}
                 type="text"
                 placeholder={organization?.name}
                 className="w-full px-4 py-3 text-sm bg-zinc-800/50 border border-zinc-800 rounded-lg text-white placeholder-zinc-600/50 transition-all duration-150 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/15"
@@ -554,7 +610,10 @@ function Toggle({ active, onToggle }: { active: boolean; onToggle: () => void })
   return (
     <button
       type="button"
-      onClick={e => { e.stopPropagation(); onToggle() }}
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle()
+      }}
       className={`relative w-12 h-[26px] rounded-full border-none cursor-pointer transition-colors duration-200 shrink-0 mt-1 ${
         active ? 'bg-purple-500' : 'bg-zinc-600'
       }`}
@@ -569,7 +628,17 @@ function Toggle({ active, onToggle }: { active: boolean; onToggle: () => void })
 }
 
 /* ===== Restriction Item Component ===== */
-function RestrictionItem({ title, desc, active, onToggle }: { title: string; desc: string; active: boolean; onToggle: () => void }) {
+function RestrictionItem({
+  title,
+  desc,
+  active,
+  onToggle
+}: {
+  title: string
+  desc: string
+  active: boolean
+  onToggle: () => void
+}) {
   return (
     <div className="flex items-start gap-3 justify-between">
       <div className="flex-1 min-w-0">

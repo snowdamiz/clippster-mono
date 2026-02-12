@@ -13,7 +13,7 @@ import {
   CreditCard,
   Settings,
   LogOut,
-  MessageSquare,
+  MessageSquare
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
@@ -37,8 +37,8 @@ const navGroups: NavGroup[] = [
       { label: 'Hub', icon: LayoutGrid, path: 'hub' },
       { label: 'Members', icon: Users, path: 'members' },
       { label: 'Creators', icon: UserCircle, path: 'creators' },
-      { label: 'Messages', icon: MessageSquare, path: 'messages' },
-    ],
+      { label: 'Messages', icon: MessageSquare, path: 'messages' }
+    ]
   },
   {
     header: 'Content',
@@ -47,17 +47,17 @@ const navGroups: NavGroup[] = [
       { label: 'Clippers', icon: Scissors, path: 'clippers' },
       { label: 'Shared Clips', icon: Share2, path: 'shared' },
       { label: 'Social Accounts', icon: Globe, path: 'social' },
-      { label: 'Posts', icon: FileText, path: 'posts' },
-    ],
+      { label: 'Posts', icon: FileText, path: 'posts' }
+    ]
   },
   {
     header: 'Management',
     items: [
       { label: 'Assets', icon: FolderOpen, path: 'assets' },
       { label: 'Billing', icon: CreditCard, path: 'billing' },
-      { label: 'Settings', icon: Settings, path: 'settings' },
-    ],
-  },
+      { label: 'Settings', icon: Settings, path: 'settings' }
+    ]
+  }
 ]
 
 function getInitials(user: { name?: string; email: string }): string {
@@ -81,9 +81,13 @@ export function DashboardSidebar() {
 
   useEffect(() => {
     if (!user) return
-    getTotalUnread().then(setUnreadMessages).catch(() => {})
+    getTotalUnread()
+      .then(setUnreadMessages)
+      .catch(() => {})
     const interval = setInterval(() => {
-      getTotalUnread().then(setUnreadMessages).catch(() => {})
+      getTotalUnread()
+        .then(setUnreadMessages)
+        .catch(() => {})
     }, 5000)
     return () => clearInterval(interval)
   }, [user])
@@ -92,7 +96,11 @@ export function DashboardSidebar() {
     const fullPath = `/dashboard/org/${id}/${path}`
     // Hub is also active for the index route
     if (path === 'hub') {
-      return location.pathname === `/dashboard/org/${id}` || location.pathname === fullPath || location.pathname.startsWith(fullPath + '/')
+      return (
+        location.pathname === `/dashboard/org/${id}` ||
+        location.pathname === fullPath ||
+        location.pathname.startsWith(fullPath + '/')
+      )
     }
     return location.pathname === fullPath || location.pathname.startsWith(fullPath + '/')
   }
@@ -118,7 +126,7 @@ export function DashboardSidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden">
         <div className="flex flex-col p-3 gap-4">
-          {navGroups.map((group, groupIndex) => (
+          {navGroups.map((group) => (
             <div key={group.header} className="flex flex-col gap-1">
               {/* Group Label */}
               <div className="text-xs font-semibold uppercase tracking-wider text-zinc-500/70 pt-2 px-3 pb-1">
@@ -170,12 +178,13 @@ export function DashboardSidebar() {
               />
             ) : (
               <div className="w-7 h-7 rounded-[20px] bg-cyan-400 flex items-center justify-center shrink-0">
-                <span className="text-xs font-extrabold text-[#0a0a0b] uppercase">
-                  {getInitials(user)}
-                </span>
+                <span className="text-xs font-extrabold text-[#0a0a0b] uppercase">{getInitials(user)}</span>
               </div>
             )}
-            <span className="flex-1 text-xs text-left whitespace-nowrap overflow-hidden text-ellipsis text-zinc-500" title={user.email}>
+            <span
+              className="flex-1 text-xs text-left whitespace-nowrap overflow-hidden text-ellipsis text-zinc-500"
+              title={user.email}
+            >
               {user.email}
             </span>
             <button

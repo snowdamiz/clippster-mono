@@ -3,7 +3,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { api } from '@/lib/api'
-import { CreditCard, Wallet, Crown, Users, Zap, Check, Tag, Loader2 } from 'lucide-react'
+import { CreditCard, Wallet, Crown, Users, Zap, Tag } from 'lucide-react'
 
 interface Plan {
   id: string
@@ -26,14 +26,20 @@ interface Props {
 export function SubscribeDialog({ open, onClose, plan, type, organizationId, organizationName, onSuccess }: Props) {
   const [promoCode, setPromoCode] = useState('')
   const [promoValidating, setPromoValidating] = useState(false)
-  const [promoResult, setPromoResult] = useState<{ valid: boolean; discount_percent?: number; message?: string } | null>(null)
+  const [promoResult, setPromoResult] = useState<{
+    valid: boolean
+    discount_percent?: number
+    message?: string
+  } | null>(null)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
 
   const handleValidatePromo = async () => {
     if (!promoCode.trim()) return
     setPromoValidating(true)
     try {
-      const result = await api.post<any>(`/organizations/${organizationId}/subscription/promo/validate`, { code: promoCode })
+      const result = await api.post<any>(`/organizations/${organizationId}/subscription/promo/validate`, {
+        code: promoCode
+      })
       setPromoResult(result)
     } catch {
       setPromoResult({ valid: false, message: 'Failed to validate promo code' })
@@ -45,13 +51,14 @@ export function SubscribeDialog({ open, onClose, plan, type, organizationId, org
   const handleStripeCheckout = async () => {
     setCheckoutLoading(true)
     try {
-      const endpoint = type === 'addon'
-        ? `/organizations/${organizationId}/subscription/addons/checkout`
-        : `/organizations/${organizationId}/subscription/checkout`
+      const endpoint =
+        type === 'addon'
+          ? `/organizations/${organizationId}/subscription/addons/checkout`
+          : `/organizations/${organizationId}/subscription/checkout`
       const result = await api.post<any>(endpoint, {
         tier_id: plan.id,
         payment_method: 'stripe',
-        promo_code: promoResult?.valid ? promoCode : undefined,
+        promo_code: promoResult?.valid ? promoCode : undefined
       })
       if (result.checkout_url) {
         window.open(result.checkout_url, '_blank')
@@ -66,9 +73,10 @@ export function SubscribeDialog({ open, onClose, plan, type, organizationId, org
     }
   }
 
-  const finalPrice = promoResult?.valid && promoResult.discount_percent
-    ? plan.price_usd * (1 - promoResult.discount_percent / 100)
-    : plan.price_usd
+  const finalPrice =
+    promoResult?.valid && promoResult.discount_percent
+      ? plan.price_usd * (1 - promoResult.discount_percent / 100)
+      : plan.price_usd
 
   return (
     <Dialog open={open} onClose={onClose} title={type === 'addon' ? 'Add to Plan' : 'Subscribe'} maxWidth="max-w-md">
@@ -86,12 +94,16 @@ export function SubscribeDialog({ open, onClose, plan, type, organizationId, org
           </div>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-zinc-400 flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> Seats</span>
+              <span className="text-zinc-400 flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5" /> Seats
+              </span>
               <span className="text-white font-medium">{plan.seats === null ? 'Unlimited' : plan.seats}</span>
             </div>
             {plan.monthly_credits > 0 && (
               <div className="flex justify-between">
-                <span className="text-zinc-400 flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> Credits/month</span>
+                <span className="text-zinc-400 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5" /> Credits/month
+                </span>
                 <span className="text-cyan-400 font-medium">{plan.monthly_credits.toLocaleString()}</span>
               </div>
             )}
@@ -100,8 +112,8 @@ export function SubscribeDialog({ open, onClose, plan, type, organizationId, org
               <span className="text-white font-bold text-base">
                 {promoResult?.valid && promoResult.discount_percent ? (
                   <>
-                    <span className="line-through text-zinc-600 text-xs mr-1.5">${plan.price_usd}</span>
-                    ${finalPrice.toFixed(2)}
+                    <span className="line-through text-zinc-600 text-xs mr-1.5">${plan.price_usd}</span>$
+                    {finalPrice.toFixed(2)}
                   </>
                 ) : (
                   <>${plan.price_usd}/mo</>
@@ -117,17 +129,28 @@ export function SubscribeDialog({ open, onClose, plan, type, organizationId, org
             <Input
               placeholder="Promo code"
               value={promoCode}
-              onChange={e => { setPromoCode(e.target.value); setPromoResult(null) }}
+              onChange={(e) => {
+                setPromoCode(e.target.value)
+                setPromoResult(null)
+              }}
               className="!py-2.5"
             />
           </div>
-          <Button variant="secondary" size="sm" onClick={handleValidatePromo} loading={promoValidating} disabled={!promoCode.trim()}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleValidatePromo}
+            loading={promoValidating}
+            disabled={!promoCode.trim()}
+          >
             <Tag className="w-3.5 h-3.5" /> Apply
           </Button>
         </div>
         {promoResult && (
           <p className={`text-xs ${promoResult.valid ? 'text-emerald-400' : 'text-red-400'}`}>
-            {promoResult.valid ? `${promoResult.discount_percent}% discount applied` : promoResult.message || 'Invalid code'}
+            {promoResult.valid
+              ? `${promoResult.discount_percent}% discount applied`
+              : promoResult.message || 'Invalid code'}
           </p>
         )}
 
