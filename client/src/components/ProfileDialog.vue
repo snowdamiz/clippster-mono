@@ -509,115 +509,126 @@
                       Position configured for {{ getConfiguredRatiosCount() }} aspect ratio(s)
                     </p>
                   </div>
-                </div>
 
-                <!-- Layout Overlays Section -->
-                <div class="org-dialog__asset-row">
-                  <label class="org-dialog__asset-label">Layout Overlays</label>
-                  <div class="org-dialog__asset-controls">
-                    <div class="org-dialog__dropdown-wrapper org-dialog__flex-1">
-                      <button
-                        type="button"
-                        class="org-dialog__asset-select"
-                        :disabled="uploadingOverlay"
-                        @click.stop="showOverlayDropdown = !showOverlayDropdown"
-                      >
-                        <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--overlay">
-                          <Layers :size="14" />
-                        </div>
-                        <span class="org-dialog__asset-select-label">
-                          {{ formData.layout_overlays.length > 0
-                            ? `${formData.layout_overlays.length} overlay${formData.layout_overlays.length > 1 ? 's' : ''}`
-                            : 'No overlays' }}
-                        </span>
-                        <ChevronDown
-                          class="org-dialog__chevron"
-                          :class="{ 'org-dialog__chevron--open': showOverlayDropdown }"
-                        />
-                      </button>
+                  <!-- Layout Overlays Section -->
+                  <div class="org-dialog__asset-row">
+                    <label class="org-dialog__asset-label">Layout Overlays</label>
+                    <div class="org-dialog__asset-controls">
+                      <div class="org-dialog__dropdown-wrapper org-dialog__flex-1">
+                        <button
+                          type="button"
+                          class="org-dialog__asset-select"
+                          :disabled="uploadingOverlay"
+                          @click.stop="showOverlayDropdown = !showOverlayDropdown"
+                        >
+                          <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--overlay">
+                            <Layers :size="14" />
+                          </div>
+                          <span class="org-dialog__asset-select-label">
+                            {{ formData.layout_overlays.length > 0
+                              ? `${formData.layout_overlays.length} overlay${formData.layout_overlays.length > 1 ? 's' : ''}`
+                              : 'No overlays' }}
+                          </span>
+                          <ChevronDown
+                            class="org-dialog__chevron"
+                            :class="{ 'org-dialog__chevron--open': showOverlayDropdown }"
+                          />
+                        </button>
 
-                      <!-- Overlay Dropdown -->
-                      <div
-                        v-if="showOverlayDropdown"
-                        class="org-dialog__dropdown org-dialog__dropdown--full"
-                        @click.stop
-                      >
-                        <div class="org-dialog__dropdown-list org-dialog__dropdown-list--scrollable">
-                          <button
-                            v-if="formData.layout_overlays.length === 0"
-                            type="button"
-                            class="org-dialog__dropdown-item org-dialog__dropdown-item--active"
-                            disabled
-                          >
-                            <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--none">
-                              <X :size="14" />
-                            </div>
-                            <span class="org-dialog__text-muted">No overlays added</span>
-                          </button>
-                          <div
-                            v-for="(overlay, idx) in formData.layout_overlays"
-                            :key="overlay.id"
-                            class="org-dialog__dropdown-item org-dialog__dropdown-item--overlay"
-                          >
-                            <div class="org-dialog__overlay-thumb">
-                              <img
-                                v-if="overlayPreviews[overlay.id]"
-                                :src="overlayPreviews[overlay.id]"
-                                class="org-dialog__overlay-thumb-img"
-                                alt=""
-                              />
-                              <Layers v-else :size="12" style="color: var(--sidebar-text-muted)" />
-                            </div>
-                            <div class="org-dialog__overlay-info">
-                              <input
-                                v-model="overlay.label"
-                                class="org-dialog__overlay-name"
-                                :placeholder="`Overlay ${idx + 1}`"
-                                @click.stop
-                              />
-                              <span class="org-dialog__overlay-meta">
-                                {{ overlay.opacity }}% opacity
-                                <template v-if="overlayConfiguredRatioCount(overlay) > 0">
-                                  · {{ overlayConfiguredRatioCount(overlay) }}/4 ratios
-                                </template>
-                              </span>
-                            </div>
+                        <!-- Overlay Dropdown -->
+                        <div
+                          v-if="showOverlayDropdown"
+                          class="org-dialog__dropdown org-dialog__dropdown--full"
+                          @click.stop
+                        >
+                          <div class="org-dialog__dropdown-list org-dialog__dropdown-list--scrollable">
                             <button
+                              v-if="formData.layout_overlays.length === 0"
                               type="button"
-                              @click.stop="openOverlayPositionPicker(idx)"
-                              class="org-dialog__overlay-action"
-                              :class="{ 'org-dialog__overlay-action--active': overlayConfiguredRatioCount(overlay) > 0 }"
-                              title="Configure position per aspect ratio"
+                              class="org-dialog__dropdown-item org-dialog__dropdown-item--active"
+                              disabled
                             >
-                              <Settings2 :size="14" />
+                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--none">
+                                <X :size="14" />
+                              </div>
+                              <span class="org-dialog__text-muted">No overlays added</span>
                             </button>
-                            <button
-                              type="button"
-                              @click.stop="removeLayoutOverlay(idx)"
-                              class="org-dialog__overlay-action org-dialog__overlay-action--danger"
-                              title="Remove overlay"
+                            <div
+                              v-for="(overlay, idx) in formData.layout_overlays"
+                              :key="overlay.id"
+                              class="org-dialog__dropdown-item org-dialog__dropdown-item--overlay"
                             >
-                              <Trash2 :size="14" />
-                            </button>
+                              <div class="org-dialog__overlay-thumb">
+                                <img
+                                  v-if="overlayPreviews[overlay.id]"
+                                  :src="overlayPreviews[overlay.id]"
+                                  class="org-dialog__overlay-thumb-img"
+                                  alt=""
+                                />
+                                <Layers v-else :size="12" style="color: var(--sidebar-text-muted)" />
+                              </div>
+                              <div class="org-dialog__overlay-info">
+                                <input
+                                  v-model="overlay.label"
+                                  class="org-dialog__overlay-name"
+                                  :placeholder="`Overlay ${idx + 1}`"
+                                  @click.stop
+                                />
+                                <span class="org-dialog__overlay-meta">
+                                  {{ overlay.opacity }}% opacity
+                                  <template v-if="overlayConfiguredRatioCount(overlay) > 0">
+                                    · {{ overlayConfiguredRatioCount(overlay) }}/4 ratios
+                                  </template>
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                @click.stop="openOverlayPositionPicker(idx)"
+                                class="org-dialog__overlay-action"
+                                :class="{ 'org-dialog__overlay-action--active': overlayConfiguredRatioCount(overlay) > 0 }"
+                                title="Configure position per aspect ratio"
+                              >
+                                <Settings2 :size="14" />
+                              </button>
+                              <button
+                                type="button"
+                                @click.stop="removeLayoutOverlay(idx)"
+                                class="org-dialog__overlay-action org-dialog__overlay-action--danger"
+                                title="Remove overlay"
+                              >
+                                <Trash2 :size="14" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </div>
+                      <!-- Configure position button -->
+                      <button
+                        type="button"
+                        @click="openOverlayPositionPicker(0)"
+                        :disabled="formData.layout_overlays.length === 0"
+                        class="org-dialog__asset-upload"
+                        :class="{ 'org-dialog__asset-upload--active': totalOverlayRatios > 0 }"
+                        title="Configure overlay position"
+                      >
+                        <Settings2 :size="16" />
+                      </button>
+                      <button
+                        type="button"
+                        @click="addLayoutOverlay"
+                        :disabled="uploadingOverlay"
+                        class="org-dialog__asset-upload"
+                        title="Upload new overlay"
+                      >
+                        <Loader2 v-if="uploadingOverlay" :size="16" class="org-dialog__spin" />
+                        <Upload v-else :size="16" />
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      @click="addLayoutOverlay"
-                      :disabled="uploadingOverlay"
-                      class="org-dialog__asset-upload"
-                      title="Upload new overlay"
-                    >
-                      <Loader2 v-if="uploadingOverlay" :size="16" class="org-dialog__spin" />
-                      <Upload v-else :size="16" />
-                    </button>
+                    <p v-if="formData.layout_overlays.length > 0" class="org-dialog__asset-hint">
+                      <Layers :size="12" />
+                      {{ totalOverlayRatios }} aspect ratio(s) configured across {{ formData.layout_overlays.length }} overlay(s)
+                    </p>
                   </div>
-                  <p v-if="formData.layout_overlays.length > 0" class="org-dialog__asset-hint">
-                    <Layers :size="12" />
-                    {{ totalOverlayRatios }} aspect ratio(s) configured across {{ formData.layout_overlays.length }} overlay(s)
-                  </p>
                 </div>
               </div>
             </div>

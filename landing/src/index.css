@@ -880,6 +880,7 @@ body {
 }
 .org-dialog__asset-upload:hover:not(:disabled) { background-color: #27272a; color: #fafafa; }
 .org-dialog__asset-upload:disabled { opacity: 0.5; cursor: not-allowed; }
+.org-dialog__asset-upload--active { border-color: rgba(245, 158, 11, 0.5); color: #f59e0b; }
 .org-dialog__asset-upload--danger:hover:not(:disabled) { background-color: rgba(239, 68, 68, 0.15); color: #ef4444; border-color: rgba(239, 68, 68, 0.3); }
 
 .org-dialog__asset-select-icon--overlay { background-color: #f59e0b; }

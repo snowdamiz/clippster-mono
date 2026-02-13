@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/useToast'
 import type { ServerOrganizationCreatorProfile, ServerOrganizationAsset, LayoutOverlay } from '@/types/organization'
 import {
   UserCircle, Plus, X, Play, SkipForward, Image as ImageIcon,
-  Loader2, Upload, ChevronDown, Trash2, Users, Paintbrush, Layers,
+  Loader2, Upload, ChevronDown, Trash2, Users, Paintbrush, Layers, Settings2,
 } from 'lucide-react'
 
 type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube'
@@ -662,6 +662,9 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                       e.target.value = ''
                     }}
                   />
+                  <button type="button" disabled={layoutOverlays.length === 0} className={`org-dialog__asset-upload${layoutOverlays.some(o => o.perRatioSettings) ? ' org-dialog__asset-upload--active' : ''}`} title="Configure overlay position">
+                    <Settings2 size={16} />
+                  </button>
                   <button type="button" onClick={() => overlayFileRef.current?.click()} disabled={uploadingOverlay} className="org-dialog__asset-upload" title="Upload new overlay">
                     {uploadingOverlay ? <Loader2 size={16} className="org-dialog__spin" /> : <Upload size={16} />}
                   </button>
