@@ -2235,5 +2235,8 @@ export function useLivestreamViewer() {
 
     // HLS output directory (for PIP window)
     hlsOutputDir,
+
+    // Debug: expose HLS playback state for diagnostics overlay
+    hlsPlaybackState: hlsPlayback.state,
   };
 }
