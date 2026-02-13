@@ -58,9 +58,19 @@ export async function getMonitoredStreamerByMint(
   mintId: string
 ): Promise<MonitoredStreamerRecord | null> {
   const db = await getDatabase();
+  const userId = getCurrentUserId();
+
+  if (userId === null) {
+    const result = await db.select<MonitoredStreamerRecord[]>(
+      'SELECT * FROM monitored_streamers WHERE mint_id = ? AND user_id IS NULL',
+      [mintId]
+    );
+    return result[0] || null;
+  }
+
   const result = await db.select<MonitoredStreamerRecord[]>(
-    'SELECT * FROM monitored_streamers WHERE mint_id = ?',
-    [mintId]
+    'SELECT * FROM monitored_streamers WHERE mint_id = ? AND (user_id = ? OR user_id IS NULL)',
+    [mintId, userId]
   );
   return result[0] || null;
 }
