@@ -3,7 +3,7 @@ import { ref, computed, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useBrandingConfig, ASPECT_RATIOS } from "../../../composables/useBrandingConfig";
 import { useEditor } from "../../../composables/useEditor";
-import { getAllWatermarkImages, type WatermarkImage } from "@/services/database/watermarks";
+import { getAllWatermarkImages, resolveWatermarkById, type WatermarkImage } from "@/services/database/watermarks";
 import { getAllIntroOutros, createIntroOutro } from "@/services/database/intro-outros";
 import type { IntroOutro } from "@/services/database/types";
 import type { AspectRatioId } from "../../../types/project";
@@ -62,15 +62,65 @@ const uploadingOutro = ref(false);
 // Watermark position picker
 const showPositionPicker = ref(false);
 
+// Resolved org watermark data (for org-asset- IDs that aren't in the local watermarks list)
+const resolvedOrgWatermark = ref<{
+	name: string;
+	dataUrl: string | null;
+	filePath: string | null;
+	width: number | null;
+	height: number | null;
+} | null>(null);
+const lastResolvedWmId = ref<string | null>(null);
+
 // Current ratio's active config
 const activeWatermark = computed(() => getActiveWatermark(activeRatio.value));
 const activeIntro = computed(() => getActiveIntro(activeRatio.value));
 const activeOutro = computed(() => getActiveOutro(activeRatio.value));
 
+// Watch active watermark ID and resolve org-asset- watermarks
+watch(
+	() => activeWatermark.value?.watermarkId,
+	async (wmId) => {
+		if (!wmId || !wmId.startsWith('org-asset-')) {
+			resolvedOrgWatermark.value = null;
+			lastResolvedWmId.value = null;
+			return;
+		}
+		if (wmId === lastResolvedWmId.value) return;
+		lastResolvedWmId.value = wmId;
+
+		try {
+			const resolved = await resolveWatermarkById(wmId);
+			if (resolved?.filePath) {
+				let dataUrl: string | null = null;
+				try {
+					dataUrl = await invoke<string>('read_file_as_data_url', { filePath: resolved.filePath });
+				} catch { /* thumbnail optional */ }
+
+				const fileName = resolved.filePath.split(/[\\/]/).pop() || 'Org Watermark';
+				resolvedOrgWatermark.value = {
+					name: fileName,
+					dataUrl,
+					filePath: resolved.filePath,
+					width: resolved.width,
+					height: resolved.height,
+				};
+			} else {
+				resolvedOrgWatermark.value = null;
+			}
+		} catch (e) {
+			console.warn('[BrandingView] Failed to resolve org watermark:', e);
+			resolvedOrgWatermark.value = null;
+		}
+	},
+	{ immediate: true },
+);
+
 // Resolve watermark name for display
 const activeWatermarkName = computed(() => {
 	const wm = activeWatermark.value;
 	if (!wm?.watermarkId) return null;
+	if (resolvedOrgWatermark.value) return resolvedOrgWatermark.value.name;
 	const found = watermarks.value.find((w) => w.id === wm.watermarkId);
 	return found?.name ?? "Unknown";
 });
@@ -78,6 +128,7 @@ const activeWatermarkName = computed(() => {
 const activeWatermarkThumbnail = computed(() => {
 	const wm = activeWatermark.value;
 	if (!wm?.watermarkId) return null;
+	if (resolvedOrgWatermark.value?.dataUrl) return resolvedOrgWatermark.value.dataUrl;
 	return watermarkThumbnails.value.get(wm.watermarkId) ?? null;
 });
 
@@ -85,6 +136,7 @@ const activeWatermarkThumbnail = computed(() => {
 const defaultWatermarkFilePath = computed(() => {
 	const wm = activeWatermark.value;
 	if (!wm?.watermarkId) return undefined;
+	if (resolvedOrgWatermark.value?.filePath) return resolvedOrgWatermark.value.filePath;
 	const found = watermarks.value.find((w) => w.id === wm.watermarkId);
 	return found?.file_path;
 });
@@ -92,6 +144,7 @@ const defaultWatermarkFilePath = computed(() => {
 const defaultWatermarkDimensions = computed(() => {
 	const wm = activeWatermark.value;
 	if (!wm?.watermarkId) return { width: null, height: null };
+	if (resolvedOrgWatermark.value) return { width: resolvedOrgWatermark.value.width, height: resolvedOrgWatermark.value.height };
 	const found = watermarks.value.find((w) => w.id === wm.watermarkId);
 	return { width: found?.width ?? null, height: found?.height ?? null };
 });
@@ -297,6 +350,10 @@ const positionPickerSettings = computed((): CreatorWatermarkSettings => {
 
 // Handle save from position picker — writes all ratios back to branding config
 function handlePositionPickerSave(settings: CreatorWatermarkSettings) {
+	if (isReadOnly.value) {
+		showPositionPicker.value = false;
+		return;
+	}
 	for (const ratio of ASPECT_RATIOS) {
 		const ratioSettings = settings[ratio];
 		if (ratioSettings && ratioSettings.position) {
@@ -397,11 +454,10 @@ function formatDuration(d: number | null | undefined): string {
 					</span>
 				</div>
 
-				<!-- Open WatermarkPositionPicker button -->
+				<!-- Open WatermarkPositionPicker button (viewable even when read-only) -->
 				<button
 					type="button"
-					:disabled="isReadOnly"
-					class="flex w-full items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-left text-xs transition-colors hover:border-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+					class="flex w-full items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-left text-xs transition-colors hover:border-white/20"
 					@click="openPositionPicker"
 				>
 					<div
@@ -594,6 +650,7 @@ function formatDuration(d: number | null | undefined): string {
 			:watermark-width="defaultWatermarkDimensions.width"
 			:watermark-height="defaultWatermarkDimensions.height"
 			:settings="positionPickerSettings"
+			:read-only="isReadOnly"
 			@close="showPositionPicker = false"
 			@save="handlePositionPickerSave"
 		/>
