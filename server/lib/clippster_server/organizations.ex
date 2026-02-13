@@ -1129,12 +1129,26 @@ defmodule ClippsterServer.Organizations do
   end
 
   @doc """
-  Assigns the global branding profile to all restricted (org-created) members
-  of the given organization. Skips non-restricted (invited/hired) members.
+  Assigns the global branding profile to restricted (org-created) members
+  of the given organization who do NOT already have a streamer-scoped profile
+  assignment. Organization creator profiles (streamer scope) are always superior
+  to global branding and must never be overridden.
   """
   def assign_global_branding_to_restricted_members(organization_id, branding_profile_id) do
+    # Find user_ids of members who have a streamer-scoped profile assignment
+    members_with_streamer_profile =
+      from(a in OrganizationProfileAssignment,
+        join: p in OrganizationCreatorProfile,
+          on: a.organization_creator_profile_id == p.id,
+        join: m in OrganizationMember,
+          on: m.user_id == a.user_id and m.organization_id == ^organization_id,
+        where: p.organization_id == ^organization_id and p.scope == "streamer",
+        select: a.user_id
+      )
+
     from(m in OrganizationMember,
-      where: m.organization_id == ^organization_id and m.is_restricted == true
+      where: m.organization_id == ^organization_id and m.is_restricted == true,
+      where: m.user_id not in subquery(members_with_streamer_profile)
     )
     |> Repo.update_all(set: [branding_profile_id: branding_profile_id])
   end

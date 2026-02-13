@@ -55,6 +55,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 tauri-plugin-updater = { version = "2.3", default-features = false, features = ["rustls-tls"] }
 tauri-plugin-process = "2.3"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-fs = "2"
 log = "0.4"
 # Text-to-image rendering for advanced text overlays (chat bubbles, gradients, glows)
 resvg = "0.44"
