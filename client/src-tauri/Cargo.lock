@@ -1476,8 +1476,7 @@ dependencies = [
 [[package]]
 name = "ffmpeg-sys-the-third"
 version = "4.0.0+ffmpeg-8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fc211d0448e9ba775923b7cac39c19d350b47b4994b658f096cd0232d09ef97"
+source = "git+https://github.com/shssoichiro/ffmpeg-the-third.git?rev=b4ec43b#b4ec43be8eef2d699c774cf496b440b5a2a9bce5"
 dependencies = [
  "bindgen",
  "cc",

@@ -135,7 +135,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ contains(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -160,7 +160,7 @@ jobs:
       # Download sidecar binaries (ffmpeg, node, yt-dlp) before Tauri build
       # build.rs will skip downloading since files already exist
       - name: Download sidecar binaries (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         run: |
           BINARIES_DIR="client/src-tauri/binaries"
           mkdir -p "$BINARIES_DIR"
@@ -320,7 +320,7 @@ jobs:
 
       # Sign native .node binaries AND sidecar binaries for macOS notarization
       - name: Sign native modules and sidecar binaries (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -378,16 +378,51 @@ jobs:
 
       # Install build tools for FFmpeg static compilation (ffmpeg-the-third crate with build feature)
       - name: Install FFmpeg build tools (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         run: |
           # nasm is required for FFmpeg x86 assembly optimizations during source compilation
           brew install nasm pkg-config
           echo "Build tools installed: nasm=$(nasm -v 2>&1 | head -1), pkg-config=$(pkg-config --version)"
 
+      # Cross-compile FFmpeg from source for x86_64 on ARM runner.
+      # ffmpeg-sys-the-third's build-from-source doesn't handle macOS cross-compilation,
+      # so we compile manually and use FFMPEG_DIR + static linking instead.
+      - name: Cross-compile FFmpeg for x86_64 (macOS Intel)
+        if: contains(matrix.platform, 'macos') && contains(matrix.args, 'x86_64')
+        run: |
+          FFMPEG_INSTALL="${{ github.workspace }}/client/src-tauri/ffmpeg-x86_64"
+          FFMPEG_SRC="$RUNNER_TEMP/ffmpeg-src"
+
+          git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg.git "$FFMPEG_SRC"
+          cd "$FFMPEG_SRC"
+
+          ./configure \
+            --prefix="$FFMPEG_INSTALL" \
+            --arch=x86_64 \
+            --enable-cross-compile \
+            --target-os=darwin \
+            --cc="clang -arch x86_64" \
+            --extra-cflags="-arch x86_64" \
+            --extra-ldflags="-arch x86_64" \
+            --enable-static \
+            --disable-shared \
+            --disable-programs \
+            --disable-doc \
+            --disable-autodetect \
+            --enable-pic \
+            --disable-avdevice \
+            --disable-avfilter
+
+          make -j$(sysctl -n hw.ncpu)
+          make install
+
+          echo "FFmpeg x86_64 installed to: $FFMPEG_INSTALL"
+          ls -la "$FFMPEG_INSTALL/lib/"
+
       # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
       # Also remove ffmpeg-libs from resources on macOS (static linking = no dylibs to bundle)
       - name: Skip frontend rebuild (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         run: |
           jq '.build.beforeBuildCommand = "" | .bundle.resources = [.bundle.resources[] | select(. != "ffmpeg-libs/*")]' client/src-tauri/tauri.conf.json > tmp.json && mv tmp.json client/src-tauri/tauri.conf.json
 
@@ -430,8 +465,9 @@ jobs:
           $config | ConvertTo-Json -Depth 10 | Set-Content client/src-tauri/tauri.conf.json
 
       # Use tauri-action for all platforms (handles CLI installation efficiently)
-      - name: Build Tauri App (macOS)
-        if: matrix.platform == 'macos-latest'
+      # macOS aarch64: native build, ffmpeg-sys-the-third compiles FFmpeg from source
+      - name: Build Tauri App (macOS aarch64)
+        if: contains(matrix.platform, 'macos') && contains(matrix.args, 'aarch64')
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -445,6 +481,25 @@ jobs:
         with:
           projectPath: client
           args: ${{ matrix.args }} --features ffmpeg-static
+
+      # macOS x86_64: cross-compile, using prebuilt FFmpeg libs (ffmpeg-sys-the-third
+      # can't cross-compile from ARM to x86_64 due to broken cross-prefix detection)
+      - name: Build Tauri App (macOS x86_64)
+        if: contains(matrix.platform, 'macos') && contains(matrix.args, 'x86_64')
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          FFMPEG_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-x86_64
+        with:
+          projectPath: client
+          args: ${{ matrix.args }} --features ffmpeg-static-prebuilt
 
       - name: Build Tauri App (Windows)
         if: matrix.platform == 'windows-latest'
@@ -461,7 +516,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Upload artifacts to public releases repo (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
@@ -490,7 +545,7 @@ jobs:
           fi
 
       - name: Generate latest.json for macOS
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         shell: bash
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
@@ -558,7 +613,7 @@ jobs:
           } | ConvertTo-Json -Depth 10 | Out-File -FilePath "$outputDir/latest.json" -Encoding utf8
 
       - name: Upload latest.json artifact (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         uses: actions/upload-artifact@v4
         with:
           name: latest-json-${{ matrix.artifact_suffix }}
