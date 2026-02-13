@@ -11,6 +11,21 @@ use tauri::Emitter;
 
 use crate::storage;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+/// On Windows, set CREATE_NO_WINDOW flag to prevent a visible console window.
+/// On other platforms, this is a no-op.
+#[cfg(target_os = "windows")]
+fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
+    cmd.creation_flags(0x08000000) // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
+    cmd
+}
+
 // Recording state management
 #[derive(Debug)]
 struct KickRecordingEntry {
@@ -335,8 +350,8 @@ fn resolve_ytdlp_binary() -> Result<String, String> {
 pub async fn check_ytdlp_available() -> Result<bool, String> {
     let ytdlp_path = resolve_ytdlp_binary()?;
     
-    let output = tokio::process::Command::new(&ytdlp_path)
-        .arg("--version")
+    let output = no_window(tokio::process::Command::new(&ytdlp_path)
+        .arg("--version"))
         .output()
         .await;
 
@@ -351,8 +366,8 @@ pub async fn check_ytdlp_available() -> Result<bool, String> {
 pub async fn get_ytdlp_version() -> Result<String, String> {
     let ytdlp_path = resolve_ytdlp_binary()?;
     
-    let output = tokio::process::Command::new(&ytdlp_path)
-        .arg("--version")
+    let output = no_window(tokio::process::Command::new(&ytdlp_path)
+        .arg("--version"))
         .output()
         .await
         .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
@@ -553,6 +568,7 @@ async fn run_kick_recorder(
     // yt-dlp <url> -o - outputs raw video to stdout
     // Pass full path to ffmpeg binary (yt-dlp accepts either directory or full binary path)
     let mut ytdlp_cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut ytdlp_cmd);
     ytdlp_cmd
         .arg(&kick_url)
         .arg("-o").arg("-")  // Output to stdout
@@ -583,6 +599,7 @@ async fn run_kick_recorder(
 
     // Spawn FFmpeg to read from yt-dlp's stdout and output HLS
     let mut ffmpeg_cmd = tokio::process::Command::new(&ffmpeg_path);
+    no_window(&mut ffmpeg_cmd);
     ffmpeg_cmd
         .arg("-i").arg("pipe:0")       // Read from stdin (piped from yt-dlp)
         .arg("-c").arg("copy")         // Copy codec (no re-encoding)

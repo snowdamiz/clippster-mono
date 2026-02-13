@@ -77,11 +77,28 @@ async fn run_segment_download_with_encoder(
     let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
     
     let preset = if encoder == "libx264" { "ultrafast" } else { "fast" };
+    let is_hls = video_url.contains(".m3u8") || video_url.contains("/playlist/");
     
-    let (mut rx, child) = cmd.args([
-        "-ss", &format!("{:.3}", start_time),
+    let start_time_str = format!("{:.3}", start_time);
+    let segment_duration_str = format!("{:.3}", segment_duration);
+    let referer_header = "Referer: https://kick.com\r\nOrigin: https://kick.com\r\n";
+    let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    
+    let mut args: Vec<&str> = Vec::new();
+    // HLS-specific input options must come before -i
+    if is_hls {
+        args.extend_from_slice(&[
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "5",
+            "-headers", referer_header,
+            "-user_agent", user_agent,
+        ]);
+    }
+    args.extend_from_slice(&[
+        "-ss", &start_time_str,
         "-i", video_url,
-        "-t", &format!("{:.3}", segment_duration),
+        "-t", &segment_duration_str,
         "-c:v", encoder,
         "-preset", preset,
         "-c:a", "aac",
@@ -91,10 +108,12 @@ async fn run_segment_download_with_encoder(
         "-avoid_negative_ts", "make_zero",
         "-movflags", "+faststart",
         "-progress", "pipe:2",
-        "-v", "warning",  // Changed from error to warning to capture more info
+        "-v", "warning",
         "-y",
         output_path,
-    ]).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
+    ]);
+    
+    let (mut rx, child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
 
     // Store process handle for cancellation
     {
@@ -234,10 +253,24 @@ async fn run_full_download_with_encoder(
     let cmd = shell.sidecar("ffmpeg").map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?;
     
     let preset = if encoder == "libx264" { "ultrafast" } else { "fast" };
+    let is_hls = video_url.contains(".m3u8") || video_url.contains("/playlist/");
+    let referer_header = "Referer: https://kick.com\r\nOrigin: https://kick.com\r\n";
+    let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
     
     // Build args based on whether we're copying or encoding
-    let args: Vec<&str> = if use_copy_codec {
-        vec![
+    let mut args: Vec<&str> = Vec::new();
+    // HLS-specific input options must come before -i
+    if is_hls {
+        args.extend_from_slice(&[
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "5",
+            "-headers", referer_header,
+            "-user_agent", user_agent,
+        ]);
+    }
+    if use_copy_codec {
+        args.extend_from_slice(&[
             "-i", video_url,
             "-c:v", "copy",
             "-c:a", "aac",
@@ -250,9 +283,9 @@ async fn run_full_download_with_encoder(
             "-y",
             "-bsf:a", "aac_adtstoasc",
             output_path,
-        ]
+        ]);
     } else {
-        vec![
+        args.extend_from_slice(&[
             "-i", video_url,
             "-c:v", encoder,
             "-preset", preset,
@@ -266,8 +299,8 @@ async fn run_full_download_with_encoder(
             "-v", "warning",
             "-y",
             output_path,
-        ]
-    };
+        ]);
+    }
     
     let (mut rx, child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
 
@@ -840,14 +873,21 @@ pub async fn download_pumpfun_vod(
 
         // First, get video info to get duration
         println!("[Rust] Running ffmpeg to get video info for URL: {}", video_url);
+        let is_hls_probe = video_url.contains(".m3u8") || video_url.contains("/playlist/");
+        let mut probe_args: Vec<&str> = Vec::new();
+        if is_hls_probe {
+            probe_args.extend_from_slice(&[
+                "-reconnect", "1",
+                "-reconnect_streamed", "1",
+                "-reconnect_delay_max", "5",
+                "-headers", "Referer: https://kick.com\r\nOrigin: https://kick.com\r\n",
+                "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            ]);
+        }
+        probe_args.extend_from_slice(&["-i", &video_url, "-f", "null", "-t", "1", "-"]);
         let info_output = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
-                match ffmpeg.args([
-                    "-i", &video_url,
-                    "-f", "null",
-                    "-t", "1",
-                    "-"
-                ]).output().await {
+                match ffmpeg.args(probe_args).output().await {
                     Ok(output) => output,
                     Err(e) => return Err(format!("Failed to run ffmpeg info: {}", e))
                 }
@@ -1520,14 +1560,21 @@ pub async fn download_kick_vod(
 
         // First, get video info to get duration
         println!("[Rust] Running ffmpeg to get video info for URL: {}", video_url);
+        let is_hls_probe = video_url.contains(".m3u8") || video_url.contains("/playlist/");
+        let mut probe_args: Vec<&str> = Vec::new();
+        if is_hls_probe {
+            probe_args.extend_from_slice(&[
+                "-reconnect", "1",
+                "-reconnect_streamed", "1",
+                "-reconnect_delay_max", "5",
+                "-headers", "Referer: https://kick.com\r\nOrigin: https://kick.com\r\n",
+                "-user_agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            ]);
+        }
+        probe_args.extend_from_slice(&["-i", &video_url, "-f", "null", "-t", "1", "-"]);
         let info_output = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
-                match ffmpeg.args([
-                    "-i", &video_url,
-                    "-f", "null",
-                    "-t", "1",
-                    "-"
-                ]).output().await {
+                match ffmpeg.args(probe_args).output().await {
                     Ok(output) => output,
                     Err(e) => return Err(format!("Failed to run ffmpeg info: {}", e))
                 }

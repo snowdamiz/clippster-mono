@@ -61,6 +61,15 @@ export async function getClipCampaignId(clipId: string): Promise<number | null> 
   return result[0]?.campaign_id || null;
 }
 
+export async function getProjectCampaignId(projectId: string): Promise<number | null> {
+  const db = await getDatabase();
+  const result = await db.select<{ campaign_id: number | null }[]>(
+    'SELECT campaign_id FROM clips WHERE project_id = ? AND campaign_id IS NOT NULL LIMIT 1',
+    [projectId]
+  );
+  return result[0]?.campaign_id || null;
+}
+
 export async function getAllClips(): Promise<Clip[]> {
   const db = await getDatabase();
   const userId = getCurrentUserId();

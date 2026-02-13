@@ -14,8 +14,8 @@ import type { StickerNodeParams } from "../../renderer/nodes/sticker-node";
 import { CaptionNode } from "../../renderer/nodes/caption-node";
 import type { CaptionNodeParams } from "../../renderer/nodes/caption-node";
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
-import { resolveWatermarkById } from "@/services/database/watermarks";
-import { getIntroOutroById } from "@/services/database/intro-outros";
+import { resolveWatermarkById, resolveOverlayImagePath } from "@/services/database/watermarks";
+import { resolveIntroOutroById } from "@/services/database/intro-outros";
 
 interface TauriAnimationData {
 	anim_type: string;
@@ -721,18 +721,32 @@ export class RendererManager {
 				}
 			}
 
-			// Resolve layout overlays
+			// Resolve layout overlays — org overlays use assetId (org-asset-{serverId}) resolved via org asset system
 			const overlayConfigs = getOverlaysForCanvasSize(canvasSize.width, canvasSize.height);
 			if (overlayConfigs && overlayConfigs.length > 0) {
-				result.overlays = overlayConfigs.map(oc => ({
-					image_path: oc.imagePath,
-					x: oc.x,
-					y: oc.y,
-					scale: oc.scale,
-					opacity: oc.opacity,
-					rotation: oc.rotation,
-					is_full_frame: oc.isFullFrameOverlay ?? false,
-				}));
+				const resolvedOverlays: TauriBrandingOverlay[] = [];
+				for (const oc of overlayConfigs) {
+					const resolvedPath = await resolveOverlayImagePath(
+						oc.imagePath,
+						oc.assetId,
+					);
+					if (resolvedPath) {
+						resolvedOverlays.push({
+							image_path: resolvedPath,
+							x: oc.x,
+							y: oc.y,
+							scale: oc.scale,
+							opacity: oc.opacity,
+							rotation: oc.rotation,
+							is_full_frame: oc.isFullFrameOverlay ?? false,
+						});
+					} else {
+						console.warn("[Export] Skipping overlay with unresolvable image:", oc.id);
+					}
+				}
+				if (resolvedOverlays.length > 0) {
+					result.overlays = resolvedOverlays;
+				}
 			}
 
 			if (!aspectRatio) {
@@ -747,10 +761,10 @@ export class RendererManager {
 					result.introPath = introConfig.filePath;
 					result.introDuration = introConfig.duration ?? null;
 				} else {
-					const introAsset = await getIntroOutroById(introConfig.assetId);
-					if (introAsset) {
-						result.introPath = introAsset.file_path;
-						result.introDuration = introAsset.duration ?? null;
+					const introResolved = await resolveIntroOutroById(introConfig.assetId);
+					if (introResolved) {
+						result.introPath = introResolved.filePath;
+						result.introDuration = introResolved.duration ?? null;
 					}
 				}
 			}
@@ -762,10 +776,10 @@ export class RendererManager {
 					result.outroPath = outroConfig.filePath;
 					result.outroDuration = outroConfig.duration ?? null;
 				} else {
-					const outroAsset = await getIntroOutroById(outroConfig.assetId);
-					if (outroAsset) {
-						result.outroPath = outroAsset.file_path;
-						result.outroDuration = outroAsset.duration ?? null;
+					const outroResolved = await resolveIntroOutroById(outroConfig.assetId);
+					if (outroResolved) {
+						result.outroPath = outroResolved.filePath;
+						result.outroDuration = outroResolved.duration ?? null;
 					}
 				}
 			}

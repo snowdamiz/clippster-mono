@@ -656,7 +656,7 @@
     | (WatermarkImage & { assetType: 'watermark'; isOrgAsset?: false })
     | (AudioAsset & { assetType: 'audio'; isOrgAsset?: false })
     | (ImageAsset & { assetType: 'image'; isOrgAsset?: false })
-    | (ServerOrganizationAsset & { assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image'; isOrgAsset: true });
+    | (ServerOrganizationAsset & { assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image' | 'overlay'; isOrgAsset: true });
 
   const assets = ref<IntroOutro[]>([]);
   const watermarks = ref<WatermarkImage[]>([]);

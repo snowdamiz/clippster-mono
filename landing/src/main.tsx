@@ -24,6 +24,7 @@ const OAuthCallbackPage = lazy(() => import('./pages/auth/OAuthCallbackPage').th
 
 // Dashboard layout
 const DashboardLayout = lazy(() => import('./layouts/DashboardLayout').then(m => ({ default: m.DashboardLayout })))
+const DashboardIndex = lazy(() => import('./pages/dashboard/DashboardIndex').then(m => ({ default: m.DashboardIndex })))
 
 // Dashboard pages
 const OrgHub = lazy(() => import('./pages/dashboard/OrgHub').then(m => ({ default: m.OrgHub })))
@@ -74,6 +75,14 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
 
                 {/* Protected dashboard routes */}
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute>
+                      <DashboardIndex />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route
                   path="/dashboard/org/:id"
                   element={

@@ -62,9 +62,9 @@
                   {{ enabledRatios[currentAspectRatio] ? 'Enabled' : 'Disabled' }}
                 </span>
                 <button
-                  @click="toggleCurrentRatio"
+                  @click="!readOnly && toggleCurrentRatio()"
                   class="relative w-9 h-5 rounded-full transition-colors border border-[var(--sidebar-border)]"
-                  :class="enabledRatios[currentAspectRatio] ? 'bg-[var(--sidebar-accent)]' : 'bg-[var(--sidebar-hover)]'"
+                  :class="[enabledRatios[currentAspectRatio] ? 'bg-[var(--sidebar-accent)]' : 'bg-[var(--sidebar-hover)]', readOnly ? 'opacity-50 cursor-not-allowed' : '']"
                 >
                   <span
                     class="absolute top-0.5 left-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-transform"
@@ -79,8 +79,7 @@
               <!-- Watermark Selection -->
               <div class="flex-1 relative">
                 <button
-                  type="button"
-                  @click.stop="showWatermarkDropdown = !showWatermarkDropdown"
+                  @click.stop="!readOnly && (showWatermarkDropdown = !showWatermarkDropdown)"
                   class="w-full px-2.5 py-2 bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] rounded-lg text-left flex items-center justify-between hover:border-[var(--sidebar-text-muted)] transition-all text-xs text-[var(--sidebar-text)]"
                 >
                   <div class="flex items-center gap-2">
@@ -171,11 +170,13 @@
 
               <!-- Full-Frame Overlay Toggle -->
               <label
-                class="flex items-center gap-2 px-2.5 py-2 bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] rounded-lg cursor-pointer hover:border-[var(--sidebar-text-muted)] transition-all flex-shrink-0"
+                class="flex items-center gap-2 px-2.5 py-2 bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] rounded-lg transition-all flex-shrink-0"
+                :class="readOnly ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-[var(--sidebar-text-muted)]'"
               >
                 <input
                   type="checkbox"
                   :checked="fullFrameOverlayRatios[currentAspectRatio]"
+                  :disabled="readOnly"
                   @change="toggleFullFrameOverlay"
                   class="w-3.5 h-3.5 rounded border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] text-[var(--sidebar-accent)] focus:ring-[var(--sidebar-accent)] focus:ring-offset-[var(--sidebar-surface)]"
                 />
@@ -194,8 +195,8 @@
                     : 'cursor-not-allowed border-[var(--sidebar-border)] opacity-50',
                 ]"
                 :style="previewContainerStyle"
-                @mousedown.prevent="enabledRatios[currentAspectRatio] && startDrag($event)"
-                @mousemove="enabledRatios[currentAspectRatio] && handleDrag($event)"
+                @mousedown.prevent="!readOnly && enabledRatios[currentAspectRatio] && startDrag($event)"
+                @mousemove="!readOnly && enabledRatios[currentAspectRatio] && handleDrag($event)"
                 @mouseup="endDrag"
                 @mouseleave="endDrag"
               >
@@ -247,7 +248,7 @@
                   />
                   <!-- Resize Handles -->
                   <div
-                    v-if="!fullFrameOverlayRatios[currentAspectRatio] && enabledRatios[currentAspectRatio]"
+                    v-if="!readOnly && !fullFrameOverlayRatios[currentAspectRatio] && enabledRatios[currentAspectRatio]"
                     class="absolute inset-0 pointer-events-none"
                   >
                     <!-- Top Left -->
@@ -293,7 +294,7 @@
             </div>
 
             <!-- Controls Row -->
-            <div :class="{ 'opacity-50 pointer-events-none': !enabledRatios[currentAspectRatio] }">
+            <div :class="{ 'opacity-50 pointer-events-none': !enabledRatios[currentAspectRatio] || readOnly }">
               <div class="flex items-center gap-6 flex-wrap">
                 <!-- Quick positions -->
                 <div
@@ -348,6 +349,7 @@
               Cancel
             </button>
             <button
+              v-if="!readOnly"
               @click="savePosition"
               class="px-4 py-2 bg-gradient-to-br from-[var(--sidebar-accent)] to-[#0891b2] hover:opacity-90 text-white rounded-lg font-medium transition-all text-sm"
             >
@@ -414,6 +416,7 @@
     watermarkWidth?: number | null;
     watermarkHeight?: number | null;
     settings?: CreatorWatermarkSettings;
+    readOnly?: boolean;
   }
 
   const props = withDefaults(defineProps<Props>(), {

@@ -2730,23 +2730,22 @@
         }
       }
 
-      // If no project-level settings, try creator profile lookup
+      // If no project-level settings, try branding profile resolution (includes org/campaign/local profiles)
       if (!watermarkId) {
-        // Get the creator profile for the segment (not the parent folder)
-        let creatorProfile = await getCreatorProfileByProjectId(segmentProjectId);
+        let creatorProfile = await resolveBrandingProfile(segmentProjectId);
         console.log(
-          '[Projects] loadPreviewWatermark: Creator profile for segment',
+          '[Projects] loadPreviewWatermark: Branding profile for segment',
           segmentProjectId,
           ':',
-          creatorProfile
+          creatorProfile?.name || null
         );
 
-        // If no creator profile on segment, try the parent folder as fallback
+        // If no branding profile on segment, try the parent folder as fallback
         if (!creatorProfile) {
           const project = projects.value.find((p) => p.id === segmentProjectId);
           if (project?.parent_id) {
-            creatorProfile = await getCreatorProfileByProjectId(project.parent_id);
-            console.log('[Projects] loadPreviewWatermark: Fallback to parent', project.parent_id, ':', creatorProfile);
+            creatorProfile = await resolveBrandingProfile(project.parent_id);
+            console.log('[Projects] loadPreviewWatermark: Fallback to parent', project.parent_id, ':', creatorProfile?.name || null);
           }
         }
 
@@ -7309,7 +7308,7 @@
   .folder-dialog__player-watermark {
     position: absolute;
     pointer-events: none;
-    z-index: 10;
+    z-index: 1;
     transition: opacity 300ms ease;
   }
 
@@ -7325,6 +7324,7 @@
     bottom: 0;
     left: 0;
     right: 0;
+    z-index: 2;
     background-color: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(4px);
     opacity: 0;

@@ -40,6 +40,7 @@
               @click="
                 openPlatformDropdown = null;
                 openAssetDropdown = null;
+                showOverlayDropdown = false;
               "
             >
               <!-- Basic Info Section -->
@@ -236,7 +237,7 @@
               </div>
 
               <!-- Asset Selection Section -->
-              <div class="org-dialog__section" @click.stop="openAssetDropdown = null">
+              <div class="org-dialog__section" @click.stop="openAssetDropdown = null; showOverlayDropdown = false">
                 <h3 class="org-dialog__section-title">Default Assets</h3>
                 <p class="org-dialog__section-desc">
                   {{ formData.scope === 'global'
@@ -508,94 +509,126 @@
                       Position configured for {{ getConfiguredRatiosCount() }} aspect ratio(s)
                     </p>
                   </div>
-                </div>
 
-                <!-- Layout Overlays Section -->
-                <div class="org-dialog__asset-row">
-                  <div class="flex items-center justify-between w-full mb-1.5">
-                    <label class="org-dialog__asset-label" style="margin-bottom: 0">
-                      <Layers :size="14" class="inline mr-1 text-amber-400" />
-                      Layout Overlays
-                    </label>
-                    <button
-                      type="button"
-                      @click="addLayoutOverlay"
-                      :disabled="uploadingOverlay"
-                      class="org-dialog__asset-upload"
-                      title="Add overlay image"
-                    >
-                      <Loader2 v-if="uploadingOverlay" :size="14" class="org-dialog__spin" />
-                      <Plus v-else :size="14" />
-                      <span class="text-[10px] ml-0.5">Add</span>
-                    </button>
-                  </div>
-
-                  <!-- Overlay List -->
-                  <div v-if="formData.layout_overlays.length > 0" class="w-full space-y-1.5">
-                    <div
-                      v-for="(overlay, idx) in formData.layout_overlays"
-                      :key="overlay.id"
-                      class="flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-all group"
-                      style="background: var(--sidebar-hover); border-color: var(--sidebar-border)"
-                    >
-                      <!-- Thumbnail -->
-                      <div
-                        class="w-8 h-8 rounded flex-shrink-0 flex items-center justify-center overflow-hidden border"
-                        style="background: var(--sidebar-surface); border-color: var(--sidebar-border)"
-                      >
-                        <img
-                          v-if="overlayPreviews[overlay.id]"
-                          :src="overlayPreviews[overlay.id]"
-                          class="max-w-full max-h-full object-contain"
-                          alt=""
-                        />
-                        <Layers v-else :size="12" class="text-zinc-500" />
-                      </div>
-
-                      <!-- Label + Info -->
-                      <div class="flex-1 min-w-0">
-                        <input
-                          v-model="overlay.label"
-                          class="text-xs bg-transparent border-none outline-none w-full placeholder-zinc-600"
-                          style="color: var(--sidebar-text)"
-                          :placeholder="`Overlay ${idx + 1}`"
-                        />
-                        <div class="text-[10px] font-mono mt-0.5" style="color: var(--sidebar-text-muted)">
-                          {{ overlay.opacity }}% opacity
-                          <span v-if="overlayConfiguredRatioCount(overlay) > 0" class="text-amber-400 ml-1">
-                            · {{ overlayConfiguredRatioCount(overlay) }}/4 ratios
+                  <!-- Layout Overlays Section -->
+                  <div class="org-dialog__asset-row">
+                    <label class="org-dialog__asset-label">Layout Overlays</label>
+                    <div class="org-dialog__asset-controls">
+                      <div class="org-dialog__dropdown-wrapper org-dialog__flex-1">
+                        <button
+                          type="button"
+                          class="org-dialog__asset-select"
+                          :disabled="uploadingOverlay"
+                          @click.stop="showOverlayDropdown = !showOverlayDropdown"
+                        >
+                          <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--overlay">
+                            <Layers :size="14" />
+                          </div>
+                          <span class="org-dialog__asset-select-label">
+                            {{ formData.layout_overlays.length > 0
+                              ? `${formData.layout_overlays.length} overlay${formData.layout_overlays.length > 1 ? 's' : ''}`
+                              : 'No overlays' }}
                           </span>
+                          <ChevronDown
+                            class="org-dialog__chevron"
+                            :class="{ 'org-dialog__chevron--open': showOverlayDropdown }"
+                          />
+                        </button>
+
+                        <!-- Overlay Dropdown -->
+                        <div
+                          v-if="showOverlayDropdown"
+                          class="org-dialog__dropdown org-dialog__dropdown--full"
+                          @click.stop
+                        >
+                          <div class="org-dialog__dropdown-list org-dialog__dropdown-list--scrollable">
+                            <button
+                              v-if="formData.layout_overlays.length === 0"
+                              type="button"
+                              class="org-dialog__dropdown-item org-dialog__dropdown-item--active"
+                              disabled
+                            >
+                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--none">
+                                <X :size="14" />
+                              </div>
+                              <span class="org-dialog__text-muted">No overlays added</span>
+                            </button>
+                            <div
+                              v-for="(overlay, idx) in formData.layout_overlays"
+                              :key="overlay.id"
+                              class="org-dialog__dropdown-item org-dialog__dropdown-item--overlay"
+                            >
+                              <div class="org-dialog__overlay-thumb">
+                                <img
+                                  v-if="overlayPreviews[overlay.id]"
+                                  :src="overlayPreviews[overlay.id]"
+                                  class="org-dialog__overlay-thumb-img"
+                                  alt=""
+                                />
+                                <Layers v-else :size="12" style="color: var(--sidebar-text-muted)" />
+                              </div>
+                              <div class="org-dialog__overlay-info">
+                                <input
+                                  v-model="overlay.label"
+                                  class="org-dialog__overlay-name"
+                                  :placeholder="`Overlay ${idx + 1}`"
+                                  @click.stop
+                                />
+                                <span class="org-dialog__overlay-meta">
+                                  {{ overlay.opacity }}% opacity
+                                  <template v-if="overlayConfiguredRatioCount(overlay) > 0">
+                                    · {{ overlayConfiguredRatioCount(overlay) }}/4 ratios
+                                  </template>
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                @click.stop="openOverlayPositionPicker(idx)"
+                                class="org-dialog__overlay-action"
+                                :class="{ 'org-dialog__overlay-action--active': overlayConfiguredRatioCount(overlay) > 0 }"
+                                title="Configure position per aspect ratio"
+                              >
+                                <Settings2 :size="14" />
+                              </button>
+                              <button
+                                type="button"
+                                @click.stop="removeLayoutOverlay(idx)"
+                                class="org-dialog__overlay-action org-dialog__overlay-action--danger"
+                                title="Remove overlay"
+                              >
+                                <Trash2 :size="14" />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
-
-                      <!-- Controls -->
-                      <div class="flex items-center gap-1">
-                        <button
-                          type="button"
-                          @click="openOverlayPositionPicker(idx)"
-                          class="px-1.5 py-1 text-[10px] font-medium rounded transition-colors flex items-center gap-0.5"
-                          style="color: var(--sidebar-accent); background: rgba(var(--sidebar-accent-rgb, 6, 182, 212), 0.1)"
-                          title="Configure position per aspect ratio"
-                        >
-                          <Move :size="10" />
-                          Position
-                        </button>
-                        <button
-                          type="button"
-                          @click="removeLayoutOverlay(idx)"
-                          class="p-1 rounded transition-colors opacity-0 group-hover:opacity-100"
-                          style="color: var(--sidebar-text-muted)"
-                          title="Remove overlay"
-                        >
-                          <Trash2 :size="12" />
-                        </button>
-                      </div>
+                      <!-- Configure position button -->
+                      <button
+                        type="button"
+                        @click="openOverlayPositionPicker(0)"
+                        :disabled="formData.layout_overlays.length === 0"
+                        class="org-dialog__asset-upload"
+                        :class="{ 'org-dialog__asset-upload--active': totalOverlayRatios > 0 }"
+                        title="Configure overlay position"
+                      >
+                        <Settings2 :size="16" />
+                      </button>
+                      <button
+                        type="button"
+                        @click="addLayoutOverlay"
+                        :disabled="uploadingOverlay"
+                        class="org-dialog__asset-upload"
+                        title="Upload new overlay"
+                      >
+                        <Loader2 v-if="uploadingOverlay" :size="16" class="org-dialog__spin" />
+                        <Upload v-else :size="16" />
+                      </button>
                     </div>
+                    <p v-if="formData.layout_overlays.length > 0" class="org-dialog__asset-hint">
+                      <Layers :size="12" />
+                      {{ totalOverlayRatios }} aspect ratio(s) configured across {{ formData.layout_overlays.length }} overlay(s)
+                    </p>
                   </div>
-
-                  <p v-else class="text-[10px] w-full" style="color: var(--sidebar-text-muted)">
-                    No overlays added. Click + Add to upload an overlay image.
-                  </p>
                 </div>
               </div>
             </div>
@@ -685,7 +718,6 @@
     Sparkles,
     Paintbrush,
     Layers,
-    Move,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
@@ -837,6 +869,7 @@
 
   // Overlay state
   const overlayPreviews = ref<Record<string, string>>({});
+  const showOverlayDropdown = ref(false);
   const showOverlayPositionPicker = ref(false);
   const activeOverlayIndex = ref(-1);
   const uploadingOverlay = ref(false);
@@ -851,6 +884,10 @@
     const s = overlay.perRatioSettings;
     return [s['16:9'], s['9:16'], s['1:1'], s['4:5']].filter((v) => v !== null && v !== undefined).length;
   }
+
+  const totalOverlayRatios = computed(() => {
+    return formData.value.layout_overlays.reduce((sum, o) => sum + overlayConfiguredRatioCount(o), 0);
+  });
 
   // Intro/Outro ratio picker state
   const showIntroOutroRatioPicker = ref(false);
@@ -1322,6 +1359,15 @@
   // ============================================
 
   async function loadOverlayPreview(overlay: LayoutOverlay) {
+    // For org overlays with assetId, find the server URL from orgAssets
+    if (overlay.assetId && props.mode === 'organization') {
+      const asset = orgAssets.value.find(a => a.id === overlay.assetId);
+      if (asset?.url) {
+        overlayPreviews.value[overlay.id] = asset.url;
+        return;
+      }
+    }
+    // For local overlays, read from disk
     if (!overlay.imagePath) return;
     try {
       const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: overlay.imagePath });
@@ -1349,23 +1395,65 @@
       });
       if (!result) return;
       const filePath = result as string;
+      const fileName = filePath.split(/[\\\/]/).pop() || 'overlay';
+      const assetName = fileName.replace(/\.[^/.]+$/, '');
 
-      const newOverlay: LayoutOverlay = {
-        id: crypto.randomUUID(),
-        imagePath: filePath,
-        x: 50,
-        y: 50,
-        width: 100,
-        height: 10,
-        opacity: 100,
-        rotation: 0,
-        label: '',
-      };
+      if (props.mode === 'organization' && props.organizationId) {
+        // Org mode: upload as org asset, store assetId + server URL
+        const ext = fileName.split('.').pop()?.toLowerCase() || 'png';
+        const mimeMap: Record<string, string> = {
+          png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+          webp: 'image/webp', svg: 'image/svg+xml', gif: 'image/gif',
+        };
+        const bytes = await readFile(filePath);
+        const file = new File([bytes], fileName, { type: mimeMap[ext] || 'image/png' });
+        const dimensions = await extractImageDimensions(file);
+        const response = await uploadOrganizationAsset(props.organizationId, file, 'overlay', {
+          name: assetName,
+          width: dimensions.width ?? undefined,
+          height: dimensions.height ?? undefined,
+        });
 
-      formData.value.layout_overlays.push(newOverlay);
-      await loadOverlayPreview(newOverlay);
-    } catch (err) {
+        if (response.success && response.asset) {
+          orgAssets.value.push(response.asset);
+          const newOverlay: LayoutOverlay = {
+            id: crypto.randomUUID(),
+            imagePath: '',
+            assetId: response.asset.id,
+            x: 50,
+            y: 50,
+            width: 100,
+            height: 10,
+            opacity: 100,
+            rotation: 0,
+            label: assetName,
+          };
+          formData.value.layout_overlays.push(newOverlay);
+          // Use server URL for preview
+          overlayPreviews.value[newOverlay.id] = response.asset.url;
+          showSuccess('Overlay Uploaded', `"${assetName}" has been uploaded`);
+        } else {
+          showError('Upload Failed', response.error || 'Failed to upload overlay');
+        }
+      } else {
+        // Local mode: store local file path directly
+        const newOverlay: LayoutOverlay = {
+          id: crypto.randomUUID(),
+          imagePath: filePath,
+          x: 50,
+          y: 50,
+          width: 100,
+          height: 10,
+          opacity: 100,
+          rotation: 0,
+          label: assetName,
+        };
+        formData.value.layout_overlays.push(newOverlay);
+        await loadOverlayPreview(newOverlay);
+      }
+    } catch (err: any) {
       console.error('[ProfileDialog] Failed to add overlay:', err);
+      showError('Upload Failed', err.message || 'Failed to add overlay');
     } finally {
       uploadingOverlay.value = false;
     }
@@ -2665,6 +2753,102 @@
   .org-dialog__asset-upload--active {
     border-color: rgba(245, 158, 11, 0.5);
     color: #f59e0b;
+  }
+
+  .org-dialog__asset-upload--danger:hover:not(:disabled) {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border-color: rgba(239, 68, 68, 0.3);
+  }
+
+  .org-dialog__asset-select-icon--overlay {
+    background-color: #f59e0b;
+  }
+
+  /* ===== Overlay Dropdown Items ===== */
+  .org-dialog__dropdown-item--overlay {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    cursor: default;
+  }
+
+  .org-dialog__overlay-thumb {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .org-dialog__overlay-thumb-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .org-dialog__overlay-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .org-dialog__overlay-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 150ms ease;
+  }
+
+  .org-dialog__overlay-action:hover {
+    background-color: var(--sidebar-active);
+    color: var(--sidebar-text);
+  }
+
+  .org-dialog__overlay-action--active {
+    color: #f59e0b;
+  }
+
+  .org-dialog__overlay-action--danger:hover {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+
+  .org-dialog__overlay-name {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    background: transparent;
+    border: none;
+    outline: none;
+    width: 100%;
+    padding: 0;
+  }
+
+  .org-dialog__overlay-name::placeholder {
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-dialog__overlay-meta {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    font-variant-numeric: tabular-nums;
   }
 
   /* ===== Footer ===== */

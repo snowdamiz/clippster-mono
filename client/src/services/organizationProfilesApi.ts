@@ -52,6 +52,7 @@ export interface ServerOrganizationCreatorProfile {
   watermark_id: number | null;
   watermark_settings: Record<string, unknown> | null;
   layout_overlays: Record<string, unknown>[] | null;
+  scope: 'streamer' | 'global';
   intro: ServerOrganizationAssetRef | null;
   outro: ServerOrganizationAssetRef | null;
   watermark: ServerOrganizationAssetRef | null;
@@ -96,6 +97,30 @@ export interface ListAssignmentsResponse {
   success: boolean;
   assignments: ServerProfileAssignment[];
   error?: string;
+}
+
+// ============================================
+// User's Assigned Profiles
+// ============================================
+
+/**
+ * Fetch all creator profiles assigned to the current user across all their organizations.
+ * Used by branding resolution to find org-assigned streamer profiles.
+ */
+export async function getMyAssignedCreatorProfiles(): Promise<ListProfilesResponse> {
+  try {
+    const response = await api.get<ListProfilesResponse>(
+      '/user/assigned-creator-profiles'
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[OrgProfilesApi] Failed to fetch assigned profiles:', error);
+    return {
+      success: false,
+      profiles: [],
+      error: error.response?.data?.error || error.message || 'Failed to fetch assigned profiles',
+    };
+  }
 }
 
 // ============================================

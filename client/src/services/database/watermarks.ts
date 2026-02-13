@@ -1,6 +1,6 @@
 import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { WatermarkImage } from './types';
-import { getWatermarkByServerId } from './organization-assets';
+import { getWatermarkByServerId, getImageAssetByServerId } from './organization-assets';
 import { getUserOrganizationAssets } from '../organizationAssetsApi';
 import { ensureAssetDownloaded } from '../orgAssetSync';
 
@@ -147,6 +147,85 @@ export async function resolveWatermarkById(
       width: watermark.width ?? null,
       height: watermark.height ?? null,
     };
+  }
+
+  return null;
+}
+
+/**
+ * Resolve all overlay image paths in a layout_overlays array for FFmpeg builds.
+ * Iterates each overlay and ensures imagePath is a valid local file path.
+ * For org overlays with assetId (org-asset-{serverId}), downloads and caches via the org asset system.
+ * Returns null if input is null/empty, or the array with resolved paths.
+ */
+export async function resolveLayoutOverlaysForBuild(
+  overlays: any[] | null | undefined,
+): Promise<any[] | null> {
+  if (!overlays || overlays.length === 0) return null;
+
+  const resolved: any[] = [];
+  for (const overlay of overlays) {
+    const localPath = await resolveOverlayImagePath(
+      overlay.imagePath,
+      overlay.assetId,
+    );
+    if (localPath) {
+      resolved.push({ ...overlay, imagePath: localPath });
+    } else {
+      console.warn('[resolveLayoutOverlaysForBuild] Skipping overlay with unresolvable image:', overlay.id);
+    }
+  }
+  return resolved.length > 0 ? resolved : null;
+}
+
+/**
+ * Resolve an overlay image to a local file path.
+ * Handles:
+ * - Local file paths (returned as-is if they already exist)
+ * - org-asset-{serverId} asset IDs (downloaded/cached via org asset system, like watermarks)
+ * - Empty/missing paths (returns null)
+ *
+ * Used at build time to ensure overlay images are available as local files for FFmpeg.
+ */
+export async function resolveOverlayImagePath(
+  imagePath: string | null | undefined,
+  assetId: string | null | undefined,
+): Promise<string | null> {
+  // If imagePath is a valid local path, use it directly
+  if (imagePath && imagePath.length > 0) {
+    return imagePath;
+  }
+
+  // If we have an org-asset- prefixed ID, resolve via the org asset system (like watermarks)
+  if (assetId && typeof assetId === 'string' && assetId.startsWith('org-asset-')) {
+    const serverId = parseInt(assetId.replace('org-asset-', ''), 10);
+    if (isNaN(serverId)) return null;
+
+    try {
+      // Check local cache first
+      const localAsset = await getImageAssetByServerId(serverId);
+      if (localAsset) {
+        return localAsset.file_path;
+      }
+
+      // Not cached — download from server via org asset system
+      const serverResponse = await getUserOrganizationAssets();
+      if (serverResponse.success && serverResponse.assets) {
+        const serverAsset = serverResponse.assets.find(
+          (a) => a.id === serverId && (a.asset_type === 'overlay' || a.asset_type === 'image')
+        );
+        if (serverAsset && serverAsset.url) {
+          const downloadResult = await ensureAssetDownloaded(serverAsset);
+          if (downloadResult.success && downloadResult.filePath) {
+            return downloadResult.filePath;
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[resolveOverlayImagePath] Failed to download org overlay asset:', error);
+    }
+
+    return null;
   }
 
   return null;
