@@ -6,6 +6,8 @@ defmodule ClippsterServerWeb.UserTwitterAuthController do
 
   use ClippsterServerWeb, :controller
 
+  require Logger
+
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Social.Platforms.Twitter
   alias ClippsterServer.Accounts
@@ -33,6 +35,8 @@ defmodule ClippsterServerWeb.UserTwitterAuthController do
         else
           # Build server callback URL
           server_callback_url = ClippsterServerWeb.Endpoint.url() <> "/api/auth/user-twitter/callback"
+          Logger.info("[UserTwitterAuth] Endpoint.url() = #{ClippsterServerWeb.Endpoint.url()}")
+          Logger.info("[UserTwitterAuth] redirect_uri = #{server_callback_url}")
 
           # Create state with user info
           state = %{
