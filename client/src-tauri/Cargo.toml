@@ -10,9 +10,12 @@ edition = "2021"
 [features]
 default = []
 # Static FFmpeg: compiles FFmpeg from source and links statically.
-# Used in CI to avoid runtime dylib dependencies (macOS notarization, DLL bundling).
+# Used in CI for native builds (macOS aarch64) to avoid runtime dylib dependencies.
 # Local dev uses system FFmpeg (dynamic linking) for faster builds.
 ffmpeg-static = ["ffmpeg-the-third/build"]
+# Static linking against prebuilt FFmpeg libraries (via FFMPEG_DIR).
+# Used for cross-compilation where ffmpeg-sys-the-third's build-from-source is broken.
+ffmpeg-static-prebuilt = ["ffmpeg-the-third/static"]
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
