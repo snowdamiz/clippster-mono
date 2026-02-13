@@ -56,6 +56,31 @@ function sourceLabel(source: ProfileSource): string {
 }
 
 /**
+ * Prefix watermarkId values inside per-ratio watermark_settings with 'org-asset-'.
+ * Server stores raw numeric IDs; the client expects the org-asset- prefix for server assets.
+ */
+function prefixWatermarkSettingsIds(settings: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(settings)) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const config = value as Record<string, unknown>;
+      if (config.watermarkId != null) {
+        const wmId = String(config.watermarkId);
+        result[key] = {
+          ...config,
+          watermarkId: wmId.startsWith('org-asset-') ? wmId : `org-asset-${wmId}`,
+        };
+      } else {
+        result[key] = value;
+      }
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+/**
  * Convert a server org creator profile to the local CreatorProfileWithLinks format.
  */
 function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProfileWithLinks {
@@ -64,10 +89,10 @@ function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProf
     name: sp.name,
     description: sp.description || null,
     profile_image_path: sp.profile_image_url || null,
-    intro_id: sp.intro_id != null ? String(sp.intro_id) : null,
-    outro_id: sp.outro_id != null ? String(sp.outro_id) : null,
-    watermark_id: sp.watermark_id != null ? String(sp.watermark_id) : null,
-    watermark_settings: sp.watermark_settings ? JSON.stringify(sp.watermark_settings) : null,
+    intro_id: sp.intro_id != null ? `org-asset-${sp.intro_id}` : null,
+    outro_id: sp.outro_id != null ? `org-asset-${sp.outro_id}` : null,
+    watermark_id: sp.watermark_id != null ? `org-asset-${sp.watermark_id}` : null,
+    watermark_settings: sp.watermark_settings ? JSON.stringify(prefixWatermarkSettingsIds(sp.watermark_settings)) : null,
     intro_outro_settings: null,
     intro_ratio_settings: null,
     outro_ratio_settings: null,
@@ -100,9 +125,9 @@ function campaignProfileToLocal(cp: CampaignCreatorProfile): CreatorProfileWithL
     name: cp.name,
     description: cp.description || null,
     profile_image_path: cp.profile_image_url || null,
-    intro_id: cp.intro?.id != null ? String(cp.intro.id) : null,
-    outro_id: cp.outro?.id != null ? String(cp.outro.id) : null,
-    watermark_id: cp.watermark?.id != null ? String(cp.watermark.id) : null,
+    intro_id: cp.intro?.id != null ? `org-asset-${cp.intro.id}` : null,
+    outro_id: cp.outro?.id != null ? `org-asset-${cp.outro.id}` : null,
+    watermark_id: cp.watermark?.id != null ? `org-asset-${cp.watermark.id}` : null,
     watermark_settings: cp.watermark_settings ? JSON.stringify(cp.watermark_settings) : null,
     intro_outro_settings: null,
     intro_ratio_settings: null,
@@ -295,6 +320,27 @@ export async function resolveApplicableProfiles(
 }
 
 /**
+ * Whether a profile source is local (exists in SQLite creator_profiles table).
+ * Server-sourced profiles (org/campaign) can't be persisted to selected_branding_profile_id
+ * because it has a FK constraint referencing the local creator_profiles table.
+ */
+function isLocalSource(source: ProfileSource): boolean {
+  return source === 'streamer' || source === 'personal-global';
+}
+
+/**
+ * Persist the branding selection only if the profile exists locally.
+ */
+async function trySaveSelection(projectId: string, candidate: ApplicableProfile): Promise<void> {
+  if (isLocalSource(candidate.source)) {
+    await setProjectBrandingProfile(projectId, candidate.profile.id);
+  } else {
+    // Clear any stale local selection — server-sourced profiles are resolved dynamically
+    await setProjectBrandingProfile(projectId, null);
+  }
+}
+
+/**
  * Main entry point: resolve the effective branding profile for a project.
  * - If already selected and valid → returns it immediately.
  * - If 0 candidates → returns null.
@@ -305,30 +351,34 @@ export async function resolveBrandingProfile(
   projectId: string,
   orgContext?: OrgBrandingContext
 ): Promise<CreatorProfileWithLinks | null> {
-  // Check if project already has a selection
-  const existingId = await getProjectBrandingProfileId(projectId);
-  if (existingId) {
-    const existing = await getCreatorProfile(existingId);
-    if (existing) {
-      console.log('[BrandingProfile] Using previously selected profile:', existing.name);
-      return existing;
-    }
-    // Selected profile was deleted — clear it and re-resolve
-    await setProjectBrandingProfile(projectId, null);
-  }
-
+  // Always run priority resolution first to get the current valid candidates
   const candidates = await resolveApplicableProfiles(projectId, orgContext);
 
   if (candidates.length === 0) {
+    // No candidates — clear any stale selection
+    await setProjectBrandingProfile(projectId, null);
     return null;
+  }
+
+  // Check if project already has a selection AND it's still a valid candidate
+  const existingId = await getProjectBrandingProfileId(projectId);
+  if (existingId) {
+    const stillValid = candidates.find((c) => c.profile.id === existingId);
+    if (stillValid) {
+      console.log('[BrandingProfile] Previously selected profile still valid:', stillValid.profile.name, `(${stillValid.source})`);
+      return stillValid.profile;
+    }
+    // Previously selected profile is no longer a valid candidate — clear it
+    console.log('[BrandingProfile] Previously selected profile', existingId, 'is no longer a valid candidate, re-resolving');
+    await setProjectBrandingProfile(projectId, null);
   }
 
   if (candidates.length === 1) {
     // Auto-select the only option
-    const profile = candidates[0].profile;
-    await setProjectBrandingProfile(projectId, profile.id);
-    console.log('[BrandingProfile] Auto-selected only available profile:', profile.name);
-    return profile;
+    const candidate = candidates[0];
+    await trySaveSelection(projectId, candidate);
+    console.log('[BrandingProfile] Auto-selected only available profile:', candidate.profile.name, `(${candidate.source})`);
+    return candidate.profile;
   }
 
   // Multiple candidates — open selector dialog
@@ -336,7 +386,10 @@ export async function resolveBrandingProfile(
     applicableProfiles.value = candidates;
     pendingResolve.value = async (selected) => {
       if (selected) {
-        await setProjectBrandingProfile(projectId, selected.id);
+        const selectedCandidate = candidates.find((c) => c.profile.id === selected.id);
+        if (selectedCandidate) {
+          await trySaveSelection(projectId, selectedCandidate);
+        }
         console.log('[BrandingProfile] User selected profile:', selected.name);
       }
       resolve(selected);
