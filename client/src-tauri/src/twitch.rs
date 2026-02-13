@@ -16,6 +16,21 @@ use crate::downloads::{
 };
 use crate::ffmpeg_utils::{get_video_info, parse_ffmpeg_time};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+/// On Windows, set CREATE_NO_WINDOW flag to prevent a visible console window.
+/// On other platforms, this is a no-op.
+#[cfg(target_os = "windows")]
+fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
+    cmd.creation_flags(0x08000000) // CREATE_NO_WINDOW
+}
+
+#[cfg(not(target_os = "windows"))]
+fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
+    cmd
+}
+
 // Recording state management
 #[derive(Debug)]
 struct TwitchRecordingEntry {
@@ -246,12 +261,12 @@ pub async fn get_twitch_vods(channel: String, limit: Option<u32>) -> Result<Stri
     // Use yt-dlp to get playlist info
     // Note: We don't use --flat-playlist because it doesn't include upload_date
     // This is slower but provides complete metadata including timestamps
-    let output = tokio::process::Command::new(&ytdlp_path)
+    let output = no_window(tokio::process::Command::new(&ytdlp_path)
         .arg("--dump-json")
         .arg("--skip-download")
         .arg("--playlist-end")
         .arg(limit.to_string())
-        .arg(&twitch_url)
+        .arg(&twitch_url))
         .output()
         .await
         .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
@@ -571,6 +586,7 @@ async fn run_twitch_recorder(
 
     // Spawn yt-dlp to output stream to stdout
     let mut ytdlp_cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut ytdlp_cmd);
     ytdlp_cmd
         .arg(&twitch_url)
         .arg("-o").arg("-")  // Output to stdout
@@ -601,6 +617,7 @@ async fn run_twitch_recorder(
 
     // Spawn FFmpeg to read from yt-dlp's stdout and output HLS
     let mut ffmpeg_cmd = tokio::process::Command::new(&ffmpeg_path);
+    no_window(&mut ffmpeg_cmd);
     ffmpeg_cmd
         .arg("-i").arg("pipe:0")       // Read from stdin (piped from yt-dlp)
         .arg("-c").arg("copy")         // Copy codec (no re-encoding)
@@ -838,10 +855,10 @@ pub async fn download_twitch_vod(
 
         // Get video duration first for progress reporting
         println!("[Twitch] Fetching video duration...");
-        let duration_output = tokio::process::Command::new(&ytdlp_path)
+        let duration_output = no_window(tokio::process::Command::new(&ytdlp_path)
             .arg("--print")
             .arg("duration")
-            .arg(&video_url)
+            .arg(&video_url))
             .output()
             .await
             .map_err(|e| format!("Failed to fetch duration: {}", e))?;
@@ -857,6 +874,7 @@ pub async fn download_twitch_vod(
 
         // Run yt-dlp to download the VOD
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
+        no_window(&mut cmd);
         cmd.arg(&video_url)
             .arg("-o").arg(&video_path_str)
             .arg("--ffmpeg-location").arg(&ffmpeg_path)
@@ -974,7 +992,7 @@ pub async fn download_twitch_vod(
         // Generate thumbnail
         println!("[Twitch] Generating thumbnail...");
         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-        let thumbnail_result = tokio::process::Command::new(&ffmpeg_path)
+        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
             .args([
                 "-hwaccel", "auto",
                 "-ss", "00:00:01",
@@ -983,7 +1001,7 @@ pub async fn download_twitch_vod(
                 "-vf", "scale=320:-1",
                 "-y",
                 thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-            ])
+            ]))
             .output()
             .await;
 
@@ -1253,6 +1271,7 @@ pub async fn download_twitch_vod_segment(
 
         // Run yt-dlp to download the segment
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
+        no_window(&mut cmd);
         cmd.arg(&video_url)
             .arg("-o").arg(&video_path_str)
             .arg("--ffmpeg-location").arg(&ffmpeg_path)
@@ -1411,7 +1430,7 @@ pub async fn download_twitch_vod_segment(
         // Generate thumbnail
         println!("[Twitch] Generating thumbnail for segment...");
         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-        let thumbnail_result = tokio::process::Command::new(&ffmpeg_path)
+        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
             .args([
                 "-hwaccel", "auto",
                 "-ss", "00:00:01",
@@ -1420,7 +1439,7 @@ pub async fn download_twitch_vod_segment(
                 "-vf", "scale=320:-1",
                 "-y",
                 thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-            ])
+            ]))
             .output()
             .await;
 
