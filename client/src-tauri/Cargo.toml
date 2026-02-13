@@ -69,5 +69,11 @@ parking_lot = "0.12"
 cocoa = "0.26"
 objc = "0.2"
 
+# Patch ffmpeg-sys-the-third to include postproc removal fix for FFmpeg 8.0
+# (crates.io v4.0.0 passes --disable-postproc which FFmpeg 8.0 no longer recognizes)
+# Remove this patch once ffmpeg-sys-the-third > 4.0.0 is published
+[patch.crates-io]
+ffmpeg-sys-the-third = { git = "https://github.com/shssoichiro/ffmpeg-the-third.git", rev = "b4ec43b" }
+
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(cargo_clippy)'] }
