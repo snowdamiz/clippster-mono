@@ -58,7 +58,7 @@ export function useProgressSocket(initialProjectId: string | null) {
           });
 
           channel.onError((err: any) => {
-            error.value = 'Connection error: ' + JSON.stringify(err);
+            console.warn('[ProgressSocket] Channel error (will auto-reconnect):', err);
           });
 
           channel
@@ -78,6 +78,7 @@ export function useProgressSocket(initialProjectId: string | null) {
 
           socket.onOpen(() => {
             isConnected.value = true;
+            error.value = '';
           });
 
           socket.onClose(() => {
@@ -85,7 +86,7 @@ export function useProgressSocket(initialProjectId: string | null) {
           });
 
           socket.onError((err: any) => {
-            error.value = 'Socket connection error: ' + JSON.stringify(err);
+            console.warn('[ProgressSocket] Socket error (will auto-reconnect):', err);
           });
         })
         .catch((_err) => {
