@@ -625,6 +625,12 @@ pub fn run() {
                             sql: include_str!("../migrations/069_add_project_media.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 90,
+                            description: "fix_monitored_streamers_user_unique",
+                            sql: include_str!("../migrations/090_fix_monitored_streamers_user_unique.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
@@ -646,6 +652,13 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 video_server::start_video_server_impl().await;
             });
+
+            // Enable devtools in production for debugging
+            #[cfg(feature = "devtools")]
+            {
+                let window = app.get_webview_window("main").unwrap();
+                window.open_devtools();
+            }
 
             // Setup window close handler
             let app_handle = app.handle().clone();
