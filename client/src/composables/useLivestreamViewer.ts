@@ -1358,6 +1358,12 @@ export function useLivestreamViewer() {
       if (success) {
         if (state.value.playbackMode === 'webrtc') {
           hlsPlayback.pause();
+        } else {
+          // Explicitly play after init - MANIFEST_PARSED auto-play can silently fail
+          // (e.g., CSP blocking blob URLs, autoplay policy rejection)
+          await hlsPlayback.play();
+          state.value.isPlaying = true;
+          state.value.isBuffering = false;
         }
       } else {
         // Only set error if explicitly in HLS mode AND WebRTC isn't working
@@ -1490,6 +1496,9 @@ export function useLivestreamViewer() {
       if (platform === 'Kick') {
         const kickStatus = await checkKickLivestream(mintId);
         isLive = kickStatus.isLive;
+      } else if (platform === 'Twitch') {
+        const twitchStatus = await checkTwitchLivestream(mintId);
+        isLive = twitchStatus.isLive;
       } else {
         // PumpFun - use the existing fetchLiveStatus function
         const pumpFunStatus = await fetchLiveStatus(mintId);
@@ -1502,26 +1511,36 @@ export function useLivestreamViewer() {
         );
         state.value.isBuffering = true;
 
-        if (platform === 'Kick') {
-          // Kick-specific restart logic
+        if (platform === 'Kick' || platform === 'Twitch') {
+          // Kick/Twitch restart logic (both use yt-dlp + FFmpeg HLS)
           try {
-            await stopKickRecording(mintId);
+            if (platform === 'Kick') {
+              await stopKickRecording(mintId);
+            } else {
+              await stopTwitchRecording(mintId);
+            }
           } catch (stopError) {
-            console.warn('[LiveViewer] Error stopping old Kick recording:', stopError);
+            console.warn(`[LiveViewer] Error stopping old ${platform} recording:`, stopError);
           }
 
           await new Promise((resolve) => setTimeout(resolve, 1000));
 
-          const newSessionId = `kick-view-${mintId}-${Date.now()}`;
+          const newSessionId = platform === 'Kick'
+            ? `kick-view-${mintId}-${Date.now()}`
+            : `twitch-view-${mintId}-${Date.now()}`;
           state.value.tempSessionId = newSessionId;
 
           try {
-            await startKickRecording(mintId, streamerId, newSessionId, 1);
+            if (platform === 'Kick') {
+              await startKickRecording(mintId, streamerId, newSessionId, 1);
+            } else {
+              await startTwitchRecording(mintId, streamerId, newSessionId, 1);
+            }
 
-            const newOutputDir = await invoke<string>('get_kick_session_output_dir', {
-              sessionId: newSessionId,
-            });
-            console.log('[LiveViewer] Kick recorder restarted, new output dir:', newOutputDir);
+            const newOutputDir = platform === 'Kick'
+              ? await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId })
+              : await getTwitchSessionOutputDir(newSessionId);
+            console.log(`[LiveViewer] ${platform} recorder restarted, new output dir:`, newOutputDir);
 
             lastSegmentCount = 0;
             lastSegmentTime = Date.now();
@@ -1531,10 +1550,10 @@ export function useLivestreamViewer() {
               await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
               hlsPlayback.play();
               state.value.isBuffering = false;
-              console.log('[LiveViewer] Playback reinitialized after Kick recorder restart');
+              console.log(`[LiveViewer] Playback reinitialized after ${platform} recorder restart`);
             }
           } catch (restartError) {
-            console.error('[LiveViewer] Failed to restart Kick recording:', restartError);
+            console.error(`[LiveViewer] Failed to restart ${platform} recording:`, restartError);
             state.value.connectionError = 'Recording stopped and failed to restart';
           }
         } else {
@@ -1873,69 +1892,92 @@ export function useLivestreamViewer() {
       }
     });
 
-    // Listen for recorder exit - attempt to restart if stream is still live (Kick only)
+    // Listen for recorder exit - attempt to restart if stream is still live (Kick and Twitch)
     // Note: PumpFun recorder exit is handled via segment stall detection
     const recorderExitUnlisten = await listen<{
       streamerId: string;
       sessionId: string;
-      channelSlug: string;
+      channelSlug?: string;
+      channelName?: string;
       code: number | null;
     }>('recorder-exit', async (event) => {
-      const { streamerId, channelSlug } = event.payload;
+      const { streamerId } = event.payload;
+      // Kick uses channelSlug, Twitch uses channelName
+      const channel = event.payload.channelSlug || event.payload.channelName;
 
-      // Only handle if this is our current stream, it's a Kick stream, and we're still supposed to be connected
+      // Only handle if this is our current stream and it's a Kick or Twitch stream
       if (
         streamerId !== state.value.streamerId ||
         isIntentionalDisconnect ||
-        state.value.platform !== 'Kick'
+        (state.value.platform !== 'Kick' && state.value.platform !== 'Twitch')
       ) {
         return;
       }
 
+      const platform = state.value.platform;
       console.log(
-        '[LiveViewer] Kick recorder exited unexpectedly, checking if stream is still live...'
+        `[LiveViewer] ${platform} recorder exited unexpectedly, checking if stream is still live...`
       );
 
       // Check if stream is still live
       try {
-        const kickStatus = await checkKickLivestream(channelSlug);
+        let isLive = false;
+        if (platform === 'Kick') {
+          const kickStatus = await checkKickLivestream(channel!);
+          isLive = kickStatus.isLive;
+        } else {
+          const twitchStatus = await checkTwitchLivestream(channel!);
+          isLive = twitchStatus.isLive;
+        }
 
-        if (kickStatus.isLive) {
-          console.log('[LiveViewer] Stream is still live, attempting to restart recording...');
+        if (isLive) {
+          console.log(`[LiveViewer] ${platform} stream is still live, attempting to restart recording...`);
           state.value.isBuffering = true;
 
           // Restart the recording with a new session
-          const newSessionId = `kick-view-${channelSlug}-${Date.now()}`;
+          const newSessionId = platform === 'Kick'
+            ? `kick-view-${channel}-${Date.now()}`
+            : `twitch-view-${channel}-${Date.now()}`;
           state.value.tempSessionId = newSessionId;
 
           try {
-            await startKickRecording(channelSlug, streamerId, newSessionId, 1);
+            if (platform === 'Kick') {
+              await startKickRecording(channel!, streamerId, newSessionId, 1);
+            } else {
+              await startTwitchRecording(channel!, streamerId, newSessionId, 1);
+            }
 
             // Get the new output directory
-            const newOutputDir = await invoke<string>('get_kick_session_output_dir', {
-              sessionId: newSessionId,
-            });
+            const newOutputDir = platform === 'Kick'
+              ? await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId })
+              : await getTwitchSessionOutputDir(newSessionId);
 
-            console.log('[LiveViewer] Kick recording restarted, new output dir:', newOutputDir);
+            console.log(`[LiveViewer] ${platform} recording restarted, new output dir:`, newOutputDir);
 
             // Update the HLS output dir - this will trigger the watcher to reinitialize playback
             hlsOutputDir.value = newOutputDir;
+
+            // Reset segment stall detection
+            lastSegmentCount = 0;
+            lastSegmentTime = Date.now();
 
             // Reinitialize HLS playback with the new recording
             if (hlsVideoElement.value) {
               await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
               hlsPlayback.play();
               state.value.isBuffering = false;
-              console.log('[LiveViewer] Playback reinitialized after Kick recorder restart');
+              console.log(`[LiveViewer] Playback reinitialized after ${platform} recorder restart`);
             }
           } catch (restartError) {
-            console.error('[LiveViewer] Failed to restart Kick recording:', restartError);
+            console.error(`[LiveViewer] Failed to restart ${platform} recording:`, restartError);
             state.value.connectionError = 'Recording stopped and failed to restart';
           }
         } else {
           console.log('[LiveViewer] Stream is no longer live');
+          streamHasEnded = true;
           state.value.connectionState = 'disconnected';
           state.value.connectionError = 'Stream ended';
+          hlsPlayback.setStreamEnded(true);
         }
       } catch (checkError) {
         console.error('[LiveViewer] Failed to check stream status:', checkError);
