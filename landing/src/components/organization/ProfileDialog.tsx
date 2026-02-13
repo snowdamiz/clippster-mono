@@ -580,28 +580,34 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                     type="file"
                     accept="image/png,image/jpeg,image/webp,image/gif"
                     className="org-dialog__hidden"
-                    onChange={e => {
+                    onChange={async e => {
                       const f = e.target.files?.[0]
-                      if (f) {
+                      if (f && organizationId) {
                         setUploadingOverlay(true)
-                        const reader = new FileReader()
-                        reader.onload = () => {
-                          const newOverlay: LayoutOverlay = {
-                            id: crypto.randomUUID(),
-                            imagePath: '',
-                            imageUrl: reader.result as string,
-                            label: f.name.replace(/\.[^/.]+$/, ''),
-                            opacity: 100,
-                            perRatioSettings: null,
+                        try {
+                          const assetName = f.name.replace(/\.[^/.]+$/, '')
+                          const res = await uploadOrganizationAsset(Number(organizationId), f, 'overlay', assetName)
+                          if (res.success && res.asset) {
+                            setAssets(prev => [...prev, res.asset!])
+                            const newOverlay: LayoutOverlay = {
+                              id: crypto.randomUUID(),
+                              imagePath: '',
+                              imageUrl: res.asset.url,
+                              assetId: res.asset.id,
+                              label: assetName,
+                              opacity: 100,
+                              perRatioSettings: null,
+                            }
+                            setLayoutOverlays(prev => [...prev, newOverlay])
+                            toast.success('Overlay uploaded', `"${assetName}" has been uploaded`)
+                          } else {
+                            toast.error('Upload failed', res.error || 'Failed to upload overlay')
                           }
-                          setLayoutOverlays(prev => [...prev, newOverlay])
+                        } catch (err: any) {
+                          toast.error('Upload failed', err.message || 'Failed to upload overlay')
+                        } finally {
                           setUploadingOverlay(false)
                         }
-                        reader.onerror = () => {
-                          toast.error('Upload failed', 'Failed to read overlay image')
-                          setUploadingOverlay(false)
-                        }
-                        reader.readAsDataURL(f)
                       }
                       e.target.value = ''
                     }}

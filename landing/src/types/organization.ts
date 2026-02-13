@@ -83,6 +83,7 @@ export interface LayoutOverlay {
   id: string
   imagePath: string
   imageUrl?: string
+  assetId?: number | null
   label: string
   opacity: number
   perRatioSettings?: Record<string, unknown> | null
@@ -131,7 +132,7 @@ export interface ServerProfileAssignment {
 export interface ServerOrganizationAsset {
   id: number
   organization_id: number
-  asset_type: 'intro' | 'outro' | 'watermark' | 'audio' | 'image' | 'video' | 'other'
+  asset_type: 'intro' | 'outro' | 'watermark' | 'audio' | 'image' | 'video' | 'overlay' | 'other'
   name: string
   url: string
   thumbnail_url?: string | null

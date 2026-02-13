@@ -1978,8 +1978,8 @@
       const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild, getClipBuilds } = await import(
         '@/services/database'
       );
-      const { getIntroOutroById } = await import('@/services/database/intro-outros');
-      const { resolveWatermarkById } = await import('@/services/database/watermarks');
+      const { getIntroOutroById, resolveIntroOutroById } = await import('@/services/database/intro-outros');
+      const { resolveWatermarkById, resolveLayoutOverlaysForBuild } = await import('@/services/database/watermarks');
 
       // Update database status to building
       await updateClipBuildStatus(clip.id, 'building', { progress: 0 });
@@ -2639,21 +2639,21 @@
               
               // Resolve intro for this ratio
               if (ratioConfig.introId) {
-                const introAsset = await getIntroOutroById(ratioConfig.introId);
-                if (introAsset) {
-                  ratioData.introPath = introAsset.file_path || undefined;
-                  ratioData.introDuration = introAsset.duration || undefined;
-                  console.log(`[ClipsTab] Resolved intro for ${ratio}:`, introAsset.name);
+                const introResolved = await resolveIntroOutroById(ratioConfig.introId);
+                if (introResolved) {
+                  ratioData.introPath = introResolved.filePath || undefined;
+                  ratioData.introDuration = introResolved.duration || undefined;
+                  console.log(`[ClipsTab] Resolved intro for ${ratio}:`, ratioConfig.introId);
                 }
               }
               
               // Resolve outro for this ratio
               if (ratioConfig.outroId) {
-                const outroAsset = await getIntroOutroById(ratioConfig.outroId);
-                if (outroAsset) {
-                  ratioData.outroPath = outroAsset.file_path || undefined;
-                  ratioData.outroDuration = outroAsset.duration || undefined;
-                  console.log(`[ClipsTab] Resolved outro for ${ratio}:`, outroAsset.name);
+                const outroResolved = await resolveIntroOutroById(ratioConfig.outroId);
+                if (outroResolved) {
+                  ratioData.outroPath = outroResolved.filePath || undefined;
+                  ratioData.outroDuration = outroResolved.duration || undefined;
+                  console.log(`[ClipsTab] Resolved outro for ${ratio}:`, ratioConfig.outroId);
                 }
               }
               
@@ -2696,10 +2696,12 @@
         textOverlays: textOverlaysForExport,
         stickers: stickersForExport,
         clipWatermarks: clipWatermarksForExport,
-        layoutOverlays: settings.layoutOverlays
-          || (props.creatorProfile?.layout_overlays
-            ? JSON.parse(props.creatorProfile.layout_overlays)
-            : null),
+        layoutOverlays: await resolveLayoutOverlaysForBuild(
+          settings.layoutOverlays
+            || (props.creatorProfile?.layout_overlays
+              ? JSON.parse(props.creatorProfile.layout_overlays)
+              : null)
+        ),
       });
 
       console.log('[ClipsTab] Clip build started successfully');

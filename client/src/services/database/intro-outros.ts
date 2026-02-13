@@ -110,6 +110,69 @@ export async function getIntroOutroById(id: string): Promise<IntroOutro | null> 
   return results[0] || null;
 }
 
+/**
+ * Resolves an intro/outro by ID, handling both local database IDs and org-asset-{serverId} format.
+ * Returns the intro/outro data including file_path and duration.
+ * For org intro/outros, downloads if not cached locally.
+ */
+export async function resolveIntroOutroById(
+  assetId: string | null | undefined
+): Promise<{ filePath: string; duration: number | null } | null> {
+  if (!assetId) return null;
+
+  // Check if this is an organization asset (ID format: org-asset-{serverId})
+  if (assetId.startsWith('org-asset-')) {
+    const serverId = parseInt(assetId.replace('org-asset-', ''), 10);
+    if (isNaN(serverId)) return null;
+
+    // First try to load from local cache
+    const { getIntroOutroByServerId } = await import('./organization-assets');
+    const localAsset = await getIntroOutroByServerId(serverId);
+    if (localAsset) {
+      return {
+        filePath: localAsset.file_path,
+        duration: localAsset.duration ?? null,
+      };
+    }
+
+    // Not cached locally - download from server
+    try {
+      const { getUserOrganizationAssets } = await import('../organizationAssetsApi');
+      const { ensureAssetDownloaded } = await import('../orgAssetSync');
+      const serverResponse = await getUserOrganizationAssets();
+      if (serverResponse.success && serverResponse.assets) {
+        const serverAsset = serverResponse.assets.find(
+          (a) => a.id === serverId && (a.asset_type === 'intro' || a.asset_type === 'outro')
+        );
+        if (serverAsset && serverAsset.url) {
+          const downloadResult = await ensureAssetDownloaded(serverAsset);
+          if (downloadResult.success && downloadResult.filePath) {
+            return {
+              filePath: downloadResult.filePath,
+              duration: serverAsset.duration ?? null,
+            };
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[resolveIntroOutroById] Failed to download org intro/outro:', error);
+    }
+
+    return null;
+  }
+
+  // Regular intro/outro lookup by local database ID
+  const asset = await getIntroOutroById(assetId);
+  if (asset) {
+    return {
+      filePath: asset.file_path,
+      duration: asset.duration ?? null,
+    };
+  }
+
+  return null;
+}
+
 export async function deleteIntroOutro(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('DELETE FROM intro_outros WHERE id = ?', [id]);

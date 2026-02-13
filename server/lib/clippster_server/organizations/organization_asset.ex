@@ -7,7 +7,7 @@ defmodule ClippsterServer.Organizations.OrganizationAsset do
   import Ecto.Changeset
 
   schema "organization_assets" do
-    field :asset_type, :string  # 'intro', 'outro', 'watermark', 'audio', 'image'
+    field :asset_type, :string  # 'intro', 'outro', 'watermark', 'audio', 'image', 'overlay'
     field :name, :string
     field :url, :string
     field :thumbnail_url, :string
@@ -24,7 +24,7 @@ defmodule ClippsterServer.Organizations.OrganizationAsset do
     timestamps(type: :utc_datetime)
   end
 
-  @asset_types ~w(intro outro watermark audio image)
+  @asset_types ~w(intro outro watermark audio image overlay)
 
   @doc """
   Changeset for creating a new organization asset.

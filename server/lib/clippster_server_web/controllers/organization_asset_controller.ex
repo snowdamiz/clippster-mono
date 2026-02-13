@@ -80,7 +80,7 @@ defmodule ClippsterServerWeb.OrganizationAssetController do
       is_nil(asset_type) or not Organizations.OrganizationAsset.valid_asset_type?(asset_type) ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: "Invalid asset_type. Must be one of: intro, outro, watermark, audio, image"})
+        |> json(%{success: false, error: "Invalid asset_type. Must be one of: intro, outro, watermark, audio, image, overlay"})
 
       # Check if R2 is configured
       not Storage.configured?() ->

@@ -435,7 +435,7 @@ export async function deleteAssetsForRemovedOrganizations(
  * Delete a specific organization asset by server ID.
  */
 export async function deleteOrgAssetByServerId(
-  assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image',
+  assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image' | 'overlay',
   serverId: number
 ): Promise<boolean> {
   const db = await getDatabase();
@@ -453,6 +453,7 @@ export async function deleteOrgAssetByServerId(
       table = 'audio_assets';
       break;
     case 'image':
+    case 'overlay':
       table = 'image_assets';
       break;
     default:
@@ -467,7 +468,7 @@ export async function deleteOrgAssetByServerId(
  * Update sync status for an asset.
  */
 export async function updateAssetSyncStatus(
-  assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image',
+  assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image' | 'overlay',
   serverId: number,
   status: 'synced' | 'downloading' | 'error'
 ): Promise<void> {
@@ -486,6 +487,7 @@ export async function updateAssetSyncStatus(
       table = 'audio_assets';
       break;
     case 'image':
+    case 'overlay':
       table = 'image_assets';
       break;
     default:

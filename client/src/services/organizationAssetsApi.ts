@@ -12,7 +12,7 @@ import api from './api';
 export interface ServerOrganizationAsset {
   id: number;
   organization_id: number;
-  asset_type: 'intro' | 'outro' | 'watermark' | 'audio' | 'image';
+  asset_type: 'intro' | 'outro' | 'watermark' | 'audio' | 'image' | 'overlay';
   name: string;
   url: string;
   thumbnail_url: string | null;
@@ -57,7 +57,7 @@ export interface DeleteAssetResponse {
  */
 export async function listOrganizationAssets(
   organizationId: string | number,
-  assetType?: 'intro' | 'outro' | 'watermark' | 'audio' | 'image'
+  assetType?: 'intro' | 'outro' | 'watermark' | 'audio' | 'image' | 'overlay'
 ): Promise<ListAssetsResponse> {
   try {
     const params = assetType ? { asset_type: assetType } : {};
@@ -131,7 +131,7 @@ export async function getUserOrganizationAssets(): Promise<ListAssetsResponse> {
 export async function uploadOrganizationAsset(
   organizationId: string | number,
   file: File,
-  assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image',
+  assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image' | 'overlay',
   options?: {
     name?: string;
     thumbnail?: File;

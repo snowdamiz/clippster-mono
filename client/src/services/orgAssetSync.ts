@@ -112,7 +112,7 @@ export async function ensureAssetDownloaded(
       existing = await getWatermarkByServerId(asset.id);
     } else if (asset.asset_type === 'audio') {
       existing = await getAudioAssetByServerId(asset.id);
-    } else if (asset.asset_type === 'image') {
+    } else if (asset.asset_type === 'image' || asset.asset_type === 'overlay') {
       existing = await getImageAssetByServerId(asset.id);
     }
 
@@ -147,7 +147,7 @@ export async function ensureAssetDownloaded(
  */
 export async function getLocalAssetPath(
   serverId: number,
-  assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image'
+  assetType: 'intro' | 'outro' | 'watermark' | 'audio' | 'image' | 'overlay'
 ): Promise<string | null> {
   try {
     let existing: { file_path: string } | null = null;
@@ -158,7 +158,7 @@ export async function getLocalAssetPath(
       existing = await getWatermarkByServerId(serverId);
     } else if (assetType === 'audio') {
       existing = await getAudioAssetByServerId(serverId);
-    } else if (assetType === 'image') {
+    } else if (assetType === 'image' || assetType === 'overlay') {
       existing = await getImageAssetByServerId(serverId);
     }
 
@@ -352,7 +352,7 @@ export async function downloadAndSaveAsset(asset: ServerOrganizationAsset): Prom
     existing = await getWatermarkByServerId(asset.id);
   } else if (asset.asset_type === 'audio') {
     existing = await getAudioAssetByServerId(asset.id);
-  } else if (asset.asset_type === 'image') {
+  } else if (asset.asset_type === 'image' || asset.asset_type === 'overlay') {
     existing = await getImageAssetByServerId(asset.id);
   }
 
@@ -378,6 +378,9 @@ export async function downloadAndSaveAsset(asset: ServerOrganizationAsset): Prom
       break;
     case 'image':
       targetFolder = 'images';
+      break;
+    case 'overlay':
+      targetFolder = 'overlays';
       break;
     default:
       targetFolder = 'other';
@@ -432,7 +435,7 @@ export async function downloadAndSaveAsset(asset: ServerOrganizationAsset): Prom
       duration: asset.duration || undefined,
       fileSize: asset.file_size || undefined,
     });
-  } else if (asset.asset_type === 'image') {
+  } else if (asset.asset_type === 'image' || asset.asset_type === 'overlay') {
     await createOrganizationImageAsset(asset.name, localFilePath, orgId, orgName, asset.id, {
       width: asset.width || undefined,
       height: asset.height || undefined,

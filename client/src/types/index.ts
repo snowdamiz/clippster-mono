@@ -1852,6 +1852,7 @@ export interface PerRatioOverlaySettings {
 export interface LayoutOverlay {
   id: string;
   imagePath: string;           // Local file path to uploaded PNG
+  assetId?: number | null;     // Server org asset ID (for org-mode overlays)
   x: number;                   // 0-100 percentage position (center-based)
   y: number;                   // 0-100 percentage position (center-based)
   width: number;               // 0-100 percentage of target frame width

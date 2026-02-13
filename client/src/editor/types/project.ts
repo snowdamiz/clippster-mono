@@ -22,6 +22,8 @@ export interface BrandingIntroOutroConfig {
 export interface BrandingOverlayConfig {
 	id: string;
 	imagePath: string;
+	imageUrl?: string;
+	assetId?: string | null;
 	x: number;
 	y: number;
 	scale: number;

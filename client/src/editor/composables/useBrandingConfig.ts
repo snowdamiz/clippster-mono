@@ -202,6 +202,8 @@ function initFromCreatorProfile(profile: CreatorProfileWithLinks): void {
 							ratioOverlays.push({
 								id: overlay.id,
 								imagePath: overlay.imagePath,
+								imageUrl: overlay.imageUrl,
+								assetId: overlay.assetId ?? null,
 								x: ratioConfig.x ?? overlay.x ?? 50,
 								y: ratioConfig.y ?? overlay.y ?? 50,
 								scale: ratioConfig.scale ?? 20,
@@ -215,6 +217,8 @@ function initFromCreatorProfile(profile: CreatorProfileWithLinks): void {
 							ratioOverlays.push({
 								id: overlay.id,
 								imagePath: overlay.imagePath,
+								imageUrl: overlay.imageUrl,
+								assetId: overlay.assetId ?? null,
 								x: overlay.x ?? 50,
 								y: overlay.y ?? 50,
 								scale: overlay.width ?? 20,

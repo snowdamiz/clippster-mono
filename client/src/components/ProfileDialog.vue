@@ -1314,6 +1314,15 @@
   // ============================================
 
   async function loadOverlayPreview(overlay: LayoutOverlay) {
+    // For org overlays with assetId, find the server URL from orgAssets
+    if (overlay.assetId && props.mode === 'organization') {
+      const asset = orgAssets.value.find(a => a.id === overlay.assetId);
+      if (asset?.url) {
+        overlayPreviews.value[overlay.id] = asset.url;
+        return;
+      }
+    }
+    // For local overlays, read from disk
     if (!overlay.imagePath) return;
     try {
       const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: overlay.imagePath });
@@ -1341,23 +1350,65 @@
       });
       if (!result) return;
       const filePath = result as string;
+      const fileName = filePath.split(/[\\\/]/).pop() || 'overlay';
+      const assetName = fileName.replace(/\.[^/.]+$/, '');
 
-      const newOverlay: LayoutOverlay = {
-        id: crypto.randomUUID(),
-        imagePath: filePath,
-        x: 50,
-        y: 50,
-        width: 100,
-        height: 10,
-        opacity: 100,
-        rotation: 0,
-        label: '',
-      };
+      if (props.mode === 'organization' && props.organizationId) {
+        // Org mode: upload as org asset, store assetId + server URL
+        const ext = fileName.split('.').pop()?.toLowerCase() || 'png';
+        const mimeMap: Record<string, string> = {
+          png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+          webp: 'image/webp', svg: 'image/svg+xml', gif: 'image/gif',
+        };
+        const bytes = await readFile(filePath);
+        const file = new File([bytes], fileName, { type: mimeMap[ext] || 'image/png' });
+        const dimensions = await extractImageDimensions(file);
+        const response = await uploadOrganizationAsset(props.organizationId, file, 'overlay', {
+          name: assetName,
+          width: dimensions.width ?? undefined,
+          height: dimensions.height ?? undefined,
+        });
 
-      formData.value.layout_overlays.push(newOverlay);
-      await loadOverlayPreview(newOverlay);
-    } catch (err) {
+        if (response.success && response.asset) {
+          orgAssets.value.push(response.asset);
+          const newOverlay: LayoutOverlay = {
+            id: crypto.randomUUID(),
+            imagePath: '',
+            assetId: response.asset.id,
+            x: 50,
+            y: 50,
+            width: 100,
+            height: 10,
+            opacity: 100,
+            rotation: 0,
+            label: assetName,
+          };
+          formData.value.layout_overlays.push(newOverlay);
+          // Use server URL for preview
+          overlayPreviews.value[newOverlay.id] = response.asset.url;
+          showSuccess('Overlay Uploaded', `"${assetName}" has been uploaded`);
+        } else {
+          showError('Upload Failed', response.error || 'Failed to upload overlay');
+        }
+      } else {
+        // Local mode: store local file path directly
+        const newOverlay: LayoutOverlay = {
+          id: crypto.randomUUID(),
+          imagePath: filePath,
+          x: 50,
+          y: 50,
+          width: 100,
+          height: 10,
+          opacity: 100,
+          rotation: 0,
+          label: assetName,
+        };
+        formData.value.layout_overlays.push(newOverlay);
+        await loadOverlayPreview(newOverlay);
+      }
+    } catch (err: any) {
       console.error('[ProfileDialog] Failed to add overlay:', err);
+      showError('Upload Failed', err.message || 'Failed to add overlay');
     } finally {
       uploadingOverlay.value = false;
     }

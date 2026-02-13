@@ -81,6 +81,23 @@ function prefixWatermarkSettingsIds(settings: Record<string, unknown>): Record<s
 }
 
 /**
+ * Prefix assetId values inside layout_overlays with 'org-asset-'.
+ * Server stores raw numeric asset IDs; the client expects the org-asset- prefix for server assets.
+ */
+function prefixOverlayAssetIds(overlays: unknown[]): unknown[] {
+  return overlays.map((overlay: any) => {
+    if (overlay && typeof overlay === 'object' && overlay.assetId != null) {
+      const assetIdStr = String(overlay.assetId);
+      return {
+        ...overlay,
+        assetId: assetIdStr.startsWith('org-asset-') ? assetIdStr : `org-asset-${assetIdStr}`,
+      };
+    }
+    return overlay;
+  });
+}
+
+/**
  * Convert a server org creator profile to the local CreatorProfileWithLinks format.
  */
 function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProfileWithLinks {
@@ -97,7 +114,7 @@ function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProf
     intro_ratio_settings: null,
     outro_ratio_settings: null,
     auto_dvr_enabled: 0,
-    layout_overlays: sp.layout_overlays ? JSON.stringify(sp.layout_overlays) : null,
+    layout_overlays: sp.layout_overlays ? JSON.stringify(prefixOverlayAssetIds(sp.layout_overlays)) : null,
     scope: sp.scope || 'streamer',
     user_id: null,
     created_at: new Date(sp.inserted_at).getTime(),
