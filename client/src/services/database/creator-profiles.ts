@@ -644,6 +644,49 @@ export async function getCreatorProfileByPlatformId(
   return null;
 }
 
+/**
+ * Extract the project's platform and streamer identifier (platform_id / source_mint_id).
+ * Used by branding resolution to match org-assigned profiles against the project's streamer.
+ */
+export async function getProjectStreamerInfo(
+  projectId: string
+): Promise<{ platform: string | null; platformId: string | null }> {
+  const db = await getDatabase();
+
+  const projectData = await db.select<{ platform: string | null }[]>(
+    'SELECT platform FROM projects WHERE id = ?',
+    [projectId]
+  );
+
+  if (projectData.length === 0 || !projectData[0].platform) {
+    return { platform: null, platformId: null };
+  }
+
+  const platform = projectData[0].platform;
+
+  // Try source_mint_id from raw videos
+  const rawVideos = await db.select<{ source_mint_id: string | null }[]>(
+    'SELECT source_mint_id FROM raw_videos WHERE project_id = ? AND source_mint_id IS NOT NULL LIMIT 1',
+    [projectId]
+  );
+
+  if (rawVideos.length > 0 && rawVideos[0].source_mint_id) {
+    return { platform, platformId: rawVideos[0].source_mint_id };
+  }
+
+  // Try monitored_streamer_id from livestream sessions
+  const sessions = await db.select<{ monitored_streamer_id: string }[]>(
+    'SELECT monitored_streamer_id FROM livestream_sessions WHERE project_id = ? ORDER BY created_at DESC LIMIT 1',
+    [projectId]
+  );
+
+  if (sessions.length > 0 && sessions[0].monitored_streamer_id) {
+    return { platform, platformId: sessions[0].monitored_streamer_id };
+  }
+
+  return { platform, platformId: null };
+}
+
 export async function getCreatorProfileByProjectId(
   projectId: string
 ): Promise<CreatorProfileWithLinks | null> {

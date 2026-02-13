@@ -10,10 +10,10 @@ import {
 } from '@/services/organizationApi'
 import { useOrganization } from '@/hooks/useOrganization'
 import { useToast } from '@/hooks/useToast'
-import type { ServerOrganizationCreatorProfile, ServerOrganizationAsset } from '@/types/organization'
+import type { ServerOrganizationCreatorProfile, ServerOrganizationAsset, LayoutOverlay } from '@/types/organization'
 import {
   UserCircle, Plus, X, Play, SkipForward, Image as ImageIcon,
-  Loader2, Upload, ChevronDown, Trash2, Users, Paintbrush,
+  Loader2, Upload, ChevronDown, Trash2, Users, Paintbrush, Layers,
 } from 'lucide-react'
 
 type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube'
@@ -70,6 +70,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
   const [outroId, setOutroId] = useState<number | null>(null)
   const [watermarkId, setWatermarkId] = useState<number | null>(null)
   const [watermarkSettings, setWatermarkSettings] = useState<Record<string, unknown> | null>(null)
+  const [layoutOverlays, setLayoutOverlays] = useState<LayoutOverlay[]>([])
   const [platformLinks, setPlatformLinks] = useState<PlatformLinkInput[]>([])
 
   // UI state
@@ -80,11 +81,13 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
   const [uploadingIntro, setUploadingIntro] = useState(false)
   const [uploadingOutro, setUploadingOutro] = useState(false)
   const [uploadingWatermark, setUploadingWatermark] = useState(false)
+  const [uploadingOverlay, setUploadingOverlay] = useState(false)
 
   // Refs
   const introFileRef = useRef<HTMLInputElement>(null)
   const outroFileRef = useRef<HTMLInputElement>(null)
   const watermarkFileRef = useRef<HTMLInputElement>(null)
+  const overlayFileRef = useRef<HTMLInputElement>(null)
 
   const isEditing = !!profile
 
@@ -114,6 +117,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
       setOutroId(profile.outro_id ?? null)
       setWatermarkId(profile.watermark_id ?? null)
       setWatermarkSettings((profile.watermark_settings as Record<string, unknown>) || null)
+      setLayoutOverlays((profile.layout_overlays as LayoutOverlay[]) || [])
       setScope(((profile as any).scope as 'streamer' | 'global') || scopeProp || 'streamer')
       setPlatformLinks(
         (profile.platform_links || []).map(link => ({
@@ -133,6 +137,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
       setOutroId(null)
       setWatermarkId(null)
       setWatermarkSettings(null)
+      setLayoutOverlays([])
       setScope(scopeProp || 'streamer')
       setPlatformLinks([])
     }
@@ -230,6 +235,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
           outro_id: outroId,
           watermark_id: watermarkId,
           watermark_settings: watermarkSettings,
+          layout_overlays: layoutOverlays.length > 0 ? layoutOverlays : null,
           scope,
         })
         if (!res.success || !res.profile) throw new Error(res.error || 'Failed to update profile')
@@ -266,6 +272,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
           outro_id: outroId,
           watermark_id: watermarkId,
           watermark_settings: watermarkSettings || undefined,
+          layout_overlays: layoutOverlays.length > 0 ? layoutOverlays : undefined,
           scope,
         })
         if (!res.success || !res.profile) throw new Error(res.error || 'Failed to create profile')
@@ -546,6 +553,98 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                     {uploadingWatermark ? <Loader2 size={16} className="org-dialog__spin" /> : <Upload size={16} />}
                   </button>
                 </div>
+              </div>
+
+              {/* Layout Overlays */}
+              <div className="org-dialog__asset-row">
+                <label className="org-dialog__asset-label">Layout Overlays</label>
+                <div className="org-dialog__asset-controls">
+                  <button
+                    type="button"
+                    onClick={() => overlayFileRef.current?.click()}
+                    disabled={uploadingOverlay}
+                    className="org-dialog__asset-select org-dialog__flex-1"
+                  >
+                    <div className="org-dialog__asset-select-icon org-dialog__asset-select-icon--overlay">
+                      <Layers size={14} />
+                    </div>
+                    <span className="org-dialog__asset-select-label">
+                      {layoutOverlays.length > 0
+                        ? `${layoutOverlays.length} overlay${layoutOverlays.length > 1 ? 's' : ''}`
+                        : 'No overlays'}
+                    </span>
+                    {uploadingOverlay ? <Loader2 size={14} className="org-dialog__spin" /> : <Plus size={14} style={{ color: 'var(--sidebar-text-muted)' }} />}
+                  </button>
+                  <input
+                    ref={overlayFileRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="org-dialog__hidden"
+                    onChange={e => {
+                      const f = e.target.files?.[0]
+                      if (f) {
+                        setUploadingOverlay(true)
+                        const reader = new FileReader()
+                        reader.onload = () => {
+                          const newOverlay: LayoutOverlay = {
+                            id: crypto.randomUUID(),
+                            imagePath: '',
+                            imageUrl: reader.result as string,
+                            label: f.name.replace(/\.[^/.]+$/, ''),
+                            opacity: 100,
+                            perRatioSettings: null,
+                          }
+                          setLayoutOverlays(prev => [...prev, newOverlay])
+                          setUploadingOverlay(false)
+                        }
+                        reader.onerror = () => {
+                          toast.error('Upload failed', 'Failed to read overlay image')
+                          setUploadingOverlay(false)
+                        }
+                        reader.readAsDataURL(f)
+                      }
+                      e.target.value = ''
+                    }}
+                  />
+                </div>
+
+                {/* Overlay Items */}
+                {layoutOverlays.length > 0 && (
+                  <div className="org-dialog__overlay-list">
+                    {layoutOverlays.map((overlay, idx) => (
+                      <div key={overlay.id} className="org-dialog__overlay-item">
+                        <div className="org-dialog__overlay-thumb">
+                          {overlay.imageUrl ? (
+                            <img src={overlay.imageUrl} className="org-dialog__overlay-thumb-img" alt="" />
+                          ) : (
+                            <Layers size={12} style={{ color: 'var(--sidebar-text-muted)' }} />
+                          )}
+                        </div>
+                        <div className="org-dialog__overlay-info">
+                          <input
+                            value={overlay.label}
+                            onChange={e => {
+                              setLayoutOverlays(prev => prev.map((o, i) => i === idx ? { ...o, label: e.target.value } : o))
+                            }}
+                            className="org-dialog__overlay-name"
+                            placeholder={`Overlay ${idx + 1}`}
+                          />
+                          <span className="org-dialog__overlay-meta">
+                            {overlay.opacity}% opacity
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setLayoutOverlays(prev => prev.filter((_, i) => i !== idx))}
+                          className="org-dialog__asset-upload org-dialog__asset-upload--danger"
+                          title="Remove overlay"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -84,6 +84,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
       outro_id: parse_integer(params["outro_id"]),
       watermark_id: parse_integer(params["watermark_id"]),
       watermark_settings: params["watermark_settings"],
+      layout_overlays: params["layout_overlays"],
       scope: params["scope"]
     }
     |> Enum.reject(fn {_, v} -> is_nil(v) end)
@@ -129,7 +130,8 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
       profile ->
         attrs = Map.take(params, [
           "name", "description", "profile_image_url",
-          "intro_id", "outro_id", "watermark_id", "watermark_settings", "scope"
+          "intro_id", "outro_id", "watermark_id", "watermark_settings",
+          "layout_overlays", "scope"
         ])
         |> Enum.map(fn
           {"intro_id", v} -> {:intro_id, parse_integer(v)}
@@ -490,6 +492,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
       outro_id: profile.outro_id,
       watermark_id: profile.watermark_id,
       watermark_settings: profile.watermark_settings,
+      layout_overlays: profile.layout_overlays,
       intro: serialize_asset(profile.intro),
       outro: serialize_asset(profile.outro),
       watermark: serialize_asset(profile.watermark),

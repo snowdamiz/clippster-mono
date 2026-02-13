@@ -19,6 +19,7 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
     field :profile_image_url, :string
     field :watermark_settings, :map
     field :intro_outro_settings, :map
+    field :layout_overlays, :map
     field :scope, :string, default: "streamer"
 
     belongs_to :organization, Organization
@@ -52,6 +53,7 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
       :watermark_id,
       :watermark_settings,
       :intro_outro_settings,
+      :layout_overlays,
       :scope
     ])
     |> validate_required([:organization_id, :name])
@@ -78,6 +80,7 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
       :watermark_id,
       :watermark_settings,
       :intro_outro_settings,
+      :layout_overlays,
       :scope
     ])
     |> validate_inclusion(:scope, ["streamer", "global"])

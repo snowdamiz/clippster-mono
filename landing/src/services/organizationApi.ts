@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { ServerOrganizationCreatorProfile, ServerOrganizationPlatformLink, ServerProfileAssignment, ServerOrganizationAsset } from '@/types/organization'
+import type { ServerOrganizationCreatorProfile, ServerOrganizationPlatformLink, ServerProfileAssignment, ServerOrganizationAsset, LayoutOverlay } from '@/types/organization'
 
 // Logo upload
 export async function uploadOrganizationLogo(orgId: number, file: File) {
@@ -25,6 +25,8 @@ export async function createOrganizationCreatorProfile(orgId: number, data: {
   outro_id?: number | null
   watermark_id?: number | null
   watermark_settings?: Record<string, unknown> | null
+  intro_outro_settings?: Record<string, unknown> | null
+  layout_overlays?: LayoutOverlay[] | null
   scope?: 'streamer' | 'global'
 }) {
   return api.post<{ success: boolean; profile?: ServerOrganizationCreatorProfile; error?: string }>(`/organizations/${orgId}/creator-profiles`, data)
@@ -39,6 +41,7 @@ export async function updateOrganizationCreatorProfile(orgId: number, profileId:
   watermark_id?: number | null
   watermark_settings?: Record<string, unknown> | null
   intro_outro_settings?: Record<string, unknown> | null
+  layout_overlays?: LayoutOverlay[] | null
   scope?: 'streamer' | 'global'
 }) {
   return api.put<{ success: boolean; profile?: ServerOrganizationCreatorProfile; error?: string }>(`/organizations/${orgId}/creator-profiles/${profileId}`, data)

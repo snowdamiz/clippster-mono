@@ -79,6 +79,15 @@ export interface OrganizationRestrictionDefaults {
   clips_visible_to_admins?: boolean
 }
 
+export interface LayoutOverlay {
+  id: string
+  imagePath: string
+  imageUrl?: string
+  label: string
+  opacity: number
+  perRatioSettings?: Record<string, unknown> | null
+}
+
 export interface ServerOrganizationCreatorProfile {
   id: number
   organization_id: number
@@ -89,6 +98,7 @@ export interface ServerOrganizationCreatorProfile {
   outro_id?: number | null
   watermark_id?: number | null
   watermark_settings?: Record<string, unknown> | null
+  layout_overlays?: LayoutOverlay[] | null
   platform_links?: ServerOrganizationPlatformLink[]
   assignments?: ServerProfileAssignment[]
   assigned_count?: number
