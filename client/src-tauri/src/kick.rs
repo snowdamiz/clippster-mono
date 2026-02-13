@@ -602,7 +602,16 @@ async fn run_kick_recorder(
     no_window(&mut ffmpeg_cmd);
     ffmpeg_cmd
         .arg("-i").arg("pipe:0")       // Read from stdin (piped from yt-dlp)
-        .arg("-c").arg("copy")         // Copy codec (no re-encoding)
+        // Re-encode to H.264 Baseline + AAC for guaranteed MSE/WebView2 compatibility.
+        // -c copy can pass through codecs (HEVC, VP9) that MSE rejects in production.
+        .arg("-c:v").arg("libx264")
+        .arg("-preset").arg("ultrafast")  // Minimize CPU usage for live streaming
+        .arg("-tune").arg("zerolatency")  // Low-latency encoding
+        .arg("-profile:v").arg("baseline") // Baseline profile = widest MSE compatibility
+        .arg("-level").arg("4.0")
+        .arg("-crf").arg("23")            // Reasonable quality
+        .arg("-c:a").arg("aac")
+        .arg("-b:a").arg("128k")
         .arg("-f").arg("hls")          // HLS output format
         .arg("-hls_time").arg(hls_segment_seconds.to_string())
         .arg("-hls_list_size").arg("0")  // Keep all segments in playlist
