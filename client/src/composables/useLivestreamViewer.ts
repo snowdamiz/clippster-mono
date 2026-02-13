@@ -789,14 +789,18 @@ export function useLivestreamViewer() {
     // Reset intentional disconnect flag when starting a new connection
     isIntentionalDisconnect = false;
 
-    state.value.connectionState = 'connecting';
+    // Don't reset connection state if HLS is already active (reconnect is just for WebRTC)
+    const hlsAlreadyActive = isHlsActive();
+    if (!hlsAlreadyActive) {
+      state.value.connectionState = 'connecting';
+      state.value.isBuffering = true;
+    }
     state.value.connectionError = null;
     state.value.mintId = mintId;
     state.value.streamerId = streamerId;
     state.value.displayName = displayName;
     state.value.profileImageUrl = profileImageUrl || null;
     state.value.platform = platform;
-    state.value.isBuffering = true;
 
     // Route to platform-specific connection
     if (platform === 'Kick') {
@@ -1103,7 +1107,32 @@ export function useLivestreamViewer() {
     await ensureHlsPlaying(seekPosition);
   }
 
+  // Check if HLS playback is active or has segments being produced.
+  // When true, WebRTC state changes should NOT disrupt the UI.
+  function isHlsActive(): boolean {
+    return (
+      hlsOutputDir.value !== null &&
+      (hlsPlayback.state.value.isInitialized ||
+        state.value.availableSegments.length > 0 ||
+        state.value.totalRecordedDuration > 0)
+    );
+  }
+
   function handleDisconnected() {
+    // If HLS is active, don't disrupt the UI — just silently try to reconnect WebRTC
+    // WebRTC is only for viewer count on PumpFun; HLS is the primary playback method
+    if (isHlsActive()) {
+      console.log('[LiveViewer] WebRTC disconnected but HLS is active, silently reconnecting for viewer count');
+      if (
+        !isIntentionalDisconnect &&
+        state.value.mintId &&
+        reconnectAttempts < MAX_RECONNECT_ATTEMPTS
+      ) {
+        scheduleWebRTCReconnect();
+      }
+      return;
+    }
+
     state.value.connectionState = 'disconnected';
 
     // Attempt reconnect only if it wasn't intentional
@@ -1122,6 +1151,8 @@ export function useLivestreamViewer() {
   }
 
   function handleReconnecting() {
+    // Don't show reconnecting overlay if HLS is active
+    if (isHlsActive()) return;
     state.value.connectionState = 'reconnecting';
   }
 
@@ -1131,6 +1162,9 @@ export function useLivestreamViewer() {
   }
 
   function handleConnectionStateChanged(connectionState: ConnectionState) {
+    // Don't let WebRTC state changes disrupt UI when HLS is active
+    if (isHlsActive() && connectionState !== ConnectionState.Connected) return;
+
     if (connectionState === ConnectionState.Connected) {
       state.value.connectionState = 'connected';
     } else if (connectionState === ConnectionState.Reconnecting) {
@@ -1175,6 +1209,50 @@ export function useLivestreamViewer() {
 
     reconnectTimeout = window.setTimeout(() => {
       connect(mintId, streamerId, displayName, profileImageUrl, false);
+    }, delay);
+  }
+
+  // Silently reconnect WebRTC only (for viewer count) without disrupting HLS playback
+  function scheduleWebRTCReconnect() {
+    if (reconnectTimeout) {
+      clearTimeout(reconnectTimeout);
+    }
+
+    reconnectAttempts++;
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+
+    reconnectTimeout = window.setTimeout(async () => {
+      if (!state.value.mintId || isIntentionalDisconnect) return;
+
+      try {
+        // Only reconnect the WebRTC room, don't restart the full connection flow
+        const joinData = await joinLivestream(state.value.mintId);
+        const token = joinData.token;
+        if (!token) return;
+
+        let livekitUrl = joinData.serverUrl || joinData.url || joinData.wsUrl;
+        if (livekitUrl && livekitUrl.startsWith('https://')) {
+          livekitUrl = livekitUrl.replace('https://', 'wss://');
+        } else if (livekitUrl && !livekitUrl.startsWith('wss://') && !livekitUrl.startsWith('ws://')) {
+          livekitUrl = 'wss://' + livekitUrl;
+        }
+
+        if (room) {
+          try { await room.disconnect(); } catch { /* ignore */ }
+        }
+
+        room = new Room({ adaptiveStream: true, dynacast: true });
+        setupRoomEventHandlers(room);
+        await room.connect(livekitUrl || '', token, { autoSubscribe: true });
+        reconnectAttempts = 0;
+        console.log('[LiveViewer] WebRTC silently reconnected for viewer count');
+      } catch (e) {
+        console.warn('[LiveViewer] WebRTC silent reconnect failed:', e);
+        // Try again if still within limits
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+          scheduleWebRTCReconnect();
+        }
+      }
     }, delay);
   }
 
