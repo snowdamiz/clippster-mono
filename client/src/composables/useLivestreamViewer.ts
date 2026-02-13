@@ -565,8 +565,10 @@ export function useLivestreamViewer() {
         ? new Date(kickStatus.startedAt).getTime()
         : Date.now();
 
-      // Check if there's an existing DVR session for this streamer (Auto DVR)
+      // Check if there's an existing recording for this streamer
+      // Priority: 1) Kick DVR session, 2) Persistent recording from monitoring, 3) Start new
       const existingDvrSession = getKickDvrSession(streamerId);
+      const existingPersistentSession = activeSessions.value.get(streamerId);
       let outputDir: string;
       let sessionId: string;
 
@@ -577,8 +579,17 @@ export function useLivestreamViewer() {
         sessionId = existingDvrSession.sessionId;
         state.value.tempSessionId = sessionId;
         state.value.isTempRecording = false; // Not a temp recording - it's a DVR session
+      } else if (existingPersistentSession && existingPersistentSession.platform === 'Kick') {
+        // Use existing persistent recording from monitoring system
+        console.log('[LiveViewer] Found existing Kick persistent session:', existingPersistentSession.sessionId);
+        sessionId = existingPersistentSession.sessionId;
+        state.value.tempSessionId = sessionId;
+        state.value.sessionId = existingPersistentSession.sessionId;
+        state.value.projectId = existingPersistentSession.projectId;
+        state.value.isTempRecording = false;
+        outputDir = await invoke<string>('get_kick_session_output_dir', { sessionId });
       } else {
-        // No existing DVR session - start a new temp recording
+        // No existing session - start a new temp recording
         sessionId = `kick-view-${channelSlug}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
         state.value.isTempRecording = true;
