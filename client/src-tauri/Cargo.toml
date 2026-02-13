@@ -7,6 +7,13 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+# Static FFmpeg: compiles FFmpeg from source and links statically.
+# Used in CI to avoid runtime dylib dependencies (macOS notarization, DLL bundling).
+# Local dev uses system FFmpeg (dynamic linking) for faster builds.
+ffmpeg-static = ["ffmpeg-the-third/build"]
+
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.

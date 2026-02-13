@@ -376,50 +376,20 @@ jobs:
 
           echo "=== All signing complete ==="
 
-      # Install FFmpeg development libraries for Rust compilation (ffmpeg-the-third crate)
-      - name: Install FFmpeg dev libraries (macOS)
+      # Install build tools for FFmpeg static compilation (ffmpeg-the-third crate with build feature)
+      - name: Install FFmpeg build tools (macOS)
         if: matrix.platform == 'macos-latest'
         run: |
-          if echo "${{ matrix.args }}" | grep -q "x86_64"; then
-            # Cross-compiling for x86_64 on ARM runner: install x86_64 Homebrew via Rosetta
-            echo "Installing x86_64 Homebrew for cross-compilation..."
-            NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            arch -x86_64 /usr/local/bin/brew install ffmpeg pkg-config
-            FFMPEG_PREFIX="/usr/local/opt/ffmpeg"
-            echo "PKG_CONFIG_PATH=${FFMPEG_PREFIX}/lib/pkgconfig:/usr/local/lib/pkgconfig" >> $GITHUB_ENV
-          else
-            # Native arm64 build
-            brew install ffmpeg pkg-config
-            FFMPEG_PREFIX=$(brew --prefix ffmpeg)
-            echo "PKG_CONFIG_PATH=${FFMPEG_PREFIX}/lib/pkgconfig:$(brew --prefix)/lib/pkgconfig" >> $GITHUB_ENV
-          fi
-          echo "FFMPEG_DIR=${FFMPEG_PREFIX}" >> $GITHUB_ENV
-          echo "FFmpeg installed at: ${FFMPEG_PREFIX}"
-          ls -la "${FFMPEG_PREFIX}/lib/" | head -10
-          pkg-config --modversion libavcodec || echo "WARNING: pkg-config cannot find libavcodec"
-
-          # Bundle FFmpeg shared libraries for runtime
-          echo "=== Bundling FFmpeg shared libraries ==="
-          FFMPEG_LIBS_DIR="client/src-tauri/ffmpeg-libs"
-          mkdir -p "$FFMPEG_LIBS_DIR"
-
-          # Copy all FFmpeg dylibs (libavcodec, libavformat, libswscale, libavutil, libswresample, and dependencies)
-          cp -L "${FFMPEG_PREFIX}"/lib/libav*.dylib "$FFMPEG_LIBS_DIR/" || true
-          cp -L "${FFMPEG_PREFIX}"/lib/libsw*.dylib "$FFMPEG_LIBS_DIR/" || true
-
-          # Also copy dependencies (x264, x265, vpx, etc.)
-          for lib in "${FFMPEG_PREFIX}"/lib/*.dylib; do
-            cp -L "$lib" "$FFMPEG_LIBS_DIR/" || true
-          done
-
-          echo "Bundled FFmpeg libraries:"
-          ls -lh "$FFMPEG_LIBS_DIR/"
+          # nasm is required for FFmpeg x86 assembly optimizations during source compilation
+          brew install nasm pkg-config
+          echo "Build tools installed: nasm=$(nasm -v 2>&1 | head -1), pkg-config=$(pkg-config --version)"
 
       # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
+      # Also remove ffmpeg-libs from resources on macOS (static linking = no dylibs to bundle)
       - name: Skip frontend rebuild (macOS)
         if: matrix.platform == 'macos-latest'
         run: |
-          jq '.build.beforeBuildCommand = ""' client/src-tauri/tauri.conf.json > tmp.json && mv tmp.json client/src-tauri/tauri.conf.json
+          jq '.build.beforeBuildCommand = "" | .bundle.resources = [.bundle.resources[] | select(. != "ffmpeg-libs/*")]' client/src-tauri/tauri.conf.json > tmp.json && mv tmp.json client/src-tauri/tauri.conf.json
 
       # Install FFmpeg development libraries for Rust compilation (Windows)
       - name: Install FFmpeg dev libraries (Windows)
@@ -474,99 +444,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: client
-          args: ${{ matrix.args }}
-
-      # Fix FFmpeg library paths on macOS using install_name_tool
-      - name: Fix FFmpeg library paths (macOS)
-        if: matrix.platform == 'macos-latest'
-        run: |
-          echo "=== Fixing FFmpeg library paths in macOS bundle ==="
-
-          # Determine target arch
-          if echo "${{ matrix.args }}" | grep -q "aarch64"; then
-            TRIPLE="aarch64-apple-darwin"
-          else
-            TRIPLE="x86_64-apple-darwin"
-          fi
-
-          # Find the .app bundle
-          APP_BUNDLE=$(find client/src-tauri/target/${TRIPLE}/release/bundle/macos -name "*.app" -type d | head -1)
-
-          if [ -z "$APP_BUNDLE" ]; then
-            echo "ERROR: Could not find .app bundle"
-            exit 1
-          fi
-
-          echo "Found app bundle: $APP_BUNDLE"
-
-          # Paths
-          BINARY_PATH="$APP_BUNDLE/Contents/MacOS/Clippster"
-          RESOURCES_DIR="$APP_BUNDLE/Contents/Resources"
-          FFMPEG_LIBS_DIR="$RESOURCES_DIR/ffmpeg-libs"
-
-          if [ ! -d "$FFMPEG_LIBS_DIR" ]; then
-            echo "ERROR: FFmpeg libs directory not found at $FFMPEG_LIBS_DIR"
-            exit 1
-          fi
-
-          echo "FFmpeg libs directory: $FFMPEG_LIBS_DIR"
-          ls -la "$FFMPEG_LIBS_DIR" | head -20
-
-          # Rewrite library paths in the main binary to use @executable_path
-          echo "=== Rewriting library paths in main binary ==="
-          for lib in "$FFMPEG_LIBS_DIR"/*.dylib; do
-            lib_name=$(basename "$lib")
-            echo "Fixing $lib_name in binary..."
-
-            # Change the library reference to use @executable_path
-            install_name_tool -change \
-              "/opt/homebrew/opt/ffmpeg/lib/$lib_name" \
-              "@executable_path/../Resources/ffmpeg-libs/$lib_name" \
-              "$BINARY_PATH" 2>/dev/null || true
-
-            install_name_tool -change \
-              "/usr/local/opt/ffmpeg/lib/$lib_name" \
-              "@executable_path/../Resources/ffmpeg-libs/$lib_name" \
-              "$BINARY_PATH" 2>/dev/null || true
-
-            # Also check for dependencies in other locations
-            install_name_tool -change \
-              "@rpath/$lib_name" \
-              "@executable_path/../Resources/ffmpeg-libs/$lib_name" \
-              "$BINARY_PATH" 2>/dev/null || true
-          done
-
-          # Fix library IDs and inter-library dependencies
-          echo "=== Fixing library IDs and dependencies ==="
-          for lib in "$FFMPEG_LIBS_DIR"/*.dylib; do
-            lib_name=$(basename "$lib")
-            echo "Processing $lib_name..."
-
-            # Change the library's ID to use @rpath
-            install_name_tool -id "@rpath/$lib_name" "$lib" 2>/dev/null || true
-
-            # Fix dependencies between FFmpeg libraries
-            for dep_lib in "$FFMPEG_LIBS_DIR"/*.dylib; do
-              dep_lib_name=$(basename "$dep_lib")
-              install_name_tool -change \
-                "/opt/homebrew/opt/ffmpeg/lib/$dep_lib_name" \
-                "@loader_path/$dep_lib_name" \
-                "$lib" 2>/dev/null || true
-              install_name_tool -change \
-                "/usr/local/opt/ffmpeg/lib/$dep_lib_name" \
-                "@loader_path/$dep_lib_name" \
-                "$lib" 2>/dev/null || true
-              install_name_tool -change \
-                "@rpath/$dep_lib_name" \
-                "@loader_path/$dep_lib_name" \
-                "$lib" 2>/dev/null || true
-            done
-          done
-
-          echo "=== Verifying library paths ==="
-          otool -L "$BINARY_PATH" | grep -E "(libav|libsw)" || echo "No FFmpeg libs found in binary (may have been rewritten)"
-
-          echo "=== FFmpeg library path fixes complete ==="
+          args: ${{ matrix.args }} --features ffmpeg-static
 
       - name: Build Tauri App (Windows)
         if: matrix.platform == 'windows-latest'
@@ -581,48 +459,6 @@ jobs:
         with:
           projectPath: client
           args: ${{ matrix.args }}
-
-      # Copy FFmpeg DLLs to exe directory on Windows (DLLs must be next to exe)
-      - name: Copy FFmpeg DLLs to exe directory (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          Write-Host "=== Copying FFmpeg DLLs to exe directory ==="
-
-          # Find the NSIS installer directory (contains the installed app structure)
-          $nsisDir = Get-ChildItem -Path "client/src-tauri/target/release/bundle/nsis" -Directory | Select-Object -First 1
-
-          if (-not $nsisDir) {
-            Write-Host "ERROR: Could not find NSIS bundle directory"
-            exit 1
-          }
-
-          Write-Host "Found NSIS bundle: $($nsisDir.FullName)"
-
-          # The installed app structure is in a subfolder - find the .exe
-          $exeFile = Get-ChildItem -Path $nsisDir.FullName -Recurse -File | Where-Object { $_.Name -eq "Clippster.exe" } | Select-Object -First 1
-
-          if (-not $exeFile) {
-            Write-Host "ERROR: Could not find Clippster.exe in NSIS bundle"
-            exit 1
-          }
-
-          $exeDir = $exeFile.DirectoryName
-          Write-Host "Found exe at: $($exeFile.FullName)"
-          Write-Host "Copying DLLs to: $exeDir"
-
-          # Copy FFmpeg DLLs from resources to exe directory
-          $ffmpegLibsSource = "client/src-tauri/ffmpeg-libs"
-          if (Test-Path $ffmpegLibsSource) {
-            Copy-Item "$ffmpegLibsSource/*.dll" $exeDir -Force
-            Write-Host "Copied FFmpeg DLLs:"
-            Get-ChildItem "$exeDir/*.dll" | Where-Object { $_.Name -match "av|sw" }
-          } else {
-            Write-Host "ERROR: FFmpeg libs source not found at $ffmpegLibsSource"
-            exit 1
-          }
-
-          Write-Host "=== FFmpeg DLLs copied successfully ==="
 
       - name: Upload artifacts to public releases repo (macOS)
         if: matrix.platform == 'macos-latest'

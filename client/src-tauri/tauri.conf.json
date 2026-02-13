@@ -84,7 +84,9 @@
       "binaries/yt-dlp"
     ],
     "windows": {
-      "nsis": {},
+      "nsis": {
+        "installerHooks": "nsis-hooks.nsi"
+      },
       "wix": {
         "language": "en-US"
       }
