@@ -48,6 +48,15 @@ defmodule ClippsterServerWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
+  # CORS must be at the endpoint level so headers are set on ALL responses,
+  # including errors from pipeline plugs (e.g. :accepts rejecting multipart uploads)
+  plug CORSPlug,
+    origin: &ClippsterServerWeb.Router.cors_origins/0,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    max_age: 86400,
+    credentials: true
+
   plug Plug.Parsers,
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
