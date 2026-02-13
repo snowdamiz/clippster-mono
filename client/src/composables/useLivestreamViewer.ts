@@ -1358,6 +1358,12 @@ export function useLivestreamViewer() {
       if (success) {
         if (state.value.playbackMode === 'webrtc') {
           hlsPlayback.pause();
+        } else {
+          // Explicitly play after init - MANIFEST_PARSED auto-play can silently fail
+          // (e.g., CSP blocking blob URLs, autoplay policy rejection)
+          await hlsPlayback.play();
+          state.value.isPlaying = true;
+          state.value.isBuffering = false;
         }
       } else {
         // Only set error if explicitly in HLS mode AND WebRTC isn't working
