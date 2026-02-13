@@ -108,7 +108,7 @@ jobs:
           - platform: macos-latest
             args: --target aarch64-apple-darwin
             artifact_suffix: aarch64
-          - platform: macos-latest
+          - platform: macos-13
             args: --target x86_64-apple-darwin
             artifact_suffix: x64
           - platform: windows-latest
@@ -135,7 +135,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || matrix.platform == 'macos-13' && 'x86_64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -160,7 +160,7 @@ jobs:
       # Download sidecar binaries (ffmpeg, node, yt-dlp) before Tauri build
       # build.rs will skip downloading since files already exist
       - name: Download sidecar binaries (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         run: |
           BINARIES_DIR="client/src-tauri/binaries"
           mkdir -p "$BINARIES_DIR"
@@ -320,7 +320,7 @@ jobs:
 
       # Sign native .node binaries AND sidecar binaries for macOS notarization
       - name: Sign native modules and sidecar binaries (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -378,7 +378,7 @@ jobs:
 
       # Install build tools for FFmpeg static compilation (ffmpeg-the-third crate with build feature)
       - name: Install FFmpeg build tools (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         run: |
           # nasm is required for FFmpeg x86 assembly optimizations during source compilation
           brew install nasm pkg-config
@@ -387,7 +387,7 @@ jobs:
       # Skip frontend rebuild - dist is already pre-built with correct VITE_API_URL
       # Also remove ffmpeg-libs from resources on macOS (static linking = no dylibs to bundle)
       - name: Skip frontend rebuild (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         run: |
           jq '.build.beforeBuildCommand = "" | .bundle.resources = [.bundle.resources[] | select(. != "ffmpeg-libs/*")]' client/src-tauri/tauri.conf.json > tmp.json && mv tmp.json client/src-tauri/tauri.conf.json
 
@@ -431,7 +431,7 @@ jobs:
 
       # Use tauri-action for all platforms (handles CLI installation efficiently)
       - name: Build Tauri App (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -461,7 +461,7 @@ jobs:
           args: ${{ matrix.args }}
 
       - name: Upload artifacts to public releases repo (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASES_PAT }}
@@ -490,7 +490,7 @@ jobs:
           fi
 
       - name: Generate latest.json for macOS
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         shell: bash
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
@@ -558,7 +558,7 @@ jobs:
           } | ConvertTo-Json -Depth 10 | Out-File -FilePath "$outputDir/latest.json" -Encoding utf8
 
       - name: Upload latest.json artifact (macOS)
-        if: matrix.platform == 'macos-latest'
+        if: contains(matrix.platform, 'macos')
         uses: actions/upload-artifact@v4
         with:
           name: latest-json-${{ matrix.artifact_suffix }}
