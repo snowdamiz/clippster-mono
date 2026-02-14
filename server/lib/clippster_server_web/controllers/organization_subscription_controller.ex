@@ -5,6 +5,8 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
   alias ClippsterServer.Accounts
   alias ClippsterServer.PromoCodes
 
+  plug ClippsterServerWeb.AuthPlug
+
   @doc """
   GET /organizations/:id/subscription
   Gets current subscription status for an organization.

@@ -166,12 +166,17 @@
                   </div>
                   <div class="admin-orgs__modal-field">
                     <label class="admin-orgs__modal-label">Tier</label>
-                    <select v-model="createOrgForm.tier" class="admin-orgs__modal-input">
-                      <option value="solo">Solo ($149.99)</option>
-                      <option value="enterprise_base">Enterprise Base ($300)</option>
-                      <option value="enterprise_ai">Enterprise AI ($500)</option>
-                      <option value="enterprise_unlimited">Enterprise Unlimited ($1800)</option>
-                    </select>
+                    <Select v-model="createOrgForm.tier">
+                      <SelectTrigger class="admin-orgs__select-trigger">
+                        <SelectValue placeholder="Select tier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="solo">Solo ($149.99)</SelectItem>
+                        <SelectItem value="enterprise_base">Enterprise Base ($300)</SelectItem>
+                        <SelectItem value="enterprise_ai">Enterprise AI ($500)</SelectItem>
+                        <SelectItem value="enterprise_unlimited">Enterprise Unlimited ($1800)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
                     <div class="admin-orgs__modal-field">
@@ -223,12 +228,17 @@
                 <form class="admin-orgs__modal-form" @submit.prevent="grantSubscription">
                   <div class="admin-orgs__modal-field">
                     <label class="admin-orgs__modal-label">Tier</label>
-                    <select v-model="grantSubForm.tier" class="admin-orgs__modal-input">
-                      <option value="solo">Solo</option>
-                      <option value="enterprise_base">Enterprise Base</option>
-                      <option value="enterprise_ai">Enterprise AI</option>
-                      <option value="enterprise_unlimited">Enterprise Unlimited</option>
-                    </select>
+                    <Select v-model="grantSubForm.tier">
+                      <SelectTrigger class="admin-orgs__select-trigger">
+                        <SelectValue placeholder="Select tier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="solo">Solo</SelectItem>
+                        <SelectItem value="enterprise_base">Enterprise Base</SelectItem>
+                        <SelectItem value="enterprise_ai">Enterprise AI</SelectItem>
+                        <SelectItem value="enterprise_unlimited">Enterprise Unlimited</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div class="admin-orgs__modal-field">
                     <label class="admin-orgs__modal-label">Days</label>
@@ -273,12 +283,17 @@
                 <form class="admin-orgs__modal-form" @submit.prevent="updateOrgSub">
                   <div class="admin-orgs__modal-field">
                     <label class="admin-orgs__modal-label">Tier</label>
-                    <select v-model="editSubForm.tier" class="admin-orgs__modal-input">
-                      <option value="solo">Solo</option>
-                      <option value="enterprise_base">Enterprise Base</option>
-                      <option value="enterprise_ai">Enterprise AI</option>
-                      <option value="enterprise_unlimited">Enterprise Unlimited</option>
-                    </select>
+                    <Select v-model="editSubForm.tier">
+                      <SelectTrigger class="admin-orgs__select-trigger">
+                        <SelectValue placeholder="Select tier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="solo">Solo</SelectItem>
+                        <SelectItem value="enterprise_base">Enterprise Base</SelectItem>
+                        <SelectItem value="enterprise_ai">Enterprise AI</SelectItem>
+                        <SelectItem value="enterprise_unlimited">Enterprise Unlimited</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
                     <div class="admin-orgs__modal-field">
@@ -428,6 +443,7 @@
   import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle, Plus, Crown, Settings, XCircle } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import api from '@/services/api';
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
   interface Organization {
     id: number;
@@ -1320,6 +1336,31 @@
     outline: none;
     border-color: var(--sidebar-accent);
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  /* ===== Select Trigger Styling ===== */
+  .admin-orgs__select-trigger {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+    height: auto;
+    justify-content: space-between;
+  }
+
+  .admin-orgs__select-trigger:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .admin-orgs__select-trigger[data-placeholder] {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
   }
 
   /* ===== Error Alert ===== */
