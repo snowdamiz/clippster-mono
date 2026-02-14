@@ -55,18 +55,18 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
 
     try {
       // Parse the URL to extract encoded directory and filename
-      // Expected format: tauri://hls/{encodedDir}/{filename}
+      // Expected format: asset://hls/{encodedDir}/{filename}
       const urlObj = new URL(url);
       
-      if (urlObj.protocol !== 'tauri:') {
-        // Fallback to regular fetch for non-tauri URLs (e.g., Kick proxy)
+      if (urlObj.protocol !== 'asset:') {
+        // Fallback to regular fetch for non-asset URLs (e.g., Kick proxy)
         return this.loadViaFetch(context, callbacks);
       }
 
       const pathParts = urlObj.pathname.split('/').filter(Boolean);
       
-      if (pathParts.length < 3 || pathParts[0] !== 'hls') {
-        throw new Error(`Invalid Tauri HLS URL format: ${url}`);
+      if (pathParts.length < 2 || pathParts[0] !== 'hls') {
+        throw new Error(`Invalid Asset HLS URL format: ${url}`);
       }
 
       const encodedDir = pathParts[1];
@@ -116,13 +116,14 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
           text: error instanceof Error ? error.message : String(error),
         },
         context,
-        null
+        null,
+        this.stats
       );
     }
   }
 
   /**
-   * Fallback to regular fetch for non-Tauri URLs (e.g., Kick HLS proxy)
+   * Fallback to regular fetch for non-asset URLs (e.g., Kick HLS proxy)
    */
   private async loadViaFetch(
     context: LoaderContext,
@@ -170,7 +171,8 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
           text: error instanceof Error ? error.message : String(error),
         },
         context,
-        null
+        null,
+        this.stats
       );
     }
   }
@@ -181,11 +183,11 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
 }
 
 /**
- * Helper function to convert local HLS directory path to Tauri URL
+ * Helper function to convert local HLS directory path to Asset URL
  */
 export function getTauriHlsUrl(outputDir: string, filename = 'playlist.m3u8'): string {
   const encodedDir = btoa(outputDir);
-  return `tauri://hls/${encodedDir}/${filename}`;
+  return `asset://hls/${encodedDir}/${filename}`;
 }
 
 /**
