@@ -1,12 +1,12 @@
 import { ref, computed, onUnmounted } from 'vue';
 import Hls from 'hls.js';
+import { TauriHlsLoader, getTauriHlsUrl, checkPlaylistExists } from './useTauriHlsLoader';
 
 // Constants for playlist polling
 const PLAYLIST_POLL_INTERVAL = 1000; // 1 second between checks
 const PLAYLIST_POLL_MAX_ATTEMPTS = 60; // Max 60 seconds waiting for playlist
 const PLAYLIST_SEGMENT_POLL_INTERVAL = 1000; // Wait for first segment after playlist exists
 const PLAYLIST_SEGMENT_POLL_MAX_ATTEMPTS = 20; // Up to ~20s after playlist appears
-const VIDEO_SERVER_PORT = 48276;
 
 // Buffer recovery constants - optimized for 4-second segments
 const BUFFER_STALL_RECOVERY_TIMEOUT = 4500; // 4.5 seconds before attempting recovery (> 1 segment)
@@ -112,29 +112,34 @@ export function useHlsPlayback() {
   });
 
   /**
-   * Generate HLS URL for the local server
+   * Generate HLS URL using Tauri protocol (no HTTP server needed)
    */
   function getHlsUrl(outputDir: string): string {
-    const encodedDir = btoa(outputDir);
-    // Use the stable playlist path - FFmpeg on macOS writes directly to playlist.m3u8
-    // (no .tmp file), while Windows may use .tmp. The server handles both cases.
-    return `http://127.0.0.1:${VIDEO_SERVER_PORT}/hls/${encodedDir}/playlist.m3u8`;
+    // Use Tauri protocol instead of HTTP to avoid CORS/PNA issues
+    return getTauriHlsUrl(outputDir, 'playlist.m3u8');
   }
 
   /**
    * Wait for the HLS playlist to become available.
    * If expectedUrl is provided, abort when the active target changes.
    */
-  async function waitForPlaylist(url: string, expectedUrl?: string): Promise<boolean> {
+  async function waitForPlaylist(url: string, expectedUrl?: string, outputDir?: string): Promise<boolean> {
     for (let attempt = 0; attempt < PLAYLIST_POLL_MAX_ATTEMPTS; attempt++) {
       if (isCleaningUp) return false;
       if (expectedUrl && hlsUrl && hlsUrl !== expectedUrl) return false;
 
       try {
-        const response = await fetch(url, { method: 'GET', mode: 'cors' });
-        if (response.ok) return true;
+        // For Tauri URLs, use checkPlaylistExists command
+        if (url.startsWith('tauri://') && outputDir) {
+          const exists = await checkPlaylistExists(outputDir, 'playlist.m3u8');
+          if (exists) return true;
+        } else {
+          // Fallback to fetch for direct URLs (e.g., Kick proxy)
+          const response = await fetch(url, { method: 'GET', mode: 'cors' });
+          if (response.ok) return true;
+        }
       } catch {
-        // Network error - continue polling
+        // Error - continue polling
       }
 
       await new Promise((resolve) => setTimeout(resolve, PLAYLIST_POLL_INTERVAL));
@@ -211,7 +216,7 @@ export function useHlsPlayback() {
     // For direct URLs (like Kick proxy), skip the playlist polling - just try to load directly
     // For local recordings, wait for the playlist to be available
     if (!isDirectUrl) {
-      const playlistReady = await waitForPlaylist(hlsUrl, expectedUrl);
+      const playlistReady = await waitForPlaylist(hlsUrl, expectedUrl, outputDirOrUrl);
       if (!playlistReady) {
         if (!isCleaningUp) {
           state.value.error = 'Playlist not available - recording may not have started';
@@ -232,6 +237,9 @@ export function useHlsPlayback() {
     try {
       // Create HLS instance with live streaming config optimized for DVR playback
       hls = new Hls({
+        // Use custom Tauri loader to avoid CORS/PNA issues
+        loader: TauriHlsLoader,
+
         // Live streaming optimizations for 4-second segments
         // CRITICAL: Stay far enough behind live edge to ensure smooth playback
         // With 4-second segments, we need at least 6 segments (24s) of buffer

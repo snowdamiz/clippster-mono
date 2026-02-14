@@ -25,6 +25,7 @@ mod video;
 mod clip_extractor_commands;
 mod utils;
 mod font_commands;
+mod hls_proxy;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -642,7 +643,6 @@ pub fn run() {
         // OTA Updates - required for automatic app updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_localhost::Builder::new(1420).build())
         .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
         .setup(|app| {
             println!("[Rust] Application setup complete");
@@ -654,16 +654,17 @@ pub fn run() {
                 video_server::start_video_server_impl().await;
             });
 
+            // Get the main window (defined in tauri.conf.json)
+            let window = app.get_webview_window("main").unwrap();
+
             // Enable devtools in production for debugging
             #[cfg(feature = "devtools")]
             {
-                let window = app.get_webview_window("main").unwrap();
                 window.open_devtools();
             }
 
             // Setup window close handler
             let app_handle = app.handle().clone();
-            let window = app.get_webview_window("main").unwrap();
 
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -913,6 +914,11 @@ font_commands::read_bundled_font,
 font_commands::copy_font_to_app_data,
 font_commands::list_custom_fonts,
 font_commands::resolve_font_path,
+
+// HLS Proxy commands
+hls_proxy::read_hls_playlist,
+hls_proxy::read_hls_segment,
+hls_proxy::check_hls_playlist_exists,
 
 // Remotion export commands
 remotion_export::start_remotion_export,
