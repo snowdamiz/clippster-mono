@@ -385,7 +385,7 @@ const router = createRouter({
       path: '/organization/:id',
       name: 'organization-detail',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiresOrgSubscription: true },
       children: [
         {
           path: '',
@@ -486,7 +486,7 @@ export function getDefaultRoute(
 }
 
 // Navigation guard for authentication, admin access, and feature flags
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore();
 
   // Check if route requires authentication
@@ -514,6 +514,28 @@ router.beforeEach((to, _from, next) => {
       if (userLevel < requiredLevel) {
         next({ path: '/billing', query: { upgrade: to.meta.requiredTier as string, reason: to.name as string } });
         return;
+      }
+    }
+  }
+
+  // Check org subscription gate
+  if (to.meta.requiresOrgSubscription && authStore.isAuthenticated) {
+    const orgId = to.params.id as string;
+    // Exempt the billing page itself so orgs can actually subscribe
+    const isBillingPage = to.name === 'org-billing';
+    if (orgId && !isBillingPage) {
+      // Check subscription status from cached org data or fetch
+      try {
+        const { data } = await import('@/services/api').then(m => m.default.get(`/organizations/${orgId}/subscription`));
+        if (data.success && data.subscription) {
+          const status = data.subscription.status;
+          if (status === 'none' || status === 'expired') {
+            next({ path: `/organization/${orgId}/billing`, query: { subscription_required: 'true' } });
+            return;
+          }
+        }
+      } catch {
+        // If we can't check, allow through (don't block on network errors)
       }
     }
   }

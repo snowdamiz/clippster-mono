@@ -40,6 +40,7 @@ const OrgClippers = lazy(() => import('./pages/dashboard/OrgClippers').then(m =>
 const OrgPosts = lazy(() => import('./pages/dashboard/OrgPosts').then(m => ({ default: m.OrgPosts })))
 const OrgHiring = lazy(() => import('./pages/dashboard/OrgHiring').then(m => ({ default: m.OrgHiring })))
 const OrgMessages = lazy(() => import('./pages/dashboard/OrgMessages').then(m => ({ default: m.OrgMessages })))
+const OrgSubscriptionRequired = lazy(() => import('./pages/dashboard/OrgSubscriptionRequired').then(m => ({ default: m.OrgSubscriptionRequired })))
 
 function LoadingFallback() {
   return (
@@ -105,6 +106,7 @@ createRoot(document.getElementById('root')!).render(
                   <Route path="posts" element={<OrgPosts />} />
                   <Route path="hiring" element={<OrgHiring />} />
                   <Route path="messages" element={<OrgMessages />} />
+                  <Route path="subscribe" element={<OrgSubscriptionRequired />} />
                 </Route>
               </Routes>
             </Suspense>

@@ -7,6 +7,7 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.AppSettings
   alias ClippsterServer.BetaCodes
   alias ClippsterServer.Subscriptions
+  alias ClippsterServer.OrganizationSubscriptions
   alias ClippsterServer.PromoCodes
 
   def get_ai_usage_stats(conn, _params) do
@@ -373,6 +374,14 @@ defmodule ClippsterServerWeb.AdminController do
             hours_remaining: Decimal.to_float(credits.hours_remaining),
             hours_used: Decimal.to_float(credits.hours_used)
           },
+          subscription_status: org.subscription_status,
+          subscription_tier: org.subscription_tier,
+          max_seats: org.max_seats,
+          monthly_credits: org.monthly_credits,
+          subscription_end_date: org.subscription_end_date,
+          admin_price_cents: org.admin_price_cents,
+          created_by_admin: org.created_by_admin_id != nil,
+          setup_completed: org.setup_completed,
           created_at: org.inserted_at
         }
       end)
@@ -1110,5 +1119,210 @@ defmodule ClippsterServerWeb.AdminController do
       end
 
     json(conn, %{success: true, branding: branding})
+  end
+
+  # ============================================================================
+  # Organization Subscription Management
+  # ============================================================================
+
+  @doc """
+  Grant a subscription to an organization.
+  """
+  def grant_org_subscription(conn, %{"organization_id" => org_id_string} = params) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        tier = Map.get(params, "tier")
+        days = parse_days(Map.get(params, "days", "30"))
+        grant_credits = parse_boolean(Map.get(params, "grant_credits", "false"))
+
+        case validate_org_tier(tier) do
+          :ok ->
+            case OrganizationSubscriptions.admin_grant_subscription(org_id, tier, days, grant_credits) do
+              {:ok, _result} ->
+                status = OrganizationSubscriptions.get_subscription_status(org_id)
+                json(conn, %{success: true, message: "Subscription granted", subscription: status})
+
+              {:error, :invalid_tier} ->
+                conn |> put_status(400) |> json(%{success: false, error: "Invalid tier"})
+
+              {:error, reason} ->
+                conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            end
+
+          {:error, reason} ->
+            conn |> put_status(400) |> json(%{success: false, error: reason})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  @doc """
+  Admin creates a new org account with email/password, custom seats/credits/price.
+  """
+  def create_org_account(conn, params) do
+    admin_id = conn.assigns[:current_user_id]
+
+    with {:ok, org_name} <- require_param(params, "org_name"),
+         {:ok, email} <- require_param(params, "email"),
+         {:ok, password} <- require_param(params, "password") do
+
+      max_seats = parse_int_param(params, "max_seats", 0)
+      monthly_credits = parse_int_param(params, "monthly_credits", 0)
+      price_cents = parse_int_param(params, "price_cents", 0)
+      tier = Map.get(params, "tier", "enterprise_base")
+      days = parse_int_param(params, "days", 30)
+
+      attrs = %{
+        org_name: org_name,
+        email: email,
+        password: password,
+        max_seats: max_seats,
+        monthly_credits: monthly_credits,
+        price_cents: price_cents,
+        admin_id: admin_id,
+        tier: tier,
+        days: days,
+        owner_name: Map.get(params, "owner_name"),
+        description: Map.get(params, "description", "")
+      }
+
+      case OrganizationSubscriptions.admin_create_org_account(attrs) do
+        {:ok, %{organization: org, user: user}} ->
+          json(conn, %{
+            success: true,
+            message: "Organization account created",
+            organization: %{
+              id: org.id,
+              name: org.name,
+              subscription_status: org.subscription_status,
+              subscription_tier: org.subscription_tier,
+              max_seats: org.max_seats,
+              monthly_credits: org.monthly_credits,
+              admin_price_cents: org.admin_price_cents
+            },
+            user: %{
+              id: user.id,
+              email: user.email
+            }
+          })
+
+        {:error, reason} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "Failed to create org account: #{inspect(reason)}"})
+      end
+    else
+      {:error, reason} ->
+        conn |> put_status(400) |> json(%{success: false, error: reason})
+    end
+  end
+
+  @doc """
+  Admin updates an existing org's subscription settings.
+  """
+  def update_org_subscription(conn, %{"organization_id" => org_id_string} = params) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        attrs = %{}
+        attrs = if Map.has_key?(params, "max_seats"), do: Map.put(attrs, :max_seats, parse_int_param(params, "max_seats", 0)), else: attrs
+        attrs = if Map.has_key?(params, "monthly_credits"), do: Map.put(attrs, :monthly_credits, parse_int_param(params, "monthly_credits", 0)), else: attrs
+        attrs = if Map.has_key?(params, "admin_price_cents"), do: Map.put(attrs, :admin_price_cents, parse_int_param(params, "admin_price_cents", 0)), else: attrs
+        attrs = if Map.has_key?(params, "tier"), do: Map.put(attrs, :tier, params["tier"]), else: attrs
+
+        immediate = parse_boolean(Map.get(params, "immediate", "false"))
+
+        case OrganizationSubscriptions.admin_update_org_subscription(org_id, attrs, immediate) do
+          {:ok, _org} ->
+            status = OrganizationSubscriptions.get_subscription_status(org_id)
+            json(conn, %{success: true, message: "Subscription updated", subscription: status})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  @doc """
+  Admin sets the seat count for an organization.
+  """
+  def set_org_seats(conn, %{"organization_id" => org_id_string} = params) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        max_seats = case Map.get(params, "max_seats") do
+          nil -> nil
+          0 -> nil
+          val when is_integer(val) -> val
+          val when is_binary(val) ->
+            case Integer.parse(val) do
+              {0, ""} -> nil
+              {int, ""} -> int
+              _ -> nil
+            end
+          _ -> nil
+        end
+
+        case OrganizationSubscriptions.admin_set_seats(org_id, max_seats) do
+          {:ok, _org} ->
+            json(conn, %{success: true, message: "Seats updated to #{max_seats || "unlimited"}"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  @doc """
+  Admin cancels an organization's subscription.
+  """
+  def cancel_org_subscription(conn, %{"organization_id" => org_id_string}) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        case OrganizationSubscriptions.admin_cancel_subscription(org_id) do
+          {:ok, _org} ->
+            status = OrganizationSubscriptions.get_subscription_status(org_id)
+            json(conn, %{success: true, message: "Subscription cancelled", subscription: status})
+
+          {:error, :not_active} ->
+            conn |> put_status(400) |> json(%{success: false, error: "No active subscription"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  defp validate_org_tier(tier) when tier in ["solo", "enterprise_base", "enterprise_ai", "enterprise_unlimited"], do: :ok
+  defp validate_org_tier(_), do: {:error, "Invalid tier - must be one of: solo, enterprise_base, enterprise_ai, enterprise_unlimited"}
+
+  defp require_param(params, key) do
+    case Map.get(params, key) do
+      nil -> {:error, "#{key} is required"}
+      "" -> {:error, "#{key} is required"}
+      value -> {:ok, value}
+    end
+  end
+
+  defp parse_int_param(params, key, default) do
+    case Map.get(params, key) do
+      nil -> default
+      val when is_integer(val) -> val
+      val when is_binary(val) ->
+        case Integer.parse(val) do
+          {int, ""} -> int
+          _ -> default
+        end
+      _ -> default
+    end
   end
 end

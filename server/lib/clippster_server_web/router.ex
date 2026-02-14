@@ -346,6 +346,8 @@ defmodule ClippsterServerWeb.Router do
     post("/organizations/:id/subscription/checkout", OrganizationSubscriptionController, :checkout)
     post("/organizations/:id/subscription/addons/checkout", OrganizationSubscriptionController, :addon_checkout)
     post("/organizations/:id/subscription/cancel", OrganizationSubscriptionController, :cancel)
+    put("/organizations/:id/subscription/tier", OrganizationSubscriptionController, :change_tier)
+    get("/organizations/:id/subscription/proration-preview", OrganizationSubscriptionController, :proration_preview)
     post("/organizations/:id/subscription/crypto-quote", OrganizationSubscriptionController, :crypto_quote)
     post("/organizations/:id/subscription/crypto-confirm", OrganizationSubscriptionController, :crypto_confirm)
 
@@ -927,6 +929,13 @@ defmodule ClippsterServerWeb.Router do
     get("/admin/organizations/:organization_id/credits", AdminController, :get_org_credits)
     post("/admin/organizations/:organization_id/credits/add", AdminController, :add_org_credits)
     put("/admin/organizations/:organization_id/credits", AdminController, :set_org_credits)
+
+    # Admin org subscription management
+    post("/admin/organizations/create-account", AdminController, :create_org_account)
+    post("/admin/organizations/:organization_id/subscription", AdminController, :grant_org_subscription)
+    put("/admin/organizations/:organization_id/subscription", AdminController, :update_org_subscription)
+    post("/admin/organizations/:organization_id/subscription/cancel", AdminController, :cancel_org_subscription)
+    put("/admin/organizations/:organization_id/seats", AdminController, :set_org_seats)
 
     # Admin bug report management
     get("/admin/bug-reports", BugReportsController, :index)

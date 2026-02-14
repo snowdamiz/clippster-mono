@@ -133,13 +133,16 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
 
       tiers ->
         valid_org_tiers = [
-          "enterprise",
+          "solo",
+          "enterprise_base",
           "enterprise_ai",
           "enterprise_unlimited",
-          "addon_5_seats",
-          "addon_5_seats_ai",
-          "addon_10_seats",
-          "addon_10_seats_ai"
+          "seats_5",
+          "seats_5_ai",
+          "seats_10",
+          "seats_10_ai",
+          "seats_20",
+          "seats_20_ai"
         ]
 
         case Enum.all?(tiers, fn t -> t in valid_org_tiers end) do
