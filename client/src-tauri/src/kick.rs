@@ -410,6 +410,7 @@ pub async fn start_kick_recording(
     streamer_id: String,
     session_id: String,
     segment_duration_minutes: Option<u32>,
+    resume_dir: Option<String>,
 ) -> Result<(), String> {
     let channel_slug = normalize_channel_slug(&channel_slug);
     
@@ -418,13 +419,42 @@ pub async fn start_kick_recording(
         return Err(format!("Already recording channel: {}", channel_slug));
     }
 
-    // Get output directory
-    let output_dir = storage::get_livestream_recordings_dir()
-        .map_err(|e| format!("Failed to get recordings directory: {}", e))?;
-    
-    let session_dir = output_dir.join(&session_id);
+    // Use resume_dir if provided (preserves DVR history), otherwise create new session dir
+    let session_dir = if let Some(ref resume_path) = resume_dir {
+        let dir = PathBuf::from(resume_path);
+        println!("[KickRecorder] Resuming recording in existing directory: {}", resume_path);
+        dir
+    } else {
+        let output_dir = storage::get_livestream_recordings_dir()
+            .map_err(|e| format!("Failed to get recordings directory: {}", e))?;
+        output_dir.join(&session_id)
+    };
     std::fs::create_dir_all(&session_dir)
         .map_err(|e| format!("Failed to create session directory: {}", e))?;
+
+    // Count existing segments to determine start_number for FFmpeg (preserves DVR on resume)
+    let existing_segment_count = if resume_dir.is_some() {
+        std::fs::read_dir(&session_dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.path()
+                            .extension()
+                            .map(|ext| ext == "ts")
+                            .unwrap_or(false)
+                    })
+                    .count() as u32
+            })
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    if existing_segment_count > 0 {
+        println!("[KickRecorder] Found {} existing segments, will resume from segment {}", 
+            existing_segment_count, existing_segment_count);
+    }
 
     let segment_duration = segment_duration_minutes.unwrap_or(5);
     
@@ -454,6 +484,7 @@ pub async fn start_kick_recording(
             session_clone,
             output_str,
             segment_duration,
+            existing_segment_count,
             stop_rx,
         )
         .await
@@ -538,6 +569,7 @@ async fn run_kick_recorder(
     session_id: String,
     output_dir: String,
     segment_duration_minutes: u32,
+    start_number: u32,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
     let ytdlp_path = resolve_ytdlp_binary()?;
@@ -586,6 +618,31 @@ async fn run_kick_recorder(
     let ytdlp_stdout = ytdlp_child.stdout.take()
         .ok_or("Failed to get yt-dlp stdout")?;
 
+    // CRITICAL: Drain yt-dlp stderr in a background task to prevent pipe deadlock.
+    // On Windows, pipe buffers are ~4KB. If yt-dlp writes enough to stderr,
+    // the buffer fills and yt-dlp blocks, freezing stdout too.
+    if let Some(ytdlp_stderr) = ytdlp_child.stderr.take() {
+        let slug_for_log = channel_slug.clone();
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut stderr = ytdlp_stderr;
+            let mut buf = vec![0u8; 4096];
+            loop {
+                match stderr.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let msg = String::from_utf8_lossy(&buf[..n]);
+                        let trimmed = msg.trim();
+                        if !trimmed.is_empty() {
+                            eprintln!("[KickRecorder yt-dlp stderr] [{}] {}", slug_for_log, trimmed);
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+    }
+
     // Convert tokio ChildStdout to std Stdio for piping to FFmpeg
     let ytdlp_stdout_std: std::process::Stdio = ytdlp_stdout.try_into()
         .map_err(|_| "Failed to convert yt-dlp stdout")?;
@@ -616,19 +673,56 @@ async fn run_kick_recorder(
         .arg("-hls_time").arg(hls_segment_seconds.to_string())
         .arg("-hls_list_size").arg("0")  // Keep all segments in playlist
         .arg("-hls_flags").arg("append_list+omit_endlist+temp_file")  // Live streaming flags + atomic writes
+        .arg("-hls_start_number").arg(start_number.to_string())  // Resume segment numbering for DVR continuity
         .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
         .stdin(ytdlp_stdout_std)       // Pipe yt-dlp output to FFmpeg
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    println!("[KickRecorder] Starting ffmpeg HLS output to: {}", playlist_path.display());
+    println!("[KickRecorder] Starting ffmpeg HLS output to: {} (start_number: {})", playlist_path.display(), start_number);
 
     let mut ffmpeg_child = ffmpeg_cmd.spawn()
         .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
 
+    // Drain FFmpeg stderr and stdout to prevent pipe deadlock
+    if let Some(ffmpeg_stderr) = ffmpeg_child.stderr.take() {
+        let slug_for_log = channel_slug.clone();
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut stderr = ffmpeg_stderr;
+            let mut buf = vec![0u8; 4096];
+            loop {
+                match stderr.read(&mut buf).await {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let msg = String::from_utf8_lossy(&buf[..n]);
+                        let trimmed = msg.trim();
+                        if !trimmed.is_empty() {
+                            eprintln!("[KickRecorder ffmpeg stderr] [{}] {}", slug_for_log, trimmed);
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+    }
+    if let Some(ffmpeg_stdout) = ffmpeg_child.stdout.take() {
+        tokio::spawn(async move {
+            use tokio::io::AsyncReadExt;
+            let mut stdout = ffmpeg_stdout;
+            let mut buf = vec![0u8; 4096];
+            loop {
+                match stdout.read(&mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        });
+    }
+
     let recording_start = std::time::Instant::now();
-    let mut last_emitted_segment: u32 = 0; // Track the last segment we emitted (1-indexed)
+    let mut last_emitted_segment: u32 = start_number; // Track the last segment we emitted (resume from existing count)
     let mut last_log_time = std::time::Instant::now();
 
     // Monitor for new segments and stop signal

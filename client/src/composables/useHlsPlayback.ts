@@ -176,9 +176,6 @@ export function useHlsPlayback() {
    * @param outputDirOrUrl - Either a local output directory path OR a direct HLS URL (starting with http)
    */
   async function initialize(video: HTMLVideoElement, outputDirOrUrl: string): Promise<boolean> {
-    // Reset cleanup flag when starting new initialization
-    isCleaningUp = false;
-
     // Detect if this is a direct URL or a local directory path
     const isDirectUrl = outputDirOrUrl.startsWith('http://') || outputDirOrUrl.startsWith('https://');
     const newUrl = isDirectUrl ? outputDirOrUrl : getHlsUrl(outputDirOrUrl);
@@ -193,6 +190,10 @@ export function useHlsPlayback() {
     if (hlsUrl && hlsUrl !== newUrl) {
       await cleanup();
     }
+
+    // Reset cleanup flag AFTER cleanup() so waitForPlaylist/waitForFirstSegment
+    // don't bail out immediately when called from initializeHlsPlayback()
+    isCleaningUp = false;
 
     videoElement = video;
     hlsUrl = newUrl;

@@ -1701,6 +1701,9 @@ class PumpfunRecorder {
       outputDir: this.outputDir,
       playlistPath: this.playlistPath,
       segmentPattern,
+      ffmpegPath: this.ffmpegPath,
+      encoderArgs: encoderArgs.join(' '),
+      isHardwareEncoder: !encoderArgs.includes('libx264'),
     });
     
     const args = [
