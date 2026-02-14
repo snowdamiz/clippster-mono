@@ -93,7 +93,6 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     .always_on_top(true)
     .skip_taskbar(true)
     .visible(true)
-    .additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults")
     .build()
     .map_err(|e| format!("Failed to create PIP window: {}", e))?;
 
@@ -643,6 +642,7 @@ pub fn run() {
         // OTA Updates - required for automatic app updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_localhost::Builder::new(1420).build())
         .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
         .setup(|app| {
             println!("[Rust] Application setup complete");
