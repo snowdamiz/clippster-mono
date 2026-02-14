@@ -118,6 +118,24 @@ async fn close_pip_control_window(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Disable Private Network Access (PNA) enforcement in WebView2.
+    // Without this, Chromium blocks http://tauri.localhost from fetching
+    // http://127.0.0.1:48276 (our local video/HLS server).
+    // Must be set BEFORE the WebView2 environment is created.
+    #[cfg(target_os = "windows")]
+    {
+        let existing = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
+        let pna_flags = "--disable-features=PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults";
+        if !existing.contains("PrivateNetworkAccess") {
+            let new_val = if existing.is_empty() {
+                pna_flags.to_string()
+            } else {
+                format!("{} {}", existing, pna_flags)
+            };
+            std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", &new_val);
+        }
+    }
+
     println!("[Rust] Starting Tauri application");
     println!("[Rust] Registering SQL plugin...");
 
