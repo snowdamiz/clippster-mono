@@ -774,6 +774,7 @@
   } from '@/services/organizationProfilesApi';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
+  import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { checkKickLivestream } from '@/services/kick';
   import { checkTwitchLivestream } from '@/services/twitch';
@@ -968,6 +969,7 @@
   const router = useRouter();
   const authStore = useAuthStore();
   const { success, error: showError } = useToast();
+  const { showGate } = useSubscriptionGate();
   const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, hasDvrRecording } =
     useLivestreamMonitoring();
   const { isLiveClipEnabled } = useFeatureFlags();
@@ -1549,6 +1551,18 @@
       showAuthModal.value = true;
       return;
     }
+    
+    // Check if user is free tier
+    const user = authStore.user;
+    const isFreeTier = user && !user.is_admin && !user.created_by_organization_id &&
+      (!(user as any).subscription_status || (user as any).subscription_status === 'none' || (user as any).subscription_status === 'expired');
+    
+    if (isFreeTier) {
+      const context = activeTab.value === 'global' ? 'Add Global Profile' : 'Add Creator';
+      showGate(context, 'general');
+      return;
+    }
+    
     creatorToEdit.value = null;
     profileDialogScope.value = activeTab.value;
     showProfileDialog.value = true;

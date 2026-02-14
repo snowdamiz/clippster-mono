@@ -214,16 +214,16 @@
     actionType.value = null;
   }
 
-  // Navigate to pricing
+  // Navigate to billing
   function goToPricing() {
     close();
-    router.push('/pricing');
+    router.push('/billing');
   }
 
-  // Select a tier and go to pricing
+  // Select a tier and go to billing
   function selectTier(tier: any) {
     close();
-    router.push({ path: '/pricing', query: { tier: tier.id } });
+    router.push({ path: '/billing', query: { tier: tier.id } });
   }
 
   // Listen for subscription-gate events from anywhere in the app

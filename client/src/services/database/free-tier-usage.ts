@@ -60,6 +60,28 @@ export async function recordUsage(userId: string, actionType: string): Promise<n
 }
 
 /**
+ * Decrements usage count for a specific action (e.g., when a download is cancelled).
+ * Will not go below 0.
+ */
+export async function decrementUsage(userId: string, actionType: string): Promise<number> {
+  const db = await getDatabase();
+  await ensureFreeTierUsageTable();
+
+  const today = getTodayDateString();
+  
+  // Only decrement if count > 0
+  await db.execute(
+    `UPDATE ${TABLE_NAME} 
+     SET count = MAX(0, count - 1), updated_at = datetime('now')
+     WHERE user_id = ? AND action_type = ? AND usage_date = ? AND count > 0`,
+    [userId, actionType, today]
+  );
+
+  // Return the new count
+  return await getUsageCount(userId, actionType);
+}
+
+/**
  * Gets all usage counts for a user on today's date.
  */
 export async function getAllUsageCounts(

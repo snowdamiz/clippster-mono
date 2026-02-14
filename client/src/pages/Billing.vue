@@ -1894,11 +1894,12 @@
     transition: all 200ms ease;
     display: flex;
     flex-direction: column;
+    cursor: pointer;
   }
 
   .billing-tier:hover {
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.1);
     transform: translateY(-2px);
   }
 
@@ -1907,7 +1908,8 @@
   }
 
   .billing-tier--popular:hover {
-    border-color: rgba(6, 182, 212, 0.6);
+    border-color: rgba(6, 182, 212, 0.8);
+    box-shadow: 0 4px 20px rgba(6, 182, 212, 0.25), 0 0 0 1px rgba(6, 182, 212, 0.5);
   }
 
   .billing-tier--current {
@@ -1916,7 +1918,8 @@
 
   .billing-tier--current:hover {
     border-color: rgba(16, 185, 129, 0.6);
-    transform: none;
+    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.2), 0 0 0 1px rgba(16, 185, 129, 0.4);
+    transform: translateY(-1px);
   }
 
   .billing-tier--free {
@@ -1925,8 +1928,9 @@
   }
 
   .billing-tier--free:hover {
-    border-color: rgba(255, 255, 255, 0.08);
-    transform: none;
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
   }
 
   .billing-tier__badge {

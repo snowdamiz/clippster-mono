@@ -20,6 +20,8 @@ export interface ChunkedDetectionOptions {
   forceReprocess?: boolean;
   organizationId?: number | null; // For org credit deduction
   multimodal?: boolean; // Enable multimodal detection (3 models + decider, 2x credits)
+  startTime?: number; // Start time in seconds for detection range
+  endTime?: number; // End time in seconds for detection range
 }
 
 export interface DetectionProgress {
@@ -156,7 +158,7 @@ export function useChunkedClipDetection() {
         message: 'Initializing clip detection...',
       };
 
-      const { chunkDurationMinutes = 10, overlapSeconds = 30, forceReprocess = false } = options;
+      const { chunkDurationMinutes = 10, overlapSeconds = 30, forceReprocess = false, startTime = 0, endTime = 0 } = options;
 
       // Get project video
       const rawVideos = await getRawVideosByProjectId(projectId);
@@ -198,7 +200,7 @@ export function useChunkedClipDetection() {
           cachedMetadata.chunks &&
           cachedMetadata.chunks.length > 0
         ) {
-          return await processWithCachedChunks(projectId, prompt, cachedMetadata, projectVideo);
+          return await processWithCachedChunks(projectId, prompt, cachedMetadata, projectVideo, startTime, endTime);
         } else if (
           cachedMetadata &&
           cachedMetadata.hasCachedTranscript &&
@@ -247,7 +249,9 @@ export function useChunkedClipDetection() {
           sessionResult.sessionId,
           prompt,
           sessionResult.chunks,
-          projectVideo
+          projectVideo,
+          startTime,
+          endTime
         );
       }
 
@@ -297,7 +301,9 @@ export function useChunkedClipDetection() {
     sessionId: string,
     prompt: string,
     chunks: AudioChunk[],
-    projectVideo: RawVideo
+    projectVideo: RawVideo,
+    startTime: number = 0,
+    endTime: number = 0
   ): Promise<{ success: boolean; sessionId?: string; error?: string }> {
     try {
       progress.value = {
@@ -431,7 +437,7 @@ export function useChunkedClipDetection() {
         throw new Error('Failed to retrieve cached metadata after transcription');
       }
 
-      return await processWithCachedChunks(projectId, prompt, cachedMetadata, projectVideo);
+      return await processWithCachedChunks(projectId, prompt, cachedMetadata, projectVideo, startTime, endTime);
     } catch (e) {
       const errorMessage = e instanceof Error ? e.message : String(e);
       throw new Error(errorMessage);
@@ -442,8 +448,10 @@ export function useChunkedClipDetection() {
     projectId: string,
     prompt: string,
     cachedMetadata: any,
-    _projectVideo: RawVideo
-  ): Promise<{ success: boolean; sessionId?: string; error?: string }> {
+    projectVideo: RawVideo,
+    startTime: number = 0,
+    endTime: number = 0
+  ): Promise<{ success: boolean; sessionId?: string; error?: string; jobId?: string }> {
     try {
       progress.value = {
         stage: 'detecting_clips',
@@ -468,6 +476,12 @@ export function useChunkedClipDetection() {
       formData.append('chunks', JSON.stringify(cachedMetadata.chunks));
       formData.append('total_duration', cachedMetadata.totalDuration.toString());
       formData.append('language', cachedMetadata.language || 'english');
+
+      // Add time range parameters if specified
+      if (startTime > 0 || endTime > 0) {
+        formData.append('start_time', startTime.toString());
+        formData.append('end_time', endTime.toString());
+      }
 
       progress.value = {
         stage: 'detecting_clips',

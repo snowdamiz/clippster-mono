@@ -102,6 +102,7 @@ const router = createRouter({
       path: '/prompts',
       name: 'prompts',
       component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -152,6 +153,7 @@ const router = createRouter({
       path: '/campaigns',
       name: 'campaigns',
       component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -165,7 +167,7 @@ const router = createRouter({
       path: '/clipper-profile',
       name: 'clipper-profile',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -184,7 +186,7 @@ const router = createRouter({
       path: '/clippers',
       name: 'clippers',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -221,7 +223,7 @@ const router = createRouter({
       path: '/messages',
       name: 'messages',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -512,7 +514,26 @@ router.beforeEach(async (to, _from, next) => {
       const userLevel = tierHierarchy[userTier] ?? 0;
       const requiredLevel = tierHierarchy[to.meta.requiredTier as string] ?? 0;
       if (userLevel < requiredLevel) {
-        next({ path: '/billing', query: { upgrade: to.meta.requiredTier as string, reason: to.name as string } });
+        // Show subscription gate dialog instead of redirecting to billing
+        const routeLabels: Record<string, string> = {
+          'campaigns-home': 'Access Campaigns',
+          'clipper-profile-home': 'Access Clipper Profile',
+          'clippers-directory': 'Browse Clippers',
+          'messages-home': 'Access Messages',
+          'prompts-home': 'Access Prompts',
+          'ai-video-home': 'Use AI Video Creator',
+        };
+        const routeName = typeof to.name === 'string' ? to.name : String(to.name);
+        const context = routeLabels[routeName] || `Access ${routeName}`;
+        
+        // Dispatch subscription gate event
+        const event = new CustomEvent('show-subscription-gate', {
+          detail: { context, type: 'general' },
+        });
+        window.dispatchEvent(event);
+        
+        // Prevent navigation
+        next(false);
         return;
       }
     }

@@ -4720,7 +4720,9 @@
     _promptId: string,
     promptContent: string,
     organizationId: number | null = null,
-    multimodal: boolean = false
+    multimodal: boolean = false,
+    startTime: number = 0,
+    endTime: number = 0
   ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
@@ -4769,6 +4771,8 @@
               forceReprocess: false,
               organizationId: organizationId,
               multimodal: multimodal,
+              startTime: startTime,
+              endTime: endTime,
             });
 
             if (result.success) {
