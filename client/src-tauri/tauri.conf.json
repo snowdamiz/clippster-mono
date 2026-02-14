@@ -25,7 +25,7 @@
     ],
     "macOSPrivateApi": true,
     "security": {
-      "csp": "default-src 'self' asset: https://asset.localhost; connect-src 'self' http://ipc.localhost http://localhost:* http://127.0.0.1:* https://clippster-server.fly.dev https: wss:; img-src 'self' asset: https://asset.localhost data: https:; media-src 'self' asset: https://asset.localhost blob: https: http://localhost:* http://127.0.0.1:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:",
+      "csp": "default-src 'self' asset: https://asset.localhost; connect-src 'self' tauri: http://ipc.localhost http://localhost:* http://127.0.0.1:* https://clippster-server.fly.dev https: wss:; img-src 'self' asset: https://asset.localhost data: https:; media-src 'self' asset: https://asset.localhost tauri: blob: https: http://localhost:* http://127.0.0.1:*; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:",
       "dangerousDisableAssetCspModification": [
         ".*/.*"
       ],
