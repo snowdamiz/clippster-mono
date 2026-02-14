@@ -76,6 +76,7 @@ defmodule ClippsterServerWeb.Router do
     # Wallet authentication routes
     post("/auth/challenge", AuthController, :request_challenge)
     post("/auth/verify", AuthController, :verify_signature)
+    post("/auth/activity-ping", AuthController, :activity_ping)
 
     # Google OAuth routes
     get("/auth/google", AuthController, :google_request)
@@ -407,6 +408,12 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/creator-profiles/:id",
       OrganizationCreatorProfileController,
       :delete
+    )
+
+    post(
+      "/organizations/:organization_id/creator-profiles/:id/toggle-disabled",
+      OrganizationCreatorProfileController,
+      :toggle_disabled
     )
 
     post(

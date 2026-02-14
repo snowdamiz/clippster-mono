@@ -73,6 +73,17 @@
                     {{ getBadgeLabel(badge.badge_type) }}
                   </Badge>
                 </div>
+                <span v-if="isOnline(profile.user?.last_active_at)" class="status-badge status-badge--online">
+                  <span class="status-badge__dot"></span>
+                  Online
+                </span>
+                <span v-else class="status-badge status-badge--offline">
+                  <span class="status-badge__dot"></span>
+                  Offline
+                </span>
+                <span v-if="profile.user?.last_active_at" class="last-active-text">
+                  {{ formatLastActive(profile.user.last_active_at) }}
+                </span>
               </div>
               <p v-if="profile.bio" class="profile-bio">{{ profile.bio }}</p>
               <div v-if="profile.specialty_tags?.length" class="profile-tags">
@@ -392,6 +403,7 @@
     getBadgeColor,
   } from '@/services/clipperProfilesApi';
   import { useToast } from '@/composables/useToast';
+  import { formatLastActive, isOnline } from '@/utils/timeUtils';
 
   const route = useRoute();
   const router = useRouter();
@@ -723,6 +735,51 @@
 
   .affiliate-badge__icon {
     flex-shrink: 0;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .status-badge--online {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  .status-badge--offline {
+    background: rgba(107, 114, 128, 0.15);
+    color: #9ca3af;
+  }
+
+  .status-badge__dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+  }
+
+  .status-badge--online .status-badge__dot {
+    background: #10b981;
+    box-shadow: 0 0 4px rgba(16, 185, 129, 0.6);
+  }
+
+  .status-badge--offline .status-badge__dot {
+    background: #6b7280;
+  }
+
+  .last-active-text {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.8;
   }
 
   .profile-badge {

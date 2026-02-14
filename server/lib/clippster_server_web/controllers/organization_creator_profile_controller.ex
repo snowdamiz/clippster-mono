@@ -193,6 +193,35 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
   end
 
   @doc """
+  Toggle disabled state of a creator profile.
+  POST /organizations/:organization_id/creator-profiles/:id/toggle-disabled
+  Org admins can toggle any profile. Users can toggle their own assigned profiles.
+  """
+  def toggle_disabled(conn, %{"organization_id" => _org_id, "id" => profile_id}) do
+    user = conn.assigns.current_user
+
+    case Organizations.toggle_creator_profile_disabled(profile_id, user) do
+      {:ok, updated} ->
+        json(conn, %{success: true, profile: serialize_profile(updated)})
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Profile not found"})
+
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "You don't have permission to toggle this profile"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(500)
+        |> json(%{success: false, error: "Failed to toggle profile: #{inspect(reason)}"})
+    end
+  end
+
+  @doc """
   Upload profile image.
   POST /organizations/:organization_id/creator-profiles/:id/image
   Admin only.
@@ -484,10 +513,12 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
       id: profile.id,
       organization_id: profile.organization_id,
       organization_name: get_org_name(profile),
+      created_by_user_id: profile.created_by_user_id,
       name: profile.name,
       description: profile.description,
       profile_image_url: maybe_presign_url(profile.profile_image_url),
       scope: profile.scope,
+      disabled: profile.disabled,
       intro_id: profile.intro_id,
       outro_id: profile.outro_id,
       watermark_id: profile.watermark_id,

@@ -52,6 +52,24 @@ export function formatLastActive(lastActiveAt: string | null | undefined): strin
 }
 
 /**
+ * Check if a user is currently online (active within last 5 minutes)
+ * @param lastActiveAt - ISO timestamp string or null
+ * @returns true if user is considered online
+ */
+export function isOnline(lastActiveAt: string | null | undefined): boolean {
+  if (!lastActiveAt) {
+    return false;
+  }
+
+  const now = new Date();
+  const lastActive = new Date(lastActiveAt);
+  const diffMs = now.getTime() - lastActive.getTime();
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+  return diffMinutes < 5;
+}
+
+/**
  * Get a color class based on how recently the user was active
  * @param lastActiveAt - ISO timestamp string or null
  * @returns CSS class name for styling

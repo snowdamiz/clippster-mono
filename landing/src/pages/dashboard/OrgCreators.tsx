@@ -5,7 +5,7 @@ import { useOrganization } from '@/hooks/useOrganization'
 
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ProfileDialog } from '@/components/organization/ProfileDialog'
-import { deleteOrganizationCreatorProfile, assignProfile, unassignProfile } from '@/services/organizationApi'
+import { deleteOrganizationCreatorProfile, assignProfile, unassignProfile, toggleCreatorProfileDisabled } from '@/services/organizationApi'
 import { useToast } from '@/hooks/useToast'
 import type { ServerOrganizationCreatorProfile } from '@/types/organization'
 import {
@@ -24,7 +24,9 @@ import {
   Image as ImageIcon,
   Check,
   User,
-  Paintbrush
+  Paintbrush,
+  Eye,
+  EyeOff
 } from 'lucide-react'
 
 function getPlatformIcon(platform: string): string {
@@ -197,6 +199,23 @@ export function OrgCreators() {
       toast.error('Save failed', err.message)
     } finally {
       setAssignmentSaving(false)
+    }
+  }
+
+  async function toggleProfileDisabled(profile: ServerOrganizationCreatorProfile) {
+    if (!organizationId) return
+    try {
+      const result = await toggleCreatorProfileDisabled(Number(organizationId), profile.id)
+      if (result.success && result.profile) {
+        const action = result.profile.disabled ? 'disabled' : 'enabled'
+        toast.success('Profile updated', `"${profile.name}" has been ${action}`)
+        loadCreatorProfiles()
+        setOpenMenuId(null)
+      } else {
+        toast.error('Toggle failed', result.error)
+      }
+    } catch (err: any) {
+      toast.error('Toggle failed', err.message)
     }
   }
 
@@ -393,6 +412,14 @@ export function OrgCreators() {
                               >
                                 <Pencil className="w-4 h-4" />
                                 <span>Edit Profile</span>
+                              </button>
+                              <div className="oc-dropdown__divider" />
+                              <button
+                                className="oc-dropdown__item"
+                                onClick={() => toggleProfileDisabled(profile)}
+                              >
+                                {(profile as any).disabled ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                                <span>{(profile as any).disabled ? 'Enable' : 'Disable'} Profile</span>
                               </button>
                               <div className="oc-dropdown__divider" />
                               <button

@@ -21,8 +21,10 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
     field :intro_outro_settings, :map
     field :layout_overlays, :map
     field :scope, :string, default: "streamer"
+    field :disabled, :boolean, default: false
 
     belongs_to :organization, Organization
+    belongs_to :created_by_user, ClippsterServer.Accounts.User, foreign_key: :created_by_user_id
     belongs_to :intro, OrganizationAsset, foreign_key: :intro_id
     belongs_to :outro, OrganizationAsset, foreign_key: :outro_id
     belongs_to :watermark, OrganizationAsset, foreign_key: :watermark_id
@@ -45,6 +47,7 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
     profile
     |> cast(attrs, [
       :organization_id,
+      :created_by_user_id,
       :name,
       :description,
       :profile_image_url,
@@ -61,6 +64,7 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
     |> validate_length(:name, min: 1, max: 255)
     |> validate_length(:description, max: 1000)
     |> foreign_key_constraint(:organization_id)
+    |> foreign_key_constraint(:created_by_user_id)
     |> foreign_key_constraint(:intro_id)
     |> foreign_key_constraint(:outro_id)
     |> foreign_key_constraint(:watermark_id)
@@ -81,7 +85,8 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
       :watermark_settings,
       :intro_outro_settings,
       :layout_overlays,
-      :scope
+      :scope,
+      :disabled
     ])
     |> validate_inclusion(:scope, ["streamer", "global"])
     |> validate_length(:name, min: 1, max: 255)

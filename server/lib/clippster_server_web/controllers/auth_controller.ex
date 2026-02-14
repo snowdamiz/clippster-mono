@@ -62,6 +62,43 @@ defmodule ClippsterServerWeb.AuthController do
     put_resp_header(conn, "access-control-allow-origin", origin)
   end
 
+  @doc """
+  Activity ping endpoint - updates user's last_active_at timestamp.
+  Called periodically by the frontend to track user activity.
+  """
+  def activity_ping(conn, _params) do
+    case get_user_from_token(conn) do
+      {:ok, user} ->
+        Accounts.update_last_active(user.id)
+        json(conn, %{success: true})
+
+      {:error, _} ->
+        conn
+        |> put_status(401)
+        |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  defp get_user_from_token(conn) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> token] ->
+        case TokenGenerator.verify_token(token) do
+          {:ok, claims} ->
+            user_id = claims["user_id"]
+            case Accounts.get_user(user_id) do
+              nil -> {:error, :not_found}
+              user -> {:ok, user}
+            end
+
+          {:error, _} ->
+            {:error, :invalid_token}
+        end
+
+      _ ->
+        {:error, :no_token}
+    end
+  end
+
   def request_challenge(conn, %{"client_id" => client_id}) do
     challenge = ChallengeStore.create_challenge(client_id)
 

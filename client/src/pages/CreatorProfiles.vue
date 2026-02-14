@@ -251,6 +251,13 @@
                             </span>
                           </DropdownMenuItem>
                         </template>
+                        <template v-if="creator.isOrgProfile && creator.organization_id">
+                          <DropdownMenuSeparator class="creator-dropdown__separator" />
+                          <DropdownMenuItem class="creator-dropdown__item" @click="toggleProfileDisabled(creator)">
+                            <component :is="creator.disabled ? 'Eye' : 'EyeOff'" class="creator-dropdown__item-icon" />
+                            {{ creator.disabled ? 'Enable' : 'Disable' }} Profile
+                          </DropdownMenuItem>
+                        </template>
                         <template v-if="!creator.isOrgProfile">
                           <DropdownMenuSeparator class="creator-dropdown__separator" />
                           <DropdownMenuItem
@@ -762,6 +769,7 @@
   import {
     getUserAssignedCreatorProfiles,
     updatePlatformLink as updateOrgPlatformLink,
+    toggleCreatorProfileDisabled,
     type ServerOrganizationCreatorProfile,
   } from '@/services/organizationProfilesApi';
   import { useAuthStore } from '@/stores/auth';
@@ -786,6 +794,7 @@
     Loader2,
     Building2,
     Eye,
+    EyeOff,
     MoreHorizontal,
     MoreVertical,
     Radio,
@@ -803,6 +812,7 @@
     organization_id?: number;
     organization_name?: string;
     server_id?: number;
+    disabled?: boolean;
   }
 
   function getMonitoredStreamerId(creator: DisplayCreatorProfile): string | null {
@@ -1587,6 +1597,27 @@
     } finally {
       showDeleteDialog.value = false;
       creatorToDelete.value = null;
+    }
+  }
+
+  async function toggleProfileDisabled(creator: DisplayCreatorProfile) {
+    if (!creator.isOrgProfile || !creator.organization_id || !creator.server_id) {
+      showError('Toggle Failed', 'This profile cannot be toggled');
+      return;
+    }
+
+    try {
+      const response = await toggleCreatorProfileDisabled(creator.organization_id, creator.server_id);
+      if (response.success && response.profile) {
+        const action = response.profile.disabled ? 'disabled' : 'enabled';
+        success('Profile Updated', `"${creator.name}" has been ${action}`);
+        await loadCreators();
+      } else {
+        showError('Toggle Failed', response.error || 'Failed to toggle profile');
+      }
+    } catch (err) {
+      console.error('Failed to toggle profile:', err);
+      showError('Toggle Failed', 'Failed to toggle profile disabled state');
     }
   }
 
