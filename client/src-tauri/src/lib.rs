@@ -25,6 +25,7 @@ mod video;
 mod clip_extractor_commands;
 mod utils;
 mod font_commands;
+mod hls_proxy;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -642,36 +643,19 @@ pub fn run() {
         // OTA Updates - required for automatic app updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_localhost::Builder::new(1420).build())
         .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
-
-            // Create main window programmatically with localhost URL
-            let port: u16 = 1420;
-            let url = if cfg!(debug_assertions) {
-                // Dev mode: use devUrl from tauri.conf.json
-                WebviewUrl::App("/".into())
-            } else {
-                // Production: use localhost plugin
-                let url_string = format!("http://localhost:{}", port);
-                WebviewUrl::External(url_string.parse().unwrap())
-            };
-
-            let window = WebviewWindowBuilder::new(app, "main", url)
-                .title("Clippster")
-                .inner_size(1400.0, 850.0)
-                .decorations(false)
-                .visible(false)
-                .transparent(true)
-                .build()?;
 
             // Start video streaming server in Tauri's async runtime
             let _app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 video_server::start_video_server_impl().await;
             });
+
+            // Get the main window (defined in tauri.conf.json)
+            let window = app.get_webview_window("main").unwrap();
 
             // Enable devtools in production for debugging
             #[cfg(feature = "devtools")]
@@ -930,6 +914,11 @@ font_commands::read_bundled_font,
 font_commands::copy_font_to_app_data,
 font_commands::list_custom_fonts,
 font_commands::resolve_font_path,
+
+// HLS Proxy commands
+hls_proxy::read_hls_playlist,
+hls_proxy::read_hls_segment,
+hls_proxy::check_hls_playlist_exists,
 
 // Remotion export commands
 remotion_export::start_remotion_export,
