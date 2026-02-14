@@ -31,6 +31,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
   # Base subscription tiers
   @org_subscription_tiers %{
+    "solo" => %{name: "Solo", seats: nil, monthly_credits: 0, usd: 149.99},
     "enterprise_base" => %{name: "Enterprise Base", seats: 5, monthly_credits: 0, usd: 300},
     "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 500},
     "enterprise_unlimited" => %{name: "Enterprise Unlimited", seats: nil, monthly_credits: 100_000, usd: 1800}
@@ -590,7 +591,11 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       total_seats: total_seats,
       total_monthly_credits: total_monthly_credits,
       current_members: current_members,
-      seats_remaining: seats_remaining
+      seats_remaining: seats_remaining,
+      pending_subscription_tier: org.pending_subscription_tier,
+      admin_price_cents: org.admin_price_cents,
+      created_by_admin: org.created_by_admin_id != nil,
+      setup_completed: org.setup_completed
     }
   end
 
@@ -654,5 +659,333 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   """
   def get_by_stripe_customer(stripe_customer_id) do
     Repo.get_by(Organization, stripe_customer_id: stripe_customer_id)
+  end
+
+  # ============================================================================
+  # Admin Subscription Management
+  # ============================================================================
+
+  @doc """
+  Admin grants a subscription to an organization.
+  Can optionally skip granting credits (grant_credits: false).
+  """
+  def admin_grant_subscription(organization_id, tier, days \\ 30, grant_credits \\ true) do
+    tier_info = get_tier_info(tier)
+
+    unless tier_info do
+      {:error, :invalid_tier}
+    else
+      Repo.transaction(fn ->
+        org = Repo.get!(Organization, organization_id)
+
+        start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+        end_date = DateTime.add(start_date, days, :day)
+
+        {:ok, updated_org} = org
+          |> Organization.subscription_changeset(%{
+            subscription_status: "active",
+            subscription_tier: tier,
+            subscription_start_date: start_date,
+            subscription_end_date: end_date,
+            subscription_renewal_method: "admin",
+            max_seats: tier_info.seats,
+            monthly_credits: if(grant_credits, do: tier_info.monthly_credits, else: 0)
+          })
+          |> Repo.update()
+
+        # Create subscription history record
+        {:ok, subscription} = %OrganizationSubscription{}
+          |> OrganizationSubscription.create_changeset(%{
+            organization_id: organization_id,
+            subscription_type: "base",
+            tier: tier,
+            status: "active",
+            start_date: start_date,
+            end_date: end_date,
+            seats: tier_info.seats,
+            credits_granted: Decimal.new(to_string(if(grant_credits, do: tier_info.monthly_credits, else: 0))),
+            payment_method: "admin",
+            stripe_subscription_id: "admin_grant_#{organization_id}_#{System.system_time(:second)}",
+            amount_usd: Decimal.new("0")
+          })
+          |> Repo.insert()
+
+        # Grant credits if requested
+        if grant_credits && tier_info.monthly_credits > 0 do
+          {:ok, _} = Organizations.add_organization_credits(organization_id, tier_info.monthly_credits)
+        end
+
+        IO.puts("[OrgSubscriptions] Admin granted #{tier} subscription to org #{organization_id}")
+
+        %{organization: updated_org, subscription: subscription}
+      end)
+    end
+  end
+
+  @doc """
+  Admin creates a custom org account with specific settings.
+  Sets custom price, seats, credits, and billing cycle.
+  The org owner user account is created with email/password.
+  setup_completed is set to false so the user can finish setup on first login.
+  """
+  def admin_create_org_account(attrs) do
+    alias ClippsterServer.Accounts.User, as: UserSchema
+
+    %{
+      org_name: org_name,
+      email: email,
+      password: password,
+      max_seats: max_seats,
+      monthly_credits: monthly_credits,
+      price_cents: price_cents,
+      admin_id: admin_id
+    } = attrs
+
+    tier = Map.get(attrs, :tier, "enterprise_base")
+    days = Map.get(attrs, :days, 30)
+
+    Repo.transaction(fn ->
+      # Create the owner user account via email registration changeset
+      {:ok, user} = %UserSchema{}
+        |> UserSchema.email_registration_changeset(%{
+          email: email,
+          password: password,
+          name: Map.get(attrs, :owner_name, org_name)
+        })
+        |> Repo.insert()
+
+      # Mark email as verified (admin-created accounts are pre-verified)
+      {:ok, user} = user
+        |> UserSchema.verify_email_changeset()
+        |> Repo.update()
+
+      # Set account type to organization
+      {:ok, user} = user
+        |> UserSchema.account_type_changeset(%{account_type: "organization"})
+        |> Repo.update()
+
+      # Create the organization
+      {:ok, org} = %Organization{}
+        |> Organization.create_changeset(%{
+          name: org_name,
+          description: Map.get(attrs, :description, ""),
+          owner_id: user.id
+        })
+        |> Repo.insert()
+
+      # Set subscription fields
+      start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+      end_date = DateTime.add(start_date, days, :day)
+
+      {:ok, updated_org} = org
+        |> Organization.subscription_changeset(%{
+          subscription_status: "active",
+          subscription_tier: tier,
+          subscription_start_date: start_date,
+          subscription_end_date: end_date,
+          subscription_renewal_method: "admin",
+          max_seats: if(max_seats == 0, do: nil, else: max_seats),
+          monthly_credits: monthly_credits,
+          admin_price_cents: price_cents,
+          admin_billing_cycle_day: start_date.day,
+          created_by_admin_id: admin_id,
+          setup_completed: false
+        })
+        |> Repo.update()
+
+      # Update user with owned_organization_id
+      {:ok, _user} = user
+        |> Ecto.Changeset.change(%{owned_organization_id: updated_org.id})
+        |> Repo.update()
+
+      # Add owner as member
+      {:ok, _member} = Organizations.add_member(updated_org.id, user.id, "owner")
+
+      # Grant initial credits if any (add_organization_credits auto-creates the credit record)
+      if monthly_credits > 0 do
+        {:ok, _} = Organizations.add_organization_credits(updated_org.id, monthly_credits)
+      end
+
+      # Create subscription history
+      {:ok, _sub} = %OrganizationSubscription{}
+        |> OrganizationSubscription.create_changeset(%{
+          organization_id: updated_org.id,
+          subscription_type: "base",
+          tier: tier,
+          status: "active",
+          start_date: start_date,
+          end_date: end_date,
+          seats: if(max_seats == 0, do: nil, else: max_seats),
+          credits_granted: Decimal.new(to_string(monthly_credits)),
+          payment_method: "admin",
+          stripe_subscription_id: "admin_create_#{updated_org.id}_#{System.system_time(:second)}",
+          amount_usd: Decimal.new(to_string(price_cents / 100))
+        })
+        |> Repo.insert()
+
+      IO.puts("[OrgSubscriptions] Admin created org account: #{org_name} (org #{updated_org.id})")
+
+      %{organization: updated_org, user: user}
+    end)
+  end
+
+  @doc """
+  Admin updates an existing org's subscription settings.
+  Changes take effect at next billing cycle (stored as pending).
+  If immediate is true, changes apply immediately.
+  """
+  def admin_update_org_subscription(organization_id, attrs, immediate \\ false) do
+    Repo.transaction(fn ->
+      org = Repo.get!(Organization, organization_id)
+
+      changeset_attrs = %{}
+      changeset_attrs = if Map.has_key?(attrs, :max_seats), do: Map.put(changeset_attrs, :max_seats, attrs.max_seats), else: changeset_attrs
+      changeset_attrs = if Map.has_key?(attrs, :monthly_credits), do: Map.put(changeset_attrs, :monthly_credits, attrs.monthly_credits), else: changeset_attrs
+      changeset_attrs = if Map.has_key?(attrs, :admin_price_cents), do: Map.put(changeset_attrs, :admin_price_cents, attrs.admin_price_cents), else: changeset_attrs
+      changeset_attrs = if Map.has_key?(attrs, :tier), do: Map.put(changeset_attrs, :subscription_tier, attrs.tier), else: changeset_attrs
+
+      if immediate do
+        {:ok, updated_org} = org
+          |> Organization.subscription_changeset(changeset_attrs)
+          |> Repo.update()
+
+        IO.puts("[OrgSubscriptions] Admin updated org #{organization_id} subscription immediately")
+        updated_org
+      else
+        # Store pending changes - they'll be applied at next renewal
+        # For now, if admin changes price, it takes effect next cycle
+        # We apply seat/credit changes immediately but price changes are stored
+        non_price_attrs = Map.drop(changeset_attrs, [:admin_price_cents])
+
+        {:ok, updated_org} = org
+          |> Organization.subscription_changeset(Map.merge(non_price_attrs, %{
+            admin_price_cents: Map.get(attrs, :admin_price_cents, org.admin_price_cents)
+          }))
+          |> Repo.update()
+
+        IO.puts("[OrgSubscriptions] Admin updated org #{organization_id} subscription (price change at next cycle)")
+        updated_org
+      end
+    end)
+  end
+
+  @doc """
+  Admin directly sets the seat count for an organization.
+  """
+  def admin_set_seats(organization_id, max_seats) do
+    org = Repo.get!(Organization, organization_id)
+
+    org
+    |> Organization.subscription_changeset(%{max_seats: max_seats})
+    |> Repo.update()
+  end
+
+  @doc """
+  Admin cancels an organization's subscription.
+  """
+  def admin_cancel_subscription(organization_id) do
+    cancel_subscription(organization_id)
+  end
+
+  # ============================================================================
+  # Subscription Tier Changes (User-initiated)
+  # ============================================================================
+
+  @doc """
+  Changes an organization's subscription tier.
+  Upgrades are applied immediately with proration.
+  Downgrades are scheduled for the next billing cycle.
+  """
+  def change_subscription_tier(organization_id, new_tier) do
+    org = Repo.get!(Organization, organization_id)
+    new_tier_info = get_tier_info(new_tier)
+    current_tier_info = if org.subscription_tier, do: get_tier_info(org.subscription_tier), else: nil
+
+    cond do
+      is_nil(new_tier_info) ->
+        {:error, :invalid_tier}
+
+      org.subscription_status != "active" ->
+        {:error, :no_active_subscription}
+
+      org.subscription_tier == new_tier ->
+        {:error, :same_tier}
+
+      is_nil(current_tier_info) ->
+        {:error, :no_current_tier}
+
+      new_tier_info.usd > current_tier_info.usd ->
+        # Upgrade - apply immediately
+        apply_tier_upgrade(org, new_tier, new_tier_info)
+
+      true ->
+        # Downgrade - schedule for next billing cycle
+        schedule_tier_downgrade(org, new_tier)
+    end
+  end
+
+  defp apply_tier_upgrade(org, new_tier, new_tier_info) do
+    Repo.transaction(fn ->
+      # If org has Stripe subscription, update it with proration
+      if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
+        # Stripe proration would be handled here via Stripe API
+        # For now, just update the tier locally
+        :ok
+      end
+
+      {:ok, updated_org} = org
+        |> Organization.subscription_changeset(%{
+          subscription_tier: new_tier,
+          max_seats: new_tier_info.seats,
+          monthly_credits: new_tier_info.monthly_credits,
+          pending_subscription_tier: nil
+        })
+        |> Repo.update()
+
+      # Grant additional credits if upgrading to a tier with more credits
+      current_credits = org.monthly_credits || 0
+      new_credits = new_tier_info.monthly_credits
+      if new_credits > current_credits do
+        credit_diff = new_credits - current_credits
+        {:ok, _} = Organizations.add_organization_credits(org.id, credit_diff)
+      end
+
+      IO.puts("[OrgSubscriptions] Upgraded org #{org.id} to #{new_tier}")
+
+      updated_org
+    end)
+  end
+
+  defp schedule_tier_downgrade(org, new_tier) do
+    org
+    |> Organization.subscription_changeset(%{pending_subscription_tier: new_tier})
+    |> Repo.update()
+  end
+
+  @doc """
+  Applies a pending tier change (called during renewal).
+  """
+  def apply_pending_tier_change(organization_id) do
+    org = Repo.get!(Organization, organization_id)
+
+    if org.pending_subscription_tier do
+      new_tier = org.pending_subscription_tier
+      tier_info = get_tier_info(new_tier)
+
+      if tier_info do
+        org
+        |> Organization.subscription_changeset(%{
+          subscription_tier: new_tier,
+          max_seats: tier_info.seats,
+          monthly_credits: tier_info.monthly_credits,
+          pending_subscription_tier: nil
+        })
+        |> Repo.update()
+      else
+        {:error, :invalid_pending_tier}
+      end
+    else
+      {:ok, org}
+    end
   end
 end

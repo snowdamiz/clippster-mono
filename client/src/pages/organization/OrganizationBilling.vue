@@ -474,13 +474,14 @@
                   {{ subscription?.status === 'active' ? 'Active' : 'Cancelled' }}
                 </p>
               </div>
-              <button
-                v-if="subscription?.status === 'active' && isAdmin"
-                @click="showCancelSubscriptionDialog = true"
-                class="org-billing__cancel-btn"
-              >
-                Cancel
-              </button>
+              <div v-if="subscription?.status === 'active' && isAdmin" class="org-billing__sub-actions">
+                <button @click="showChangePlanDialog = true" class="org-billing__change-plan-btn">
+                  Change Plan
+                </button>
+                <button @click="showCancelSubscriptionDialog = true" class="org-billing__cancel-btn">
+                  Cancel
+                </button>
+              </div>
             </div>
             <div class="org-billing__subscription-body">
               <div class="org-billing__subscription-stats">
@@ -502,6 +503,10 @@
                     <span class="org-billing__subscription-stat-label">Credits/Month</span>
                   </div>
                 </div>
+              </div>
+              <div v-if="subscription?.pending_subscription_tier" class="org-billing__subscription-renewal org-billing__subscription-renewal--warning" style="margin-bottom: 0.5rem">
+                <AlertTriangle class="org-billing__subscription-renewal-icon" />
+                <span>Downgrading to {{ subscription.pending_subscription_tier }} at end of billing period</span>
               </div>
               <div v-if="subscription?.end_date" class="org-billing__subscription-renewal">
                 <CalendarCheck class="org-billing__subscription-renewal-icon" />
@@ -659,6 +664,83 @@
       @success="handleSubscribeSuccess"
     />
 
+    <!-- Change Plan Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showChangePlanDialog" class="org-billing-modal__overlay" @click.self="closeChangePlanDialog">
+          <Transition name="dialog" appear>
+            <div class="org-billing-modal" style="max-width: 520px">
+              <div class="org-billing-modal__content">
+                <div class="org-billing-modal__header">
+                  <div class="org-billing-modal__icon" style="background-color: rgba(6, 182, 212, 0.15); color: #22d3ee">
+                    <Crown />
+                  </div>
+                  <h2 class="org-billing-modal__title">Change Plan</h2>
+                  <p class="org-billing-modal__subtitle">Current: {{ subscription?.tier_name }}</p>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem">
+                  <button
+                    v-for="tier in sortedBaseTiers.filter((t: any) => t.id !== subscription?.tier)"
+                    :key="tier.id"
+                    @click="selectChangePlanTier(tier.id)"
+                    class="org-billing__tier-option"
+                    :class="{ 'org-billing__tier-option--selected': changePlanTier === tier.id }"
+                  >
+                    <span class="org-billing__tier-option-name">{{ tier.name }}</span>
+                    <span class="org-billing__tier-option-price">${{ tier.usd }}<span style="font-size:0.75rem;font-weight:400;color:var(--sidebar-text-muted)">/mo</span></span>
+                    <span class="org-billing__tier-option-info">
+                      {{ tier.seats === null ? '∞' : tier.seats }} seats
+                      <template v-if="tier.monthly_credits > 0"> · {{ tier.monthly_credits.toLocaleString() }}/mo</template>
+                    </span>
+                  </button>
+                </div>
+
+                <div v-if="prorationLoading" style="display:flex;justify-content:center;padding:1rem">
+                  <Loader2 style="width:20px;height:20px;color:#22d3ee;animation:spin 1s linear infinite" />
+                </div>
+
+                <div v-if="prorationPreview && !prorationLoading" class="org-billing__proration-preview">
+                  <div class="org-billing__proration-row">
+                    <span>Type</span>
+                    <span :style="{ color: prorationPreview.change_type === 'upgrade' ? '#4ade80' : '#fbbf24', fontWeight: 600 }">
+                      {{ prorationPreview.change_type === 'upgrade' ? 'Upgrade' : 'Downgrade' }}
+                    </span>
+                  </div>
+                  <div class="org-billing__proration-row">
+                    <span>New price</span>
+                    <span style="color:white;font-weight:600">${{ prorationPreview.new_price }}/mo</span>
+                  </div>
+                  <div v-if="prorationPreview.change_type === 'upgrade' && prorationPreview.proration_amount > 0" class="org-billing__proration-row">
+                    <span>Prorated charge now</span>
+                    <span style="color:white;font-weight:600">${{ prorationPreview.proration_amount }}</span>
+                  </div>
+                  <div class="org-billing__proration-row">
+                    <span>Effective</span>
+                    <span style="color:white">{{ prorationPreview.effective_date === 'immediate' ? 'Immediately' : formatDate(prorationPreview.effective_date) }}</span>
+                  </div>
+                </div>
+
+                <div class="org-billing-modal__actions">
+                  <button
+                    class="org-billing-modal__btn org-billing-modal__btn--primary"
+                    :disabled="!changePlanTier || changePlanLoading"
+                    @click="handleChangePlan"
+                  >
+                    <Loader2 v-if="changePlanLoading" style="width:16px;height:16px;animation:spin 1s linear infinite" />
+                    {{ changePlanLoading ? 'Changing...' : 'Confirm Change' }}
+                  </button>
+                  <button class="org-billing-modal__btn org-billing-modal__btn--secondary" @click="closeChangePlanDialog">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Cancel Subscription Confirmation -->
     <Teleport to="body">
       <Transition name="modal">
@@ -789,6 +871,13 @@
   const selectedPlan = ref<any>(null);
   const selectedType = ref<'base' | 'addon'>('base');
 
+  // Change Plan state
+  const showChangePlanDialog = ref(false);
+  const changePlanTier = ref<string | null>(null);
+  const changePlanLoading = ref(false);
+  const prorationPreview = ref<any>(null);
+  const prorationLoading = ref(false);
+
   const sortedBaseTiers = computed(() => {
     // Sort base tiers by price (cheapest to most expensive)
     return [...baseTiers.value].sort((a, b) => a.usd - b.usd);
@@ -883,6 +972,49 @@
     }
   }
 
+  async function fetchProrationPreview(tier: string) {
+    if (!organizationId.value) return;
+    prorationLoading.value = true;
+    try {
+      const response = await api.get(`/organizations/${organizationId.value}/subscription/proration-preview?tier=${tier}`);
+      if (response.data.success) {
+        prorationPreview.value = response.data.preview;
+      }
+    } catch { /* ignore */ }
+    finally { prorationLoading.value = false; }
+  }
+
+  async function handleChangePlan() {
+    if (!organizationId.value || !changePlanTier.value) return;
+    changePlanLoading.value = true;
+    try {
+      const response = await api.put(`/organizations/${organizationId.value}/subscription/tier`, { tier: changePlanTier.value });
+      if (response.data.success) {
+        showSuccess('Plan changed', response.data.message || 'Subscription tier updated');
+        showChangePlanDialog.value = false;
+        changePlanTier.value = null;
+        prorationPreview.value = null;
+        await loadOrganization();
+      } else {
+        showError('Failed', response.data.error);
+      }
+    } catch (err: any) {
+      showError('Failed', err.message || 'An error occurred');
+    } finally {
+      changePlanLoading.value = false;
+    }
+  }
+
+  function selectChangePlanTier(tierId: string) {
+    changePlanTier.value = tierId;
+    fetchProrationPreview(tierId);
+  }
+
+  function closeChangePlanDialog() {
+    showChangePlanDialog.value = false;
+    changePlanTier.value = null;
+    prorationPreview.value = null;
+  }
 
   onMounted(async () => {
     await fetchSubscriptionTiers();
@@ -1849,6 +1981,28 @@
     margin: 0.25rem 0 0;
   }
 
+  .org-billing__sub-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .org-billing__change-plan-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #22d3ee;
+    background: transparent;
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .org-billing__change-plan-btn:hover {
+    background-color: rgba(6, 182, 212, 0.1);
+  }
+
   .org-billing__cancel-btn {
     padding: 0.5rem 1rem;
     font-size: 0.75rem;
@@ -1865,6 +2019,67 @@
     color: #f87171;
     border-color: rgba(248, 113, 113, 0.3);
     background-color: rgba(248, 113, 113, 0.1);
+  }
+
+  .org-billing__tier-option {
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid var(--sidebar-border);
+    background: var(--sidebar-hover);
+    cursor: pointer;
+    transition: all 150ms ease;
+    text-align: left;
+  }
+
+  .org-billing__tier-option:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .org-billing__tier-option--selected {
+    border-color: rgba(6, 182, 212, 0.6);
+    background: rgba(6, 182, 212, 0.1);
+    box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.3);
+  }
+
+  .org-billing__tier-option-name {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin-bottom: 0.25rem;
+  }
+
+  .org-billing__tier-option-price {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin-bottom: 0.5rem;
+  }
+
+  .org-billing__tier-option-info {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-billing__proration-preview {
+    padding: 1rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    font-size: 0.875rem;
+  }
+
+  .org-billing__proration-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.375rem 0;
+    color: var(--sidebar-text-muted);
+  }
+
+  .org-billing__proration-row:not(:last-child) {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   }
 
   .org-billing__subscription-body {

@@ -268,6 +268,15 @@ defmodule ClippsterServer.Organizations do
     end
   end
 
+  defp check_not_solo_tier(organization_id) do
+    org = Repo.get(Organization, organization_id)
+    if org && org.subscription_tier == "solo" do
+      {:error, :solo_tier_no_accounts}
+    else
+      {:ok, :allowed}
+    end
+  end
+
   # ============================================================================
   # Invitation Management
   # ============================================================================
@@ -496,6 +505,7 @@ defmodule ClippsterServer.Organizations do
   """
   def create_member_account(organization_id, email, password, role, name, %User{} = creator) do
     with {:ok, _} <- verify_admin(organization_id, creator.id),
+         {:ok, _} <- check_not_solo_tier(organization_id),
          {:ok, _} <- ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id),
          nil <- Accounts.get_user_by_email(email) do
 

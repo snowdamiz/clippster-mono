@@ -37,6 +37,13 @@ defmodule ClippsterServer.Organizations.Organization do
     field :stripe_customer_id, :string
     field :max_seats, :integer  # nil = unlimited (legacy), otherwise seat limit
     field :monthly_credits, :integer, default: 0  # Credits granted per renewal
+    field :pending_subscription_tier, :string  # Tier org is downgrading to at period end
+
+    # Admin-managed subscription fields
+    field :admin_price_cents, :integer  # Custom price set by admin (in cents), nil = use tier default
+    field :admin_billing_cycle_day, :integer  # Day of month for billing cycle
+    field :created_by_admin_id, :integer  # Admin user ID who created this org account
+    field :setup_completed, :boolean, default: true  # false = user needs to finish setup on first login
 
     belongs_to :owner, ClippsterServer.Accounts.User
     has_many :members, ClippsterServer.Organizations.OrganizationMember
@@ -85,10 +92,15 @@ defmodule ClippsterServer.Organizations.Organization do
       :stripe_subscription_id,
       :stripe_customer_id,
       :max_seats,
-      :monthly_credits
+      :monthly_credits,
+      :pending_subscription_tier,
+      :admin_price_cents,
+      :admin_billing_cycle_day,
+      :created_by_admin_id,
+      :setup_completed
     ])
     |> validate_inclusion(:subscription_status, ["none", "active", "cancelled", "expired"])
-    |> validate_inclusion(:subscription_tier, ["enterprise_base", "enterprise_ai", "enterprise_unlimited", nil])
+    |> validate_inclusion(:subscription_tier, ["solo", "enterprise_base", "enterprise_ai", "enterprise_unlimited", nil])
   end
 
   @doc """

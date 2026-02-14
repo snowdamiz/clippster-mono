@@ -56,7 +56,7 @@ export function SubscribeDialog({ open, onClose, plan, type, organizationId, org
           ? `/organizations/${organizationId}/subscription/addons/checkout`
           : `/organizations/${organizationId}/subscription/checkout`
       const result = await api.post<any>(endpoint, {
-        tier_id: plan.id,
+        tier: plan.id,
         payment_method: 'stripe',
         promo_code: promoResult?.valid ? promoCode : undefined
       })

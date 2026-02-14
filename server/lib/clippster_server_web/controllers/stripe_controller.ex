@@ -567,7 +567,41 @@ defmodule ClippsterServerWeb.StripeController do
 
     case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
       nil ->
-        IO.puts("[Stripe Webhook] No user found for subscription #{stripe_subscription_id}")
+        # Fallback: check org subscriptions
+        case ClippsterServer.OrganizationSubscriptions.get_by_stripe_subscription(stripe_subscription_id) do
+          nil ->
+            IO.puts("[Stripe Webhook] No user or org found for subscription #{stripe_subscription_id}")
+
+          org ->
+            cond do
+              cancel_at_period_end == true ->
+                case ClippsterServer.OrganizationSubscriptions.cancel_subscription(org.id) do
+                  {:ok, _} ->
+                    IO.puts("[Stripe Webhook] Marked org subscription as cancelled for org #{org.id}")
+                  {:error, reason} ->
+                    IO.puts("[Stripe Webhook] Failed to cancel org sub: #{inspect(reason)}")
+                end
+
+              status in ["canceled", "unpaid", "incomplete_expired"] ->
+                case ClippsterServer.OrganizationSubscriptions.expire_subscription(org.id) do
+                  {:ok, _} -> IO.puts("[Stripe Webhook] Expired org subscription for org #{org.id}")
+                  {:error, reason} -> IO.puts("[Stripe Webhook] Failed to expire org sub: #{inspect(reason)}")
+                end
+
+              true ->
+                # Check for pending tier change on org
+                if org.pending_subscription_tier do
+                  case ClippsterServer.OrganizationSubscriptions.apply_pending_tier_change(org.id) do
+                    {:ok, _} ->
+                      IO.puts("[Stripe Webhook] Applied pending tier change for org #{org.id}")
+                    {:error, reason} ->
+                      IO.puts("[Stripe Webhook] Failed to apply pending tier change: #{inspect(reason)}")
+                  end
+                else
+                  IO.puts("[Stripe Webhook] Org subscription update - status: #{status}")
+                end
+            end
+        end
 
       user ->
         cond do

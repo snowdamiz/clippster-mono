@@ -64,6 +64,10 @@ export interface OrganizationSubscription {
   total_monthly_credits: number
   current_members: number
   seats_remaining: number | null
+  pending_subscription_tier?: string | null
+  admin_price_cents?: number | null
+  created_by_admin?: boolean
+  setup_completed?: boolean
 }
 
 export interface OrganizationRestrictionDefaults {
