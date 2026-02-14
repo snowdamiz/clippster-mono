@@ -1082,22 +1082,24 @@ pub async fn start_video_server_impl() {
             }
         });
 
-    let cors = warp::cors()
-        .allow_any_origin()
-        .allow_methods(vec!["GET", "HEAD", "OPTIONS"])
-        .allow_headers(vec!["Content-Type", "Range", "Accept", "Origin", "Access-Control-Request-Private-Network"])
-        .expose_headers(vec!["Content-Range", "Content-Length", "Accept-Ranges"]);
+    // Explicit OPTIONS preflight for Chrome Private Network Access (PNA).
+    // Warp's built-in CORS middleware won't include Access-Control-Allow-Private-Network
+    // on its auto-generated OPTIONS responses, so we handle preflight ourselves.
+    let preflight = warp::options()
+        .map(|| {
+            warp::http::Response::builder()
+                .status(204)
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+                .header("Access-Control-Allow-Headers", "Content-Type, Range, Accept, Origin, Access-Control-Request-Private-Network")
+                .header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges")
+                .header("Access-Control-Allow-Private-Network", "true")
+                .header("Access-Control-Max-Age", "86400")
+                .body("")
+                .unwrap()
+        });
 
-    // Chrome Private Network Access (PNA) policy: requests from http://tauri.localhost
-    // (non-loopback origin) to http://127.0.0.1 (loopback) require this header on ALL
-    // responses including preflight OPTIONS. Without it, production builds cannot reach
-    // the local video/HLS server.
-    let pna_header = warp::reply::with::header(
-        "Access-Control-Allow-Private-Network",
-        "true",
-    );
-
-    let routes = video_head_route.or(video_route).or(hls_playlist_head_route)
+    let data_routes = video_head_route.or(video_route).or(hls_playlist_head_route)
         .or(hls_playlist_tmp_head_route)
         .or(hls_playlist_route)
         .or(hls_playlist_tmp_route)
@@ -1105,8 +1107,11 @@ pub async fn start_video_server_impl() {
         .or(ts_hls_playlist_route)
         .or(ts_hls_segment_route)
         .or(kick_hls_proxy_route)
-        .with(cors)
-        .with(pna_header);
+        .with(warp::reply::with::header("Access-Control-Allow-Origin", "*"))
+        .with(warp::reply::with::header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges"))
+        .with(warp::reply::with::header("Access-Control-Allow-Private-Network", "true"));
+
+    let routes = preflight.or(data_routes);
 
     println!("Starting local video server on port {}", VIDEO_SERVER_PORT);
     warp::serve(routes).run(([127, 0, 0, 1], VIDEO_SERVER_PORT)).await;
