@@ -92,6 +92,9 @@ defmodule ClippsterServerWeb.AuthController do
       # Create or get user (with optional referral code)
       referral_code = Map.get(conn.params, "referral_code")
       {:ok, user, is_new_user} = Accounts.get_or_create_user(public_key, referral_code)
+      
+      # Update last active timestamp
+      Accounts.update_last_active(user.id)
 
       # Generate JWT token
       token_claims = %{

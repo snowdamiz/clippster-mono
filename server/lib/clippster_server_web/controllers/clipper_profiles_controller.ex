@@ -518,7 +518,8 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       user: if(profile.user, do: %{
         id: profile.user.id,
         name: profile.user.name,
-        email: profile.user.email
+        email: profile.user.email,
+        last_active_at: profile.user.last_active_at
       }, else: nil),
       endorsements: Enum.map(profile.endorsements || [], &serialize_endorsement/1)
     })

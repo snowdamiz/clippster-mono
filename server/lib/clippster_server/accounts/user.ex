@@ -47,6 +47,9 @@ defmodule ClippsterServer.Accounts.User do
     field :deactivated, :boolean, default: false
     field :deactivated_at, :utc_datetime
 
+    # Activity tracking
+    field :last_active_at, :utc_datetime
+
     timestamps(type: :utc_datetime)
   end
 
