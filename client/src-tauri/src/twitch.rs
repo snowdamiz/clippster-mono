@@ -626,7 +626,7 @@ async fn run_twitch_recorder(
         .arg("--no-part")    // Don't use .part files
         .arg("--ffmpeg-location").arg(&ffmpeg_path)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null());  // Discard stderr (--quiet already suppresses output; prevents pipe deadlock on Windows)
+        .stderr(std::process::Stdio::piped());
 
     println!("[TwitchRecorder] Starting yt-dlp: {} {} --ffmpeg-location {}", ytdlp_path, twitch_url, ffmpeg_path);
 
@@ -670,8 +670,8 @@ async fn run_twitch_recorder(
         .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
         .stdin(ytdlp_stdout_std)       // Pipe yt-dlp output to FFmpeg
-        .stdout(std::process::Stdio::null())   // HLS writes to files, not stdout; null prevents pipe deadlock
-        .stderr(std::process::Stdio::null());  // Discard stderr to prevent pipe deadlock on Windows
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
 
     println!("[TwitchRecorder] Starting ffmpeg HLS output to: {} (start_number: {})", playlist_path.display(), start_number);
 
