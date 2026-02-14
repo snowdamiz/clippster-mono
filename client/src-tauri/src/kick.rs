@@ -608,7 +608,7 @@ async fn run_kick_recorder(
         .arg("--no-part")    // Don't use .part files
         .arg("--ffmpeg-location").arg(&ffmpeg_path)  // Full path to ffmpeg binary
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::null());  // Discard stderr (--quiet already suppresses output; prevents pipe deadlock on Windows)
 
     println!("[KickRecorder] Starting yt-dlp: {} {} --ffmpeg-location {}", ytdlp_path, kick_url, ffmpeg_path);
 
@@ -617,31 +617,6 @@ async fn run_kick_recorder(
 
     let ytdlp_stdout = ytdlp_child.stdout.take()
         .ok_or("Failed to get yt-dlp stdout")?;
-
-    // CRITICAL: Drain yt-dlp stderr in a background task to prevent pipe deadlock.
-    // On Windows, pipe buffers are ~4KB. If yt-dlp writes enough to stderr,
-    // the buffer fills and yt-dlp blocks, freezing stdout too.
-    if let Some(ytdlp_stderr) = ytdlp_child.stderr.take() {
-        let slug_for_log = channel_slug.clone();
-        tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
-            let mut stderr = ytdlp_stderr;
-            let mut buf = vec![0u8; 4096];
-            loop {
-                match stderr.read(&mut buf).await {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let msg = String::from_utf8_lossy(&buf[..n]);
-                        let trimmed = msg.trim();
-                        if !trimmed.is_empty() {
-                            eprintln!("[KickRecorder yt-dlp stderr] [{}] {}", slug_for_log, trimmed);
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-    }
 
     // Convert tokio ChildStdout to std Stdio for piping to FFmpeg
     let ytdlp_stdout_std: std::process::Stdio = ytdlp_stdout.try_into()
@@ -677,49 +652,13 @@ async fn run_kick_recorder(
         .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
         .stdin(ytdlp_stdout_std)       // Pipe yt-dlp output to FFmpeg
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stdout(std::process::Stdio::null())   // HLS writes to files, not stdout; null prevents pipe deadlock
+        .stderr(std::process::Stdio::null());  // Discard stderr to prevent pipe deadlock on Windows
 
     println!("[KickRecorder] Starting ffmpeg HLS output to: {} (start_number: {})", playlist_path.display(), start_number);
 
     let mut ffmpeg_child = ffmpeg_cmd.spawn()
         .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
-
-    // Drain FFmpeg stderr and stdout to prevent pipe deadlock
-    if let Some(ffmpeg_stderr) = ffmpeg_child.stderr.take() {
-        let slug_for_log = channel_slug.clone();
-        tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
-            let mut stderr = ffmpeg_stderr;
-            let mut buf = vec![0u8; 4096];
-            loop {
-                match stderr.read(&mut buf).await {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let msg = String::from_utf8_lossy(&buf[..n]);
-                        let trimmed = msg.trim();
-                        if !trimmed.is_empty() {
-                            eprintln!("[KickRecorder ffmpeg stderr] [{}] {}", slug_for_log, trimmed);
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-    }
-    if let Some(ffmpeg_stdout) = ffmpeg_child.stdout.take() {
-        tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
-            let mut stdout = ffmpeg_stdout;
-            let mut buf = vec![0u8; 4096];
-            loop {
-                match stdout.read(&mut buf).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => {}
-                }
-            }
-        });
-    }
 
     let recording_start = std::time::Instant::now();
     let mut last_emitted_segment: u32 = start_number; // Track the last segment we emitted (resume from existing count)

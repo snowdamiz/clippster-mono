@@ -626,7 +626,7 @@ async fn run_twitch_recorder(
         .arg("--no-part")    // Don't use .part files
         .arg("--ffmpeg-location").arg(&ffmpeg_path)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stderr(std::process::Stdio::null());  // Discard stderr (--quiet already suppresses output; prevents pipe deadlock on Windows)
 
     println!("[TwitchRecorder] Starting yt-dlp: {} {} --ffmpeg-location {}", ytdlp_path, twitch_url, ffmpeg_path);
 
@@ -635,33 +635,6 @@ async fn run_twitch_recorder(
 
     let ytdlp_stdout = ytdlp_child.stdout.take()
         .ok_or("Failed to get yt-dlp stdout")?;
-
-    // CRITICAL: Drain yt-dlp stderr in a background task to prevent pipe deadlock.
-    // On Windows, pipe buffers are ~4KB. If yt-dlp writes enough to stderr (warnings,
-    // format selection info, Twitch token messages), the buffer fills and yt-dlp blocks
-    // on the next stderr write, which freezes stdout too. FFmpeg then receives no data
-    // and produces near-empty segments (~105KB instead of ~10MB).
-    if let Some(ytdlp_stderr) = ytdlp_child.stderr.take() {
-        let channel_for_log = channel_name.clone();
-        tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
-            let mut stderr = ytdlp_stderr;
-            let mut buf = vec![0u8; 4096];
-            loop {
-                match stderr.read(&mut buf).await {
-                    Ok(0) => break, // EOF
-                    Ok(n) => {
-                        let msg = String::from_utf8_lossy(&buf[..n]);
-                        let trimmed = msg.trim();
-                        if !trimmed.is_empty() {
-                            eprintln!("[TwitchRecorder yt-dlp stderr] [{}] {}", channel_for_log, trimmed);
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-    }
 
     // Convert tokio ChildStdout to std Stdio for piping to FFmpeg
     let ytdlp_stdout_std: std::process::Stdio = ytdlp_stdout.try_into()
@@ -697,52 +670,13 @@ async fn run_twitch_recorder(
         .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
         .stdin(ytdlp_stdout_std)       // Pipe yt-dlp output to FFmpeg
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
+        .stdout(std::process::Stdio::null())   // HLS writes to files, not stdout; null prevents pipe deadlock
+        .stderr(std::process::Stdio::null());  // Discard stderr to prevent pipe deadlock on Windows
 
     println!("[TwitchRecorder] Starting ffmpeg HLS output to: {} (start_number: {})", playlist_path.display(), start_number);
 
     let mut ffmpeg_child = ffmpeg_cmd.spawn()
         .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
-
-    // CRITICAL: Drain FFmpeg stderr too — FFmpeg writes codec info, progress, and
-    // warnings to stderr. Same pipe deadlock risk as yt-dlp.
-    if let Some(ffmpeg_stderr) = ffmpeg_child.stderr.take() {
-        let channel_for_log = channel_name.clone();
-        tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
-            let mut stderr = ffmpeg_stderr;
-            let mut buf = vec![0u8; 4096];
-            loop {
-                match stderr.read(&mut buf).await {
-                    Ok(0) => break,
-                    Ok(n) => {
-                        let msg = String::from_utf8_lossy(&buf[..n]);
-                        let trimmed = msg.trim();
-                        if !trimmed.is_empty() {
-                            eprintln!("[TwitchRecorder ffmpeg stderr] [{}] {}", channel_for_log, trimmed);
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        });
-    }
-
-    // Drain FFmpeg stdout (usually empty for HLS output, but prevents potential deadlock)
-    if let Some(ffmpeg_stdout) = ffmpeg_child.stdout.take() {
-        tokio::spawn(async move {
-            use tokio::io::AsyncReadExt;
-            let mut stdout = ffmpeg_stdout;
-            let mut buf = vec![0u8; 4096];
-            loop {
-                match stdout.read(&mut buf).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => {} // Discard
-                }
-            }
-        });
-    }
 
     let recording_start = std::time::Instant::now();
     let mut last_emitted_segment: u32 = start_number; // Track the last segment we emitted (resume from existing count)
