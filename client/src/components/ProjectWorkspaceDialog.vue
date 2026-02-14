@@ -1736,6 +1736,17 @@
 
   // Function to handle clip playback
   async function onPlayClip(clip: any) {
+    console.log('[ProjectWorkspaceDialog] onPlayClip called with clip:', {
+      id: clip.id,
+      title: clip.title,
+      type: clip.type,
+      segmentsCount: clip.segments?.length,
+      segments: clip.segments,
+    });
+
+    // Stop any existing playback first
+    stopSegmentedPlayback();
+
     // Clear all previous selection states when starting playback
     hoveredClipId.value = null;
     hoveredTimelineClipId.value = null;
@@ -1746,8 +1757,9 @@
       hoveredTimelineClipId.value = null;
     }, 10);
 
-    // Track the currently playing clip
+    // Track the currently playing clip - SET THIS FIRST so timeline highlights immediately
     currentlyPlayingClipId.value = clip.id;
+    console.log('[ProjectWorkspaceDialog] Set currentlyPlayingClipId to:', clip.id);
 
     // Reveal the clip in the timeline (makes it visible if hidden)
     if (timelineRef.value) {
@@ -1755,9 +1767,8 @@
     }
 
     // Scroll timeline to the clip (after revealing, wait for DOM to update)
-    nextTick(() => {
-      scrollToClipInTimeline(clip.id);
-    });
+    await nextTick();
+    scrollToClipInTimeline(clip.id);
 
     // Check if this is a standalone clip file (DVR/livestream clip without raw video)
     // If no video is loaded but clip has a file path, load the clip's video directly
@@ -1862,10 +1873,30 @@
       ];
     }
 
-    console.log('[ProjectWorkspaceDialog] Final segments to play:', segments);
+    console.log('[ProjectWorkspaceDialog] Final segments to play:', {
+      count: segments.length,
+      segments: segments.map(s => ({
+        start: s.start_time,
+        end: s.end_time,
+        duration: s.duration,
+      })),
+    });
 
     if (segments.length > 0) {
-      playClipSegments(segments);
+      // Ensure we have valid segments before playing
+      const validSegments = segments.filter(s => 
+        s.start_time >= 0 && 
+        s.end_time > s.start_time && 
+        s.end_time <= duration.value
+      );
+
+      if (validSegments.length > 0) {
+        console.log('[ProjectWorkspaceDialog] Playing', validSegments.length, 'valid segments');
+        playClipSegments(validSegments);
+      } else {
+        console.warn('[ProjectWorkspaceDialog] No valid segments found for clip:', clip.id);
+        currentlyPlayingClipId.value = null;
+      }
     } else {
       console.warn('[ProjectWorkspaceDialog] No segments found for clip:', clip.id);
       currentlyPlayingClipId.value = null;
