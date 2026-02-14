@@ -1085,7 +1085,15 @@ pub async fn start_video_server_impl() {
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "HEAD", "OPTIONS"])
-        .allow_headers(vec!["Content-Type", "Range", "Accept", "Origin"]).expose_headers(vec!["Content-Range", "Content-Length", "Accept-Ranges"]);
+        .allow_headers(vec!["Content-Type", "Range", "Accept", "Origin", "Access-Control-Request-Private-Network"])
+        .expose_headers(vec!["Content-Range", "Content-Length", "Accept-Ranges"]);
+
+    // Private Network Access (PNA): Chromium/WebView2 blocks http://tauri.localhost
+    // from accessing loopback addresses (127.0.0.1) unless the server explicitly opts in.
+    // This header must be present on all responses (especially preflight OPTIONS responses).
+    let pna_header = warp::reply::with::header(
+        "Access-Control-Allow-Private-Network", "true"
+    );
 
     let routes = video_head_route.or(video_route).or(hls_playlist_head_route)
         .or(hls_playlist_tmp_head_route)
@@ -1095,7 +1103,8 @@ pub async fn start_video_server_impl() {
         .or(ts_hls_playlist_route)
         .or(ts_hls_segment_route)
         .or(kick_hls_proxy_route)
-        .with(cors);
+        .with(cors)
+        .with(pna_header);
 
     println!("Starting local video server on port {}", VIDEO_SERVER_PORT);
     warp::serve(routes).run(([127, 0, 0, 1], VIDEO_SERVER_PORT)).await;
