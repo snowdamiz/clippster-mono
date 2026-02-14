@@ -229,13 +229,15 @@ export async function startKickRecording(
   channelSlug: string,
   streamerId: string,
   sessionId: string,
-  segmentDurationMinutes?: number
+  segmentDurationMinutes?: number,
+  resumeDir?: string
 ): Promise<void> {
   await invoke('start_kick_recording', {
     channelSlug,
     streamerId,
     sessionId,
     segmentDurationMinutes,
+    resumeDir: resumeDir || null,
   });
 }
 
