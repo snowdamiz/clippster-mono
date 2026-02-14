@@ -1,6 +1,7 @@
 import { ref, computed, onUnmounted } from 'vue';
 import Hls from 'hls.js';
 import { TauriHlsLoader, getTauriHlsUrl, checkPlaylistExists } from './useTauriHlsLoader';
+import { invoke } from '@tauri-apps/api/core';
 
 // Constants for playlist polling
 const PLAYLIST_POLL_INTERVAL = 1000; // 1 second between checks
@@ -129,8 +130,8 @@ export function useHlsPlayback() {
       if (expectedUrl && hlsUrl && hlsUrl !== expectedUrl) return false;
 
       try {
-        // For Tauri URLs, use checkPlaylistExists command
-        if (url.startsWith('tauri://') && outputDir) {
+        // For Tauri asset URLs, use checkPlaylistExists command (fetch can't handle asset:// scheme)
+        if (outputDir && (url.startsWith('asset://') || url.startsWith('tauri://'))) {
           const exists = await checkPlaylistExists(outputDir, 'playlist.m3u8');
           if (exists) return true;
         } else {
@@ -153,20 +154,31 @@ export function useHlsPlayback() {
    * Wait for the first segment to appear in the playlist.
    * If expectedUrl is provided, abort when the active target changes.
    */
-  async function waitForFirstSegment(url: string, expectedUrl?: string): Promise<boolean> {
+  async function waitForFirstSegment(url: string, expectedUrl?: string, outputDir?: string): Promise<boolean> {
     for (let attempt = 0; attempt < PLAYLIST_SEGMENT_POLL_MAX_ATTEMPTS; attempt++) {
       if (isCleaningUp) return false;
       if (expectedUrl && hlsUrl && hlsUrl !== expectedUrl) return false;
 
       try {
-        const response = await fetch(url, { method: 'GET', cache: 'no-store', mode: 'cors' });
-        if (response.ok) {
-          const text = await response.text();
-          const segmentCount = (text.match(/#EXTINF:/g) || []).length;
+        // For Tauri asset URLs, use invoke to read playlist content (fetch can't handle asset:// scheme)
+        if (outputDir && (url.startsWith('asset://') || url.startsWith('tauri://'))) {
+          const encodedDir = btoa(outputDir);
+          const content = await invoke<string>('read_hls_playlist', {
+            encodedDir,
+            filename: 'playlist.m3u8',
+          });
+          const segmentCount = (content.match(/#EXTINF:/g) || []).length;
           if (segmentCount > 0) return true;
+        } else {
+          const response = await fetch(url, { method: 'GET', cache: 'no-store', mode: 'cors' });
+          if (response.ok) {
+            const text = await response.text();
+            const segmentCount = (text.match(/#EXTINF:/g) || []).length;
+            if (segmentCount > 0) return true;
+          }
         }
       } catch {
-        // Network error - continue polling
+        // Error - continue polling
       }
 
       await new Promise((resolve) => setTimeout(resolve, PLAYLIST_SEGMENT_POLL_INTERVAL));
@@ -225,7 +237,7 @@ export function useHlsPlayback() {
       }
 
       // Ensure at least one segment exists
-      const segmentReady = await waitForFirstSegment(hlsUrl, expectedUrl);
+      const segmentReady = await waitForFirstSegment(hlsUrl, expectedUrl, isDirectUrl ? undefined : outputDirOrUrl);
       if (!segmentReady) {
         if (!isCleaningUp) {
           state.value.error = 'No segments produced for recording';
