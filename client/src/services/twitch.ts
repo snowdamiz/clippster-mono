@@ -99,15 +99,13 @@ export async function startTwitchRecording(
   channelName: string,
   streamerId: string,
   sessionId: string,
-  segmentDurationMinutes?: number,
-  resumeDir?: string
+  segmentDurationMinutes?: number
 ): Promise<void> {
   await invoke('start_twitch_recording', {
     channelName,
     streamerId,
     sessionId,
     segmentDurationMinutes,
-    resumeDir: resumeDir || null,
   });
 }
 
