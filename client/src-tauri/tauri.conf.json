@@ -47,7 +47,8 @@
   "plugins": {
     "core": {
       "capabilities": [
-        "main-window-permissions"
+        "main-window-permissions",
+        "pip-window-permissions"
       ]
     },
     "sql": {
