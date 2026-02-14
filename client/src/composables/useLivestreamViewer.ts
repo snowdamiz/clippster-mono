@@ -2306,6 +2306,9 @@ export function useLivestreamViewer() {
 
   // Watch for segments to become available - retry HLS init if it failed earlier
   // This handles the case where waitForPlaylistReady timed out but segments are now available
+  // NOTE: We intentionally do NOT require connectionState === 'connected' here.
+  // For PumpFun, WebRTC is only for viewer count — HLS is the primary playback method.
+  // If WebRTC disconnects before segments arrive, we still need to initialize HLS.
   watch(
     () => state.value.availableSegments.length,
     async (segmentCount) => {
@@ -2314,11 +2317,15 @@ export function useLivestreamViewer() {
         segmentCount >= 2 &&
         hlsOutputDir.value &&
         (hlsVideoElement.value || videoElement.value) &&
-        state.value.connectionState === 'connected' &&
         !hlsPlayback.state.value.isInitialized &&
         !isHlsInitializing
       ) {
         console.log('[LiveViewer] Segments available, retrying HLS initialization');
+        // Ensure connectionState is 'connected' for HLS playback even if WebRTC dropped
+        if (state.value.connectionState !== 'connected') {
+          console.log('[LiveViewer] Restoring connectionState to connected (HLS segments flowing)');
+          state.value.connectionState = 'connected';
+        }
         await initializeHlsPlayback();
       }
     }
