@@ -20,8 +20,7 @@
         "titleBarStyle": "Overlay",
         "visible": false,
         "transparent": true,
-        "dragDropEnabled": false,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults"
+        "dragDropEnabled": false
       }
     ],
     "macOSPrivateApi": true,
