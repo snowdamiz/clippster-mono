@@ -441,6 +441,10 @@
                         <Check class="billing-tier__feature-icon" />
                         <span>Credits roll over</span>
                       </li>
+                      <li v-if="tier.id === 'starter'" class="billing-tier__feature billing-tier__feature--disabled">
+                        <X class="billing-tier__feature-icon billing-tier__feature-icon--disabled" />
+                        <span>No AI Video Creator</span>
+                      </li>
                     </ul>
 
                     <button
@@ -1865,12 +1869,18 @@
     display: grid;
     grid-template-columns: repeat(1, 1fr);
     gap: 1.25rem;
-    padding-top: 0.75rem;
+    margin-top: 1.5rem;
   }
 
   @media (min-width: 768px) {
     .billing-plans__grid {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1400px) {
+    .billing-plans__grid {
+      grid-template-columns: repeat(4, 1fr);
     }
   }
 
