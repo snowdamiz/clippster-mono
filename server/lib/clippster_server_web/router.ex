@@ -159,7 +159,10 @@ defmodule ClippsterServerWeb.Router do
     post("/subscription/promo/validate", SubscriptionController, :validate_promo)
     post("/subscription/crypto-quote", SubscriptionController, :get_crypto_quote)
     post("/subscription/crypto-confirm", SubscriptionController, :confirm_crypto_payment)
+    put("/subscription/tier", SubscriptionController, :change_tier)
+    post("/subscription/pending-change/cancel", SubscriptionController, :cancel_pending_change)
     post("/subscription/cancel", SubscriptionController, :cancel)
+    post("/subscription/deactivate", SubscriptionController, :deactivate_profile)
     get("/subscription/history", SubscriptionController, :history)
 
     # Beta code activation (requires auth)

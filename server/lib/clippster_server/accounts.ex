@@ -226,6 +226,24 @@ defmodule ClippsterServer.Accounts do
   end
 
   @doc """
+  Deactivates a user account.
+  """
+  def deactivate_user(user_id) do
+    case get_user(user_id) do
+      nil ->
+        {:error, :not_found}
+
+      user ->
+        user
+        |> Ecto.Changeset.change(%{
+          deactivated: true,
+          deactivated_at: DateTime.utc_now()
+        })
+        |> Repo.update()
+    end
+  end
+
+  @doc """
   Promotes a user to admin.
   """
   def promote_user_to_admin(user_id) do

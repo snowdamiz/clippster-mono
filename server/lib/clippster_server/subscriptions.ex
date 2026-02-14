@@ -338,6 +338,8 @@ defmodule ClippsterServer.Subscriptions do
   defp build_status_response(user) do
     tier = user.subscription_tier
     tier_info = if tier, do: get_tier_info(tier), else: nil
+    pending = user.pending_subscription_tier
+    pending_info = if pending, do: get_tier_info(pending), else: nil
 
     %{
       status: user.subscription_status || "none",
@@ -347,7 +349,9 @@ defmodule ClippsterServer.Subscriptions do
       end_date: user.subscription_end_date,
       renewal_method: user.subscription_renewal_method,
       needs_subscription: needs_subscription?(user),
-      days_remaining: calculate_days_remaining(user.subscription_end_date)
+      days_remaining: calculate_days_remaining(user.subscription_end_date),
+      pending_subscription_tier: pending,
+      pending_subscription_tier_name: if(pending_info, do: pending_info.name, else: nil)
     }
   end
 
@@ -433,30 +437,233 @@ defmodule ClippsterServer.Subscriptions do
   # Subscription Tier Changes
   # ============================================================================
 
+  @tier_price_hierarchy %{"starter" => 1, "creator" => 2, "pro" => 3}
+
   @doc """
-  Changes subscription tier (upgrade/downgrade).
-  For Stripe subscriptions, this should be handled via Stripe's subscription update API.
+  Changes subscription tier (upgrade/downgrade) for a user with an active Stripe subscription.
+
+  - **Upgrade** (new tier price > current): Updates Stripe subscription immediately with proration.
+    Stripe charges the prorated difference. Updates DB tier, credits difference granted immediately.
+  - **Downgrade** (new tier price < current): Schedules the change at period end.
+    Sets `pending_subscription_tier` on user. Actual change applied when webhook fires at renewal.
+
+  Returns `{:ok, %{type: "upgrade" | "downgrade", user: user}}` or `{:error, reason}`.
   """
   def change_subscription_tier(user_id, new_tier) do
-    tier_info = get_tier_info(new_tier)
+    new_tier_info = get_tier_info(new_tier)
 
-    unless tier_info do
+    unless new_tier_info do
       {:error, :invalid_tier}
     else
-      Repo.transaction(fn ->
-        user = Repo.get!(User, user_id)
+      user = Repo.get!(User, user_id)
 
-        # Update user's tier
-        {:ok, updated_user} = user
-          |> User.subscription_changeset(%{
-            subscription_tier: new_tier
-          })
-          |> Repo.update()
+      cond do
+        user.subscription_status not in ["active"] ->
+          {:error, :no_active_subscription}
 
-        IO.puts("[Subscriptions] Changed subscription tier for user #{user_id} to #{new_tier}")
+        user.subscription_tier == new_tier ->
+          {:error, :same_tier}
 
-        updated_user
-      end)
+        true ->
+          current_level = Map.get(@tier_price_hierarchy, user.subscription_tier, 0)
+          new_level = Map.get(@tier_price_hierarchy, new_tier, 0)
+
+          if new_level > current_level do
+            do_upgrade(user, new_tier, new_tier_info)
+          else
+            do_downgrade(user, new_tier)
+          end
+      end
+    end
+  end
+
+  @doc """
+  Applies a pending downgrade tier change. Called from webhook at renewal.
+  """
+  def apply_pending_tier_change(user_id) do
+    user = Repo.get!(User, user_id)
+
+    case user.pending_subscription_tier do
+      nil -> {:ok, user}
+      pending_tier ->
+        tier_info = get_tier_info(pending_tier)
+
+        if tier_info do
+          {:ok, updated_user} = user
+            |> User.subscription_changeset(%{
+              subscription_tier: pending_tier,
+              pending_subscription_tier: nil
+            })
+            |> Repo.update()
+
+          # Grant the new tier's credits
+          {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+
+          IO.puts("[Subscriptions] Applied pending downgrade for user #{user_id}: #{user.subscription_tier} -> #{pending_tier}")
+          {:ok, %{type: "downgrade_applied", user: updated_user}}
+        else
+          # Invalid pending tier, clear it
+          {:ok, updated_user} = user
+            |> User.subscription_changeset(%{pending_subscription_tier: nil})
+            |> Repo.update()
+          {:ok, %{type: "cleared_invalid", user: updated_user}}
+        end
+    end
+  end
+
+  @doc """
+  Cancels a pending downgrade (user changed their mind).
+  """
+  def cancel_pending_tier_change(user_id) do
+    user = Repo.get!(User, user_id)
+
+    {:ok, updated_user} = user
+      |> User.subscription_changeset(%{pending_subscription_tier: nil})
+      |> Repo.update()
+
+    {:ok, updated_user}
+  end
+
+  # Upgrade: update Stripe subscription immediately with proration, update DB tier now
+  defp do_upgrade(user, new_tier, new_tier_info) do
+    if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
+      # Retrieve current Stripe subscription to get the item ID
+      case Stripe.Subscription.retrieve(user.stripe_subscription_id) do
+        {:ok, stripe_sub} ->
+          item = List.first(stripe_sub.items.data)
+
+          if item do
+            new_amount_cents = trunc(new_tier_info.usd * 100)
+
+            # Update the subscription item with new price, prorate immediately
+            update_params = %{
+              items: [
+                %{
+                  id: item.id,
+                  price_data: %{
+                    currency: "usd",
+                    product: item.price.product,
+                    unit_amount: new_amount_cents,
+                    recurring: %{interval: item.price.recurring.interval}
+                  }
+                }
+              ],
+              proration_behavior: "create_prorations",
+              metadata: %{
+                subscription_tier: new_tier,
+                monthly_credits: to_string(new_tier_info.monthly_credits)
+              }
+            }
+
+            case Stripe.Subscription.update(user.stripe_subscription_id, update_params) do
+              {:ok, _updated_sub} ->
+                # Update DB immediately for upgrades
+                {:ok, updated_user} = user
+                  |> User.subscription_changeset(%{
+                    subscription_tier: new_tier,
+                    pending_subscription_tier: nil
+                  })
+                  |> Repo.update()
+
+                # Grant the difference in credits immediately
+                current_tier_info = get_tier_info(user.subscription_tier)
+                credit_diff = new_tier_info.monthly_credits - (current_tier_info && current_tier_info.monthly_credits || 0)
+                if credit_diff > 0 do
+                  {:ok, _} = Credits.add_credits(user.id, credit_diff)
+                end
+
+                IO.puts("[Subscriptions] Upgraded user #{user.id}: #{user.subscription_tier} -> #{new_tier} (prorated)")
+                {:ok, %{type: "upgrade", user: updated_user}}
+
+              {:error, %Stripe.Error{message: message}} ->
+                IO.puts("[Subscriptions] Stripe upgrade error for user #{user.id}: #{message}")
+                {:error, "Stripe error: #{message}"}
+            end
+          else
+            {:error, :no_subscription_items}
+          end
+
+        {:error, %Stripe.Error{message: message}} ->
+          {:error, "Failed to retrieve subscription: #{message}"}
+      end
+    else
+      # Non-Stripe subscription (admin/crypto) — just update tier directly
+      {:ok, updated_user} = user
+        |> User.subscription_changeset(%{
+          subscription_tier: new_tier,
+          pending_subscription_tier: nil
+        })
+        |> Repo.update()
+
+      {:ok, %{type: "upgrade", user: updated_user}}
+    end
+  end
+
+  # Downgrade: schedule at period end, set pending_subscription_tier
+  defp do_downgrade(user, new_tier) do
+    if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
+      # For Stripe, we update the subscription to the new price at period end
+      new_tier_info = get_tier_info(new_tier)
+      new_amount_cents = trunc(new_tier_info.usd * 100)
+
+      case Stripe.Subscription.retrieve(user.stripe_subscription_id) do
+        {:ok, stripe_sub} ->
+          item = List.first(stripe_sub.items.data)
+
+          if item do
+            # Schedule the price change at period end (no proration)
+            update_params = %{
+              items: [
+                %{
+                  id: item.id,
+                  price_data: %{
+                    currency: "usd",
+                    product: item.price.product,
+                    unit_amount: new_amount_cents,
+                    recurring: %{interval: item.price.recurring.interval}
+                  }
+                }
+              ],
+              proration_behavior: "none",
+              metadata: %{
+                subscription_tier: new_tier,
+                monthly_credits: to_string(new_tier_info.monthly_credits),
+                pending_downgrade: "true"
+              }
+            }
+
+            case Stripe.Subscription.update(user.stripe_subscription_id, update_params) do
+              {:ok, _updated_sub} ->
+                # Don't change tier yet — store as pending
+                {:ok, updated_user} = user
+                  |> User.subscription_changeset(%{
+                    pending_subscription_tier: new_tier
+                  })
+                  |> Repo.update()
+
+                IO.puts("[Subscriptions] Scheduled downgrade for user #{user.id}: #{user.subscription_tier} -> #{new_tier} at period end")
+                {:ok, %{type: "downgrade", user: updated_user}}
+
+              {:error, %Stripe.Error{message: message}} ->
+                IO.puts("[Subscriptions] Stripe downgrade error for user #{user.id}: #{message}")
+                {:error, "Stripe error: #{message}"}
+            end
+          else
+            {:error, :no_subscription_items}
+          end
+
+        {:error, %Stripe.Error{message: message}} ->
+          {:error, "Failed to retrieve subscription: #{message}"}
+      end
+    else
+      # Non-Stripe subscription — set pending, will be applied at renewal
+      {:ok, updated_user} = user
+        |> User.subscription_changeset(%{
+          pending_subscription_tier: new_tier
+        })
+        |> Repo.update()
+
+      {:ok, %{type: "downgrade", user: updated_user}}
     end
   end
 

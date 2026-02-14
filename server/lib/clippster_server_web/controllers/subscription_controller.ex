@@ -534,6 +534,74 @@ defmodule ClippsterServerWeb.SubscriptionController do
   end
 
   @doc """
+  Change the user's subscription tier (upgrade or downgrade).
+  Upgrades are prorated immediately. Downgrades take effect at next billing cycle.
+  """
+  def change_tier(conn, %{"tier" => new_tier}) do
+    with {:ok, user_id} <- get_user_id_from_token(conn) do
+      case Subscriptions.change_subscription_tier(user_id, new_tier) do
+        {:ok, %{type: "upgrade", user: _user}} ->
+          status = Subscriptions.get_subscription_status(user_id)
+          new_tier_info = Subscriptions.get_tier_info(new_tier)
+
+          json(conn, %{
+            success: true,
+            type: "upgrade",
+            message: "Upgraded to #{new_tier_info.name}! Prorated charges applied.",
+            subscription: status
+          })
+
+        {:ok, %{type: "downgrade", user: _user}} ->
+          status = Subscriptions.get_subscription_status(user_id)
+          new_tier_info = Subscriptions.get_tier_info(new_tier)
+
+          json(conn, %{
+            success: true,
+            type: "downgrade",
+            message: "Your plan will change to #{new_tier_info.name} at the end of your current billing period.",
+            subscription: status
+          })
+
+        {:error, :invalid_tier} ->
+          conn |> put_status(400) |> json(%{success: false, error: "Invalid subscription tier"})
+
+        {:error, :no_active_subscription} ->
+          conn |> put_status(400) |> json(%{success: false, error: "No active subscription to change"})
+
+        {:error, :same_tier} ->
+          conn |> put_status(400) |> json(%{success: false, error: "Already on this tier"})
+
+        {:error, reason} when is_binary(reason) ->
+          conn |> put_status(500) |> json(%{success: false, error: reason})
+
+        {:error, reason} ->
+          conn |> put_status(500) |> json(%{success: false, error: to_string(reason)})
+      end
+    else
+      {:error, :unauthorized} ->
+        conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  def change_tier(conn, _params) do
+    conn |> put_status(400) |> json(%{success: false, error: "Missing 'tier' parameter"})
+  end
+
+  @doc """
+  Cancel a pending downgrade.
+  """
+  def cancel_pending_change(conn, _params) do
+    with {:ok, user_id} <- get_user_id_from_token(conn) do
+      {:ok, _user} = Subscriptions.cancel_pending_tier_change(user_id)
+      status = Subscriptions.get_subscription_status(user_id)
+      json(conn, %{success: true, message: "Pending plan change cancelled.", subscription: status})
+    else
+      {:error, :unauthorized} ->
+        conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  @doc """
   Cancel the user's subscription.
   """
   def cancel(conn, _params) do
@@ -622,6 +690,35 @@ defmodule ClippsterServerWeb.SubscriptionController do
         conn
         |> put_status(401)
         |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  @doc """
+  Deactivate the user's profile. Cancels any active subscription and marks account as deactivated.
+  """
+  def deactivate_profile(conn, _params) do
+    with {:ok, user_id} <- get_user_id_from_token(conn),
+         {:ok, user} <- get_user(user_id) do
+      # Cancel Stripe subscription if active
+      if user.subscription_status in ["active"] do
+        if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
+          Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true})
+        end
+        Subscriptions.cancel_subscription(user_id)
+      end
+
+      # Deactivate the account
+      case ClippsterServer.Accounts.deactivate_user(user_id) do
+        {:ok, _user} ->
+          json(conn, %{success: true, message: "Profile deactivated successfully"})
+        {:error, reason} ->
+          conn |> put_status(500) |> json(%{success: false, error: to_string(reason)})
+      end
+    else
+      {:error, :unauthorized} ->
+        conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
+      {:error, :user_not_found} ->
+        conn |> put_status(404) |> json(%{success: false, error: "User not found"})
     end
   end
 

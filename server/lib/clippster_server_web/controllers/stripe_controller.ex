@@ -417,6 +417,13 @@ defmodule ClippsterServerWeb.StripeController do
             {:ok, _result} ->
               IO.puts("[Stripe Webhook] Renewed subscription for user #{user.id}")
 
+              # Apply pending tier change (downgrade) if any
+              case Subscriptions.apply_pending_tier_change(user.id) do
+                {:ok, %{type: "downgrade_applied"}} ->
+                  IO.puts("[Stripe Webhook] Applied pending downgrade for user #{user.id}")
+                _ -> :ok
+              end
+
               # Record affiliate recurring commission
               amount_total = invoice["amount_paid"] || Map.get(invoice, :amount_paid) || 0
               amount_usd = Decimal.div(Decimal.new(amount_total), Decimal.new(100))
