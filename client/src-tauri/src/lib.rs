@@ -648,6 +648,25 @@ pub fn run() {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
 
+            // Create main window programmatically with localhost URL
+            let port: u16 = 1420;
+            let url = if cfg!(debug_assertions) {
+                // Dev mode: use devUrl from tauri.conf.json
+                WebviewUrl::App("/".into())
+            } else {
+                // Production: use localhost plugin
+                let url_string = format!("http://localhost:{}", port);
+                WebviewUrl::External(url_string.parse().unwrap())
+            };
+
+            let window = WebviewWindowBuilder::new(app, "main", url)
+                .title("Clippster")
+                .inner_size(1400.0, 850.0)
+                .decorations(false)
+                .visible(false)
+                .transparent(true)
+                .build()?;
+
             // Start video streaming server in Tauri's async runtime
             let _app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -657,13 +676,11 @@ pub fn run() {
             // Enable devtools in production for debugging
             #[cfg(feature = "devtools")]
             {
-                let window = app.get_webview_window("main").unwrap();
                 window.open_devtools();
             }
 
             // Setup window close handler
             let app_handle = app.handle().clone();
-            let window = app.get_webview_window("main").unwrap();
 
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
