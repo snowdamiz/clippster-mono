@@ -63,14 +63,16 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
         return this.loadViaFetch(context, callbacks);
       }
 
+      // For asset:// URLs, 'hls' is parsed as the hostname (not a path segment)
+      // asset://hls/{encodedDir}/{filename} → hostname='hls', pathname='/{encodedDir}/{filename}'
       const pathParts = urlObj.pathname.split('/').filter(Boolean);
       
-      if (pathParts.length < 2 || pathParts[0] !== 'hls') {
+      if (urlObj.hostname !== 'hls' || pathParts.length < 2) {
         throw new Error(`Invalid Asset HLS URL format: ${url}`);
       }
 
-      const encodedDir = pathParts[1];
-      const filename = pathParts.slice(2).join('/');
+      const encodedDir = pathParts[0];
+      const filename = pathParts.slice(1).join('/');
 
       // Determine if this is a playlist or segment
       const isPlaylist = filename.endsWith('.m3u8');
