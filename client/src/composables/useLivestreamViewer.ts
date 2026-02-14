@@ -1513,9 +1513,6 @@ export function useLivestreamViewer() {
 
         if (platform === 'Kick' || platform === 'Twitch') {
           // Kick/Twitch restart logic (both use yt-dlp + FFmpeg HLS)
-          // Resume in the SAME output directory to preserve DVR history
-          const currentOutputDir = hlsOutputDir.value;
-
           try {
             if (platform === 'Kick') {
               await stopKickRecording(mintId);
@@ -1535,25 +1532,25 @@ export function useLivestreamViewer() {
 
           try {
             if (platform === 'Kick') {
-              await startKickRecording(mintId, streamerId, newSessionId, 1, currentOutputDir || undefined);
+              await startKickRecording(mintId, streamerId, newSessionId, 1);
             } else {
-              await startTwitchRecording(mintId, streamerId, newSessionId, 1, currentOutputDir || undefined);
+              await startTwitchRecording(mintId, streamerId, newSessionId, 1);
             }
 
-            console.log(`[LiveViewer] ${platform} recorder resumed in same dir:`, currentOutputDir);
+            const newOutputDir = platform === 'Kick'
+              ? await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId })
+              : await getTwitchSessionOutputDir(newSessionId);
+            console.log(`[LiveViewer] ${platform} recorder restarted, new output dir:`, newOutputDir);
 
-            // DON'T reset segment count - we're resuming in the same directory
+            lastSegmentCount = 0;
             lastSegmentTime = Date.now();
+            hlsOutputDir.value = newOutputDir;
 
-            // DON'T reinitialize HLS or change hlsOutputDir - same directory, same playlist.
-            // HLS.js will automatically pick up new segments as they're appended.
-            if (hlsPlayback.state.value.isInitialized) {
-              hlsPlayback.refreshPlaylist();
-              if (!hlsPlayback.state.value.isPlaying) {
-                hlsPlayback.play();
-              }
+            if (hlsVideoElement.value) {
+              await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
+              hlsPlayback.play();
               state.value.isBuffering = false;
-              console.log(`[LiveViewer] Playback continues after ${platform} recorder resume (same dir)`);
+              console.log(`[LiveViewer] Playback reinitialized after ${platform} recorder restart`);
             }
           } catch (restartError) {
             console.error(`[LiveViewer] Failed to restart ${platform} recording:`, restartError);
@@ -1937,8 +1934,7 @@ export function useLivestreamViewer() {
           console.log(`[LiveViewer] ${platform} stream is still live, attempting to restart recording...`);
           state.value.isBuffering = true;
 
-          // Resume recording in the SAME output directory to preserve DVR history
-          const currentOutputDir = hlsOutputDir.value;
+          // Restart the recording with a new session
           const newSessionId = platform === 'Kick'
             ? `kick-view-${channel}-${Date.now()}`
             : `twitch-view-${channel}-${Date.now()}`;
@@ -1946,26 +1942,31 @@ export function useLivestreamViewer() {
 
           try {
             if (platform === 'Kick') {
-              await startKickRecording(channel!, streamerId, newSessionId, 1, currentOutputDir || undefined);
+              await startKickRecording(channel!, streamerId, newSessionId, 1);
             } else {
-              await startTwitchRecording(channel!, streamerId, newSessionId, 1, currentOutputDir || undefined);
+              await startTwitchRecording(channel!, streamerId, newSessionId, 1);
             }
 
-            console.log(`[LiveViewer] ${platform} recording resumed in same dir:`, currentOutputDir);
+            // Get the new output directory
+            const newOutputDir = platform === 'Kick'
+              ? await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId })
+              : await getTwitchSessionOutputDir(newSessionId);
 
-            // Reset segment stall detection but DON'T reset segment count (we're resuming)
+            console.log(`[LiveViewer] ${platform} recording restarted, new output dir:`, newOutputDir);
+
+            // Update the HLS output dir - this will trigger the watcher to reinitialize playback
+            hlsOutputDir.value = newOutputDir;
+
+            // Reset segment stall detection
+            lastSegmentCount = 0;
             lastSegmentTime = Date.now();
 
-            // DON'T reinitialize HLS - the playlist is in the same dir and HLS.js will
-            // automatically pick up new segments as they're appended to the playlist.
-            // Just refresh the playlist to detect new segments sooner.
-            if (hlsPlayback.state.value.isInitialized) {
-              hlsPlayback.refreshPlaylist();
-              if (!hlsPlayback.state.value.isPlaying) {
-                hlsPlayback.play();
-              }
+            // Reinitialize HLS playback with the new recording
+            if (hlsVideoElement.value) {
+              await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
+              hlsPlayback.play();
               state.value.isBuffering = false;
-              console.log(`[LiveViewer] Playback continues after ${platform} recorder resume (same dir)`);
+              console.log(`[LiveViewer] Playback reinitialized after ${platform} recorder restart`);
             }
           } catch (restartError) {
             console.error(`[LiveViewer] Failed to restart ${platform} recording:`, restartError);
