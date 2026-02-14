@@ -5,6 +5,8 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
   alias ClippsterServer.Accounts
   alias ClippsterServer.PromoCodes
 
+  plug ClippsterServerWeb.AuthPlug
+
   @doc """
   GET /organizations/:id/subscription
   Gets current subscription status for an organization.
@@ -520,6 +522,113 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
           conn
           |> put_status(:bad_request)
           |> json(%{success: false, error: "Payment confirmation failed: #{inspect(reason)}"})
+      end
+    end
+  end
+
+  @doc """
+  PUT /organizations/:id/subscription/tier
+  Changes the organization's subscription tier (upgrade or downgrade).
+  """
+  def change_tier(conn, %{"id" => organization_id, "tier" => new_tier}) do
+    user_id = conn.assigns[:current_user_id]
+    org_id = String.to_integer(organization_id)
+
+    unless Organizations.is_admin?(org_id, user_id) do
+      conn
+      |> put_status(:forbidden)
+      |> json(%{success: false, error: "Admin access required"})
+    else
+      case OrganizationSubscriptions.change_subscription_tier(org_id, new_tier) do
+        {:ok, _org} ->
+          status = OrganizationSubscriptions.get_subscription_status(org_id)
+          new_tier_info = OrganizationSubscriptions.get_tier_info(new_tier)
+
+          conn
+          |> json(%{
+            success: true,
+            message: "Subscription tier changed",
+            subscription: status,
+            change_type: if(status.pending_subscription_tier, do: "downgrade_scheduled", else: "upgrade_applied"),
+            new_tier_name: if(new_tier_info, do: new_tier_info.name, else: new_tier)
+          })
+
+        {:error, :invalid_tier} ->
+          conn |> put_status(:bad_request) |> json(%{success: false, error: "Invalid tier"})
+
+        {:error, :no_active_subscription} ->
+          conn |> put_status(:bad_request) |> json(%{success: false, error: "No active subscription"})
+
+        {:error, :same_tier} ->
+          conn |> put_status(:bad_request) |> json(%{success: false, error: "Already on this tier"})
+
+        {:error, reason} ->
+          conn |> put_status(:internal_server_error) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+      end
+    end
+  end
+
+  @doc """
+  GET /organizations/:id/subscription/proration-preview?tier=X
+  Returns a proration preview for upgrading to a new tier.
+  """
+  def proration_preview(conn, %{"id" => organization_id, "tier" => new_tier}) do
+    user_id = conn.assigns[:current_user_id]
+    org_id = String.to_integer(organization_id)
+
+    unless Organizations.is_admin?(org_id, user_id) do
+      conn
+      |> put_status(:forbidden)
+      |> json(%{success: false, error: "Admin access required"})
+    else
+      org = Organizations.get_organization(org_id)
+      current_tier_info = if org.subscription_tier, do: OrganizationSubscriptions.get_tier_info(org.subscription_tier), else: nil
+      new_tier_info = OrganizationSubscriptions.get_tier_info(new_tier)
+
+      cond do
+        is_nil(new_tier_info) ->
+          conn |> put_status(:bad_request) |> json(%{success: false, error: "Invalid tier"})
+
+        is_nil(current_tier_info) ->
+          conn |> put_status(:bad_request) |> json(%{success: false, error: "No current subscription"})
+
+        true ->
+          # Calculate proration
+          days_remaining = OrganizationSubscriptions.get_subscription_days() |> then(fn _total_days ->
+            if org.subscription_end_date do
+              diff = DateTime.diff(org.subscription_end_date, DateTime.utc_now(), :day)
+              max(0, diff)
+            else
+              0
+            end
+          end)
+
+          total_days = OrganizationSubscriptions.get_subscription_days()
+          daily_rate_current = current_tier_info.usd / total_days
+          daily_rate_new = new_tier_info.usd / total_days
+
+          proration_amount = if new_tier_info.usd > current_tier_info.usd do
+            # Upgrade: charge difference for remaining days
+            (daily_rate_new - daily_rate_current) * days_remaining
+          else
+            # Downgrade: no immediate charge, takes effect at renewal
+            0
+          end
+
+          conn
+          |> json(%{
+            success: true,
+            preview: %{
+              current_tier: org.subscription_tier,
+              current_price: current_tier_info.usd,
+              new_tier: new_tier,
+              new_price: new_tier_info.usd,
+              days_remaining: days_remaining,
+              proration_amount: Float.round(proration_amount, 2),
+              change_type: if(new_tier_info.usd > current_tier_info.usd, do: "upgrade", else: "downgrade"),
+              effective_date: if(new_tier_info.usd > current_tier_info.usd, do: "immediate", else: to_string(org.subscription_end_date))
+            }
+          })
       end
     end
   end

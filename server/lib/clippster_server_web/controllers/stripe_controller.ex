@@ -305,12 +305,14 @@ defmodule ClippsterServerWeb.StripeController do
 
       # Handle user subscription checkout
       payment_type == "subscription" && user_id && subscription_tier ->
+        billing_interval = get_metadata_value(metadata, "billing_interval") || "monthly"
         handle_subscription_checkout(
           user_id,
           subscription_tier,
           stripe_subscription_id,
           stripe_customer_id,
-          promo_code_id
+          promo_code_id,
+          billing_interval
         )
 
       # Handle credit pack purchase for organization
@@ -414,6 +416,13 @@ defmodule ClippsterServerWeb.StripeController do
           case Subscriptions.renew_subscription(user.id) do
             {:ok, _result} ->
               IO.puts("[Stripe Webhook] Renewed subscription for user #{user.id}")
+
+              # Apply pending tier change (downgrade) if any
+              case Subscriptions.apply_pending_tier_change(user.id) do
+                {:ok, %{type: "downgrade_applied"}} ->
+                  IO.puts("[Stripe Webhook] Applied pending downgrade for user #{user.id}")
+                _ -> :ok
+              end
 
               # Record affiliate recurring commission
               amount_total = invoice["amount_paid"] || Map.get(invoice, :amount_paid) || 0
@@ -558,7 +567,41 @@ defmodule ClippsterServerWeb.StripeController do
 
     case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
       nil ->
-        IO.puts("[Stripe Webhook] No user found for subscription #{stripe_subscription_id}")
+        # Fallback: check org subscriptions
+        case ClippsterServer.OrganizationSubscriptions.get_by_stripe_subscription(stripe_subscription_id) do
+          nil ->
+            IO.puts("[Stripe Webhook] No user or org found for subscription #{stripe_subscription_id}")
+
+          org ->
+            cond do
+              cancel_at_period_end == true ->
+                case ClippsterServer.OrganizationSubscriptions.cancel_subscription(org.id) do
+                  {:ok, _} ->
+                    IO.puts("[Stripe Webhook] Marked org subscription as cancelled for org #{org.id}")
+                  {:error, reason} ->
+                    IO.puts("[Stripe Webhook] Failed to cancel org sub: #{inspect(reason)}")
+                end
+
+              status in ["canceled", "unpaid", "incomplete_expired"] ->
+                case ClippsterServer.OrganizationSubscriptions.expire_subscription(org.id) do
+                  {:ok, _} -> IO.puts("[Stripe Webhook] Expired org subscription for org #{org.id}")
+                  {:error, reason} -> IO.puts("[Stripe Webhook] Failed to expire org sub: #{inspect(reason)}")
+                end
+
+              true ->
+                # Check for pending tier change on org
+                if org.pending_subscription_tier do
+                  case ClippsterServer.OrganizationSubscriptions.apply_pending_tier_change(org.id) do
+                    {:ok, _} ->
+                      IO.puts("[Stripe Webhook] Applied pending tier change for org #{org.id}")
+                    {:error, reason} ->
+                      IO.puts("[Stripe Webhook] Failed to apply pending tier change: #{inspect(reason)}")
+                  end
+                else
+                  IO.puts("[Stripe Webhook] Org subscription update - status: #{status}")
+                end
+            end
+        end
 
       user ->
         cond do
@@ -597,19 +640,21 @@ defmodule ClippsterServerWeb.StripeController do
          tier,
          stripe_subscription_id,
          stripe_customer_id,
-         promo_code_id
+         promo_code_id,
+         billing_interval
        ) do
     user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
 
     IO.puts(
-      "[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, sub_id=#{stripe_subscription_id}, promo_code_id=#{promo_code_id}"
+      "[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, interval=#{billing_interval}, sub_id=#{stripe_subscription_id}, promo_code_id=#{promo_code_id}"
     )
 
     case Subscriptions.create_stripe_subscription(
            user_id_int,
            tier,
            stripe_subscription_id,
-           stripe_customer_id
+           stripe_customer_id,
+           billing_interval
          ) do
       {:ok, _result} ->
         IO.puts(
@@ -851,9 +896,9 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   # Map subscription tier to approximate USD amount for commission calculation
-  defp get_subscription_amount("starter"), do: Decimal.new("9.99")
-  defp get_subscription_amount("creator"), do: Decimal.new("24.99")
-  defp get_subscription_amount("pro"), do: Decimal.new("49.99")
+  defp get_subscription_amount("starter"), do: Decimal.new("29.99")
+  defp get_subscription_amount("creator"), do: Decimal.new("54.99")
+  defp get_subscription_amount("pro"), do: Decimal.new("204.99")
   defp get_subscription_amount(_), do: Decimal.new("0")
 
   defp get_metadata_value(metadata, key) when is_map(metadata) do

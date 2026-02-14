@@ -17,6 +17,7 @@ use crate::downloads::{
 use crate::ffmpeg_utils::{get_video_info, parse_ffmpeg_time};
 
 #[cfg(target_os = "windows")]
+#[allow(unused_imports)]
 use std::os::windows::process::CommandExt;
 
 /// On Windows, set CREATE_NO_WINDOW flag to prevent a visible console window.

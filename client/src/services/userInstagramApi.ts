@@ -39,6 +39,7 @@ export interface UserPost {
   save_count: number;
   reach_count: number;
   impressions_count: number;
+  published_at: string | null;
   synced_at: string | null;
   inserted_at: string;
   updated_at: string;

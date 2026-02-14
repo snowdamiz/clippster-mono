@@ -59,6 +59,7 @@ const router = createRouter({
       path: '/ai-video',
       name: 'ai-video',
       component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -101,6 +102,7 @@ const router = createRouter({
       path: '/prompts',
       name: 'prompts',
       component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -151,6 +153,7 @@ const router = createRouter({
       path: '/campaigns',
       name: 'campaigns',
       component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -164,7 +167,7 @@ const router = createRouter({
       path: '/clipper-profile',
       name: 'clipper-profile',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -183,7 +186,7 @@ const router = createRouter({
       path: '/clippers',
       name: 'clippers',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -220,7 +223,7 @@ const router = createRouter({
       path: '/messages',
       name: 'messages',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -384,7 +387,7 @@ const router = createRouter({
       path: '/organization/:id',
       name: 'organization-detail',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiresOrgSubscription: true },
       children: [
         {
           path: '',
@@ -485,7 +488,7 @@ export function getDefaultRoute(
 }
 
 // Navigation guard for authentication, admin access, and feature flags
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore();
 
   // Check if route requires authentication
@@ -499,6 +502,63 @@ router.beforeEach((to, _from, next) => {
   if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
     next('/projects');
     return;
+  }
+
+  // Check if route requires a minimum subscription tier
+  if (to.meta.requiredTier && authStore.isAuthenticated) {
+    const tierHierarchy: Record<string, number> = { free: 0, starter: 1, creator: 2, pro: 3 };
+    const user = authStore.user;
+    // Admins and org-created users bypass tier checks
+    if (!user?.is_admin && !user?.created_by_organization_id) {
+      const userTier = (user as any)?.subscription_tier || 'free';
+      const userLevel = tierHierarchy[userTier] ?? 0;
+      const requiredLevel = tierHierarchy[to.meta.requiredTier as string] ?? 0;
+      if (userLevel < requiredLevel) {
+        // Show subscription gate dialog instead of redirecting to billing
+        const routeLabels: Record<string, string> = {
+          'campaigns-home': 'Access Campaigns',
+          'clipper-profile-home': 'Access Clipper Profile',
+          'clippers-directory': 'Browse Clippers',
+          'messages-home': 'Access Messages',
+          'prompts-home': 'Access Prompts',
+          'ai-video-home': 'Use AI Video Creator',
+        };
+        const routeName = typeof to.name === 'string' ? to.name : String(to.name);
+        const context = routeLabels[routeName] || `Access ${routeName}`;
+        
+        // Dispatch subscription gate event
+        const event = new CustomEvent('show-subscription-gate', {
+          detail: { context, type: 'general' },
+        });
+        window.dispatchEvent(event);
+        
+        // Prevent navigation
+        next(false);
+        return;
+      }
+    }
+  }
+
+  // Check org subscription gate
+  if (to.meta.requiresOrgSubscription && authStore.isAuthenticated) {
+    const orgId = to.params.id as string;
+    // Exempt the billing page itself so orgs can actually subscribe
+    const isBillingPage = to.name === 'org-billing';
+    if (orgId && !isBillingPage) {
+      // Check subscription status from cached org data or fetch
+      try {
+        const { data } = await import('@/services/api').then(m => m.default.get(`/organizations/${orgId}/subscription`));
+        if (data.success && data.subscription) {
+          const status = data.subscription.status;
+          if (status === 'none' || status === 'expired') {
+            next({ path: `/organization/${orgId}/billing`, query: { subscription_required: 'true' } });
+            return;
+          }
+        }
+      } catch {
+        // If we can't check, allow through (don't block on network errors)
+      }
+    }
   }
 
   // Check Live Clip feature flag for /live-clip route

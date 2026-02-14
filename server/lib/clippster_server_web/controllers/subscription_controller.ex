@@ -128,11 +128,12 @@ defmodule ClippsterServerWeb.SubscriptionController do
         error: "Payment service is not configured. Please contact support."
       })
     else
-      create_checkout_with_stripe(conn, tier, Map.get(params, "promo_code"))
+      billing_interval = Map.get(params, "billing_interval", "monthly")
+      create_checkout_with_stripe(conn, tier, Map.get(params, "promo_code"), billing_interval)
     end
   end
 
-  defp create_checkout_with_stripe(conn, tier, promo_code) do
+  defp create_checkout_with_stripe(conn, tier, promo_code, billing_interval) do
     require Logger
 
     with {:ok, user_id} <- get_user_id_from_token(conn),
@@ -219,6 +220,17 @@ defmodule ClippsterServerWeb.SubscriptionController do
         Subscriptions.update_stripe_customer(user_id, customer_id)
       end
 
+      # Calculate price and interval based on billing_interval
+      {stripe_interval, unit_amount_cents, product_description, credits_to_grant} =
+        if billing_interval == "yearly" do
+          # Yearly = 11 months price, but grant 12 months of credits upfront
+          yearly_price = tier_info.usd * 11
+          yearly_credits = tier_info.monthly_credits * 12
+          {"year", trunc(yearly_price * 100), "#{yearly_credits} credits upfront (12 months)", yearly_credits}
+        else
+          {"month", trunc(tier_info.usd * 100), "#{tier_info.monthly_credits} credits per month", tier_info.monthly_credits}
+        end
+
       # Create Stripe Checkout session for subscription
       base_session_params = %{
         mode: "subscription",
@@ -228,13 +240,12 @@ defmodule ClippsterServerWeb.SubscriptionController do
             price_data: %{
               currency: "usd",
               product_data: %{
-                name: "#{tier_info.name} Subscription",
-                description: "#{tier_info.monthly_credits} credits per month"
+                name: "#{tier_info.name} Subscription#{if billing_interval == "yearly", do: " (Annual)", else: ""}",
+                description: product_description
               },
-              # Stripe expects cents
-              unit_amount: trunc(tier_info.usd * 100),
+              unit_amount: unit_amount_cents,
               recurring: %{
-                interval: "month"
+                interval: stripe_interval
               }
             },
             quantity: 1
@@ -244,6 +255,8 @@ defmodule ClippsterServerWeb.SubscriptionController do
           user_id: to_string(user_id),
           subscription_tier: tier,
           monthly_credits: to_string(tier_info.monthly_credits),
+          credits_to_grant: to_string(credits_to_grant),
+          billing_interval: billing_interval,
           type: "subscription"
         },
         success_url: "#{success_url}?session_id={CHECKOUT_SESSION_ID}&type=subscription",
@@ -349,12 +362,14 @@ defmodule ClippsterServerWeb.SubscriptionController do
     alias ClippsterServer.Credits
 
     promo_code = Map.get(params, "promo_code")
+    billing_interval = Map.get(params, "billing_interval", "monthly")
 
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, tier_info} <- validate_tier(tier),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
-      # Calculate base price
-      base_usd = tier_info.usd
+      # Calculate base price (yearly = 11 months)
+      base_usd = if billing_interval == "yearly", do: tier_info.usd * 11, else: tier_info.usd
+      credits_to_grant = if billing_interval == "yearly", do: tier_info.monthly_credits * 12, else: tier_info.monthly_credits
 
       # Apply promo code discount if provided and valid
       {final_usd, promo_info} =
@@ -386,6 +401,8 @@ defmodule ClippsterServerWeb.SubscriptionController do
         tier: tier,
         tier_name: tier_info.name,
         monthly_credits: tier_info.monthly_credits,
+        credits_to_grant: credits_to_grant,
+        billing_interval: billing_interval,
         amount_usd: final_usd,
         amount_sol: sol_amount,
         sol_usd_rate: sol_usd_rate,
@@ -517,6 +534,74 @@ defmodule ClippsterServerWeb.SubscriptionController do
   end
 
   @doc """
+  Change the user's subscription tier (upgrade or downgrade).
+  Upgrades are prorated immediately. Downgrades take effect at next billing cycle.
+  """
+  def change_tier(conn, %{"tier" => new_tier}) do
+    with {:ok, user_id} <- get_user_id_from_token(conn) do
+      case Subscriptions.change_subscription_tier(user_id, new_tier) do
+        {:ok, %{type: "upgrade", user: _user}} ->
+          status = Subscriptions.get_subscription_status(user_id)
+          new_tier_info = Subscriptions.get_tier_info(new_tier)
+
+          json(conn, %{
+            success: true,
+            type: "upgrade",
+            message: "Upgraded to #{new_tier_info.name}! Prorated charges applied.",
+            subscription: status
+          })
+
+        {:ok, %{type: "downgrade", user: _user}} ->
+          status = Subscriptions.get_subscription_status(user_id)
+          new_tier_info = Subscriptions.get_tier_info(new_tier)
+
+          json(conn, %{
+            success: true,
+            type: "downgrade",
+            message: "Your plan will change to #{new_tier_info.name} at the end of your current billing period.",
+            subscription: status
+          })
+
+        {:error, :invalid_tier} ->
+          conn |> put_status(400) |> json(%{success: false, error: "Invalid subscription tier"})
+
+        {:error, :no_active_subscription} ->
+          conn |> put_status(400) |> json(%{success: false, error: "No active subscription to change"})
+
+        {:error, :same_tier} ->
+          conn |> put_status(400) |> json(%{success: false, error: "Already on this tier"})
+
+        {:error, reason} when is_binary(reason) ->
+          conn |> put_status(500) |> json(%{success: false, error: reason})
+
+        {:error, reason} ->
+          conn |> put_status(500) |> json(%{success: false, error: to_string(reason)})
+      end
+    else
+      {:error, :unauthorized} ->
+        conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  def change_tier(conn, _params) do
+    conn |> put_status(400) |> json(%{success: false, error: "Missing 'tier' parameter"})
+  end
+
+  @doc """
+  Cancel a pending downgrade.
+  """
+  def cancel_pending_change(conn, _params) do
+    with {:ok, user_id} <- get_user_id_from_token(conn) do
+      {:ok, _user} = Subscriptions.cancel_pending_tier_change(user_id)
+      status = Subscriptions.get_subscription_status(user_id)
+      json(conn, %{success: true, message: "Pending plan change cancelled.", subscription: status})
+    else
+      {:error, :unauthorized} ->
+        conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  @doc """
   Cancel the user's subscription.
   """
   def cancel(conn, _params) do
@@ -605,6 +690,35 @@ defmodule ClippsterServerWeb.SubscriptionController do
         conn
         |> put_status(401)
         |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  @doc """
+  Deactivate the user's profile. Cancels any active subscription and marks account as deactivated.
+  """
+  def deactivate_profile(conn, _params) do
+    with {:ok, user_id} <- get_user_id_from_token(conn),
+         {:ok, user} <- get_user(user_id) do
+      # Cancel Stripe subscription if active
+      if user.subscription_status in ["active"] do
+        if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
+          Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true})
+        end
+        Subscriptions.cancel_subscription(user_id)
+      end
+
+      # Deactivate the account
+      case ClippsterServer.Accounts.deactivate_user(user_id) do
+        {:ok, _user} ->
+          json(conn, %{success: true, message: "Profile deactivated successfully"})
+        {:error, reason} ->
+          conn |> put_status(500) |> json(%{success: false, error: to_string(reason)})
+      end
+    else
+      {:error, :unauthorized} ->
+        conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
+      {:error, :user_not_found} ->
+        conn |> put_status(404) |> json(%{success: false, error: "User not found"})
     end
   end
 

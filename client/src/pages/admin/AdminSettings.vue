@@ -138,13 +138,89 @@
           </p>
         </div>
       </div>
+
+      <!-- Free Tier Branding Section -->
+      <div class="admin-settings__section">
+        <div class="admin-settings__section-header">
+          <h3 class="admin-settings__section-title">Free Tier Branding</h3>
+          <p class="admin-settings__section-desc">
+            Configure the watermark, intro, and outro that are automatically applied to all free tier user outputs.
+            Free tier users cannot override these settings.
+          </p>
+        </div>
+
+        <div class="admin-settings__branding">
+          <div class="admin-settings__branding-status">
+            <div class="admin-settings__branding-indicator" :class="{ 'admin-settings__branding-indicator--active': freeTierBrandingConfigured }">
+              <Check v-if="freeTierBrandingConfigured" :size="14" />
+              <ImageIcon v-else :size="14" />
+            </div>
+            <div>
+              <span class="admin-settings__branding-label">
+                {{ freeTierBrandingConfigured ? 'Branding Configured' : 'No Branding Set' }}
+              </span>
+              <p class="admin-settings__branding-hint">
+                {{ freeTierBrandingConfigured
+                  ? 'Free tier outputs will include admin watermark/intro/outro'
+                  : 'Free tier outputs will not have any branding applied'
+                }}
+              </p>
+            </div>
+          </div>
+
+          <div class="admin-settings__branding-fields">
+            <!-- Watermark URL -->
+            <div class="admin-settings__branding-field">
+              <label class="admin-settings__branding-field-label">Watermark Image URL</label>
+              <input
+                v-model="freeTierBranding.watermark_url"
+                type="text"
+                placeholder="https://... (PNG or SVG recommended)"
+                class="admin-settings__input"
+              />
+            </div>
+
+            <!-- Intro Video URL -->
+            <div class="admin-settings__branding-field">
+              <label class="admin-settings__branding-field-label">Intro Video URL</label>
+              <input
+                v-model="freeTierBranding.intro_url"
+                type="text"
+                placeholder="https://... (MP4 recommended)"
+                class="admin-settings__input"
+              />
+            </div>
+
+            <!-- Outro Video URL -->
+            <div class="admin-settings__branding-field">
+              <label class="admin-settings__branding-field-label">Outro Video URL</label>
+              <input
+                v-model="freeTierBranding.outro_url"
+                type="text"
+                placeholder="https://... (MP4 recommended)"
+                class="admin-settings__input"
+              />
+            </div>
+          </div>
+
+          <button
+            class="admin-settings__branding-save"
+            :disabled="savingBranding"
+            @click="saveFreeTierBranding"
+          >
+            <Loader2 v-if="savingBranding" :size="14" class="admin-settings__flag-loading-icon" />
+            <span>{{ savingBranding ? 'Saving...' : 'Save Branding' }}</span>
+          </button>
+        </div>
+      </div>
     </div>
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue';
-  import { Settings, Radio, KeyRound, Check, Loader2 } from 'lucide-vue-next';
+  import { ref, computed, onMounted } from 'vue';
+  import { Settings, Radio, KeyRound, Check, Loader2, ImageIcon } from 'lucide-vue-next';
+  import api from '@/services/api';
   import PageLayout from '@/components/PageLayout.vue';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
 
@@ -222,9 +298,49 @@
     }
   };
 
+  // Free tier branding
+  const freeTierBranding = ref<{ watermark_url: string; intro_url: string; outro_url: string }>({
+    watermark_url: '',
+    intro_url: '',
+    outro_url: '',
+  });
+  const savingBranding = ref(false);
+
+  const freeTierBrandingConfigured = computed(() => {
+    return !!(freeTierBranding.value.watermark_url || freeTierBranding.value.intro_url || freeTierBranding.value.outro_url);
+  });
+
+  async function loadFreeTierBranding() {
+    try {
+      const response = await api.get('/admin/free-tier-branding');
+      if (response.data.success && response.data.branding) {
+        const b = response.data.branding;
+        freeTierBranding.value = {
+          watermark_url: b.watermark_url || '',
+          intro_url: b.intro_url || '',
+          outro_url: b.outro_url || '',
+        };
+      }
+    } catch (err) {
+      console.warn('[AdminSettings] Failed to load free tier branding:', err);
+    }
+  }
+
+  async function saveFreeTierBranding() {
+    savingBranding.value = true;
+    try {
+      await api.put('/admin/free-tier-branding', { branding: freeTierBranding.value });
+    } catch (err) {
+      console.error('[AdminSettings] Failed to save free tier branding:', err);
+    } finally {
+      savingBranding.value = false;
+    }
+  }
+
   onMounted(() => {
     fetchFeatureFlags();
     loadPlatformOverride();
+    loadFreeTierBranding();
   });
 </script>
 
@@ -541,6 +657,115 @@
 
   .admin-settings__platform-reset:hover {
     color: #bfdbfe;
+  }
+
+  /* Free Tier Branding */
+  .admin-settings__branding {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .admin-settings__branding-status {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .admin-settings__branding-indicator {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(100, 116, 139, 0.15);
+    color: var(--sidebar-text-muted);
+  }
+
+  .admin-settings__branding-indicator--active {
+    background: rgba(16, 185, 129, 0.15);
+    color: rgb(16, 185, 129);
+  }
+
+  .admin-settings__branding-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .admin-settings__branding-hint {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 2px 0 0;
+  }
+
+  .admin-settings__branding-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .admin-settings__branding-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .admin-settings__branding-field-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+  }
+
+  .admin-settings__input {
+    padding: 0.5rem 0.75rem;
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    font-size: 0.8125rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .admin-settings__input:focus {
+    border-color: var(--sidebar-accent);
+  }
+
+  .admin-settings__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
+  }
+
+  .admin-settings__branding-save {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.25rem;
+    background: var(--sidebar-accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    align-self: flex-start;
+  }
+
+  .admin-settings__branding-save:hover:not(:disabled) {
+    filter: brightness(1.1);
+  }
+
+  .admin-settings__branding-save:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   @keyframes spin {

@@ -801,11 +801,6 @@
   }
 
   async function handleDownloadClip(clip: PlatformClip) {
-    // Check subscription access before allowing download
-    if (!(await gates.download(`Download "${clip.title}"`))) {
-      return; // Gate was shown, user doesn't have access
-    }
-
     clipToDownload.value = clip;
     selectedTimeRange.value = { startTime: 0, endTime: clip.duration || 0 };
     // Default auto-segment off, user can enable if they want to split
@@ -1039,7 +1034,16 @@
         }, 500);
       }
     } catch (err) {
-      showError('Download Failed', `Failed to download "${clip.title}": ${err}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      
+      // Check if this is a free tier limit error
+      if (errorMessage.includes('Daily download limit reached')) {
+        // Show subscription gate instead of error toast
+        gates.download(`Download "${clip.title}"`);
+      } else {
+        showError('Download Failed', `Failed to download "${clip.title}": ${errorMessage}`);
+      }
+      
       downloadStarting.value = false;
       closeDownloadDialog();
       

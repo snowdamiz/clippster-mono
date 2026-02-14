@@ -20,6 +20,7 @@
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useAppUpdater } from '@/composables/useAppUpdater';
   import { useToast } from '@/composables/useToast';
+  import { useActivityTracker } from '@/composables/useActivityTracker';
   import { invoke } from '@tauri-apps/api/core';
 
   // Platform detection for OS-specific styling (e.g., rounded corners on macOS)
@@ -31,6 +32,9 @@
   const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
   const { state: updateState, checkForUpdates } = useAppUpdater();
   const { success } = useToast();
+  
+  // Track user activity to update last_active_at
+  useActivityTracker();
 
   // Update check must complete before app continues
   const isCheckingForUpdates = ref(true);

@@ -62,6 +62,43 @@ defmodule ClippsterServerWeb.AuthController do
     put_resp_header(conn, "access-control-allow-origin", origin)
   end
 
+  @doc """
+  Activity ping endpoint - updates user's last_active_at timestamp.
+  Called periodically by the frontend to track user activity.
+  """
+  def activity_ping(conn, _params) do
+    case get_user_from_token(conn) do
+      {:ok, user} ->
+        Accounts.update_last_active(user.id)
+        json(conn, %{success: true})
+
+      {:error, _} ->
+        conn
+        |> put_status(401)
+        |> json(%{success: false, error: "Unauthorized"})
+    end
+  end
+
+  defp get_user_from_token(conn) do
+    case get_req_header(conn, "authorization") do
+      ["Bearer " <> token] ->
+        case TokenGenerator.verify_token(token) do
+          {:ok, claims} ->
+            user_id = claims["user_id"]
+            case Accounts.get_user(user_id) do
+              nil -> {:error, :not_found}
+              user -> {:ok, user}
+            end
+
+          {:error, _} ->
+            {:error, :invalid_token}
+        end
+
+      _ ->
+        {:error, :no_token}
+    end
+  end
+
   def request_challenge(conn, %{"client_id" => client_id}) do
     challenge = ChallengeStore.create_challenge(client_id)
 
@@ -91,7 +128,10 @@ defmodule ClippsterServerWeb.AuthController do
 
       # Create or get user (with optional referral code)
       referral_code = Map.get(conn.params, "referral_code")
-      {:ok, user} = Accounts.get_or_create_user(public_key, referral_code)
+      {:ok, user, is_new_user} = Accounts.get_or_create_user(public_key, referral_code)
+      
+      # Update last active timestamp
+      Accounts.update_last_active(user.id)
 
       # Generate JWT token
       token_claims = %{
@@ -110,6 +150,7 @@ defmodule ClippsterServerWeb.AuthController do
             success: true,
             token: token,
             wallet_address: public_key,
+            is_new_user: is_new_user,
             user: %{
               id: user.id,
               wallet_address: user.wallet_address,
@@ -322,8 +363,8 @@ defmodule ClippsterServerWeb.AuthController do
               oauth_referral_code = web_opts[:referral_code]
 
               case Accounts.get_or_create_oauth_user("google", google_user["id"], oauth_info, oauth_referral_code) do
-                {:ok, user} ->
-                  IO.puts("User created/retrieved: #{user.id}")
+                {:ok, user, is_new_user} ->
+                  IO.puts("User created/retrieved: #{user.id}, is_new: #{is_new_user}")
 
                   # Generate JWT token
                   token_claims = %{
@@ -339,7 +380,7 @@ defmodule ClippsterServerWeb.AuthController do
 
                   case TokenGenerator.generate_token(token_claims) do
                     {:ok, token} ->
-                      send_auth_success_html(conn, token, user, web_opts)
+                      send_auth_success_html(conn, token, user, web_opts, is_new_user)
 
                     {:error, _reason} ->
                       send_auth_error_html(conn, "Token generation failed", web_opts)
@@ -436,7 +477,7 @@ defmodule ClippsterServerWeb.AuthController do
     end
   end
 
-  defp send_auth_success_html(conn, token, user, %{web: true} = web_opts) do
+  defp send_auth_success_html(conn, token, user, %{web: true} = web_opts, is_new_user) do
     # Web mode: redirect to the origin's callback page (avoids COOP issues with window.opener)
     ai_allowed = check_ai_allowed_for_user(user)
     target_origin = web_opts[:origin] || "https://clippster.app"
@@ -457,13 +498,14 @@ defmodule ClippsterServerWeb.AuthController do
 
     params = URI.encode_query(%{
       "token" => token,
-      "user" => user_json
+      "user" => user_json,
+      "is_new_user" => to_string(is_new_user)
     })
 
     redirect(conn, external: "#{target_origin}/auth/google/callback?#{params}")
   end
 
-  defp send_auth_success_html(conn, token, user, _web_opts) do
+  defp send_auth_success_html(conn, token, user, _web_opts, is_new_user) do
     # Tauri mode: redirect to local callback server
     ai_allowed = check_ai_allowed_for_user(user)
 
@@ -480,7 +522,8 @@ defmodule ClippsterServerWeb.AuthController do
       "owned_organization_id" => user.owned_organization_id || "",
       "created_by_organization_id" => user.created_by_organization_id || "",
       "ai_allowed" => ai_allowed,
-      "beta_activated" => user.beta_activated
+      "beta_activated" => user.beta_activated,
+      "is_new_user" => to_string(is_new_user)
     })
 
     redirect(conn, external: "http://localhost:54321/google-callback?#{params}")

@@ -254,6 +254,23 @@ async function handleExport() {
 	const project = activeProject.value;
 	if (!project) return;
 
+	// Free tier: 1 export/day limit
+	const { useAuthStore } = await import("@/stores/auth");
+	const _authStore = useAuthStore();
+	const _user = _authStore.user;
+	const _isFree = _user && !_user.is_admin && !_user.created_by_organization_id &&
+		(!(_user as any).subscription_status || (_user as any).subscription_status === "none" || (_user as any).subscription_status === "expired");
+	if (_isFree) {
+		const { getUsageCount, recordUsage } = await import("@/services/database/free-tier-usage");
+		const FREE_LIMIT = 1;
+		const used = await getUsageCount(String(_user.id), "editor_export");
+		if (used >= FREE_LIMIT) {
+			exportError.value = "Daily export limit reached (1/day on free plan). Upgrade for unlimited exports.";
+			return;
+		}
+		await recordUsage(String(_user.id), "editor_export");
+	}
+
 	cancelRequested.value = false;
 	isExporting.value = true;
 	progress.value = 0;

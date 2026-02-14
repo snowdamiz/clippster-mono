@@ -183,8 +183,11 @@ defmodule ClippsterServer.Credits do
     end
   end
 
+  # Maximum credits a free tier user can hold
+  @free_tier_credit_cap 60
+
   @doc """
-  Adds hours to user balance
+  Adds hours to user balance (uncapped — used by subscription activation and renewals).
   """
   def add_credits(user_id, hours) do
     {:ok, user_credit} = get_or_create_user_credits(user_id)
@@ -192,6 +195,39 @@ defmodule ClippsterServer.Credits do
     user_credit
     |> UserCredit.add_hours_changeset(hours)
     |> Repo.update()
+  end
+
+  @doc """
+  Adds credits with free tier cap enforcement.
+  Free tier users (subscription_status is nil or "none") cannot exceed #{@free_tier_credit_cap} credits.
+  Used for promo codes, referral bonuses, and other non-subscription credit grants.
+  Returns {:error, :free_tier_cap_reached} if the user is free tier and already at/above cap.
+  """
+  def add_credits_capped(user_id, hours) do
+    alias ClippsterServer.Accounts
+
+    user = Accounts.get_user(user_id)
+    is_free_tier = is_nil(user) or user.subscription_status in [nil, "none"]
+
+    if is_free_tier do
+      {:ok, %{hours_remaining: remaining}} = get_user_balance(user_id)
+      current = Decimal.to_float(remaining)
+
+      if current >= @free_tier_credit_cap do
+        {:error, :free_tier_cap_reached}
+      else
+        # Only add enough to reach the cap
+        capped_hours = min(hours, @free_tier_credit_cap - current)
+        if capped_hours > 0 do
+          add_credits(user_id, capped_hours)
+        else
+          {:error, :free_tier_cap_reached}
+        end
+      end
+    else
+      # Paid subscribers have no cap
+      add_credits(user_id, hours)
+    end
   end
 
   @doc """

@@ -268,6 +268,15 @@ defmodule ClippsterServer.Organizations do
     end
   end
 
+  defp check_not_solo_tier(organization_id) do
+    org = Repo.get(Organization, organization_id)
+    if org && org.subscription_tier == "solo" do
+      {:error, :solo_tier_no_accounts}
+    else
+      {:ok, :allowed}
+    end
+  end
+
   # ============================================================================
   # Invitation Management
   # ============================================================================
@@ -496,6 +505,7 @@ defmodule ClippsterServer.Organizations do
   """
   def create_member_account(organization_id, email, password, role, name, %User{} = creator) do
     with {:ok, _} <- verify_admin(organization_id, creator.id),
+         {:ok, _} <- check_not_solo_tier(organization_id),
          {:ok, _} <- ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id),
          nil <- Accounts.get_user_by_email(email) do
 
@@ -1108,22 +1118,32 @@ defmodule ClippsterServer.Organizations do
 
   @doc """
   Lists all creator profiles for an organization.
+  Optionally include disabled profiles (default: false).
   """
-  def list_creator_profiles(organization_id) do
-    OrganizationCreatorProfile
+  def list_creator_profiles(organization_id, opts \\ []) do
+    include_disabled = Keyword.get(opts, :include_disabled, false)
+
+    query = OrganizationCreatorProfile
     |> where([p], p.organization_id == ^organization_id)
     |> preload([:platform_links, :intro, :outro, :watermark, assignments: :user])
     |> order_by([p], desc: p.inserted_at)
-    |> Repo.all()
+
+    query = if include_disabled do
+      query
+    else
+      where(query, [p], p.disabled == false)
+    end
+
+    Repo.all(query)
   end
 
   @doc """
   Gets the global branding profile for an organization (if one exists).
-  Returns the first profile with scope "global", or nil.
+  Returns the first profile with scope "global" that is not disabled, or nil.
   """
   def get_global_branding_profile(organization_id) do
     OrganizationCreatorProfile
-    |> where([p], p.organization_id == ^organization_id and p.scope == "global")
+    |> where([p], p.organization_id == ^organization_id and p.scope == "global" and p.disabled == false)
     |> limit(1)
     |> Repo.one()
   end
@@ -1155,13 +1175,23 @@ defmodule ClippsterServer.Organizations do
 
   @doc """
   Lists creator profiles for an organization filtered by scope.
+  Optionally include disabled profiles (default: false).
   """
-  def list_creator_profiles_by_scope(organization_id, scope) when scope in ["streamer", "global"] do
-    OrganizationCreatorProfile
+  def list_creator_profiles_by_scope(organization_id, scope, opts \\ []) when scope in ["streamer", "global"] do
+    include_disabled = Keyword.get(opts, :include_disabled, false)
+
+    query = OrganizationCreatorProfile
     |> where([p], p.organization_id == ^organization_id and p.scope == ^scope)
     |> preload([:platform_links, :intro, :outro, :watermark, assignments: :user])
     |> order_by([p], desc: p.inserted_at)
-    |> Repo.all()
+
+    query = if include_disabled do
+      query
+    else
+      where(query, [p], p.disabled == false)
+    end
+
+    Repo.all(query)
   end
 
   @doc """
@@ -1190,7 +1220,11 @@ defmodule ClippsterServer.Organizations do
   def create_creator_profile(organization_id, attrs, %User{} = user) do
     if is_admin?(organization_id, user.id) do
       %OrganizationCreatorProfile{}
-      |> OrganizationCreatorProfile.create_changeset(Map.put(attrs, :organization_id, organization_id))
+      |> OrganizationCreatorProfile.create_changeset(
+        attrs
+        |> Map.put(:organization_id, organization_id)
+        |> Map.put(:created_by_user_id, user.id)
+      )
       |> Repo.insert()
       |> case do
         {:ok, profile} ->
@@ -1257,6 +1291,42 @@ defmodule ClippsterServer.Organizations do
     case get_creator_profile(organization_id, profile_id) do
       nil -> {:error, :not_found}
       profile -> delete_creator_profile(profile, user)
+    end
+  end
+
+  @doc """
+  Toggles the disabled state of a creator profile.
+  Organization admins can toggle any profile in their organization.
+  Regular users can only toggle profiles they created (not profiles assigned to them).
+  """
+  def toggle_creator_profile_disabled(profile_id, %User{} = user) do
+    case get_creator_profile(profile_id) do
+      nil ->
+        {:error, :not_found}
+
+      profile ->
+        # Check if user is org admin (can toggle any profile in their org)
+        is_org_admin = is_admin?(profile.organization_id, user.id)
+
+        # Check if user created this profile
+        is_creator = profile.created_by_user_id == user.id
+
+        cond do
+          is_org_admin ->
+            # Org admin can toggle any profile in their organization
+            profile
+            |> OrganizationCreatorProfile.update_changeset(%{disabled: !profile.disabled})
+            |> Repo.update()
+
+          is_creator ->
+            # User can only toggle profiles they created
+            profile
+            |> OrganizationCreatorProfile.update_changeset(%{disabled: !profile.disabled})
+            |> Repo.update()
+
+          true ->
+            {:error, :unauthorized}
+        end
     end
   end
 

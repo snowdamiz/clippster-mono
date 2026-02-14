@@ -64,6 +64,10 @@ export interface OrganizationSubscription {
   total_monthly_credits: number
   current_members: number
   seats_remaining: number | null
+  pending_subscription_tier?: string | null
+  admin_price_cents?: number | null
+  created_by_admin?: boolean
+  setup_completed?: boolean
 }
 
 export interface OrganizationRestrictionDefaults {
@@ -92,6 +96,7 @@ export interface LayoutOverlay {
 export interface ServerOrganizationCreatorProfile {
   id: number
   organization_id: number
+  created_by_user_id?: number | null
   name: string
   description?: string | null
   profile_image_url?: string | null
@@ -100,6 +105,7 @@ export interface ServerOrganizationCreatorProfile {
   watermark_id?: number | null
   watermark_settings?: Record<string, unknown> | null
   layout_overlays?: LayoutOverlay[] | null
+  disabled?: boolean
   platform_links?: ServerOrganizationPlatformLink[]
   assignments?: ServerProfileAssignment[]
   assigned_count?: number

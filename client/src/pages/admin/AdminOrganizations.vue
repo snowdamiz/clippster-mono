@@ -7,10 +7,14 @@
     :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Organizations' }]"
   >
     <template #actions>
+      <button class="admin-orgs__action-btn admin-orgs__action-btn--create" @click="showCreateOrgDialog = true">
+        <Plus class="admin-orgs__action-icon" />
+        Create Org Account
+      </button>
       <button class="admin-orgs__action-btn" :disabled="loading" @click="fetchOrganizations">
         <RefreshCw v-if="!loading" class="admin-orgs__action-icon" />
         <Loader2 v-else class="admin-orgs__action-icon admin-orgs__action-icon--spin" />
-        Refresh Organizations
+        Refresh
       </button>
     </template>
 
@@ -53,7 +57,8 @@
                 <tr>
                   <th class="admin-orgs__th">ID</th>
                   <th class="admin-orgs__th">Name</th>
-                  <th class="admin-orgs__th">Members</th>
+                  <th class="admin-orgs__th">Subscription</th>
+                  <th class="admin-orgs__th">Seats</th>
                   <th class="admin-orgs__th">Credits</th>
                   <th class="admin-orgs__th">Created</th>
                   <th class="admin-orgs__th">Actions</th>
@@ -68,12 +73,22 @@
                     <div class="admin-orgs__name-cell">
                       <span class="admin-orgs__name">{{ org.name }}</span>
                       <span v-if="org.description" class="admin-orgs__description">{{ org.description }}</span>
+                      <span v-if="org.created_by_admin" class="admin-orgs__badge admin-orgs__badge--admin">Admin Created</span>
+                    </div>
+                  </td>
+                  <td class="admin-orgs__td">
+                    <div class="admin-orgs__sub-cell">
+                      <span :class="['admin-orgs__status-badge', `admin-orgs__status-badge--${org.subscription_status || 'none'}`]">
+                        {{ org.subscription_status || 'none' }}
+                      </span>
+                      <span v-if="org.subscription_tier" class="admin-orgs__tier-label">{{ org.subscription_tier }}</span>
+                      <span v-if="org.admin_price_cents != null" class="admin-orgs__price-label">${{ (org.admin_price_cents / 100).toFixed(2) }}/mo</span>
                     </div>
                   </td>
                   <td class="admin-orgs__td">
                     <span class="admin-orgs__members">
                       <Users class="admin-orgs__members-icon" />
-                      {{ org.member_count }} member{{ org.member_count !== 1 ? 's' : '' }}
+                      {{ org.member_count }}{{ org.max_seats ? `/${org.max_seats}` : '' }}
                     </span>
                   </td>
                   <td class="admin-orgs__td">
@@ -83,25 +98,27 @@
                         <span class="admin-orgs__credits-value">{{ formatCredits(org.credits.hours_remaining) }}</span>
                         <span class="admin-orgs__credits-unit">min</span>
                       </div>
-                      <span class="admin-orgs__credits-used">{{ formatCredits(org.credits.hours_used) }} used</span>
+                      <span v-if="org.monthly_credits" class="admin-orgs__credits-used">{{ org.monthly_credits }}/mo</span>
                     </div>
                   </td>
                   <td class="admin-orgs__td">
                     <span class="admin-orgs__date">{{ formatDate(org.created_at) }}</span>
                   </td>
                   <td class="admin-orgs__td">
-                    <button
-                      class="admin-orgs__set-credits-btn"
-                      :disabled="updatingOrgCreditsId === org.id"
-                      @click="openOrgCreditDialog(org)"
-                    >
-                      <Loader2
-                        v-if="updatingOrgCreditsId === org.id"
-                        class="admin-orgs__btn-icon admin-orgs__btn-icon--spin"
-                      />
-                      <CreditCard v-else class="admin-orgs__btn-icon" />
-                      Set Credits
-                    </button>
+                    <div class="admin-orgs__actions-cell">
+                      <button class="admin-orgs__set-credits-btn" @click="openOrgCreditDialog(org)">
+                        <CreditCard class="admin-orgs__btn-icon" /> Credits
+                      </button>
+                      <button class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--sub" @click="openGrantSubDialog(org)">
+                        <Crown class="admin-orgs__btn-icon" /> Sub
+                      </button>
+                      <button v-if="org.subscription_status === 'active'" class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--edit" @click="openEditSubDialog(org)">
+                        <Settings class="admin-orgs__btn-icon" /> Edit
+                      </button>
+                      <button v-if="org.subscription_status === 'active'" class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--cancel" @click="cancelOrgSub(org)">
+                        <XCircle class="admin-orgs__btn-icon" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -119,6 +136,197 @@
         <button class="admin-orgs__empty-btn" @click="fetchOrganizations">Refresh Organizations</button>
       </div>
     </div>
+
+    <!-- Create Org Account Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showCreateOrgDialog" class="admin-orgs__modal-backdrop" @click.self="showCreateOrgDialog = false">
+          <Transition name="dialog" appear>
+            <div v-if="showCreateOrgDialog" class="admin-orgs__modal" role="dialog" aria-modal="true">
+              <div class="admin-orgs__modal-accent"></div>
+              <div class="admin-orgs__modal-header">
+                <button class="admin-orgs__modal-close" @click="showCreateOrgDialog = false"><X :size="18" /></button>
+                <div class="admin-orgs__modal-icon"><Building2 :size="24" /></div>
+                <h2 class="admin-orgs__modal-title">Create Organization Account</h2>
+                <p class="admin-orgs__modal-subtitle">Admin-managed org with custom billing</p>
+              </div>
+              <div class="admin-orgs__modal-content">
+                <form class="admin-orgs__modal-form" @submit.prevent="createOrgAccount">
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">Organization Name *</label>
+                    <input v-model="createOrgForm.org_name" type="text" required class="admin-orgs__modal-input" placeholder="Acme Corp" />
+                  </div>
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">Owner Email *</label>
+                    <input v-model="createOrgForm.email" type="email" required class="admin-orgs__modal-input" placeholder="owner@example.com" />
+                  </div>
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">Owner Password *</label>
+                    <input v-model="createOrgForm.password" type="text" required class="admin-orgs__modal-input" placeholder="Temporary password" />
+                  </div>
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">Tier</label>
+                    <Select v-model="createOrgForm.tier">
+                      <SelectTrigger class="admin-orgs__select-trigger">
+                        <SelectValue placeholder="Select tier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="solo">Solo ($149.99)</SelectItem>
+                        <SelectItem value="enterprise_base">Enterprise Base ($300)</SelectItem>
+                        <SelectItem value="enterprise_ai">Enterprise AI ($500)</SelectItem>
+                        <SelectItem value="enterprise_unlimited">Enterprise Unlimited ($1800)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+                    <div class="admin-orgs__modal-field">
+                      <label class="admin-orgs__modal-label">Max Seats</label>
+                      <input v-model.number="createOrgForm.max_seats" type="number" min="0" class="admin-orgs__modal-input" placeholder="0 = unlimited" />
+                    </div>
+                    <div class="admin-orgs__modal-field">
+                      <label class="admin-orgs__modal-label">AI Credits/mo</label>
+                      <input v-model.number="createOrgForm.monthly_credits" type="number" min="0" class="admin-orgs__modal-input" placeholder="0" />
+                    </div>
+                  </div>
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">Price ($/month)</label>
+                    <input v-model.number="createOrgForm.price_dollars" type="number" step="0.01" min="0" class="admin-orgs__modal-input" placeholder="0 = free" />
+                  </div>
+                  <div v-if="createOrgError" class="admin-orgs__modal-error">
+                    <AlertCircle :size="16" />
+                    <p class="admin-orgs__modal-error-text">{{ createOrgError }}</p>
+                  </div>
+                </form>
+              </div>
+              <div class="admin-orgs__modal-footer">
+                <button type="button" class="admin-orgs__modal-btn admin-orgs__modal-btn--secondary" @click="showCreateOrgDialog = false">Cancel</button>
+                <button type="submit" class="admin-orgs__modal-btn admin-orgs__modal-btn--primary" :disabled="creatingOrg" @click="createOrgAccount">
+                  <Loader2 v-if="creatingOrg" :size="16" class="admin-orgs__modal-spinner" />
+                  {{ creatingOrg ? 'Creating...' : 'Create Account' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Grant Subscription Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showGrantSubDialog" class="admin-orgs__modal-backdrop" @click.self="showGrantSubDialog = false">
+          <Transition name="dialog" appear>
+            <div v-if="showGrantSubDialog" class="admin-orgs__modal" role="dialog" aria-modal="true">
+              <div class="admin-orgs__modal-accent"></div>
+              <div class="admin-orgs__modal-header">
+                <button class="admin-orgs__modal-close" @click="showGrantSubDialog = false"><X :size="18" /></button>
+                <div class="admin-orgs__modal-icon"><Crown :size="24" /></div>
+                <h2 class="admin-orgs__modal-title">Grant Subscription</h2>
+                <p class="admin-orgs__modal-subtitle">{{ grantSubOrg?.name }}</p>
+              </div>
+              <div class="admin-orgs__modal-content">
+                <form class="admin-orgs__modal-form" @submit.prevent="grantSubscription">
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">Tier</label>
+                    <Select v-model="grantSubForm.tier">
+                      <SelectTrigger class="admin-orgs__select-trigger">
+                        <SelectValue placeholder="Select tier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="solo">Solo</SelectItem>
+                        <SelectItem value="enterprise_base">Enterprise Base</SelectItem>
+                        <SelectItem value="enterprise_ai">Enterprise AI</SelectItem>
+                        <SelectItem value="enterprise_unlimited">Enterprise Unlimited</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">Days</label>
+                    <input v-model.number="grantSubForm.days" type="number" min="1" class="admin-orgs__modal-input" />
+                  </div>
+                  <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.875rem;color:var(--sidebar-text)">
+                    <input type="checkbox" v-model="grantSubForm.grant_credits" /> Grant AI Credits
+                  </label>
+                  <div v-if="grantSubError" class="admin-orgs__modal-error">
+                    <AlertCircle :size="16" />
+                    <p class="admin-orgs__modal-error-text">{{ grantSubError }}</p>
+                  </div>
+                </form>
+              </div>
+              <div class="admin-orgs__modal-footer">
+                <button type="button" class="admin-orgs__modal-btn admin-orgs__modal-btn--secondary" @click="showGrantSubDialog = false">Cancel</button>
+                <button type="submit" class="admin-orgs__modal-btn admin-orgs__modal-btn--primary" :disabled="grantingSubId !== null" @click="grantSubscription">
+                  <Loader2 v-if="grantingSubId !== null" :size="16" class="admin-orgs__modal-spinner" />
+                  {{ grantingSubId !== null ? 'Granting...' : 'Grant Subscription' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Edit Subscription Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showEditSubDialog" class="admin-orgs__modal-backdrop" @click.self="showEditSubDialog = false">
+          <Transition name="dialog" appear>
+            <div v-if="showEditSubDialog" class="admin-orgs__modal" role="dialog" aria-modal="true">
+              <div class="admin-orgs__modal-accent"></div>
+              <div class="admin-orgs__modal-header">
+                <button class="admin-orgs__modal-close" @click="showEditSubDialog = false"><X :size="18" /></button>
+                <div class="admin-orgs__modal-icon"><Settings :size="24" /></div>
+                <h2 class="admin-orgs__modal-title">Edit Subscription</h2>
+                <p class="admin-orgs__modal-subtitle">{{ editSubOrg?.name }}</p>
+              </div>
+              <div class="admin-orgs__modal-content">
+                <form class="admin-orgs__modal-form" @submit.prevent="updateOrgSub">
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">Tier</label>
+                    <Select v-model="editSubForm.tier">
+                      <SelectTrigger class="admin-orgs__select-trigger">
+                        <SelectValue placeholder="Select tier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="solo">Solo</SelectItem>
+                        <SelectItem value="enterprise_base">Enterprise Base</SelectItem>
+                        <SelectItem value="enterprise_ai">Enterprise AI</SelectItem>
+                        <SelectItem value="enterprise_unlimited">Enterprise Unlimited</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+                    <div class="admin-orgs__modal-field">
+                      <label class="admin-orgs__modal-label">Max Seats</label>
+                      <input v-model.number="editSubForm.max_seats" type="number" min="0" class="admin-orgs__modal-input" placeholder="0 = unlimited" />
+                    </div>
+                    <div class="admin-orgs__modal-field">
+                      <label class="admin-orgs__modal-label">AI Credits/mo</label>
+                      <input v-model.number="editSubForm.monthly_credits" type="number" min="0" class="admin-orgs__modal-input" />
+                    </div>
+                  </div>
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">Price ($/month)</label>
+                    <input v-model.number="editSubForm.price_dollars" type="number" step="0.01" min="0" class="admin-orgs__modal-input" />
+                  </div>
+                  <div v-if="editSubError" class="admin-orgs__modal-error">
+                    <AlertCircle :size="16" />
+                    <p class="admin-orgs__modal-error-text">{{ editSubError }}</p>
+                  </div>
+                </form>
+              </div>
+              <div class="admin-orgs__modal-footer">
+                <button type="button" class="admin-orgs__modal-btn admin-orgs__modal-btn--secondary" @click="showEditSubDialog = false">Cancel</button>
+                <button type="submit" class="admin-orgs__modal-btn admin-orgs__modal-btn--primary" :disabled="editingSubId !== null" @click="updateOrgSub">
+                  <Loader2 v-if="editingSubId !== null" :size="16" class="admin-orgs__modal-spinner" />
+                  {{ editingSubId !== null ? 'Saving...' : 'Save Changes' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Organization Credit Dialog -->
     <Teleport to="body">
@@ -232,9 +440,10 @@
 
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
-  import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle } from 'lucide-vue-next';
+  import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle, Plus, Crown, Settings, XCircle } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import api from '@/services/api';
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
   interface Organization {
     id: number;
@@ -245,6 +454,14 @@
       hours_remaining: number;
       hours_used: number;
     };
+    subscription_status: string | null;
+    subscription_tier: string | null;
+    max_seats: number | null;
+    monthly_credits: number | null;
+    subscription_end_date: string | null;
+    admin_price_cents: number | null;
+    created_by_admin: boolean;
+    setup_completed: boolean;
     created_at: string;
   }
 
@@ -255,6 +472,34 @@
   const updatingOrgCreditsId = ref<number | null>(null);
   const orgCreditForm = ref({ hours_remaining: 0, hours_used: 0 });
   const orgCreditError = ref<string | null>(null);
+
+  // Create Org Account
+  const showCreateOrgDialog = ref(false);
+  const creatingOrg = ref(false);
+  const createOrgError = ref<string | null>(null);
+  const createOrgForm = ref({
+    org_name: '',
+    email: '',
+    password: '',
+    tier: 'enterprise_base',
+    max_seats: 5,
+    monthly_credits: 0,
+    price_dollars: 0,
+  });
+
+  // Grant Subscription
+  const showGrantSubDialog = ref(false);
+  const grantSubOrg = ref<Organization | null>(null);
+  const grantingSubId = ref<number | null>(null);
+  const grantSubError = ref<string | null>(null);
+  const grantSubForm = ref({ tier: 'enterprise_base', days: 30, grant_credits: false });
+
+  // Edit Subscription
+  const showEditSubDialog = ref(false);
+  const editSubOrg = ref<Organization | null>(null);
+  const editingSubId = ref<number | null>(null);
+  const editSubError = ref<string | null>(null);
+  const editSubForm = ref({ tier: '', max_seats: 0, monthly_credits: 0, price_dollars: 0 });
 
   const fetchOrganizations = async () => {
     loading.value = true;
@@ -332,6 +577,115 @@
       orgCreditError.value = err instanceof Error ? err.message : 'Unknown error occurred';
     } finally {
       updatingOrgCreditsId.value = null;
+    }
+  };
+
+  // Create Org Account
+  const createOrgAccount = async () => {
+    creatingOrg.value = true;
+    createOrgError.value = null;
+    try {
+      const response = await api.post('/admin/organizations/create-account', {
+        org_name: createOrgForm.value.org_name,
+        email: createOrgForm.value.email,
+        password: createOrgForm.value.password,
+        tier: createOrgForm.value.tier,
+        max_seats: createOrgForm.value.max_seats,
+        monthly_credits: createOrgForm.value.monthly_credits,
+        price_cents: Math.round(createOrgForm.value.price_dollars * 100),
+      });
+      if (response.data.success) {
+        showCreateOrgDialog.value = false;
+        createOrgForm.value = { org_name: '', email: '', password: '', tier: 'enterprise_base', max_seats: 5, monthly_credits: 0, price_dollars: 0 };
+        fetchOrganizations();
+      } else {
+        throw new Error(response.data.error);
+      }
+    } catch (err) {
+      createOrgError.value = err instanceof Error ? err.message : 'Failed to create org account';
+    } finally {
+      creatingOrg.value = false;
+    }
+  };
+
+  // Grant Subscription
+  const openGrantSubDialog = (org: Organization) => {
+    grantSubOrg.value = org;
+    grantSubForm.value = { tier: org.subscription_tier || 'enterprise_base', days: 30, grant_credits: false };
+    grantSubError.value = null;
+    showGrantSubDialog.value = true;
+  };
+
+  const grantSubscription = async () => {
+    if (!grantSubOrg.value) return;
+    grantingSubId.value = grantSubOrg.value.id;
+    grantSubError.value = null;
+    try {
+      const response = await api.post(`/admin/organizations/${grantSubOrg.value.id}/subscription`, {
+        tier: grantSubForm.value.tier,
+        days: grantSubForm.value.days,
+        grant_credits: grantSubForm.value.grant_credits,
+      });
+      if (response.data.success) {
+        showGrantSubDialog.value = false;
+        fetchOrganizations();
+      } else {
+        throw new Error(response.data.error);
+      }
+    } catch (err) {
+      grantSubError.value = err instanceof Error ? err.message : 'Failed to grant subscription';
+    } finally {
+      grantingSubId.value = null;
+    }
+  };
+
+  // Edit Subscription
+  const openEditSubDialog = (org: Organization) => {
+    editSubOrg.value = org;
+    editSubForm.value = {
+      tier: org.subscription_tier || 'enterprise_base',
+      max_seats: org.max_seats || 0,
+      monthly_credits: org.monthly_credits || 0,
+      price_dollars: org.admin_price_cents != null ? org.admin_price_cents / 100 : 0,
+    };
+    editSubError.value = null;
+    showEditSubDialog.value = true;
+  };
+
+  const updateOrgSub = async () => {
+    if (!editSubOrg.value) return;
+    editingSubId.value = editSubOrg.value.id;
+    editSubError.value = null;
+    try {
+      const response = await api.put(`/admin/organizations/${editSubOrg.value.id}/subscription`, {
+        tier: editSubForm.value.tier,
+        max_seats: editSubForm.value.max_seats,
+        monthly_credits: editSubForm.value.monthly_credits,
+        admin_price_cents: Math.round(editSubForm.value.price_dollars * 100),
+      });
+      if (response.data.success) {
+        showEditSubDialog.value = false;
+        fetchOrganizations();
+      } else {
+        throw new Error(response.data.error);
+      }
+    } catch (err) {
+      editSubError.value = err instanceof Error ? err.message : 'Failed to update subscription';
+    } finally {
+      editingSubId.value = null;
+    }
+  };
+
+  // Cancel Subscription
+  const cancelOrgSub = async (org: Organization) => {
+    if (!confirm(`Cancel subscription for ${org.name}?`)) return;
+    try {
+      const response = await api.post(`/admin/organizations/${org.id}/subscription/cancel`);
+      if (response.data.success) {
+        fetchOrganizations();
+      }
+    } catch (err) {
+      console.error('Failed to cancel subscription:', err);
     }
   };
 
@@ -614,18 +968,42 @@
     color: var(--sidebar-text-muted);
   }
 
+  .admin-orgs__action-btn--create {
+    background: linear-gradient(135deg, #8b5cf6, #6d28d9);
+  }
+
+  .admin-orgs__actions-cell {
+    display: flex;
+    gap: 0.375rem;
+    flex-wrap: wrap;
+  }
+
   .admin-orgs__set-credits-btn {
     display: inline-flex;
     align-items: center;
-    padding: 0.375rem 0.75rem;
+    padding: 0.25rem 0.5rem;
     background: linear-gradient(to right, #16a34a, #059669);
     color: white;
     border: none;
-    border-radius: 8px;
-    font-size: 0.75rem;
+    border-radius: 6px;
+    font-size: 0.6875rem;
     font-weight: 500;
     cursor: pointer;
     transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .admin-orgs__set-credits-btn--sub {
+    background: linear-gradient(to right, #8b5cf6, #6d28d9);
+  }
+
+  .admin-orgs__set-credits-btn--edit {
+    background: linear-gradient(to right, #3b82f6, #2563eb);
+  }
+
+  .admin-orgs__set-credits-btn--cancel {
+    background: linear-gradient(to right, #ef4444, #dc2626);
+    padding: 0.25rem 0.375rem;
   }
 
   .admin-orgs__set-credits-btn:hover:not(:disabled) {
@@ -638,13 +1016,80 @@
   }
 
   .admin-orgs__btn-icon {
-    width: 12px;
-    height: 12px;
-    margin-right: 0.375rem;
+    width: 11px;
+    height: 11px;
+    margin-right: 0.25rem;
   }
 
   .admin-orgs__btn-icon--spin {
     animation: spin 1s linear infinite;
+  }
+
+  .admin-orgs__sub-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .admin-orgs__status-badge {
+    display: inline-block;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    width: fit-content;
+  }
+
+  .admin-orgs__status-badge--active {
+    background-color: rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+  }
+
+  .admin-orgs__status-badge--cancelled {
+    background-color: rgba(251, 191, 36, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(251, 191, 36, 0.3);
+  }
+
+  .admin-orgs__status-badge--expired {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .admin-orgs__status-badge--none {
+    background-color: rgba(113, 113, 122, 0.2);
+    color: #a1a1aa;
+    border: 1px solid rgba(113, 113, 122, 0.3);
+  }
+
+  .admin-orgs__tier-label {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .admin-orgs__price-label {
+    font-size: 0.6875rem;
+    color: #22d3ee;
+    font-weight: 500;
+  }
+
+  .admin-orgs__badge {
+    display: inline-block;
+    padding: 0.0625rem 0.375rem;
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    width: fit-content;
+    margin-top: 0.125rem;
+  }
+
+  .admin-orgs__badge--admin {
+    background-color: rgba(139, 92, 246, 0.2);
+    color: #a78bfa;
+    border: 1px solid rgba(139, 92, 246, 0.3);
   }
 
   .admin-orgs__empty {
@@ -891,6 +1336,31 @@
     outline: none;
     border-color: var(--sidebar-accent);
     box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  /* ===== Select Trigger Styling ===== */
+  .admin-orgs__select-trigger {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+    height: auto;
+    justify-content: space-between;
+  }
+
+  .admin-orgs__select-trigger:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .admin-orgs__select-trigger[data-placeholder] {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
   }
 
   /* ===== Error Alert ===== */

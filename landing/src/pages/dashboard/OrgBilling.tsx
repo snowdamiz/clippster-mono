@@ -90,6 +90,13 @@ export function OrgBilling() {
   } | null>(null)
   const [selectedType, setSelectedType] = useState<'base' | 'addon'>('base')
 
+  // Change Plan state
+  const [showChangePlanDialog, setShowChangePlanDialog] = useState(false)
+  const [changePlanTier, setChangePlanTier] = useState<string | null>(null)
+  const [changePlanLoading, setChangePlanLoading] = useState(false)
+  const [prorationPreview, setProrationPreview] = useState<any>(null)
+  const [prorationLoading, setProrationLoading] = useState(false)
+
   useEffect(() => {
     loadOrganization()
   }, [loadOrganization])
@@ -152,6 +159,39 @@ export function OrgBilling() {
     setShowSubscriptionModal(false)
     setSelectedPlan(null)
     loadOrganization()
+  }
+
+  async function fetchProrationPreview(tier: string) {
+    if (!organizationId) return
+    setProrationLoading(true)
+    try {
+      const result = await api.get<any>(`/organizations/${organizationId}/subscription/proration-preview?tier=${tier}`)
+      if (result.success) {
+        setProrationPreview(result.preview)
+      }
+    } catch { /* ignore */ }
+    finally { setProrationLoading(false) }
+  }
+
+  async function handleChangePlan() {
+    if (!organizationId || !changePlanTier) return
+    setChangePlanLoading(true)
+    try {
+      const result = await api.put<any>(`/organizations/${organizationId}/subscription/tier`, { tier: changePlanTier })
+      if (result.success) {
+        toast.success('Plan changed', result.message || 'Subscription tier updated')
+        setShowChangePlanDialog(false)
+        setChangePlanTier(null)
+        setProrationPreview(null)
+        await loadOrganization()
+      } else {
+        toast.error('Failed', result.error)
+      }
+    } catch (err: any) {
+      toast.error('Failed', err.message || 'An error occurred')
+    } finally {
+      setChangePlanLoading(false)
+    }
   }
 
   async function cancelSubscription() {
@@ -770,12 +810,20 @@ export function OrgBilling() {
                       </p>
                     </div>
                     {subscription.status === 'active' && isAdmin && (
-                      <button
-                        onClick={() => setShowCancelDialog(true)}
-                        className="px-4 py-2 text-xs font-medium text-zinc-500 bg-transparent border border-zinc-800 rounded-md cursor-pointer transition-all duration-150 hover:text-red-400 hover:border-red-400/30 hover:bg-red-400/10"
-                      >
-                        Cancel
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setShowChangePlanDialog(true)}
+                          className="px-4 py-2 text-xs font-medium text-cyan-400 bg-transparent border border-cyan-500/30 rounded-md cursor-pointer transition-all duration-150 hover:bg-cyan-500/10"
+                        >
+                          Change Plan
+                        </button>
+                        <button
+                          onClick={() => setShowCancelDialog(true)}
+                          className="px-4 py-2 text-xs font-medium text-zinc-500 bg-transparent border border-zinc-800 rounded-md cursor-pointer transition-all duration-150 hover:text-red-400 hover:border-red-400/30 hover:bg-red-400/10"
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     )}
                   </div>
                   <div className="p-6">
@@ -801,6 +849,12 @@ export function OrgBilling() {
                         </div>
                       </div>
                     </div>
+                    {subscription.pending_subscription_tier && (
+                      <div className="flex items-center gap-2 text-[0.8125rem] text-amber-400 mb-2">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Downgrading to {subscription.pending_subscription_tier} at end of billing period</span>
+                      </div>
+                    )}
                     {subscription.end_date && (
                       <div className="flex items-center gap-2 text-[0.8125rem] text-zinc-500">
                         <CalendarCheck className="w-3.5 h-3.5" />
@@ -973,6 +1027,93 @@ export function OrgBilling() {
           organizationName={organization?.name}
           onSuccess={handleSubscribeSuccess}
         />
+      )}
+
+      {/* Change Plan Dialog */}
+      {showChangePlanDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => { setShowChangePlanDialog(false); setChangePlanTier(null); setProrationPreview(null) }} />
+          <div className="relative w-full max-w-[520px] bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden shadow-[0_20px_60px_rgba(0,0,0,0.4)]">
+            <div className="p-7">
+              <div className="flex flex-col items-center mb-6">
+                <div className="w-14 h-14 rounded-[14px] flex items-center justify-center bg-cyan-500/15 text-cyan-400 mb-3.5">
+                  <Crown className="w-[26px] h-[26px]" />
+                </div>
+                <h2 className="text-[1.1875rem] font-bold text-white m-0">Change Plan</h2>
+                <p className="text-[0.8125rem] text-zinc-500 m-0 mt-1">Current: {subscription?.tier_name}</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                {sortedBaseTiers.filter(t => t.id !== subscription?.tier).map(tier => (
+                  <button
+                    key={tier.id}
+                    onClick={() => { setChangePlanTier(tier.id); fetchProrationPreview(tier.id) }}
+                    className={`p-4 rounded-lg border text-left transition-all ${
+                      changePlanTier === tier.id
+                        ? 'border-cyan-500/60 bg-cyan-500/10'
+                        : 'border-zinc-700/50 bg-zinc-800/30 hover:border-zinc-600'
+                    }`}
+                  >
+                    <h4 className="text-sm font-bold text-white m-0 mb-1">{tier.name}</h4>
+                    <p className="text-lg font-bold text-white m-0">${tier.usd}<span className="text-xs font-normal text-zinc-500">/mo</span></p>
+                    <div className="flex items-center gap-1.5 mt-2 text-xs text-zinc-500">
+                      <Users className="w-3 h-3" /> {tier.seats === null ? '∞' : tier.seats} seats
+                      {tier.monthly_credits > 0 && <><span className="mx-1">·</span><Zap className="w-3 h-3" /> {tier.monthly_credits.toLocaleString()}/mo</>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {prorationLoading && (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
+                </div>
+              )}
+
+              {prorationPreview && !prorationLoading && (
+                <div className="p-4 bg-zinc-800/30 rounded-lg mb-6 text-sm">
+                  <div className="flex justify-between mb-2">
+                    <span className="text-zinc-500">Type</span>
+                    <span className={prorationPreview.change_type === 'upgrade' ? 'text-emerald-400 font-semibold' : 'text-amber-400 font-semibold'}>
+                      {prorationPreview.change_type === 'upgrade' ? 'Upgrade' : 'Downgrade'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between mb-2">
+                    <span className="text-zinc-500">New price</span>
+                    <span className="text-white font-semibold">${prorationPreview.new_price}/mo</span>
+                  </div>
+                  {prorationPreview.change_type === 'upgrade' && prorationPreview.proration_amount > 0 && (
+                    <div className="flex justify-between mb-2">
+                      <span className="text-zinc-500">Prorated charge now</span>
+                      <span className="text-white font-semibold">${prorationPreview.proration_amount}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Effective</span>
+                    <span className="text-white">{prorationPreview.effective_date === 'immediate' ? 'Immediately' : formatDate(prorationPreview.effective_date)}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2.5">
+                <button
+                  onClick={handleChangePlan}
+                  disabled={!changePlanTier || changePlanLoading}
+                  className="flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold rounded-lg border-none cursor-pointer transition-all duration-150 bg-cyan-500 text-[#0a0a0b] hover:bg-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {changePlanLoading && <Loader2 className="w-[18px] h-[18px] animate-spin" />}
+                  {changePlanLoading ? 'Changing...' : 'Confirm Change'}
+                </button>
+                <button
+                  onClick={() => { setShowChangePlanDialog(false); setChangePlanTier(null); setProrationPreview(null) }}
+                  className="flex items-center justify-center gap-2 px-4 py-3.5 text-sm font-semibold rounded-lg border border-zinc-800 cursor-pointer transition-all duration-150 bg-zinc-800/50 text-white hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Cancel Subscription Confirmation */}

@@ -1,6 +1,6 @@
 # Subscription Gate + Solo Tier + Admin Org Subscription Management
 
-Gate newly-approved organizations behind a subscription paywall, add a "Solo" tier ($149.99/mo), allow admin to grant subscriptions with zero credits, allow orgs to purchase extra seats ($20/seat/mo as separate Stripe subscriptions), and support discount codes during checkout.
+Gate newly-approved organizations behind a subscription paywall, add a "Solo" tier ($149.99/mo), allow admin to grant subscriptions with zero credits, and support discount codes during checkout.
 
 ## Current State
 
@@ -11,6 +11,24 @@ Gate newly-approved organizations behind a subscription paywall, add a "Solo" ti
 - **Admin org panel** (`client/src/pages/admin/AdminOrganizations.vue`): Lists orgs, has "Set Credits" dialog. No subscription management.
 - **Admin user subscription**: Endpoints exist for granting/extending/changing user subscriptions (`admin_grant_subscription`), but nothing equivalent for org subscriptions.
 - **Credit removal**: Admin can already set org credits to 0 via `PUT /admin/organizations/:id/credits` with `hours_remaining: 0`. The UI for this exists in `AdminOrganizations.vue`.
+
+---
+
+## Bug Fixes
+
+Fix tier key mismatches and parameter bugs discovered during review.
+
+### `server/lib/clippster_server/promo_codes/promo_code.ex` — `valid_org_tiers` mismatch (line 135)
+- `"enterprise"` → `"enterprise_base"` (matches `@org_subscription_tiers` key)
+- `"addon_5_seats"` → `"seats_5"`
+- `"addon_5_seats_ai"` → `"seats_5_ai"`
+- `"addon_10_seats"` → `"seats_10"`
+- `"addon_10_seats_ai"` → `"seats_10_ai"`
+- Add `"seats_20"` and `"seats_20_ai"` (missing entirely)
+- Add `"solo"` (new tier)
+
+### `landing/src/components/organization/SubscribeDialog.tsx` — wrong param key (line 59)
+- `tier_id: plan.id` → `tier: plan.id` (backend expects `"tier"`)
 
 ---
 
@@ -32,29 +50,7 @@ Gate newly-approved organizations behind a subscription paywall, add a "Solo" ti
 
 ---
 
-## Part 2: Purchasable Extra Seats ($20/seat/mo)
-
-Orgs can buy additional seats on top of their base subscription. Each extra seat is **$20/mo** as a separate Stripe subscription, no AI credits.
-
-### Backend
-- **`server/lib/clippster_server/organization_subscriptions.ex`**
-  - Add function `purchase_extra_seats(organization_id, seat_count)` — increments `max_seats` by `seat_count`, creates a Stripe subscription line item
-  - Add function `get_extra_seats_price()` → returns `20` (USD per seat per month)
-- **`server/lib/clippster_server_web/controllers/organization_subscription_controller.ex`**
-  - New action `seats_checkout(conn, %{"id" => org_id, "seats" => count})` — creates a separate Stripe subscription for extra seats at $20/seat/mo
-  - Stripe metadata: `subscription_type: "extra_seats"`, `seat_count: N`
-- **`server/lib/clippster_server_web/router.ex`**
-  - Add route: `post "/organizations/:id/subscription/seats/checkout"` → `seats_checkout`
-- **`server/lib/clippster_server_web/controllers/stripe_controller.ex`**
-  - Handle `subscription_type == "extra_seats"` in webhook — call `add_extra_seats(org_id, seat_count)`. Separate subscription renews independently each month.
-
-### Frontend
-- **`landing/src/pages/dashboard/OrgBilling.tsx`** — Add "Buy More Seats" button in subscriptions tab, shows seat count input + $20/seat price
-- **`client/src/pages/organization/OrganizationBilling.vue`** — Same "Buy More Seats" UI
-
----
-
-## Part 3: Admin Grant Org Subscription (with zero-credit option)
+## Part 2: Admin Grant Org Subscription (with zero-credit option)
 
 Admin can grant any subscription tier to an org with a `grant_credits: false` flag, so the org gets the tier's access level but zero AI credits.
 
@@ -87,7 +83,7 @@ Admin can grant any subscription tier to an org with a `grant_credits: false` fl
 
 ---
 
-## Part 4: Subscription Gate
+## Part 3: Subscription Gate
 
 Block org dashboard access until subscription is active.
 
@@ -108,14 +104,17 @@ Block org dashboard access until subscription is active.
   - Stripe checkout button
   - Styled consistently with existing dashboard pages
 - **`landing/src/main.tsx`** — Add route `/dashboard/org/:id/subscribe`
-- **`landing/src/layouts/DashboardLayout.tsx`** — Check `subscription_status`; if `"none"` or `"expired"`, redirect to subscribe page
+- **`landing/src/layouts/DashboardLayout.tsx`** — Check `subscription_status`; if `"none"` or `"expired"`, redirect to `/dashboard/org/:id/subscribe`
+  - **Exempt the billing/subscribe page itself** from the gate so orgs can actually subscribe
+  - Flow: org approved → user redirected to `/dashboard/org/:id` → `DashboardLayout` checks subscription → redirects to subscribe page → user subscribes → redirected back to hub
 
 ### Tauri App
 - **`client/src/router/index.ts`** — Add `beforeEnter` guard on `/organization/:id` routes; redirect to `/organization/:id/billing` if no active subscription
+  - **Exempt the billing page itself** from the guard
 
 ---
 
-## Part 5: Admin Org List — Show Subscription Info
+## Part 4: Admin Org List — Show Subscription Info
 
 The `GET /admin/organizations` endpoint currently returns `id, name, description, member_count, credits, created_at`. Need to add subscription fields.
 
@@ -124,7 +123,7 @@ The `GET /admin/organizations` endpoint currently returns `id, name, description
 
 ---
 
-## Part 6: Subscription Changes (Cancel, Upgrade, Downgrade)
+## Part 5: Subscription Changes (Cancel, Upgrade, Downgrade)
 
 Orgs can cancel, upgrade, or downgrade their subscription at any time. Cancellation continues until period end. Upgrades are prorated immediately. Downgrades take effect at next billing cycle.
 
@@ -140,11 +139,17 @@ Orgs can cancel, upgrade, or downgrade their subscription at any time. Cancellat
   - Add to `subscription_changeset`
 - **`server/lib/clippster_server_web/controllers/organization_subscription_controller.ex`**
   - New action `change_tier(conn, %{"id" => org_id, "tier" => new_tier})` — validates tier, determines upgrade vs downgrade, calls appropriate function
+  - New action `proration_preview(conn, %{"id" => org_id, "tier" => new_tier})` — calls Stripe API to get upcoming invoice preview with the new price, returns `%{proration_amount: X, new_price: Y, effective_date: Z}`
 - **`server/lib/clippster_server_web/router.ex`**
   - Add route: `put "/organizations/:id/subscription/tier"` → `change_tier`
+  - Add route: `get "/organizations/:id/subscription/proration-preview"` → `proration_preview`
 - **`server/lib/clippster_server_web/controllers/stripe_controller.ex`**
   - Update `customer.subscription.updated` handler to also check org subscriptions (currently only checks user subscriptions)
-  - On renewal with `pending_subscription_tier`, apply the tier change: update `subscription_tier`, `max_seats`, `monthly_credits`, clear `pending_subscription_tier`
+  - If no user found via `Subscriptions.get_user_by_stripe_subscription`, fallback: check `OrganizationSubscriptions.get_by_stripe_subscription`
+  - Handle org cases:
+    - `cancel_at_period_end == true` → call `OrganizationSubscriptions.cancel_subscription(org.id)`
+    - `status in ["canceled", "unpaid", "incomplete_expired"]` → call `OrganizationSubscriptions.expire_subscription(org.id)`
+    - If org has `pending_subscription_tier`, apply the tier change on renewal: update `subscription_tier`, `max_seats`, `monthly_credits`, clear `pending_subscription_tier`
 
 ### Frontend
 - **`landing/src/pages/dashboard/OrgBilling.tsx`**
@@ -154,6 +159,9 @@ Orgs can cancel, upgrade, or downgrade their subscription at any time. Cancellat
   - Show pending downgrade notice if `pending_subscription_tier` is set
 - **`client/src/pages/organization/OrganizationBilling.vue`**
   - Same "Change Plan" UI as landing app
+- **`client/src/composables/useOrganization.ts`** — add `pending_subscription_tier?: string | null` to `OrganizationSubscription` interface
+- **`landing/src/types/organization.ts`** — add `pending_subscription_tier?: string | null` to `OrganizationSubscription` interface
+- **`landing/src/hooks/useOrganization.ts`** — expose `pending_subscription_tier` from subscription state (already available via `state.subscription`)
 
 ### Database Migration
 - Add `pending_subscription_tier` column to `organizations` table (string, nullable)
@@ -165,4 +173,5 @@ Orgs can cancel, upgrade, or downgrade their subscription at any time. Cancellat
 1. **Solo seats**: `max_seats: nil` (unlimited invites/hires), but `create_member_account` blocked. Solo orgs can invite existing users and hire clippers, just can't create new accounts under them.
 2. **Legacy orgs**: Grandfathered in — existing orgs (created before migration) are exempt from the subscription gate.
 3. **Cancelled sub**: Access continues until `end_date`. Gate only blocks `"none"` and `"expired"`.
-4. **Extra seats**: Separate Stripe subscriptions that renew independently each month at $20/seat.
+4. **Extra seats**: The existing add-on system (`seats_5`, `seats_10`, `seats_20`, etc.) remains as-is. No separate $20/seat subscriptions.
+5. **Crypto payments**: Remain disabled ("Coming Soon") until further notice.

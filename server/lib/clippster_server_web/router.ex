@@ -76,6 +76,7 @@ defmodule ClippsterServerWeb.Router do
     # Wallet authentication routes
     post("/auth/challenge", AuthController, :request_challenge)
     post("/auth/verify", AuthController, :verify_signature)
+    post("/auth/activity-ping", AuthController, :activity_ping)
 
     # Google OAuth routes
     get("/auth/google", AuthController, :google_request)
@@ -130,6 +131,7 @@ defmodule ClippsterServerWeb.Router do
 
     # Public settings/feature flags
     get("/settings/feature-flags", SettingsController, :get_feature_flags)
+    get("/app-settings/free-tier-branding", SettingsController, :get_free_tier_branding)
 
     # App release info (for download buttons on landing page)
     get("/releases/latest", ReleaseController, :latest)
@@ -158,7 +160,10 @@ defmodule ClippsterServerWeb.Router do
     post("/subscription/promo/validate", SubscriptionController, :validate_promo)
     post("/subscription/crypto-quote", SubscriptionController, :get_crypto_quote)
     post("/subscription/crypto-confirm", SubscriptionController, :confirm_crypto_payment)
+    put("/subscription/tier", SubscriptionController, :change_tier)
+    post("/subscription/pending-change/cancel", SubscriptionController, :cancel_pending_change)
     post("/subscription/cancel", SubscriptionController, :cancel)
+    post("/subscription/deactivate", SubscriptionController, :deactivate_profile)
     get("/subscription/history", SubscriptionController, :history)
 
     # Beta code activation (requires auth)
@@ -341,6 +346,8 @@ defmodule ClippsterServerWeb.Router do
     post("/organizations/:id/subscription/checkout", OrganizationSubscriptionController, :checkout)
     post("/organizations/:id/subscription/addons/checkout", OrganizationSubscriptionController, :addon_checkout)
     post("/organizations/:id/subscription/cancel", OrganizationSubscriptionController, :cancel)
+    put("/organizations/:id/subscription/tier", OrganizationSubscriptionController, :change_tier)
+    get("/organizations/:id/subscription/proration-preview", OrganizationSubscriptionController, :proration_preview)
     post("/organizations/:id/subscription/crypto-quote", OrganizationSubscriptionController, :crypto_quote)
     post("/organizations/:id/subscription/crypto-confirm", OrganizationSubscriptionController, :crypto_confirm)
 
@@ -403,6 +410,12 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/creator-profiles/:id",
       OrganizationCreatorProfileController,
       :delete
+    )
+
+    post(
+      "/organizations/:organization_id/creator-profiles/:id/toggle-disabled",
+      OrganizationCreatorProfileController,
+      :toggle_disabled
     )
 
     post(
@@ -917,6 +930,13 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/organizations/:organization_id/credits/add", AdminController, :add_org_credits)
     put("/admin/organizations/:organization_id/credits", AdminController, :set_org_credits)
 
+    # Admin org subscription management
+    post("/admin/organizations/create-account", AdminController, :create_org_account)
+    post("/admin/organizations/:organization_id/subscription", AdminController, :grant_org_subscription)
+    put("/admin/organizations/:organization_id/subscription", AdminController, :update_org_subscription)
+    post("/admin/organizations/:organization_id/subscription/cancel", AdminController, :cancel_org_subscription)
+    put("/admin/organizations/:organization_id/seats", AdminController, :set_org_seats)
+
     # Admin bug report management
     get("/admin/bug-reports", BugReportsController, :index)
     put("/admin/bug-reports/:id", BugReportsController, :update)
@@ -925,6 +945,10 @@ defmodule ClippsterServerWeb.Router do
     # Admin settings management
     get("/admin/settings", AdminController, :get_settings)
     put("/admin/settings/:key", AdminController, :update_setting)
+
+    # Admin free tier branding
+    get("/admin/free-tier-branding", AdminController, :get_free_tier_branding)
+    put("/admin/free-tier-branding", AdminController, :save_free_tier_branding)
 
     # Admin beta codes management
     post("/admin/beta-codes/generate", AdminController, :generate_beta_codes)

@@ -54,60 +54,67 @@ defmodule ClippsterServerWeb.SchedulingController do
   def schedule(conn, params) do
     user = conn.assigns.current_user
 
-    # Determine if this is an org or personal post
-    owner_type = determine_owner_type(params)
-
-    # Validate org membership and settings if org post
-    with :ok <- validate_scheduling_request(params, user, owner_type),
-         attrs <- build_scheduling_attrs(params, owner_type),
-         {:ok, post} <- Social.schedule_post(attrs, user) do
-
-      pulse_capture(%{
-        type: "post.scheduled",
-        level: :info,
-        message: "Post scheduled for #{post.scheduled_at}",
-        metadata: %{
-          post_id: post.id,
-          platform: post.platform,
-          owner_type: owner_type,
-          scheduled_at: post.scheduled_at,
-          user_id: user.id
-        },
-        tags: %{platform: post.platform, action: "scheduled"}
-      })
-
+    # Free tier users cannot schedule posts
+    if is_free_tier?(user) do
       conn
-      |> put_status(201)
-      |> json(%{
-        success: true,
-        post: serialize_post(post),
-        message: "Post scheduled successfully"
-      })
+      |> put_status(403)
+      |> json(%{success: false, error: "Post scheduling requires a paid subscription"})
     else
-      {:error, :unauthorized} ->
-        conn
-        |> put_status(403)
-        |> json(%{success: false, error: "You don't have permission to schedule this post"})
+      # Determine if this is an org or personal post
+      owner_type = determine_owner_type(params)
 
-      {:error, :scheduling_disabled} ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: "Scheduling is disabled for this organization"})
+      # Validate org membership and settings if org post
+      with :ok <- validate_scheduling_request(params, user, owner_type),
+           attrs <- build_scheduling_attrs(params, owner_type),
+           {:ok, post} <- Social.schedule_post(attrs, user) do
 
-      {:error, :personal_accounts_disabled} ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: "Personal Instagram accounts are not allowed for this organization"})
+        pulse_capture(%{
+          type: "post.scheduled",
+          level: :info,
+          message: "Post scheduled for #{post.scheduled_at}",
+          metadata: %{
+            post_id: post.id,
+            platform: post.platform,
+            owner_type: owner_type,
+            scheduled_at: post.scheduled_at,
+            user_id: user.id
+          },
+          tags: %{platform: post.platform, action: "scheduled"}
+        })
 
-      {:error, %Ecto.Changeset{} = changeset} ->
         conn
-        |> put_status(422)
-        |> json(%{success: false, error: format_errors(changeset)})
+        |> put_status(201)
+        |> json(%{
+          success: true,
+          post: serialize_post(post),
+          message: "Post scheduled successfully"
+        })
+      else
+        {:error, :unauthorized} ->
+          conn
+          |> put_status(403)
+          |> json(%{success: false, error: "You don't have permission to schedule this post"})
 
-      {:error, reason} ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: to_string(reason)})
+        {:error, :scheduling_disabled} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "Scheduling is disabled for this organization"})
+
+        {:error, :personal_accounts_disabled} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "Personal Instagram accounts are not allowed for this organization"})
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: format_errors(changeset)})
+
+        {:error, reason} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: to_string(reason)})
+      end
     end
   end
 
@@ -995,5 +1002,9 @@ defmodule ClippsterServerWeb.SchedulingController do
     end)
     |> Enum.map(fn {field, errors} -> "#{field}: #{Enum.join(errors, ", ")}" end)
     |> Enum.join("; ")
+  end
+
+  defp is_free_tier?(user) do
+    if user.is_admin, do: false, else: user.subscription_status in [nil, "none", "expired"]
   end
 end

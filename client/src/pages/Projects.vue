@@ -475,6 +475,13 @@
       @confirm="onFolderBuildConfirm"
     />
 
+    <!-- Free Tier Limit Dialog -->
+    <FreeTierLimitDialog
+      :show="showFreeTierLimitDialog"
+      :limit-info="freeTierLimitInfo"
+      @close="showFreeTierLimitDialog = false"
+    />
+
     <!-- Folder Contents Dialog -->
     <Teleport to="body">
       <Transition name="modal">
@@ -1344,6 +1351,7 @@
     type BuildSettings,
     type IntroOutroItem,
   } from '@/components/ClipBuildSettingsDialog.vue';
+  import FreeTierLimitDialog from '@/components/FreeTierLimitDialog.vue';
   import ClipsTab from '@/components/ClipsTab.vue';
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from '@/components/clip-editor/ExistingProjectDialog.vue';
@@ -3435,9 +3443,29 @@
   // Track if we're currently processing a folder build to prevent duplicates
   const isFolderBuildInProgress = ref(false);
 
+  // Free tier limit dialog state
+  const showFreeTierLimitDialog = ref(false);
+  const freeTierLimitInfo = ref<{ used: number; limit: number; label: string } | null>(null);
+
   // Handle build confirmation
   async function onFolderBuildConfirm(settings: BuildSettings) {
     if (!folderClipToBuild.value) return;
+
+    // Check free tier daily limit
+    const user = authStore.user;
+    const isFree = user && !user.is_admin && !user.created_by_organization_id &&
+      (!(user as any).subscription_status || (user as any).subscription_status === 'none' || (user as any).subscription_status === 'expired');
+    if (isFree) {
+      const { getUsageCount, recordUsage } = await import('@/services/database/free-tier-usage');
+      const FREE_LIMIT = 5;
+      const used = await getUsageCount(String(user.id), 'clip_build');
+      if (used >= FREE_LIMIT) {
+        freeTierLimitInfo.value = { used, limit: FREE_LIMIT, label: 'clip builds' };
+        showFreeTierLimitDialog.value = true;
+        return;
+      }
+      await recordUsage(String(user.id), 'clip_build');
+    }
 
     // Prevent duplicate builds
     if (isFolderBuildInProgress.value) {
@@ -3680,6 +3708,23 @@
         } catch (e) {
           console.warn('[Projects] Failed to parse intro_outro_settings:', e);
         }
+      }
+
+      // Free tier branding override: replace user assets with admin-configured branding
+      const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
+      const { getBrandingIfFreeTier } = useFreeTierBranding();
+      const adminBranding = await getBrandingIfFreeTier();
+      if (adminBranding) {
+        // Override watermark with admin watermark
+        if (adminBranding.watermark_url) {
+          watermarkSettings = adminBranding.watermark_settings || null;
+        }
+        // Override intro/outro with admin versions (nullify user selections)
+        introPath = null;
+        introDuration = null;
+        outroPath = null;
+        outroDuration = null;
+        console.log('[Projects] Free tier branding applied — admin watermark/intro/outro injected');
       }
 
       // Start the build using the correct command
@@ -4675,7 +4720,9 @@
     _promptId: string,
     promptContent: string,
     organizationId: number | null = null,
-    multimodal: boolean = false
+    multimodal: boolean = false,
+    startTime: number = 0,
+    endTime: number = 0
   ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
@@ -4724,6 +4771,8 @@
               forceReprocess: false,
               organizationId: organizationId,
               multimodal: multimodal,
+              startTime: startTime,
+              endTime: endTime,
             });
 
             if (result.success) {

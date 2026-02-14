@@ -123,6 +123,11 @@
                         Renews {{ formatDate(subscriptionStatus?.end_date) }}
                         <span class="billing-card__info-muted">({{ subscriptionStatus?.days_remaining }} days)</span>
                       </span>
+                      <span v-if="subscriptionStatus?.pending_subscription_tier" class="billing-card__info-row billing-card__info-row--warning" style="margin-top: 4px;">
+                        <Clock class="billing-card__info-icon" />
+                        Switching to {{ subscriptionStatus?.pending_subscription_tier_name }} at period end
+                        <button class="billing-card__cancel-pending" @click="cancelPendingChange">undo</button>
+                      </span>
                     </template>
                     <template v-else-if="subscriptionStatus?.status === 'cancelled'">
                       <span class="billing-card__info-row billing-card__info-row--warning">
@@ -213,6 +218,33 @@
                 </h2>
                 <p class="billing-plans__subtitle">Select the plan that works best for you</p>
               </div>
+
+              <!-- Monthly/Yearly Toggle -->
+              <div class="billing-plans__toggle">
+                <button
+                  class="billing-plans__toggle-btn"
+                  :class="{ 'billing-plans__toggle-btn--active': billingInterval === 'monthly' }"
+                  @click="billingInterval = 'monthly'"
+                >
+                  Monthly
+                </button>
+                <button
+                  class="billing-plans__toggle-btn"
+                  :class="{ 'billing-plans__toggle-btn--active': billingInterval === 'yearly' }"
+                  @click="billingInterval = 'yearly'"
+                >
+                  Yearly
+                  <span class="billing-plans__toggle-save">Save 1 month</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Continue with Free button for new users -->
+            <div v-if="isNewUserFlow && !hasActiveSubscription" class="billing-plans__free-cta">
+              <button class="billing-plans__free-btn" @click="continueWithFree">
+                Continue with Free Plan
+              </button>
+              <p class="billing-plans__free-hint">60 one-time credits · 5 clip builds/day · Admin watermark applied</p>
             </div>
 
             <div class="billing-plans__grid">
@@ -258,6 +290,82 @@
               </template>
               <!-- Loaded tiers -->
               <template v-else>
+                <!-- Free Tier Card (always visible) -->
+                <div
+                  class="billing-tier billing-tier--free"
+                  :class="{ 'billing-tier--current': !hasActiveSubscription }"
+                >
+                  <!-- Current Badge for free tier -->
+                  <div v-if="!hasActiveSubscription" class="billing-tier__badge billing-tier__badge--current">
+                    <Check class="billing-tier__badge-icon" />
+                    <span>Current Plan</span>
+                  </div>
+
+                  <div class="billing-tier__content">
+                    <div class="billing-tier__header">
+                      <h3 class="billing-tier__name">Free</h3>
+                      <div class="billing-tier__price">
+                        <span class="billing-tier__price-currency">$</span>
+                        <span class="billing-tier__price-amount">0</span>
+                        <span class="billing-tier__price-period">/mo</span>
+                      </div>
+                    </div>
+
+                    <div class="billing-tier__credits billing-tier__credits--free">
+                      <Zap class="billing-tier__credits-icon" />
+                      <span class="billing-tier__credits-value">60</span>
+                      <span class="billing-tier__credits-label">one-time credits</span>
+                    </div>
+
+                    <div class="billing-tier__divider"></div>
+
+                    <ul class="billing-tier__features">
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
+                        <span>5 clip builds/day</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
+                        <span>1 editor export/day</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
+                        <span>2 VOD downloads/day</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
+                        <span>Admin watermark applied</span>
+                      </li>
+                      <li class="billing-tier__feature billing-tier__feature--disabled">
+                        <X class="billing-tier__feature-icon billing-tier__feature-icon--disabled" />
+                        <span>No social posting</span>
+                      </li>
+                      <li class="billing-tier__feature billing-tier__feature--disabled">
+                        <X class="billing-tier__feature-icon billing-tier__feature-icon--disabled" />
+                        <span>No AI Video Creator</span>
+                      </li>
+                      <li class="billing-tier__feature billing-tier__feature--disabled">
+                        <X class="billing-tier__feature-icon billing-tier__feature-icon--disabled" />
+                        <span>No campaign participation</span>
+                      </li>
+                    </ul>
+
+                    <button
+                      class="billing-tier__btn"
+                      :class="{
+                        'billing-tier__btn--free': !hasActiveSubscription,
+                      }"
+                      :disabled="!hasActiveSubscription || pendingDowngradeToFree"
+                      @click="confirmDowngradeToFree"
+                    >
+                      <span v-if="!hasActiveSubscription">Current Plan</span>
+                      <span v-else-if="pendingDowngradeToFree">Downgrading at period end</span>
+                      <span v-else>Switch Plan</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Paid Tiers -->
                 <div
                   v-for="tier in subscriptionTiers"
                   :key="tier.id"
@@ -284,15 +392,22 @@
                       <h3 class="billing-tier__name">{{ tier.name }}</h3>
                       <div class="billing-tier__price">
                         <span class="billing-tier__price-currency">$</span>
-                        <span class="billing-tier__price-amount">{{ tier.price_usd }}</span>
-                        <span class="billing-tier__price-period">/mo</span>
+                        <span class="billing-tier__price-amount">{{ getDisplayPrice(tier) }}</span>
+                        <span class="billing-tier__price-period">{{ billingInterval === 'yearly' ? '/yr' : '/mo' }}</span>
+                      </div>
+                      <div v-if="billingInterval === 'yearly'" class="billing-tier__price-effective">
+                        ${{ getEffectiveMonthly(tier) }}/mo effective
                       </div>
                     </div>
 
                     <div class="billing-tier__credits">
                       <Zap class="billing-tier__credits-icon" />
-                      <span class="billing-tier__credits-value">{{ tier.monthly_credits.toLocaleString() }}</span>
-                      <span class="billing-tier__credits-label">credits/month</span>
+                      <span class="billing-tier__credits-value">
+                        {{ billingInterval === 'yearly' ? (tier.monthly_credits * 12).toLocaleString() : tier.monthly_credits.toLocaleString() }}
+                      </span>
+                      <span class="billing-tier__credits-label">
+                        {{ billingInterval === 'yearly' ? 'credits upfront' : 'credits/month' }}
+                      </span>
                     </div>
 
                     <div class="billing-tier__divider"></div>
@@ -300,7 +415,7 @@
                     <ul class="billing-tier__features">
                       <li class="billing-tier__feature">
                         <Check class="billing-tier__feature-icon" />
-                        <span>Full app access</span>
+                        <span>Unlimited clip builds</span>
                       </li>
                       <li class="billing-tier__feature">
                         <Check class="billing-tier__feature-icon" />
@@ -308,7 +423,27 @@
                       </li>
                       <li class="billing-tier__feature">
                         <Check class="billing-tier__feature-icon" />
+                        <span>Custom watermark &amp; intro/outro</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Social posting &amp; scheduling</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Organization membership</span>
+                      </li>
+                      <li v-if="tier.id === 'creator' || tier.id === 'pro'" class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>AI Video Creator</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
                         <span>Credits roll over</span>
+                      </li>
+                      <li v-if="tier.id === 'starter'" class="billing-tier__feature billing-tier__feature--disabled">
+                        <X class="billing-tier__feature-icon billing-tier__feature-icon--disabled" />
+                        <span>No AI Video Creator</span>
                       </li>
                     </ul>
 
@@ -318,10 +453,11 @@
                         'billing-tier__btn--current': isCurrentTier(tier.id),
                         'billing-tier__btn--primary': tier.id === 'creator' && !isCurrentTier(tier.id),
                       }"
-                      @click="selectSubscription(tier)"
-                      :disabled="isCurrentTier(tier.id)"
+                      @click="handleTierClick(tier)"
+                      :disabled="isCurrentTier(tier.id) || isPendingTier(tier.id)"
                     >
                       <span v-if="isCurrentTier(tier.id)">Current Plan</span>
+                      <span v-else-if="isPendingTier(tier.id)">Switching at period end</span>
                       <span v-else-if="hasActiveSubscription">Switch Plan</span>
                       <span v-else>Get Started</span>
                     </button>
@@ -416,6 +552,31 @@
               </table>
             </div>
           </section>
+
+          <!-- Deactivate Profile Section -->
+          <section v-if="authStore.isAuthenticated" class="billing-deactivate">
+            <div class="billing-deactivate__header">
+              <div class="billing-deactivate__header-icon">
+                <AlertTriangle />
+              </div>
+              <div class="billing-deactivate__header-text">
+                <h2 class="billing-deactivate__title">Danger Zone</h2>
+                <p class="billing-deactivate__subtitle">Irreversible account actions</p>
+              </div>
+            </div>
+            <div class="billing-deactivate__card">
+              <div class="billing-deactivate__info">
+                <h3 class="billing-deactivate__info-title">Deactivate Profile</h3>
+                <p class="billing-deactivate__info-desc">
+                  Deactivating your profile will cancel any active subscription and disable your account.
+                  Your data will be preserved and you can contact support to reactivate.
+                </p>
+              </div>
+              <button class="billing-deactivate__btn" @click="showDeactivateConfirm = true">
+                Deactivate Profile
+              </button>
+            </div>
+          </section>
         </div>
       </div>
     </PageLayout>
@@ -462,6 +623,152 @@
       </Transition>
     </Teleport>
 
+    <!-- Tier Change Confirmation Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showTierChangeConfirm" class="billing-modal__overlay" @click.self="showTierChangeConfirm = false">
+          <Transition name="dialog" appear>
+            <div class="billing-modal">
+              <div class="billing-modal__header">
+                <div class="billing-modal__icon" :class="tierChangeIsUpgrade ? 'billing-modal__icon--accent' : 'billing-modal__icon--warning'">
+                  <TrendingUp v-if="tierChangeIsUpgrade" />
+                  <AlertTriangle v-else />
+                </div>
+                <h2 class="billing-modal__title">
+                  {{ tierChangeIsUpgrade ? 'Upgrade Plan' : 'Switch Plan' }}
+                </h2>
+              </div>
+
+              <div class="billing-modal__body">
+                <div class="billing-modal__info">
+                  <p v-if="tierChangeIsUpgrade">
+                    You'll be upgraded to <strong>{{ tierChangeTarget?.name }}</strong> immediately.
+                    A prorated charge will be applied for the remainder of your billing period.
+                  </p>
+                  <p v-else>
+                    Your plan will switch to <strong>{{ tierChangeTarget?.name }}</strong> at the end of your current billing period
+                    (<strong>{{ formatDate(subscriptionStatus?.end_date) }}</strong>).
+                    You'll keep your current plan until then.
+                  </p>
+                  <p v-if="tierChangeIsUpgrade" class="billing-modal__info-muted">
+                    You'll also receive {{ tierChangeCreditDiff }} additional credits now.
+                  </p>
+                </div>
+
+                <div class="billing-modal__actions">
+                  <button
+                    @click="executeTierChange"
+                    class="billing-modal__btn"
+                    :class="tierChangeIsUpgrade ? 'billing-modal__btn--primary' : 'billing-modal__btn--danger'"
+                    :disabled="changingTier"
+                  >
+                    {{ changingTier ? 'Processing...' : (tierChangeIsUpgrade ? 'Confirm Upgrade' : 'Confirm Switch') }}
+                  </button>
+                  <button @click="showTierChangeConfirm = false" class="billing-modal__btn billing-modal__btn--secondary">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Downgrade to Free Confirmation Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showFreeDowngradeConfirm" class="billing-modal__overlay" @click.self="showFreeDowngradeConfirm = false">
+          <Transition name="dialog" appear>
+            <div class="billing-modal">
+              <div class="billing-modal__header">
+                <div class="billing-modal__icon billing-modal__icon--warning">
+                  <AlertTriangle />
+                </div>
+                <h2 class="billing-modal__title">Switch to Free Plan?</h2>
+              </div>
+
+              <div class="billing-modal__body">
+                <div class="billing-modal__info">
+                  <p>
+                    Your subscription will be cancelled at the end of your billing period
+                    (<strong>{{ formatDate(subscriptionStatus?.end_date) }}</strong>).
+                    You'll keep your current plan until then.
+                  </p>
+                  <p class="billing-modal__info-muted">
+                    On the free plan you'll have daily limits and admin watermarks. Your remaining credits will stay in your account but you will <strong>not</strong> receive the 60 free credits again.
+                  </p>
+                </div>
+
+                <div class="billing-modal__actions">
+                  <button
+                    @click="executeDowngradeToFree"
+                    class="billing-modal__btn billing-modal__btn--danger"
+                    :disabled="cancellingSubscription"
+                  >
+                    {{ cancellingSubscription ? 'Processing...' : 'Yes, Switch to Free' }}
+                  </button>
+                  <button @click="showFreeDowngradeConfirm = false" class="billing-modal__btn billing-modal__btn--secondary">
+                    Keep Current Plan
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Deactivate Profile Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showDeactivateConfirm" class="billing-modal__overlay" @click.self="showDeactivateConfirm = false">
+          <Transition name="dialog" appear>
+            <div class="billing-modal">
+              <div class="billing-modal__header">
+                <div class="billing-modal__icon billing-modal__icon--danger">
+                  <AlertTriangle />
+                </div>
+                <h2 class="billing-modal__title">Deactivate Profile?</h2>
+              </div>
+
+              <div class="billing-modal__body">
+                <div class="billing-modal__info">
+                  <p>
+                    This will deactivate your profile and cancel any active subscription.
+                    Your account data will be preserved but you won't be able to use Clippster until you reactivate.
+                  </p>
+                  <p class="billing-modal__info-muted">
+                    Type <strong>DEACTIVATE</strong> to confirm.
+                  </p>
+                  <input
+                    v-model="deactivateInput"
+                    type="text"
+                    class="billing-modal__input"
+                    placeholder="Type DEACTIVATE"
+                    autocomplete="off"
+                  />
+                </div>
+
+                <div class="billing-modal__actions">
+                  <button
+                    @click="executeDeactivateProfile"
+                    class="billing-modal__btn billing-modal__btn--danger"
+                    :disabled="deactivateInput !== 'DEACTIVATE' || deactivatingProfile"
+                  >
+                    {{ deactivatingProfile ? 'Deactivating...' : 'Deactivate Profile' }}
+                  </button>
+                  <button @click="showDeactivateConfirm = false; deactivateInput = ''" class="billing-modal__btn billing-modal__btn--secondary">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Subscribe Dialog -->
     <SubscribeDialog
       v-if="selectedSubscription"
@@ -469,6 +776,7 @@
       :plan="selectedSubscription"
       context="user"
       :current-plan="subscriptionStatus?.tier"
+      :billing-interval="billingInterval"
       @update:open="showPaymentModal = $event"
       @success="handleSubscribeSuccess"
     />
@@ -505,12 +813,23 @@
   import EmptyState from '@/components/EmptyState.vue';
   import SubscribeDialog from '@/components/SubscribeDialog.vue';
 
+  import { useRoute, useRouter } from 'vue-router';
+  import { getDefaultRoute } from '@/router';
+
   const authStore = useAuthStore();
+  const route = useRoute();
+  const router = useRouter();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
   const loadingBalance = ref(true);
   const loadingTiers = ref(true);
   const loadingHistory = ref(true);
+
+  // Billing interval toggle
+  const billingInterval = ref<'monthly' | 'yearly'>('monthly');
+
+  // New user flow detection
+  const isNewUserFlow = computed(() => route.query.new_user === 'true');
 
   // Subscription data
   const subscriptionTiers = ref<any[]>([]);
@@ -532,6 +851,22 @@
   // Cancel subscription
   const showCancelConfirm = ref(false);
   const cancellingSubscription = ref(false);
+
+  // Tier change
+  const showTierChangeConfirm = ref(false);
+  const tierChangeTarget = ref<any>(null);
+  const changingTier = ref(false);
+
+  // Free downgrade
+  const showFreeDowngradeConfirm = ref(false);
+
+  // Deactivate profile
+  const showDeactivateConfirm = ref(false);
+  const deactivateInput = ref('');
+  const deactivatingProfile = ref(false);
+
+  // Tier hierarchy for upgrade/downgrade detection
+  const TIER_HIERARCHY: Record<string, number> = { starter: 1, creator: 2, pro: 3 };
 
   // Computed values
   const hasActiveSubscription = computed(() => {
@@ -564,6 +899,29 @@
   function isCurrentTier(tierId: string): boolean {
     return hasActiveSubscription.value && subscriptionStatus.value?.tier === tierId;
   }
+
+  function isPendingTier(tierId: string): boolean {
+    return subscriptionStatus.value?.pending_subscription_tier === tierId;
+  }
+
+  const pendingDowngradeToFree = computed(() => {
+    return subscriptionStatus.value?.status === 'cancelled';
+  });
+
+  const tierChangeIsUpgrade = computed(() => {
+    if (!tierChangeTarget.value || !subscriptionStatus.value?.tier) return false;
+    const currentLevel = TIER_HIERARCHY[subscriptionStatus.value.tier] ?? 0;
+    const newLevel = TIER_HIERARCHY[tierChangeTarget.value.id] ?? 0;
+    return newLevel > currentLevel;
+  });
+
+  const tierChangeCreditDiff = computed(() => {
+    if (!tierChangeTarget.value || !subscriptionStatus.value?.tier) return 0;
+    const currentTier = subscriptionTiers.value.find((t: any) => t.id === subscriptionStatus.value?.tier);
+    const newCredits = tierChangeTarget.value.monthly_credits || 0;
+    const currentCredits = currentTier?.monthly_credits || 0;
+    return Math.max(0, newCredits - currentCredits);
+  });
 
   function getStatusClass(status: string): string {
     if (status === 'active' || status === 'confirmed') return 'billing-history__status--success';
@@ -680,11 +1038,127 @@
     }
   }
 
-  function selectSubscription(tier: any) {
+  /** Handle clicking a paid tier card button */
+  function handleTierClick(tier: any) {
     if (isCurrentTier(tier.id)) return;
 
-    selectedSubscription.value = tier;
-    showPaymentModal.value = true;
+    if (hasActiveSubscription.value && subscriptionStatus.value?.status === 'active') {
+      // User has active sub — show tier change confirmation (calls PUT /subscription/tier)
+      tierChangeTarget.value = tier;
+      showTierChangeConfirm.value = true;
+    } else {
+      // No active sub — go through Stripe checkout
+      selectedSubscription.value = tier;
+      showPaymentModal.value = true;
+    }
+  }
+
+  /** Open free downgrade confirmation */
+  function confirmDowngradeToFree() {
+    if (!hasActiveSubscription.value) return;
+    showFreeDowngradeConfirm.value = true;
+  }
+
+  /** Execute tier change via API (upgrade prorated immediately, downgrade at period end) */
+  async function executeTierChange() {
+    if (!tierChangeTarget.value) return;
+    changingTier.value = true;
+    try {
+      const response = await api.put('/subscription/tier', { tier: tierChangeTarget.value.id });
+      if (response.data.success) {
+        showSuccessToast(
+          response.data.type === 'upgrade' ? 'Plan Upgraded' : 'Plan Change Scheduled',
+          response.data.message
+        );
+        subscriptionStatus.value = response.data.subscription;
+        showTierChangeConfirm.value = false;
+        tierChangeTarget.value = null;
+        await fetchBalance();
+      } else {
+        throw new Error(response.data.error || 'Failed to change plan');
+      }
+    } catch (error: any) {
+      showErrorToast('Failed to change plan', error?.response?.data?.error || error.message || 'An error occurred');
+    } finally {
+      changingTier.value = false;
+    }
+  }
+
+  /** Execute downgrade to free (cancels subscription at period end) */
+  async function executeDowngradeToFree() {
+    cancellingSubscription.value = true;
+    try {
+      const response = await api.post('/subscription/cancel');
+      if (response.data.success) {
+        showSuccessToast('Switching to Free', 'Your subscription will end at the current billing period. You will NOT receive the 60 free credits again.');
+        subscriptionStatus.value = response.data.subscription;
+        showFreeDowngradeConfirm.value = false;
+      } else {
+        throw new Error(response.data.error || 'Failed to switch to free plan');
+      }
+    } catch (error: any) {
+      showErrorToast('Failed to switch', error.message || 'An error occurred');
+    } finally {
+      cancellingSubscription.value = false;
+    }
+  }
+
+  /** Cancel a pending tier change */
+  async function cancelPendingChange() {
+    try {
+      const response = await api.post('/subscription/pending-change/cancel');
+      if (response.data.success) {
+        showSuccessToast('Change Cancelled', response.data.message);
+        subscriptionStatus.value = response.data.subscription;
+      }
+    } catch (error: any) {
+      showErrorToast('Failed', error.message || 'An error occurred');
+    }
+  }
+
+  /** Execute profile deactivation */
+  async function executeDeactivateProfile() {
+    if (deactivateInput.value !== 'DEACTIVATE') return;
+    deactivatingProfile.value = true;
+    try {
+      const response = await api.post('/subscription/deactivate');
+      if (response.data.success) {
+        showSuccessToast('Profile Deactivated', 'Your profile has been deactivated.');
+        showDeactivateConfirm.value = false;
+        deactivateInput.value = '';
+        authStore.logout();
+        router.push('/');
+      } else {
+        throw new Error(response.data.error || 'Failed to deactivate profile');
+      }
+    } catch (error: any) {
+      showErrorToast('Failed to deactivate', error?.response?.data?.error || error.message || 'An error occurred');
+    } finally {
+      deactivatingProfile.value = false;
+    }
+  }
+
+  /** Continue with free tier — mark plan selected and go to default route */
+  function continueWithFree() {
+    localStorage.setItem('has_selected_plan', 'true');
+    const targetRoute = getDefaultRoute(authStore.user);
+    router.push(targetRoute);
+  }
+
+  /** Get displayed price for a tier based on billing interval */
+  function getDisplayPrice(tier: any): string {
+    if (billingInterval.value === 'yearly') {
+      return (tier.price_usd * 11).toFixed(2);
+    }
+    return tier.price_usd.toFixed(2);
+  }
+
+  /** Get effective monthly price for yearly billing */
+  function getEffectiveMonthly(tier: any): string {
+    if (billingInterval.value === 'yearly') {
+      return ((tier.price_usd * 11) / 12).toFixed(2);
+    }
+    return tier.price_usd.toFixed(2);
   }
 
   function handleSubscribeSuccess() {
@@ -1308,16 +1782,105 @@
     margin: 0.125rem 0 0;
   }
 
+  .billing-plans__toggle {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    padding: 3px;
+    margin-left: auto;
+  }
+
+  .billing-plans__toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--sidebar-text-muted);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .billing-plans__toggle-btn--active {
+    background: var(--sidebar-accent);
+    color: white;
+    box-shadow: 0 1px 4px rgba(6, 182, 212, 0.3);
+  }
+
+  .billing-plans__toggle-save {
+    font-size: 0.625rem;
+    font-weight: 600;
+    background: rgba(16, 185, 129, 0.2);
+    color: rgb(16, 185, 129);
+    padding: 1px 5px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .billing-plans__free-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 0;
+  }
+
+  .billing-plans__free-btn {
+    padding: 10px 28px;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--sidebar-text-muted);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .billing-plans__free-btn:hover {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--sidebar-text-muted);
+    color: var(--sidebar-text);
+  }
+
+  .billing-plans__free-hint {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    opacity: 0.7;
+  }
+
+  .billing-tier__price-effective {
+    font-size: 0.6875rem;
+    color: rgb(16, 185, 129);
+    font-weight: 500;
+    margin-top: 2px;
+  }
+
   .billing-plans__grid {
     display: grid;
     grid-template-columns: repeat(1, 1fr);
     gap: 1.25rem;
-    padding-top: 0.75rem;
+    margin-top: 1.5rem;
   }
 
   @media (min-width: 768px) {
     .billing-plans__grid {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1400px) {
+    .billing-plans__grid {
+      grid-template-columns: repeat(4, 1fr);
     }
   }
 
@@ -1331,11 +1894,12 @@
     transition: all 200ms ease;
     display: flex;
     flex-direction: column;
+    cursor: pointer;
   }
 
   .billing-tier:hover {
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border-color: rgba(255, 255, 255, 0.2);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.1);
     transform: translateY(-2px);
   }
 
@@ -1344,7 +1908,8 @@
   }
 
   .billing-tier--popular:hover {
-    border-color: rgba(6, 182, 212, 0.6);
+    border-color: rgba(6, 182, 212, 0.8);
+    box-shadow: 0 4px 20px rgba(6, 182, 212, 0.25), 0 0 0 1px rgba(6, 182, 212, 0.5);
   }
 
   .billing-tier--current {
@@ -1353,7 +1918,19 @@
 
   .billing-tier--current:hover {
     border-color: rgba(16, 185, 129, 0.6);
-    transform: none;
+    box-shadow: 0 4px 20px rgba(16, 185, 129, 0.2), 0 0 0 1px rgba(16, 185, 129, 0.4);
+    transform: translateY(-1px);
+  }
+
+  .billing-tier--free {
+    border-color: rgba(255, 255, 255, 0.05);
+    opacity: 0.85;
+  }
+
+  .billing-tier--free:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
   }
 
   .billing-tier__badge {
@@ -1508,6 +2085,19 @@
     opacity: 0.5;
   }
 
+  .billing-tier__feature--disabled {
+    opacity: 0.4;
+  }
+
+  .billing-tier__feature-icon--disabled {
+    color: #ef4444;
+  }
+
+  .billing-tier__credits--free {
+    background-color: rgba(255, 255, 255, 0.02);
+    border-color: rgba(255, 255, 255, 0.05);
+  }
+
   .billing-tier__btn {
     width: 100%;
     padding: 0.75rem 1rem;
@@ -1547,6 +2137,18 @@
 
   .billing-tier__btn--current:hover {
     background-color: rgba(16, 185, 129, 0.15);
+    transform: none;
+  }
+
+  .billing-tier__btn--free {
+    background-color: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text-muted);
+    cursor: default;
+  }
+
+  .billing-tier__btn--free:hover {
+    background-color: rgba(255, 255, 255, 0.03);
     transform: none;
   }
 
@@ -2326,5 +2928,143 @@
     100% {
       background-position: 200% 0;
     }
+  }
+
+  /* ===== Cancel Pending Button ===== */
+  .billing-card__cancel-pending {
+    background: none;
+    border: none;
+    color: var(--sidebar-accent);
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-decoration: underline;
+    padding: 0 0 0 4px;
+  }
+
+  .billing-card__cancel-pending:hover {
+    opacity: 0.8;
+  }
+
+  /* ===== Modal Input ===== */
+  .billing-modal__input {
+    width: 100%;
+    padding: 0.625rem 0.75rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    font-size: 0.8125rem;
+    margin-top: 0.5rem;
+    outline: none;
+    transition: border-color 150ms ease;
+  }
+
+  .billing-modal__input:focus {
+    border-color: var(--sidebar-accent);
+  }
+
+  .billing-modal__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
+  }
+
+  /* ===== Modal Icon Variants ===== */
+  .billing-modal__icon--accent {
+    background-color: rgba(6, 182, 212, 0.12);
+    color: #06b6d4;
+  }
+
+  .billing-modal__icon--warning {
+    background-color: rgba(245, 158, 11, 0.12);
+    color: #f59e0b;
+  }
+
+  /* ===== Deactivate Profile Section ===== */
+  .billing-deactivate {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    border-top: 1px solid rgba(239, 68, 68, 0.15);
+    padding-top: 2rem;
+  }
+
+  .billing-deactivate__header {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+  }
+
+  .billing-deactivate__header-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+  }
+
+  .billing-deactivate__header-icon svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .billing-deactivate__title {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: #ef4444;
+    margin: 0;
+  }
+
+  .billing-deactivate__subtitle {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  .billing-deactivate__card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 1rem 1.25rem;
+    background: rgba(239, 68, 68, 0.04);
+    border: 1px solid rgba(239, 68, 68, 0.15);
+    border-radius: 10px;
+  }
+
+  .billing-deactivate__info-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem;
+  }
+
+  .billing-deactivate__info-desc {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  .billing-deactivate__btn {
+    flex-shrink: 0;
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 6px;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    background: transparent;
+    color: #ef4444;
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .billing-deactivate__btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.5);
   }
 </style>

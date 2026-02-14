@@ -44,15 +44,18 @@ export interface ServerOrganizationCreatorProfile {
   id: number;
   organization_id: number;
   organization_name?: string;
+  created_by_user_id?: number | null;
   name: string;
-  description: string | null;
-  profile_image_url: string | null;
-  intro_id: number | null;
-  outro_id: number | null;
-  watermark_id: number | null;
-  watermark_settings: Record<string, unknown> | null;
-  layout_overlays: Record<string, unknown>[] | null;
+  description?: string | null;
+  profile_image_url?: string | null;
+  intro_id?: number | null;
+  outro_id?: number | null;
+  watermark_id?: number | null;
+  watermark_settings?: Record<string, unknown> | null;
+  intro_outro_settings?: Record<string, unknown> | null;
+  layout_overlays?: Record<string, unknown>[] | null;
   scope: 'streamer' | 'global';
+  disabled: boolean;
   intro: ServerOrganizationAssetRef | null;
   outro: ServerOrganizationAssetRef | null;
   watermark: ServerOrganizationAssetRef | null;
@@ -256,6 +259,28 @@ export async function deleteOrganizationCreatorProfile(
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to delete profile',
+    };
+  }
+}
+
+/**
+ * Toggle the disabled state of a creator profile.
+ * Org admins can toggle any profile. Users can toggle their own assigned profiles.
+ */
+export async function toggleCreatorProfileDisabled(
+  organizationId: string | number,
+  profileId: number
+): Promise<ProfileResponse> {
+  try {
+    const response = await api.post<ProfileResponse>(
+      `/organizations/${organizationId}/creator-profiles/${profileId}/toggle-disabled`
+    );
+    return response.data;
+  } catch (error: any) {
+    console.error('[OrgProfilesApi] Failed to toggle profile disabled state:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to toggle profile',
     };
   }
 }

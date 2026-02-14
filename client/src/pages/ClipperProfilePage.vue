@@ -71,6 +71,10 @@
                   Private
                 </span>
               </div>
+              <div v-if="clipperProfile?.user?.last_active_at" class="profile-last-active">
+                <Clock :size="14" />
+                <span>{{ formatLastActive(clipperProfile.user.last_active_at) }}</span>
+              </div>
               <p class="profile-bio" :class="{ 'profile-bio--empty': !clipperProfile?.bio }">
                 {{ clipperProfile?.bio || 'Add a bio to tell organizations about yourself' }}
               </p>
@@ -544,7 +548,7 @@
                       </div>
                     </div>
                     <div class="post-card__footer">
-                      <span class="post-card__date">{{ formatDate(post.published_at) }}</span>
+                      <span class="post-card__date">{{ formatDate(post.published_at || post.inserted_at) }}</span>
                     </div>
                   </div>
                 </div>
@@ -1228,6 +1232,7 @@
     type EarningsSummary,
   } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
+  import { formatLastActive } from '@/utils/timeUtils';
   import {
     getMyDashboard,
     getMyReferrals,
@@ -2138,6 +2143,16 @@
   .private-badge {
     background: var(--sidebar-surface);
     color: var(--sidebar-text-muted);
+  }
+
+  .profile-last-active {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0.5rem;
+    opacity: 0.8;
   }
 
   .profile-bio {

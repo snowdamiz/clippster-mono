@@ -12,6 +12,7 @@ use tauri::Emitter;
 use crate::storage;
 
 #[cfg(target_os = "windows")]
+#[allow(unused_imports)]
 use std::os::windows::process::CommandExt;
 
 /// On Windows, set CREATE_NO_WINDOW flag to prevent a visible console window.

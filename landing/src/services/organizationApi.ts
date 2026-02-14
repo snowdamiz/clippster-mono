@@ -51,6 +51,10 @@ export async function deleteOrganizationCreatorProfile(orgId: number, profileId:
   return api.delete<{ success: boolean; error?: string }>(`/organizations/${orgId}/creator-profiles/${profileId}`)
 }
 
+export async function toggleCreatorProfileDisabled(orgId: number, profileId: number) {
+  return api.post<{ success: boolean; profile?: ServerOrganizationCreatorProfile; error?: string }>(`/organizations/${orgId}/creator-profiles/${profileId}/toggle-disabled`)
+}
+
 export async function uploadCreatorProfileImage(orgId: number, profileId: number, file: File) {
   const formData = new FormData()
   formData.append('image', file)

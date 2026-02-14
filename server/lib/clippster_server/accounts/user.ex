@@ -38,9 +38,17 @@ defmodule ClippsterServer.Accounts.User do
     field :subscription_renewal_method, :string  # stripe, crypto
     field :stripe_subscription_id, :string
     field :stripe_customer_id, :string
+    field :pending_subscription_tier, :string  # set when downgrading, applied at next renewal
 
     # Affiliate referral tracking
     field :referred_by_affiliate_id, :integer
+
+    # Account deactivation
+    field :deactivated, :boolean, default: false
+    field :deactivated_at, :utc_datetime
+
+    # Activity tracking
+    field :last_active_at, :utc_datetime
 
     timestamps(type: :utc_datetime)
   end
@@ -208,7 +216,8 @@ defmodule ClippsterServer.Accounts.User do
       :subscription_end_date,
       :subscription_renewal_method,
       :stripe_subscription_id,
-      :stripe_customer_id
+      :stripe_customer_id,
+      :pending_subscription_tier
     ])
     |> validate_inclusion(:subscription_status, ["none", "active", "cancelled", "expired"])
     |> validate_inclusion(:subscription_tier, ["starter", "creator", "pro", nil])

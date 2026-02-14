@@ -75,40 +75,47 @@ defmodule ClippsterServerWeb.SocialAccountController do
   def create(conn, %{"organization_id" => org_id} = params) do
     user = conn.assigns.current_user
 
-    attrs = %{
-      platform: params["platform"],
-      platform_user_id: params["platform_user_id"],
-      username: params["username"],
-      display_name: params["display_name"],
-      profile_image_url: params["profile_image_url"],
-      access_token: params["access_token"],
-      refresh_token: params["refresh_token"],
-      token_expires_at: parse_datetime(params["token_expires_at"]),
-      facebook_page_id: params["facebook_page_id"]
-    }
-    |> Enum.reject(fn {_, v} -> is_nil(v) end)
-    |> Enum.into(%{})
+    # Free tier users cannot connect social accounts
+    if is_free_tier?(user) do
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Social account posting requires a paid subscription"})
+    else
+      attrs = %{
+        platform: params["platform"],
+        platform_user_id: params["platform_user_id"],
+        username: params["username"],
+        display_name: params["display_name"],
+        profile_image_url: params["profile_image_url"],
+        access_token: params["access_token"],
+        refresh_token: params["refresh_token"],
+        token_expires_at: parse_datetime(params["token_expires_at"]),
+        facebook_page_id: params["facebook_page_id"]
+      }
+      |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      |> Enum.into(%{})
 
-    case Social.create_social_account(org_id, attrs, user) do
-      {:ok, account} ->
-        conn
-        |> put_status(201)
-        |> json(%{success: true, account: serialize_account(account)})
+      case Social.create_social_account(org_id, attrs, user) do
+        {:ok, account} ->
+          conn
+          |> put_status(201)
+          |> json(%{success: true, account: serialize_account(account)})
 
-      {:error, :unauthorized} ->
-        conn
-        |> put_status(403)
-        |> json(%{success: false, error: "Only admins can connect social accounts"})
+        {:error, :unauthorized} ->
+          conn
+          |> put_status(403)
+          |> json(%{success: false, error: "Only admins can connect social accounts"})
 
-      {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
-        conn
-        |> put_status(422)
-        |> json(%{success: false, error: format_errors(changeset)})
+        {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: format_errors(changeset)})
 
-      {:error, reason} ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: to_string(reason)})
+        {:error, reason} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: to_string(reason)})
+      end
     end
   end
 
@@ -383,5 +390,9 @@ defmodule ClippsterServerWeb.SocialAccountController do
     end)
     |> Enum.map(fn {field, errors} -> "#{field}: #{Enum.join(errors, ", ")}" end)
     |> Enum.join("; ")
+  end
+
+  defp is_free_tier?(user) do
+    if user.is_admin, do: false, else: user.subscription_status in [nil, "none", "expired"]
   end
 end

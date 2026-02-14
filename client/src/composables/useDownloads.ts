@@ -131,6 +131,25 @@ function loadState() {
 }
 
 export function useDownloads() {
+  // Helper function to refund free tier usage when download is cancelled or fails
+  async function refundFreeTierUsage() {
+    try {
+      const { useAuthStore } = await import('@/stores/auth');
+      const _authStore = useAuthStore();
+      const _user = _authStore.user;
+      const _isFree = _user && !_user.is_admin && !_user.created_by_organization_id &&
+        (!(_user as any).subscription_status || (_user as any).subscription_status === 'none' || (_user as any).subscription_status === 'expired');
+      
+      if (_isFree) {
+        const { decrementUsage } = await import('@/services/database/free-tier-usage');
+        await decrementUsage(String(_user.id), 'vod_download');
+        console.log('[Downloads] Refunded free tier usage for cancelled/failed download');
+      }
+    } catch (error) {
+      console.error('[Downloads] Failed to refund free tier usage:', error);
+    }
+  }
+
   async function initialize() {
     if (isInitialized.value) {
       return;
@@ -314,6 +333,9 @@ export function useDownloads() {
                 error: validationResult.error || 'Video validation failed',
               };
 
+              // Refund free tier usage for failed download
+              await refundFreeTierUsage();
+
               // Notify listeners about validation failure
               completionCallbacks.forEach((callback) => {
                 try {
@@ -337,6 +359,9 @@ export function useDownloads() {
               success: false,
               error: `Validation error: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
+
+            // Refund free tier usage for failed download
+            await refundFreeTierUsage();
           }
         }
       } else {
@@ -398,6 +423,22 @@ export function useDownloads() {
       };
     } = {}
   ): Promise<string> {
+    // Free tier: 2 VOD downloads/day limit
+    const { useAuthStore } = await import('@/stores/auth');
+    const _authStore = useAuthStore();
+    const _user = _authStore.user;
+    const _isFree = _user && !_user.is_admin && !_user.created_by_organization_id &&
+      (!(_user as any).subscription_status || (_user as any).subscription_status === 'none' || (_user as any).subscription_status === 'expired');
+    if (_isFree) {
+      const { getUsageCount, recordUsage } = await import('@/services/database/free-tier-usage');
+      const FREE_LIMIT = 2;
+      const used = await getUsageCount(String(_user.id), 'vod_download');
+      if (used >= FREE_LIMIT) {
+        throw new Error('Daily download limit reached (2/day on free plan). Upgrade for unlimited downloads.');
+      }
+      await recordUsage(String(_user.id), 'vod_download');
+    }
+
     await initialize();
 
     const provider = options.provider || 'pumpfun';
@@ -960,6 +1001,9 @@ export function useDownloads() {
           cancelled = true; // Assume we can still clean up
         }
 
+        // Refund free tier usage for cancelled download
+        await refundFreeTierUsage();
+
         // Remove from active downloads
         activeDownloads.delete(downloadId);
         activeDownloadIds.delete(downloadId);
@@ -972,6 +1016,10 @@ export function useDownloads() {
       if (queuedDownloads.has(downloadId)) {
         // Simply remove from queue (no backend process to cancel)
         queuedDownloads.delete(downloadId);
+        
+        // Refund free tier usage for queued download that was cancelled
+        await refundFreeTierUsage();
+        
         cancelled = true;
       }
 
