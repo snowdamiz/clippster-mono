@@ -93,6 +93,7 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     .always_on_top(true)
     .skip_taskbar(true)
     .visible(true)
+    .additional_browser_args("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults")
     .build()
     .map_err(|e| format!("Failed to create PIP window: {}", e))?;
 
