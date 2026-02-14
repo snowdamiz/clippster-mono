@@ -128,11 +128,12 @@ defmodule ClippsterServerWeb.SubscriptionController do
         error: "Payment service is not configured. Please contact support."
       })
     else
-      create_checkout_with_stripe(conn, tier, Map.get(params, "promo_code"))
+      billing_interval = Map.get(params, "billing_interval", "monthly")
+      create_checkout_with_stripe(conn, tier, Map.get(params, "promo_code"), billing_interval)
     end
   end
 
-  defp create_checkout_with_stripe(conn, tier, promo_code) do
+  defp create_checkout_with_stripe(conn, tier, promo_code, billing_interval) do
     require Logger
 
     with {:ok, user_id} <- get_user_id_from_token(conn),
@@ -219,6 +220,17 @@ defmodule ClippsterServerWeb.SubscriptionController do
         Subscriptions.update_stripe_customer(user_id, customer_id)
       end
 
+      # Calculate price and interval based on billing_interval
+      {stripe_interval, unit_amount_cents, product_description, credits_to_grant} =
+        if billing_interval == "yearly" do
+          # Yearly = 11 months price, but grant 12 months of credits upfront
+          yearly_price = tier_info.usd * 11
+          yearly_credits = tier_info.monthly_credits * 12
+          {"year", trunc(yearly_price * 100), "#{yearly_credits} credits upfront (12 months)", yearly_credits}
+        else
+          {"month", trunc(tier_info.usd * 100), "#{tier_info.monthly_credits} credits per month", tier_info.monthly_credits}
+        end
+
       # Create Stripe Checkout session for subscription
       base_session_params = %{
         mode: "subscription",
@@ -228,13 +240,12 @@ defmodule ClippsterServerWeb.SubscriptionController do
             price_data: %{
               currency: "usd",
               product_data: %{
-                name: "#{tier_info.name} Subscription",
-                description: "#{tier_info.monthly_credits} credits per month"
+                name: "#{tier_info.name} Subscription#{if billing_interval == "yearly", do: " (Annual)", else: ""}",
+                description: product_description
               },
-              # Stripe expects cents
-              unit_amount: trunc(tier_info.usd * 100),
+              unit_amount: unit_amount_cents,
               recurring: %{
-                interval: "month"
+                interval: stripe_interval
               }
             },
             quantity: 1
@@ -244,6 +255,8 @@ defmodule ClippsterServerWeb.SubscriptionController do
           user_id: to_string(user_id),
           subscription_tier: tier,
           monthly_credits: to_string(tier_info.monthly_credits),
+          credits_to_grant: to_string(credits_to_grant),
+          billing_interval: billing_interval,
           type: "subscription"
         },
         success_url: "#{success_url}?session_id={CHECKOUT_SESSION_ID}&type=subscription",
@@ -349,12 +362,14 @@ defmodule ClippsterServerWeb.SubscriptionController do
     alias ClippsterServer.Credits
 
     promo_code = Map.get(params, "promo_code")
+    billing_interval = Map.get(params, "billing_interval", "monthly")
 
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, tier_info} <- validate_tier(tier),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
-      # Calculate base price
-      base_usd = tier_info.usd
+      # Calculate base price (yearly = 11 months)
+      base_usd = if billing_interval == "yearly", do: tier_info.usd * 11, else: tier_info.usd
+      credits_to_grant = if billing_interval == "yearly", do: tier_info.monthly_credits * 12, else: tier_info.monthly_credits
 
       # Apply promo code discount if provided and valid
       {final_usd, promo_info} =
@@ -386,6 +401,8 @@ defmodule ClippsterServerWeb.SubscriptionController do
         tier: tier,
         tier_name: tier_info.name,
         monthly_credits: tier_info.monthly_credits,
+        credits_to_grant: credits_to_grant,
+        billing_interval: billing_interval,
         amount_usd: final_usd,
         amount_sol: sol_amount,
         sol_usd_rate: sol_usd_rate,

@@ -55,38 +55,46 @@ defmodule ClippsterServerWeb.CampaignController do
   """
   def apply(conn, %{"id" => id} = params) do
     user = conn.assigns.current_user
-    application_note = Map.get(params, "application_note")
 
-    case Campaigns.get_campaign(id) do
-      nil ->
-        conn
-        |> put_status(404)
-        |> json(%{success: false, error: "Campaign not found"})
+    # Free tier users cannot apply to campaigns
+    if is_free_tier?(user) do
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Campaign participation requires a paid subscription"})
+    else
+      application_note = Map.get(params, "application_note")
 
-      campaign ->
-        case Campaigns.apply_to_campaign(campaign, user, application_note) do
-          {:ok, participant} ->
-            json(conn, %{
-              success: true,
-              participant: serialize_participant(participant),
-              message: if(campaign.join_type == "open", do: "Joined campaign", else: "Application submitted")
-            })
+      case Campaigns.get_campaign(id) do
+        nil ->
+          conn
+          |> put_status(404)
+          |> json(%{success: false, error: "Campaign not found"})
 
-          {:error, :campaign_not_active} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "Campaign is not active"})
+        campaign ->
+          case Campaigns.apply_to_campaign(campaign, user, application_note) do
+            {:ok, participant} ->
+              json(conn, %{
+                success: true,
+                participant: serialize_participant(participant),
+                message: if(campaign.join_type == "open", do: "Joined campaign", else: "Application submitted")
+              })
 
-          {:error, :already_participating} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "Already participating in this campaign"})
+            {:error, :campaign_not_active} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Campaign is not active"})
 
-          {:error, changeset} ->
-            conn
-            |> put_status(422)
-            |> json(%{success: false, error: format_errors(changeset)})
-        end
+            {:error, :already_participating} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Already participating in this campaign"})
+
+            {:error, changeset} ->
+              conn
+              |> put_status(422)
+              |> json(%{success: false, error: format_errors(changeset)})
+          end
+      end
     end
   end
 
@@ -167,46 +175,52 @@ defmodule ClippsterServerWeb.CampaignController do
   def submit_clip(conn, %{"id" => campaign_id} = params) do
     user = conn.assigns.current_user
 
-    case Campaigns.get_campaign(campaign_id) do
-      nil ->
-        conn
-        |> put_status(404)
-        |> json(%{success: false, error: "Campaign not found"})
+    if is_free_tier?(user) do
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Campaign submissions require a paid subscription"})
+    else
+      case Campaigns.get_campaign(campaign_id) do
+        nil ->
+          conn
+          |> put_status(404)
+          |> json(%{success: false, error: "Campaign not found"})
 
-      campaign ->
-        attrs = %{
-          clip_url: Map.get(params, "clip_url"),
-          platform: Map.get(params, "platform"),
-          social_account_id: Map.get(params, "social_account_id")
-        }
+        campaign ->
+          attrs = %{
+            clip_url: Map.get(params, "clip_url"),
+            platform: Map.get(params, "platform"),
+            social_account_id: Map.get(params, "social_account_id")
+          }
 
-        case Campaigns.submit_clip(campaign, user, attrs) do
-          {:ok, submission} ->
-            json(conn, %{
-              success: true,
-              submission: serialize_submission(submission)
-            })
+          case Campaigns.submit_clip(campaign, user, attrs) do
+            {:ok, submission} ->
+              json(conn, %{
+                success: true,
+                submission: serialize_submission(submission)
+              })
 
-          {:error, :not_a_participant} ->
-            conn
-            |> put_status(403)
-            |> json(%{success: false, error: "You must join the campaign first"})
+            {:error, :not_a_participant} ->
+              conn
+              |> put_status(403)
+              |> json(%{success: false, error: "You must join the campaign first"})
 
-          {:error, :campaign_not_active} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "Campaign is not active"})
+            {:error, :campaign_not_active} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Campaign is not active"})
 
-          {:error, :platform_not_allowed} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "Platform not allowed for this campaign"})
+            {:error, :platform_not_allowed} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Platform not allowed for this campaign"})
 
-          {:error, changeset} ->
-            conn
-            |> put_status(422)
-            |> json(%{success: false, error: format_errors(changeset)})
-        end
+            {:error, changeset} ->
+              conn
+              |> put_status(422)
+              |> json(%{success: false, error: format_errors(changeset)})
+          end
+      end
     end
   end
 
@@ -1199,5 +1213,9 @@ defmodule ClippsterServerWeb.CampaignController do
       String.starts_with?(url, "org-assets/") -> true  # Storage key format
       true -> false
     end
+  end
+
+  defp is_free_tier?(user) do
+    if user.is_admin, do: false, else: user.subscription_status in [nil, "none", "expired"]
   end
 end

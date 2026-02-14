@@ -59,6 +59,7 @@ const router = createRouter({
       path: '/ai-video',
       name: 'ai-video',
       component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -499,6 +500,22 @@ router.beforeEach((to, _from, next) => {
   if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
     next('/projects');
     return;
+  }
+
+  // Check if route requires a minimum subscription tier
+  if (to.meta.requiredTier && authStore.isAuthenticated) {
+    const tierHierarchy: Record<string, number> = { free: 0, starter: 1, creator: 2, pro: 3 };
+    const user = authStore.user;
+    // Admins and org-created users bypass tier checks
+    if (!user?.is_admin && !user?.created_by_organization_id) {
+      const userTier = (user as any)?.subscription_tier || 'free';
+      const userLevel = tierHierarchy[userTier] ?? 0;
+      const requiredLevel = tierHierarchy[to.meta.requiredTier as string] ?? 0;
+      if (userLevel < requiredLevel) {
+        next({ path: '/billing', query: { upgrade: to.meta.requiredTier as string, reason: to.name as string } });
+        return;
+      }
+    }
   }
 
   // Check Live Clip feature flag for /live-clip route

@@ -205,7 +205,7 @@ export const useAuthStore = defineStore('auth', {
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(data.user.id);
 
-        return { success: true, user: data.user };
+        return { success: true, user: data.user, is_new_user: !!data.is_new_user };
       } catch (error) {
         this.error = error.message;
         return { success: false, error: error.message };
@@ -293,7 +293,7 @@ export const useAuthStore = defineStore('auth', {
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(result.user.id);
 
-        return { success: true, user: result.user };
+        return { success: true, user: result.user, is_new_user: result.is_new_user === 'true' || result.is_new_user === true };
       } catch (error) {
         this.error = error.message;
         return { success: false, error: error.message };
@@ -392,7 +392,7 @@ export const useAuthStore = defineStore('auth', {
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(data.user.id);
 
-        return { success: true, user: data.user };
+        return { success: true, user: data.user, is_new_user: !!data.is_new_user };
       } catch (error) {
         this.error = error.message;
         return { success: false, error: error.message };
@@ -450,7 +450,7 @@ export const useAuthStore = defineStore('auth', {
         // Emit event to trigger data refresh across the app
         emitAuthStateChanged(data.user.id);
 
-        return { success: true, user: data.user };
+        return { success: true, user: data.user, is_new_user: !!data.is_new_user };
       } catch (error) {
         this.error = error.message;
         return { success: false, error: error.message };

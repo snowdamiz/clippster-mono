@@ -305,12 +305,14 @@ defmodule ClippsterServerWeb.StripeController do
 
       # Handle user subscription checkout
       payment_type == "subscription" && user_id && subscription_tier ->
+        billing_interval = get_metadata_value(metadata, "billing_interval") || "monthly"
         handle_subscription_checkout(
           user_id,
           subscription_tier,
           stripe_subscription_id,
           stripe_customer_id,
-          promo_code_id
+          promo_code_id,
+          billing_interval
         )
 
       # Handle credit pack purchase for organization
@@ -597,19 +599,21 @@ defmodule ClippsterServerWeb.StripeController do
          tier,
          stripe_subscription_id,
          stripe_customer_id,
-         promo_code_id
+         promo_code_id,
+         billing_interval
        ) do
     user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
 
     IO.puts(
-      "[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, sub_id=#{stripe_subscription_id}, promo_code_id=#{promo_code_id}"
+      "[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, interval=#{billing_interval}, sub_id=#{stripe_subscription_id}, promo_code_id=#{promo_code_id}"
     )
 
     case Subscriptions.create_stripe_subscription(
            user_id_int,
            tier,
            stripe_subscription_id,
-           stripe_customer_id
+           stripe_customer_id,
+           billing_interval
          ) do
       {:ok, _result} ->
         IO.puts(
@@ -851,9 +855,9 @@ defmodule ClippsterServerWeb.StripeController do
   end
 
   # Map subscription tier to approximate USD amount for commission calculation
-  defp get_subscription_amount("starter"), do: Decimal.new("9.99")
-  defp get_subscription_amount("creator"), do: Decimal.new("24.99")
-  defp get_subscription_amount("pro"), do: Decimal.new("49.99")
+  defp get_subscription_amount("starter"), do: Decimal.new("29.99")
+  defp get_subscription_amount("creator"), do: Decimal.new("54.99")
+  defp get_subscription_amount("pro"), do: Decimal.new("204.99")
   defp get_subscription_amount(_), do: Decimal.new("0")
 
   defp get_metadata_value(metadata, key) when is_map(metadata) do

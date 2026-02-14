@@ -398,6 +398,22 @@ export function useDownloads() {
       };
     } = {}
   ): Promise<string> {
+    // Free tier: 2 VOD downloads/day limit
+    const { useAuthStore } = await import('@/stores/auth');
+    const _authStore = useAuthStore();
+    const _user = _authStore.user;
+    const _isFree = _user && !_user.is_admin && !_user.created_by_organization_id &&
+      (!(_user as any).subscription_status || (_user as any).subscription_status === 'none' || (_user as any).subscription_status === 'expired');
+    if (_isFree) {
+      const { getUsageCount, recordUsage } = await import('@/services/database/free-tier-usage');
+      const FREE_LIMIT = 2;
+      const used = await getUsageCount(String(_user.id), 'vod_download');
+      if (used >= FREE_LIMIT) {
+        throw new Error('Daily download limit reached (2/day on free plan). Upgrade for unlimited downloads.');
+      }
+      await recordUsage(String(_user.id), 'vod_download');
+    }
+
     await initialize();
 
     const provider = options.provider || 'pumpfun';

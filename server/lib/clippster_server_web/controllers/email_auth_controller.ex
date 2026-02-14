@@ -63,6 +63,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
             json(conn, %{
               success: true,
               token: token,
+              is_new_user: true,
               user: %{
                 id: user.id,
                 email: user.email,
@@ -176,6 +177,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
             json(conn, %{
               success: true,
               token: token,
+              is_new_user: false,
               user: %{
                 id: user.id,
                 email: user.email,

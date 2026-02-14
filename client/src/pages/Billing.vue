@@ -213,6 +213,33 @@
                 </h2>
                 <p class="billing-plans__subtitle">Select the plan that works best for you</p>
               </div>
+
+              <!-- Monthly/Yearly Toggle -->
+              <div class="billing-plans__toggle">
+                <button
+                  class="billing-plans__toggle-btn"
+                  :class="{ 'billing-plans__toggle-btn--active': billingInterval === 'monthly' }"
+                  @click="billingInterval = 'monthly'"
+                >
+                  Monthly
+                </button>
+                <button
+                  class="billing-plans__toggle-btn"
+                  :class="{ 'billing-plans__toggle-btn--active': billingInterval === 'yearly' }"
+                  @click="billingInterval = 'yearly'"
+                >
+                  Yearly
+                  <span class="billing-plans__toggle-save">Save 1 month</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Continue with Free button for new users -->
+            <div v-if="isNewUserFlow && !hasActiveSubscription" class="billing-plans__free-cta">
+              <button class="billing-plans__free-btn" @click="continueWithFree">
+                Continue with Free Plan
+              </button>
+              <p class="billing-plans__free-hint">60 one-time credits · 5 clip builds/day · Admin watermark applied</p>
             </div>
 
             <div class="billing-plans__grid">
@@ -284,15 +311,22 @@
                       <h3 class="billing-tier__name">{{ tier.name }}</h3>
                       <div class="billing-tier__price">
                         <span class="billing-tier__price-currency">$</span>
-                        <span class="billing-tier__price-amount">{{ tier.price_usd }}</span>
-                        <span class="billing-tier__price-period">/mo</span>
+                        <span class="billing-tier__price-amount">{{ getDisplayPrice(tier) }}</span>
+                        <span class="billing-tier__price-period">{{ billingInterval === 'yearly' ? '/yr' : '/mo' }}</span>
+                      </div>
+                      <div v-if="billingInterval === 'yearly'" class="billing-tier__price-effective">
+                        ${{ getEffectiveMonthly(tier) }}/mo effective
                       </div>
                     </div>
 
                     <div class="billing-tier__credits">
                       <Zap class="billing-tier__credits-icon" />
-                      <span class="billing-tier__credits-value">{{ tier.monthly_credits.toLocaleString() }}</span>
-                      <span class="billing-tier__credits-label">credits/month</span>
+                      <span class="billing-tier__credits-value">
+                        {{ billingInterval === 'yearly' ? (tier.monthly_credits * 12).toLocaleString() : tier.monthly_credits.toLocaleString() }}
+                      </span>
+                      <span class="billing-tier__credits-label">
+                        {{ billingInterval === 'yearly' ? 'credits upfront' : 'credits/month' }}
+                      </span>
                     </div>
 
                     <div class="billing-tier__divider"></div>
@@ -300,11 +334,27 @@
                     <ul class="billing-tier__features">
                       <li class="billing-tier__feature">
                         <Check class="billing-tier__feature-icon" />
-                        <span>Full app access</span>
+                        <span>Unlimited clip builds</span>
                       </li>
                       <li class="billing-tier__feature">
                         <Check class="billing-tier__feature-icon" />
                         <span>AI clip detection</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Custom watermark &amp; intro/outro</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Social posting &amp; scheduling</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Organization membership</span>
+                      </li>
+                      <li v-if="tier.id === 'creator' || tier.id === 'pro'" class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>AI Video Creator</span>
                       </li>
                       <li class="billing-tier__feature">
                         <Check class="billing-tier__feature-icon" />
@@ -469,6 +519,7 @@
       :plan="selectedSubscription"
       context="user"
       :current-plan="subscriptionStatus?.tier"
+      :billing-interval="billingInterval"
       @update:open="showPaymentModal = $event"
       @success="handleSubscribeSuccess"
     />
@@ -505,12 +556,23 @@
   import EmptyState from '@/components/EmptyState.vue';
   import SubscribeDialog from '@/components/SubscribeDialog.vue';
 
+  import { useRoute, useRouter } from 'vue-router';
+  import { getDefaultRoute } from '@/router';
+
   const authStore = useAuthStore();
+  const route = useRoute();
+  const router = useRouter();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
 
   const loadingBalance = ref(true);
   const loadingTiers = ref(true);
   const loadingHistory = ref(true);
+
+  // Billing interval toggle
+  const billingInterval = ref<'monthly' | 'yearly'>('monthly');
+
+  // New user flow detection
+  const isNewUserFlow = computed(() => route.query.new_user === 'true');
 
   // Subscription data
   const subscriptionTiers = ref<any[]>([]);
@@ -685,6 +747,29 @@
 
     selectedSubscription.value = tier;
     showPaymentModal.value = true;
+  }
+
+  /** Continue with free tier — mark plan selected and go to default route */
+  function continueWithFree() {
+    localStorage.setItem('has_selected_plan', 'true');
+    const targetRoute = getDefaultRoute(authStore.user);
+    router.push(targetRoute);
+  }
+
+  /** Get displayed price for a tier based on billing interval */
+  function getDisplayPrice(tier: any): string {
+    if (billingInterval.value === 'yearly') {
+      return (tier.price_usd * 11).toFixed(2);
+    }
+    return tier.price_usd.toFixed(2);
+  }
+
+  /** Get effective monthly price for yearly billing */
+  function getEffectiveMonthly(tier: any): string {
+    if (billingInterval.value === 'yearly') {
+      return ((tier.price_usd * 11) / 12).toFixed(2);
+    }
+    return tier.price_usd.toFixed(2);
   }
 
   function handleSubscribeSuccess() {
@@ -1306,6 +1391,89 @@
     font-size: 0.75rem;
     color: var(--sidebar-text-muted);
     margin: 0.125rem 0 0;
+  }
+
+  .billing-plans__toggle {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    padding: 3px;
+    margin-left: auto;
+  }
+
+  .billing-plans__toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--sidebar-text-muted);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .billing-plans__toggle-btn--active {
+    background: var(--sidebar-accent);
+    color: white;
+    box-shadow: 0 1px 4px rgba(6, 182, 212, 0.3);
+  }
+
+  .billing-plans__toggle-save {
+    font-size: 0.625rem;
+    font-weight: 600;
+    background: rgba(16, 185, 129, 0.2);
+    color: rgb(16, 185, 129);
+    padding: 1px 5px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .billing-plans__free-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 0;
+  }
+
+  .billing-plans__free-btn {
+    padding: 10px 28px;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--sidebar-text-muted);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .billing-plans__free-btn:hover {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--sidebar-text-muted);
+    color: var(--sidebar-text);
+  }
+
+  .billing-plans__free-hint {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    opacity: 0.7;
+  }
+
+  .billing-tier__price-effective {
+    font-size: 0.6875rem;
+    color: rgb(16, 185, 129);
+    font-weight: 500;
+    margin-top: 2px;
   }
 
   .billing-plans__grid {

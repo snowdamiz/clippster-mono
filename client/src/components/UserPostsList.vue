@@ -64,7 +64,7 @@
           </div>
 
           <div class="post-card__footer">
-            <span class="post-card__date">{{ formatDate(post.published_at) }}</span>
+            <span class="post-card__date">{{ formatDate(post.published_at || post.inserted_at) }}</span>
             <span v-if="post.synced_at" class="post-card__synced">Synced {{ formatDate(post.synced_at) }}</span>
           </div>
         </div>

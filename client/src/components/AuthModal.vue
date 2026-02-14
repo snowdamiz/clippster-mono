@@ -421,9 +421,14 @@
   let cooldownInterval: ReturnType<typeof setInterval> | null = null;
 
   // Redirect to appropriate page after successful login
-  const redirectAfterLogin = (user: any) => {
-    const targetRoute = getDefaultRoute(user);
-    router.push(targetRoute);
+  const redirectAfterLogin = (user: any, isNewUser: boolean = false) => {
+    if (isNewUser && !user.is_admin) {
+      // New users go to billing to select a plan (or continue with free)
+      router.push('/billing?new_user=true');
+    } else {
+      const targetRoute = getDefaultRoute(user);
+      router.push(targetRoute);
+    }
   };
 
   const connectWallet = async () => {
@@ -433,7 +438,7 @@
     if (result.success) {
       localStorage.removeItem('referral_code');
       close();
-      redirectAfterLogin(result.user);
+      redirectAfterLogin(result.user, (result as any).is_new_user);
     }
   };
 
@@ -444,7 +449,7 @@
     if (result.success) {
       localStorage.removeItem('referral_code');
       close();
-      redirectAfterLogin(result.user);
+      redirectAfterLogin(result.user, (result as any).is_new_user);
     }
   };
 
@@ -455,7 +460,7 @@
 
     if (result.success) {
       close();
-      redirectAfterLogin(result.user);
+      redirectAfterLogin(result.user, (result as any).is_new_user);
     } else if ((result as any).needsVerification) {
       currentView.value = 'verify-otp';
       startResendCooldown();
@@ -482,7 +487,7 @@
 
     if (result.success) {
       close();
-      redirectAfterLogin(result.user);
+      redirectAfterLogin(result.user, (result as any).is_new_user);
     }
   };
 

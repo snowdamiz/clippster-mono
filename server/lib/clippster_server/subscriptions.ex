@@ -3,9 +3,9 @@ defmodule ClippsterServer.Subscriptions do
   The Subscriptions context - manages user subscriptions.
 
   Subscription Tiers (1 credit = 1 minute):
-  - Starter: $24.99/month, 600 credits (10 hours)
-  - Creator: $49.99/month, 1800 credits (30 hours)
-  - Pro: $199.99/month, 9000 credits (150 hours)
+  - Starter: $29.99/month, 600 credits (10 hours)
+  - Creator: $54.99/month, 1800 credits (30 hours)
+  - Pro: $204.99/month, 9000 credits (150 hours)
 
   Business Rules:
   - Users must have an active subscription to use the app
@@ -26,9 +26,9 @@ defmodule ClippsterServer.Subscriptions do
 
   # Subscription tiers with pricing and credits (1 credit = 1 minute)
   @subscription_tiers %{
-    "starter" => %{monthly_credits: 600, usd: 24.99, name: "Starter"},
-    "creator" => %{monthly_credits: 1800, usd: 49.99, name: "Creator"},
-    "pro" => %{monthly_credits: 9000, usd: 199.99, name: "Pro"}
+    "starter" => %{monthly_credits: 600, usd: 29.99, name: "Starter"},
+    "creator" => %{monthly_credits: 1800, usd: 54.99, name: "Creator"},
+    "pro" => %{monthly_credits: 9000, usd: 204.99, name: "Pro"}
   }
 
   @doc """
@@ -56,7 +56,7 @@ defmodule ClippsterServer.Subscriptions do
   Creates a new subscription for a user via Stripe.
   Grants the tier's monthly credits and activates subscription.
   """
-  def create_stripe_subscription(user_id, tier, stripe_subscription_id, stripe_customer_id \\ nil) do
+  def create_stripe_subscription(user_id, tier, stripe_subscription_id, stripe_customer_id \\ nil, billing_interval \\ "monthly") do
     tier_info = get_tier_info(tier)
 
     unless tier_info do
@@ -66,7 +66,12 @@ defmodule ClippsterServer.Subscriptions do
         user = Repo.get!(User, user_id)
 
         start_date = DateTime.utc_now() |> DateTime.truncate(:second)
-        end_date = DateTime.add(start_date, @subscription_days, :day)
+        subscription_days = if billing_interval == "yearly", do: 365, else: @subscription_days
+        end_date = DateTime.add(start_date, subscription_days, :day)
+
+        # Yearly subscribers get 12 months of credits upfront; monthly gets 1 month
+        credits_to_grant = if billing_interval == "yearly", do: tier_info.monthly_credits * 12, else: tier_info.monthly_credits
+        amount_usd = if billing_interval == "yearly", do: tier_info.usd * 11, else: tier_info.usd
 
         # Update user subscription fields
         {:ok, updated_user} = user
@@ -90,17 +95,17 @@ defmodule ClippsterServer.Subscriptions do
             start_date: start_date,
             end_date: end_date,
             hours_included: Decimal.new("0"),
-            credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+            credits_granted: Decimal.new(to_string(credits_to_grant)),
             payment_method: "stripe",
             stripe_subscription_id: stripe_subscription_id,
-            amount_usd: Decimal.new(to_string(tier_info.usd))
+            amount_usd: Decimal.new(to_string(amount_usd))
           })
           |> Repo.insert()
 
-        # Grant monthly credits
-        {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+        # Grant credits
+        {:ok, _} = Credits.add_credits(user_id, credits_to_grant)
 
-        IO.puts("[Subscriptions] Created #{tier} subscription for user #{user_id}, granted #{tier_info.monthly_credits} credits")
+        IO.puts("[Subscriptions] Created #{tier} (#{billing_interval}) subscription for user #{user_id}, granted #{credits_to_grant} credits")
 
         %{user: updated_user, subscription: subscription}
       end)
@@ -111,7 +116,7 @@ defmodule ClippsterServer.Subscriptions do
   Creates a subscription via crypto payment.
   Similar to Stripe but with crypto payment method.
   """
-  def create_crypto_subscription(user_id, tier, tx_signature) do
+  def create_crypto_subscription(user_id, tier, tx_signature, billing_interval \\ "monthly") do
     tier_info = get_tier_info(tier)
 
     unless tier_info do
@@ -121,7 +126,12 @@ defmodule ClippsterServer.Subscriptions do
         user = Repo.get!(User, user_id)
 
         start_date = DateTime.utc_now() |> DateTime.truncate(:second)
-        end_date = DateTime.add(start_date, @subscription_days, :day)
+        subscription_days = if billing_interval == "yearly", do: 365, else: @subscription_days
+        end_date = DateTime.add(start_date, subscription_days, :day)
+
+        # Yearly subscribers get 12 months of credits upfront; monthly gets 1 month
+        credits_to_grant = if billing_interval == "yearly", do: tier_info.monthly_credits * 12, else: tier_info.monthly_credits
+        amount_usd = if billing_interval == "yearly", do: tier_info.usd * 11, else: tier_info.usd
 
         # Update user subscription fields
         {:ok, updated_user} = user
@@ -143,17 +153,17 @@ defmodule ClippsterServer.Subscriptions do
             start_date: start_date,
             end_date: end_date,
             hours_included: Decimal.new("0"),
-            credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
+            credits_granted: Decimal.new(to_string(credits_to_grant)),
             payment_method: "crypto",
             stripe_subscription_id: "crypto_#{tx_signature}",
-            amount_usd: Decimal.new(to_string(tier_info.usd))
+            amount_usd: Decimal.new(to_string(amount_usd))
           })
           |> Repo.insert()
 
-        # Grant monthly credits
-        {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+        # Grant credits
+        {:ok, _} = Credits.add_credits(user_id, credits_to_grant)
 
-        IO.puts("[Subscriptions] Created #{tier} crypto subscription for user #{user_id}, granted #{tier_info.monthly_credits} credits")
+        IO.puts("[Subscriptions] Created #{tier} (#{billing_interval}) crypto subscription for user #{user_id}, granted #{credits_to_grant} credits")
 
         %{user: updated_user, subscription: subscription}
       end)

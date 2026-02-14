@@ -544,7 +544,7 @@
                       </div>
                     </div>
                     <div class="post-card__footer">
-                      <span class="post-card__date">{{ formatDate(post.published_at) }}</span>
+                      <span class="post-card__date">{{ formatDate(post.published_at || post.inserted_at) }}</span>
                     </div>
                   </div>
                 </div>

@@ -130,6 +130,7 @@ defmodule ClippsterServerWeb.Router do
 
     # Public settings/feature flags
     get("/settings/feature-flags", SettingsController, :get_feature_flags)
+    get("/app-settings/free-tier-branding", SettingsController, :get_free_tier_branding)
 
     # App release info (for download buttons on landing page)
     get("/releases/latest", ReleaseController, :latest)
@@ -925,6 +926,10 @@ defmodule ClippsterServerWeb.Router do
     # Admin settings management
     get("/admin/settings", AdminController, :get_settings)
     put("/admin/settings/:key", AdminController, :update_setting)
+
+    # Admin free tier branding
+    get("/admin/free-tier-branding", AdminController, :get_free_tier_branding)
+    put("/admin/free-tier-branding", AdminController, :save_free_tier_branding)
 
     # Admin beta codes management
     post("/admin/beta-codes/generate", AdminController, :generate_beta_codes)

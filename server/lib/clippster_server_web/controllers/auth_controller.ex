@@ -91,7 +91,7 @@ defmodule ClippsterServerWeb.AuthController do
 
       # Create or get user (with optional referral code)
       referral_code = Map.get(conn.params, "referral_code")
-      {:ok, user} = Accounts.get_or_create_user(public_key, referral_code)
+      {:ok, user, is_new_user} = Accounts.get_or_create_user(public_key, referral_code)
 
       # Generate JWT token
       token_claims = %{
@@ -110,6 +110,7 @@ defmodule ClippsterServerWeb.AuthController do
             success: true,
             token: token,
             wallet_address: public_key,
+            is_new_user: is_new_user,
             user: %{
               id: user.id,
               wallet_address: user.wallet_address,
@@ -322,8 +323,8 @@ defmodule ClippsterServerWeb.AuthController do
               oauth_referral_code = web_opts[:referral_code]
 
               case Accounts.get_or_create_oauth_user("google", google_user["id"], oauth_info, oauth_referral_code) do
-                {:ok, user} ->
-                  IO.puts("User created/retrieved: #{user.id}")
+                {:ok, user, is_new_user} ->
+                  IO.puts("User created/retrieved: #{user.id}, is_new: #{is_new_user}")
 
                   # Generate JWT token
                   token_claims = %{
@@ -339,7 +340,7 @@ defmodule ClippsterServerWeb.AuthController do
 
                   case TokenGenerator.generate_token(token_claims) do
                     {:ok, token} ->
-                      send_auth_success_html(conn, token, user, web_opts)
+                      send_auth_success_html(conn, token, user, web_opts, is_new_user)
 
                     {:error, _reason} ->
                       send_auth_error_html(conn, "Token generation failed", web_opts)
@@ -436,7 +437,7 @@ defmodule ClippsterServerWeb.AuthController do
     end
   end
 
-  defp send_auth_success_html(conn, token, user, %{web: true} = web_opts) do
+  defp send_auth_success_html(conn, token, user, %{web: true} = web_opts, is_new_user) do
     # Web mode: redirect to the origin's callback page (avoids COOP issues with window.opener)
     ai_allowed = check_ai_allowed_for_user(user)
     target_origin = web_opts[:origin] || "https://clippster.app"
@@ -457,13 +458,14 @@ defmodule ClippsterServerWeb.AuthController do
 
     params = URI.encode_query(%{
       "token" => token,
-      "user" => user_json
+      "user" => user_json,
+      "is_new_user" => to_string(is_new_user)
     })
 
     redirect(conn, external: "#{target_origin}/auth/google/callback?#{params}")
   end
 
-  defp send_auth_success_html(conn, token, user, _web_opts) do
+  defp send_auth_success_html(conn, token, user, _web_opts, is_new_user) do
     # Tauri mode: redirect to local callback server
     ai_allowed = check_ai_allowed_for_user(user)
 
@@ -480,7 +482,8 @@ defmodule ClippsterServerWeb.AuthController do
       "owned_organization_id" => user.owned_organization_id || "",
       "created_by_organization_id" => user.created_by_organization_id || "",
       "ai_allowed" => ai_allowed,
-      "beta_activated" => user.beta_activated
+      "beta_activated" => user.beta_activated,
+      "is_new_user" => to_string(is_new_user)
     })
 
     redirect(conn, external: "http://localhost:54321/google-callback?#{params}")

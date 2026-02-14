@@ -1074,4 +1074,41 @@ defmodule ClippsterServerWeb.AdminController do
   defp maybe_put_filter(filters, _key, nil), do: filters
   defp maybe_put_filter(filters, _key, ""), do: filters
   defp maybe_put_filter(filters, key, value), do: Map.put(filters, key, value)
+
+  @doc """
+  Save free tier branding configuration (watermark, intro, outro, overlays).
+  Admin only.
+  """
+  def save_free_tier_branding(conn, %{"branding" => branding}) do
+    case AppSettings.set_setting("free_tier_branding", Jason.encode!(branding)) do
+      {:ok, _} ->
+        json(conn, %{success: true, message: "Free tier branding saved"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Failed to save branding: #{inspect(reason)}"})
+    end
+  end
+
+  @doc """
+  Get free tier branding configuration.
+  Admin only.
+  """
+  def get_free_tier_branding(conn, _params) do
+    raw = AppSettings.get_setting("free_tier_branding")
+
+    branding =
+      case raw do
+        nil -> nil
+        value when is_binary(value) ->
+          case Jason.decode(value) do
+            {:ok, decoded} -> decoded
+            _ -> nil
+          end
+        value -> value
+      end
+
+    json(conn, %{success: true, branding: branding})
+  end
 end

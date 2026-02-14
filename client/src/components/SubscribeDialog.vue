@@ -238,20 +238,19 @@
 
                         <button
                           type="button"
-                          class="subscribe-dialog__payment-btn subscribe-dialog__payment-btn--phantom"
-                          @click="initiateCryptoPayment"
-                          :disabled="processing"
+                          class="subscribe-dialog__payment-btn subscribe-dialog__payment-btn--phantom subscribe-dialog__payment-btn--coming-soon"
+                          disabled
                         >
                           <div class="subscribe-dialog__payment-btn-content">
-                            <Loader2 v-if="processing && paymentMethod === 'crypto'" :size="20" class="subscribe-dialog__spinner" />
-                            <svg v-else class="subscribe-dialog__payment-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg class="subscribe-dialog__payment-icon" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" style="opacity: 0.5">
                               <path d="M27 7.5C27 10.5 25 13.5 22 15.5L25 20.5C25.5 21.5 25 23 23.5 23.5C22.5 24 21 23.5 20.5 22L17 16C16.5 16 16 16 15.5 16C14 16 12.5 15.5 11.5 14.5L9 19C8.5 20 7 20.5 6 20C5 19.5 4.5 18 5 17L7.5 12C6 10.5 5 8.5 5 6.5C5 4 6.5 2.5 9 2.5H23C25.5 2.5 27 4 27 7.5ZM10 6.5C10 7.5 10.5 8 11.5 8C12.5 8 13 7.5 13 6.5C13 5.5 12.5 5 11.5 5C10.5 5 10 5.5 10 6.5ZM19 6.5C19 7.5 19.5 8 20.5 8C21.5 8 22 7.5 22 6.5C22 5.5 21.5 5 20.5 5C19.5 5 19 5.5 19 6.5Z" fill="currentColor"/>
                             </svg>
                             <div class="subscribe-dialog__payment-btn-text">
                               <span class="subscribe-dialog__payment-btn-label">Pay with Crypto</span>
-                              <span class="subscribe-dialog__payment-btn-hint">Phantom Wallet</span>
+                              <span class="subscribe-dialog__payment-btn-hint">Coming Soon</span>
                             </div>
                           </div>
+                          <span class="subscribe-dialog__coming-soon-badge">Coming Soon</span>
                         </button>
                       </div>
                     </div>
@@ -360,6 +359,7 @@ interface Props {
   organizationName?: string;
   currentPlan?: string;
   type?: 'base' | 'addon';
+  billingInterval?: 'monthly' | 'yearly';
 }
 
 interface Emits {
@@ -386,8 +386,16 @@ const validatedPromo = ref<any>(null);
 const validatingPromo = ref(false);
 const promoError = ref('');
 
+const effectivePrice = computed(() => {
+  const monthlyPrice = props.plan.price_usd;
+  if (props.billingInterval === 'yearly') {
+    return monthlyPrice * 11; // Yearly = 11 months
+  }
+  return monthlyPrice;
+});
+
 const discountedPrice = computed(() => {
-  const basePrice = props.plan.price_usd;
+  const basePrice = effectivePrice.value;
   if (validatedPromo.value) {
     const discount = validatedPromo.value.percent_off / 100;
     return (basePrice * (1 - discount)).toFixed(2);
@@ -466,6 +474,10 @@ async function initiateStripePayment() {
     } else {
       endpoint = '/subscription/checkout';
       payload = { tier: props.plan.id };
+
+      if (props.billingInterval) {
+        payload.billing_interval = props.billingInterval;
+      }
 
       if (validatedPromo.value && promoCode.value.trim()) {
         payload.promo_code = promoCode.value.trim();
@@ -1173,6 +1185,26 @@ watch(() => props.open, (isOpen) => {
   background: linear-gradient(135deg, #7c65e8 0%, #6a52d9 100%);
   color: white;
   box-shadow: 0 2px 8px rgba(124, 101, 232, 0.3);
+}
+
+.subscribe-dialog__payment-btn--coming-soon {
+  position: relative;
+  opacity: 0.55;
+  cursor: not-allowed !important;
+}
+
+.subscribe-dialog__coming-soon-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .subscribe-dialog__payment-btn--phantom:hover:not(:disabled) {

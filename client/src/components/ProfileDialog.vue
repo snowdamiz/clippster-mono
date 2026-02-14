@@ -237,7 +237,7 @@
               </div>
 
               <!-- Asset Selection Section -->
-              <div class="org-dialog__section" @click.stop="openAssetDropdown = null; showOverlayDropdown = false">
+              <div class="org-dialog__section" :class="{ 'org-dialog__section--locked': isFreeTierUser }" @click.stop="openAssetDropdown = null; showOverlayDropdown = false">
                 <h3 class="org-dialog__section-title">Default Assets</h3>
                 <p class="org-dialog__section-desc">
                   {{ formData.scope === 'global'
@@ -245,6 +245,12 @@
                     : "Configure default intro, outro, and watermark for this creator's content."
                   }}
                 </p>
+
+                <!-- Free tier lock overlay -->
+                <div v-if="isFreeTierUser" class="org-dialog__premium-lock">
+                  <Lock :size="16" />
+                  <span>Custom assets require a paid plan</span>
+                </div>
 
                 <div class="org-dialog__section-items">
                   <!-- Intro Selection -->
@@ -718,6 +724,7 @@
     Sparkles,
     Paintbrush,
     Layers,
+    Lock,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
@@ -758,6 +765,7 @@
   import type { RatioAssetMap } from '@/services/database/types';
   import type { LayoutOverlay, PerRatioOverlaySettings } from '@/types';
   import { invoke } from '@tauri-apps/api/core';
+  import { useAuthStore } from '@/stores/auth';
 
   type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
 
@@ -801,6 +809,18 @@
   }>();
 
   const { success: showSuccess, error: showError } = useToast();
+
+  // Free tier detection
+  const authStoreForTier = useAuthStore();
+  const isFreeTierUser = computed(() => {
+    if (props.mode === 'organization') return false; // org mode doesn't apply
+    const user = authStoreForTier.user;
+    if (!user) return false;
+    if (user.is_admin) return false;
+    if (user.created_by_organization_id) return false;
+    const status = (user as any).subscription_status;
+    return !status || status === 'none' || status === 'expired';
+  });
 
   // Asset operations for local mode
   const { uploadAsset: uploadVideoAsset, onUploadComplete } = useAssetOperations();
@@ -2226,6 +2246,30 @@
 
   .org-dialog__section-header .org-dialog__section-title {
     margin: 0;
+  }
+
+  .org-dialog__section--locked {
+    position: relative;
+  }
+
+  .org-dialog__section--locked .org-dialog__section-items {
+    opacity: 0.35;
+    pointer-events: none;
+    filter: blur(1px);
+  }
+
+  .org-dialog__premium-lock {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background: rgba(168, 85, 247, 0.08);
+    border: 1px solid rgba(168, 85, 247, 0.2);
+    border-radius: 8px;
+    color: #a855f7;
+    font-size: 0.75rem;
+    font-weight: 500;
+    margin-bottom: 0.75rem;
   }
 
   .org-dialog__section-desc {

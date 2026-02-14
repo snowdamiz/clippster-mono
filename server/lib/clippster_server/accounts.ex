@@ -71,8 +71,12 @@ defmodule ClippsterServer.Accounts do
   """
   def get_or_create_user(wallet_address, referral_code \\ nil) do
     case get_user_by_wallet(wallet_address) do
-      nil -> create_user(wallet_address, referral_code)
-      user -> {:ok, user}
+      nil ->
+        case create_user(wallet_address, referral_code) do
+          {:ok, user} -> {:ok, user, true}
+          error -> error
+        end
+      user -> {:ok, user, false}
     end
   end
 
@@ -119,8 +123,16 @@ defmodule ClippsterServer.Accounts do
   """
   def get_or_create_oauth_user(provider, provider_id, oauth_info \\ %{}, referral_code \\ nil) do
     case get_user_by_provider(provider, provider_id) do
-      nil -> create_oauth_user(provider, provider_id, oauth_info, referral_code)
-      user -> update_oauth_info(user, oauth_info)
+      nil ->
+        case create_oauth_user(provider, provider_id, oauth_info, referral_code) do
+          {:ok, user} -> {:ok, user, true}
+          error -> error
+        end
+      user ->
+        case update_oauth_info(user, oauth_info) do
+          {:ok, user} -> {:ok, user, false}
+          error -> error
+        end
     end
   end
 
