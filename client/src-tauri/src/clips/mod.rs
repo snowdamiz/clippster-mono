@@ -58,7 +58,7 @@ pub async fn build_clip_from_segments(
     intro_duration: Option<f64>,
     outro_path: Option<String>,
     outro_duration: Option<f64>,
-    intro_outro_per_ratio: Option<std::collections::HashMap<String, (Option<String>, Option<f64>)>>,
+    intro_outro_per_ratio: Option<std::collections::HashMap<String, IntroOutroPerRatioConfig>>,
     watermark_settings: Option<WatermarkSettings>,
     audio_settings: Option<AudioSettings>,
     framing_strategy: Option<FramingStrategy>,
