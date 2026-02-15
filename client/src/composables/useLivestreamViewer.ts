@@ -1374,6 +1374,14 @@ export function useLivestreamViewer() {
     // Use hlsVideoElement if available, otherwise fall back to main videoElement
     const hlsElement = hlsVideoElement.value || videoElement.value;
 
+    console.log('[LiveViewer] initializeHlsPlayback called', {
+      hasElement: !!hlsElement,
+      hasOutputDir: !!hlsOutputDir.value,
+      isInitializing: isHlsInitializing,
+      isInitialized: hlsPlayback.state.value.isInitialized,
+      playbackMode: state.value.playbackMode,
+    });
+
     if (!hlsElement || !hlsOutputDir.value) return;
 
     // Prevent duplicate initialization
@@ -1387,26 +1395,46 @@ export function useLivestreamViewer() {
 
     try {
       // Gate initialization on playlist + first segment readiness to avoid 404 loops
+      console.log('[LiveViewer] Waiting for playlist ready...');
       const ready = await hlsPlayback.waitForPlaylistReady(hlsOutputDir.value);
+      console.log('[LiveViewer] Playlist ready result:', ready);
+      
       if (!ready) {
         console.warn('[LiveViewer] Playlist/segments not ready, skipping HLS init');
         // Don't set error - recording may still be starting
         return;
       }
 
+      console.log('[LiveViewer] Initializing HLS playback...');
       const success = await hlsPlayback.initialize(hlsElement, hlsOutputDir.value);
+      console.log('[LiveViewer] HLS initialization result:', success);
 
       if (success) {
-        if (state.value.playbackMode === 'webrtc') {
-          hlsPlayback.pause();
-        } else {
-          // Explicitly play after init - MANIFEST_PARSED auto-play can silently fail
-          // (e.g., CSP blocking blob URLs, autoplay policy rejection)
+        // For PumpFun (and all platforms now), always use HLS playback
+        // WebRTC is only used for viewer count tracking, not video playback
+        console.log('[LiveViewer] HLS mode, starting playback...');
+        
+        try {
           await hlsPlayback.play();
           state.value.isPlaying = true;
           state.value.isBuffering = false;
+          console.log('[LiveViewer] HLS playback started successfully');
+        } catch (playError) {
+          console.error('[LiveViewer] Failed to start HLS playback:', playError);
+          // Try again after a short delay (autoplay policy workaround)
+          setTimeout(async () => {
+            try {
+              await hlsPlayback.play();
+              state.value.isPlaying = true;
+              state.value.isBuffering = false;
+              console.log('[LiveViewer] HLS playback started on retry');
+            } catch (retryError) {
+              console.error('[LiveViewer] Retry failed:', retryError);
+            }
+          }, 500);
         }
       } else {
+        console.warn('[LiveViewer] HLS initialization failed');
         // Only set error if explicitly in HLS mode AND WebRTC isn't working
         if (state.value.playbackMode === 'hls' && !remoteVideoTrack) {
           state.value.connectionError =
