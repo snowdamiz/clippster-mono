@@ -42,6 +42,25 @@ defmodule ClippsterServer.Emails do
     |> text_body(password_reset_text(reset_url, app_name))
   end
 
+  @doc """
+  Creates an email change verification email.
+  """
+  def email_change_verification_email(email, verification_token) do
+    config = Application.get_env(:clippster_server, :email_auth, [])
+    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
+    app_name = Keyword.get(config, :app_name, "Clippster")
+    base_url = Keyword.get(config, :verification_url_base, "http://localhost:4000")
+
+    verification_url = "#{base_url}/verify-email-change/#{verification_token}"
+
+    new()
+    |> to(email)
+    |> from({app_name, from_email})
+    |> subject("Verify your new #{app_name} email address")
+    |> html_body(email_change_html(verification_url, app_name))
+    |> text_body(email_change_text(verification_url, app_name))
+  end
+
   defp verification_html(otp_code, magic_link_url, app_name) do
     """
     <!DOCTYPE html>
@@ -214,6 +233,84 @@ defmodule ClippsterServer.Emails do
     This link expires in 1 hour.
 
     If you didn't request a password reset, you can safely ignore this email.
+    """
+  end
+
+  defp email_change_html(verification_url, app_name) do
+    """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Verify your new email</title>
+    </head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0a;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="min-height: 100vh;">
+        <tr>
+          <td align="center" style="padding: 40px 20px;">
+            <table role="presentation" width="100%" style="max-width: 480px;">
+              <!-- Logo/Header -->
+              <tr>
+                <td align="center" style="padding-bottom: 32px;">
+                  <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">#{app_name}</h1>
+                </td>
+              </tr>
+
+              <!-- Main Card -->
+              <tr>
+                <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 40px;">
+                  <!-- Title -->
+                  <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #ffffff; text-align: center;">
+                    Verify your new email
+                  </h2>
+                  <p style="margin: 0 0 32px 0; font-size: 14px; color: #a1a1aa; text-align: center;">
+                    Click the button below to confirm your new email address
+                  </p>
+
+                  <!-- Button -->
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                    <tr>
+                      <td align="center">
+                        <a href="#{verification_url}" style="display: inline-block; background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+                          Verify Email Address
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+
+                  <p style="margin: 24px 0 0 0; font-size: 13px; color: #71717a; text-align: center;">
+                    This link expires in <strong style="color: #a1a1aa;">1 hour</strong>
+                  </p>
+                </td>
+              </tr>
+
+              <!-- Footer -->
+              <tr>
+                <td style="padding-top: 32px; text-align: center;">
+                  <p style="margin: 0; font-size: 12px; color: #52525b;">
+                    If you didn't request this email change, please contact support immediately.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+    """
+  end
+
+  defp email_change_text(verification_url, app_name) do
+    """
+    #{app_name} - Verify your new email address
+
+    Click this link to verify your new email address: #{verification_url}
+
+    This link expires in 1 hour.
+
+    If you didn't request this email change, please contact support immediately.
     """
   end
 

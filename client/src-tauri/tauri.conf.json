@@ -65,6 +65,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "OpenWorth Technologies, LLC.",
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
