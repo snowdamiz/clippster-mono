@@ -548,6 +548,30 @@ function getKickDvrSession(streamerId: string): KickDvrSession | null {
   return kickDvrSessions.value.get(streamerId) || null;
 }
 
+// Manually add a Kick DVR session (for temp recordings started outside monitoring)
+function addKickDvrSession(streamerId: string, mintId: string, sessionId: string, outputDir: string): void {
+  const newMap = new Map(kickDvrSessions.value);
+  newMap.set(streamerId, { mintId, sessionId, outputDir });
+  kickDvrSessions.value = newMap;
+
+  // Also track in general DVR sessions for compatibility
+  updateDvrSessionsMap((map) => {
+    map.set(streamerId, { mintId });
+  });
+}
+
+// Manually remove a Kick DVR session
+function removeKickDvrSession(streamerId: string): void {
+  const newMap = new Map(kickDvrSessions.value);
+  newMap.delete(streamerId);
+  kickDvrSessions.value = newMap;
+
+  // Also remove from general DVR sessions
+  updateDvrSessionsMap((map) => {
+    map.delete(streamerId);
+  });
+}
+
 // Start Twitch DVR recording using yt-dlp
 async function startTwitchDvrRecording(streamer: MonitoredStreamer): Promise<boolean> {
   // Check if already has Twitch DVR recording
@@ -615,6 +639,30 @@ async function stopTwitchDvrRecording(streamerId: string): Promise<void> {
 // Get Twitch DVR session info
 function getTwitchDvrSession(streamerId: string): TwitchDvrSession | null {
   return twitchDvrSessions.value.get(streamerId) || null;
+}
+
+// Manually add a Twitch DVR session (for temp recordings started outside monitoring)
+function addTwitchDvrSession(streamerId: string, mintId: string, sessionId: string, outputDir: string): void {
+  const newMap = new Map(twitchDvrSessions.value);
+  newMap.set(streamerId, { mintId, sessionId, outputDir });
+  twitchDvrSessions.value = newMap;
+
+  // Also track in general DVR sessions for compatibility
+  updateDvrSessionsMap((map) => {
+    map.set(streamerId, { mintId });
+  });
+}
+
+// Manually remove a Twitch DVR session
+function removeTwitchDvrSession(streamerId: string): void {
+  const newMap = new Map(twitchDvrSessions.value);
+  newMap.delete(streamerId);
+  twitchDvrSessions.value = newMap;
+
+  // Also remove from general DVR sessions
+  updateDvrSessionsMap((map) => {
+    map.delete(streamerId);
+  });
 }
 
 // Shared function to finalize a recording session (cleanup empty projects)
@@ -1559,11 +1607,15 @@ export function useLivestreamMonitoring() {
     getKickDvrSession,
     startKickDvrRecording,
     stopKickDvrRecording,
+    addKickDvrSession,
+    removeKickDvrSession,
     // Twitch DVR exports
     twitchDvrSessions,
     getTwitchDvrSession,
     startTwitchDvrRecording,
     stopTwitchDvrRecording,
+    addTwitchDvrSession,
+    removeTwitchDvrSession,
     // Auto DVR exports
     initAutoDvrPolling,
     stopAutoDvrPolling,

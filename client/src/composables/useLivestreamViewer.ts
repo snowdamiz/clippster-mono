@@ -139,6 +139,10 @@ export function useLivestreamViewer() {
     dvrSessions,
     getKickDvrSession,
     getTwitchDvrSession,
+    addKickDvrSession,
+    addTwitchDvrSession,
+    removeKickDvrSession,
+    removeTwitchDvrSession,
   } = useLivestreamMonitoring();
 
   // HLS Playback composable for reliable live streaming with DVR
@@ -609,6 +613,10 @@ export function useLivestreamViewer() {
 
         // Get the output directory for HLS playback
         outputDir = await invoke<string>('get_kick_session_output_dir', { sessionId });
+
+        // Track this temp recording so it can be reused if user closes and reopens
+        addKickDvrSession(streamerId, channelSlug, sessionId, outputDir);
+        console.log('[LiveViewer] Tracked temp Kick DVR session for reuse:', sessionId);
       }
 
       console.log('[LiveViewer] Kick HLS output dir:', outputDir);
@@ -742,6 +750,10 @@ export function useLivestreamViewer() {
 
         // Get the output directory for HLS playback
         outputDir = await getTwitchSessionOutputDir(sessionId);
+
+        // Track this temp recording so it can be reused if user closes and reopens
+        addTwitchDvrSession(streamerId, channelName, sessionId, outputDir);
+        console.log('[LiveViewer] Tracked temp Twitch DVR session for reuse:', sessionId);
       }
 
       console.log('[LiveViewer] Twitch HLS output dir:', outputDir);
@@ -2077,15 +2089,9 @@ export function useLivestreamViewer() {
     // Clean up HLS playback
     await hlsPlayback.cleanup();
 
-    // Stop Kick recording if this was a Kick stream
-    if (state.value.platform === 'Kick' && state.value.mintId) {
-      try {
-        await stopKickRecording(state.value.mintId);
-        console.log('[LiveViewer] Stopped Kick recording');
-      } catch (e) {
-        console.warn('[LiveViewer] Error stopping Kick recording:', e);
-      }
-    }
+    // DON'T stop recordings on disconnect - keep them running for DVR functionality
+    // Recordings will continue in background and can be resumed when user reopens stream
+    // Only stop recordings when user explicitly stops monitoring or app closes
 
     // Reset HLS output directory
     hlsOutputDir.value = null;
