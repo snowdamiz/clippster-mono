@@ -221,7 +221,16 @@ if config_env() == :prod do
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
       port: port
     ],
-    secret_key_base: secret_key_base
+    secret_key_base: secret_key_base,
+    # Allow WebSocket connections from Tauri desktop app
+    check_origin: [
+      "//clippster-server.fly.dev",
+      "//api.clippster.app",
+      # Tauri custom protocol
+      "tauri://localhost",
+      "https://tauri.localhost",
+      "http://tauri.localhost"
+    ]
 
   # ## SSL Support
   #
