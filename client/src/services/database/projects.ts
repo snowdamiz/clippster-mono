@@ -140,19 +140,13 @@ export async function deleteProject(id: string): Promise<void> {
     console.warn('[Database] clips project_id column update failed:', error);
   }
 
-  try {
-    // Disassociate clip detection sessions from this project (has project_id)
-    await db.execute('UPDATE clip_detection_sessions SET project_id = NULL WHERE project_id = ?', [
-      id,
-    ]);
-  } catch (error) {
-    console.warn('[Database] clip_detection_sessions project_id column update failed:', error);
-  }
+  // Note: clip_detection_sessions has ON DELETE CASCADE, so they will be automatically deleted
+  // when the project is deleted. No need to manually update project_id.
 
   // Note: transcripts table was changed in migration 4 to use raw_video_id instead of project_id
   // So we don't need to update transcripts here
 
-  // Now safely delete the project
+  // Now safely delete the project (CASCADE will handle clip_detection_sessions)
   await db.execute('DELETE FROM projects WHERE id = ?', [id]);
 }
 
@@ -293,14 +287,10 @@ export async function deleteProjectWithRetention(
     console.warn('[Database] projects parent_id column update failed:', error);
   }
 
-  // Disassociate clip detection sessions
-  try {
-    await db.execute('UPDATE clip_detection_sessions SET project_id = NULL WHERE project_id = ?', [projectId]);
-  } catch (error) {
-    console.warn('[Database] clip_detection_sessions project_id column update failed:', error);
-  }
+  // Note: clip_detection_sessions has ON DELETE CASCADE, so they will be automatically deleted
+  // when the project is deleted. No need to manually update project_id.
 
-  // Delete the project record
+  // Delete the project record (CASCADE will handle clip_detection_sessions)
   await db.execute('DELETE FROM projects WHERE id = ?', [projectId]);
 
   return { deletedClipIds, retainedClipIds };

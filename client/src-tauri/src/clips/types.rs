@@ -1205,3 +1205,22 @@ pub struct ClipWatermarkSettings {
     #[serde(default)]
     pub per_ratio_configs: Option<std::collections::HashMap<String, ClipWatermarkRatioConfig>>,
 }
+
+// ============================================================================
+// INTRO/OUTRO PER-RATIO TYPES
+// ============================================================================
+
+/// Per-aspect-ratio intro/outro configuration
+/// Allows using different intro/outro videos for different aspect ratios
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntroOutroPerRatioConfig {
+    #[serde(default)]
+    pub intro_path: Option<String>,
+    #[serde(default)]
+    pub intro_duration: Option<f64>,
+    #[serde(default)]
+    pub outro_path: Option<String>,
+    #[serde(default)]
+    pub outro_duration: Option<f64>,
+}

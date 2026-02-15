@@ -150,7 +150,8 @@ export function useHlsPlayback() {
   async function waitForPlaylist(url: string, expectedUrl?: string, outputDir?: string): Promise<boolean> {
     for (let attempt = 0; attempt < PLAYLIST_POLL_MAX_ATTEMPTS; attempt++) {
       if (isCleaningUp) return false;
-      if (expectedUrl && hlsUrl && hlsUrl !== expectedUrl) return false;
+      // Skip URL mismatch check if outputDir is provided (standalone check for new directory)
+      if (!outputDir && expectedUrl && hlsUrl && hlsUrl !== expectedUrl) return false;
 
       try {
         // For Tauri asset URLs, use checkPlaylistExists command (fetch can't handle asset:// scheme)
@@ -184,7 +185,8 @@ export function useHlsPlayback() {
   async function waitForFirstSegment(url: string, expectedUrl?: string, outputDir?: string): Promise<boolean> {
     for (let attempt = 0; attempt < PLAYLIST_SEGMENT_POLL_MAX_ATTEMPTS; attempt++) {
       if (isCleaningUp) return false;
-      if (expectedUrl && hlsUrl && hlsUrl !== expectedUrl) return false;
+      // Skip URL mismatch check if outputDir is provided (standalone check for new directory)
+      if (!outputDir && expectedUrl && hlsUrl && hlsUrl !== expectedUrl) return false;
 
       try {
         // For Tauri asset URLs, use invoke to read playlist content (fetch can't handle asset:// scheme)
@@ -1047,9 +1049,10 @@ export function useHlsPlayback() {
     const isDirectUrl = outputDirOrUrl.startsWith('http://') || outputDirOrUrl.startsWith('https://');
     const targetUrl = isDirectUrl ? outputDirOrUrl : getHlsUrl(outputDirOrUrl);
 
-    const playlistReady = await waitForPlaylist(targetUrl, targetUrl);
+    // Pass outputDir to bypass hlsUrl mismatch check - this is called standalone, not during active playback
+    const playlistReady = await waitForPlaylist(targetUrl, targetUrl, isDirectUrl ? undefined : outputDirOrUrl);
     if (!playlistReady) return false;
-    return waitForFirstSegment(targetUrl, targetUrl);
+    return waitForFirstSegment(targetUrl, targetUrl, isDirectUrl ? undefined : outputDirOrUrl);
   }
 
   // Cleanup on unmount
