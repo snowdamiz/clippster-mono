@@ -114,7 +114,7 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
         
         if let Ok(hwnd) = window.hwnd() {
             unsafe {
-                let hwnd = HWND(hwnd.0 as isize);
+                let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
                 let _ = SetWindowPos(
                     hwnd,
                     HWND_TOPMOST,
