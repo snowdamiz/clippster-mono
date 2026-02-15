@@ -138,6 +138,7 @@ export function useLivestreamViewer() {
     stopMonitoring,
     dvrSessions,
     getKickDvrSession,
+    getTwitchDvrSession,
   } = useLivestreamMonitoring();
 
   // HLS Playback composable for reliable live streaming with DVR
@@ -698,25 +699,50 @@ export function useLivestreamViewer() {
         ? new Date(twitchStatus.startedAt).getTime()
         : Date.now();
 
-      // Start a new recording session (no DVR session reuse for Twitch yet)
-      const sessionId = `twitch-view-${channelName}-${Date.now()}`;
-      state.value.tempSessionId = sessionId;
-      state.value.isTempRecording = true;
+      // Check if there's an existing recording for this streamer
+      // Priority: 1) Twitch DVR session, 2) Persistent recording from monitoring, 3) Start new
+      const existingDvrSession = getTwitchDvrSession(streamerId);
+      const existingPersistentSession = activeSessions.value.get(streamerId);
+      let outputDir: string;
+      let sessionId: string;
 
-      console.log('[LiveViewer] Starting new Twitch recording:', channelName);
+      if (existingDvrSession) {
+        // Use existing DVR session - allows seeking back to beginning of stream
+        console.log('[LiveViewer] Found existing Twitch DVR session:', existingDvrSession.sessionId);
+        outputDir = existingDvrSession.outputDir;
+        sessionId = existingDvrSession.sessionId;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = false; // Not a temp recording - it's a DVR session
+      } else if (existingPersistentSession && existingPersistentSession.platform === 'Twitch') {
+        // Use existing persistent recording from monitoring system
+        console.log('[LiveViewer] Found existing Twitch persistent session:', existingPersistentSession.sessionId);
+        sessionId = existingPersistentSession.sessionId;
+        state.value.tempSessionId = sessionId;
+        state.value.sessionId = existingPersistentSession.sessionId;
+        state.value.projectId = existingPersistentSession.projectId;
+        state.value.isTempRecording = false;
+        outputDir = await getTwitchSessionOutputDir(sessionId);
+      } else {
+        // No existing session - start a new temp recording
+        sessionId = `twitch-view-${channelName}-${Date.now()}`;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = true;
 
-      // Start yt-dlp recording - this creates local HLS files we can play
-      try {
-        await startTwitchRecording(channelName, streamerId, sessionId, 1);
-      } catch (recordingError) {
-        console.error('[LiveViewer] Failed to start Twitch recording:', recordingError);
-        state.value.connectionState = 'failed';
-        state.value.connectionError = 'Failed to start stream capture';
-        return;
+        console.log('[LiveViewer] Starting new Twitch recording:', channelName);
+
+        // Start yt-dlp recording - this creates local HLS files we can play
+        try {
+          await startTwitchRecording(channelName, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start Twitch recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+
+        // Get the output directory for HLS playback
+        outputDir = await getTwitchSessionOutputDir(sessionId);
       }
-
-      // Get the output directory for HLS playback
-      const outputDir = await getTwitchSessionOutputDir(sessionId);
 
       console.log('[LiveViewer] Twitch HLS output dir:', outputDir);
 
@@ -756,7 +782,10 @@ export function useLivestreamViewer() {
         hlsPlayback.play();
         state.value.isPlaying = true;
 
-        console.log('[LiveViewer] Connected to Twitch stream via yt-dlp (new recording)');
+        console.log(
+          '[LiveViewer] Connected to Twitch stream via yt-dlp',
+          existingDvrSession ? '(using existing DVR)' : '(new recording)'
+        );
       } else {
         throw new Error('HLS video element not available');
       }
