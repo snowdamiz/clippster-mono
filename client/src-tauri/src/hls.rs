@@ -268,22 +268,51 @@ pub fn get_recording_output_dir(session_id: String) -> Result<String, String> {
 /// Get HLS segment info from the playlist
 #[tauri::command]
 pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>, String> {
-    // Prefer finalized playlist, but fall back to the temp file while ffmpeg is writing
-    let playlist_path = PathBuf::from(&output_dir).join("playlist.m3u8");
-    let playlist_tmp_path = PathBuf::from(&output_dir).join("playlist.m3u8.tmp");
+    let output_path = PathBuf::from(&output_dir);
+    
+    // Check if output directory exists
+    if !output_path.exists() {
+        return Ok(Vec::new());
+    }
+    
+    // Try multiple playlist locations in order of preference:
+    // 1. playlist.m3u8 (finalized)
+    // 2. playlist.m3u8.tmp (being written by FFmpeg with +temp_file flag)
+    // 3. Direct segment scanning if no playlist exists yet
+    let playlist_path = output_path.join("playlist.m3u8");
+    let playlist_tmp_path = output_path.join("playlist.m3u8.tmp");
     
     let playlist_to_use = if playlist_path.exists() {
-        playlist_path
+        Some(playlist_path)
     } else if playlist_tmp_path.exists() {
-        playlist_tmp_path
+        Some(playlist_tmp_path)
     } else {
-        return Ok(Vec::new());
+        // No playlist file found yet - this is normal during initial FFmpeg startup
+        // Check if any segments exist to determine if recording has started
+        if let Ok(entries) = std::fs::read_dir(&output_path) {
+            let has_segments = entries
+                .filter_map(|e| e.ok())
+                .any(|e| {
+                    if let Ok(name) = e.file_name().into_string() {
+                        name.starts_with("segment_") && name.ends_with(".ts")
+                    } else {
+                        false
+                    }
+                });
+            
+            if has_segments {
+                // Segments exist but no playlist - fall through to direct scanning
+                None
+            } else {
+                // No segments yet - recording hasn't started producing output
+                return Ok(Vec::new());
+            }
+        } else {
+            return Ok(Vec::new());
+        }
     };
 
-    let content = tokio::fs::read_to_string(&playlist_to_use)
-        .await
-        .map_err(|e| format!("Failed to read playlist: {}", e))?;
-
+    // If we have a playlist file, parse it
     let mut segments = Vec::new();
     let mut current_duration: f64 = 0.0;
     let mut first_duration: f64 = 0.0;
@@ -291,7 +320,12 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
     let mut segment_number: u32 = 0;
     let mut media_sequence: u32 = 0;
 
-    for line in content.lines() {
+    if let Some(playlist_path) = playlist_to_use {
+        let content = tokio::fs::read_to_string(&playlist_path)
+            .await
+            .map_err(|e| format!("Failed to read playlist: {}", e))?;
+
+        for line in content.lines() {
         let line = line.trim();
         
         // Handle sliding window playlists by tracking media sequence
@@ -340,6 +374,7 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
             
             cumulative_time += current_duration;
             segment_number += 1;
+        }
         }
     }
 
