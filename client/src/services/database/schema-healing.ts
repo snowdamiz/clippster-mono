@@ -67,6 +67,9 @@ export async function healSchema(): Promise<void> {
     await addColumnIfMissing(db, 'video_editor_watermarks', 'layer', 'INTEGER DEFAULT 0');
     await addColumnIfMissing(db, 'clip_watermarks', 'layer', 'INTEGER DEFAULT 0');
 
+    // --- Migration 089: auto_dvr_enabled on creator_profiles ---
+    await addColumnIfMissing(db, 'creator_profiles', 'auto_dvr_enabled', 'INTEGER DEFAULT 0');
+
     // --- Migration 083: vod_presets table + project columns (also in vod-presets.ts) ---
     await addColumnIfMissing(db, 'projects', 'active_vod_preset_id', 'TEXT');
     await addColumnIfMissing(db, 'projects', 'active_vod_preset_config', 'TEXT');

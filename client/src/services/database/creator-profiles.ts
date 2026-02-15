@@ -1,14 +1,6 @@
 import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { CreatorProfile, CreatorPlatformLink, CreatorProfileWithLinks } from './types';
 
-async function ensureAutoDvrColumn(db: any) {
-  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
-  const hasAutoDvr = columns.some((c: { name: string }) => c.name === 'auto_dvr_enabled');
-  if (!hasAutoDvr) {
-    await db.execute('ALTER TABLE creator_profiles ADD COLUMN auto_dvr_enabled INTEGER DEFAULT 0');
-  }
-}
-
 async function ensureIntroOutroSettingsColumn(db: any) {
   const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
   const hasIntroOutroSettings = columns.some((c: { name: string }) => c.name === 'intro_outro_settings');
@@ -57,7 +49,6 @@ async function ensureSelectedBrandingColumn(db: any) {
 
 export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]> {
   const db = await getDatabase();
-  await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);
@@ -109,7 +100,6 @@ export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]
 
 export async function getCreatorProfile(id: string): Promise<CreatorProfileWithLinks | null> {
   const db = await getDatabase();
-  await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);
@@ -172,7 +162,6 @@ export async function createCreatorProfile(
   layoutOverlays?: string | null
 ): Promise<string> {
   const db = await getDatabase();
-  await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);
@@ -227,7 +216,6 @@ export async function updateCreatorProfile(
   }>
 ): Promise<void> {
   const db = await getDatabase();
-  await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);
@@ -321,7 +309,6 @@ export async function deleteCreatorProfile(id: string): Promise<void> {
 
 export async function getAllGlobalProfiles(): Promise<CreatorProfileWithLinks[]> {
   const db = await getDatabase();
-  await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);
@@ -349,7 +336,6 @@ export async function getAllGlobalProfiles(): Promise<CreatorProfileWithLinks[]>
 
 export async function getAllStreamerProfiles(): Promise<CreatorProfileWithLinks[]> {
   const db = await getDatabase();
-  await ensureAutoDvrColumn(db);
   await ensureIntroOutroSettingsColumn(db);
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);

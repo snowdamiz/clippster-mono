@@ -92,6 +92,7 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     .decorations(false)
     .transparent(true)
     .always_on_top(true)
+    .visible_on_all_workspaces(true)  // Ensures window stays on top across all virtual desktops and fullscreen apps
     .skip_taskbar(true)
     .visible(true)
     .build()
@@ -103,6 +104,47 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
         let x = size.width as i32 - 420;
         let y = size.height as i32 - 300;
         let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition { x, y }));
+    }
+
+    // Windows-specific: Force window to stay on top even over fullscreen games
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW};
+        
+        if let Ok(hwnd) = window.hwnd() {
+            unsafe {
+                let hwnd = HWND(hwnd.0 as isize);
+                let _ = SetWindowPos(
+                    hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                );
+            }
+        }
+    }
+
+    // macOS-specific: Set window collection behavior to appear over fullscreen apps
+    #[cfg(target_os = "macos")]
+    {
+        use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};
+        use cocoa::base::id;
+        
+        if let Ok(ns_window) = window.ns_window() {
+            unsafe {
+                let ns_window = ns_window as id;
+                // NSWindowCollectionBehaviorCanJoinAllSpaces (1 << 0) = 1
+                // NSWindowCollectionBehaviorFullScreenAuxiliary (1 << 8) = 256
+                // Combined: allows window to appear in all Spaces and over fullscreen apps
+                let behavior = NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
+                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary;
+                ns_window.setCollectionBehavior_(behavior);
+            }
+        }
     }
 
     Ok(())

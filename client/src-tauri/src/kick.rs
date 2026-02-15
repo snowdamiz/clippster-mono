@@ -415,8 +415,10 @@ pub async fn start_kick_recording(
     let channel_slug = normalize_channel_slug(&channel_slug);
     
     // Check if already recording this channel
+    // If so, allow sharing the existing recording instead of blocking
     if KICK_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&channel_slug) {
-        return Err(format!("Already recording channel: {}", channel_slug));
+        println!("[Kick] Recording already active for {}, sharing existing session", channel_slug);
+        return Ok(()); // Allow sharing - caller can use get_kick_session_output_dir
     }
 
     // Get output directory

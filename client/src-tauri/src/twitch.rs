@@ -440,8 +440,10 @@ pub async fn start_twitch_recording(
     let channel_name = normalize_channel_name(&channel_name);
     
     // Check if already recording this channel
+    // If so, allow sharing the existing recording instead of blocking
     if TWITCH_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&channel_name) {
-        return Err(format!("Already recording channel: {}", channel_name));
+        println!("[Twitch] Recording already active for {}, sharing existing session", channel_name);
+        return Ok(()); // Allow sharing - caller can use get_twitch_session_output_dir
     }
 
     // Get output directory
