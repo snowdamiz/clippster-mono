@@ -139,6 +139,10 @@ export function useLivestreamViewer() {
     dvrSessions,
     getKickDvrSession,
     getTwitchDvrSession,
+    addKickDvrSession,
+    addTwitchDvrSession,
+    removeKickDvrSession,
+    removeTwitchDvrSession,
   } = useLivestreamMonitoring();
 
   // HLS Playback composable for reliable live streaming with DVR
@@ -609,6 +613,10 @@ export function useLivestreamViewer() {
 
         // Get the output directory for HLS playback
         outputDir = await invoke<string>('get_kick_session_output_dir', { sessionId });
+
+        // Track this temp recording so it can be reused if user closes and reopens
+        addKickDvrSession(streamerId, channelSlug, sessionId, outputDir);
+        console.log('[LiveViewer] Tracked temp Kick DVR session for reuse:', sessionId);
       }
 
       console.log('[LiveViewer] Kick HLS output dir:', outputDir);
@@ -742,6 +750,10 @@ export function useLivestreamViewer() {
 
         // Get the output directory for HLS playback
         outputDir = await getTwitchSessionOutputDir(sessionId);
+
+        // Track this temp recording so it can be reused if user closes and reopens
+        addTwitchDvrSession(streamerId, channelName, sessionId, outputDir);
+        console.log('[LiveViewer] Tracked temp Twitch DVR session for reuse:', sessionId);
       }
 
       console.log('[LiveViewer] Twitch HLS output dir:', outputDir);
@@ -1362,6 +1374,14 @@ export function useLivestreamViewer() {
     // Use hlsVideoElement if available, otherwise fall back to main videoElement
     const hlsElement = hlsVideoElement.value || videoElement.value;
 
+    console.log('[LiveViewer] initializeHlsPlayback called', {
+      hasElement: !!hlsElement,
+      hasOutputDir: !!hlsOutputDir.value,
+      isInitializing: isHlsInitializing,
+      isInitialized: hlsPlayback.state.value.isInitialized,
+      playbackMode: state.value.playbackMode,
+    });
+
     if (!hlsElement || !hlsOutputDir.value) return;
 
     // Prevent duplicate initialization
@@ -1375,26 +1395,46 @@ export function useLivestreamViewer() {
 
     try {
       // Gate initialization on playlist + first segment readiness to avoid 404 loops
+      console.log('[LiveViewer] Waiting for playlist ready...');
       const ready = await hlsPlayback.waitForPlaylistReady(hlsOutputDir.value);
+      console.log('[LiveViewer] Playlist ready result:', ready);
+      
       if (!ready) {
         console.warn('[LiveViewer] Playlist/segments not ready, skipping HLS init');
         // Don't set error - recording may still be starting
         return;
       }
 
+      console.log('[LiveViewer] Initializing HLS playback...');
       const success = await hlsPlayback.initialize(hlsElement, hlsOutputDir.value);
+      console.log('[LiveViewer] HLS initialization result:', success);
 
       if (success) {
-        if (state.value.playbackMode === 'webrtc') {
-          hlsPlayback.pause();
-        } else {
-          // Explicitly play after init - MANIFEST_PARSED auto-play can silently fail
-          // (e.g., CSP blocking blob URLs, autoplay policy rejection)
+        // For PumpFun (and all platforms now), always use HLS playback
+        // WebRTC is only used for viewer count tracking, not video playback
+        console.log('[LiveViewer] HLS mode, starting playback...');
+        
+        try {
           await hlsPlayback.play();
           state.value.isPlaying = true;
           state.value.isBuffering = false;
+          console.log('[LiveViewer] HLS playback started successfully');
+        } catch (playError) {
+          console.error('[LiveViewer] Failed to start HLS playback:', playError);
+          // Try again after a short delay (autoplay policy workaround)
+          setTimeout(async () => {
+            try {
+              await hlsPlayback.play();
+              state.value.isPlaying = true;
+              state.value.isBuffering = false;
+              console.log('[LiveViewer] HLS playback started on retry');
+            } catch (retryError) {
+              console.error('[LiveViewer] Retry failed:', retryError);
+            }
+          }, 500);
         }
       } else {
+        console.warn('[LiveViewer] HLS initialization failed');
         // Only set error if explicitly in HLS mode AND WebRTC isn't working
         if (state.value.playbackMode === 'hls' && !remoteVideoTrack) {
           state.value.connectionError =
@@ -2077,15 +2117,9 @@ export function useLivestreamViewer() {
     // Clean up HLS playback
     await hlsPlayback.cleanup();
 
-    // Stop Kick recording if this was a Kick stream
-    if (state.value.platform === 'Kick' && state.value.mintId) {
-      try {
-        await stopKickRecording(state.value.mintId);
-        console.log('[LiveViewer] Stopped Kick recording');
-      } catch (e) {
-        console.warn('[LiveViewer] Error stopping Kick recording:', e);
-      }
-    }
+    // DON'T stop recordings on disconnect - keep them running for DVR functionality
+    // Recordings will continue in background and can be resumed when user reopens stream
+    // Only stop recordings when user explicitly stops monitoring or app closes
 
     // Reset HLS output directory
     hlsOutputDir.value = null;
