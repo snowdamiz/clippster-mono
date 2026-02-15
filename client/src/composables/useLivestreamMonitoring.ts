@@ -31,6 +31,7 @@ import {
   checkTwitchLivestream,
   startTwitchRecording,
   stopTwitchRecording,
+  getTwitchSessionOutputDir,
   type TwitchLiveStatus,
 } from '@/services/twitch';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
@@ -473,6 +474,11 @@ async function startDvrRecordingForStreamer(streamer: MonitoredStreamer): Promis
 type KickDvrSession = { mintId: string; sessionId: string; outputDir: string };
 const kickDvrSessions = ref<Map<string, KickDvrSession>>(new Map());
 
+// Track Twitch DVR sessions separately (they use yt-dlp, not LiveKit)
+// Key: streamerId, Value: { mintId, sessionId, outputDir }
+type TwitchDvrSession = { mintId: string; sessionId: string; outputDir: string };
+const twitchDvrSessions = ref<Map<string, TwitchDvrSession>>(new Map());
+
 // Start Kick DVR recording using yt-dlp
 async function startKickDvrRecording(streamer: MonitoredStreamer): Promise<boolean> {
   // Check if already has Kick DVR recording
@@ -540,6 +546,75 @@ async function stopKickDvrRecording(streamerId: string): Promise<void> {
 // Get Kick DVR session info
 function getKickDvrSession(streamerId: string): KickDvrSession | null {
   return kickDvrSessions.value.get(streamerId) || null;
+}
+
+// Start Twitch DVR recording using yt-dlp
+async function startTwitchDvrRecording(streamer: MonitoredStreamer): Promise<boolean> {
+  // Check if already has Twitch DVR recording
+  if (twitchDvrSessions.value.has(streamer.id)) {
+    console.log('[LiveMonitor] Twitch DVR already active for:', streamer.id);
+    return true;
+  }
+
+  try {
+    // Generate a DVR session ID
+    const sessionId = `twitch-dvr-${streamer.mintId}-${Date.now()}`;
+
+    // Start yt-dlp recording via Rust backend
+    await startTwitchRecording(
+      streamer.mintId, // channel name
+      streamer.id, // streamer ID
+      sessionId,
+      5 // 5 minute segments (doesn't matter much for DVR)
+    );
+
+    // Get the output directory
+    const outputDir = await getTwitchSessionOutputDir(sessionId);
+
+    // Track the Twitch DVR session
+    const newMap = new Map(twitchDvrSessions.value);
+    newMap.set(streamer.id, { mintId: streamer.mintId, sessionId, outputDir });
+    twitchDvrSessions.value = newMap;
+
+    // Also track in general DVR sessions for compatibility
+    updateDvrSessionsMap((map) => {
+      map.set(streamer.id, { mintId: streamer.mintId });
+    });
+
+    console.log(
+      '[LiveMonitor] Started Twitch DVR recording for',
+      streamer.mintId,
+      'output:',
+      outputDir
+    );
+    return true;
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to start Twitch DVR for', streamer.mintId, error);
+    return false;
+  }
+}
+
+// Stop Twitch DVR recording
+async function stopTwitchDvrRecording(streamerId: string): Promise<void> {
+  const session = twitchDvrSessions.value.get(streamerId);
+  if (!session) return;
+
+  try {
+    await stopTwitchRecording(session.mintId);
+    console.log('[LiveMonitor] Stopped Twitch DVR recording for', session.mintId);
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to stop Twitch DVR', error);
+  }
+
+  // Remove from tracking
+  const newMap = new Map(twitchDvrSessions.value);
+  newMap.delete(streamerId);
+  twitchDvrSessions.value = newMap;
+}
+
+// Get Twitch DVR session info
+function getTwitchDvrSession(streamerId: string): TwitchDvrSession | null {
+  return twitchDvrSessions.value.get(streamerId) || null;
 }
 
 // Shared function to finalize a recording session (cleanup empty projects)
@@ -1484,6 +1559,11 @@ export function useLivestreamMonitoring() {
     getKickDvrSession,
     startKickDvrRecording,
     stopKickDvrRecording,
+    // Twitch DVR exports
+    twitchDvrSessions,
+    getTwitchDvrSession,
+    startTwitchDvrRecording,
+    stopTwitchDvrRecording,
     // Auto DVR exports
     initAutoDvrPolling,
     stopAutoDvrPolling,

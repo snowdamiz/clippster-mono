@@ -121,6 +121,29 @@ export function useHlsPlayback() {
   }
 
   /**
+   * Extract output directory from asset:// URL
+   * Format: asset://hls/{base64EncodedDir}/playlist.m3u8
+   */
+  function extractOutputDirFromAssetUrl(url: string): string | null {
+    try {
+      const urlObj = new URL(url);
+      if (urlObj.protocol !== 'asset:' && urlObj.protocol !== 'tauri:') {
+        return null;
+      }
+      
+      // asset://hls/{encodedDir}/{filename} → hostname='hls', pathname='/{encodedDir}/{filename}'
+      const pathParts = urlObj.pathname.split('/').filter(Boolean);
+      if (pathParts.length < 1) return null;
+      
+      const encodedDir = pathParts[0];
+      // Decode base64 to get original directory path
+      return atob(encodedDir);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Wait for the HLS playlist to become available.
    * If expectedUrl is provided, abort when the active target changes.
    */
@@ -131,9 +154,13 @@ export function useHlsPlayback() {
 
       try {
         // For Tauri asset URLs, use checkPlaylistExists command (fetch can't handle asset:// scheme)
-        if (outputDir && (url.startsWith('asset://') || url.startsWith('tauri://'))) {
-          const exists = await checkPlaylistExists(outputDir, 'playlist.m3u8');
-          if (exists) return true;
+        if (url.startsWith('asset://') || url.startsWith('tauri://')) {
+          // Extract outputDir from URL if not provided
+          const dirToUse = outputDir || extractOutputDirFromAssetUrl(url);
+          if (dirToUse) {
+            const exists = await checkPlaylistExists(dirToUse, 'playlist.m3u8');
+            if (exists) return true;
+          }
         } else {
           // Fallback to fetch for direct URLs (e.g., Kick proxy)
           const response = await fetch(url, { method: 'GET', mode: 'cors' });
@@ -161,14 +188,18 @@ export function useHlsPlayback() {
 
       try {
         // For Tauri asset URLs, use invoke to read playlist content (fetch can't handle asset:// scheme)
-        if (outputDir && (url.startsWith('asset://') || url.startsWith('tauri://'))) {
-          const encodedDir = btoa(outputDir);
-          const content = await invoke<string>('read_hls_playlist', {
-            encodedDir,
-            filename: 'playlist.m3u8',
-          });
-          const segmentCount = (content.match(/#EXTINF:/g) || []).length;
-          if (segmentCount > 0) return true;
+        if (url.startsWith('asset://') || url.startsWith('tauri://')) {
+          // Extract outputDir from URL if not provided
+          const dirToUse = outputDir || extractOutputDirFromAssetUrl(url);
+          if (dirToUse) {
+            const encodedDir = btoa(dirToUse);
+            const content = await invoke<string>('read_hls_playlist', {
+              encodedDir,
+              filename: 'playlist.m3u8',
+            });
+            const segmentCount = (content.match(/#EXTINF:/g) || []).length;
+            if (segmentCount > 0) return true;
+          }
         } else {
           const response = await fetch(url, { method: 'GET', cache: 'no-store', mode: 'cors' });
           if (response.ok) {
