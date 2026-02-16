@@ -67,7 +67,7 @@
                 </tr>
               </thead>
               <tbody class="admin-users__tbody">
-                <tr v-for="user in users" :key="user.id" class="admin-users__row">
+                <tr v-for="user in users" :key="user.id" class="admin-users__row admin-users__row--clickable" @click="navigateToUserProfile(user.id)">
                   <td class="admin-users__td">
                     <span class="admin-users__id">#{{ user.id }}</span>
                   </td>
@@ -105,6 +105,10 @@
                     <span v-if="user.is_admin" class="admin-users__role admin-users__role--admin">
                       <Shield class="admin-users__role-icon" />
                       Admin
+                    </span>
+                    <span v-else-if="user.is_moderator" class="admin-users__role admin-users__role--moderator">
+                      <Shield class="admin-users__role-icon" />
+                      Moderator
                     </span>
                     <span v-else class="admin-users__role admin-users__role--user">
                       <User class="admin-users__role-icon" />
@@ -177,6 +181,35 @@
                             @click.stop
                           >
                             <button
+                              v-if="!user.is_moderator"
+                              class="admin-users__dropdown-item admin-users__dropdown-item--blue"
+                              :disabled="promotingModUserId === user.id"
+                              @click.stop="confirmPromoteToModerator(user); closeUserActionMenu();"
+                            >
+                              <Loader2
+                                v-if="promotingModUserId === user.id"
+                                class="admin-users__dropdown-item-icon admin-users__dropdown-item-icon--spin"
+                              />
+                              <Shield v-else class="admin-users__dropdown-item-icon" />
+                              <span>Promote to Moderator</span>
+                            </button>
+                            <button
+                              v-if="user.is_moderator"
+                              class="admin-users__dropdown-item admin-users__dropdown-item--orange"
+                              :disabled="demotingModUserId === user.id"
+                              @click.stop="
+                                confirmDemoteModerator(user);
+                                closeUserActionMenu();
+                              "
+                            >
+                              <Loader2
+                                v-if="demotingModUserId === user.id"
+                                class="admin-users__dropdown-item-icon admin-users__dropdown-item-icon--spin"
+                              />
+                              <Shield v-else class="admin-users__dropdown-item-icon" />
+                              <span>Demote Moderator</span>
+                            </button>
+                            <button
                               class="admin-users__dropdown-item admin-users__dropdown-item--purple"
                               :disabled="promotingUserId === user.id"
                               @click.stop="
@@ -245,6 +278,31 @@
       confirm-text="Promote"
       @close="handlePromoteDialogClose"
       @confirm="promoteUserConfirmed"
+    />
+
+    <!-- Moderator Promotion Confirmation Modal -->
+    <ConfirmationModal
+      :show="showPromoteModDialog"
+      title="Promote User to Moderator"
+      :message="'Are you sure you want to promote'"
+      :item-name="userToPromoteMod ? getUserDisplayName(userToPromoteMod) : ''"
+      suffix="to moderator?"
+      confirm-text="Promote"
+      @close="handlePromoteModDialogClose"
+      @confirm="promoteToModeratorConfirmed"
+    />
+
+    <!-- Moderator Demotion Confirmation Modal -->
+    <ConfirmationModal
+      :show="showDemoteModDialog"
+      title="Demote Moderator"
+      :message="'Are you sure you want to demote'"
+      :item-name="userToDemoteMod ? getUserDisplayName(userToDemoteMod) : ''"
+      suffix="from moderator?"
+      confirm-text="Demote"
+      variant="destructive"
+      @close="handleDemoteModDialogClose"
+      @confirm="demoteModeratorConfirmed"
     />
 
     <!-- Credit Editing Modal -->
@@ -441,11 +499,12 @@
                   <div class="admin-users__subscription-form-grid">
                     <div>
                       <label class="admin-users__subscription-form-label">Tier</label>
-                      <select v-model="subscriptionForm.grant_tier" class="admin-users__subscription-select">
-                        <option value="starter">Starter (600 credits)</option>
-                        <option value="creator">Creator (1800 credits)</option>
-                        <option value="pro">Pro (9000 credits)</option>
-                      </select>
+                      <CustomDropdown
+                        v-model="subscriptionForm.grant_tier"
+                        :options="tierOptions"
+                        placeholder="Select tier"
+                        trigger-class="admin-users__dropdown-trigger"
+                      />
                     </div>
                     <div>
                       <label class="admin-users__subscription-form-label">Duration (days)</label>
@@ -519,11 +578,12 @@
                   <div class="admin-users__subscription-form-grid admin-users__subscription-form-grid--half">
                     <div>
                       <label class="admin-users__subscription-form-label">New Tier</label>
-                      <select v-model="subscriptionForm.change_tier" class="admin-users__subscription-select">
-                        <option value="starter">Starter (600 credits)</option>
-                        <option value="creator">Creator (1800 credits)</option>
-                        <option value="pro">Pro (9000 credits)</option>
-                      </select>
+                      <CustomDropdown
+                        v-model="subscriptionForm.change_tier"
+                        :options="tierOptions"
+                        placeholder="Select tier"
+                        trigger-class="admin-users__dropdown-trigger"
+                      />
                     </div>
                     <div class="admin-users__subscription-form-actions">
                       <label class="admin-users__subscription-checkbox">
@@ -629,6 +689,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted } from 'vue';
+  import { useRouter } from 'vue-router';
   import {
     Users,
     RefreshCw,
@@ -646,6 +707,7 @@
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
   import { useAuthStore } from '@/stores/auth';
   import api from '@/services/api';
 
@@ -655,6 +717,7 @@
     email: string | null;
     provider: string;
     is_admin: boolean;
+    is_moderator: boolean;
     created_at: string;
     updated_at: string;
     credits: {
@@ -672,12 +735,25 @@
   }
 
   const authStore = useAuthStore();
+
+  const tierOptions = [
+    { label: 'Starter (600 credits)', value: 'starter' },
+    { label: 'Creator (1800 credits)', value: 'creator' },
+    { label: 'Pro (9000 credits)', value: 'pro' },
+  ];
+
   const users = ref<UserType[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
   const promotingUserId = ref<number | null>(null);
   const showPromoteDialog = ref(false);
   const userToPromote = ref<UserType | null>(null);
+  const promotingModUserId = ref<number | null>(null);
+  const demotingModUserId = ref<number | null>(null);
+  const showPromoteModDialog = ref(false);
+  const showDemoteModDialog = ref(false);
+  const userToPromoteMod = ref<UserType | null>(null);
+  const userToDemoteMod = ref<UserType | null>(null);
   const showCreditDialog = ref(false);
   const userToEditCredits = ref<UserType | null>(null);
   const updatingCreditsUserId = ref<number | null>(null);
@@ -838,6 +914,80 @@
       promotingUserId.value = null;
       showPromoteDialog.value = false;
       userToPromote.value = null;
+    }
+  };
+
+  // Moderator promotion functions
+  const confirmPromoteToModerator = (user: UserType) => {
+    userToPromoteMod.value = user;
+    showPromoteModDialog.value = true;
+  };
+
+  const handlePromoteModDialogClose = () => {
+    showPromoteModDialog.value = false;
+    userToPromoteMod.value = null;
+  };
+
+  const promoteToModeratorConfirmed = async () => {
+    if (!userToPromoteMod.value) return;
+    promotingModUserId.value = userToPromoteMod.value.id;
+    try {
+      const response = await api.post(`/admin/users/${userToPromoteMod.value.id}/moderator`);
+      if (response.data.success) {
+        const userIndex = users.value.findIndex((u) => u.id === userToPromoteMod.value!.id);
+        if (userIndex !== -1) {
+          users.value[userIndex] = {
+            ...users.value[userIndex],
+            is_moderator: true,
+            updated_at: response.data.user.updated_at,
+          };
+        }
+      } else {
+        throw new Error(response.data.error || 'Failed to promote user to moderator');
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      promotingModUserId.value = null;
+      showPromoteModDialog.value = false;
+      userToPromoteMod.value = null;
+    }
+  };
+
+  // Moderator demotion functions
+  const confirmDemoteModerator = (user: UserType) => {
+    userToDemoteMod.value = user;
+    showDemoteModDialog.value = true;
+  };
+
+  const handleDemoteModDialogClose = () => {
+    showDemoteModDialog.value = false;
+    userToDemoteMod.value = null;
+  };
+
+  const demoteModeratorConfirmed = async () => {
+    if (!userToDemoteMod.value) return;
+    demotingModUserId.value = userToDemoteMod.value.id;
+    try {
+      const response = await api.delete(`/admin/users/${userToDemoteMod.value.id}/moderator`);
+      if (response.data.success) {
+        const userIndex = users.value.findIndex((u) => u.id === userToDemoteMod.value!.id);
+        if (userIndex !== -1) {
+          users.value[userIndex] = {
+            ...users.value[userIndex],
+            is_moderator: false,
+            updated_at: response.data.user.updated_at,
+          };
+        }
+      } else {
+        throw new Error(response.data.error || 'Failed to demote moderator');
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      demotingModUserId.value = null;
+      showDemoteModDialog.value = false;
+      userToDemoteMod.value = null;
     }
   };
 
@@ -1085,6 +1235,12 @@
     }
   }
 
+  const router = useRouter();
+
+  const navigateToUserProfile = (userId: number) => {
+    router.push(`/admin/users/${userId}`);
+  };
+
   onMounted(() => {
     fetchUsers();
     document.addEventListener('click', handleUserActionMenuClickOutside);
@@ -1326,6 +1482,14 @@
     transition: background-color 150ms ease;
   }
 
+  .admin-users__row--clickable {
+    cursor: pointer;
+  }
+
+  .admin-users__row--clickable:hover {
+    background-color: var(--sidebar-hover);
+  }
+
   .admin-users__row:hover {
     background-color: rgba(39, 39, 42, 0.3);
   }
@@ -1416,6 +1580,12 @@
     background-color: rgba(168, 85, 247, 0.2);
     color: #c084fc;
     border: 1px solid rgba(168, 85, 247, 0.3);
+  }
+
+  .admin-users__role--moderator {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
   }
 
   .admin-users__role--user {
@@ -2160,7 +2330,31 @@
     margin-bottom: 0.375rem;
   }
 
-  .admin-users__subscription-select,
+  /* Dropdown trigger styling */
+  :deep(.admin-users__dropdown-trigger) {
+    height: 38px !important;
+    padding: 0 0.75rem !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 6px !important;
+    font-size: 0.875rem !important;
+    transition: all 150ms ease !important;
+  }
+
+  :deep(.admin-users__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  :deep(.admin-users__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.admin-users__dropdown-trigger svg) {
+    width: 14px !important;
+    height: 14px !important;
+    color: var(--sidebar-text-muted) !important;
+  }
+
   .admin-users__subscription-input {
     width: 100%;
     padding: 0.5rem 0.75rem;
@@ -2172,7 +2366,6 @@
     transition: all 150ms ease;
   }
 
-  .admin-users__subscription-select:focus,
   .admin-users__subscription-input:focus {
     outline: none;
     border-color: var(--sidebar-accent);

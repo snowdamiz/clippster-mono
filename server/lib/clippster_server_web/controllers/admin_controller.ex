@@ -1766,6 +1766,44 @@ defmodule ClippsterServerWeb.AdminController do
           # Get member count
           member_count = Organizations.count_members(org_id)
 
+          # Get members list with user details
+          members = Organizations.list_members(org_id)
+          |> Enum.map(fn member ->
+            %{
+              id: member.id,
+              user_id: member.user_id,
+              role: member.role,
+              user: if member.user do
+                %{
+                  id: member.user.id,
+                  name: member.user.name,
+                  email: member.user.email,
+                  avatar_url: member.user.avatar_url
+                }
+              else
+                nil
+              end
+            }
+          end)
+
+          # Get owner details
+          owner = if org.owner_id do
+            Accounts.get_user(org.owner_id)
+          else
+            nil
+          end
+
+          owner_info = if owner do
+            %{
+              id: owner.id,
+              name: owner.name,
+              email: owner.email,
+              avatar_url: owner.avatar_url
+            }
+          else
+            nil
+          end
+
           json(conn, %{
             success: true,
             organization: %{
@@ -1774,8 +1812,10 @@ defmodule ClippsterServerWeb.AdminController do
               description: org.description,
               logo_url: org.logo_url,
               owner_id: org.owner_id,
+              owner: owner_info,
               created_at: org.inserted_at,
               member_count: member_count,
+              members: members,
               subscription: subscription_info
             }
           })

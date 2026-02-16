@@ -1,95 +1,198 @@
 <template>
-  <div class="admin-org-detail">
+  <div class="admin-org-detail-page">
     <PageLayout
-      :title="org ? `Organization: ${org.name}` : 'Organization Details'"
-      description="Detailed organization information and management"
+      :title="org?.name || 'Organization Details'"
+      :description="org?.description || ''"
       :show-header="true"
-      :show-back-button="true"
       :icon="Building2"
+      :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Organizations', path: '/admin/organizations' }, { label: org?.name || 'Details' }]"
     >
+      <template #actions>
+        <div v-if="org" class="org-header-actions">
+          <button @click="navigateToOrgPage" class="org-action-btn org-action-btn--primary">
+            <ExternalLink class="org-action-btn__icon" />
+            View Page
+          </button>
+          <button @click="messageOwner" class="org-action-btn org-action-btn--outline">
+            <MessageSquare class="org-action-btn__icon" />
+            Message Owner
+          </button>
+        </div>
+      </template>
+
       <!-- Loading State -->
-      <div v-if="loading" class="admin-org-detail__loading">
-        <Loader2 class="admin-org-detail__spinner" />
-        <p>Loading organization details...</p>
+      <div v-if="loading" class="org-content org-content--loading">
+        <div class="loading-spinner">
+          <Loader2 class="loading-spinner__icon" />
+        </div>
       </div>
 
       <!-- Error State -->
-      <div v-else-if="error" class="admin-org-detail__error">
-        <AlertTriangle class="admin-org-detail__error-icon" />
-        <h2>Failed to load organization</h2>
-        <p>{{ error }}</p>
-        <Button @click="loadOrgDetails">Try Again</Button>
+      <div v-else-if="error" class="org-content org-content--empty">
+        <div class="empty-state">
+          <div class="empty-state__icon-wrapper">
+            <AlertTriangle class="empty-state__icon" />
+          </div>
+          <h3 class="empty-state__title">Failed to load organization</h3>
+          <p class="empty-state__description">{{ error }}</p>
+          <Button @click="loadOrgDetails">Try Again</Button>
+        </div>
       </div>
 
       <!-- Main Content -->
-      <div v-else-if="org" class="admin-org-detail__content">
-        <!-- Header Card -->
-        <div class="admin-org-detail__header-card">
-          <div class="admin-org-detail__header-info">
-            <div class="admin-org-detail__logo">
-              <Building2 class="admin-org-detail__logo-icon" />
+      <div v-else-if="org" class="org-content">
+        <!-- Organization Header -->
+        <header class="org-header">
+          <div class="org-header__main">
+            <div class="org-avatar">
+              <img
+                v-if="org.logo_url"
+                :src="org.logo_url"
+                class="org-avatar__img"
+              />
+              <Building2 v-else class="org-avatar__fallback" />
             </div>
-            <div class="admin-org-detail__header-text">
-              <h2 class="admin-org-detail__name">{{ org.name }}</h2>
-              <p class="admin-org-detail__description">{{ org.description || 'No description' }}</p>
-              <div class="admin-org-detail__badges">
-                <span v-if="org.subscription?.tier" class="admin-org-detail__badge">
-                  <Crown class="admin-org-detail__badge-icon" />
+            <div class="org-meta">
+              <div class="org-meta__top">
+                <h1 class="org-name">{{ org.name }}</h1>
+                <span v-if="org.subscription?.tier" class="tier-badge">
+                  <Crown :size="12" class="tier-badge__icon" />
                   {{ org.subscription.tier }}
                 </span>
+                <span v-if="org.subscription?.status === 'active'" class="status-badge status-badge--active">
+                  <span class="status-badge__dot"></span>
+                  Active
+                </span>
+              </div>
+              <p v-if="org.description" class="org-bio">{{ org.description }}</p>
+            </div>
+          </div>
+          <div class="org-stats">
+            <div class="stat">
+              <span class="stat__value">{{ org.member_count || 0 }}</span>
+              <span class="stat__label">Members</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value">{{ formatDate(org.created_at) }}</span>
+              <span class="stat__label">Created</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- Two Column Layout -->
+        <div class="main-layout">
+          <!-- Left Column -->
+          <div class="main-column">
+            <!-- Owner Section -->
+            <section v-if="org.owner" class="section">
+              <div class="section__header">
+                <div class="section__header-icon">
+                  <User />
+                </div>
+                <div class="section__header-text">
+                  <h2 class="section__title">Organization Owner</h2>
+                  <p class="section__subtitle">Primary account holder</p>
+                </div>
+              </div>
+              <div class="owner-card">
+                <div class="owner-card__info">
+                  <div class="owner-card__avatar">
+                    <User class="owner-card__avatar-icon" />
+                  </div>
+                  <div class="owner-card__details">
+                    <div class="owner-card__name">{{ org.owner.name || 'Unnamed User' }}</div>
+                    <div class="owner-card__email">{{ org.owner.email }}</div>
+                  </div>
+                </div>
+                <Button @click="navigateToUserProfile(org.owner.id)" variant="outline" size="sm">
+                  View Profile
+                </Button>
+              </div>
+            </section>
+
+            <!-- Members Section -->
+            <section v-if="org.members && org.members.length > 0" class="section">
+              <div class="section__header">
+                <div class="section__header-icon section__header-icon--purple">
+                  <Users />
+                </div>
+                <div class="section__header-text">
+                  <h2 class="section__title">Members</h2>
+                  <p class="section__subtitle">{{ org.members.length }} total members</p>
+                </div>
+              </div>
+              <div class="members-list">
+                <div v-for="member in org.members" :key="member.id" class="member-card">
+                  <div class="member-card__info">
+                    <div class="member-card__avatar">
+                      <User />
+                    </div>
+                    <div class="member-card__details">
+                      <div class="member-card__name">{{ member.user?.name || 'Unnamed User' }}</div>
+                      <div class="member-card__email">{{ member.user?.email }}</div>
+                    </div>
+                  </div>
+                  <span :class="['role-badge', `role-badge--${member.role}`]">
+                    <Shield v-if="member.role === 'owner' || member.role === 'admin'" :size="12" />
+                    {{ member.role }}
+                  </span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- Right Sidebar -->
+          <aside class="sidebar-column">
+            <!-- Subscription Card -->
+            <div class="sidebar-card">
+              <div class="sidebar-card__header">
+                <CreditCard class="sidebar-card__icon" />
+                <h3 class="sidebar-card__title">Subscription</h3>
+              </div>
+              <div class="sidebar-card__content">
+                <div class="info-list">
+                  <div class="info-list-item">
+                    <div class="info-list-item__label">Tier</div>
+                    <div class="info-list-item__value">{{ org.subscription?.tier || 'Free' }}</div>
+                  </div>
+                  <div class="info-list-item">
+                    <div class="info-list-item__label">Status</div>
+                    <span :class="['status-badge', `status-badge--${org.subscription?.status || 'none'}`]">
+                      {{ org.subscription?.status || 'none' }}
+                    </span>
+                  </div>
+                  <div class="info-list-item">
+                    <div class="info-list-item__label">Billing</div>
+                    <div class="info-list-item__value">{{ org.subscription?.billing_interval || 'N/A' }}</div>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          <div class="admin-org-detail__header-stats">
-            <div class="admin-org-detail__stat">
-              <span class="admin-org-detail__stat-label">Members</span>
-              <span class="admin-org-detail__stat-value">{{ org.member_count || 0 }}</span>
-            </div>
-            <div class="admin-org-detail__stat">
-              <span class="admin-org-detail__stat-label">Created</span>
-              <span class="admin-org-detail__stat-value">{{ formatDate(org.created_at) }}</span>
-            </div>
-          </div>
-        </div>
 
-        <!-- Subscription Card -->
-        <div class="admin-org-detail__card">
-          <h3 class="admin-org-detail__card-title">
-            <CreditCard class="admin-org-detail__card-icon" />
-            Subscription
-          </h3>
-          <div class="admin-org-detail__subscription">
-            <div class="admin-org-detail__field">
-              <span class="admin-org-detail__field-label">Tier</span>
-              <span class="admin-org-detail__field-value">{{ org.subscription?.tier || 'None' }}</span>
+            <!-- Details Card -->
+            <div class="sidebar-card">
+              <div class="sidebar-card__header">
+                <Info class="sidebar-card__icon" />
+                <h3 class="sidebar-card__title">Details</h3>
+              </div>
+              <div class="sidebar-card__content">
+                <div class="info-list">
+                  <div class="info-list-item">
+                    <div class="info-list-item__label">Organization ID</div>
+                    <div class="info-list-item__value info-list-item__value--mono">{{ org.id }}</div>
+                  </div>
+                  <div class="info-list-item">
+                    <div class="info-list-item__label">Created</div>
+                    <div class="info-list-item__value">{{ formatFullDate(org.created_at) }}</div>
+                  </div>
+                  <div v-if="org.updated_at" class="info-list-item">
+                    <div class="info-list-item__label">Last Updated</div>
+                    <div class="info-list-item__value">{{ formatFullDate(org.updated_at) }}</div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="admin-org-detail__field">
-              <span class="admin-org-detail__field-label">Status</span>
-              <span class="admin-org-detail__field-value">{{ org.subscription?.status || 'none' }}</span>
-            </div>
-            <div class="admin-org-detail__field">
-              <span class="admin-org-detail__field-label">Billing</span>
-              <span class="admin-org-detail__field-value">{{ org.subscription?.billing_interval || 'N/A' }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Actions Card -->
-        <div class="admin-org-detail__card">
-          <h3 class="admin-org-detail__card-title">
-            <Settings class="admin-org-detail__card-icon" />
-            Actions
-          </h3>
-          <div class="admin-org-detail__actions">
-            <Button @click="navigateToOrgPage" variant="outline" size="sm">
-              <ExternalLink class="admin-org-detail__action-icon" />
-              View Organization Page
-            </Button>
-            <Button @click="messageOwner" variant="outline" size="sm">
-              <MessageSquare class="admin-org-detail__action-icon" />
-              Message Owner
-            </Button>
-          </div>
+          </aside>
         </div>
       </div>
     </PageLayout>
@@ -97,17 +200,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import {
   Building2,
   Crown,
   CreditCard,
-  Settings,
   ExternalLink,
   MessageSquare,
   Loader2,
   AlertTriangle,
+  Users,
+  User,
+  Shield,
+  Info,
 } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import PageLayout from '@/components/PageLayout.vue';
@@ -122,10 +228,24 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 const org = ref<any>(null);
 
-const orgId = computed(() => route.params.id as string);
+const orgId = route.params.id as string;
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString();
+  return new Date(dateString).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
+const formatFullDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
 const loadOrgDetails = async () => {
@@ -133,7 +253,7 @@ const loadOrgDetails = async () => {
   error.value = null;
   
   try {
-    const response = await api.get(`/admin/organizations/${orgId.value}/details`);
+    const response = await api.get(`/admin/organizations/${orgId}/details`);
     if (response.data.success) {
       org.value = response.data.organization;
     } else {
@@ -147,11 +267,15 @@ const loadOrgDetails = async () => {
 };
 
 const navigateToOrgPage = () => {
-  router.push(`/organizations/${orgId.value}`);
+  router.push(`/organization/${orgId}`);
 };
 
 const messageOwner = () => {
   toast('Messaging feature coming soon');
+};
+
+const navigateToUserProfile = (userId: number) => {
+  router.push(`/admin/users/${userId}`);
 };
 
 onMounted(() => {
@@ -160,194 +284,619 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.admin-org-detail {
+/* ===== Page Container ===== */
+.admin-org-detail-page {
   width: 100%;
   min-height: 100%;
 }
 
-.admin-org-detail__loading,
-.admin-org-detail__error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  padding: 3rem;
-  text-align: center;
-}
-
-.admin-org-detail__spinner {
-  width: 2rem;
-  height: 2rem;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.admin-org-detail__error-icon {
-  width: 3rem;
-  height: 3rem;
-  color: var(--destructive);
-}
-
-.admin-org-detail__content {
+.org-content {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
   padding: 1.5rem;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
+  width: 100%;
 }
 
-.admin-org-detail__header-card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1.5rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 2rem;
+.org-content--loading,
+.org-content--empty {
+  justify-content: center;
+  align-items: center;
+  min-height: 400px;
 }
 
-.admin-org-detail__header-info {
-  display: flex;
-  gap: 1rem;
-  flex: 1;
-}
-
-.admin-org-detail__logo {
-  width: 64px;
-  height: 64px;
-  border-radius: 8px;
-  background: var(--muted);
+/* ===== Loading State ===== */
+.loading-spinner {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.admin-org-detail__logo-icon {
-  width: 32px;
-  height: 32px;
-  color: var(--muted-foreground);
+.loading-spinner__icon {
+  width: 40px;
+  height: 40px;
+  color: var(--sidebar-text-muted);
+  animation: spin 1s linear infinite;
 }
 
-.admin-org-detail__header-text {
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== Empty State ===== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.empty-state__icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  background-color: var(--sidebar-hover);
+  border-radius: 16px;
+  margin-bottom: 1.5rem;
+}
+
+.empty-state__icon {
+  width: 36px;
+  height: 36px;
+  color: var(--sidebar-text-muted);
+}
+
+.empty-state__title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  margin: 0 0 0.5rem;
+}
+
+.empty-state__description {
+  font-size: 0.875rem;
+  color: var(--sidebar-text-muted);
+  margin: 0 0 1.5rem;
+  max-width: 320px;
+  line-height: 1.5;
+}
+
+/* ===== Organization Header ===== */
+.org-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+@media (max-width: 640px) {
+  .org-header {
+    flex-direction: column;
+  }
+}
+
+.org-header__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
   flex: 1;
 }
 
-.admin-org-detail__name {
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin: 0 0 0.25rem;
+.org-avatar {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  background: var(--sidebar-surface);
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
-.admin-org-detail__description {
-  color: var(--muted-foreground);
-  margin: 0 0 0.75rem;
+.org-avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
-.admin-org-detail__badges {
+.org-avatar__fallback {
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  color: var(--sidebar-text-muted);
+}
+
+.org-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.org-meta__top {
   display: flex;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.625rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.375rem;
 }
 
-.admin-org-detail__badge {
+.org-name {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.tier-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.75rem;
+  gap: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  background: rgba(6, 182, 212, 0.12);
   border-radius: 4px;
-  font-size: 0.75rem;
+  font-size: 0.625rem;
   font-weight: 600;
-  background: var(--accent);
-  color: var(--accent-foreground);
+  color: var(--sidebar-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
-.admin-org-detail__badge-icon {
-  width: 12px;
-  height: 12px;
+.tier-badge__icon {
+  flex-shrink: 0;
 }
 
-.admin-org-detail__header-stats {
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-badge--active {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+
+.status-badge--none {
+  background: rgba(107, 114, 128, 0.15);
+  color: #9ca3af;
+}
+
+.status-badge__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+.status-badge--active .status-badge__dot {
+  background: #10b981;
+  box-shadow: 0 0 4px rgba(16, 185, 129, 0.6);
+}
+
+.status-badge--none .status-badge__dot {
+  background: #6b7280;
+}
+
+.org-bio {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  margin: 0;
+  line-height: 1.5;
+  max-width: 420px;
+}
+
+.org-stats {
   display: flex;
   gap: 2rem;
 }
 
-.admin-org-detail__stat {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+.stat {
+  text-align: center;
 }
 
-.admin-org-detail__stat-label {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
+.stat__value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.stat__label {
+  display: block;
+  font-size: 0.5625rem;
+  color: var(--sidebar-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  margin-top: 0.25rem;
 }
 
-.admin-org-detail__stat-value {
-  font-size: 1.25rem;
-  font-weight: 700;
-}
-
-.admin-org-detail__card {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 1.5rem;
-}
-
-.admin-org-detail__card-title {
+/* Header Action Buttons */
+.org-header-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 1.125rem;
-  font-weight: 600;
-  margin: 0 0 1rem;
 }
 
-.admin-org-detail__card-icon {
+.org-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 32px;
+  padding: 0 0.875rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.org-action-btn--primary {
+  background-color: var(--sidebar-accent);
+  color: var(--sidebar-bg);
+  border: none;
+}
+
+.org-action-btn--primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.org-action-btn--outline {
+  background: transparent;
+  border: 1px solid var(--sidebar-border);
+  color: var(--sidebar-text);
+}
+
+.org-action-btn--outline:hover:not(:disabled) {
+  border-color: var(--sidebar-accent);
+  color: var(--sidebar-accent);
+}
+
+.org-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.org-action-btn__icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ===== Main Layout ===== */
+.main-layout {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .main-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== Main Column ===== */
+.main-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ===== Section ===== */
+.section {
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+
+.section__header {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  margin-bottom: 1.25rem;
+}
+
+.section__header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+  flex-shrink: 0;
+}
+
+.section__header-icon svg {
   width: 20px;
   height: 20px;
 }
 
-.admin-org-detail__subscription {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+.section__header-icon--purple {
+  background-color: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+.section__header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.section__title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.section__subtitle {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  margin: 0.1875rem 0 0;
+}
+
+/* Owner Card */
+.owner-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 1rem;
 }
 
-.admin-org-detail__field {
+.owner-card__info {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.owner-card__avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--sidebar-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.owner-card__avatar-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--sidebar-text-muted);
+}
+
+.owner-card__details {
+  flex: 1;
+  min-width: 0;
+}
+
+.owner-card__name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+}
+
+.owner-card__email {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  margin-top: 0.125rem;
+}
+
+/* Members List */
+.members-list {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-}
-
-.admin-org-detail__field-label {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.admin-org-detail__field-value {
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.admin-org-detail__actions {
-  display: flex;
-  flex-wrap: wrap;
   gap: 0.75rem;
 }
 
-.admin-org-detail__action-icon {
-  width: 16px;
-  height: 16px;
+.member-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.875rem;
+  background: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+}
+
+.member-card__info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.member-card__avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  background: var(--sidebar-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.member-card__avatar svg {
+  width: 18px;
+  height: 18px;
+  color: var(--sidebar-text-muted);
+}
+
+.member-card__details {
+  flex: 1;
+  min-width: 0;
+}
+
+.member-card__name {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+}
+
+.member-card__email {
+  font-size: 0.6875rem;
+  color: var(--sidebar-text-muted);
+  margin-top: 0.125rem;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text);
+}
+
+.role-badge--owner {
+  background: rgba(99, 102, 241, 0.15);
+  color: #818cf8;
+}
+
+.role-badge--admin {
+  background: rgba(168, 85, 247, 0.15);
+  color: #a78bfa;
+}
+
+/* ===== Sidebar Column ===== */
+.sidebar-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  position: sticky;
+  top: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+  .sidebar-column {
+    position: static;
+  }
+}
+
+/* Sidebar Card */
+.sidebar-card {
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.sidebar-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 1rem 1.125rem;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.sidebar-card__icon {
+  width: 18px;
+  height: 18px;
+  color: var(--sidebar-accent);
+}
+
+.sidebar-card__title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  margin: 0;
+}
+
+.sidebar-card__content {
+  padding: 1rem 1.125rem;
+}
+
+/* Info List */
+.info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.info-list-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.info-list-item__label {
+  font-size: 0.6875rem;
+  color: var(--sidebar-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.info-list-item__value {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+}
+
+.info-list-item__value--mono {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: var(--sidebar-accent);
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .org-content {
+    padding: 1rem;
+    gap: 1.25rem;
+  }
+
+  .org-header {
+    flex-direction: column;
+  }
+
+  .org-header__main {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .org-name {
+    font-size: 1.125rem;
+  }
+
+  .org-meta__top {
+    justify-content: center;
+  }
+
+  .org-stats {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .stat {
+    min-width: 80px;
+  }
+
+  .main-layout {
+    gap: 1rem;
+  }
 }
 </style>

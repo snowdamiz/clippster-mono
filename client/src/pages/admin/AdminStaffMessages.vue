@@ -120,10 +120,12 @@
         <div class="admin-staff-messages__dialog-content">
           <div class="admin-staff-messages__dialog-field">
             <label>Type</label>
-            <select v-model="newConversationType">
-              <option value="direct">Direct Message</option>
-              <option value="group">Group Chat</option>
-            </select>
+            <CustomDropdown
+              v-model="newConversationType"
+              :options="conversationTypeOptions"
+              placeholder="Select type"
+              trigger-class="admin-staff-messages__dropdown-trigger"
+            />
           </div>
           
           <div v-if="newConversationType === 'group'" class="admin-staff-messages__dialog-field">
@@ -133,11 +135,12 @@
           
           <div class="admin-staff-messages__dialog-field">
             <label>{{ newConversationType === 'direct' ? 'Recipient' : 'Participants' }}</label>
-            <select v-model="selectedStaffMembers" :multiple="newConversationType === 'group'">
-              <option v-for="staff in staffMembers" :key="staff.id" :value="staff.id">
-                {{ staff.name || staff.email }}
-              </option>
-            </select>
+            <CustomDropdown
+              v-model="selectedStaffMembers"
+              :options="staffMemberOptions"
+              :placeholder="newConversationType === 'direct' ? 'Select recipient' : 'Select participants'"
+              trigger-class="admin-staff-messages__dropdown-trigger"
+            />
           </div>
           
           <div class="admin-staff-messages__dialog-actions">
@@ -155,12 +158,18 @@ import { ref, computed, onMounted, nextTick } from 'vue';
 import { MessagesSquare, Plus, Send, Loader2 } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import CustomDropdown from '@/components/CustomDropdown.vue';
 import PageLayout from '@/components/PageLayout.vue';
 import { useAuthStore } from '@/stores/auth';
 import api from '@/services/api';
 
 const authStore = useAuthStore();
 const currentUserId = computed(() => authStore.user?.id);
+
+const conversationTypeOptions = [
+  { label: 'Direct Message', value: 'direct' },
+  { label: 'Group Chat', value: 'group' },
+];
 
 const conversations = ref<any[]>([]);
 const selectedConversation = ref<any>(null);
@@ -173,14 +182,21 @@ const messagesContainer = ref<HTMLElement | null>(null);
 const showNewConversationDialog = ref(false);
 const newConversationType = ref<'direct' | 'group'>('direct');
 const newConversationName = ref('');
-const selectedStaffMembers = ref<number[]>([]);
+const selectedStaffMembers = ref<number | number[]>(0);
 const staffMembers = ref<any[]>([]);
+
+const staffMemberOptions = computed(() => 
+  staffMembers.value.map(staff => ({
+    label: staff.name || staff.email,
+    value: staff.id
+  }))
+);
 
 const canCreateConversation = computed(() => {
   if (newConversationType.value === 'direct') {
-    return selectedStaffMembers.value.length === 1;
+    return typeof selectedStaffMembers.value === 'number' && selectedStaffMembers.value > 0;
   } else {
-    return newConversationName.value.trim() && selectedStaffMembers.value.length > 0;
+    return newConversationName.value.trim() && Array.isArray(selectedStaffMembers.value) && selectedStaffMembers.value.length > 0;
   }
 });
 
@@ -248,12 +264,12 @@ const createConversation = async () => {
     let response;
     if (newConversationType.value === 'direct') {
       response = await api.post('/staff/conversations/direct', {
-        target_user_id: selectedStaffMembers.value[0]
+        target_user_id: selectedStaffMembers.value
       });
     } else {
       response = await api.post('/staff/conversations/group', {
         name: newConversationName.value,
-        participant_ids: selectedStaffMembers.value
+        participant_ids: Array.isArray(selectedStaffMembers.value) ? selectedStaffMembers.value : [selectedStaffMembers.value]
       });
     }
     
@@ -261,7 +277,7 @@ const createConversation = async () => {
     showNewConversationDialog.value = false;
     newConversationType.value = 'direct';
     newConversationName.value = '';
-    selectedStaffMembers.value = [];
+    selectedStaffMembers.value = 0;
     
     selectConversation(response.data.conversation);
   } catch (error) {
@@ -537,16 +553,36 @@ onMounted(() => {
   margin-bottom: 0.5rem;
 }
 
-.admin-staff-messages__dialog-field input,
-.admin-staff-messages__dialog-field select {
+.admin-staff-messages__dialog-field input {
   width: 100%;
   padding: 0.5rem;
   border: 1px solid var(--border);
   border-radius: 0.375rem;
 }
 
-.admin-staff-messages__dialog-field select[multiple] {
-  min-height: 150px;
+/* Dropdown trigger styling */
+:deep(.admin-staff-messages__dropdown-trigger) {
+  height: 38px !important;
+  padding: 0 0.75rem !important;
+  background-color: var(--sidebar-surface) !important;
+  border: 1px solid var(--sidebar-border) !important;
+  border-radius: 6px !important;
+  font-size: 0.875rem !important;
+  transition: all 150ms ease !important;
+}
+
+:deep(.admin-staff-messages__dropdown-trigger:hover) {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+:deep(.admin-staff-messages__dropdown-trigger span) {
+  color: var(--sidebar-text) !important;
+}
+
+:deep(.admin-staff-messages__dropdown-trigger svg) {
+  width: 14px !important;
+  height: 14px !important;
+  color: var(--sidebar-text-muted) !important;
 }
 
 .admin-staff-messages__dialog-actions {

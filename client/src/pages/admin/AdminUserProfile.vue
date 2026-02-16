@@ -6,6 +6,7 @@
       :show-header="true"
       :show-back-button="true"
       :icon="User"
+      :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Users', path: '/admin/users' }, { label: userName || 'Profile' }]"
     >
       <!-- Loading State -->
       <div v-if="loading" class="admin-user-profile__loading">
