@@ -10,6 +10,7 @@ defmodule ClippsterServer.Accounts.User do
     field :provider, :string, default: "wallet"
     field :provider_id, :string
     field :is_admin, :boolean, default: false
+    field :is_moderator, :boolean, default: false
 
     # Email auth fields
     field :password, :string, virtual: true
@@ -49,6 +50,22 @@ defmodule ClippsterServer.Accounts.User do
 
     # Activity tracking
     field :last_active_at, :utc_datetime
+
+    # Platform-level restrictions
+    field :is_restricted, :boolean, default: false
+    field :restricted_at, :utc_datetime
+    field :restricted_reason, :string
+    field :scheduled_deletion_at, :utc_datetime
+
+    # Per-user discount tracking
+    field :admin_discount_percent, :integer
+    field :admin_discount_months_remaining, :integer
+    field :admin_discount_applied_at, :utc_datetime
+    field :admin_discount_stripe_coupon_id, :string
+
+    # Moderator discount
+    field :mod_discount_enabled, :boolean, default: false
+    field :mod_discount_stripe_coupon_id, :string
 
     timestamps(type: :utc_datetime)
   end
@@ -219,6 +236,43 @@ defmodule ClippsterServer.Accounts.User do
   def admin_changeset(user, attrs) do
     user
     |> cast(attrs, [:is_admin])
+  end
+
+  @doc """
+  Changeset for moderator operations (promoting/demoting moderator).
+  """
+  def moderator_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:is_moderator])
+  end
+
+  @doc """
+  Changeset for platform-level user restrictions.
+  """
+  def restriction_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:is_restricted, :restricted_at, :restricted_reason, :scheduled_deletion_at])
+  end
+
+  @doc """
+  Changeset for admin-applied user discounts.
+  """
+  def discount_changeset(user, attrs) do
+    user
+    |> cast(attrs, [
+      :admin_discount_percent,
+      :admin_discount_months_remaining,
+      :admin_discount_applied_at,
+      :admin_discount_stripe_coupon_id
+    ])
+  end
+
+  @doc """
+  Changeset for moderator discount toggle.
+  """
+  def mod_discount_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:mod_discount_enabled, :mod_discount_stripe_coupon_id])
   end
 
   @doc """

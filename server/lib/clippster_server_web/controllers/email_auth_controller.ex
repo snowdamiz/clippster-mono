@@ -54,6 +54,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
           "provider" => "email",
           "user_id" => user.id,
           "is_admin" => user.is_admin,
+          "is_moderator" => user.is_moderator,
           "email" => user.email
         }
 
@@ -69,6 +70,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
                 email: user.email,
                 name: user.name,
                 is_admin: user.is_admin,
+                is_moderator: user.is_moderator,
                 account_type: user.account_type,
                 owned_organization_id: user.owned_organization_id,
                 created_by_organization_id: user.created_by_organization_id,
@@ -130,6 +132,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
           "provider" => "email",
           "user_id" => user.id,
           "is_admin" => user.is_admin,
+          "is_moderator" => user.is_moderator,
           "email" => user.email
         }
 
@@ -168,6 +171,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
           "provider" => "email",
           "user_id" => user.id,
           "is_admin" => user.is_admin,
+          "is_moderator" => user.is_moderator,
           "email" => user.email
         }
 
@@ -183,6 +187,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
                 email: user.email,
                 name: user.name,
                 is_admin: user.is_admin,
+                is_moderator: user.is_moderator,
                 account_type: user.account_type,
                 owned_organization_id: user.owned_organization_id,
                 created_by_organization_id: user.created_by_organization_id,

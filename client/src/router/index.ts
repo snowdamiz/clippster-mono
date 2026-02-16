@@ -338,6 +338,21 @@ const router = createRouter({
           name: 'admin-affiliate-detail',
           component: () => import('@/pages/admin/AdminAffiliateDetail.vue'),
         },
+        {
+          path: 'users/:id',
+          name: 'admin-user-profile',
+          component: () => import('@/pages/admin/AdminUserProfile.vue'),
+        },
+        {
+          path: 'organizations/:id',
+          name: 'admin-org-detail',
+          component: () => import('@/pages/admin/AdminOrgDetail.vue'),
+        },
+        {
+          path: 'customer-service',
+          name: 'admin-customer-service',
+          component: () => import('@/pages/admin/AdminCustomerService.vue'),
+        },
       ],
     },
     // Affiliate dashboard (authenticated, affiliate users only)

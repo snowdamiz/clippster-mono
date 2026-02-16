@@ -51,7 +51,9 @@ defmodule ClippsterServerWeb.AuthPlug do
             |> assign(:current_user_id, user_id)
             |> assign(:current_user, user)
             |> assign(:current_wallet_address, claims["wallet_address"])
-            |> assign(:is_admin, claims["is_admin"])
+            |> assign(:is_admin, user.is_admin)
+            |> assign(:is_moderator, user.is_moderator)
+            |> assign(:is_restricted, user.is_restricted)
             |> assign(:current_user_claims, claims)
         end
 

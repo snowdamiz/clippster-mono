@@ -760,4 +760,174 @@ defmodule ClippsterServer.Accounts do
 
     updated_user
   end
+
+  # ============================================
+  # Moderator Management
+  # ============================================
+
+  @doc """
+  Promotes a user to moderator.
+  Validates that user is not on free tier.
+  """
+  def promote_user_to_moderator(user_id) do
+    user = get_user(user_id)
+
+    cond do
+      is_nil(user) ->
+        {:error, :user_not_found}
+
+      user.is_moderator ->
+        {:error, :already_moderator}
+
+      user.subscription_tier == nil or user.subscription_status != "active" ->
+        {:error, :must_have_active_subscription}
+
+      true ->
+        user
+        |> User.moderator_changeset(%{is_moderator: true})
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Demotes a moderator to regular user.
+  """
+  def demote_moderator(user_id) do
+    user = get_user(user_id)
+
+    cond do
+      is_nil(user) ->
+        {:error, :user_not_found}
+
+      not user.is_moderator ->
+        {:error, :not_moderator}
+
+      true ->
+        user
+        |> User.moderator_changeset(%{is_moderator: false})
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Lists all admins and moderators (for customer service routing).
+  """
+  def list_admins_and_moderators do
+    User
+    |> where([u], u.is_admin == true or u.is_moderator == true)
+    |> Repo.all()
+  end
+
+  # ============================================
+  # User Restrictions
+  # ============================================
+
+  @doc """
+  Restricts a user platform-wide.
+  """
+  def restrict_user(user_id, reason) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> User.restriction_changeset(%{
+        is_restricted: true,
+        restricted_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        restricted_reason: reason
+      })
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Unrestricts a user.
+  """
+  def unrestrict_user(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> User.restriction_changeset(%{
+        is_restricted: false,
+        restricted_at: nil,
+        restricted_reason: nil
+      })
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Schedules a user for deletion at end of billing cycle.
+  """
+  def schedule_user_deletion(user_id, deletion_date) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> User.restriction_changeset(%{scheduled_deletion_at: deletion_date})
+      |> Repo.update()
+    end
+  end
+
+  # ============================================
+  # User Discounts
+  # ============================================
+
+  @doc """
+  Applies an admin discount to a user.
+  """
+  def apply_admin_discount(user_id, percent_off, months) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> User.discount_changeset(%{
+        admin_discount_percent: percent_off,
+        admin_discount_months_remaining: months,
+        admin_discount_applied_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Enables moderator discount for a user.
+  """
+  def enable_mod_discount(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> User.mod_discount_changeset(%{mod_discount_enabled: true})
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Disables moderator discount for a user.
+  """
+  def disable_mod_discount(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> User.mod_discount_changeset(%{
+        mod_discount_enabled: false,
+        mod_discount_stripe_coupon_id: nil
+      })
+      |> Repo.update()
+    end
+  end
 end

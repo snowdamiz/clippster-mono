@@ -10,6 +10,10 @@
         <span v-if="loading" class="admin-hub__role admin-hub__role--loading">
           <Loader2 class="admin-hub__role-spinner" />
         </span>
+        <span v-else-if="isModerator && !isAdmin" class="admin-hub__role admin-hub__role--moderator">
+          <Shield class="admin-hub__role-icon" />
+          Moderator
+        </span>
         <span v-else class="admin-hub__role admin-hub__role--admin">
           <Shield class="admin-hub__role-icon" />
           Admin
@@ -168,12 +172,19 @@
     AlertTriangle,
     Percent,
     Handshake,
+    Headset,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
+  import { useAuthStore } from '@/stores/auth';
 
+  const authStore = useAuthStore();
   const loading = ref(false);
   const error = ref<string | null>(null);
+
+  // Role checks
+  const isAdmin = computed(() => authStore.user?.is_admin || false);
+  const isModerator = computed(() => authStore.user?.is_moderator || false);
 
   interface Tool {
     id: string;
@@ -185,94 +196,134 @@
     statLabel?: string;
   }
 
-  const usersTools = computed<Tool[]>(() => [
-    {
-      id: 'users',
-      title: 'Users',
-      description: 'Manage user accounts, credits, and subscriptions',
-      icon: Users,
-      route: '/admin/users',
-    },
-    {
-      id: 'organizations',
-      title: 'Organizations',
-      description: 'Manage organizations and their credits',
-      icon: Building2,
-      route: '/admin/organizations',
-    },
-    {
-      id: 'org-applications',
-      title: 'Org Applications',
-      description: 'Review organization account applications',
-      icon: FileText,
-      route: '/admin/org-applications',
-    },
-  ]);
+  // Admin-only tools
+  const usersTools = computed<Tool[]>(() => {
+    const tools: Tool[] = [];
+    
+    // Admin-only: Users and Organizations management
+    if (isAdmin.value) {
+      tools.push(
+        {
+          id: 'users',
+          title: 'Users',
+          description: 'Manage user accounts, credits, and subscriptions',
+          icon: Users,
+          route: '/admin/users',
+        },
+        {
+          id: 'organizations',
+          title: 'Organizations',
+          description: 'Manage organizations and their credits',
+          icon: Building2,
+          route: '/admin/organizations',
+        }
+      );
+    }
+    
+    // Mod+Admin: Org Applications
+    if (isAdmin.value || isModerator.value) {
+      tools.push({
+        id: 'org-applications',
+        title: 'Org Applications',
+        description: 'Review organization account applications',
+        icon: FileText,
+        route: '/admin/org-applications',
+      });
+    }
+    
+    return tools;
+  });
 
-  const contentTools = computed<Tool[]>(() => [
-    {
-      id: 'bug-reports',
-      title: 'Bug Reports',
-      description: 'Track and manage reported issues',
-      icon: FileText,
-      route: '/admin/bug-reports',
-    },
-    {
-      id: 'ai-usage',
-      title: 'AI Usage',
-      description: 'Monitor AI service consumption and performance',
-      icon: Activity,
-      route: '/admin/ai-usage',
-    },
-    {
-      id: 'analytics',
-      title: 'Analytics',
-      description: 'Track key user actions and events',
-      icon: BarChart3,
-      route: '/admin/analytics',
-    },
-  ]);
+  // Mod+Admin tools
+  const contentTools = computed<Tool[]>(() => {
+    const tools: Tool[] = [];
+    
+    if (isAdmin.value || isModerator.value) {
+      tools.push(
+        {
+          id: 'bug-reports',
+          title: 'Bug Reports',
+          description: 'Track and manage reported issues',
+          icon: FileText,
+          route: '/admin/bug-reports',
+        },
+        {
+          id: 'ai-usage',
+          title: 'AI Usage',
+          description: 'Monitor AI service consumption and performance',
+          icon: Activity,
+          route: '/admin/ai-usage',
+        },
+        {
+          id: 'analytics',
+          title: 'Analytics',
+          description: 'Track key user actions and events',
+          icon: BarChart3,
+          route: '/admin/analytics',
+        },
+        {
+          id: 'customer-service',
+          title: 'Customer Service',
+          description: 'Manage support conversations and tickets',
+          icon: Headset,
+          route: '/admin/customer-service',
+        }
+      );
+    }
+    
+    return tools;
+  });
 
-  const revenueTools = computed<Tool[]>(() => [
-    {
-      id: 'affiliates',
-      title: 'Affiliates',
-      description: 'Manage affiliate accounts, commissions, and payouts',
-      icon: Handshake,
-      route: '/admin/affiliates',
-    },
-  ]);
+  // Admin-only revenue tools
+  const revenueTools = computed<Tool[]>(() => {
+    if (!isAdmin.value) return [];
+    
+    return [
+      {
+        id: 'affiliates',
+        title: 'Affiliates',
+        description: 'Manage affiliate accounts, commissions, and payouts',
+        icon: Handshake,
+        route: '/admin/affiliates',
+      },
+    ];
+  });
 
-  const systemTools = computed<Tool[]>(() => [
-    {
-      id: 'beta-codes',
-      title: 'Beta Codes',
-      description: 'Generate and manage beta access codes',
-      icon: KeyRound,
-      route: '/admin/beta-codes',
-    },
-    {
-      id: 'discount-codes',
-      title: 'Discount Codes',
-      description: 'Create and manage promotional discount codes',
-      icon: Percent,
-      route: '/admin/discount-codes',
-    },
-    {
-      id: 'waitlist',
-      title: 'Waitlist',
-      description: 'Users who signed up for early access',
-      icon: UserPlus,
-      route: '/admin/waitlist',
-    },
-    {
-      id: 'settings',
-      title: 'Settings',
-      description: 'Feature flags and UI configuration',
-      icon: Settings,
-      route: '/admin/settings',
-    },
-  ]);
+  // Admin-only system tools
+  const systemTools = computed<Tool[]>(() => {
+    if (!isAdmin.value) return [];
+    
+    return [
+      {
+        id: 'beta-codes',
+        title: 'Beta Codes',
+        description: 'Generate and manage beta access codes',
+        icon: KeyRound,
+        route: '/admin/beta-codes',
+      },
+      {
+        id: 'discount-codes',
+        title: 'Discount Codes',
+        description: 'Create and manage promotional discount codes',
+        icon: Percent,
+        route: '/admin/discount-codes',
+      },
+      {
+        id: 'waitlist',
+        title: 'Waitlist',
+        description: 'Users who signed up for early access',
+        icon: UserPlus,
+        route: '/admin/waitlist',
+      },
+      {
+        id: 'settings',
+        title: 'Settings',
+        description: 'Feature flags and UI configuration',
+        icon: Settings,
+        route: '/admin/settings',
+      },
+    ];
+  });
 
   const loadData = async () => {
     error.value = null;

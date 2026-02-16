@@ -140,7 +140,8 @@ defmodule ClippsterServerWeb.AuthController do
         "exp" => DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.to_unix(),
         "wallet_address" => public_key,
         "user_id" => user.id,
-        "is_admin" => user.is_admin
+        "is_admin" => user.is_admin,
+        "is_moderator" => user.is_moderator
       }
 
       case TokenGenerator.generate_token(token_claims) do
@@ -155,6 +156,7 @@ defmodule ClippsterServerWeb.AuthController do
               id: user.id,
               wallet_address: user.wallet_address,
               is_admin: user.is_admin,
+              is_moderator: user.is_moderator,
               account_type: user.account_type,
               owned_organization_id: user.owned_organization_id,
               created_by_organization_id: user.created_by_organization_id,
@@ -375,6 +377,7 @@ defmodule ClippsterServerWeb.AuthController do
                     "provider_id" => google_user["id"],
                     "user_id" => user.id,
                     "is_admin" => user.is_admin,
+                    "is_moderator" => user.is_moderator,
                     "email" => user.email
                   }
 

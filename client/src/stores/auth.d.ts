@@ -7,6 +7,7 @@ export interface AuthUser {
   name?: string
   avatar_url?: string
   is_admin: boolean
+  is_moderator?: boolean
   is_affiliate?: boolean
   account_type?: 'personal' | 'organization'
   owned_organization_id?: string | null

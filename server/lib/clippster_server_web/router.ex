@@ -42,6 +42,21 @@ defmodule ClippsterServerWeb.Router do
     plug(ClippsterServerWeb.AdminPlug)
   end
 
+  pipeline :api_mod do
+    plug(:accepts, ["json"])
+
+    plug(CORSPlug,
+      origin: &__MODULE__.cors_origins/0,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      max_age: 86400,
+      credentials: true
+    )
+
+    plug(ClippsterServerWeb.AuthPlug)
+    plug(ClippsterServerWeb.ModeratorPlug)
+  end
+
   # Define CORS origins - must be specific origins (not "*") when Authorization header is used
   # as the browser treats requests with Authorization as credentialed requests
   def cors_origins do
@@ -919,10 +934,32 @@ defmodule ClippsterServerWeb.Router do
     pipe_through(:api_admin)
 
     get("/admin/users", AdminController, :list_users)
+    get("/admin/users/:user_id/profile", AdminController, :get_user_profile)
     get("/admin/ai-usage", AdminController, :get_ai_usage_stats)
     get("/admin/analytics", AnalyticsController, :stats)
     post("/admin/users/:user_id/promote", AdminController, :promote_user)
     put("/admin/users/:user_id/credits", AdminController, :update_user_credits)
+    
+    # Moderator management
+    post("/admin/users/:user_id/moderator", AdminController, :promote_to_moderator)
+    delete("/admin/users/:user_id/moderator", AdminController, :demote_moderator)
+    post("/admin/users/:user_id/mod-discount", AdminController, :enable_mod_discount)
+    delete("/admin/users/:user_id/mod-discount", AdminController, :disable_mod_discount)
+    
+    # User restrictions
+    post("/admin/users/:user_id/restrict", AdminController, :restrict_user)
+    delete("/admin/users/:user_id/restrict", AdminController, :unrestrict_user)
+    
+    # User discounts
+    post("/admin/users/:user_id/discount", AdminController, :apply_user_discount)
+    post("/admin/users/:user_id/free-month", AdminController, :grant_free_month)
+    
+    # User deletion
+    delete("/admin/users/:user_id", AdminController, :delete_user)
+    
+    # Moderator action logs
+    get("/admin/mod-logs", AdminController, :list_mod_logs)
+    get("/admin/mod-logs/:mod_id", AdminController, :get_mod_logs_for_user)
 
     # Admin subscription management
     post("/admin/users/:user_id/subscription", AdminController, :grant_subscription)
@@ -933,6 +970,7 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin organization management
     get("/admin/organizations", AdminController, :list_organizations)
+    get("/admin/organizations/:id/details", AdminController, :get_org_details)
     get("/admin/organizations/:organization_id/credits", AdminController, :get_org_credits)
     post("/admin/organizations/:organization_id/credits/add", AdminController, :add_org_credits)
     put("/admin/organizations/:organization_id/credits", AdminController, :set_org_credits)
