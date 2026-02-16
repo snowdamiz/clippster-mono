@@ -113,6 +113,14 @@ async function fetchPumpFunLiveStatus(mintId: string): Promise<LiveStatus> {
     if (!response) {
       return { isLive: false };
     }
+
+    // Validate response is JSON before parsing (PumpFun API returns error text like "error code: 504" during outages)
+    const trimmed = response.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      // Non-JSON response (likely error text), silently return offline status
+      return { isLive: false };
+    }
+
     const data = JSON.parse(response);
     return {
       isLive: Boolean(data?.isLive),

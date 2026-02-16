@@ -285,6 +285,14 @@ export function useLivestreamViewer() {
       if (!response) {
         return { isLive: false };
       }
+
+      // Validate response is JSON before parsing (PumpFun API returns error text like "error code: 504" during outages)
+      const trimmed = response.trim();
+      if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        // Non-JSON response (likely error text), silently return offline status
+        return { isLive: false };
+      }
+
       const data = JSON.parse(response);
       return {
         isLive: Boolean(data?.isLive),
@@ -307,6 +315,13 @@ export function useLivestreamViewer() {
       if (!response) {
         throw new Error('Empty response from join API');
       }
+
+      // Validate response is JSON before parsing
+      const trimmed = response.trim();
+      if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        throw new Error('Invalid response format (not JSON)');
+      }
+
       return JSON.parse(response);
     } catch (error) {
       console.error('[LiveViewer] Join livestream error:', error);
@@ -318,15 +333,18 @@ export function useLivestreamViewer() {
     try {
       const response = await invoke<string>('get_livekit_regions', { token });
       if (response) {
-        const data = JSON.parse(response);
-        if (Array.isArray(data?.regions) && data.regions.length > 0) {
-          const sorted = [...data.regions].sort(
-            (a: any, b: any) => Number(a.distance || Infinity) - Number(b.distance || Infinity)
-          );
-          const regionUrl = sorted[0]?.url;
-          if (regionUrl) {
-            return regionUrl;
-          }
+        // Validate response is JSON before parsing
+        const trimmed = response.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          const data = JSON.parse(response);
+          if (Array.isArray(data?.regions) && data.regions.length > 0) {
+            const sorted = [...data.regions].sort(
+              (a: any, b: any) => Number(a.distance || Infinity) - Number(b.distance || Infinity)
+            );
+            const regionUrl = sorted[0]?.url;
+            if (regionUrl) {
+              return regionUrl;
+            }
         }
       }
     } catch (error) {
