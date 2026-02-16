@@ -25,6 +25,7 @@ defmodule ClippsterServerWeb.Router do
     )
 
     plug(ClippsterServerWeb.AuthPlug)
+    plug(ClippsterServerWeb.EnsureOrgSubscription)
   end
 
   pipeline :api_admin do

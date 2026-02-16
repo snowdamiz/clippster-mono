@@ -16,44 +16,77 @@ defmodule ClippsterServerWeb.EnsureOrgSubscription do
 
   def init(opts), do: opts
 
+  # Subscription-related path segments that must remain accessible
+  # so orgs can actually subscribe, view tiers, validate promos, etc.
+  @exempt_segments ["subscription", "tiers", "checkout", "promo", "payments"]
+
   def call(conn, _opts) do
-    # Extract organization_id from path params
-    org_id = conn.params["id"] || conn.params["organization_id"]
+    case extract_org_id(conn) do
+      nil ->
+        # Not an org-scoped route, skip
+        conn
 
-    if is_nil(org_id) do
-      # No org ID in route, skip check
-      conn
-    else
-      org_id_int = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
-
-      case Organizations.get_organization(org_id_int) do
-        nil ->
+      org_id ->
+        if exempt_path?(conn.request_path) do
+          # Subscription-related endpoint, allow through
           conn
+        else
+          check_subscription(conn, org_id)
+        end
+    end
+  end
 
-        org ->
-          cond do
-            # Active or cancelled (still within period) - allow
-            org.subscription_status in ["active", "cancelled"] ->
-              conn
+  # Only extract org ID from paths that are actually org-scoped.
+  # Matches /api/organizations/:id/... and /api/organizations/:organization_id/...
+  defp extract_org_id(conn) do
+    path = conn.request_path
 
-            # Legacy org - grandfathered
-            org.subscription_status == "none" &&
-              org.inserted_at &&
-              DateTime.compare(org.inserted_at, @legacy_cutoff_date) == :lt ->
-              conn
+    cond do
+      String.contains?(path, "/organizations/") ->
+        # Use organization_id param first (most org routes), fall back to id
+        # (routes like /organizations/:id/subscription use :id)
+        conn.params["organization_id"] || conn.params["id"]
 
-            # No subscription or expired - block
-            true ->
-              conn
-              |> put_status(:forbidden)
-              |> Phoenix.Controller.json(%{
-                success: false,
-                error: "subscription_required",
-                message: "An active subscription is required to access this organization"
-              })
-              |> halt()
-          end
-      end
+      true ->
+        nil
+    end
+  end
+
+  defp exempt_path?(path) do
+    segments = String.split(path, "/")
+    Enum.any?(@exempt_segments, fn seg -> seg in segments end)
+  end
+
+  defp check_subscription(conn, org_id) do
+    org_id_int = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
+
+    case Organizations.get_organization(org_id_int) do
+      nil ->
+        conn
+
+      org ->
+        cond do
+          # Active or cancelled (still within period) - allow
+          org.subscription_status in ["active", "cancelled"] ->
+            conn
+
+          # Legacy org - grandfathered
+          org.subscription_status == "none" &&
+            org.inserted_at &&
+            DateTime.compare(org.inserted_at, @legacy_cutoff_date) == :lt ->
+            conn
+
+          # No subscription or expired - block
+          true ->
+            conn
+            |> put_status(:forbidden)
+            |> Phoenix.Controller.json(%{
+              success: false,
+              error: "subscription_required",
+              message: "An active subscription is required to access this organization"
+            })
+            |> halt()
+        end
     end
   end
 end
