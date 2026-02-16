@@ -664,7 +664,7 @@ async fn run_twitch_recorder(
         .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
         .stdin(ytdlp_stdout_std)       // Pipe yt-dlp output to FFmpeg
-        .stdout(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())  // FFmpeg writes HLS to files, not stdout. MUST be null to prevent pipe buffer deadlock on macOS.
         .stderr(std::process::Stdio::piped());
 
     println!("[TwitchRecorder] Starting ffmpeg HLS output to: {}", playlist_path.display());
