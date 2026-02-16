@@ -112,26 +112,31 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::WindowsAndMessaging::{
             SetWindowPos, GetWindowLongPtrW, SetWindowLongPtrW, BringWindowToTop,
-            HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SWP_NOACTIVATE,
-            WINDOW_EX_STYLE, GWL_EXSTYLE, WS_EX_TOPMOST, WS_EX_LAYERED
+            HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SWP_NOACTIVATE, SWP_FRAMECHANGED,
+            WINDOW_EX_STYLE, GWL_EXSTYLE, WS_EX_TOPMOST, WS_EX_LAYERED, WS_EX_TOOLWINDOW
         };
         
         if let Ok(hwnd) = window.hwnd() {
             unsafe {
                 let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
                 
-                // CRITICAL FIX FOR PRODUCTION BUILDS:
-                // Must use GetWindowLongPtrW to GET current styles, then SetWindowLongPtrW to SET new styles.
-                // Previous code was calling SetWindowLongPtrW(hwnd, GWL_EXSTYLE, 0) which REMOVED all styles!
+                // CRITICAL FIX FOR FULLSCREEN GAMES:
+                // Fullscreen games use exclusive fullscreen mode which places them in a different Z-order.
+                // WS_EX_TOOLWINDOW creates a tool window that can appear above fullscreen applications.
+                // This is the ONLY way to stay on top of fullscreen exclusive mode games.
                 
-                // Step 1: Get current extended window styles using GetWindowLongPtrW
+                // Step 1: Get current extended window styles
                 let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
                 
-                // Step 2: Add WS_EX_TOPMOST and WS_EX_LAYERED flags to existing styles
-                let new_ex_style = WINDOW_EX_STYLE(current_ex_style as u32) | WS_EX_TOPMOST | WS_EX_LAYERED;
+                // Step 2: Add WS_EX_TOPMOST, WS_EX_LAYERED, and WS_EX_TOOLWINDOW flags
+                // WS_EX_TOOLWINDOW is the KEY - it allows the window to appear above fullscreen apps
+                let new_ex_style = WINDOW_EX_STYLE(current_ex_style as u32) 
+                    | WS_EX_TOPMOST 
+                    | WS_EX_LAYERED 
+                    | WS_EX_TOOLWINDOW;
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style.0 as isize);
                 
-                // Step 3: Use SetWindowPos to apply the changes and ensure topmost ordering
+                // Step 3: Use SetWindowPos with SWP_FRAMECHANGED to force the window to redraw with new styles
                 let _ = SetWindowPos(
                     hwnd,
                     HWND_TOPMOST,
@@ -139,7 +144,7 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                     0,
                     0,
                     0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 );
                 
                 // Step 4: Bring window to top to ensure it's visible
