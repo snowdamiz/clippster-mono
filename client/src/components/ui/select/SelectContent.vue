@@ -38,7 +38,7 @@
         :class="
           cn(
             'p-1',
-            position === 'popper' && 'h-[--reka-select-trigger-height] w-full min-w-[--reka-select-trigger-width]'
+            position === 'popper' && 'w-full min-w-[--reka-select-trigger-width]'
           )
         "
       >
