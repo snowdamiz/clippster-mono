@@ -76,7 +76,6 @@ defmodule ClippsterServerWeb.Router do
     # Wallet authentication routes
     post("/auth/challenge", AuthController, :request_challenge)
     post("/auth/verify", AuthController, :verify_signature)
-    post("/auth/activity-ping", AuthController, :activity_ping)
 
     # Google OAuth routes
     get("/auth/google", AuthController, :google_request)
@@ -149,6 +148,9 @@ defmodule ClippsterServerWeb.Router do
 
     # Get current user info (refreshes user data from server)
     get("/auth/me", AuthController, :me)
+
+    # Activity tracking (requires auth)
+    post("/auth/activity-ping", AuthController, :activity_ping)
 
     # User restrictions
     get("/user/restrictions", RestrictionController, :get_user_restrictions)

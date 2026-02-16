@@ -65,37 +65,19 @@ defmodule ClippsterServerWeb.AuthController do
   @doc """
   Activity ping endpoint - updates user's last_active_at timestamp.
   Called periodically by the frontend to track user activity.
+  Requires authentication via AuthPlug.
   """
   def activity_ping(conn, _params) do
-    case get_user_from_token(conn) do
-      {:ok, user} ->
-        Accounts.update_last_active(user.id)
+    user = conn.assigns[:current_user]
+    
+    case Accounts.update_last_active(user.id) do
+      {:ok, _updated_user} ->
         json(conn, %{success: true})
-
-      {:error, _} ->
+      
+      {:error, _reason} ->
         conn
-        |> put_status(401)
-        |> json(%{success: false, error: "Unauthorized"})
-    end
-  end
-
-  defp get_user_from_token(conn) do
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> token] ->
-        case TokenGenerator.verify_token(token) do
-          {:ok, claims} ->
-            user_id = claims["user_id"]
-            case Accounts.get_user(user_id) do
-              nil -> {:error, :not_found}
-              user -> {:ok, user}
-            end
-
-          {:error, _} ->
-            {:error, :invalid_token}
-        end
-
-      _ ->
-        {:error, :no_token}
+        |> put_status(500)
+        |> json(%{success: false, error: "Failed to update activity"})
     end
   end
 
