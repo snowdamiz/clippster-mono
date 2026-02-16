@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted } from 'vue';
+import { onUnmounted } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import api from '@/services/api';
 
@@ -19,20 +19,23 @@ export function useActivityTracker() {
 
   const pingServer = async () => {
     if (!authStore.isAuthenticated) {
+      console.log('[ActivityTracker] User not authenticated, skipping ping');
       return;
     }
 
     // Check if user has been inactive
     const timeSinceLastActivity = Date.now() - lastActivityTime;
     if (timeSinceLastActivity > INACTIVITY_THRESHOLD) {
+      console.log('[ActivityTracker] User inactive, skipping ping');
       return; // Don't ping if user is inactive
     }
 
     try {
-      await api.post('/auth/activity-ping');
+      console.log('[ActivityTracker] Sending activity ping...');
+      const response = await api.post('/auth/activity-ping');
+      console.log('[ActivityTracker] Activity ping successful:', response.data);
     } catch (error) {
-      // Silently fail - not critical
-      console.debug('Activity ping failed:', error);
+      console.error('[ActivityTracker] Activity ping failed:', error);
     }
   };
 
@@ -41,10 +44,15 @@ export function useActivityTracker() {
   };
 
   const startTracking = () => {
+    console.log('[ActivityTracker] startTracking called, isAuthenticated:', authStore.isAuthenticated);
+    
     if (!authStore.isAuthenticated) {
+      console.log('[ActivityTracker] Not authenticated, skipping tracker initialization');
       return;
     }
 
+    console.log('[ActivityTracker] Initializing activity tracker...');
+    
     // Track user interactions
     window.addEventListener('mousemove', updateLastActivity);
     window.addEventListener('keydown', updateLastActivity);
@@ -53,8 +61,10 @@ export function useActivityTracker() {
 
     // Start periodic ping
     intervalId = window.setInterval(pingServer, PING_INTERVAL);
+    console.log('[ActivityTracker] Interval started, will ping every', PING_INTERVAL / 1000, 'seconds');
 
     // Initial ping
+    console.log('[ActivityTracker] Sending initial ping...');
     pingServer();
   };
 
@@ -69,10 +79,6 @@ export function useActivityTracker() {
     window.removeEventListener('click', updateLastActivity);
     window.removeEventListener('scroll', updateLastActivity);
   };
-
-  onMounted(() => {
-    startTracking();
-  });
 
   onUnmounted(() => {
     stopTracking();

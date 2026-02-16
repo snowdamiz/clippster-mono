@@ -94,7 +94,7 @@
       return;
     }
 
-    const result = await authStore.verifyEmailChange(token);
+    const result = await (authStore as any).verifyEmailChange(token);
 
     if (result.success) {
       success.value = true;
