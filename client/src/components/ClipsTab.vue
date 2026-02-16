@@ -2011,17 +2011,29 @@
       }
 
       // Get the project video file path
-      // Use clip's project_id (for clips from child segments) or fallback to props.projectId
-      const clipProjectId = clip.project_id || props.projectId;
-      if (!clipProjectId) {
-        throw new Error('No project ID available for clip');
-      }
-      const rawVideos = await getRawVideosByProjectId(clipProjectId);
-      if (rawVideos.length === 0) {
-        throw new Error('No project video found');
-      }
+      // Manual clips from livestreams have file_path directly (already extracted)
+      // Regular clips need to extract from raw_videos
+      let projectVideo: { file_path: string; duration?: number | null };
 
-      const projectVideo = rawVideos[0];
+      if (clip.file_path) {
+        // Manual clip - use the file_path directly (already an extracted video file)
+        console.log('[ClipsTab] Using manual clip file_path:', clip.file_path);
+        projectVideo = {
+          file_path: clip.file_path,
+          duration: clip.duration || undefined,
+        };
+      } else {
+        // Regular clip - get raw video from project
+        const clipProjectId = clip.project_id || props.projectId;
+        if (!clipProjectId) {
+          throw new Error('No project ID available for clip');
+        }
+        const rawVideos = await getRawVideosByProjectId(clipProjectId);
+        if (rawVideos.length === 0) {
+          throw new Error('No project video found');
+        }
+        projectVideo = rawVideos[0];
+      }
 
       // IMPORTANT: Reload segments from database to get latest edits from timeline
       // The clip object in props may have stale data if user edited segments on timeline

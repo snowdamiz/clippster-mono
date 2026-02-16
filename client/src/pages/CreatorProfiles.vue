@@ -1360,8 +1360,8 @@
     return orgProfiles.map((profile) => ({
       id: `org-${profile.id}`,
       name: profile.name,
-      description: profile.description,
-      profile_image_path: profile.profile_image_url,
+      description: profile.description ?? null,
+      profile_image_path: profile.profile_image_url ?? null,
       intro_id: profile.intro_id ? `org-asset-${profile.intro_id}` : null,
       outro_id: profile.outro_id ? `org-asset-${profile.outro_id}` : null,
       watermark_id: profile.watermark_id ? `org-asset-${profile.watermark_id}` : null,

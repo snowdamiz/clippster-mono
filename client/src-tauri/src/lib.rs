@@ -111,21 +111,27 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowPos, SetForegroundWindow, HWND_TOPMOST, 
-            SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SWP_NOACTIVATE
+            SetWindowPos, GetWindowLongPtrW, SetWindowLongPtrW, BringWindowToTop,
+            HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SWP_NOACTIVATE,
+            WINDOW_EX_STYLE, GWL_EXSTYLE, WS_EX_TOPMOST, WS_EX_LAYERED
         };
         
         if let Ok(hwnd) = window.hwnd() {
             unsafe {
                 let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
                 
-                // CRITICAL: Must call SetForegroundWindow first to gain permission
-                // for SetWindowPos to work above fullscreen apps in production builds.
-                // Per Microsoft docs: "To use SetWindowPos to bring a window to the top,
-                // the process that owns the window must have SetForegroundWindow permission."
-                let _ = SetForegroundWindow(hwnd);
+                // CRITICAL FIX FOR PRODUCTION BUILDS:
+                // Must use GetWindowLongPtrW to GET current styles, then SetWindowLongPtrW to SET new styles.
+                // Previous code was calling SetWindowLongPtrW(hwnd, GWL_EXSTYLE, 0) which REMOVED all styles!
                 
-                // Now set HWND_TOPMOST with SWP_NOACTIVATE to stay on top without stealing focus
+                // Step 1: Get current extended window styles using GetWindowLongPtrW
+                let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+                
+                // Step 2: Add WS_EX_TOPMOST and WS_EX_LAYERED flags to existing styles
+                let new_ex_style = WINDOW_EX_STYLE(current_ex_style as u32) | WS_EX_TOPMOST | WS_EX_LAYERED;
+                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style.0 as isize);
+                
+                // Step 3: Use SetWindowPos to apply the changes and ensure topmost ordering
                 let _ = SetWindowPos(
                     hwnd,
                     HWND_TOPMOST,
@@ -135,6 +141,9 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                     0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
                 );
+                
+                // Step 4: Bring window to top to ensure it's visible
+                let _ = BringWindowToTop(hwnd);
             }
         }
     }

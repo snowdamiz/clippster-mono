@@ -48,6 +48,7 @@ type ActiveSessionsMap = Map<string, LiveSession>;
 type FailedSessionsMap = Map<string, number>;
 type MonitoredStreamersMap = Map<string, MonitoredStreamerEntry>;
 type DvrSessionsMap = Map<string, { mintId: string }>;
+type ActiveViewerSession = { streamerId: string; isAtLiveEdge: boolean; isWatching: boolean };
 
 const activeSessions = ref<ActiveSessionsMap>(new Map());
 const failedSessions = ref<FailedSessionsMap>(new Map()); // streamerId -> timestamp
@@ -113,6 +114,14 @@ async function fetchPumpFunLiveStatus(mintId: string): Promise<LiveStatus> {
     if (!response) {
       return { isLive: false };
     }
+
+    // Validate response is JSON before parsing (PumpFun API returns error text like "error code: 504" during outages)
+    const trimmed = response.trim();
+    if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+      // Non-JSON response (likely error text), silently return offline status
+      return { isLive: false };
+    }
+
     const data = JSON.parse(response);
     return {
       isLive: Boolean(data?.isLive),
@@ -391,11 +400,31 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
 
 // Handle DVR cleanup when stream ends (for watch-only DVR sessions)
 async function handleDvrStreamEnd(streamerId: string, mintId: string) {
+  // Check if user is actively watching and not at live edge
+  const viewerSession = activeViewerSessions.value.get(streamerId);
+  if (viewerSession && viewerSession.isWatching && !viewerSession.isAtLiveEdge) {
+    console.log('[LiveMonitor] User is watching behind live edge, preserving DVR for:', mintId);
+    return; // Don't cleanup - user is watching old content
+  }
+
   // Check for Kick DVR session first
   const kickSession = kickDvrSessions.value.get(streamerId);
   if (kickSession) {
     console.log('[LiveMonitor] Cleaning up Kick DVR session for', mintId);
     await stopKickDvrRecording(streamerId);
+
+    // Also remove from general DVR sessions
+    updateDvrSessionsMap((map) => {
+      map.delete(streamerId);
+    });
+    return;
+  }
+
+  // Check for Twitch DVR session
+  const twitchSession = twitchDvrSessions.value.get(streamerId);
+  if (twitchSession) {
+    console.log('[LiveMonitor] Cleaning up Twitch DVR session for', mintId);
+    await stopTwitchDvrRecording(streamerId);
 
     // Also remove from general DVR sessions
     updateDvrSessionsMap((map) => {
@@ -472,12 +501,72 @@ async function startDvrRecordingForStreamer(streamer: MonitoredStreamer): Promis
 // Track Kick DVR sessions separately (they use yt-dlp, not LiveKit)
 // Key: streamerId, Value: { mintId, sessionId, outputDir }
 type KickDvrSession = { mintId: string; sessionId: string; outputDir: string };
-const kickDvrSessions = ref<Map<string, KickDvrSession>>(new Map());
+const kickDvrSessions = ref<Map<string, { mintId: string; channelSlug: string; sessionId: string; outputDir: string }>>(new Map());
 
 // Track Twitch DVR sessions separately (they use yt-dlp, not LiveKit)
 // Key: streamerId, Value: { mintId, sessionId, outputDir }
 type TwitchDvrSession = { mintId: string; sessionId: string; outputDir: string };
-const twitchDvrSessions = ref<Map<string, TwitchDvrSession>>(new Map());
+const twitchDvrSessions = ref<Map<string, { mintId: string; channelName: string; sessionId: string; outputDir: string }>>(new Map());
+
+// Track active viewer sessions to prevent cleanup when user is watching
+const activeViewerSessions = ref<Map<string, ActiveViewerSession>>(new Map());
+
+// Register a viewer session (called by useLivestreamViewer when user opens a stream)
+function registerViewerSession(streamerId: string, isAtLiveEdge: boolean): void {
+  const newMap = new Map(activeViewerSessions.value);
+  newMap.set(streamerId, { streamerId, isAtLiveEdge, isWatching: true });
+  activeViewerSessions.value = newMap;
+}
+
+// Update viewer session state (called when isAtLiveEdge changes)
+function updateViewerSession(streamerId: string, isAtLiveEdge: boolean): void {
+  const session = activeViewerSessions.value.get(streamerId);
+  if (!session) return;
+  
+  const newMap = new Map(activeViewerSessions.value);
+  newMap.set(streamerId, { ...session, isAtLiveEdge });
+  activeViewerSessions.value = newMap;
+}
+
+// Unregister a viewer session (called when user closes the viewer)
+function unregisterViewerSession(streamerId: string): void {
+  const newMap = new Map(activeViewerSessions.value);
+  newMap.delete(streamerId);
+  activeViewerSessions.value = newMap;
+}
+
+// Cleanup DVR files when streamer is deleted from Live page
+async function cleanupStreamerDvr(streamerId: string, mintId: string): Promise<void> {
+  console.log('[LiveMonitor] Cleaning up DVR for deleted streamer:', mintId);
+  
+  // Check for Kick DVR session
+  const kickSession = kickDvrSessions.value.get(streamerId);
+  if (kickSession) {
+    await stopKickDvrRecording(streamerId);
+    return;
+  }
+  
+  // Check for Twitch DVR session
+  const twitchSession = twitchDvrSessions.value.get(streamerId);
+  if (twitchSession) {
+    await stopTwitchDvrRecording(streamerId);
+    return;
+  }
+  
+  // Check for PumpFun DVR session
+  const dvrSession = dvrSessions.value.get(streamerId);
+  if (dvrSession) {
+    try {
+      await dvrRecording.stopDvrSession(mintId);
+    } catch (error) {
+      console.warn('[LiveMonitor] Failed to cleanup PumpFun DVR', error);
+    }
+    
+    const newMap = new Map(dvrSessions.value);
+    newMap.delete(streamerId);
+    dvrSessions.value = newMap;
+  }
+}
 
 // Start Kick DVR recording using yt-dlp
 async function startKickDvrRecording(streamer: MonitoredStreamer): Promise<boolean> {
@@ -504,7 +593,7 @@ async function startKickDvrRecording(streamer: MonitoredStreamer): Promise<boole
 
     // Track the Kick DVR session
     const newMap = new Map(kickDvrSessions.value);
-    newMap.set(streamer.id, { mintId: streamer.mintId, sessionId, outputDir });
+    newMap.set(streamer.id, { mintId: streamer.mintId, channelSlug: streamer.mintId, sessionId, outputDir });
     kickDvrSessions.value = newMap;
 
     // Also track in general DVR sessions for compatibility
@@ -551,7 +640,7 @@ function getKickDvrSession(streamerId: string): KickDvrSession | null {
 // Manually add a Kick DVR session (for temp recordings started outside monitoring)
 function addKickDvrSession(streamerId: string, mintId: string, sessionId: string, outputDir: string): void {
   const newMap = new Map(kickDvrSessions.value);
-  newMap.set(streamerId, { mintId, sessionId, outputDir });
+  newMap.set(streamerId, { mintId, channelSlug: mintId, sessionId, outputDir });
   kickDvrSessions.value = newMap;
 
   // Also track in general DVR sessions for compatibility
@@ -597,7 +686,7 @@ async function startTwitchDvrRecording(streamer: MonitoredStreamer): Promise<boo
 
     // Track the Twitch DVR session
     const newMap = new Map(twitchDvrSessions.value);
-    newMap.set(streamer.id, { mintId: streamer.mintId, sessionId, outputDir });
+    newMap.set(streamer.id, { mintId: streamer.mintId, channelName: streamer.mintId, sessionId, outputDir });
     twitchDvrSessions.value = newMap;
 
     // Also track in general DVR sessions for compatibility
@@ -644,7 +733,7 @@ function getTwitchDvrSession(streamerId: string): TwitchDvrSession | null {
 // Manually add a Twitch DVR session (for temp recordings started outside monitoring)
 function addTwitchDvrSession(streamerId: string, mintId: string, sessionId: string, outputDir: string): void {
   const newMap = new Map(twitchDvrSessions.value);
-  newMap.set(streamerId, { mintId, sessionId, outputDir });
+  newMap.set(streamerId, { mintId, channelName: mintId, sessionId, outputDir });
   twitchDvrSessions.value = newMap;
 
   // Also track in general DVR sessions for compatibility
@@ -1619,5 +1708,11 @@ export function useLivestreamMonitoring() {
     // Auto DVR exports
     initAutoDvrPolling,
     stopAutoDvrPolling,
+    // Viewer session tracking exports
+    registerViewerSession,
+    updateViewerSession,
+    unregisterViewerSession,
+    // DVR cleanup export
+    cleanupStreamerDvr,
   };
 }

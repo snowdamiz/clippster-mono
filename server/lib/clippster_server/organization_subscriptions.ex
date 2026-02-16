@@ -21,6 +21,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   alias ClippsterServer.Repo
   alias ClippsterServer.Organizations
   alias ClippsterServer.Organizations.Organization
+
   alias ClippsterServer.OrganizationSubscriptions.{
     OrganizationSubscription,
     OrganizationSubscriptionAddon
@@ -34,15 +35,38 @@ defmodule ClippsterServer.OrganizationSubscriptions do
     "solo" => %{name: "Solo", seats: nil, monthly_credits: 0, usd: 149.99},
     "enterprise_base" => %{name: "Enterprise Base", seats: 5, monthly_credits: 0, usd: 300},
     "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 500},
-    "enterprise_unlimited" => %{name: "Enterprise Unlimited", seats: nil, monthly_credits: 100_000, usd: 1800}
+    "enterprise_unlimited" => %{
+      name: "Enterprise Unlimited",
+      seats: nil,
+      monthly_credits: 100_000,
+      usd: 1800
+    }
   }
 
   # Add-on tiers (require base subscription)
   @org_addon_tiers %{
     # With AI
-    "seats_5_ai" => %{name: "5 Seats + AI", seats: 5, monthly_credits: 10_000, usd: 250, requires_ai: true},
-    "seats_10_ai" => %{name: "10 Seats + AI", seats: 10, monthly_credits: 20_000, usd: 400, requires_ai: true},
-    "seats_20_ai" => %{name: "20 Seats + AI", seats: 20, monthly_credits: 40_000, usd: 575, requires_ai: true},
+    "seats_5_ai" => %{
+      name: "5 Seats + AI",
+      seats: 5,
+      monthly_credits: 10_000,
+      usd: 250,
+      requires_ai: true
+    },
+    "seats_10_ai" => %{
+      name: "10 Seats + AI",
+      seats: 10,
+      monthly_credits: 20_000,
+      usd: 400,
+      requires_ai: true
+    },
+    "seats_20_ai" => %{
+      name: "20 Seats + AI",
+      seats: 20,
+      monthly_credits: 40_000,
+      usd: 575,
+      requires_ai: true
+    },
     # Without AI
     "seats_5" => %{name: "5 Seats", seats: 5, monthly_credits: 0, usd: 150, requires_ai: false},
     "seats_10" => %{name: "10 Seats", seats: 10, monthly_credits: 0, usd: 200, requires_ai: false},
@@ -86,7 +110,12 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   Creates a new base subscription for an organization via Stripe.
   Grants the tier's monthly credits and activates subscription.
   """
-  def create_stripe_subscription(organization_id, tier, stripe_subscription_id, stripe_customer_id \\ nil) do
+  def create_stripe_subscription(
+        organization_id,
+        tier,
+        stripe_subscription_id,
+        stripe_customer_id \\ nil
+      ) do
     tier_info = get_tier_info(tier)
 
     unless tier_info do
@@ -99,7 +128,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         end_date = DateTime.add(start_date, @subscription_days, :day)
 
         # Update organization subscription fields
-        {:ok, updated_org} = org
+        {:ok, updated_org} =
+          org
           |> Organization.subscription_changeset(%{
             subscription_status: "active",
             subscription_tier: tier,
@@ -114,7 +144,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
           |> Repo.update()
 
         # Create subscription history record
-        {:ok, subscription} = %OrganizationSubscription{}
+        {:ok, subscription} =
+          %OrganizationSubscription{}
           |> OrganizationSubscription.create_changeset(%{
             organization_id: organization_id,
             subscription_type: "base",
@@ -132,10 +163,13 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
         # Grant monthly credits to organization pool
         if tier_info.monthly_credits > 0 do
-          {:ok, _} = Organizations.add_organization_credits(organization_id, tier_info.monthly_credits)
+          {:ok, _} =
+            Organizations.add_organization_credits(organization_id, tier_info.monthly_credits)
         end
 
-        IO.puts("[OrgSubscriptions] Created #{tier} subscription for org #{organization_id}, granted #{tier_info.monthly_credits} credits")
+        IO.puts(
+          "[OrgSubscriptions] Created #{tier} subscription for org #{organization_id}, granted #{tier_info.monthly_credits} credits"
+        )
 
         %{organization: updated_org, subscription: subscription}
       end)
@@ -158,7 +192,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         end_date = DateTime.add(start_date, @subscription_days, :day)
 
         # Update organization subscription fields
-        {:ok, updated_org} = org
+        {:ok, updated_org} =
+          org
           |> Organization.subscription_changeset(%{
             subscription_status: "active",
             subscription_tier: tier,
@@ -171,7 +206,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
           |> Repo.update()
 
         # Create subscription history record
-        {:ok, subscription} = %OrganizationSubscription{}
+        {:ok, subscription} =
+          %OrganizationSubscription{}
           |> OrganizationSubscription.create_changeset(%{
             organization_id: organization_id,
             subscription_type: "base",
@@ -189,10 +225,13 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
         # Grant monthly credits
         if tier_info.monthly_credits > 0 do
-          {:ok, _} = Organizations.add_organization_credits(organization_id, tier_info.monthly_credits)
+          {:ok, _} =
+            Organizations.add_organization_credits(organization_id, tier_info.monthly_credits)
         end
 
-        IO.puts("[OrgSubscriptions] Created #{tier} crypto subscription for org #{organization_id}")
+        IO.puts(
+          "[OrgSubscriptions] Created #{tier} crypto subscription for org #{organization_id}"
+        )
 
         %{organization: updated_org, subscription: subscription}
       end)
@@ -221,10 +260,12 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       true ->
         Repo.transaction(fn ->
           start_date = DateTime.utc_now() |> DateTime.truncate(:second)
-          end_date = org.subscription_end_date  # Align with base subscription
+          # Align with base subscription
+          end_date = org.subscription_end_date
 
           # Create addon record
-          {:ok, addon} = %OrganizationSubscriptionAddon{}
+          {:ok, addon} =
+            %OrganizationSubscriptionAddon{}
             |> OrganizationSubscriptionAddon.create_changeset(%{
               organization_id: organization_id,
               addon_tier: addon_tier,
@@ -241,7 +282,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
           new_max_seats = (org.max_seats || 0) + addon_info.seats
           new_monthly_credits = (org.monthly_credits || 0) + addon_info.monthly_credits
 
-          {:ok, updated_org} = org
+          {:ok, updated_org} =
+            org
             |> Organization.subscription_changeset(%{
               max_seats: new_max_seats,
               monthly_credits: new_monthly_credits
@@ -249,7 +291,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
             |> Repo.update()
 
           # Create history record
-          {:ok, history} = %OrganizationSubscription{}
+          {:ok, history} =
+            %OrganizationSubscription{}
             |> OrganizationSubscription.create_changeset(%{
               organization_id: organization_id,
               subscription_type: "addon",
@@ -267,7 +310,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
           # Grant credits immediately
           if addon_info.monthly_credits > 0 do
-            {:ok, _} = Organizations.add_organization_credits(organization_id, addon_info.monthly_credits)
+            {:ok, _} =
+              Organizations.add_organization_credits(organization_id, addon_info.monthly_credits)
           end
 
           IO.puts("[OrgSubscriptions] Added #{addon_tier} addon for org #{organization_id}")
@@ -297,7 +341,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
           end_date = org.subscription_end_date
 
           # Create addon record
-          {:ok, addon} = %OrganizationSubscriptionAddon{}
+          {:ok, addon} =
+            %OrganizationSubscriptionAddon{}
             |> OrganizationSubscriptionAddon.create_changeset(%{
               organization_id: organization_id,
               addon_tier: addon_tier,
@@ -313,7 +358,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
           new_max_seats = (org.max_seats || 0) + addon_info.seats
           new_monthly_credits = (org.monthly_credits || 0) + addon_info.monthly_credits
 
-          {:ok, updated_org} = org
+          {:ok, updated_org} =
+            org
             |> Organization.subscription_changeset(%{
               max_seats: new_max_seats,
               monthly_credits: new_monthly_credits
@@ -321,7 +367,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
             |> Repo.update()
 
           # Create history
-          {:ok, history} = %OrganizationSubscription{}
+          {:ok, history} =
+            %OrganizationSubscription{}
             |> OrganizationSubscription.create_changeset(%{
               organization_id: organization_id,
               subscription_type: "addon",
@@ -339,7 +386,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
           # Grant credits
           if addon_info.monthly_credits > 0 do
-            {:ok, _} = Organizations.add_organization_credits(organization_id, addon_info.monthly_credits)
+            {:ok, _} =
+              Organizations.add_organization_credits(organization_id, addon_info.monthly_credits)
           end
 
           %{addon: addon, organization: updated_org, history: history}
@@ -367,15 +415,19 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
       # Calculate new end date
       current_end = org.subscription_end_date || DateTime.utc_now()
-      new_start = if DateTime.compare(DateTime.utc_now(), current_end) == :gt do
-        DateTime.utc_now() |> DateTime.truncate(:second)
-      else
-        current_end
-      end
+
+      new_start =
+        if DateTime.compare(DateTime.utc_now(), current_end) == :gt do
+          DateTime.utc_now() |> DateTime.truncate(:second)
+        else
+          current_end
+        end
+
       new_end = DateTime.add(new_start, @subscription_days, :day)
 
       # Update organization
-      {:ok, updated_org} = org
+      {:ok, updated_org} =
+        org
         |> Organization.subscription_changeset(%{
           subscription_status: "active",
           subscription_end_date: new_end
@@ -383,7 +435,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         |> Repo.update()
 
       # Create history for base subscription renewal
-      {:ok, _subscription} = %OrganizationSubscription{}
+      {:ok, _subscription} =
+        %OrganizationSubscription{}
         |> OrganizationSubscription.create_changeset(%{
           organization_id: organization_id,
           subscription_type: "base",
@@ -403,48 +456,52 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       total_credits = tier_info.monthly_credits
 
       # Renew and grant credits for active addons
-      active_addons = OrganizationSubscriptionAddon
+      active_addons =
+        OrganizationSubscriptionAddon
         |> where([a], a.organization_id == ^organization_id and a.status == "active")
         |> Repo.all()
 
-      total_credits = Enum.reduce(active_addons, total_credits, fn addon, acc ->
-        addon_info = get_addon_info(addon.addon_tier)
+      total_credits =
+        Enum.reduce(active_addons, total_credits, fn addon, acc ->
+          addon_info = get_addon_info(addon.addon_tier)
 
-        if addon_info do
-          # Update addon end date
-          addon
-          |> OrganizationSubscriptionAddon.update_status_changeset(%{end_date: new_end})
-          |> Repo.update()
+          if addon_info do
+            # Update addon end date
+            addon
+            |> OrganizationSubscriptionAddon.update_status_changeset(%{end_date: new_end})
+            |> Repo.update()
 
-          # Create history
-          %OrganizationSubscription{}
-          |> OrganizationSubscription.create_changeset(%{
-            organization_id: organization_id,
-            subscription_type: "addon",
-            tier: addon.addon_tier,
-            status: "active",
-            start_date: new_start,
-            end_date: new_end,
-            seats: addon_info.seats,
-            credits_granted: Decimal.new(to_string(addon_info.monthly_credits)),
-            payment_method: org.subscription_renewal_method || "stripe",
-            stripe_subscription_id: addon.stripe_subscription_id,
-            amount_usd: Decimal.new(to_string(addon_info.usd))
-          })
-          |> Repo.insert()
+            # Create history
+            %OrganizationSubscription{}
+            |> OrganizationSubscription.create_changeset(%{
+              organization_id: organization_id,
+              subscription_type: "addon",
+              tier: addon.addon_tier,
+              status: "active",
+              start_date: new_start,
+              end_date: new_end,
+              seats: addon_info.seats,
+              credits_granted: Decimal.new(to_string(addon_info.monthly_credits)),
+              payment_method: org.subscription_renewal_method || "stripe",
+              stripe_subscription_id: addon.stripe_subscription_id,
+              amount_usd: Decimal.new(to_string(addon_info.usd))
+            })
+            |> Repo.insert()
 
-          acc + addon_info.monthly_credits
-        else
-          acc
-        end
-      end)
+            acc + addon_info.monthly_credits
+          else
+            acc
+          end
+        end)
 
       # Grant total credits to org pool
       if total_credits > 0 do
         {:ok, _} = Organizations.add_organization_credits(organization_id, total_credits)
       end
 
-      IO.puts("[OrgSubscriptions] Renewed subscription for org #{organization_id}, granted #{total_credits} credits")
+      IO.puts(
+        "[OrgSubscriptions] Renewed subscription for org #{organization_id}, granted #{total_credits} credits"
+      )
 
       updated_org
     end)
@@ -466,7 +523,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       end
 
       # Update status to cancelled
-      {:ok, updated_org} = org
+      {:ok, updated_org} =
+        org
         |> Organization.subscription_changeset(%{
           subscription_status: "cancelled"
         })
@@ -490,7 +548,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
     Repo.transaction(fn ->
       org = Repo.get!(Organization, organization_id)
 
-      {:ok, updated_org} = org
+      {:ok, updated_org} =
+        org
         |> Organization.subscription_changeset(%{
           subscription_status: "expired"
         })
@@ -548,29 +607,33 @@ defmodule ClippsterServer.OrganizationSubscriptions do
     tier_info = if org.subscription_tier, do: get_tier_info(org.subscription_tier), else: nil
 
     # Get active addons
-    active_addons = if org.subscription_status == "active" do
-      OrganizationSubscriptionAddon
-      |> where([a], a.organization_id == ^org.id and a.status == "active")
-      |> Repo.all()
-      |> Enum.map(fn addon ->
-        addon_info = get_addon_info(addon.addon_tier)
-        %{
-          tier: addon.addon_tier,
-          name: addon_info.name,
-          seats: addon_info.seats,
-          credits: addon_info.monthly_credits
-        }
-      end)
-    else
-      []
-    end
+    active_addons =
+      if org.subscription_status == "active" do
+        OrganizationSubscriptionAddon
+        |> where([a], a.organization_id == ^org.id and a.status == "active")
+        |> Repo.all()
+        |> Enum.map(fn addon ->
+          addon_info = get_addon_info(addon.addon_tier)
+
+          %{
+            tier: addon.addon_tier,
+            name: addon_info.name,
+            seats: addon_info.seats,
+            credits: addon_info.monthly_credits
+          }
+        end)
+      else
+        []
+      end
 
     # Calculate totals
     base_seats = if tier_info, do: tier_info.seats, else: 0
     base_credits = if tier_info, do: tier_info.monthly_credits, else: 0
 
-    total_seats = org.max_seats  # This is kept in sync
-    total_monthly_credits = org.monthly_credits  # This is kept in sync
+    # This is kept in sync
+    total_seats = org.max_seats
+    # This is kept in sync
+    total_monthly_credits = org.monthly_credits
 
     # Count current members
     current_members = Organizations.count_members(org.id)
@@ -600,6 +663,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   end
 
   defp calculate_days_remaining(nil), do: 0
+
   defp calculate_days_remaining(end_date) do
     diff = DateTime.diff(end_date, DateTime.utc_now(), :day)
     max(0, diff)
@@ -611,7 +675,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   """
   def get_total_seats(organization_id) do
     org = Repo.get(Organization, organization_id)
-    org.max_seats  # nil = unlimited (legacy)
+    # nil = unlimited (legacy)
+    org.max_seats
   end
 
   @doc """
@@ -681,7 +746,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         start_date = DateTime.utc_now() |> DateTime.truncate(:second)
         end_date = DateTime.add(start_date, days, :day)
 
-        {:ok, updated_org} = org
+        {:ok, updated_org} =
+          org
           |> Organization.subscription_changeset(%{
             subscription_status: "active",
             subscription_tier: tier,
@@ -694,7 +760,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
           |> Repo.update()
 
         # Create subscription history record
-        {:ok, subscription} = %OrganizationSubscription{}
+        {:ok, subscription} =
+          %OrganizationSubscription{}
           |> OrganizationSubscription.create_changeset(%{
             organization_id: organization_id,
             subscription_type: "base",
@@ -703,16 +770,19 @@ defmodule ClippsterServer.OrganizationSubscriptions do
             start_date: start_date,
             end_date: end_date,
             seats: tier_info.seats,
-            credits_granted: Decimal.new(to_string(if(grant_credits, do: tier_info.monthly_credits, else: 0))),
+            credits_granted:
+              Decimal.new(to_string(if(grant_credits, do: tier_info.monthly_credits, else: 0))),
             payment_method: "admin",
-            stripe_subscription_id: "admin_grant_#{organization_id}_#{System.system_time(:second)}",
+            stripe_subscription_id:
+              "admin_grant_#{organization_id}_#{System.system_time(:second)}",
             amount_usd: Decimal.new("0")
           })
           |> Repo.insert()
 
         # Grant credits if requested
         if grant_credits && tier_info.monthly_credits > 0 do
-          {:ok, _} = Organizations.add_organization_credits(organization_id, tier_info.monthly_credits)
+          {:ok, _} =
+            Organizations.add_organization_credits(organization_id, tier_info.monthly_credits)
         end
 
         IO.puts("[OrgSubscriptions] Admin granted #{tier} subscription to org #{organization_id}")
@@ -744,89 +814,104 @@ defmodule ClippsterServer.OrganizationSubscriptions do
     tier = Map.get(attrs, :tier, "enterprise_base")
     days = Map.get(attrs, :days, 30)
 
-    Repo.transaction(fn ->
-      # Create the owner user account via email registration changeset
-      {:ok, user} = %UserSchema{}
-        |> UserSchema.email_registration_changeset(%{
-          email: email,
-          password: password,
-          name: Map.get(attrs, :owner_name, org_name)
-        })
-        |> Repo.insert()
+    # Check if email already exists before starting transaction
+    if Repo.get_by(UserSchema, email: email) do
+      {:error, :email_already_exists}
+    else
+      Repo.transaction(fn ->
+        # Create the owner user account via email registration changeset
+        {:ok, user} =
+          %UserSchema{}
+          |> UserSchema.email_registration_changeset(%{
+            email: email,
+            password: password,
+            name: Map.get(attrs, :owner_name, org_name)
+          })
+          |> Repo.insert()
 
-      # Mark email as verified (admin-created accounts are pre-verified)
-      {:ok, user} = user
-        |> UserSchema.verify_email_changeset()
-        |> Repo.update()
+        # Mark email as verified (admin-created accounts are pre-verified)
+        {:ok, user} =
+          user
+          |> UserSchema.verify_email_changeset()
+          |> Repo.update()
 
-      # Set account type to organization
-      {:ok, user} = user
-        |> UserSchema.account_type_changeset(%{account_type: "organization"})
-        |> Repo.update()
+        # Set account type to organization
+        {:ok, user} =
+          user
+          |> UserSchema.account_type_changeset(%{account_type: "organization"})
+          |> Repo.update()
 
-      # Create the organization
-      {:ok, org} = %Organization{}
-        |> Organization.create_changeset(%{
-          name: org_name,
-          description: Map.get(attrs, :description, ""),
-          owner_id: user.id
-        })
-        |> Repo.insert()
+        # Create the organization
+        {:ok, org} =
+          %Organization{}
+          |> Organization.create_changeset(%{
+            name: org_name,
+            description: Map.get(attrs, :description, ""),
+            owner_id: user.id
+          })
+          |> Repo.insert()
 
-      # Set subscription fields
-      start_date = DateTime.utc_now() |> DateTime.truncate(:second)
-      end_date = DateTime.add(start_date, days, :day)
+        # Set subscription fields
+        start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+        end_date = DateTime.add(start_date, days, :day)
 
-      {:ok, updated_org} = org
-        |> Organization.subscription_changeset(%{
-          subscription_status: "active",
-          subscription_tier: tier,
-          subscription_start_date: start_date,
-          subscription_end_date: end_date,
-          subscription_renewal_method: "admin",
-          max_seats: if(max_seats == 0, do: nil, else: max_seats),
-          monthly_credits: monthly_credits,
-          admin_price_cents: price_cents,
-          admin_billing_cycle_day: start_date.day,
-          created_by_admin_id: admin_id,
-          setup_completed: false
-        })
-        |> Repo.update()
+        {:ok, updated_org} =
+          org
+          |> Organization.subscription_changeset(%{
+            subscription_status: "active",
+            subscription_tier: tier,
+            subscription_start_date: start_date,
+            subscription_end_date: end_date,
+            subscription_renewal_method: "admin",
+            max_seats: if(max_seats == 0, do: nil, else: max_seats),
+            monthly_credits: monthly_credits,
+            admin_price_cents: price_cents,
+            admin_billing_cycle_day: start_date.day,
+            created_by_admin_id: admin_id,
+            setup_completed: false
+          })
+          |> Repo.update()
 
-      # Update user with owned_organization_id
-      {:ok, _user} = user
-        |> Ecto.Changeset.change(%{owned_organization_id: updated_org.id})
-        |> Repo.update()
+        # Update user with owned_organization_id
+        {:ok, _user} =
+          user
+          |> Ecto.Changeset.change(%{owned_organization_id: updated_org.id})
+          |> Repo.update()
 
-      # Add owner as member
-      {:ok, _member} = Organizations.add_member(updated_org.id, user.id, "owner")
+        # Add owner as member
+        {:ok, _member} = Organizations.add_member(updated_org.id, user.id, "owner")
 
-      # Grant initial credits if any (add_organization_credits auto-creates the credit record)
-      if monthly_credits > 0 do
-        {:ok, _} = Organizations.add_organization_credits(updated_org.id, monthly_credits)
-      end
+        # Grant initial credits if any (add_organization_credits auto-creates the credit record)
+        if monthly_credits > 0 do
+          {:ok, _} = Organizations.add_organization_credits(updated_org.id, monthly_credits)
+        end
 
-      # Create subscription history
-      {:ok, _sub} = %OrganizationSubscription{}
-        |> OrganizationSubscription.create_changeset(%{
-          organization_id: updated_org.id,
-          subscription_type: "base",
-          tier: tier,
-          status: "active",
-          start_date: start_date,
-          end_date: end_date,
-          seats: if(max_seats == 0, do: nil, else: max_seats),
-          credits_granted: Decimal.new(to_string(monthly_credits)),
-          payment_method: "admin",
-          stripe_subscription_id: "admin_create_#{updated_org.id}_#{System.system_time(:second)}",
-          amount_usd: Decimal.new(to_string(price_cents / 100))
-        })
-        |> Repo.insert()
+        # Create subscription history
+        {:ok, _sub} =
+          %OrganizationSubscription{}
+          |> OrganizationSubscription.create_changeset(%{
+            organization_id: updated_org.id,
+            subscription_type: "base",
+            tier: tier,
+            status: "active",
+            start_date: start_date,
+            end_date: end_date,
+            seats: if(max_seats == 0, do: nil, else: max_seats),
+            credits_granted: Decimal.new(to_string(monthly_credits)),
+            payment_method: "admin",
+            stripe_subscription_id:
+              "admin_create_#{updated_org.id}_#{System.system_time(:second)}",
+            amount_usd: Decimal.new(to_string(price_cents / 100))
+          })
+          |> Repo.insert()
 
-      IO.puts("[OrgSubscriptions] Admin created org account: #{org_name} (org #{updated_org.id})")
+        IO.puts(
+          "[OrgSubscriptions] Admin created org account: #{org_name} (org #{updated_org.id})"
+        )
 
-      %{organization: updated_org, user: user}
-    end)
+        %{organization: updated_org, user: user}
+      end)
+    end
   end
 
   @doc """
@@ -839,17 +924,37 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       org = Repo.get!(Organization, organization_id)
 
       changeset_attrs = %{}
-      changeset_attrs = if Map.has_key?(attrs, :max_seats), do: Map.put(changeset_attrs, :max_seats, attrs.max_seats), else: changeset_attrs
-      changeset_attrs = if Map.has_key?(attrs, :monthly_credits), do: Map.put(changeset_attrs, :monthly_credits, attrs.monthly_credits), else: changeset_attrs
-      changeset_attrs = if Map.has_key?(attrs, :admin_price_cents), do: Map.put(changeset_attrs, :admin_price_cents, attrs.admin_price_cents), else: changeset_attrs
-      changeset_attrs = if Map.has_key?(attrs, :tier), do: Map.put(changeset_attrs, :subscription_tier, attrs.tier), else: changeset_attrs
+
+      changeset_attrs =
+        if Map.has_key?(attrs, :max_seats),
+          do: Map.put(changeset_attrs, :max_seats, attrs.max_seats),
+          else: changeset_attrs
+
+      changeset_attrs =
+        if Map.has_key?(attrs, :monthly_credits),
+          do: Map.put(changeset_attrs, :monthly_credits, attrs.monthly_credits),
+          else: changeset_attrs
+
+      changeset_attrs =
+        if Map.has_key?(attrs, :admin_price_cents),
+          do: Map.put(changeset_attrs, :admin_price_cents, attrs.admin_price_cents),
+          else: changeset_attrs
+
+      changeset_attrs =
+        if Map.has_key?(attrs, :tier),
+          do: Map.put(changeset_attrs, :subscription_tier, attrs.tier),
+          else: changeset_attrs
 
       if immediate do
-        {:ok, updated_org} = org
+        {:ok, updated_org} =
+          org
           |> Organization.subscription_changeset(changeset_attrs)
           |> Repo.update()
 
-        IO.puts("[OrgSubscriptions] Admin updated org #{organization_id} subscription immediately")
+        IO.puts(
+          "[OrgSubscriptions] Admin updated org #{organization_id} subscription immediately"
+        )
+
         updated_org
       else
         # Store pending changes - they'll be applied at next renewal
@@ -857,13 +962,19 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         # We apply seat/credit changes immediately but price changes are stored
         non_price_attrs = Map.drop(changeset_attrs, [:admin_price_cents])
 
-        {:ok, updated_org} = org
-          |> Organization.subscription_changeset(Map.merge(non_price_attrs, %{
-            admin_price_cents: Map.get(attrs, :admin_price_cents, org.admin_price_cents)
-          }))
+        {:ok, updated_org} =
+          org
+          |> Organization.subscription_changeset(
+            Map.merge(non_price_attrs, %{
+              admin_price_cents: Map.get(attrs, :admin_price_cents, org.admin_price_cents)
+            })
+          )
           |> Repo.update()
 
-        IO.puts("[OrgSubscriptions] Admin updated org #{organization_id} subscription (price change at next cycle)")
+        IO.puts(
+          "[OrgSubscriptions] Admin updated org #{organization_id} subscription (price change at next cycle)"
+        )
+
         updated_org
       end
     end)
@@ -899,7 +1010,9 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   def change_subscription_tier(organization_id, new_tier) do
     org = Repo.get!(Organization, organization_id)
     new_tier_info = get_tier_info(new_tier)
-    current_tier_info = if org.subscription_tier, do: get_tier_info(org.subscription_tier), else: nil
+
+    current_tier_info =
+      if org.subscription_tier, do: get_tier_info(org.subscription_tier), else: nil
 
     cond do
       is_nil(new_tier_info) ->
@@ -933,7 +1046,8 @@ defmodule ClippsterServer.OrganizationSubscriptions do
         :ok
       end
 
-      {:ok, updated_org} = org
+      {:ok, updated_org} =
+        org
         |> Organization.subscription_changeset(%{
           subscription_tier: new_tier,
           max_seats: new_tier_info.seats,
@@ -945,6 +1059,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       # Grant additional credits if upgrading to a tier with more credits
       current_credits = org.monthly_credits || 0
       new_credits = new_tier_info.monthly_credits
+
       if new_credits > current_credits do
         credit_diff = new_credits - current_credits
         {:ok, _} = Organizations.add_organization_credits(org.id, credit_diff)

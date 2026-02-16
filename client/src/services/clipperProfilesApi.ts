@@ -33,6 +33,7 @@ export interface ClipperProfile {
     id: number;
     name: string;
     email: string;
+    last_active_at?: string;
   };
   inserted_at: string;
   updated_at: string;

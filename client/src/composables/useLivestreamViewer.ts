@@ -143,6 +143,9 @@ export function useLivestreamViewer() {
     addTwitchDvrSession,
     removeKickDvrSession,
     removeTwitchDvrSession,
+    registerViewerSession,
+    updateViewerSession,
+    unregisterViewerSession,
   } = useLivestreamMonitoring();
 
   // HLS Playback composable for reliable live streaming with DVR
@@ -285,6 +288,14 @@ export function useLivestreamViewer() {
       if (!response) {
         return { isLive: false };
       }
+
+      // Validate response is JSON before parsing (PumpFun API returns error text like "error code: 504" during outages)
+      const trimmed = response.trim();
+      if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        // Non-JSON response (likely error text), silently return offline status
+        return { isLive: false };
+      }
+
       const data = JSON.parse(response);
       return {
         isLive: Boolean(data?.isLive),
@@ -307,6 +318,13 @@ export function useLivestreamViewer() {
       if (!response) {
         throw new Error('Empty response from join API');
       }
+
+      // Validate response is JSON before parsing
+      const trimmed = response.trim();
+      if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+        throw new Error('Invalid response format (not JSON)');
+      }
+
       return JSON.parse(response);
     } catch (error) {
       console.error('[LiveViewer] Join livestream error:', error);
@@ -318,14 +336,18 @@ export function useLivestreamViewer() {
     try {
       const response = await invoke<string>('get_livekit_regions', { token });
       if (response) {
-        const data = JSON.parse(response);
-        if (Array.isArray(data?.regions) && data.regions.length > 0) {
-          const sorted = [...data.regions].sort(
-            (a: any, b: any) => Number(a.distance || Infinity) - Number(b.distance || Infinity)
-          );
-          const regionUrl = sorted[0]?.url;
-          if (regionUrl) {
-            return regionUrl;
+        // Validate response is JSON before parsing
+        const trimmed = response.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          const data = JSON.parse(response);
+          if (Array.isArray(data?.regions) && data.regions.length > 0) {
+            const sorted = [...data.regions].sort(
+              (a: any, b: any) => Number(a.distance || Infinity) - Number(b.distance || Infinity)
+            );
+            const regionUrl = sorted[0]?.url;
+            if (regionUrl) {
+              return regionUrl;
+            }
           }
         }
       }
@@ -657,6 +679,11 @@ export function useLivestreamViewer() {
         hlsPlayback.play();
         state.value.isPlaying = true;
 
+        // Register viewer session with monitoring system
+        if (streamerId) {
+          registerViewerSession(streamerId, state.value.isAtLiveEdge);
+        }
+
         console.log(
           '[LiveViewer] Connected to Kick stream via yt-dlp',
           existingDvrSession ? '(using existing DVR)' : '(new recording)'
@@ -793,6 +820,11 @@ export function useLivestreamViewer() {
         // Auto-play
         hlsPlayback.play();
         state.value.isPlaying = true;
+
+        // Register viewer session with monitoring system
+        if (streamerId) {
+          registerViewerSession(streamerId, state.value.isAtLiveEdge);
+        }
 
         console.log(
           '[LiveViewer] Connected to Twitch stream via yt-dlp',
@@ -1582,6 +1614,10 @@ export function useLivestreamViewer() {
 
         if (platform === 'Kick' || platform === 'Twitch') {
           // Kick/Twitch restart logic (both use yt-dlp + FFmpeg HLS)
+          // CRITICAL: Resume in same directory to preserve DVR content (same as PumpFun approach)
+          const currentOutputDir = hlsOutputDir.value;
+          const currentSessionId = state.value.tempSessionId;
+          
           try {
             if (platform === 'Kick') {
               await stopKickRecording(mintId);
@@ -1594,32 +1630,33 @@ export function useLivestreamViewer() {
 
           await new Promise((resolve) => setTimeout(resolve, 1000));
 
-          const newSessionId = platform === 'Kick'
-            ? `kick-view-${mintId}-${Date.now()}`
-            : `twitch-view-${mintId}-${Date.now()}`;
-          state.value.tempSessionId = newSessionId;
-
           try {
+            // Reuse the same session ID to resume in the same directory
             if (platform === 'Kick') {
-              await startKickRecording(mintId, streamerId, newSessionId, 1);
+              await startKickRecording(mintId, streamerId, currentSessionId!, 1);
             } else {
-              await startTwitchRecording(mintId, streamerId, newSessionId, 1);
+              await startTwitchRecording(mintId, streamerId, currentSessionId!, 1);
             }
 
-            const newOutputDir = platform === 'Kick'
-              ? await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId })
-              : await getTwitchSessionOutputDir(newSessionId);
-            console.log(`[LiveViewer] ${platform} recorder restarted, new output dir:`, newOutputDir);
+            console.log(`[LiveViewer] ${platform} recorder resumed in existing dir:`, currentOutputDir);
 
-            lastSegmentCount = 0;
+            // Don't reset segment count - we're resuming, not starting fresh
             lastSegmentTime = Date.now();
-            hlsOutputDir.value = newOutputDir;
-
-            if (hlsVideoElement.value) {
-              await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
-              hlsPlayback.play();
+            
+            // CRITICAL: Do NOT reinitialize HLS playback when recorder restarts in same directory
+            // HLS.js will automatically pick up new segments from the playlist as they're added
+            // Reinitializing causes the player to reload the playlist and jump backwards
+            console.log(`[LiveViewer] ${platform} recorder restarted - HLS playback continues without reinitialization`);
+            
+            // Just ensure playback is still active
+            if (hlsVideoElement.value && hlsPlayback.state.value.isInitialized) {
+              // Refresh the playlist to pick up any new segments immediately
+              hlsPlayback.refreshPlaylist();
+              // Resume playback if it was paused
+              if (!hlsPlayback.state.value.isPlaying) {
+                hlsPlayback.play();
+              }
               state.value.isBuffering = false;
-              console.log(`[LiveViewer] Playback reinitialized after ${platform} recorder restart`);
             }
           } catch (restartError) {
             console.error(`[LiveViewer] Failed to restart ${platform} recording:`, restartError);
@@ -1786,7 +1823,16 @@ export function useLivestreamViewer() {
         // Don't override isAtLiveEdge while actively seeking
         if (!isSeekingActive) {
           // Check if at live edge (within 2 seconds of end)
-          state.value.isAtLiveEdge = ps.isAtLiveEdge || ps.currentTime >= ps.duration - 2;
+          const newIsAtLiveEdge = ps.isAtLiveEdge || ps.currentTime >= ps.duration - 2;
+          if (newIsAtLiveEdge !== state.value.isAtLiveEdge) {
+            state.value.isAtLiveEdge = newIsAtLiveEdge;
+            // Update monitoring system when isAtLiveEdge changes
+            if (state.value.streamerId) {
+              updateViewerSession(state.value.streamerId, newIsAtLiveEdge);
+            }
+          } else {
+            state.value.isAtLiveEdge = newIsAtLiveEdge;
+          }
         }
       } else if (actualHlsDuration > 0) {
         // HLS has some content but not enough for smooth playback
@@ -2155,6 +2201,11 @@ export function useLivestreamViewer() {
     state.value.playbackPosition = 0;
     state.value.bufferedRanges = [];
     state.value.isAtLiveEdge = true;
+
+    // Unregister viewer session from monitoring system
+    if (state.value.streamerId) {
+      unregisterViewerSession(state.value.streamerId);
+    }
 
     // Reset HLS ready state and seeking flag
     isHlsReady.value = false;

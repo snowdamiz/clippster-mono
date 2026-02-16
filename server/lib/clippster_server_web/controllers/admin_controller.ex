@@ -1109,13 +1109,17 @@ defmodule ClippsterServerWeb.AdminController do
 
     branding =
       case raw do
-        nil -> nil
+        nil ->
+          nil
+
         value when is_binary(value) ->
           case Jason.decode(value) do
             {:ok, decoded} -> decoded
             _ -> nil
           end
-        value -> value
+
+        value ->
+          value
       end
 
     json(conn, %{success: true, branding: branding})
@@ -1137,16 +1141,24 @@ defmodule ClippsterServerWeb.AdminController do
 
         case validate_org_tier(tier) do
           :ok ->
-            case OrganizationSubscriptions.admin_grant_subscription(org_id, tier, days, grant_credits) do
+            case OrganizationSubscriptions.admin_grant_subscription(
+                   org_id,
+                   tier,
+                   days,
+                   grant_credits
+                 ) do
               {:ok, _result} ->
                 status = OrganizationSubscriptions.get_subscription_status(org_id)
+
                 json(conn, %{success: true, message: "Subscription granted", subscription: status})
 
               {:error, :invalid_tier} ->
                 conn |> put_status(400) |> json(%{success: false, error: "Invalid tier"})
 
               {:error, reason} ->
-                conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
             end
 
           {:error, reason} ->
@@ -1167,7 +1179,6 @@ defmodule ClippsterServerWeb.AdminController do
     with {:ok, org_name} <- require_param(params, "org_name"),
          {:ok, email} <- require_param(params, "email"),
          {:ok, password} <- require_param(params, "password") do
-
       max_seats = parse_int_param(params, "max_seats", 0)
       monthly_credits = parse_int_param(params, "monthly_credits", 0)
       price_cents = parse_int_param(params, "price_cents", 0)
@@ -1208,6 +1219,11 @@ defmodule ClippsterServerWeb.AdminController do
             }
           })
 
+        {:error, :email_already_exists} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "An account with this email already exists"})
+
         {:error, reason} ->
           conn
           |> put_status(400)
@@ -1226,10 +1242,25 @@ defmodule ClippsterServerWeb.AdminController do
     case parse_integer(org_id_string) do
       {:ok, org_id} ->
         attrs = %{}
-        attrs = if Map.has_key?(params, "max_seats"), do: Map.put(attrs, :max_seats, parse_int_param(params, "max_seats", 0)), else: attrs
-        attrs = if Map.has_key?(params, "monthly_credits"), do: Map.put(attrs, :monthly_credits, parse_int_param(params, "monthly_credits", 0)), else: attrs
-        attrs = if Map.has_key?(params, "admin_price_cents"), do: Map.put(attrs, :admin_price_cents, parse_int_param(params, "admin_price_cents", 0)), else: attrs
-        attrs = if Map.has_key?(params, "tier"), do: Map.put(attrs, :tier, params["tier"]), else: attrs
+
+        attrs =
+          if Map.has_key?(params, "max_seats"),
+            do: Map.put(attrs, :max_seats, parse_int_param(params, "max_seats", 0)),
+            else: attrs
+
+        attrs =
+          if Map.has_key?(params, "monthly_credits"),
+            do: Map.put(attrs, :monthly_credits, parse_int_param(params, "monthly_credits", 0)),
+            else: attrs
+
+        attrs =
+          if Map.has_key?(params, "admin_price_cents"),
+            do:
+              Map.put(attrs, :admin_price_cents, parse_int_param(params, "admin_price_cents", 0)),
+            else: attrs
+
+        attrs =
+          if Map.has_key?(params, "tier"), do: Map.put(attrs, :tier, params["tier"]), else: attrs
 
         immediate = parse_boolean(Map.get(params, "immediate", "false"))
 
@@ -1239,7 +1270,9 @@ defmodule ClippsterServerWeb.AdminController do
             json(conn, %{success: true, message: "Subscription updated", subscription: status})
 
           {:error, reason} ->
-            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1253,25 +1286,36 @@ defmodule ClippsterServerWeb.AdminController do
   def set_org_seats(conn, %{"organization_id" => org_id_string} = params) do
     case parse_integer(org_id_string) do
       {:ok, org_id} ->
-        max_seats = case Map.get(params, "max_seats") do
-          nil -> nil
-          0 -> nil
-          val when is_integer(val) -> val
-          val when is_binary(val) ->
-            case Integer.parse(val) do
-              {0, ""} -> nil
-              {int, ""} -> int
-              _ -> nil
-            end
-          _ -> nil
-        end
+        max_seats =
+          case Map.get(params, "max_seats") do
+            nil ->
+              nil
+
+            0 ->
+              nil
+
+            val when is_integer(val) ->
+              val
+
+            val when is_binary(val) ->
+              case Integer.parse(val) do
+                {0, ""} -> nil
+                {int, ""} -> int
+                _ -> nil
+              end
+
+            _ ->
+              nil
+          end
 
         case OrganizationSubscriptions.admin_set_seats(org_id, max_seats) do
           {:ok, _org} ->
             json(conn, %{success: true, message: "Seats updated to #{max_seats || "unlimited"}"})
 
           {:error, reason} ->
-            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1294,7 +1338,9 @@ defmodule ClippsterServerWeb.AdminController do
             conn |> put_status(400) |> json(%{success: false, error: "No active subscription"})
 
           {:error, reason} ->
-            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1302,8 +1348,13 @@ defmodule ClippsterServerWeb.AdminController do
     end
   end
 
-  defp validate_org_tier(tier) when tier in ["solo", "enterprise_base", "enterprise_ai", "enterprise_unlimited"], do: :ok
-  defp validate_org_tier(_), do: {:error, "Invalid tier - must be one of: solo, enterprise_base, enterprise_ai, enterprise_unlimited"}
+  defp validate_org_tier(tier)
+       when tier in ["solo", "enterprise_base", "enterprise_ai", "enterprise_unlimited"], do: :ok
+
+  defp validate_org_tier(_),
+    do:
+      {:error,
+       "Invalid tier - must be one of: solo, enterprise_base, enterprise_ai, enterprise_unlimited"}
 
   defp require_param(params, key) do
     case Map.get(params, key) do
@@ -1315,14 +1366,20 @@ defmodule ClippsterServerWeb.AdminController do
 
   defp parse_int_param(params, key, default) do
     case Map.get(params, key) do
-      nil -> default
-      val when is_integer(val) -> val
+      nil ->
+        default
+
+      val when is_integer(val) ->
+        val
+
       val when is_binary(val) ->
         case Integer.parse(val) do
           {int, ""} -> int
           _ -> default
         end
-      _ -> default
+
+      _ ->
+        default
     end
   end
 

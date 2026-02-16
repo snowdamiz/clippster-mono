@@ -491,6 +491,16 @@
         );
         await updateClip(clipId, { current_version_id: versionId });
         console.log('[ClipModal] Clip saved to database');
+
+        // Update project thumbnail if it doesn't have one yet
+        if (thumbnailFilePath) {
+          const { getProject, updateProject } = await import('@/services/database/projects');
+          const project = await getProject(effectiveProjectId);
+          if (project && !project.thumbnail_path) {
+            await updateProject(effectiveProjectId, undefined, undefined, thumbnailFilePath);
+            console.log('[ClipModal] Set project thumbnail from clip:', thumbnailFilePath);
+          }
+        }
       } catch (dbErr) {
         console.warn('[ClipModal] Failed to save clip to database (clip file still created):', dbErr);
         // Don't fail the whole operation if DB save fails - clip file was created

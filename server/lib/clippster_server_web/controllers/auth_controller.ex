@@ -65,37 +65,29 @@ defmodule ClippsterServerWeb.AuthController do
   @doc """
   Activity ping endpoint - updates user's last_active_at timestamp.
   Called periodically by the frontend to track user activity.
+  Requires authentication via AuthPlug.
   """
   def activity_ping(conn, _params) do
-    case get_user_from_token(conn) do
-      {:ok, user} ->
-        Accounts.update_last_active(user.id)
-        json(conn, %{success: true})
-
-      {:error, _} ->
+    case conn.assigns[:current_user] do
+      nil ->
+        IO.puts("[AuthController] activity_ping - current_user is nil! assigns: #{inspect(Map.keys(conn.assigns))}")
         conn
         |> put_status(401)
-        |> json(%{success: false, error: "Unauthorized"})
-    end
-  end
-
-  defp get_user_from_token(conn) do
-    case get_req_header(conn, "authorization") do
-      ["Bearer " <> token] ->
-        case TokenGenerator.verify_token(token) do
-          {:ok, claims} ->
-            user_id = claims["user_id"]
-            case Accounts.get_user(user_id) do
-              nil -> {:error, :not_found}
-              user -> {:ok, user}
-            end
-
-          {:error, _} ->
-            {:error, :invalid_token}
+        |> json(%{success: false, error: "User not authenticated"})
+      
+      user ->
+        IO.puts("[AuthController] activity_ping - Updating last_active for user #{user.id}")
+        case Accounts.update_last_active(user.id) do
+          {:ok, _updated_user} ->
+            IO.puts("[AuthController] activity_ping - Successfully updated user #{user.id}")
+            json(conn, %{success: true})
+          
+          {:error, reason} ->
+            IO.puts("[AuthController] activity_ping - Failed to update user #{user.id}: #{inspect(reason)}")
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to update activity"})
         end
-
-      _ ->
-        {:error, :no_token}
     end
   end
 

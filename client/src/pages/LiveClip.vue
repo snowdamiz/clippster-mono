@@ -559,6 +559,7 @@
     dvrSessions,
     hasDvrRecording,
     initAutoDvrPolling,
+    cleanupStreamerDvr,
   } = useLivestreamMonitoring();
 
   const { hoursRemaining, fetchBalance } = useCreditBalance();
@@ -1256,6 +1257,15 @@
       const streamer = streamers.value.find((s) => s.id === id);
 
       if (streamer) {
+        // Clean up DVR files (Kick/Twitch/PumpFun)
+        try {
+          await cleanupStreamerDvr(id, streamer.mintId);
+          console.log('[LiveClip] Cleaned up DVR for', streamer.mintId);
+        } catch (dvrError) {
+          console.warn('[LiveClip] DVR cleanup warning:', dvrError);
+        }
+
+        // Clean up HLS recordings (legacy)
         try {
           await invoke('cleanup_hls_recordings', { mintId: streamer.mintId });
           console.log('[LiveClip] Cleaned up HLS recordings for', streamer.mintId);
