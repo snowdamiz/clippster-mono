@@ -841,6 +841,16 @@
         );
         await updateClip(clipId, { current_version_id: versionId });
         console.log('[WatchDialog] Quick clip saved to database');
+
+        // Update project thumbnail if it doesn't have one yet
+        if (thumbnailFilePath) {
+          const { getProject, updateProject } = await import('@/services/database/projects');
+          const project = await getProject(effectiveProjectId);
+          if (project && !project.thumbnail_path) {
+            await updateProject(effectiveProjectId, undefined, undefined, thumbnailFilePath);
+            console.log('[WatchDialog] Set project thumbnail from clip:', thumbnailFilePath);
+          }
+        }
       } catch (dbErr) {
         console.warn('[WatchDialog] Failed to save clip to database:', dbErr);
       }

@@ -2214,6 +2214,12 @@
 
       // Generate missing thumbnails in background (controlled: one at a time with 500ms delay)
       generateMissingThumbnailsInBackground();
+
+      // Auto-select first clip for preview if clips exist and none selected
+      if (folderClips.value.length > 0 && !clipToPreview.value) {
+        previewClip(folderClips.value[0]);
+        console.log('[Projects] Auto-selected first clip for preview:', folderClips.value[0].id);
+      }
     } catch (e) {
       console.error('Failed to load folder clips:', e);
       folderClips.value = [];
