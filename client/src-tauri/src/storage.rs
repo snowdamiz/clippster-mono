@@ -167,6 +167,55 @@ pub fn delete_raw_video_files(file_path: String, thumbnail_path: Option<String>)
     Ok(())
 }
 
+/// Delete all proxy files associated with a source ID
+/// Deletes all proxy variants (different resolutions, trim offsets) for the given source
+#[tauri::command]
+pub fn delete_proxy_files(source_id: String) -> Result<(), String> {
+    use std::fs;
+    
+    println!("[Storage] Deleting proxy files for source: {}", source_id);
+    
+    let paths = init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    let proxy_dir = paths.temp.join("proxies");
+    
+    if !proxy_dir.exists() {
+        println!("[Storage] Proxy directory does not exist, nothing to delete");
+        return Ok(());
+    }
+    
+    // Read all files in the proxy directory
+    let entries = fs::read_dir(&proxy_dir)
+        .map_err(|e| format!("Failed to read proxy directory: {}", e))?;
+    
+    let mut deleted_count = 0;
+    
+    // Delete all files that match the pattern proxy_{source_id}_*
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+            
+            // Match pattern: proxy_{source_id}_*
+            let prefix = format!("proxy_{}_", source_id);
+            if file_name_str.starts_with(&prefix) {
+                match fs::remove_file(entry.path()) {
+                    Ok(_) => {
+                        println!("[Storage] Deleted proxy file: {}", file_name_str);
+                        deleted_count += 1;
+                    }
+                    Err(e) => {
+                        println!("[Storage] Warning: Failed to delete proxy file {}: {}", file_name_str, e);
+                    }
+                }
+            }
+        }
+    }
+    
+    println!("[Storage] Deleted {} proxy file(s) for source: {}", deleted_count, source_id);
+    Ok(())
+}
+
 /// Initialize storage directories, creating them if they don't exist (cached version)
 pub fn init_storage_dirs() -> Result<StoragePaths, String> {
     let mut cache = STORAGE_PATHS.lock().unwrap();
@@ -241,6 +290,35 @@ pub fn get_livestream_recordings_dir() -> Result<PathBuf, String> {
     std::fs::create_dir_all(&recordings_dir)
         .map_err(|e| format!("Failed to create livestream recordings directory: {}", e))?;
     Ok(recordings_dir)
+}
+
+/// Delete a livestream recording session directory and all its contents
+/// This removes all HLS segments, playlists, and other files for the session
+#[tauri::command]
+pub fn delete_livestream_recording(session_id: String) -> Result<(), String> {
+    use std::fs;
+    
+    println!("[Storage] Deleting livestream recording for session: {}", session_id);
+    
+    let recordings_dir = get_livestream_recordings_dir()?;
+    let session_dir = recordings_dir.join(&session_id);
+    
+    if !session_dir.exists() {
+        println!("[Storage] Session directory does not exist: {:?}", session_dir);
+        return Ok(());
+    }
+    
+    // Remove the entire session directory recursively
+    match fs::remove_dir_all(&session_dir) {
+        Ok(_) => {
+            println!("[Storage] Deleted livestream recording directory: {:?}", session_dir);
+            Ok(())
+        }
+        Err(e) => {
+            println!("[Storage] Warning: Failed to delete livestream recording directory: {}", e);
+            Err(format!("Failed to delete livestream recording directory: {}", e))
+        }
+    }
 }
 
 /// Storage paths structure
