@@ -2,7 +2,7 @@ import { Header } from './components/Header'
 import { Hero } from './components/Hero'
 import { Product } from './components/Product'
 import { Features } from './components/Features'
-import { ClipperMarketplace } from './components/ClipperMarketplace'
+// import { ClipperMarketplace } from './components/ClipperMarketplace'
 import { HowItWorks } from './components/HowItWorks'
 // import { Testimonials } from './components/Testimonials'
 import { CTA } from './components/CTA'
@@ -20,7 +20,7 @@ function App() {
         <Hero />
         <Product />
         <Features />
-        <ClipperMarketplace />
+        {/* <ClipperMarketplace /> */}
         <HowItWorks />
         {/* <Testimonials /> */}
         <CTA />

@@ -1,4 +1,4 @@
-import { Brain, Clock, Shield, Zap, Share2, Wand2, PictureInPicture2, Building2, DollarSign, type LucideIcon } from 'lucide-react'
+import { Brain, Clock, Shield, Zap, Share2, Wand2, PictureInPicture2, Building2, type LucideIcon } from 'lucide-react'
 
 interface Feature {
   icon: LucideIcon
@@ -43,13 +43,6 @@ const features: Feature[] = [
     description: 'Clips are generated live as you stream. Post highlights before the stream ends with minimal latency.',
     stat: { value: '<30s', label: 'latency' },
     accentColor: 'cyan',
-  },
-  {
-    icon: DollarSign,
-    title: 'Clipper Marketplace',
-    description: 'Build your reputation, join campaigns, and earn money for views. Connect clippers with organizations.',
-    stat: { value: 'CPM', label: 'earnings' },
-    accentColor: 'purple',
   },
   {
     icon: Share2,

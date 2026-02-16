@@ -174,17 +174,6 @@ const comparisonFeatures: ComparisonCategory[] = [
       { name: 'Team seats', clippster: 'Organization Accounts', opus: '2 (Pro)', winner: 'clippster' },
     ]
   },
-  {
-    category: 'Clipper Marketplace',
-    features: [
-      { name: 'Public clipper profiles', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Earn per 1K views (CPM)', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Campaign participation', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Leaderboard rankings', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Social account linking', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Endorsements system', clippster: 'yes', opus: 'no', winner: 'clippster' },
-    ]
-  },
 ]
 
 // FAQ data
