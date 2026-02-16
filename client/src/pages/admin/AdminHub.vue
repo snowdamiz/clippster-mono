@@ -173,6 +173,8 @@
     Percent,
     Handshake,
     Headset,
+    MessagesSquare,
+    ScrollText,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
@@ -267,6 +269,13 @@
           description: 'Manage support conversations and tickets',
           icon: Headset,
           route: '/admin/customer-service',
+        },
+        {
+          id: 'staff-messages',
+          title: 'Staff Messages',
+          description: 'Internal messaging for admins and moderators',
+          icon: MessagesSquare,
+          route: '/admin/staff-messages',
         }
       );
     }
@@ -321,6 +330,13 @@
         description: 'Feature flags and UI configuration',
         icon: Settings,
         route: '/admin/settings',
+      },
+      {
+        id: 'mod-logs',
+        title: 'Moderator Logs',
+        description: 'View all moderator actions and activity',
+        icon: ScrollText,
+        route: '/admin/mod-logs',
       },
     ];
   });

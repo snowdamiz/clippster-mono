@@ -768,4 +768,257 @@ defmodule ClippsterServer.Messaging do
       |> Enum.take(-limit) # Take most recent
     end
   end
+
+  # ============================================================================
+  # Support Conversations (Customer Service)
+  # ============================================================================
+
+  @doc """
+  Gets or creates a support conversation for a user.
+  Each user has at most one active support conversation.
+  """
+  def get_or_create_support_conversation(user_id) do
+    case get_user_support_conversation(user_id) do
+      nil ->
+        create_support_conversation(user_id)
+      conversation ->
+        # If archived, reopen it
+        if conversation.status == "archived" do
+          reopen_support_conversation(conversation.id)
+        else
+          {:ok, conversation}
+        end
+    end
+  end
+
+  @doc """
+  Gets a user's support conversation (if it exists).
+  """
+  def get_user_support_conversation(user_id) do
+    Conversation
+    |> where([c], c.type == "support")
+    |> join(:inner, [c], p in ConversationParticipant, on: p.conversation_id == c.id)
+    |> where([c, p], p.user_id == ^user_id and is_nil(p.left_at))
+    |> where([c, p], is_nil(c.organization_id))
+    |> order_by([c], desc: c.inserted_at)
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  @doc """
+  Creates a new support conversation for a user.
+  Adds user + all current admins/mods as participants.
+  Sends automated welcome message.
+  """
+  def create_support_conversation(user_id) do
+    # Get all admins and moderators
+    staff_users = ClippsterServer.Accounts.list_admins_and_moderators()
+    staff_ids = Enum.map(staff_users, & &1.id)
+    all_participant_ids = Enum.uniq([user_id | staff_ids])
+
+    Repo.transaction(fn ->
+      # Create conversation
+      conversation =
+        %Conversation{}
+        |> Conversation.changeset(%{
+          type: "support",
+          organization_id: nil,
+          created_by_user_id: user_id,
+          status: "open"
+        })
+        |> Repo.insert!()
+
+      # Add participants
+      participants =
+        Enum.map(all_participant_ids, fn participant_id ->
+          %{
+            conversation_id: conversation.id,
+            user_id: participant_id,
+            joined_at: DateTime.utc_now() |> DateTime.truncate(:second),
+            inserted_at: DateTime.utc_now() |> DateTime.truncate(:second),
+            updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+          }
+        end)
+
+      Repo.insert_all(ConversationParticipant, participants)
+
+      # Send automated welcome message
+      auto_message_content = get_support_auto_message()
+      
+      %Message{}
+      |> Message.changeset(%{
+        conversation_id: conversation.id,
+        sender_id: nil,
+        content: auto_message_content,
+        message_type: "system"
+      })
+      |> Repo.insert!()
+
+      Repo.preload(conversation, [:participants, participants: :user])
+    end)
+  end
+
+  @doc """
+  Returns the automated welcome message for support conversations.
+  """
+  def get_support_auto_message do
+    "Thanks for reaching out! This is an automated message. A member of our team will get back to you within 24 hours."
+  end
+
+  @doc """
+  Sends a message to a user's support conversation.
+  Auto-reopens if conversation was archived.
+  """
+  def send_support_message(user_id, content) do
+    case get_user_support_conversation(user_id) do
+      nil ->
+        {:error, :conversation_not_found}
+      
+      conversation ->
+        # Reopen if archived
+        if conversation.status == "archived" do
+          reopen_support_conversation(conversation.id)
+        end
+        
+        send_message(conversation.id, user_id, content)
+    end
+  end
+
+  @doc """
+  Sends a response from admin/mod to a support conversation.
+  """
+  def send_support_response(conversation_id, moderator_id, content) do
+    send_message(conversation_id, moderator_id, content)
+  end
+
+  @doc """
+  Archives a support conversation.
+  """
+  def archive_support_conversation(conversation_id, moderator_id) do
+    conversation = Repo.get(Conversation, conversation_id)
+    
+    if is_nil(conversation) do
+      {:error, :not_found}
+    else
+      conversation
+      |> Conversation.changeset(%{
+        status: "archived",
+        archived_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        archived_by_user_id: moderator_id
+      })
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Reopens an archived support conversation.
+  """
+  def reopen_support_conversation(conversation_id) do
+    conversation = Repo.get(Conversation, conversation_id)
+    
+    if is_nil(conversation) do
+      {:error, :not_found}
+    else
+      conversation
+      |> Conversation.changeset(%{
+        status: "open",
+        archived_at: nil,
+        archived_by_user_id: nil
+      })
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Lists all support conversations with optional status filter.
+  """
+  def list_support_conversations(status \\ "open", page \\ 1, per_page \\ 50) do
+    offset = (page - 1) * per_page
+    
+    Conversation
+    |> where([c], c.type == "support")
+    |> where([c], c.status == ^status)
+    |> order_by([c], desc: c.last_message_at)
+    |> limit(^per_page)
+    |> offset(^offset)
+    |> preload([:participants, participants: :user])
+    |> Repo.all()
+  end
+
+  @doc """
+  Counts support conversations by status.
+  """
+  def count_support_conversations(status \\ "open") do
+    Conversation
+    |> where([c], c.type == "support")
+    |> where([c], c.status == ^status)
+    |> Repo.aggregate(:count)
+  end
+
+  # ============================================================================
+  # Staff Internal Messaging
+  # ============================================================================
+
+  @doc """
+  Creates a direct staff conversation between two staff members.
+  """
+  def create_staff_direct_conversation(user1_id, user2_id) do
+    # Check if conversation already exists
+    case find_existing_staff_direct_conversation(user1_id, user2_id) do
+      nil ->
+        create_conversation_with_participants(
+          %{
+            type: "staff",
+            organization_id: nil,
+            created_by_user_id: user1_id
+          },
+          [user1_id, user2_id]
+        )
+      
+      conversation ->
+        {:ok, conversation}
+    end
+  end
+
+  @doc """
+  Creates a group staff conversation.
+  """
+  def create_staff_group_conversation(creator_id, name, participant_ids) do
+    all_participant_ids = Enum.uniq([creator_id | participant_ids])
+    
+    create_conversation_with_participants(
+      %{
+        type: "staff",
+        name: name,
+        organization_id: nil,
+        created_by_user_id: creator_id
+      },
+      all_participant_ids
+    )
+  end
+
+  @doc """
+  Lists all staff conversations for a user.
+  """
+  def list_staff_conversations(user_id) do
+    Conversation
+    |> where([c], c.type == "staff")
+    |> join(:inner, [c], p in ConversationParticipant, on: p.conversation_id == c.id)
+    |> where([c, p], p.user_id == ^user_id and is_nil(p.left_at))
+    |> order_by([c], desc: c.last_message_at)
+    |> preload([:participants, participants: :user])
+    |> Repo.all()
+  end
+
+  defp find_existing_staff_direct_conversation(user1_id, user2_id) do
+    # Find staff direct conversations where both users are participants
+    Conversation
+    |> where([c], c.type == "staff" and is_nil(c.organization_id))
+    |> join(:inner, [c], p1 in ConversationParticipant, on: p1.conversation_id == c.id)
+    |> join(:inner, [c], p2 in ConversationParticipant, on: p2.conversation_id == c.id)
+    |> where([c, p1, p2], p1.user_id == ^user1_id and p2.user_id == ^user2_id)
+    |> where([c, p1, p2], is_nil(p1.left_at) and is_nil(p2.left_at))
+    |> limit(1)
+    |> Repo.one()
+  end
 end

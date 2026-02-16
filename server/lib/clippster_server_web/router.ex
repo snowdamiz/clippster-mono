@@ -25,6 +25,7 @@ defmodule ClippsterServerWeb.Router do
     )
 
     plug(ClippsterServerWeb.AuthPlug)
+    plug(ClippsterServerWeb.RestrictionPlug)
   end
 
   pipeline :api_admin do
@@ -929,6 +930,39 @@ defmodule ClippsterServerWeb.Router do
     get("/affiliate/referrals", AffiliateController, :my_referrals)
     get("/affiliate/payouts", AffiliateController, :my_payouts)
     put("/affiliate/settings", AffiliateController, :update_settings)
+    
+    # Support conversation routes (any authenticated user)
+    get("/support/conversation", SupportController, :get_or_create)
+    post("/support/conversation/messages", SupportController, :send_message)
+    get("/support/conversation/messages", SupportController, :get_messages)
+  end
+
+  # Moderator + Admin routes
+  scope "/api", ClippsterServerWeb do
+    pipe_through(:api_mod)
+
+    # Customer service (support conversations)
+    get("/admin/support/conversations", SupportController, :list_all)
+    get("/admin/support/conversations/:id/messages", SupportController, :get_conversation_messages)
+    post("/admin/support/conversations/:id/messages", SupportController, :respond)
+    post("/admin/support/conversations/:id/archive", SupportController, :archive)
+    post("/admin/support/conversations/:id/read", SupportController, :mark_read)
+    
+    # Staff internal messaging
+    get("/staff/conversations", StaffController, :list_conversations)
+    post("/staff/conversations/direct", StaffController, :create_direct)
+    post("/staff/conversations/group", StaffController, :create_group)
+    get("/staff/conversations/:id/messages", StaffController, :get_messages)
+    post("/staff/conversations/:id/messages", StaffController, :send_message)
+    
+    # Mod-accessible admin routes
+    get("/admin/organization-applications", OrganizationApplicationController, :index)
+    put("/admin/organization-applications/:id/approve", OrganizationApplicationController, :approve)
+    put("/admin/organization-applications/:id/reject", OrganizationApplicationController, :reject)
+    get("/admin/bug-reports", BugReportsController, :index)
+    put("/admin/bug-reports/:id", BugReportsController, :update)
+    get("/admin/ai-usage", AdminController, :get_ai_usage_stats)
+    get("/admin/analytics", AnalyticsController, :stats)
   end
 
   # Admin-only routes
@@ -937,8 +971,6 @@ defmodule ClippsterServerWeb.Router do
 
     get("/admin/users", AdminController, :list_users)
     get("/admin/users/:user_id/profile", AdminController, :get_user_profile)
-    get("/admin/ai-usage", AdminController, :get_ai_usage_stats)
-    get("/admin/analytics", AnalyticsController, :stats)
     post("/admin/users/:user_id/promote", AdminController, :promote_user)
     put("/admin/users/:user_id/credits", AdminController, :update_user_credits)
     

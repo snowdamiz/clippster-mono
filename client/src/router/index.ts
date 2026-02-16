@@ -353,6 +353,16 @@ const router = createRouter({
           name: 'admin-customer-service',
           component: () => import('@/pages/admin/AdminCustomerService.vue'),
         },
+        {
+          path: 'staff-messages',
+          name: 'admin-staff-messages',
+          component: () => import('@/pages/admin/AdminStaffMessages.vue'),
+        },
+        {
+          path: 'mod-logs',
+          name: 'admin-mod-logs',
+          component: () => import('@/pages/admin/AdminModLogs.vue'),
+        },
       ],
     },
     // Affiliate dashboard (authenticated, affiliate users only)
@@ -518,8 +528,8 @@ router.beforeEach(async (to, _from, next) => {
     return;
   }
 
-  // Check if route requires admin
-  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
+  // Check if route requires admin or moderator
+  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || (!authStore.user?.is_admin && !authStore.user?.is_moderator))) {
     next('/projects');
     return;
   }

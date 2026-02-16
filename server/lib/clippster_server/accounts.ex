@@ -881,6 +881,7 @@ defmodule ClippsterServer.Accounts do
 
   @doc """
   Applies an admin discount to a user.
+  Creates a Stripe coupon and applies it to the user's active subscription if they have one.
   """
   def apply_admin_discount(user_id, percent_off, months) do
     user = get_user(user_id)
@@ -888,18 +889,54 @@ defmodule ClippsterServer.Accounts do
     if is_nil(user) do
       {:error, :user_not_found}
     else
+      # If user has active Stripe subscription, create and apply coupon
+      coupon_id = if user.stripe_subscription_id do
+        case create_and_apply_stripe_discount(user, percent_off, months) do
+          {:ok, coupon_id} -> coupon_id
+          {:error, _reason} -> nil
+        end
+      else
+        nil
+      end
+
       user
       |> User.discount_changeset(%{
         admin_discount_percent: percent_off,
         admin_discount_months_remaining: months,
-        admin_discount_applied_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        admin_discount_applied_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        admin_discount_stripe_coupon_id: coupon_id
       })
       |> Repo.update()
     end
   end
 
+  defp create_and_apply_stripe_discount(user, percent_off, months) do
+    try do
+      # Create Stripe coupon
+      coupon_params = %{
+        percent_off: percent_off,
+        duration: "repeating",
+        duration_in_months: months,
+        name: "Admin Discount - #{percent_off}% for #{months} months"
+      }
+      
+      case Stripe.Coupon.create(coupon_params) do
+        {:ok, coupon} ->
+          # Apply coupon to subscription
+          case Stripe.Subscription.update(user.stripe_subscription_id, %{coupon: coupon.id}) do
+            {:ok, _subscription} -> {:ok, coupon.id}
+            {:error, reason} -> {:error, reason}
+          end
+        {:error, reason} -> {:error, reason}
+      end
+    rescue
+      e -> {:error, e}
+    end
+  end
+
   @doc """
   Enables moderator discount for a user.
+  Creates a recurring 10% Stripe coupon if user has active subscription.
   """
   def enable_mod_discount(user_id) do
     user = get_user(user_id)
@@ -907,14 +944,51 @@ defmodule ClippsterServer.Accounts do
     if is_nil(user) do
       {:error, :user_not_found}
     else
+      # If user has active Stripe subscription, create and apply 10% recurring coupon
+      coupon_id = if user.stripe_subscription_id do
+        case create_and_apply_mod_discount(user) do
+          {:ok, coupon_id} -> coupon_id
+          {:error, _reason} -> nil
+        end
+      else
+        nil
+      end
+
       user
-      |> User.mod_discount_changeset(%{mod_discount_enabled: true})
+      |> User.mod_discount_changeset(%{
+        mod_discount_enabled: true,
+        mod_discount_stripe_coupon_id: coupon_id
+      })
       |> Repo.update()
+    end
+  end
+
+  defp create_and_apply_mod_discount(user) do
+    try do
+      # Create recurring 10% Stripe coupon
+      coupon_params = %{
+        percent_off: 10,
+        duration: "forever",
+        name: "Moderator Discount - 10%"
+      }
+      
+      case Stripe.Coupon.create(coupon_params) do
+        {:ok, coupon} ->
+          # Apply coupon to subscription
+          case Stripe.Subscription.update(user.stripe_subscription_id, %{coupon: coupon.id}) do
+            {:ok, _subscription} -> {:ok, coupon.id}
+            {:error, reason} -> {:error, reason}
+          end
+        {:error, reason} -> {:error, reason}
+      end
+    rescue
+      e -> {:error, e}
     end
   end
 
   @doc """
   Disables moderator discount for a user.
+  Removes the Stripe coupon from their subscription if they have one.
   """
   def disable_mod_discount(user_id) do
     user = get_user(user_id)
@@ -922,6 +996,15 @@ defmodule ClippsterServer.Accounts do
     if is_nil(user) do
       {:error, :user_not_found}
     else
+      # Remove coupon from Stripe subscription if present
+      if user.stripe_subscription_id && user.mod_discount_stripe_coupon_id do
+        try do
+          Stripe.Subscription.update(user.stripe_subscription_id, %{coupon: ""})
+        rescue
+          _ -> :ok
+        end
+      end
+
       user
       |> User.mod_discount_changeset(%{
         mod_discount_enabled: false,
