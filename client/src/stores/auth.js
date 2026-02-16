@@ -549,6 +549,100 @@ export const useAuthStore = defineStore('auth', {
     },
 
     /**
+     * Change user's email address.
+     * Requires current password for verification.
+     */
+    async changeEmail(newEmail, password) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const api = await getApi();
+        const response = await api.post('/account/change-email', {
+          new_email: newEmail,
+          password,
+        });
+
+        const data = response.data;
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to change email');
+        }
+
+        return { success: true, message: data.message };
+      } catch (error) {
+        this.error = error.response?.data?.error || error.message;
+        return { success: false, error: this.error };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Change user's password.
+     * Requires current password for verification.
+     */
+    async changePassword(currentPassword, newPassword) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const api = await getApi();
+        const response = await api.post('/account/change-password', {
+          current_password: currentPassword,
+          new_password: newPassword,
+        });
+
+        const data = response.data;
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to change password');
+        }
+
+        return { success: true, message: data.message };
+      } catch (error) {
+        this.error = error.response?.data?.error || error.message;
+        return { success: false, error: this.error };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
+     * Verify email change with token.
+     */
+    async verifyEmailChange(token) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const api = await getApi();
+        const response = await api.get(`/account/verify-email-change/${token}`);
+
+        const data = response.data;
+
+        if (!data.success) {
+          throw new Error(data.error || 'Email verification failed');
+        }
+
+        // Update user email in store if verification successful
+        if (data.user && this.user) {
+          this.user.email = data.user.email;
+          this.email = data.user.email;
+          localStorage.setItem('email', data.user.email);
+          localStorage.setItem('user', JSON.stringify(this.user));
+        }
+
+        return { success: true, message: data.message };
+      } catch (error) {
+        this.error = error.response?.data?.error || error.message;
+        return { success: false, error: this.error };
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /**
      * Start listening for magic link email verification.
      * This runs in background while user might also use OTP.
      */

@@ -107,6 +107,9 @@ defmodule ClippsterServerWeb.Router do
     post("/auth/email/resend-verification", EmailAuthController, :resend_verification)
     post("/auth/email/forgot-password", EmailAuthController, :forgot_password)
     post("/auth/email/reset-password", EmailAuthController, :reset_password)
+    
+    # Email change verification (public route)
+    get("/account/verify-email-change/:token", AccountController, :verify_email_change)
 
     # Payment routes (public - pricing info)
     get("/pricing", PaymentController, :get_pricing)
@@ -224,6 +227,10 @@ defmodule ClippsterServerWeb.Router do
 
     # OAuth account linking routes
     post("/auth/link/google", AuthController, :link_google_account)
+
+    # Account management routes (email/password changes)
+    post("/account/change-email", AccountController, :change_email)
+    post("/account/change-password", AccountController, :change_password)
 
     # Account type selection (for new users)
     post("/account/type", OrganizationController, :set_account_type)

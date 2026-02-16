@@ -110,11 +110,22 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     #[cfg(target_os = "windows")]
     {
         use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW};
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowPos, SetForegroundWindow, HWND_TOPMOST, 
+            SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SWP_NOACTIVATE
+        };
         
         if let Ok(hwnd) = window.hwnd() {
             unsafe {
                 let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
+                
+                // CRITICAL: Must call SetForegroundWindow first to gain permission
+                // for SetWindowPos to work above fullscreen apps in production builds.
+                // Per Microsoft docs: "To use SetWindowPos to bring a window to the top,
+                // the process that owns the window must have SetForegroundWindow permission."
+                let _ = SetForegroundWindow(hwnd);
+                
+                // Now set HWND_TOPMOST with SWP_NOACTIVATE to stay on top without stealing focus
                 let _ = SetWindowPos(
                     hwnd,
                     HWND_TOPMOST,
@@ -122,7 +133,7 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                     0,
                     0,
                     0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE,
                 );
             }
         }

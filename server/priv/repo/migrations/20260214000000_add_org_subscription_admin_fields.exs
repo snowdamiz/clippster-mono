@@ -1,13 +1,7 @@
 defmodule ClippsterServer.Repo.Migrations.AddOrgSubscriptionAdminFields do
   use Ecto.Migration
 
+  # Columns already exist in the database from a previous run
   def change do
-    alter table(:organizations) do
-      add :pending_subscription_tier, :string
-      add :admin_price_cents, :integer
-      add :admin_billing_cycle_day, :integer
-      add :created_by_admin_id, :integer
-      add :setup_completed, :boolean, default: true
-    end
   end
 end

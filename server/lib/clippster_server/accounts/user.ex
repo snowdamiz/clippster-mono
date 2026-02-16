@@ -170,6 +170,40 @@ defmodule ClippsterServer.Accounts.User do
   end
 
   @doc """
+  Changeset for password update (requires current password validation).
+  """
+  def password_update_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:password])
+    |> validate_required([:password])
+    |> validate_password()
+    |> hash_password()
+  end
+
+  @doc """
+  Changeset for email change request.
+  """
+  def email_change_request_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:email_change_token, :email_change_new_email, :email_change_sent_at])
+  end
+
+  @doc """
+  Changeset for confirming email change.
+  """
+  def email_change_confirm_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:email])
+    |> validate_required([:email])
+    |> validate_email()
+    |> put_change(:email_change_token, nil)
+    |> put_change(:email_change_new_email, nil)
+    |> put_change(:email_change_sent_at, nil)
+    |> put_email_provider_id()
+    |> unique_constraint(:email)
+  end
+
+  @doc """
   Changeset for setting account type (personal/organization).
   """
   def account_type_changeset(user, attrs) do

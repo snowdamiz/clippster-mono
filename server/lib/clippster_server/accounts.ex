@@ -566,6 +566,132 @@ defmodule ClippsterServer.Accounts do
     end
   end
 
+  @doc """
+  Changes a user's email address.
+  Requires current password verification.
+  Sends verification email to new address.
+  """
+  def change_email(user_id, new_email, password) do
+    user = get_user(user_id)
+
+    cond do
+      is_nil(user) ->
+        {:error, :not_found}
+
+      user.provider != "email" ->
+        {:error, :not_email_user}
+
+      not User.valid_password?(user, password) ->
+        {:error, :invalid_password}
+
+      true ->
+        # Check if new email is already in use
+        case get_user_by_email(new_email) do
+          nil ->
+            do_change_email(user, new_email)
+
+          existing_user when existing_user.id != user.id ->
+            {:error, :email_already_in_use}
+
+          _ ->
+            # Same user, same email - no change needed
+            {:ok, user}
+        end
+    end
+  end
+
+  defp do_change_email(user, new_email) do
+    # Generate verification token
+    verification_token = generate_token()
+    hashed_token = hash_token(verification_token)
+
+    {:ok, user} =
+      user
+      |> User.email_change_request_changeset(%{
+        email_change_token: hashed_token,
+        email_change_new_email: new_email,
+        email_change_sent_at: DateTime.utc_now() |> DateTime.truncate(:second)
+      })
+      |> Repo.update()
+
+    # Send verification email to new address
+    new_email
+    |> Emails.email_change_verification_email(verification_token)
+    |> Mailer.deliver()
+
+    {:ok, user}
+  end
+
+  @doc """
+  Verifies email change using the verification token.
+  """
+  def verify_email_change(token) do
+    hashed_token = hash_token(token)
+
+    case Repo.get_by(User, email_change_token: hashed_token) do
+      nil ->
+        {:error, :invalid_token}
+
+      user ->
+        cond do
+          is_nil(user.email_change_sent_at) ->
+            {:error, :no_change_pending}
+
+          email_change_expired?(user.email_change_sent_at) ->
+            {:error, :token_expired}
+
+          is_nil(user.email_change_new_email) ->
+            {:error, :no_change_pending}
+
+          true ->
+            # Check if new email is now taken by someone else
+            case get_user_by_email(user.email_change_new_email) do
+              nil ->
+                user
+                |> User.email_change_confirm_changeset(%{
+                  email: user.email_change_new_email
+                })
+                |> Repo.update()
+
+              existing_user when existing_user.id != user.id ->
+                {:error, :email_already_in_use}
+
+              _ ->
+                # Same user, proceed
+                user
+                |> User.email_change_confirm_changeset(%{
+                  email: user.email_change_new_email
+                })
+                |> Repo.update()
+            end
+        end
+    end
+  end
+
+  @doc """
+  Changes a user's password.
+  Requires current password verification.
+  """
+  def change_password(user_id, current_password, new_password) do
+    user = get_user(user_id)
+
+    cond do
+      is_nil(user) ->
+        {:error, :not_found}
+
+      user.provider != "email" ->
+        {:error, :not_email_user}
+
+      not User.valid_password?(user, current_password) ->
+        {:error, :invalid_current_password}
+
+      true ->
+        user
+        |> User.password_update_changeset(%{password: new_password})
+        |> Repo.update()
+    end
+  end
+
   # ============================================
   # Helper Functions
   # ============================================
@@ -601,6 +727,11 @@ defmodule ClippsterServer.Accounts do
   end
 
   defp password_reset_expired?(sent_at) do
+    expiry = DateTime.add(sent_at, @password_reset_expiry_hours, :hour)
+    DateTime.compare(DateTime.utc_now(), expiry) == :gt
+  end
+
+  defp email_change_expired?(sent_at) do
     expiry = DateTime.add(sent_at, @password_reset_expiry_hours, :hour)
     DateTime.compare(DateTime.utc_now(), expiry) == :gt
   end

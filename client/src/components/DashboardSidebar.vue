@@ -14,6 +14,9 @@
       @submitted="handleBugReportSubmitted"
     />
 
+    <!-- Account Settings Dialog -->
+    <AccountSettingsDialog :show="showAccountSettingsDialog" @close="showAccountSettingsDialog = false" />
+
     <!-- ===== Navigation Section ===== -->
     <nav class="flex-1 overflow-hidden">
       <div class="sidebar-nav__scroll h-full overflow-y-auto overflow-x-hidden">
@@ -170,6 +173,12 @@
                 Clipper Profile
               </DropdownMenuItem>
               <DropdownMenuSeparator class="sidebar-dropdown__separator" />
+              <!-- Account Settings -->
+              <DropdownMenuItem class="sidebar-dropdown__item" @click="showAccountSettingsDialog = true">
+                <Settings class="w-4 h-4 mr-2" />
+                Account Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator class="sidebar-dropdown__separator" />
               <!-- Admin Link (conditional) -->
               <DropdownMenuItem
                 v-if="authStore.user?.is_admin"
@@ -222,6 +231,7 @@
   import { getSortedNavigationGroups, type NavigationItem } from '@/config/navigation';
   import { getMyClipperProfile, type ClipperProfile } from '@/services/clipperProfilesApi';
   import BugReportDialog from '@/components/BugReportDialog.vue';
+  import AccountSettingsDialog from '@/components/AccountSettingsDialog.vue';
   import {
     DropdownMenu,
     DropdownMenuContent,
@@ -255,6 +265,7 @@
   const loadingBalance = ref(false);
   const isNativeEnvironment = ref(false);
   const showBugReportDialog = ref(false);
+  const showAccountSettingsDialog = ref(false);
   const userOrganizations = ref<any[]>([]);
   const avatarFailed = ref(false);
   const clipperProfile = ref<ClipperProfile | null>(null);

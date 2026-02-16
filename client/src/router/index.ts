@@ -365,6 +365,11 @@ const router = createRouter({
       name: 'reset-password',
       component: () => import('@/pages/ResetPassword.vue'),
     },
+    {
+      path: '/verify-email-change/:token',
+      name: 'verify-email-change',
+      component: () => import('@/pages/EmailChangeVerification.vue'),
+    },
     // Organization routes
     {
       path: '/organizations',
