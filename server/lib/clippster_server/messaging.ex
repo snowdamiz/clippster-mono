@@ -277,6 +277,20 @@ defmodule ClippsterServer.Messaging do
     Repo.all(query)
   end
 
+  @doc """
+  Gets paginated messages for a conversation with limit and offset.
+  Used by support and staff controllers.
+  """
+  def get_conversation_messages(conversation_id, limit, offset) do
+    Message
+    |> where([m], m.conversation_id == ^conversation_id)
+    |> order_by([m], desc: m.inserted_at)
+    |> limit(^limit)
+    |> offset(^offset)
+    |> preload([:sender, :read_statuses])
+    |> Repo.all()
+  end
+
   # ============================================================================
   # Read Status
   # ============================================================================
@@ -324,6 +338,13 @@ defmodule ClippsterServer.Messaging do
 
       :ok
     end)
+  end
+
+  @doc """
+  Alias for mark_as_read/2 - marks all messages in a conversation as read for a user.
+  """
+  def mark_conversation_read(conversation_id, user_id) do
+    mark_as_read(conversation_id, user_id)
   end
 
   @doc """
@@ -580,6 +601,13 @@ defmodule ClippsterServer.Messaging do
     |> where([p], p.conversation_id == ^conversation_id and p.user_id == ^user_id)
     |> where([p], is_nil(p.left_at))
     |> Repo.exists?()
+  end
+
+  @doc """
+  Alias for is_participant?/2 - checks if a user is a participant in a conversation.
+  """
+  def is_conversation_participant?(conversation_id, user_id) do
+    is_participant?(conversation_id, user_id)
   end
 
   @doc """

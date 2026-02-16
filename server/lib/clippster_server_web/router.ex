@@ -1016,9 +1016,7 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/organizations/:organization_id/subscription/cancel", AdminController, :cancel_org_subscription)
     put("/admin/organizations/:organization_id/seats", AdminController, :set_org_seats)
 
-    # Admin bug report management
-    get("/admin/bug-reports", BugReportsController, :index)
-    put("/admin/bug-reports/:id", BugReportsController, :update)
+    # Admin bug report management (delete route only - index/update in mod scope)
     delete("/admin/bug-reports/:id", BugReportsController, :delete)
 
     # Admin settings management
@@ -1054,16 +1052,7 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/affiliates/:id/activate", AffiliateController, :activate)
     post("/admin/affiliates/:id/payout", AffiliateController, :record_payout)
 
-    # Admin organization application management
-    get("/admin/organization-applications", OrganizationApplicationController, :index)
-
-    put(
-      "/admin/organization-applications/:id/approve",
-      OrganizationApplicationController,
-      :approve
-    )
-
-    put("/admin/organization-applications/:id/reject", OrganizationApplicationController, :reject)
+    # Admin organization application management (delete route only - index/approve/reject in mod scope)
     delete("/admin/organization-applications/:id", OrganizationApplicationController, :delete)
   end
 

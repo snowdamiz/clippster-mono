@@ -84,7 +84,7 @@ defmodule ClippsterServerWeb.KickController do
           error: "Channel not found"
         })
 
-      {:ok, %Req.Response{status: status, body: body}} when status >= 500 and retries_left > 1 ->
+      {:ok, %Req.Response{status: status, body: _body}} when status >= 500 and retries_left > 1 ->
         Logger.warning("Kick API returned #{status} for channel #{channel_slug}, retrying... (#{retries_left - 1} retries left)")
         # Wait briefly before retry (exponential backoff)
         Process.sleep(500 * (4 - retries_left))
