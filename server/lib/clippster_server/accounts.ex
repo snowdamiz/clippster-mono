@@ -485,24 +485,30 @@ defmodule ClippsterServer.Accounts do
   Returns error if email is not verified.
   """
   def authenticate_with_email(email, password) do
+    require Logger
     user = get_user_by_email(email)
 
     cond do
       is_nil(user) ->
+        Logger.warning("Login failed: User not found for email: #{email}")
         # Prevent timing attacks
         Pbkdf2.no_user_verify()
         {:error, :invalid_credentials}
 
       user.provider != "email" ->
+        Logger.warning("Login failed: Wrong auth method for #{email}. Provider: #{user.provider}")
         {:error, :wrong_auth_method}
 
       not user.email_verified ->
+        Logger.warning("Login failed: Email not verified for #{email}")
         {:error, :email_not_verified}
 
       User.valid_password?(user, password) ->
+        Logger.info("Login successful for #{email}")
         {:ok, user}
 
       true ->
+        Logger.warning("Login failed: Invalid password for #{email}")
         {:error, :invalid_credentials}
     end
   end
