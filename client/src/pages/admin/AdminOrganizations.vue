@@ -1368,6 +1368,33 @@
     opacity: 0.6;
   }
 
+  /* ===== Select Content (Dropdown) ===== */
+  :deep([role="listbox"]) {
+    z-index: 10000 !important;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    padding: 0.5rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+
+  :deep([role="option"]) {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  :deep([role="option"]:hover) {
+    background-color: var(--sidebar-accent-hover);
+  }
+
+  :deep([role="option"][data-state="checked"]) {
+    background-color: var(--sidebar-accent);
+    color: white;
+  }
+
   /* ===== Error Alert ===== */
   .admin-orgs__modal-error {
     display: flex;
