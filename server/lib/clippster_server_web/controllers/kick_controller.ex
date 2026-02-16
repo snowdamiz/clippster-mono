@@ -15,11 +15,15 @@ defmodule ClippsterServerWeb.KickController do
     ]
   end
 
-  # Get channel live status
+  # Get channel live status with retry logic
   def get_channel(conn, %{"channel_slug" => channel_slug}) do
+    do_get_channel_with_retry(conn, channel_slug, 3)
+  end
+
+  defp do_get_channel_with_retry(conn, channel_slug, retries_left) when retries_left > 0 do
     url = "https://#{@rapid_api_host}/channels/#{channel_slug}"
 
-    case Req.get(url, headers: rapid_api_headers()) do
+    case Req.get(url, headers: rapid_api_headers(), retry: false) do
       {:ok, %Req.Response{status: 200, body: body}} ->
         # RapidAPI wraps response in "data" key
         data = body["data"] || body
@@ -80,6 +84,12 @@ defmodule ClippsterServerWeb.KickController do
           error: "Channel not found"
         })
 
+      {:ok, %Req.Response{status: status, body: body}} when status >= 500 and retries_left > 1 ->
+        Logger.warning("Kick API returned #{status} for channel #{channel_slug}, retrying... (#{retries_left - 1} retries left)")
+        # Wait briefly before retry (exponential backoff)
+        Process.sleep(500 * (4 - retries_left))
+        do_get_channel_with_retry(conn, channel_slug, retries_left - 1)
+
       {:ok, %Req.Response{status: status, body: body}} ->
         Logger.error("Kick API returned #{status} for channel #{channel_slug}. Body: #{inspect(body)}")
         
@@ -87,12 +97,24 @@ defmodule ClippsterServerWeb.KickController do
         |> put_status(:bad_gateway)
         |> json(%{isLive: false, error: "Kick API returned #{status}"})
 
+      {:error, exception} when retries_left > 1 ->
+        Logger.warning("Kick API request failed for #{channel_slug}, retrying... (#{retries_left - 1} retries left): #{inspect(exception)}")
+        Process.sleep(500 * (4 - retries_left))
+        do_get_channel_with_retry(conn, channel_slug, retries_left - 1)
+
       {:error, exception} ->
-        Logger.error("Kick API request failed: #{inspect(exception)}")
+        Logger.error("Kick API request failed after retries: #{inspect(exception)}")
         conn
         |> put_status(:internal_server_error)
         |> json(%{isLive: false, error: "Kick API request failed"})
     end
+  end
+
+  defp do_get_channel_with_retry(conn, channel_slug, 0) do
+    Logger.error("Kick API exhausted all retries for channel #{channel_slug}")
+    conn
+    |> put_status(:internal_server_error)
+    |> json(%{isLive: false, error: "Kick API request failed after retries"})
   end
 
   def get_clips(conn, %{"channel_slug" => channel_slug, "limit" => limit}) do

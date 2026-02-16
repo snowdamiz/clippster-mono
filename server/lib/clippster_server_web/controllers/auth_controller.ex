@@ -84,11 +84,35 @@ defmodule ClippsterServerWeb.AuthController do
           
           {:error, reason} ->
             IO.puts("[AuthController] activity_ping - Failed to update user #{user.id}: #{inspect(reason)}")
+            
+            # Log detailed error information
+            error_msg = case reason do
+              %Ecto.Changeset{} = changeset ->
+                errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
+                "Changeset errors: #{inspect(errors)}"
+              
+              %Postgrex.Error{} = pg_error ->
+                "Database error: #{inspect(pg_error.postgres)}"
+              
+              other ->
+                "Error: #{inspect(other)}"
+            end
+            
+            IO.puts("[AuthController] activity_ping - Detailed error: #{error_msg}")
+            
             conn
             |> put_status(500)
-            |> json(%{success: false, error: "Failed to update activity"})
+            |> json(%{success: false, error: "Failed to update activity", details: error_msg})
         end
     end
+  rescue
+    e ->
+      IO.puts("[AuthController] activity_ping - Exception caught: #{inspect(e)}")
+      IO.puts("[AuthController] activity_ping - Stacktrace: #{inspect(__STACKTRACE__)}")
+      
+      conn
+      |> put_status(500)
+      |> json(%{success: false, error: "Internal server error", details: Exception.message(e)})
   end
 
   def request_challenge(conn, %{"client_id" => client_id}) do
