@@ -1155,6 +1155,11 @@
     z-index: 9999;
   }
 
+  /* Fix Select dropdown z-index to appear above modal */
+  .admin-orgs__modal :deep([data-reka-select-content]) {
+    z-index: 10000 !important;
+  }
+
   /* ===== Modal Container ===== */
   .admin-orgs__modal {
     background-color: var(--sidebar-surface);

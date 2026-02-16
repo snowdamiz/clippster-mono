@@ -10,6 +10,7 @@ use tokio::sync::oneshot;
 use tauri::Emitter;
 
 use crate::storage;
+use tokio::io::AsyncBufReadExt;
 
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
@@ -589,6 +590,31 @@ async fn run_kick_recorder(
     let ytdlp_stdout = ytdlp_child.stdout.take()
         .ok_or("Failed to get yt-dlp stdout")?;
 
+    // CRITICAL: Drain yt-dlp stderr in a background task to prevent pipe buffer deadlock.
+    // On macOS, if the stderr pipe buffer fills (~64KB), the child process blocks forever.
+    // This was the root cause of livestream watching not working on macOS.
+    if let Some(ytdlp_stderr) = ytdlp_child.stderr.take() {
+        let app_for_ytdlp_stderr = app.clone();
+        let streamer_id_for_ytdlp = streamer_id.clone();
+        let channel_slug_for_ytdlp = channel_slug.clone();
+        tokio::spawn(async move {
+            let reader = tokio::io::BufReader::new(ytdlp_stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                println!("[KickRecorder] yt-dlp stderr: {}", line);
+                // Emit errors to frontend for visibility
+                if line.contains("ERROR") || line.contains("error") {
+                    let _ = app_for_ytdlp_stderr.emit("recorder-log", KickRecorderLogPayload {
+                        streamer_id: streamer_id_for_ytdlp.clone(),
+                        channel_slug: channel_slug_for_ytdlp.clone(),
+                        message: format!("yt-dlp: {}", line),
+                        level: "error".to_string(),
+                    });
+                }
+            }
+        });
+    }
+
     // Convert tokio ChildStdout to std Stdio for piping to FFmpeg
     let ytdlp_stdout_std: std::process::Stdio = ytdlp_stdout.try_into()
         .map_err(|_| "Failed to convert yt-dlp stdout")?;
@@ -629,6 +655,37 @@ async fn run_kick_recorder(
 
     let mut ffmpeg_child = ffmpeg_cmd.spawn()
         .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
+
+    // CRITICAL: Drain FFmpeg stderr in a background task to prevent pipe buffer deadlock.
+    // FFmpeg writes progress and diagnostic info to stderr continuously.
+    // On macOS, if this pipe buffer fills (~64KB), FFmpeg blocks and never produces HLS output.
+    if let Some(ffmpeg_stderr) = ffmpeg_child.stderr.take() {
+        let app_for_ffmpeg_stderr = app.clone();
+        let streamer_id_for_ffmpeg = streamer_id.clone();
+        let channel_slug_for_ffmpeg = channel_slug.clone();
+        tokio::spawn(async move {
+            let reader = tokio::io::BufReader::new(ffmpeg_stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                // Only log important FFmpeg messages (errors, warnings) to avoid spam
+                let line_lower = line.to_lowercase();
+                if line_lower.contains("error") || line_lower.contains("fatal") {
+                    println!("[KickRecorder] FFmpeg ERROR: {}", line);
+                    let _ = app_for_ffmpeg_stderr.emit("recorder-log", KickRecorderLogPayload {
+                        streamer_id: streamer_id_for_ffmpeg.clone(),
+                        channel_slug: channel_slug_for_ffmpeg.clone(),
+                        message: format!("FFmpeg: {}", line),
+                        level: "error".to_string(),
+                    });
+                } else if line_lower.contains("warning") {
+                    println!("[KickRecorder] FFmpeg warning: {}", line);
+                } else {
+                    // Silently drain other output (progress, codec info, etc.)
+                    // This is the critical part - just reading it prevents the deadlock
+                }
+            }
+        });
+    }
 
     let recording_start = std::time::Instant::now();
     let mut last_emitted_segment: u32 = 0; // Track the last segment we emitted (1-indexed)
