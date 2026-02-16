@@ -253,7 +253,7 @@ defmodule ClippsterServer.Accounts do
 
       user ->
         user
-        |> Ecto.Changeset.change(%{last_active_at: DateTime.utc_now()})
+        |> Ecto.Changeset.change(%{last_active_at: DateTime.utc_now() |> DateTime.truncate(:second)})
         |> Repo.update()
     end
   end
