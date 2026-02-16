@@ -68,16 +68,26 @@ defmodule ClippsterServerWeb.AuthController do
   Requires authentication via AuthPlug.
   """
   def activity_ping(conn, _params) do
-    user = conn.assigns[:current_user]
-    
-    case Accounts.update_last_active(user.id) do
-      {:ok, _updated_user} ->
-        json(conn, %{success: true})
-      
-      {:error, _reason} ->
+    case conn.assigns[:current_user] do
+      nil ->
+        IO.puts("[AuthController] activity_ping - current_user is nil! assigns: #{inspect(Map.keys(conn.assigns))}")
         conn
-        |> put_status(500)
-        |> json(%{success: false, error: "Failed to update activity"})
+        |> put_status(401)
+        |> json(%{success: false, error: "User not authenticated"})
+      
+      user ->
+        IO.puts("[AuthController] activity_ping - Updating last_active for user #{user.id}")
+        case Accounts.update_last_active(user.id) do
+          {:ok, _updated_user} ->
+            IO.puts("[AuthController] activity_ping - Successfully updated user #{user.id}")
+            json(conn, %{success: true})
+          
+          {:error, reason} ->
+            IO.puts("[AuthController] activity_ping - Failed to update user #{user.id}: #{inspect(reason)}")
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to update activity"})
+        end
     end
   end
 

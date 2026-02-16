@@ -111,9 +111,9 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowPos, SetWindowLongPtrW, BringWindowToTop,
+            SetWindowPos, GetWindowLongPtrW, SetWindowLongPtrW, BringWindowToTop,
             HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SWP_NOACTIVATE,
-            GWL_EXSTYLE, WS_EX_TOPMOST, WS_EX_LAYERED
+            WINDOW_EX_STYLE, GWL_EXSTYLE, WS_EX_TOPMOST, WS_EX_LAYERED
         };
         
         if let Ok(hwnd) = window.hwnd() {
@@ -121,16 +121,15 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                 let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
                 
                 // CRITICAL FIX FOR PRODUCTION BUILDS:
-                // SetForegroundWindow fails silently in production due to Windows security.
-                // Instead, we use SetWindowLongPtrW to set the WS_EX_TOPMOST extended style,
-                // which is more reliable and doesn't require foreground permissions.
+                // Must use GetWindowLongPtrW to GET current styles, then SetWindowLongPtrW to SET new styles.
+                // Previous code was calling SetWindowLongPtrW(hwnd, GWL_EXSTYLE, 0) which REMOVED all styles!
                 
-                // Step 1: Get current extended window styles
-                let current_ex_style = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, 0);
+                // Step 1: Get current extended window styles using GetWindowLongPtrW
+                let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
                 
-                // Step 2: Add WS_EX_TOPMOST and WS_EX_LAYERED flags
-                let new_ex_style = current_ex_style | WS_EX_TOPMOST.0 as isize | WS_EX_LAYERED.0 as isize;
-                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style);
+                // Step 2: Add WS_EX_TOPMOST and WS_EX_LAYERED flags to existing styles
+                let new_ex_style = WINDOW_EX_STYLE(current_ex_style as u32) | WS_EX_TOPMOST | WS_EX_LAYERED;
+                SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style.0 as isize);
                 
                 // Step 3: Use SetWindowPos to apply the changes and ensure topmost ordering
                 let _ = SetWindowPos(
