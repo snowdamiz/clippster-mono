@@ -34,7 +34,8 @@
   const { success } = useToast();
   
   // Track user activity to update last_active_at
-  useActivityTracker();
+  // Will be initialized after authentication check completes
+  const { startTracking } = useActivityTracker();
 
   // Update check must complete before app continues
   const isCheckingForUpdates = ref(true);
@@ -105,6 +106,13 @@
   // Handle auth state changes (login/logout) by refreshing the router view
   const handleAuthStateChanged = (event: CustomEvent) => {
     console.log('[App] Auth state changed, refreshing data. User ID:', event.detail?.userId);
+    
+    // Start activity tracking if user just logged in
+    if (event.detail?.userId && authStore.isAuthenticated) {
+      console.log('[App] User logged in, starting activity tracker');
+      startTracking();
+    }
+    
     // Increment key to force Vue to re-mount all route components
     routerKey.value++;
   };
@@ -191,6 +199,12 @@
     // Check authentication status on app start
     try {
       await authStore.checkAuth();
+      
+      // Start activity tracking after authentication is confirmed
+      if (authStore.isAuthenticated) {
+        console.log('[App] User authenticated, starting activity tracker');
+        startTracking();
+      }
     } catch (error) {
       console.error('[App] Failed to check authentication:', error);
     }

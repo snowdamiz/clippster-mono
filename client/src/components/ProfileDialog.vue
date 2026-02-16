@@ -1011,9 +1011,9 @@
           formData.value = {
             name: props.profile.name,
             description: props.profile.description || '',
-            intro_id: props.profile.intro_id,
-            outro_id: props.profile.outro_id,
-            watermark_id: props.profile.watermark_id,
+            intro_id: props.profile.intro_id ?? null,
+            outro_id: props.profile.outro_id ?? null,
+            watermark_id: props.profile.watermark_id ?? null,
             watermark_settings: (props.profile.watermark_settings as unknown as CreatorWatermarkSettings) || null,
             intro_outro_settings: (props.profile as any).intro_outro_settings || null,
             intro_ratio_settings: (props.profile as any).intro_ratio_settings || null,
