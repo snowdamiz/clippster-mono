@@ -1155,6 +1155,11 @@
     z-index: 9999;
   }
 
+  /* Fix Select dropdown z-index to appear above modal */
+  .admin-orgs__modal :deep([data-reka-select-content]) {
+    z-index: 10000 !important;
+  }
+
   /* ===== Modal Container ===== */
   .admin-orgs__modal {
     background-color: var(--sidebar-surface);
@@ -1361,6 +1366,33 @@
   .admin-orgs__select-trigger[data-placeholder] {
     color: var(--sidebar-text-muted);
     opacity: 0.6;
+  }
+
+  /* ===== Select Content (Dropdown) ===== */
+  :deep([role="listbox"]) {
+    z-index: 10000 !important;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    padding: 0.5rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  }
+
+  :deep([role="option"]) {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  :deep([role="option"]:hover) {
+    background-color: var(--sidebar-accent-hover);
+  }
+
+  :deep([role="option"][data-state="checked"]) {
+    background-color: var(--sidebar-accent);
+    color: white;
   }
 
   /* ===== Error Alert ===== */

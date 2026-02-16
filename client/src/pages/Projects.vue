@@ -4410,8 +4410,34 @@
     // These caches are needed for waveform display and editing
     const hasRetainedClips = retainedClipIds.length > 0;
 
+    // Track unique session IDs for livestream recording cleanup
+    const sessionIdsToDelete = new Set<string>();
+
     for (const video of videos) {
       try {
+        // Check if this is a livestream recording by checking the file path
+        // Livestream recordings are stored in: livestream_recordings/{session_id}/segment_*.ts
+        if (video.file_path.includes('livestream_recordings')) {
+          const pathParts = video.file_path.split(/[/\\]/);
+          const recordingsIndex = pathParts.findIndex(part => part === 'livestream_recordings');
+          if (recordingsIndex !== -1 && recordingsIndex + 1 < pathParts.length) {
+            const sessionId = pathParts[recordingsIndex + 1];
+            sessionIdsToDelete.add(sessionId);
+          }
+        }
+
+        // Always delete proxy files for this video source
+        // Proxies are tied to the raw video, not the clips, so they should always be deleted
+        try {
+          await invoke('delete_proxy_files', {
+            sourceId: video.id,
+          });
+          console.log(`[Projects] Deleted proxy files for source: ${video.id}`);
+        } catch (proxyErr) {
+          console.warn(`[Projects] Failed to delete proxy files for source ${video.id}:`, proxyErr);
+          // Continue with other deletions
+        }
+
         if (hasRetainedClips) {
           // Only delete video file and thumbnail, preserve audio/waveform caches
           // Retained clips (built or in-editor) still need these caches
@@ -4431,6 +4457,19 @@
       } catch (err) {
         console.warn(`[Projects] Failed to delete video files for: ${video.file_path}`, err);
         // Continue deleting other files even if one fails
+      }
+    }
+
+    // Delete livestream recording directories
+    for (const sessionId of sessionIdsToDelete) {
+      try {
+        await invoke('delete_livestream_recording', {
+          sessionId,
+        });
+        console.log(`[Projects] Deleted livestream recording directory for session: ${sessionId}`);
+      } catch (err) {
+        console.warn(`[Projects] Failed to delete livestream recording directory for session ${sessionId}:`, err);
+        // Continue with other deletions
       }
     }
   }

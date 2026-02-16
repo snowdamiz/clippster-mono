@@ -162,6 +162,9 @@ defmodule ClippsterServerWeb.EmailAuthController do
   Login with email and password.
   """
   def login(conn, %{"email" => email, "password" => password}) do
+    require Logger
+    Logger.info("Login attempt for email: #{email}")
+    
     case Accounts.authenticate_with_email(email, password) do
       {:ok, user} ->
         token_claims = %{

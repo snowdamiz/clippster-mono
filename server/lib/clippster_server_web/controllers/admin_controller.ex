@@ -1224,9 +1224,24 @@ defmodule ClippsterServerWeb.AdminController do
           |> put_status(400)
           |> json(%{success: false, error: "An account with this email already exists"})
 
-        {:error, reason} ->
+        {:error, :user_create_error} ->
           conn
           |> put_status(400)
+          |> json(%{success: false, error: "Failed to create user account. Please check email and password."})
+
+        {:error, :org_create_error} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "Failed to create organization. Please check organization name."})
+
+        {:error, :member_error} ->
+          conn
+          |> put_status(500)
+          |> json(%{success: false, error: "Failed to add owner as organization member"})
+
+        {:error, reason} ->
+          conn
+          |> put_status(500)
           |> json(%{success: false, error: "Failed to create org account: #{inspect(reason)}"})
       end
     else
