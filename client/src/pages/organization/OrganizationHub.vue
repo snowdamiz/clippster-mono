@@ -106,21 +106,37 @@
         <section class="org-hub__section">
           <h2 class="org-hub__section-title">Content</h2>
           <div class="org-hub__grid">
-            <router-link v-for="tool in contentTools" :key="tool.id" :to="tool.route" class="org-hub__card">
-              <div class="org-hub__card-content">
-                <div class="org-hub__card-icon">
-                  <component :is="tool.icon" class="org-hub__card-icon-svg" />
-                </div>
-                <div class="org-hub__card-info">
-                  <h3 class="org-hub__card-title">{{ tool.title }}</h3>
-                  <p class="org-hub__card-desc">{{ tool.description }}</p>
-                </div>
-                <div class="org-hub__card-stat" v-if="tool.stat !== undefined">
-                  <span class="org-hub__card-stat-value">{{ tool.stat }}</span>
-                  <span class="org-hub__card-stat-label">{{ tool.statLabel }}</span>
+            <template v-for="tool in contentTools" :key="tool.id">
+              <!-- Coming Soon card (non-clickable) -->
+              <div v-if="tool.comingSoon" class="org-hub__card org-hub__card--coming-soon">
+                <div class="org-hub__card-content">
+                  <div class="org-hub__card-icon">
+                    <component :is="tool.icon" class="org-hub__card-icon-svg" />
+                  </div>
+                  <div class="org-hub__card-info">
+                    <h3 class="org-hub__card-title">{{ tool.title }}</h3>
+                    <p class="org-hub__card-desc">{{ tool.description }}</p>
+                  </div>
+                  <span class="org-hub__coming-soon-badge">Coming Soon</span>
                 </div>
               </div>
-            </router-link>
+              <!-- Normal card -->
+              <router-link v-else :to="tool.route" class="org-hub__card">
+                <div class="org-hub__card-content">
+                  <div class="org-hub__card-icon">
+                    <component :is="tool.icon" class="org-hub__card-icon-svg" />
+                  </div>
+                  <div class="org-hub__card-info">
+                    <h3 class="org-hub__card-title">{{ tool.title }}</h3>
+                    <p class="org-hub__card-desc">{{ tool.description }}</p>
+                  </div>
+                  <div class="org-hub__card-stat" v-if="tool.stat !== undefined">
+                    <span class="org-hub__card-stat-value">{{ tool.stat }}</span>
+                    <span class="org-hub__card-stat-label">{{ tool.statLabel }}</span>
+                  </div>
+                </div>
+              </router-link>
+            </template>
           </div>
         </section>
 
@@ -220,6 +236,7 @@
     color: string;
     stat?: number | string;
     statLabel?: string;
+    comingSoon?: boolean;
   }
 
   // Tool definitions with dynamic stats
@@ -270,6 +287,7 @@
       icon: Target,
       route: `/organization/${organizationId.value}/campaigns`,
       color: 'violet',
+      comingSoon: true,
     },
     {
       id: 'clippers',
@@ -721,6 +739,35 @@
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     border-radius: 4px;
+  }
+
+  .org-hub__card--coming-soon {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
+  .org-hub__card--coming-soon:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .org-hub__card--coming-soon:hover::before {
+    opacity: 0;
+  }
+
+  .org-hub__coming-soon-badge {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 0.1875rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    white-space: nowrap;
   }
 
   .org-hub__card--skeleton {

@@ -566,6 +566,17 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
+  // Block campaigns routes (Coming Soon)
+  if (to.path === '/campaigns' || to.name === 'campaigns-home') {
+    next('/creators');
+    return;
+  }
+  if (to.name === 'org-campaigns') {
+    const orgId = to.params.id as string;
+    next(`/organization/${orgId}`);
+    return;
+  }
+
   // Check Live Clip feature flag for /live-clip route
   if (to.path.startsWith('/live-clip') && !featureFlags.isLiveClipEnabled.value) {
     next('/creators');

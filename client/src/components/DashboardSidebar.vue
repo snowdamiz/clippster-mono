@@ -40,7 +40,30 @@
               <!-- Navigation Items -->
               <ul class="sidebar-nav-group__items m-0 p-0 flex flex-col gap-0.5">
                 <li v-for="item in getVisibleGroupItems(group.items)" :key="item.path">
+                  <!-- Disabled item (non-clickable) -->
+                  <div
+                    v-if="item.disabled"
+                    class="flex items-center w-full py-2 rounded-md text-[var(--sidebar-text-muted)] bg-transparent border-[none] no-underline text-sm opacity-40 cursor-not-allowed select-none"
+                    :class="{
+                      'justify-center px-0': isCollapsed,
+                      'gap-3 px-3': !isCollapsed
+                    }"
+                    :title="isCollapsed ? (item.badge || item.name) : undefined"
+                  >
+                    <div class="relative flex items-center justify-center shrink-0">
+                      <component :is="item.icon as Component" class="w-[18px] h-[18px]" />
+                    </div>
+                    <span v-if="!isCollapsed" class="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">{{ item.name }}</span>
+                    <span
+                      v-if="item.badge && !isCollapsed"
+                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] whitespace-nowrap"
+                    >
+                      {{ item.badge }}
+                    </span>
+                  </div>
+                  <!-- Normal nav item -->
                   <router-link
+                    v-else
                     :to="item.path"
                     class="flex items-center w-full py-2 rounded-md text-[var(--sidebar-text-muted)] bg-transparent border-[none] no-underline text-sm transition-all duration-150 cursor-pointer hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)]"
                     :class="{

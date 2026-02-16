@@ -60,6 +60,8 @@ export const navigationItems: NavigationItem[] = [
     icon: Megaphone,
     group: 'browse',
     restrictedHidden: true,
+    disabled: true,
+    badge: 'Coming Soon',
   },
 
   // Create group - content creation tools
