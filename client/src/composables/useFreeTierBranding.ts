@@ -1,6 +1,7 @@
 import { ref, computed } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import api from '@/services/api';
+import { useSubscription } from '@/composables/useSubscription';
 import type { WatermarkSettings, IntroOutroRef } from '@/types';
 
 /**
@@ -71,6 +72,8 @@ export function useFreeTierBranding() {
 
   /** Get branding if user is free tier, null otherwise */
   async function getBrandingIfFreeTier(): Promise<FreeTierBranding | null> {
+    const { fetchSubscriptionStatus } = useSubscription();
+    await fetchSubscriptionStatus();
     if (!isFreeTier.value) return null;
     return await fetchBranding();
   }

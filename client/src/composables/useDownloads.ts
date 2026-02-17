@@ -137,6 +137,9 @@ export function useDownloads() {
       const { useAuthStore } = await import('@/stores/auth');
       const _authStore = useAuthStore();
       const _user = _authStore.user;
+      const { useSubscription } = await import('@/composables/useSubscription');
+      const { fetchSubscriptionStatus } = useSubscription();
+      await fetchSubscriptionStatus();
       const _isFree = _user && !_user.is_admin && !_user.created_by_organization_id &&
         (!(_user as any).subscription_status || (_user as any).subscription_status === 'none' || (_user as any).subscription_status === 'expired');
       
@@ -427,6 +430,9 @@ export function useDownloads() {
     const { useAuthStore } = await import('@/stores/auth');
     const _authStore = useAuthStore();
     const _user = _authStore.user;
+    const { useSubscription } = await import('@/composables/useSubscription');
+    const { fetchSubscriptionStatus } = useSubscription();
+    await fetchSubscriptionStatus();
     const _isFree = _user && !_user.is_admin && !_user.created_by_organization_id &&
       (!(_user as any).subscription_status || (_user as any).subscription_status === 'none' || (_user as any).subscription_status === 'expired');
     if (_isFree) {
