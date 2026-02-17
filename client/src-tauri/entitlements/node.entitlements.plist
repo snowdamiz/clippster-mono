@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required for Node.js to dlopen() native .node addons (e.g., @livekit/rtc-node).
+         Without this, hardened runtime blocks loading of dynamically-linked native modules. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Required for Node.js JIT compilation (V8 engine) and native addon memory allocation. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

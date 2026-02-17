@@ -711,6 +711,10 @@ export function useLivestreamViewer() {
         // Start segment polling for clipping functionality
         startSegmentPolling();
 
+        // Listen for segment events and recorder logs (errors, binary paths)
+        // Without this, Kick recording errors are invisible in the WebView console
+        await setupSegmentEventListeners();
+
         // Start playback sync to keep UI in sync with HLS state
         startPlaybackSync();
 
@@ -854,6 +858,10 @@ export function useLivestreamViewer() {
 
         // Start segment polling for clipping functionality
         startSegmentPolling();
+
+        // Listen for segment events and recorder logs (errors, binary paths)
+        // Without this, Twitch recording errors are invisible in the WebView console
+        await setupSegmentEventListeners();
 
         // Start playback sync to keep UI in sync with HLS state
         startPlaybackSync();

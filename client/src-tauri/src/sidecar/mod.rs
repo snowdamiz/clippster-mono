@@ -48,6 +48,18 @@ fn resolve_node_binary() -> Result<String, String> {
         return Ok(prod_path.to_string_lossy().to_string());
     }
 
+    // macOS production bundle: Tauri strips the target triple from sidecar names
+    #[cfg(target_os = "windows")]
+    let bare_name = "node.exe".to_string();
+    #[cfg(not(target_os = "windows"))]
+    let bare_name = "node".to_string();
+
+    let bare_path = exe_dir.join(&bare_name);
+    if bare_path.exists() {
+        println!("[RemotionSidecar] Found node at (bundle): {}", bare_path.display());
+        return Ok(bare_path.to_string_lossy().to_string());
+    }
+
     // Development mode: check src-tauri/binaries/
     if let Some(target_dir) = exe_dir.parent() {
         if let Some(target_parent) = target_dir.parent() {
