@@ -77,12 +77,12 @@
               <div class="admin-customer-service__chat-actions">
                 <Button
                   v-if="selectedConversation.status === 'open'"
-                  @click="archiveConversation"
+                  @click="showArchiveConfirmation"
                   variant="outline"
                   size="sm"
                 >
                   <Archive class="admin-customer-service__button-icon" />
-                  Archive
+                  Close Ticket
                 </Button>
               </div>
             </div>
@@ -141,6 +141,18 @@
         </div>
       </div>
     </PageLayout>
+
+    <!-- Archive Confirmation Dialog -->
+    <div v-if="showArchiveDialog" class="admin-customer-service__dialog-overlay" @click="showArchiveDialog = false">
+      <div class="admin-customer-service__dialog" @click.stop>
+        <h3>Close Ticket</h3>
+        <p>Are you sure you want to close this support ticket? The conversation will be archived for admins/mods and will be cleared from the user's view after 24 hours.</p>
+        <div class="admin-customer-service__dialog-actions">
+          <Button @click="showArchiveDialog = false" variant="outline">Cancel</Button>
+          <Button @click="archiveConversation" variant="destructive">Close Ticket</Button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -164,6 +176,7 @@ const loadingConversations = ref(false);
 const loadingMessages = ref(false);
 const messagesContainer = ref<HTMLElement | null>(null);
 const openCount = ref(0);
+const showArchiveDialog = ref(false);
 
 const loadConversations = async () => {
   loadingConversations.value = true;
@@ -220,12 +233,17 @@ const sendMessage = async () => {
   }
 };
 
+const showArchiveConfirmation = () => {
+  showArchiveDialog.value = true;
+};
+
 const archiveConversation = async () => {
   if (!selectedConversation.value) return;
   
   try {
     await api.post(`/admin/support/conversations/${selectedConversation.value.id}/archive`);
     selectedConversation.value.status = 'archived';
+    showArchiveDialog.value = false;
     loadConversations();
   } catch (error) {
     console.error('Failed to archive conversation:', error);
@@ -666,5 +684,42 @@ onMounted(() => {
   padding: 1rem;
   background: var(--muted);
   border-radius: 6px;
+}
+
+.admin-customer-service__dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.admin-customer-service__dialog {
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 1.5rem;
+  max-width: 500px;
+  width: 90%;
+}
+
+.admin-customer-service__dialog h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+}
+
+.admin-customer-service__dialog p {
+  color: var(--muted-foreground);
+  margin: 0 0 1.5rem;
+  line-height: 1.5;
+}
+
+.admin-customer-service__dialog-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
 }
 </style>

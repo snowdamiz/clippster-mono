@@ -28,6 +28,7 @@ defmodule ClippsterServer.Repo.Migrations.AddModeratorAndRestrictions do
       add :status, :string, default: "open"
       add :archived_at, :utc_datetime
       add :archived_by_user_id, references(:users, on_delete: :nilify_all)
+      add :scheduled_deletion_at, :utc_datetime
     end
     
     # Create mod action logs table

@@ -942,6 +942,7 @@ defmodule ClippsterServer.Messaging do
 
   @doc """
   Archives a support conversation.
+  Sets scheduled deletion for 24 hours from now to auto-clear from user's view.
   """
   def archive_support_conversation(conversation_id, moderator_id) do
     conversation = Repo.get(Conversation, conversation_id)
@@ -949,11 +950,17 @@ defmodule ClippsterServer.Messaging do
     if is_nil(conversation) do
       {:error, :not_found}
     else
+      # Schedule deletion for 24 hours from now
+      scheduled_deletion = DateTime.utc_now() 
+        |> DateTime.add(24 * 60 * 60, :second) 
+        |> DateTime.truncate(:second)
+      
       conversation
       |> Conversation.changeset(%{
         status: "archived",
         archived_at: DateTime.utc_now() |> DateTime.truncate(:second),
-        archived_by_user_id: moderator_id
+        archived_by_user_id: moderator_id,
+        scheduled_deletion_at: scheduled_deletion
       })
       |> Repo.update()
     end

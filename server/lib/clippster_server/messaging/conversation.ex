@@ -15,6 +15,7 @@ defmodule ClippsterServer.Messaging.Conversation do
     field :last_message_preview, :string
     field :status, :string, default: "open"
     field :archived_at, :utc_datetime
+    field :scheduled_deletion_at, :utc_datetime
 
     belongs_to :organization, Organization
     belongs_to :created_by, User, foreign_key: :created_by_user_id
@@ -29,7 +30,7 @@ defmodule ClippsterServer.Messaging.Conversation do
   @doc false
   def changeset(conversation, attrs) do
     conversation
-    |> cast(attrs, [:type, :name, :last_message_at, :last_message_preview, :organization_id, :created_by_user_id, :status, :archived_at, :archived_by_user_id])
+    |> cast(attrs, [:type, :name, :last_message_at, :last_message_preview, :organization_id, :created_by_user_id, :status, :archived_at, :archived_by_user_id, :scheduled_deletion_at])
     |> validate_required([:type])
     |> validate_inclusion(:type, @conversation_types)
     |> validate_name_for_group()
