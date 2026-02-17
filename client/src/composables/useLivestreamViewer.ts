@@ -31,6 +31,7 @@ import {
   checkKickLivestream,
   startKickRecording,
   stopKickRecording,
+  isKickRecordingActive,
   extractChannelSlug,
 } from '@/services/kick';
 import {
@@ -225,6 +226,8 @@ export function useLivestreamViewer() {
   let recorderRestartCount = 0;
   const MAX_RECORDER_RESTARTS = 3; // Stop trying after 3 failed restarts
   const SEGMENT_STALL_THRESHOLD = 30000; // 30 seconds without new segments = stalled
+  const ZERO_SEGMENT_TIMEOUT = 45000; // 45 seconds with zero segments = recording likely failed
+  let zeroSegmentStartTime: number | null = null; // Track when we started seeing zero segments
   let streamHasEnded = false; // Flag to indicate stream has ended
 
   // Update timers
@@ -605,7 +608,34 @@ export function useLivestreamViewer() {
         outputDir = existingDvrSession.outputDir;
         sessionId = existingDvrSession.sessionId;
         state.value.tempSessionId = sessionId;
-        state.value.isTempRecording = false; // Not a temp recording - it's a DVR session
+        state.value.isTempRecording = false;
+
+        // Verify the recording process is still active (it may have exited/crashed)
+        const recordingActive = await isKickRecordingActive(channelSlug);
+        if (!recordingActive) {
+          console.warn('[LiveViewer] DVR session recording process is no longer active, restarting in same directory...');
+          try {
+            await startKickRecording(channelSlug, streamerId, sessionId, 1);
+            console.log('[LiveViewer] Restarted recording for existing DVR session');
+          } catch (restartError) {
+            console.warn('[LiveViewer] Failed to restart recording:', restartError);
+            // Start completely fresh with new session
+            removeKickDvrSession(streamerId);
+            sessionId = `kick-view-${channelSlug}-${Date.now()}`;
+            state.value.tempSessionId = sessionId;
+            state.value.isTempRecording = true;
+            try {
+              await startKickRecording(channelSlug, streamerId, sessionId, 1);
+            } catch (recordingError) {
+              console.error('[LiveViewer] Failed to start Kick recording:', recordingError);
+              state.value.connectionState = 'failed';
+              state.value.connectionError = 'Failed to start stream capture';
+              return;
+            }
+            outputDir = await invoke<string>('get_kick_session_output_dir', { sessionId });
+            addKickDvrSession(streamerId, channelSlug, sessionId, outputDir);
+          }
+        }
       } else if (existingPersistentSession && existingPersistentSession.platform === 'Kick') {
         // Use existing persistent recording from monitoring system
         console.log('[LiveViewer] Found existing Kick persistent session:', existingPersistentSession.sessionId);
@@ -653,18 +683,27 @@ export function useLivestreamViewer() {
 
         // Use the HLS playback composable for local Kick stream
         // This will poll for the playlist to become available
-        await hlsPlayback.initialize(hlsVideoElement.value, outputDir);
+        const hlsInitSuccess = await hlsPlayback.initialize(hlsVideoElement.value, outputDir);
 
         state.value.connectionState = 'connected';
-        state.value.isBuffering = false;
         state.value.playbackMode = 'hls';
-        isHlsReady.value = true;
         reconnectAttempts = 0;
 
         // Reset segment stall detection
         lastSegmentCount = 0;
         lastSegmentTime = Date.now();
         isRestartingRecorder = false;
+
+        if (hlsInitSuccess) {
+          state.value.isBuffering = false;
+          isHlsReady.value = true;
+        } else {
+          // HLS initialization failed (playlist not available yet)
+          // Still proceed - segment polling will trigger re-initialization when segments arrive
+          console.warn('[LiveViewer] HLS init failed (playlist not ready), will retry via segment polling');
+          state.value.isBuffering = true;
+          isHlsReady.value = false;
+        }
 
         // Start live edge updates for Kick
         startLiveEdgeUpdates();
@@ -675,9 +714,11 @@ export function useLivestreamViewer() {
         // Start playback sync to keep UI in sync with HLS state
         startPlaybackSync();
 
-        // Auto-play
-        hlsPlayback.play();
-        state.value.isPlaying = true;
+        // Auto-play (only if HLS initialized)
+        if (hlsInitSuccess) {
+          hlsPlayback.play();
+          state.value.isPlaying = true;
+        }
 
         // Register viewer session with monitoring system
         if (streamerId) {
@@ -1492,15 +1533,31 @@ export function useLivestreamViewer() {
       });
 
       if (segments && segments.length > 0) {
+        // Clear zero-segment timer since we have segments now
+        zeroSegmentStartTime = null;
+
         const previousCount = state.value.availableSegments.length;
         state.value.availableSegments = segments;
         state.value.totalRecordedDuration = segments[segments.length - 1].endTime;
+
+        // If HLS wasn't initialized yet (failed on first attempt), try again now that segments exist
+        if (!hlsPlayback.state.value.isInitialized && hlsVideoElement.value && hlsOutputDir.value) {
+          console.log('[LiveViewer] Segments available, attempting HLS initialization...');
+          const success = await hlsPlayback.initialize(hlsVideoElement.value, hlsOutputDir.value);
+          if (success) {
+            console.log('[LiveViewer] HLS initialization succeeded on retry');
+            isHlsReady.value = true;
+            state.value.isBuffering = false;
+            hlsPlayback.play();
+            state.value.isPlaying = true;
+          }
+        }
 
         // Track segment progress for stall detection
         if (segments.length > lastSegmentCount) {
           lastSegmentCount = segments.length;
           lastSegmentTime = Date.now();
-          
+
           // Reset restart counter when segments are flowing - recording is working
           if (recorderRestartCount > 0) {
             console.log('[LiveViewer] Segments flowing again, resetting restart counter');
@@ -1549,7 +1606,25 @@ export function useLivestreamViewer() {
           }
         }
       } else {
-        console.debug('[LiveViewer] No segments returned from get_hls_segments');
+        // No segments at all - track how long we've been in this state
+        if (!zeroSegmentStartTime) {
+          zeroSegmentStartTime = Date.now();
+        }
+
+        const zeroSegmentDuration = Date.now() - zeroSegmentStartTime;
+        if (
+          zeroSegmentDuration > ZERO_SEGMENT_TIMEOUT &&
+          !isRestartingRecorder &&
+          !isIntentionalDisconnect &&
+          !streamHasEnded
+        ) {
+          console.warn(
+            `[LiveViewer] No segments produced for ${(zeroSegmentDuration / 1000).toFixed(0)}s, recording may have failed. Attempting restart...`
+          );
+          checkAndRestartRecorderIfNeeded();
+        } else {
+          console.debug('[LiveViewer] No segments returned from get_hls_segments');
+        }
       }
     } catch (error) {
       // Silently fail - segments may not be ready yet
@@ -2099,6 +2174,22 @@ export function useLivestreamViewer() {
       }
     });
 
+    // Listen for recorder log events (errors, warnings, binary paths) visible in WebView console
+    const recorderLogUnlisten = await listen<{
+      streamer_id?: string;
+      streamerId?: string;
+      message: string;
+      level: string;
+    }>('recorder-log', (event) => {
+      const p = event.payload;
+      const msg = `[RecorderLog] ${p.message}`;
+      if (p.level === 'error') {
+        console.error(msg);
+      } else {
+        console.log(msg);
+      }
+    });
+
     // For HLS mode, poll for new segments
     const hlsUpdateInterval = window.setInterval(() => {
       if (hlsOutputDir.value) {
@@ -2111,7 +2202,7 @@ export function useLivestreamViewer() {
       clearInterval(hlsUpdateInterval);
     };
 
-    unlistenFunctions.push(unlisten, hlsSegmentUnlisten, recorderExitUnlisten, cleanupHlsInterval as any);
+    unlistenFunctions.push(unlisten, hlsSegmentUnlisten, recorderExitUnlisten, recorderLogUnlisten, cleanupHlsInterval as any);
   }
 
   // Disconnect from livestream
