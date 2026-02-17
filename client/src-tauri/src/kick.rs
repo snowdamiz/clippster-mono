@@ -319,6 +319,18 @@ fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
         return Ok(prod_path.to_string_lossy().to_string());
     }
 
+    // macOS production bundle: Tauri strips the target triple from sidecar names
+    #[cfg(target_os = "windows")]
+    let bare_name = format!("{}.exe", base_name);
+    #[cfg(not(target_os = "windows"))]
+    let bare_name = base_name.to_string();
+
+    let bare_path = exe_dir.join(&bare_name);
+    if bare_path.exists() {
+        println!("[Kick] Found {} at (bundle): {}", base_name, bare_path.display());
+        return Ok(bare_path.to_string_lossy().to_string());
+    }
+
     // Development mode: check src-tauri/binaries/
     // In dev, exe is in target/debug/, binaries are in src-tauri/binaries/
     if let Some(target_dir) = exe_dir.parent() {

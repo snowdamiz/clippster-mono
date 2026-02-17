@@ -492,6 +492,9 @@ jobs:
 
       # Use tauri-action for all platforms (handles CLI installation efficiently)
       # macOS aarch64: native build, ffmpeg-sys-the-third compiles FFmpeg from source
+      # Tauri-action signs with APPLE_CERTIFICATE but we omit APPLE_ID/PASSWORD/TEAM_ID
+      # to prevent auto-notarization. We re-sign sidecars with entitlements and notarize
+      # manually in a post-build step below.
       - name: Build Tauri App (macOS aarch64)
         if: contains(matrix.platform, 'macos') && contains(matrix.args, 'aarch64')
         uses: tauri-apps/tauri-action@v0
@@ -501,9 +504,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: client
           args: ${{ matrix.args }} --features ffmpeg-static
@@ -519,9 +519,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           FFMPEG_DIR: ${{ github.workspace }}/client/src-tauri/ffmpeg-x86_64
         with:
           projectPath: client
@@ -541,6 +538,135 @@ jobs:
           projectPath: client
           args: ${{ matrix.args }}
 
+      # Post-build: re-sign sidecars with entitlements, notarize, and re-package.
+      # tauri-action signs everything but strips entitlements from sidecars.
+      # We re-sign node and yt-dlp inside the .app with their entitlements,
+      # then notarize, staple, and re-create the .app.tar.gz + DMG.
+      - name: Re-sign sidecars with entitlements and notarize (macOS)
+        if: contains(matrix.platform, 'macos')
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # Import certificate into a temporary keychain for signing
+          CERTIFICATE_PATH=$RUNNER_TEMP/postsign_cert.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/postsign.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o $CERTIFICATE_PATH
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security import $CERTIFICATE_PATH -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          EXISTING_KEYCHAINS=$(security list-keychains -d user | tr -d '"' | tr '\n' ' ')
+          security list-keychains -d user -s $KEYCHAIN_PATH $EXISTING_KEYCHAINS
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          echo "Using identity: $IDENTITY"
+
+          # Locate the .app bundle
+          APP_BUNDLE=$(find client/src-tauri/target -name "*.app" -type d | head -1)
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "ERROR: .app bundle not found"
+            exit 1
+          fi
+          echo "Found .app bundle: $APP_BUNDLE"
+          MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
+
+          # Entitlements paths
+          NODE_ENTITLEMENTS="client/src-tauri/entitlements/node.entitlements.plist"
+          YTDLP_ENTITLEMENTS="client/src-tauri/entitlements/yt-dlp.entitlements.plist"
+
+          # Re-sign native .node addons inside the bundled pumpfun-service
+          echo "=== Re-signing native .node addons ==="
+          find "$APP_BUNDLE/Contents/Resources" -name "*.node" -type f 2>/dev/null | while read file; do
+            echo "Signing with entitlements: $file"
+            codesign --force --options runtime --timestamp --entitlements "$NODE_ENTITLEMENTS" --sign "$IDENTITY" "$file"
+          done
+
+          # Re-sign node with entitlements (needs disable-library-validation + allow-jit)
+          if [ -f "$MACOS_DIR/node" ]; then
+            echo "Re-signing node with entitlements"
+            codesign --force --options runtime --timestamp --entitlements "$NODE_ENTITLEMENTS" --sign "$IDENTITY" "$MACOS_DIR/node"
+          fi
+
+          # Re-sign yt-dlp with entitlements (PyInstaller binary needs disable-library-validation)
+          if [ -f "$MACOS_DIR/yt-dlp" ]; then
+            echo "Re-signing yt-dlp with entitlements"
+            codesign --force --options runtime --timestamp --entitlements "$YTDLP_ENTITLEMENTS" --sign "$IDENTITY" "$MACOS_DIR/yt-dlp"
+          fi
+
+          # Re-sign the outer .app to update the seal after modifying inner binaries
+          echo "Re-signing .app bundle"
+          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP_BUNDLE"
+
+          # Verify entitlements were applied
+          echo "=== Verifying entitlements ==="
+          if [ -f "$MACOS_DIR/node" ]; then
+            codesign -d --entitlements - "$MACOS_DIR/node" 2>&1 || true
+          fi
+          if [ -f "$MACOS_DIR/yt-dlp" ]; then
+            codesign -d --entitlements - "$MACOS_DIR/yt-dlp" 2>&1 || true
+          fi
+
+          # Notarize the .app bundle
+          echo "=== Notarizing .app bundle ==="
+          ZIP_PATH="$RUNNER_TEMP/Clippster-notarize.zip"
+          ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
+          xcrun notarytool submit "$ZIP_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          rm -f "$ZIP_PATH"
+
+          # Staple the notarization ticket
+          echo "=== Stapling notarization ticket ==="
+          xcrun stapler staple "$APP_BUNDLE"
+
+          # Re-create the .app.tar.gz for the updater
+          echo "=== Re-creating .app.tar.gz ==="
+          APP_TAR=$(find client/src-tauri/target -name "*.app.tar.gz" -type f | head -1)
+          if [ -n "$APP_TAR" ]; then
+            APP_DIR=$(dirname "$APP_BUNDLE")
+            APP_NAME=$(basename "$APP_BUNDLE")
+            tar -czf "$APP_TAR" -C "$APP_DIR" "$APP_NAME"
+            echo "Re-created: $APP_TAR"
+
+            # Re-sign the .app.tar.gz with Tauri updater signing key
+            echo "=== Re-signing .app.tar.gz with Tauri key ==="
+            TAURI_PRIVATE_KEY_FILE="$RUNNER_TEMP/tauri_key.pem"
+            echo "$TAURI_SIGNING_PRIVATE_KEY" > "$TAURI_PRIVATE_KEY_FILE"
+
+            # Use the tauri CLI to sign the updater bundle
+            npx @tauri-apps/cli signer sign -k "$TAURI_SIGNING_PRIVATE_KEY" -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$APP_TAR"
+            rm -f "$TAURI_PRIVATE_KEY_FILE"
+            echo "Re-signed updater bundle: ${APP_TAR}.sig"
+          fi
+
+          # Re-create the DMG
+          echo "=== Re-creating DMG ==="
+          DMG_FILE=$(find client/src-tauri/target -name "*.dmg" -type f | head -1)
+          if [ -n "$DMG_FILE" ]; then
+            APP_DIR=$(dirname "$APP_BUNDLE")
+            APP_NAME=$(basename "$APP_BUNDLE" .app)
+            rm -f "$DMG_FILE"
+            hdiutil create -volname "$APP_NAME" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG_FILE"
+            # Sign the DMG
+            codesign --force --timestamp --sign "$IDENTITY" "$DMG_FILE"
+            echo "Re-created DMG: $DMG_FILE"
+          fi
+
+          echo "=== Post-build signing and notarization complete ==="
+
       - name: Upload artifacts to public releases repo (macOS)
         if: contains(matrix.platform, 'macos')
         shell: bash
@@ -552,7 +678,7 @@ jobs:
           # Upload DMG
           DMG_FILE=$(find client/src-tauri/target -name "*.dmg" -type f | head -1)
           [ -n "$DMG_FILE" ] && gh release upload "v$VERSION" "$DMG_FILE" --repo $RELEASES_REPO --clobber
-          
+
           # Upload .app.tar.gz (for updater) with architecture suffix
           APP_TAR=$(find client/src-tauri/target -name "*.app.tar.gz" -type f | head -1)
           if [ -n "$APP_TAR" ]; then
@@ -560,7 +686,7 @@ jobs:
             NEW_NAME="${BASENAME%.app.tar.gz}_${ARCH_SUFFIX}.app.tar.gz"
             cp "$APP_TAR" "/tmp/$NEW_NAME"
             gh release upload "v$VERSION" "/tmp/$NEW_NAME" --repo $RELEASES_REPO --clobber
-            
+
             # Upload signature
             APP_SIG=$(find client/src-tauri/target -name "*.app.tar.gz.sig" -type f | head -1)
             if [ -n "$APP_SIG" ]; then
