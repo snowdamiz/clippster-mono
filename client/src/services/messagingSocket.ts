@@ -254,7 +254,7 @@ class MessagingSocket {
 
       channel
         .push('edit_message', { message_id: messageId, content })
-        .receive('ok', (response: Message) => resolve(response))
+        .receive('ok', (response: any) => resolve(normalizeMessage(response)))
         .receive('error', (reason: unknown) => reject(new Error(`Failed to edit message: ${JSON.stringify(reason)}`)));
     });
   }
