@@ -303,6 +303,23 @@ async function handleExport() {
 			exportedPath.value = result.outputPath || null;
 			isOpen.value = false;
 			progress.value = 0;
+
+			// Register the exported file as a built clip so it appears in Built Clips
+			if (result.outputPath) {
+				try {
+					const { getVideoEditorSourcesByProjectId } = await import("@/services/database/video-editor-projects");
+					const { updateClipBuildStatus } = await import("@/services/database/clip-build");
+					const sources = await getVideoEditorSourcesByProjectId(project.metadata.id);
+					const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
+					if (clipSource?.source_id) {
+						await updateClipBuildStatus(clipSource.source_id, "completed", {
+							builtFilePath: result.outputPath,
+						});
+					}
+				} catch (e) {
+					console.warn("[ExportButton] Failed to register export as built clip:", e);
+				}
+			}
 		} else {
 			exportError.value = result.error || "Unknown error occurred";
 		}
