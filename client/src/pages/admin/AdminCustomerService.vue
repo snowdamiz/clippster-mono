@@ -49,12 +49,16 @@ const sortedMessages = computed(() => {
 async function loadConversations() {
   isLoading.value = true;
   try {
+    console.log('Loading support conversations with status:', statusFilter.value);
     const response = await api.get('/admin/support/conversations', {
       params: { status: statusFilter.value }
     });
+    console.log('Support conversations response:', response.data);
     conversations.value = response.data.conversations || [];
-  } catch (error) {
+    console.log('Conversations set to:', conversations.value);
+  } catch (error: any) {
     console.error('Failed to load conversations:', error);
+    console.error('Error details:', error.response?.data);
   } finally {
     isLoading.value = false;
   }
@@ -175,6 +179,10 @@ watch(statusFilter, () => {
 });
 
 onMounted(() => {
+  console.log('AdminCustomerService mounted');
+  console.log('Current user:', authStore.user);
+  console.log('Is authenticated:', authStore.isAuthenticated);
+  console.log('Auth token exists:', !!authStore.token);
   loadConversations();
 });
 </script>
