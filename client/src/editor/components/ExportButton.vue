@@ -30,12 +30,12 @@ const exportedPath = ref<string | null>(null);
 
 const hasProject = computed(() => {
 	void version.value;
-	return !!editor.project.getActive();
+	return !!editor.project.getActiveOrNull();
 });
 
 const activeProject = computed(() => {
 	void version.value;
-	return editor.project.getActive();
+	return editor.project.getActiveOrNull();
 });
 
 const projectName = computed(() => activeProject.value?.metadata.name || "Untitled Project");

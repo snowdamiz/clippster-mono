@@ -734,7 +734,7 @@ function handleTranscriptUpdate() {
 watch(
 	() => {
 		void version.value;
-		return editor.project.getActive()?.metadata.id;
+		return editor.project.getActiveOrNull()?.metadata.id;
 	},
 	() => {
 		loadTranscript();
