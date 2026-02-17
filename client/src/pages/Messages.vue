@@ -83,12 +83,9 @@
   let typingTimeout: number | null = null;
 
   const filteredConversations = computed(() => {
-    // Filter out support conversations (they appear as pinned entry)
-    const regularConversations = messagingStore.conversationList.filter((conv) => conv.type !== 'support');
-    
-    if (!searchQuery.value) return regularConversations;
+    if (!searchQuery.value) return messagingStore.conversationList;
     const query = searchQuery.value.toLowerCase();
-    return regularConversations.filter((conv) => {
+    return messagingStore.conversationList.filter((conv) => {
       const name = getConversationName(conv).toLowerCase();
       return name.includes(query);
     });
@@ -705,6 +702,7 @@
                             'messages-conv__avatar--direct': conv.type === 'direct',
                             'messages-conv__avatar--group': conv.type === 'group',
                             'messages-conv__avatar--announcement': conv.type === 'announcement',
+                            'messages-conv__avatar--support': conv.type === 'support',
                           }"
                         >
                           <img
@@ -713,6 +711,7 @@
                             alt=""
                             class="messages-conv__avatar-img"
                           />
+                          <Headset v-else-if="conv.type === 'support'" class="messages-conv__avatar-icon" />
                           <Users v-else-if="conv.type === 'group'" class="messages-conv__avatar-icon" />
                           <Megaphone v-else-if="conv.type === 'announcement'" class="messages-conv__avatar-icon" />
                           <span v-else class="messages-conv__avatar-initial">
