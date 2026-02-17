@@ -299,7 +299,7 @@
 
         const response = await api.post(`/organization-applications/${props.application.id}/logo`, formData, {
           headers: {
-            'Content-Type': 'multipart/form-data',
+            'Content-Type': undefined,
           },
         });
 
@@ -363,7 +363,7 @@
 
             await api.post(`/organization-applications/${data.application.id}/logo`, logoFormData, {
               headers: {
-                'Content-Type': 'multipart/form-data',
+                'Content-Type': undefined,
               },
             });
           } catch (logoErr) {

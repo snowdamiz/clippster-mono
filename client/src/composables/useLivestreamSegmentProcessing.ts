@@ -212,7 +212,7 @@ export function useLivestreamSegmentProcessing() {
         job.onProgress?.('Transcribing audio & Detecting Clips');
         try {
           const response = await api.post('/clips/detect', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
+            headers: { 'Content-Type': undefined },
             timeout: 900000, // 15 minutes for AI detection
           });
 

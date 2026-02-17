@@ -150,7 +150,7 @@ export async function createSharedClip(
       formData,
       {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Content-Type': undefined,
         },
         timeout: 600000, // 10 minutes for large uploads
       }

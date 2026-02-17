@@ -361,9 +361,7 @@ export async function uploadPortfolioClip(
       '/user/clipper-profile/portfolio-clips/upload',
       formData,
       {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': undefined },
       }
     );
     return response.data;
@@ -419,9 +417,7 @@ export async function uploadClipperAvatar(file: File): Promise<UploadAvatarRespo
       '/user/clipper-profile/avatar',
       formData,
       {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': undefined },
       }
     );
     return response.data;

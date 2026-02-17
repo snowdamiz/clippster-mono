@@ -674,7 +674,7 @@ export async function uploadCampaignCoverImage(
 
     const response = await api.post(`/organizations/${organizationId}/assets`, formData, {
       headers: {
-        'Content-Type': 'multipart/form-data',
+        'Content-Type': undefined,
       },
       timeout: 120000, // 2 minutes
     });

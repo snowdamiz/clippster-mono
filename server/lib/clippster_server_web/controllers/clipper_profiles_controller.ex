@@ -155,18 +155,28 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   Add a channel link.
   """
   def create_channel_link(conn, params) do
+    require Logger
     user = conn.assigns.current_user
+    Logger.debug("[ClipperProfiles] create_channel_link params: #{inspect(params)}")
+
+    link_params = Map.take(params, ["platform", "url", "username", "display_order"])
 
     with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
-         {:ok, link} <- ClipperProfiles.add_channel_link(profile.id, params) do
+         {:ok, link} <- ClipperProfiles.add_channel_link(profile.id, link_params) do
       conn
       |> put_status(:created)
       |> json(%{success: true, channel_link: serialize_channel_link(link)})
     else
-      {:error, changeset} ->
+      {:error, %Ecto.Changeset{} = changeset} ->
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{success: false, error: format_changeset_errors(changeset)})
+
+      {:error, reason} ->
+        Logger.error("[ClipperProfiles] create_channel_link error: #{inspect(reason)}")
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{success: false, error: "Failed to save channel link"})
     end
   end
 
@@ -371,10 +381,12 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     end
   end
 
-  def upload_portfolio_clip(conn, _params) do
+  def upload_portfolio_clip(conn, params) do
+    require Logger
+    Logger.error("[ClipperProfiles] upload_portfolio_clip fallback - params keys: #{inspect(Map.keys(params))}")
     conn
     |> put_status(:bad_request)
-    |> json(%{success: false, error: "No file provided"})
+    |> json(%{success: false, error: "No file provided. Expected multipart/form-data with 'file' field."})
   end
 
   defp generate_portfolio_clip_key(user_id, filename) do
