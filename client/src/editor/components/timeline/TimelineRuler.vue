@@ -29,7 +29,7 @@ const duration = computed(() => {
 
 const fps = computed(() => {
 	void version.value;
-	return editor.project.getActive()?.settings?.fps ?? DEFAULT_FPS;
+	return editor.project.getActiveOrNull()?.settings?.fps ?? DEFAULT_FPS;
 });
 
 const pixelsPerSecond = computed(

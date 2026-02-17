@@ -23,7 +23,7 @@ const addedMediaIds = ref<Map<string, string>>(new Map()); // clipId → mediaAs
 
 const activeProject = computed(() => {
 	void version.value;
-	return editor.project.getActive();
+	return editor.project.getActiveOrNull();
 });
 
 const existingMediaNames = computed(() => {

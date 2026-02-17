@@ -81,7 +81,7 @@ const totalDuration = computed(() => {
 });
 const fps = computed(() => {
 	void version.value;
-	return editor.project.getActive()?.settings?.fps ?? 30;
+	return editor.project.getActiveOrNull()?.settings?.fps ?? 30;
 });
 
 const canUndo = computed(() => {

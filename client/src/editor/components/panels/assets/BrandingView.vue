@@ -219,7 +219,7 @@ loadAssets();
 watch(
 	config,
 	(newConfig) => {
-		const project = editor.project.getActive();
+		const project = editor.project.getActiveOrNull();
 		if (!project) return;
 		editor.project.updateSettings({ settings: { brandingConfig: newConfig } });
 	},

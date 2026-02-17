@@ -69,7 +69,7 @@ onUnmounted(() => {
 
 const activeProject = computed(() => {
 	void version.value;
-	return editor.project.getActive();
+	return editor.project.getActiveOrNull();
 });
 
 const canvasWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
@@ -86,7 +86,7 @@ watch(is916, (val) => {
 	}
 });
 const fps = computed(() => activeProject.value?.settings?.fps ?? 30);
-const background = computed(() => activeProject.value?.settings?.background);
+const background = computed(() => activeProject.value?.settings?.background ?? { type: "color" as const, color: "#000000" });
 
 const renderer = shallowRef<CanvasRenderer | null>(null);
 

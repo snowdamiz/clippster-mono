@@ -499,7 +499,7 @@
                 </div>
                 <div class="section__header-text">
                   <h2 class="section-title">My Posts</h2>
-                  <p class="section-subtitle">Posts published to your Instagram account</p>
+                  <p class="section-subtitle">Posts published to your Social Media Accounts</p>
                 </div>
                 <button class="browse-btn" @click="loadPostsAnalytics">
                   <RefreshCw class="browse-btn__icon" :class="{ 'animate-spin': loadingPosts }" />

@@ -83,7 +83,7 @@ export function usePreviewInteraction({
 	canvasHeight: Ref<number>;
 }) {
 	const { editor, version } = useEditor();
-	const { selectedElements, selectElement, clearElementSelection } = useElementSelection();
+	const { selectedElements, selectElement, clearElementSelection, isElementSelected } = useElementSelection();
 
 	const dragState = ref<DragState | null>(null);
 	const hoveredElementId = ref<string | null>(null);
@@ -369,7 +369,12 @@ export function usePreviewInteraction({
 
 		const hit = hitTest(pos.x, pos.y);
 		if (hit) {
-			selectElement({ trackId: hit.trackId, elementId: hit.elementId });
+			// If the clicked element is already part of a multi-selection (e.g. caption track),
+			// preserve the selection so the entire group moves together.
+			const alreadySelected = isElementSelected({ trackId: hit.trackId, elementId: hit.elementId });
+			if (!alreadySelected) {
+				selectElement({ trackId: hit.trackId, elementId: hit.elementId });
+			}
 			startDrag(event, hit, "move");
 		} else {
 			clearElementSelection();
@@ -498,13 +503,21 @@ export function usePreviewInteraction({
 	function handleMouseUp() {
 		const ds = dragState.value;
 		if (ds) {
+			// Collect all selected element IDs on this track (for batch commit, e.g. caption track)
+			const selectedOnTrack = new Set(
+				selectedElements.value
+					.filter((s) => s.trackId === ds.trackId)
+					.map((s) => s.elementId),
+			);
+			selectedOnTrack.add(ds.elementId);
+
 			// Commit the final transform via command for undo/redo
 			const track = editor.timeline.getTrackById({ trackId: ds.trackId });
 			if (track) {
-				const element = track.elements.find((e) => e.id === ds.elementId);
-				if (element && "transform" in element) {
-					const liveTransform = (element as any).transform as Transform;
-					// Deep-copy before reverting so we don't lose the final values
+				// Read final transform from the primary dragged element
+				const primaryElement = track.elements.find((e) => e.id === ds.elementId);
+				if (primaryElement && "transform" in primaryElement) {
+					const liveTransform = (primaryElement as any).transform as Transform;
 					const finalTransform: Transform = {
 						scale: liveTransform.scale,
 						rotate: liveTransform.rotate,
@@ -518,13 +531,27 @@ export function usePreviewInteraction({
 						finalTransform.scale !== orig.scale ||
 						finalTransform.rotate !== orig.rotate
 					) {
-						// Revert to original, then execute command (so undo restores original)
-						applyTransformDirect(ds.trackId, ds.elementId, orig);
-						editor.timeline.updateElement({
-							trackId: ds.trackId,
-							elementId: ds.elementId,
-							updates: { transform: finalTransform },
+						// Batch-revert all selected elements to original in one updateTracks call
+						const currentTracks = editor.timeline.getTracks();
+						const revertedTracks = currentTracks.map((t) => {
+							if (t.id !== ds.trackId) return t;
+							return {
+								...t,
+								elements: t.elements.map((el) =>
+									selectedOnTrack.has(el.id) ? { ...el, transform: orig } : el,
+								),
+							} as typeof t;
 						});
+						editor.timeline.updateTracks(revertedTracks);
+
+						// Commit final transform for each element via command (supports undo/redo)
+						for (const elId of selectedOnTrack) {
+							editor.timeline.updateElement({
+								trackId: ds.trackId,
+								elementId: elId,
+								updates: { transform: finalTransform },
+							});
+						}
 					}
 				}
 			}
@@ -544,13 +571,22 @@ export function usePreviewInteraction({
 	}
 
 	function applyTransformDirect(trackId: string, elementId: string, transform: Transform) {
+		// Collect all selected element IDs on this track so they all move together
+		const selectedOnTrack = new Set(
+			selectedElements.value
+				.filter((s) => s.trackId === trackId)
+				.map((s) => s.elementId),
+		);
+		// Always include the primary dragged element
+		selectedOnTrack.add(elementId);
+
 		const currentTracks = editor.timeline.getTracks();
 		const updatedTracks = currentTracks.map((t) => {
 			if (t.id !== trackId) return t;
 			return {
 				...t,
 				elements: t.elements.map((el) =>
-					el.id === elementId ? { ...el, transform } : el,
+					selectedOnTrack.has(el.id) ? { ...el, transform } : el,
 				),
 			} as typeof t;
 		});
