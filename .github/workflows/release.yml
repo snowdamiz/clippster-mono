@@ -346,10 +346,14 @@ jobs:
           IDENTITY=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
           echo "Using identity: $IDENTITY"
           
-          # Sign all .node files in pumpfun-service/node_modules
+          # Sign all .node files in pumpfun-service/node_modules WITH entitlements.
+          # Native .node addons are loaded via dlopen() by Node.js, which hardened
+          # runtime blocks unless disable-library-validation is granted.
+          # Without this, @livekit/rtc-node and other native addons crash on macOS production.
+          NODE_ENTITLEMENTS="client/src-tauri/entitlements/node.entitlements.plist"
           find client/src-tauri/pumpfun-service/node_modules -name "*.node" -type f | while read file; do
-            echo "Signing: $file"
-            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$file"
+            echo "Signing with entitlements: $file"
+            codesign --force --options runtime --timestamp --entitlements "$NODE_ENTITLEMENTS" --sign "$IDENTITY" "$file"
           done
           
           echo "Native modules signed successfully"
@@ -362,17 +366,39 @@ jobs:
             TRIPLE="x86_64-apple-darwin"
           fi
 
-          for BINARY in \
-            "client/src-tauri/binaries/ffmpeg-${TRIPLE}" \
-            "client/src-tauri/binaries/node-${TRIPLE}" \
-            "client/src-tauri/binaries/yt-dlp-${TRIPLE}"; do
-            if [ -f "$BINARY" ]; then
-              echo "Signing sidecar: $BINARY"
-              codesign --force --options runtime --timestamp --sign "$IDENTITY" "$BINARY"
-            else
-              echo "WARNING: Sidecar binary not found: $BINARY"
-            fi
-          done
+          # Sign ffmpeg (native binary - no special entitlements needed)
+          FFMPEG_BINARY="client/src-tauri/binaries/ffmpeg-${TRIPLE}"
+          if [ -f "$FFMPEG_BINARY" ]; then
+            echo "Signing sidecar: $FFMPEG_BINARY"
+            codesign --force --options runtime --timestamp --sign "$IDENTITY" "$FFMPEG_BINARY"
+          else
+            echo "WARNING: Sidecar binary not found: $FFMPEG_BINARY"
+          fi
+
+          # Sign Node.js WITH entitlements - it needs disable-library-validation to
+          # dlopen() native .node addons (e.g., @livekit/rtc-node), and allow-jit
+          # for V8 JIT compilation. Without these, PumpFun recording fails silently.
+          NODE_BINARY="client/src-tauri/binaries/node-${TRIPLE}"
+          NODE_ENTITLEMENTS="client/src-tauri/entitlements/node.entitlements.plist"
+          if [ -f "$NODE_BINARY" ]; then
+            echo "Signing node with entitlements: $NODE_BINARY"
+            codesign --force --options runtime --timestamp --entitlements "$NODE_ENTITLEMENTS" --sign "$IDENTITY" "$NODE_BINARY"
+          else
+            echo "WARNING: Node binary not found: $NODE_BINARY"
+          fi
+
+          # Sign yt-dlp WITH entitlements - it's a PyInstaller binary that needs
+          # disable-library-validation and allow-unsigned-executable-memory to load
+          # its embedded Python runtime under hardened runtime.
+          # Without these entitlements, yt-dlp crashes silently on macOS production.
+          YTDLP_BINARY="client/src-tauri/binaries/yt-dlp-${TRIPLE}"
+          YTDLP_ENTITLEMENTS="client/src-tauri/entitlements/yt-dlp.entitlements.plist"
+          if [ -f "$YTDLP_BINARY" ]; then
+            echo "Signing yt-dlp with entitlements: $YTDLP_BINARY"
+            codesign --force --options runtime --timestamp --entitlements "$YTDLP_ENTITLEMENTS" --sign "$IDENTITY" "$YTDLP_BINARY"
+          else
+            echo "WARNING: yt-dlp binary not found: $YTDLP_BINARY"
+          fi
 
           echo "=== All signing complete ==="
 

@@ -582,13 +582,25 @@ async fn run_twitch_recorder(
     let ffmpeg_path = resolve_ffmpeg_binary()?;
     let twitch_url = format!("https://twitch.tv/{}", channel_name);
 
+    // Verify binaries exist on disk before attempting to spawn
+    let ytdlp_exists = std::path::Path::new(&ytdlp_path).exists();
+    let ffmpeg_exists = std::path::Path::new(&ffmpeg_path).exists();
+
     // Log resolved binary paths and output dir for debugging macOS production issues
     let _ = app.emit("recorder-log", TwitchRecorderLogPayload {
         streamer_id: streamer_id.clone(),
         channel_name: channel_name.clone(),
-        message: format!("Resolved binaries - yt-dlp: {}, ffmpeg: {}, output: {}", ytdlp_path, ffmpeg_path, output_dir),
+        message: format!("Resolved binaries - yt-dlp: {} (exists: {}), ffmpeg: {} (exists: {}), output: {}", 
+            ytdlp_path, ytdlp_exists, ffmpeg_path, ffmpeg_exists, output_dir),
         level: "info".to_string(),
     });
+
+    if !ytdlp_exists {
+        return Err(format!("yt-dlp binary not found at: {}", ytdlp_path));
+    }
+    if !ffmpeg_exists {
+        return Err(format!("ffmpeg binary not found at: {}", ffmpeg_path));
+    }
 
     // HLS segment duration in seconds
     // For Auto-Detect/Record: use user-configured segment duration (e.g., 5 minutes = 300 seconds)
@@ -641,14 +653,19 @@ async fn run_twitch_recorder(
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 println!("[TwitchRecorder] yt-dlp stderr: {}", line);
-                if line.contains("ERROR") || line.contains("error") {
-                    let _ = app_for_ytdlp_stderr.emit("recorder-log", TwitchRecorderLogPayload {
-                        streamer_id: streamer_id_for_ytdlp.clone(),
-                        channel_name: channel_name_for_ytdlp.clone(),
-                        message: format!("yt-dlp: {}", line),
-                        level: "error".to_string(),
-                    });
-                }
+                // Emit ALL stderr lines to frontend - not just "error" lines.
+                // PyInstaller crashes (hardened runtime) output "MemoryError",
+                // "Failed to execute script", "Killed", "Traceback" etc.
+                let line_lower = line.to_lowercase();
+                let is_error = line_lower.contains("error") || line_lower.contains("fail")
+                    || line_lower.contains("killed") || line_lower.contains("traceback")
+                    || line_lower.contains("crash") || line_lower.contains("abort");
+                let _ = app_for_ytdlp_stderr.emit("recorder-log", TwitchRecorderLogPayload {
+                    streamer_id: streamer_id_for_ytdlp.clone(),
+                    channel_name: channel_name_for_ytdlp.clone(),
+                    message: format!("yt-dlp stderr: {}", line),
+                    level: if is_error { "error".to_string() } else { "info".to_string() },
+                });
             }
         });
     }
