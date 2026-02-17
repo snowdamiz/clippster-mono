@@ -79,6 +79,28 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 			await resolveAndInitBranding(sources);
 		}
 
+		// Backfill sourceProjectId if missing (for projects created before this was added)
+		if (!loadedProject?.settings?.sourceProjectId) {
+			try {
+				const sources = await getVideoEditorSourcesByProjectId(projectId);
+				const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
+				if (clipSource?.source_id) {
+					const clip = await getClip(clipSource.source_id);
+					if (clip?.project_id) {
+						editor.project.setActiveProject({
+							project: {
+								...loadedProject,
+								settings: { ...loadedProject.settings, sourceProjectId: clip.project_id },
+							},
+						});
+						await editor.project.saveCurrentProject();
+					}
+				}
+			} catch {
+				// Non-fatal
+			}
+		}
+
 		return editor;
 	}
 
@@ -90,6 +112,21 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 
 	// Build timeline tracks
 	const tracks = await buildTimelineTracks(projectId, sources, mediaAssets);
+
+	// Resolve the original Clippster project ID (for transcript lookup)
+	// Chain: video_editor_source (source_type='clip') → clip → clip.project_id
+	let sourceProjectId: string | null = null;
+	try {
+		const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
+		if (clipSource?.source_id) {
+			const clip = await getClip(clipSource.source_id);
+			if (clip?.project_id) {
+				sourceProjectId = clip.project_id;
+			}
+		}
+	} catch {
+		// Non-fatal — transcript just won't load
+	}
 
 	// Create the OpenCut project
 	const now = new Date();
@@ -115,7 +152,7 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 			},
 		],
 		currentSceneId: sceneId,
-		settings: DEFAULT_PROJECT_SETTINGS,
+		settings: { ...DEFAULT_PROJECT_SETTINGS, sourceProjectId },
 		version: 1,
 		timelineViewState: {
 			zoomLevel: 1,

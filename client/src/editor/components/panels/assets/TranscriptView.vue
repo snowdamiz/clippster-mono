@@ -229,12 +229,15 @@ async function loadTranscript() {
 			return;
 		}
 
-		const projectId = activeProject.metadata.id;
+		// Use the original Clippster project ID for transcript lookup.
+		// The transcript is stored against the source project (the one with the VOD),
+		// not the video editor project ID.
+		const transcriptProjectId = activeProject.settings?.sourceProjectId ?? activeProject.metadata.id;
 
 		// Try loading from the project's existing transcript (SQLite)
 		const { useTranscriptData } = await import("@/composables/useTranscriptData");
-		const { loadTranscriptData, transcriptData } = useTranscriptData(ref(projectId));
-		await loadTranscriptData(projectId);
+		const { loadTranscriptData, transcriptData } = useTranscriptData(ref(transcriptProjectId));
+		await loadTranscriptData(transcriptProjectId);
 
 		if (transcriptData.value && transcriptData.value.words.length > 0) {
 			const loadedWords = transcriptData.value.words.map((w: any) => ({
