@@ -23,7 +23,28 @@ onMounted(async () => {
 	try {
 		// Load the Clippster project into the OpenCut editor via bridge
 		// This initializes EditorCore internally and converts the SQLite project
-		await loadClippsterProject(projectId);
+		const editor = await loadClippsterProject(projectId);
+
+		// Wait for project to be fully loaded and ready
+		// Verify that both project and scene are accessible before rendering
+		let retries = 0;
+		const maxRetries = 50; // 5 seconds max wait
+		while (retries < maxRetries) {
+			const project = editor.project.getActiveOrNull();
+			const scenes = editor.scenes.getScenes();
+			
+			if (project && scenes.length > 0) {
+				// Project and scenes are loaded, safe to render
+				break;
+			}
+			
+			await new Promise(resolve => setTimeout(resolve, 100));
+			retries++;
+		}
+
+		if (retries >= maxRetries) {
+			throw new Error("Timeout waiting for project to load");
+		}
 
 		isLoading.value = false;
 	} catch (err) {
