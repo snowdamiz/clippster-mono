@@ -181,45 +181,83 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
     
     let limit_str = limit.unwrap_or(10).to_string();
     let channel_url = if channel_id.starts_with('@') {
-        format!("https://www.youtube.com/{}/videos", channel_id)
+        format!("https://www.youtube.com/{}/streams", channel_id)
     } else {
-        format!("https://www.youtube.com/channel/{}/videos", channel_id)
+        format!("https://www.youtube.com/channel/{}/streams", channel_id)
     };
     
+    println!("[YouTube VODs] Fetching from: {}", channel_url);
+
     let mut cmd = tokio::process::Command::new(&ytdlp_path);
     no_window(&mut cmd);
-    
+
+    // --dump-json outputs one JSON per video line; --skip-download avoids downloading
+    // youtubetab:skip=webpage skips JS for the tab/playlist page itself
+    // youtube:player_skip=webpage,configs skips JS for each individual video (avoids SABR errors)
+    // Together these provide full metadata (upload_date, title, duration, etc.) without JS runtime
     cmd.arg("--dump-json")
-        .arg("--playlist-end").arg(&limit_str)
         .arg("--skip-download")
+        .arg("--no-warnings")
+        .arg("--ignore-errors")
+        .arg("--extractor-args").arg("youtubetab:skip=webpage;youtube:player_skip=webpage,configs")
+        .arg("--playlist-end").arg(&limit_str)
         .arg(&channel_url);
-    
+
     let output = cmd.output().await
         .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("yt-dlp failed: {}", stderr));
-    }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut vods = Vec::new();
-    
-    for line in stdout.lines() {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-            let vod = YouTubeVod {
-                video_id: json["id"].as_str().unwrap_or("").to_string(),
-                title: json["title"].as_str().map(String::from),
-                duration: json["duration"].as_f64(),
-                view_count: json["view_count"].as_i64(),
-                thumbnail_url: json["thumbnail"].as_str().map(String::from),
-                upload_date: json["upload_date"].as_str().map(String::from),
-                url: json["webpage_url"].as_str().unwrap_or("").to_string(),
-            };
-            vods.push(vod);
-        }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    println!("[YouTube VODs] stdout lines: {}", stdout.lines().count());
+    if !stderr.is_empty() {
+        println!("[YouTube VODs] stderr (first 300): {}", &stderr[..stderr.len().min(300)]);
     }
-    
+
+    if stdout.trim().is_empty() {
+        return Err(format!("yt-dlp returned no output. stderr: {}", &stderr[..stderr.len().min(500)]));
+    }
+
+    let mut vods = Vec::new();
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let json: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let video_id = match json["id"].as_str() {
+            Some(id) if !id.is_empty() => id.to_string(),
+            _ => continue,
+        };
+
+        // upload_date is YYYYMMDD from yt-dlp
+        let upload_date = json["upload_date"].as_str().map(String::from);
+
+        let thumbnail_url = json["thumbnail"].as_str().map(String::from)
+            .or_else(|| Some(format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", video_id)));
+
+        let url = json["webpage_url"].as_str()
+            .map(String::from)
+            .unwrap_or_else(|| format!("https://www.youtube.com/watch?v={}", video_id));
+
+        println!("[YouTube VODs] entry: id={} upload_date={:?} live_status={:?}",
+            video_id, upload_date, json["live_status"].as_str());
+
+        let vod = YouTubeVod {
+            video_id,
+            title: json["title"].as_str().map(String::from),
+            duration: json["duration"].as_f64(),
+            view_count: json["view_count"].as_i64(),
+            thumbnail_url,
+            upload_date,
+            url,
+        };
+        vods.push(vod);
+    }
+
     Ok(serde_json::to_string(&vods).unwrap())
 }
 

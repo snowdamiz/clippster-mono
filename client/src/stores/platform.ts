@@ -495,17 +495,35 @@ export const usePlatformStore = defineStore('platform', {
     }> {
       try {
         const vods = await getYouTubeVods(channelId, limit);
-        const clips: PlatformClip[] = vods.map((vod: YouTubeVod) => ({
-          clipId: vod.videoId,
-          title: vod.title || `Video ${vod.videoId}`,
-          duration: vod.duration || 0,
-          thumbnailUrl: vod.thumbnailUrl,
-          playlistUrl: vod.url,
-          mp4Url: vod.url,
-          clipType: 'COMPLETE' as const,
-          createdAt: vod.uploadDate,
-          views: vod.viewCount ?? undefined,
-        }));
+        const clips: PlatformClip[] = vods.map((vod: YouTubeVod) => {
+          // yt-dlp flat-playlist returns timestamp as Unix epoch string (e.g. "1737014400")
+          // or upload_date as "YYYYMMDD" — normalize both to ISO 8601
+          let createdAt: string | undefined;
+          if (vod.uploadDate) {
+            const raw = vod.uploadDate;
+            if (/^\d{8}$/.test(raw)) {
+              // YYYYMMDD → YYYY-MM-DD
+              createdAt = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+            } else if (/^\d{9,13}$/.test(raw)) {
+              // Unix epoch seconds or milliseconds → ISO string
+              const ms = raw.length <= 10 ? Number(raw) * 1000 : Number(raw);
+              createdAt = new Date(ms).toISOString();
+            } else {
+              createdAt = raw;
+            }
+          }
+          return {
+            clipId: vod.videoId,
+            title: vod.title || `Video ${vod.videoId}`,
+            duration: vod.duration || 0,
+            thumbnailUrl: vod.thumbnailUrl,
+            playlistUrl: vod.url,
+            mp4Url: vod.url,
+            clipType: 'COMPLETE' as const,
+            createdAt,
+            views: vod.viewCount ?? undefined,
+          };
+        });
         return {
           success: true,
           clips,
