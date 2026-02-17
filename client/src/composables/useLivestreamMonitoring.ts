@@ -246,6 +246,7 @@ async function fetchLiveStatus(
     case 'Twitch':
       return fetchTwitchLiveStatus(platformId);
     case 'YouTube':
+    case 'Youtube':
       return fetchYouTubeLiveStatus(platformId);
     case 'Rumble':
       return fetchRumbleLiveStatus(platformId);

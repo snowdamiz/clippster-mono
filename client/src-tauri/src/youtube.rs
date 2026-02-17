@@ -79,12 +79,6 @@ struct YouTubeRecorderExitPayload {
     code: Option<i32>,
 }
 
-static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
-    reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .build()
-        .expect("Failed to build reqwest client")
-});
 
 /// Simplified live status response for frontend
 #[derive(Debug, Serialize, Deserialize)]
@@ -112,201 +106,71 @@ pub struct YouTubeVod {
     pub url: String,
 }
 
-/// Check if a YouTube channel is live using InnerTube API
+/// Check if a YouTube channel is live using yt-dlp
 /// 
 /// # Arguments
-/// * `channel` - YouTube channel ID (UC...) or handle (@username)
+/// * `channel` - YouTube channel ID (UC...), handle (@username), or channel URL
 #[tauri::command]
 pub async fn check_youtube_livestream(channel: String) -> Result<String, String> {
     let channel_id = normalize_channel_input(&channel);
-    
-    // Use YouTube's InnerTube API (same as their website)
-    let url = "https://www.youtube.com/youtubei/v1/browse";
-    
-    // Determine if input is handle or channel ID
-    let browse_id = if channel_id.starts_with('@') {
-        // For handles, we need to resolve to channel ID first
-        match resolve_handle_to_channel_id(&channel_id).await {
-            Ok(id) => id,
-            Err(e) => return Err(format!("Failed to resolve handle: {}", e)),
-        }
+    let ytdlp_path = resolve_ytdlp_binary()?;
+
+    // Build the live URL for the channel
+    let live_url = if channel_id.starts_with('@') {
+        format!("https://www.youtube.com/{}/live", channel_id)
     } else if channel_id.starts_with("UC") {
-        channel_id.clone()
+        format!("https://www.youtube.com/channel/{}/live", channel_id)
     } else {
-        // Assume it's a channel ID without UC prefix
-        format!("UC{}", channel_id)
+        format!("https://www.youtube.com/@{}/live", channel_id)
     };
-    
-    let body = serde_json::json!({
-        "context": {
-            "client": {
-                "clientName": "WEB",
-                "clientVersion": "2.20250101"
-            }
-        },
-        "browseId": browse_id
-    });
-    
-    let response = HTTP_CLIENT
-        .post(url)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("InnerTube API request failed: {}", e))?;
-    
-    if !response.status().is_success() {
-        return Err(format!("InnerTube API error: {}", response.status()));
+
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut cmd);
+
+    cmd.arg("--dump-json")
+        .arg("--skip-download")
+        .arg("--no-playlist")
+        .arg(&live_url)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let output = cmd.output().await
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(stdout.trim()) {
+        let is_live = json["is_live"].as_bool().unwrap_or(false)
+            || json["live_status"].as_str() == Some("is_live");
+
+        let status = YouTubeLiveStatus {
+            is_live,
+            channel_id: Some(channel_id),
+            channel_name: json["uploader"].as_str().map(String::from)
+                .or_else(|| json["channel"].as_str().map(String::from)),
+            stream_title: json["title"].as_str().map(String::from),
+            viewer_count: json["concurrent_view_count"].as_i64()
+                .map(|v| v.to_string())
+                .or_else(|| json["view_count"].as_i64().map(|v| v.to_string())),
+            thumbnail_url: json["thumbnail"].as_str().map(String::from),
+            started_at: json["timestamp"].as_i64().map(|t| t.to_string()),
+        };
+
+        return Ok(serde_json::to_string(&status).unwrap());
     }
-    
-    let data: serde_json::Value = response.json().await
-        .map_err(|e| format!("Failed to parse InnerTube response: {}", e))?;
-    
-    // Parse response for live stream
-    let is_live = check_if_live_from_response(&data);
-    let stream_info = extract_stream_info(&data);
-    
+
+    // yt-dlp returned no JSON — channel is not live
     let status = YouTubeLiveStatus {
-        is_live,
-        channel_id: Some(browse_id),
-        channel_name: stream_info.channel_name,
-        stream_title: stream_info.title,
-        viewer_count: stream_info.viewer_count,
-        thumbnail_url: stream_info.thumbnail,
+        is_live: false,
+        channel_id: Some(channel_id),
+        channel_name: None,
+        stream_title: None,
+        viewer_count: None,
+        thumbnail_url: None,
         started_at: None,
     };
-    
+
     Ok(serde_json::to_string(&status).unwrap())
-}
-
-/// Resolve YouTube handle (@username) to channel ID
-async fn resolve_handle_to_channel_id(handle: &str) -> Result<String, String> {
-    let url = "https://www.youtube.com/youtubei/v1/search";
-    
-    let body = serde_json::json!({
-        "context": {
-            "client": {
-                "clientName": "WEB",
-                "clientVersion": "2.20250101"
-            }
-        },
-        "query": handle
-    });
-    
-    let response = HTTP_CLIENT
-        .post(url)
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("Search API request failed: {}", e))?;
-    
-    let data: serde_json::Value = response.json().await
-        .map_err(|e| format!("Failed to parse search response: {}", e))?;
-    
-    // Extract channel ID from search results
-    if let Some(contents) = data["contents"]["twoColumnSearchResultsRenderer"]["primaryContents"]
-        ["sectionListRenderer"]["contents"].as_array() 
-    {
-        for section in contents {
-            if let Some(items) = section["itemSectionRenderer"]["contents"].as_array() {
-                for item in items {
-                    if let Some(channel_id) = item["channelRenderer"]["channelId"].as_str() {
-                        return Ok(channel_id.to_string());
-                    }
-                }
-            }
-        }
-    }
-    
-    Err("Could not resolve handle to channel ID".to_string())
-}
-
-struct StreamInfo {
-    channel_name: Option<String>,
-    title: Option<String>,
-    viewer_count: Option<String>,
-    thumbnail: Option<String>,
-}
-
-fn check_if_live_from_response(data: &serde_json::Value) -> bool {
-    // Check for live badge in channel page
-    if let Some(tabs) = data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"].as_array() {
-        for tab in tabs {
-            if let Some(contents) = tab["tabRenderer"]["content"]["richGridRenderer"]["contents"].as_array() {
-                for item in contents {
-                    if let Some(renderer) = item.get("richItemRenderer") {
-                        if let Some(badges) = renderer["content"]["videoRenderer"]["badges"].as_array() {
-                            for badge in badges {
-                                if let Some(label) = badge["metadataBadgeRenderer"]["label"].as_str() {
-                                    if label == "LIVE" {
-                                        return true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    false
-}
-
-fn extract_stream_info(data: &serde_json::Value) -> StreamInfo {
-    let mut info = StreamInfo {
-        channel_name: None,
-        title: None,
-        viewer_count: None,
-        thumbnail: None,
-    };
-    
-    // Extract channel name
-    if let Some(name) = data["header"]["c4TabbedHeaderRenderer"]["title"].as_str() {
-        info.channel_name = Some(name.to_string());
-    }
-    
-    // Extract live stream info
-    if let Some(tabs) = data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"].as_array() {
-        for tab in tabs {
-            if let Some(contents) = tab["tabRenderer"]["content"]["richGridRenderer"]["contents"].as_array() {
-                for item in contents {
-                    if let Some(renderer) = item["richItemRenderer"]["content"]["videoRenderer"].as_object() {
-                        // Check if it's live
-                        if let Some(badges) = renderer.get("badges") {
-                            if badges.as_array().map_or(false, |b| {
-                                b.iter().any(|badge| {
-                                    badge["metadataBadgeRenderer"]["label"].as_str() == Some("LIVE")
-                                })
-                            }) {
-                                // Extract title
-                                if let Some(title) = renderer["title"]["runs"][0]["text"].as_str() {
-                                    info.title = Some(title.to_string());
-                                }
-                                
-                                // Extract viewer count
-                                if let Some(count) = renderer["viewCountText"]["runs"][0]["text"].as_str() {
-                                    info.viewer_count = Some(count.to_string());
-                                }
-                                
-                                // Extract thumbnail
-                                if let Some(thumbnails) = renderer["thumbnail"]["thumbnails"].as_array() {
-                                    if let Some(url) = thumbnails.last().and_then(|t| t["url"].as_str()) {
-                                        info.thumbnail = Some(url.to_string());
-                                    }
-                                }
-                                
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    info
 }
 
 /// Get list of VODs from a YouTube channel using yt-dlp
