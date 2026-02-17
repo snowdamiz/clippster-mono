@@ -64,6 +64,14 @@ struct YouTubeRecorderLogPayload {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct YouTubeStreamEndedPayload {
+    streamer_id: String,
+    session_id: String,
+    channel_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct YouTubeRecorderExitPayload {
     streamer_id: String,
     session_id: String,
