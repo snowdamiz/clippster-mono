@@ -2,6 +2,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import type { VideoElement } from "../../../types/timeline";
+import { DeleteTranscriptWordsCommand, UpdateTranscriptWordCommand, ReorderTranscriptWordsCommand } from "../../../lib/commands/transcript";
 import {
 	FileText,
 	Loader2,
@@ -40,6 +41,9 @@ const { editor, version } = useEditor();
 const words = ref<TranscriptWord[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
+
+// Subscribe to transcript manager changes
+let unsubscribe: (() => void) | null = null;
 
 // Current playback time from editor
 const currentTime = computed(() => {
@@ -233,12 +237,15 @@ async function loadTranscript() {
 		await loadTranscriptData(projectId);
 
 		if (transcriptData.value && transcriptData.value.words.length > 0) {
-			words.value = transcriptData.value.words.map((w: any) => ({
+			const loadedWords = transcriptData.value.words.map((w: any) => ({
 				word: w.word || w.text || w.content || String(w),
 				start: w.start || w.begin || w.startTime || 0,
 				end: w.end || w.finish || w.endTime || 0,
 				confidence: w.confidence,
 			}));
+			// Set words in transcript manager
+			editor.transcript.setWords(loadedWords);
+			words.value = loadedWords;
 			return;
 		}
 
@@ -269,6 +276,8 @@ async function loadTranscript() {
 
 		if (captionWords.length > 0) {
 			captionWords.sort((a, b) => a.start - b.start);
+			// Set words in transcript manager
+			editor.transcript.setWords(captionWords);
 			words.value = captionWords;
 			return;
 		}
@@ -383,15 +392,13 @@ function saveWordEdit() {
 	const newText = editingWordText.value.trim();
 
 	if (!newText && words.value[idx]) {
-		// Empty text = delete this word and ripple-delete its time range from the video
-		const word = words.value[idx];
-		editor.timeline.rippleDeleteTimeRange({
-			startTime: word.start,
-			endTime: word.end,
-		});
-		words.value.splice(idx, 1);
+		// Empty text = delete this word using command for undo/redo
+		const command = new DeleteTranscriptWordsCommand(idx, idx);
+		editor.command.execute({ command });
 	} else if (newText && words.value[idx]) {
-		words.value[idx].word = newText;
+		// Update word text using command for undo/redo
+		const command = new UpdateTranscriptWordCommand(idx, newText);
+		editor.command.execute({ command });
 	}
 
 	editingWordIndex.value = -1;
@@ -478,13 +485,9 @@ function deleteSelectedWords() {
 	const endWord = words.value[selectionEndIndex.value];
 	if (!startWord || !endWord) return;
 
-	editor.timeline.rippleDeleteTimeRange({
-		startTime: startWord.start,
-		endTime: endWord.end,
-	});
-
-	// Remove words from local state
-	words.value.splice(selectionStartIndex.value, selectionEndIndex.value - selectionStartIndex.value + 1);
+	// Delete using command for undo/redo
+	const command = new DeleteTranscriptWordsCommand(selectionStartIndex.value, selectionEndIndex.value);
+	editor.command.execute({ command });
 	clearSelection();
 }
 
@@ -515,11 +518,9 @@ function commitStrikethrough() {
 		const endWord = words.value[range.end];
 		if (!startWord || !endWord) continue;
 
-		editor.timeline.rippleDeleteTimeRange({
-			startTime: startWord.start,
-			endTime: endWord.end,
-		});
-		words.value.splice(range.start, range.end - range.start + 1);
+		// Delete using command for undo/redo
+		const command = new DeleteTranscriptWordsCommand(range.start, range.end);
+		editor.command.execute({ command });
 	}
 
 	strikethroughIndices.value = new Set();
@@ -566,23 +567,17 @@ function onParagraphDrop(event: DragEvent, targetParagraphId: string) {
 		return;
 	}
 
-	// Reorder words array: move source paragraph words to target position
+	// Reorder using command for undo/redo
 	const sourceOffset = paragraphWordOffsets.value[sourceIdx];
 	const sourceCount = paragraphs.value[sourceIdx].words.length;
-	const movedWords = words.value.splice(sourceOffset, sourceCount);
-
-	// Recalculate target offset after removal
+	
+	// Calculate target offset after removal
 	const newTargetOffset = targetIdx > sourceIdx
 		? paragraphWordOffsets.value[targetIdx] - sourceCount + paragraphs.value[targetIdx].words.length
 		: paragraphWordOffsets.value[targetIdx];
 
-	words.value.splice(newTargetOffset, 0, ...movedWords);
-
-	// Recalculate timestamps: assign sequential times based on new order
-	recalculateTimestamps();
-
-	// Reorder video segments on the timeline to match
-	reorderVideoSegments();
+	const command = new ReorderTranscriptWordsCommand(sourceOffset, sourceCount, newTargetOffset);
+	editor.command.execute({ command });
 
 	draggingParagraphId.value = null;
 }
@@ -710,6 +705,11 @@ onMounted(() => {
 
 	// Listen for transcript updates
 	document.addEventListener("transcript-updated", handleTranscriptUpdate);
+
+	// Subscribe to transcript manager changes
+	unsubscribe = editor.transcript.subscribe(() => {
+		words.value = editor.transcript.getWords();
+	});
 });
 
 onUnmounted(() => {
@@ -718,6 +718,9 @@ onUnmounted(() => {
 	if (searchDebounceTimeout) clearTimeout(searchDebounceTimeout);
 	document.removeEventListener("transcript-updated", handleTranscriptUpdate);
 	wordElements.value.clear();
+	
+	// Unsubscribe from transcript manager
+	if (unsubscribe) unsubscribe();
 });
 
 function handleTranscriptUpdate() {

@@ -30,6 +30,10 @@ export interface Affiliate {
   solana_usdc_address?: string | null;
   paypal_email?: string | null;
   notes: string | null;
+  discount_enabled?: boolean;
+  discount_type?: string | null;
+  first_month_discount_pct?: number | null;
+  recurring_discount_pct?: number | null;
   stats?: AffiliateStats;
   approved_by?: { id: number; email: string | null } | null;
   inserted_at: string;
@@ -218,6 +222,10 @@ export async function updateAffiliate(
     solana_usdc_address: string;
     paypal_email: string;
     notes: string;
+    discount_enabled: boolean;
+    discount_type: string;
+    first_month_discount_pct: number;
+    recurring_discount_pct: number;
   }>
 ): Promise<{ success: boolean; affiliate?: Partial<Affiliate>; error?: string }> {
   try {
@@ -267,6 +275,7 @@ export async function recordPayout(
   data: {
     period_month: number;
     period_year: number;
+    manual_amount?: number;
     transaction_id?: string;
     payout_method?: string;
     notes?: string;
@@ -277,6 +286,7 @@ export async function recordPayout(
     const formData = new FormData();
     formData.append('period_month', String(data.period_month));
     formData.append('period_year', String(data.period_year));
+    if (data.manual_amount) formData.append('manual_amount', String(data.manual_amount));
     if (data.transaction_id) formData.append('transaction_id', data.transaction_id);
     if (data.payout_method) formData.append('payout_method', data.payout_method);
     if (data.notes) formData.append('notes', data.notes);

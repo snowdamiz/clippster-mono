@@ -25,6 +25,7 @@
     UserMinus,
     LogOut,
     MessagesSquare,
+    Headset,
   } from 'lucide-vue-next';
 
   const messagingStore = useMessagingStore();
@@ -43,18 +44,18 @@
   const newGroupName = ref('');
   const selectedUserIds = ref<number[]>([]);
   const memberSearchQuery = ref('');
-  const members = ref<
+  const searchableUsers = ref<
     Array<{
       id: number;
-      orgId: number;
-      userId: number;
-      displayName: string;
-      avatarUrl: string | null;
-      orgName: string;
-      role?: string;
+      name: string | null;
+      email: string;
+      avatar_url: string | null;
+      account_type: string;
+      has_clipper_profile: boolean;
     }>
   >([]);
   const isLoadingMembers = ref(false);
+  const isSearchingUsers = ref(false);
   const organizations = ref<Array<{ id: number; name: string }>>([]);
   const showConversationMenu = ref(false);
   const showParticipantsDialog = ref(false);
@@ -82,9 +83,12 @@
   let typingTimeout: number | null = null;
 
   const filteredConversations = computed(() => {
-    if (!searchQuery.value) return messagingStore.conversationList;
+    // Filter out support conversations (they appear as pinned entry)
+    const regularConversations = messagingStore.conversationList.filter((conv) => conv.type !== 'support');
+    
+    if (!searchQuery.value) return regularConversations;
     const query = searchQuery.value.toLowerCase();
-    return messagingStore.conversationList.filter((conv) => {
+    return regularConversations.filter((conv) => {
       const name = getConversationName(conv).toLowerCase();
       return name.includes(query);
     });
@@ -116,11 +120,8 @@
   });
 
   const filteredMembers = computed(() => {
-    // Filter out current user for conversation creation
-    let filtered = members.value.filter((m) => m.userId !== authStore.user?.id);
-    if (!memberSearchQuery.value) return filtered;
-    const query = memberSearchQuery.value.toLowerCase();
-    return filtered.filter((m) => m.displayName.toLowerCase().includes(query));
+    // Return searchable users directly (already filtered by backend)
+    return searchableUsers.value;
   });
 
   const canCreateConversation = computed(() => {
@@ -151,9 +152,7 @@
 
   // Get current user's org role for the active conversation's org
   const myOrgRole = computed(() => {
-    if (!messagingStore.activeConversation) return null;
-    const member = members.value.find((m) => m.userId === authStore.user?.id);
-    return member?.role || null;
+    return null; // Simplified - role checks handled by backend
   });
 
   // Check if user can kick a specific participant
@@ -161,15 +160,6 @@
     if (!isConversationAdmin.value) return false;
     const participantUserId = participant.userId ?? participant.user_id;
     if (participantUserId === authStore.user?.id) return false; // Can't kick self
-
-    // Find the target's org role
-    const targetOrgMember = members.value.find((m) => m.userId === participantUserId);
-    const targetIsOrgAdmin = targetOrgMember?.role === 'owner' || targetOrgMember?.role === 'admin';
-
-    // If I'm not an org admin, I can't kick org admins
-    const iAmOrgAdmin = myOrgRole.value === 'owner' || myOrgRole.value === 'admin';
-    if (!iAmOrgAdmin && targetIsOrgAdmin) return false;
-
     return true;
   }
 
@@ -240,47 +230,42 @@
       const orgsResponse = await api.get<{ organizations: Array<{ id: number; name: string }> }>('/organizations');
       organizations.value = orgsResponse.data.organizations || [];
 
-      isLoadingMembers.value = true;
-      members.value = [];
-
       if (organizations.value.length === 0) {
         // No organizations — initialize messaging without org scope (global conversations only)
         await messagingStore.initialize();
-      }
-
-      for (const org of organizations.value) {
-        try {
-          const membersResponse = await api.get<{
-            members: Array<{
-              id: number;
-              user_id: number;
-              user: { name: string; email: string; avatar_url: string | null };
-              role: string;
-            }>;
-          }>(`/organizations/${org.id}/members`);
-          const orgMembers = (membersResponse.data.members || []).map((m) => ({
-            id: m.id,
-            orgId: org.id,
-            userId: m.user_id,
-            displayName: m.user?.name || m.user?.email || 'Unknown',
-            avatarUrl: m.user?.avatar_url || null,
-            orgName: org.name,
-            role: m.role,
-          }));
-
-          members.value.push(...orgMembers);
-
-          if (org === organizations.value[0]) {
-            await messagingStore.initialize(org.id);
-          }
-        } catch (e) {
-          console.error(`Failed to load members for org ${org.id}:`, e);
-        }
+      } else {
+        // Initialize with first org
+        await messagingStore.initialize(organizations.value[0].id);
       }
     } catch (error) {
       console.error('Failed to load organizations:', error);
+    }
+  }
+
+  async function searchUsers(query: string) {
+    if (!query || query.trim().length < 2) {
+      searchableUsers.value = [];
+      return;
+    }
+
+    isSearchingUsers.value = true;
+    try {
+      const response = await api.get<{ data: Array<{
+        id: number;
+        name: string | null;
+        email: string;
+        avatar_url: string | null;
+        account_type: string;
+        has_clipper_profile: boolean;
+      }> }>('/messaging/search-users', {
+        params: { query, limit: 20 }
+      });
+      searchableUsers.value = response.data.data || [];
+    } catch (error) {
+      console.error('Failed to search users:', error);
+      searchableUsers.value = [];
     } finally {
-      isLoadingMembers.value = false;
+      isSearchingUsers.value = false;
     }
   }
 
@@ -292,6 +277,8 @@
 
   function getConversationName(conversation: Conversation): string {
     if (conversation.name) return conversation.name;
+
+    if (conversation.type === 'support') return 'Clippster Customer Support';
 
     if (conversation.type === 'direct') {
       const otherParticipant = conversation.participants.find((p) => {
@@ -450,21 +437,25 @@
     }
   }
 
+  // Debounced user search
+  let searchTimeout: number | null = null;
+  watch(memberSearchQuery, (newQuery) => {
+    if (searchTimeout) clearTimeout(searchTimeout);
+    searchTimeout = window.setTimeout(() => {
+      searchUsers(newQuery);
+    }, 300);
+  });
+
   async function createConversation() {
     if (!canCreateConversation.value) return;
 
     try {
-      const selectedMember = members.value.find((m) => m.userId === selectedUserIds.value[0]);
-      if (!selectedMember) return;
-
-      if (messagingStore.currentOrgId !== selectedMember.orgId) {
-        await messagingStore.initialize(selectedMember.orgId);
-      }
-
       let conversation;
       if (newConversationType.value === 'direct') {
-        conversation = await messagingStore.startDirectConversation(selectedUserIds.value[0]);
+        // Use global direct conversation for all users
+        conversation = await messagingStore.startGlobalDirectConversation(selectedUserIds.value[0]);
       } else {
+        // Group conversations still need org context
         conversation = await messagingStore.startGroupConversation(newGroupName.value.trim(), selectedUserIds.value);
       }
 
@@ -483,6 +474,7 @@
     newGroupName.value = '';
     selectedUserIds.value = [];
     memberSearchQuery.value = '';
+    searchableUsers.value = [];
   }
 
   function closeNewConversationDialog() {
@@ -745,18 +737,6 @@
                     </div>
                   </div>
 
-                  <!-- Empty State -->
-                  <div v-if="filteredConversations.length === 0" class="messages-panel__empty">
-                    <div class="messages-panel__empty-icon">
-                      <MessageSquare />
-                    </div>
-                    <p class="messages-panel__empty-title">No conversations yet</p>
-                    <p class="messages-panel__empty-text">Start chatting with your team</p>
-                    <button @click="openNewConversationDialog" class="messages-panel__empty-btn">
-                      <Plus class="messages-panel__empty-btn-icon" />
-                      New Conversation
-                    </button>
-                  </div>
                 </template>
               </div>
             </div>
@@ -776,6 +756,7 @@
                         'messages-chat__avatar--group': messagingStore.activeConversation.type === 'group',
                         'messages-chat__avatar--announcement':
                           messagingStore.activeConversation.type === 'announcement',
+                        'messages-chat__avatar--support': messagingStore.activeConversation.type === 'support',
                       }"
                     >
                       <img
@@ -783,6 +764,10 @@
                         :src="getConversationAvatar(messagingStore.activeConversation)!"
                         alt=""
                         class="messages-chat__avatar-img"
+                      />
+                      <Headset
+                        v-else-if="messagingStore.activeConversation.type === 'support'"
+                        class="messages-chat__avatar-icon"
                       />
                       <Users
                         v-else-if="messagingStore.activeConversation.type === 'group'"
@@ -1055,34 +1040,39 @@
                 <!-- Members List -->
                 <div class="messages-modal__members">
                   <div
-                    v-for="member in filteredMembers"
-                    :key="`${member.orgId}-${member.userId}`"
+                    v-for="user in filteredMembers"
+                    :key="user.id"
                     class="messages-modal__member"
-                    :class="{ 'messages-modal__member--selected': selectedUserIds.includes(member.userId) }"
-                    @click="toggleUserSelection(member.userId)"
+                    :class="{ 'messages-modal__member--selected': selectedUserIds.includes(user.id) }"
+                    @click="toggleUserSelection(user.id)"
                   >
                     <div class="messages-modal__member-avatar">
-                      <img v-if="member.avatarUrl" :src="member.avatarUrl" alt="" class="messages-modal__member-img" />
+                      <img v-if="user.avatar_url" :src="user.avatar_url" alt="" class="messages-modal__member-img" />
                       <span v-else class="messages-modal__member-initial">
-                        {{ member.displayName.charAt(0).toUpperCase() }}
+                        {{ (user.name || user.email).charAt(0).toUpperCase() }}
                       </span>
                     </div>
                     <div class="messages-modal__member-info">
-                      <p class="messages-modal__member-name">{{ member.displayName }}</p>
-                      <p class="messages-modal__member-org">{{ member.orgName }}</p>
+                      <p class="messages-modal__member-name">{{ user.name || user.email }}</p>
+                      <p class="messages-modal__member-org">{{ user.account_type === 'organization' ? 'Organization' : 'User' }}</p>
                     </div>
-                    <div v-if="selectedUserIds.includes(member.userId)" class="messages-modal__member-check">
+                    <div v-if="selectedUserIds.includes(user.id)" class="messages-modal__member-check">
                       <Check />
                     </div>
                   </div>
 
-                  <!-- No Members -->
-                  <div v-if="filteredMembers.length === 0 && !isLoadingMembers" class="messages-modal__members-empty">
-                    No members found
+                  <!-- No Results -->
+                  <div v-if="filteredMembers.length === 0 && !isSearchingUsers && memberSearchQuery.trim().length >= 2" class="messages-modal__members-empty">
+                    No users found
                   </div>
 
-                  <!-- Loading Members -->
-                  <div v-if="isLoadingMembers" class="messages-modal__members-loading">
+                  <!-- Search Prompt -->
+                  <div v-if="memberSearchQuery.trim().length < 2 && !isSearchingUsers" class="messages-modal__members-empty">
+                    Type at least 2 characters to search
+                  </div>
+
+                  <!-- Loading -->
+                  <div v-if="isSearchingUsers" class="messages-modal__members-loading">
                     <Loader2 class="messages-modal__members-spinner" />
                   </div>
                 </div>
@@ -1594,6 +1584,16 @@
     background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
   }
 
+  .messages-conv__avatar--support {
+    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
+  }
+
+  .messages-conv--pinned {
+    border-bottom: 2px solid rgba(139, 92, 246, 0.3);
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+  }
+
   .messages-conv__avatar-img {
     width: 100%;
     height: 100%;
@@ -1834,6 +1834,10 @@
 
   .messages-chat__avatar--announcement {
     background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
+  }
+
+  .messages-chat__avatar--support {
+    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
   }
 
   .messages-chat__avatar-img {

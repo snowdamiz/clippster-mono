@@ -7,12 +7,27 @@ export interface AuthUser {
   name?: string
   avatar_url?: string
   is_admin: boolean
+  is_moderator?: boolean
   is_affiliate?: boolean
   account_type?: 'personal' | 'organization'
   owned_organization_id?: string | null
   created_by_organization_id?: number | null
   ai_allowed?: boolean
   beta_activated?: boolean
+  subscription?: {
+    status: 'none' | 'active' | 'cancelled' | 'expired'
+    tier: string | null
+    tier_name: string | null
+    start_date: string | null
+    end_date: string | null
+    renewal_method: 'stripe' | 'crypto' | 'admin' | null
+    needs_subscription: boolean
+    days_remaining: number
+  }
+  credits?: {
+    hours_remaining: number
+    minutes_remaining: number
+  }
 }
 
 export interface AuthState {

@@ -338,6 +338,31 @@ const router = createRouter({
           name: 'admin-affiliate-detail',
           component: () => import('@/pages/admin/AdminAffiliateDetail.vue'),
         },
+        {
+          path: 'users/:id',
+          name: 'admin-user-profile',
+          component: () => import('@/pages/admin/AdminUserProfile.vue'),
+        },
+        {
+          path: 'organizations/:id',
+          name: 'admin-org-detail',
+          component: () => import('@/pages/admin/AdminOrgDetail.vue'),
+        },
+        {
+          path: 'customer-service',
+          name: 'admin-customer-service',
+          component: () => import('@/pages/admin/AdminCustomerService.vue'),
+        },
+        {
+          path: 'staff-messages',
+          name: 'admin-staff-messages',
+          component: () => import('@/pages/admin/AdminStaffMessages.vue'),
+        },
+        {
+          path: 'mod-logs',
+          name: 'admin-mod-logs',
+          component: () => import('@/pages/admin/AdminModLogs.vue'),
+        },
       ],
     },
     // Affiliate dashboard (authenticated, affiliate users only)
@@ -503,8 +528,8 @@ router.beforeEach(async (to, _from, next) => {
     return;
   }
 
-  // Check if route requires admin
-  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || !authStore.user?.is_admin)) {
+  // Check if route requires admin or moderator
+  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || (!authStore.user?.is_admin && !authStore.user?.is_moderator))) {
     next('/projects');
     return;
   }
@@ -515,7 +540,7 @@ router.beforeEach(async (to, _from, next) => {
     const user = authStore.user;
     // Admins and org-created users bypass tier checks
     if (!user?.is_admin && !user?.created_by_organization_id) {
-      const userTier = (user as any)?.subscription_tier || 'free';
+      const userTier = user?.subscription?.tier || 'free';
       const userLevel = tierHierarchy[userTier] ?? 0;
       const requiredLevel = tierHierarchy[to.meta.requiredTier as string] ?? 0;
       if (userLevel < requiredLevel) {

@@ -410,6 +410,23 @@ defmodule ClippsterServerWeb.MessagingController do
   end
 
   @doc """
+  Search for users that the current user can message.
+  Role-based filtering:
+  - Admins/moderators can search all users
+  - Organization owners can search all users
+  - Regular users can only search users in their organizations
+  """
+  def search_users(conn, params) do
+    user_id = conn.assigns.current_user.id
+    query = Map.get(params, "query", "")
+    limit = Map.get(params, "limit", "20") |> String.to_integer()
+    
+    users = Messaging.search_messageable_users(user_id, query, limit: limit)
+    
+    json(conn, %{data: users})
+  end
+
+  @doc """
   Create a global direct conversation with another user (not scoped to an organization).
   """
   def create_global_direct(conn, %{"user_id" => other_user_id}) do

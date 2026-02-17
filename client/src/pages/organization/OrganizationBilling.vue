@@ -640,6 +640,21 @@
           Contact your organization admin if you need additional credits allocated to your account
         </p>
       </div>
+      
+      <!-- Owner without subscription - redirect to subscription setup -->
+      <div v-if="isAdmin && !hasActiveSubscription && activeTab === 'allocations'" class="org-billing__no-subscription">
+        <div class="org-billing__no-subscription-icon">
+          <Crown />
+        </div>
+        <h3 class="org-billing__no-subscription-title">No Active Subscription</h3>
+        <p class="org-billing__no-subscription-desc">
+          Your organization needs an active subscription to access credits and features.
+        </p>
+        <Button @click="activeTab = 'subscriptions'" size="lg">
+          <Crown class="org-billing__no-subscription-btn-icon" />
+          Set Up Subscription
+        </Button>
+      </div>
     </div>
 
     <!-- Buy Credits Modal -->
@@ -1907,6 +1922,55 @@
     margin: 0;
     max-width: 360px;
     line-height: 1.5;
+  }
+
+  /* ===== No Subscription View ===== */
+  .org-billing__no-subscription {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 1.5rem;
+    background: var(--sidebar-card);
+    border-radius: 12px;
+    border: 1px solid var(--sidebar-border);
+    text-align: center;
+  }
+
+  .org-billing__no-subscription-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, var(--sidebar-accent-hover) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1.25rem;
+  }
+
+  .org-billing__no-subscription-icon svg {
+    width: 28px;
+    height: 28px;
+    color: white;
+  }
+
+  .org-billing__no-subscription-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .org-billing__no-subscription-desc {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1.5rem;
+    max-width: 400px;
+  }
+
+  .org-billing__no-subscription-btn-icon {
+    width: 16px;
+    height: 16px;
   }
 
   /* ===== Subscription Card ===== */

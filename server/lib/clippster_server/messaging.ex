@@ -277,6 +277,20 @@ defmodule ClippsterServer.Messaging do
     Repo.all(query)
   end
 
+  @doc """
+  Gets paginated messages for a conversation with limit and offset.
+  Used by support and staff controllers.
+  """
+  def get_conversation_messages(conversation_id, limit, offset) do
+    Message
+    |> where([m], m.conversation_id == ^conversation_id)
+    |> order_by([m], desc: m.inserted_at)
+    |> limit(^limit)
+    |> offset(^offset)
+    |> preload([:sender, :read_statuses])
+    |> Repo.all()
+  end
+
   # ============================================================================
   # Read Status
   # ============================================================================
@@ -324,6 +338,13 @@ defmodule ClippsterServer.Messaging do
 
       :ok
     end)
+  end
+
+  @doc """
+  Alias for mark_as_read/2 - marks all messages in a conversation as read for a user.
+  """
+  def mark_conversation_read(conversation_id, user_id) do
+    mark_as_read(conversation_id, user_id)
   end
 
   @doc """
@@ -583,6 +604,13 @@ defmodule ClippsterServer.Messaging do
   end
 
   @doc """
+  Alias for is_participant?/2 - checks if a user is a participant in a conversation.
+  """
+  def is_conversation_participant?(conversation_id, user_id) do
+    is_participant?(conversation_id, user_id)
+  end
+
+  @doc """
   Checks if a user can send announcements in an organization.
   """
   def can_send_announcement?(organization_id, user_id) do
@@ -767,5 +795,372 @@ defmodule ClippsterServer.Messaging do
       |> Enum.filter(fn minutes -> minutes > 0 and minutes < 60 * 24 * 7 end) # Filter out > 1 week
       |> Enum.take(-limit) # Take most recent
     end
+  end
+
+  # ============================================================================
+  # User Search for Messaging
+  # ============================================================================
+
+  @doc """
+  Searches for users that the current user can message.
+  - Admins/moderators can search all users
+  - Organization owners can search all users
+  - Regular users can only search users in their organizations
+  Returns clipper profile display_name if available, otherwise user name/email.
+  """
+  def search_messageable_users(current_user_id, query, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 20)
+    current_user = Repo.get(ClippsterServer.Accounts.User, current_user_id)
+    
+    if is_nil(current_user) do
+      []
+    else
+      base_query = 
+        ClippsterServer.Accounts.User
+        |> where([u], u.id != ^current_user_id)
+        |> where([u], is_nil(u.deactivated_at))
+        |> limit(^limit)
+        # Left join with clipper_profiles to get display_name
+        |> join(:left, [u], cp in ClippsterServer.ClipperProfiles.ClipperProfile,
+          on: cp.user_id == u.id
+        )
+      
+      # Apply search filter if query provided
+      filtered_query = if query && String.trim(query) != "" do
+        search_term = "%#{String.downcase(query)}%"
+        base_query
+        |> where([u, cp], 
+          fragment("LOWER(COALESCE(?, ?)) LIKE ?", cp.display_name, u.name, ^search_term) or
+          fragment("LOWER(?) LIKE ?", u.email, ^search_term)
+        )
+      else
+        base_query
+      end
+      
+      # Apply role-based filtering
+      final_query = cond do
+        # Admins and moderators can see all users
+        current_user.is_admin or current_user.is_moderator ->
+          filtered_query
+        
+        # Organization owners can see all users
+        current_user.account_type == "organization" and not is_nil(current_user.owned_organization_id) ->
+          filtered_query
+        
+        # Regular users can only see users in their organizations
+        true ->
+          # Get all organization IDs where current user is a member
+          org_ids = 
+            ClippsterServer.Organizations.OrganizationMember
+            |> where([m], m.user_id == ^current_user_id)
+            |> select([m], m.organization_id)
+            |> Repo.all()
+          
+          if Enum.empty?(org_ids) do
+            # No organizations, return empty
+            filtered_query |> where([u, cp], false)
+          else
+            # Return users who are members of the same organizations
+            filtered_query
+            |> join(:inner, [u, cp], m in ClippsterServer.Organizations.OrganizationMember,
+              on: m.user_id == u.id
+            )
+            |> where([u, cp, m], m.organization_id in ^org_ids)
+            |> distinct([u, cp], u.id)
+          end
+      end
+      
+      final_query
+      |> select([u, cp], %{
+        id: u.id,
+        name: fragment("COALESCE(?, ?, ?)", cp.display_name, u.name, u.email),
+        email: u.email,
+        avatar_url: fragment("COALESCE(?, ?)", cp.avatar_url, u.avatar_url),
+        account_type: u.account_type,
+        has_clipper_profile: not is_nil(cp.id)
+      })
+      |> Repo.all()
+    end
+  end
+
+  # ============================================================================
+  # Support Conversations (Customer Service)
+  # ============================================================================
+
+  @doc """
+  Gets or creates a support conversation for a user.
+  Each user has at most one active support conversation.
+  """
+  def get_or_create_support_conversation(user_id) do
+    case get_user_support_conversation(user_id) do
+      nil ->
+        create_support_conversation(user_id)
+      conversation ->
+        # If archived, reopen it
+        if conversation.status == "archived" do
+          case reopen_support_conversation(conversation.id) do
+            {:ok, reopened_conversation} ->
+              {:ok, Repo.preload(reopened_conversation, [participants: :user])}
+            error -> error
+          end
+        else
+          {:ok, conversation}
+        end
+    end
+  end
+
+  @doc """
+  Gets a user's support conversation (if it exists).
+  """
+  def get_user_support_conversation(user_id) do
+    Conversation
+    |> where([c], c.type == "support")
+    |> join(:inner, [c], p in ConversationParticipant, on: p.conversation_id == c.id)
+    |> where([c, p], p.user_id == ^user_id and is_nil(p.left_at))
+    |> where([c, p], is_nil(c.organization_id))
+    |> order_by([c], desc: c.inserted_at)
+    |> limit(1)
+    |> Repo.one()
+    |> case do
+      nil -> nil
+      conversation -> Repo.preload(conversation, [participants: :user])
+    end
+  end
+
+  @doc """
+  Creates a new support conversation for a user.
+  Adds user + all current admins/mods as participants.
+  Sends automated welcome message.
+  """
+  def create_support_conversation(user_id) do
+    # Get all admins and moderators
+    staff_users = ClippsterServer.Accounts.list_admins_and_moderators()
+    staff_ids = Enum.map(staff_users, & &1.id)
+    all_participant_ids = Enum.uniq([user_id | staff_ids])
+
+    Repo.transaction(fn ->
+      # Create conversation
+      conversation =
+        %Conversation{}
+        |> Conversation.changeset(%{
+          type: "support",
+          organization_id: nil,
+          created_by_user_id: user_id,
+          status: "open"
+        })
+        |> Repo.insert!()
+
+      # Add participants
+      participants =
+        Enum.map(all_participant_ids, fn participant_id ->
+          %{
+            conversation_id: conversation.id,
+            user_id: participant_id,
+            joined_at: DateTime.utc_now() |> DateTime.truncate(:second),
+            inserted_at: DateTime.utc_now() |> DateTime.truncate(:second),
+            updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+          }
+        end)
+
+      Repo.insert_all(ConversationParticipant, participants)
+
+      Repo.preload(conversation, [:participants, participants: :user])
+    end)
+  end
+
+  @doc """
+  Returns the automated welcome message for support conversations.
+  """
+  def get_support_auto_message do
+    "Thanks for reaching out! This is an automated message. A member of our team will get back to you within 24 hours."
+  end
+
+  @doc """
+  Sends a message to a user's support conversation.
+  Auto-reopens if conversation was archived.
+  Sends automated welcome message on first user message.
+  """
+  def send_support_message(user_id, content) do
+    case get_user_support_conversation(user_id) do
+      nil ->
+        {:error, :conversation_not_found}
+      
+      conversation ->
+        # Reopen if archived
+        if conversation.status == "archived" do
+          reopen_support_conversation(conversation.id)
+        end
+        
+        # Check if this is the first user message (no messages from this user yet)
+        user_message_count = 
+          Message
+          |> where([m], m.conversation_id == ^conversation.id)
+          |> where([m], m.sender_id == ^user_id)
+          |> Repo.aggregate(:count, :id)
+        
+        # Send user's message first
+        result = send_message(conversation.id, user_id, content)
+        
+        # If this was the first message, send automated welcome response
+        if user_message_count == 0 do
+          auto_message_content = get_support_auto_message()
+          
+          %Message{}
+          |> Message.changeset(%{
+            conversation_id: conversation.id,
+            sender_id: nil,
+            content: auto_message_content,
+            message_type: "system"
+          })
+          |> Repo.insert!()
+        end
+        
+        result
+    end
+  end
+
+  @doc """
+  Sends a response from admin/mod to a support conversation.
+  """
+  def send_support_response(conversation_id, moderator_id, content) do
+    send_message(conversation_id, moderator_id, content)
+  end
+
+  @doc """
+  Archives a support conversation.
+  Sets scheduled deletion for 24 hours from now to auto-clear from user's view.
+  """
+  def archive_support_conversation(conversation_id, moderator_id) do
+    conversation = Repo.get(Conversation, conversation_id)
+    
+    if is_nil(conversation) do
+      {:error, :not_found}
+    else
+      # Schedule deletion for 24 hours from now
+      scheduled_deletion = DateTime.utc_now() 
+        |> DateTime.add(24 * 60 * 60, :second) 
+        |> DateTime.truncate(:second)
+      
+      conversation
+      |> Conversation.changeset(%{
+        status: "archived",
+        archived_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        archived_by_user_id: moderator_id,
+        scheduled_deletion_at: scheduled_deletion
+      })
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Reopens an archived support conversation.
+  """
+  def reopen_support_conversation(conversation_id) do
+    conversation = Repo.get(Conversation, conversation_id)
+    
+    if is_nil(conversation) do
+      {:error, :not_found}
+    else
+      conversation
+      |> Conversation.changeset(%{
+        status: "open",
+        archived_at: nil,
+        archived_by_user_id: nil
+      })
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Lists all support conversations with optional status filter.
+  """
+  def list_support_conversations(status \\ "open", page \\ 1, per_page \\ 50) do
+    offset = (page - 1) * per_page
+    
+    Conversation
+    |> where([c], c.type == "support")
+    |> where([c], c.status == ^status)
+    |> order_by([c], desc: c.last_message_at)
+    |> limit(^per_page)
+    |> offset(^offset)
+    |> preload([:participants, participants: :user])
+    |> Repo.all()
+  end
+
+  @doc """
+  Counts support conversations by status.
+  """
+  def count_support_conversations(status \\ "open") do
+    Conversation
+    |> where([c], c.type == "support")
+    |> where([c], c.status == ^status)
+    |> Repo.aggregate(:count)
+  end
+
+  # ============================================================================
+  # Staff Internal Messaging
+  # ============================================================================
+
+  @doc """
+  Creates a direct staff conversation between two staff members.
+  """
+  def create_staff_direct_conversation(user1_id, user2_id) do
+    # Check if conversation already exists
+    case find_existing_staff_direct_conversation(user1_id, user2_id) do
+      nil ->
+        create_conversation_with_participants(
+          %{
+            type: "staff",
+            organization_id: nil,
+            created_by_user_id: user1_id
+          },
+          [user1_id, user2_id]
+        )
+      
+      conversation ->
+        {:ok, conversation}
+    end
+  end
+
+  @doc """
+  Creates a group staff conversation.
+  """
+  def create_staff_group_conversation(creator_id, name, participant_ids) do
+    all_participant_ids = Enum.uniq([creator_id | participant_ids])
+    
+    create_conversation_with_participants(
+      %{
+        type: "staff",
+        name: name,
+        organization_id: nil,
+        created_by_user_id: creator_id
+      },
+      all_participant_ids
+    )
+  end
+
+  @doc """
+  Lists all staff conversations for a user.
+  """
+  def list_staff_conversations(user_id) do
+    Conversation
+    |> where([c], c.type == "staff")
+    |> join(:inner, [c], p in ConversationParticipant, on: p.conversation_id == c.id)
+    |> where([c, p], p.user_id == ^user_id and is_nil(p.left_at))
+    |> order_by([c], desc: c.last_message_at)
+    |> preload([:participants, participants: :user])
+    |> Repo.all()
+  end
+
+  defp find_existing_staff_direct_conversation(user1_id, user2_id) do
+    # Find staff direct conversations where both users are participants
+    Conversation
+    |> where([c], c.type == "staff" and is_nil(c.organization_id))
+    |> join(:inner, [c], p1 in ConversationParticipant, on: p1.conversation_id == c.id)
+    |> join(:inner, [c], p2 in ConversationParticipant, on: p2.conversation_id == c.id)
+    |> where([c, p1, p2], p1.user_id == ^user1_id and p2.user_id == ^user2_id)
+    |> where([c, p1, p2], is_nil(p1.left_at) and is_nil(p2.left_at))
+    |> limit(1)
+    |> Repo.one()
   end
 end

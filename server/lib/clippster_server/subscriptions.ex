@@ -392,12 +392,13 @@ defmodule ClippsterServer.Subscriptions do
 
   @doc """
   Checks if a user needs a personal subscription.
-  Returns false for admins and org-created users.
+  Returns false for admins, org-created users, and users with active subscriptions.
   """
   def needs_subscription?(user) when is_map(user) do
     cond do
       user.is_admin -> false
       not is_nil(user.created_by_organization_id) -> false
+      user.subscription_status in ["active", "cancelled"] -> false
       true -> true
     end
   end
@@ -797,10 +798,18 @@ defmodule ClippsterServer.Subscriptions do
       Repo.transaction(fn ->
         user = Repo.get!(User, user_id)
 
-        # Update user's tier
+        # Determine start and end dates
+        start_date = user.subscription_start_date || DateTime.utc_now() |> DateTime.truncate(:second)
+        end_date = user.subscription_end_date || DateTime.add(start_date, @subscription_days, :day)
+
+        # Update user's tier and ensure subscription is active
         {:ok, updated_user} = user
           |> User.subscription_changeset(%{
-            subscription_tier: new_tier
+            subscription_tier: new_tier,
+            subscription_status: "active",
+            subscription_start_date: start_date,
+            subscription_end_date: end_date,
+            subscription_renewal_method: user.subscription_renewal_method || "admin"
           })
           |> Repo.update()
 
@@ -812,10 +821,10 @@ defmodule ClippsterServer.Subscriptions do
           {:ok, subscription} = %Subscription{}
             |> Subscription.create_changeset(%{
               user_id: user_id,
-              status: user.subscription_status || "active",
+              status: "active",
               subscription_tier: new_tier,
-              start_date: user.subscription_start_date,
-              end_date: user.subscription_end_date,
+              start_date: start_date,
+              end_date: end_date,
               hours_included: Decimal.new("0"),
               credits_granted: Decimal.new(to_string(tier_info.monthly_credits)),
               payment_method: "admin",
@@ -825,7 +834,22 @@ defmodule ClippsterServer.Subscriptions do
 
           %{user: updated_user, subscription: subscription}
         else
-          %{user: updated_user, subscription: nil}
+          # Create subscription history record even without credits
+          {:ok, subscription} = %Subscription{}
+            |> Subscription.create_changeset(%{
+              user_id: user_id,
+              status: "active",
+              subscription_tier: new_tier,
+              start_date: start_date,
+              end_date: end_date,
+              hours_included: Decimal.new("0"),
+              credits_granted: Decimal.new("0"),
+              payment_method: "admin",
+              amount_usd: Decimal.new("0")
+            })
+            |> Repo.insert()
+
+          %{user: updated_user, subscription: subscription}
         end
       end)
     end

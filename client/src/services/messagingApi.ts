@@ -19,7 +19,7 @@ export interface Participant {
 
 export interface Conversation {
   id: number;
-  type: 'direct' | 'group' | 'announcement';
+  type: 'direct' | 'group' | 'announcement' | 'support';
   name: string | null;
   organizationId: number;
   createdByUserId: number;
@@ -29,6 +29,7 @@ export interface Conversation {
   participants: Participant[];
   unreadCount?: number;
   muted?: boolean;
+  status?: string;
 }
 
 export interface Message {
@@ -313,4 +314,34 @@ export async function listAllConversations(): Promise<Conversation[]> {
 export async function getTotalUnread(): Promise<number> {
   const response = await api.get<{ data: { unread_count: number } }>('/me/unread-count');
   return response.data.data.unread_count;
+}
+
+// ============================================================================
+// Support conversation endpoints
+// ============================================================================
+
+/**
+ * Get or create the user's support conversation.
+ */
+export async function getOrCreateSupportConversation(): Promise<Conversation> {
+  const response = await api.get<{ conversation: any }>('/support/conversation');
+  return normalizeConversation(response.data.conversation);
+}
+
+/**
+ * Send a message to the support conversation.
+ */
+export async function sendSupportMessage(content: string): Promise<Message> {
+  const response = await api.post<{ message: any }>('/support/conversation/messages', { content });
+  return normalizeMessage(response.data.message);
+}
+
+/**
+ * Get messages from the support conversation.
+ */
+export async function getSupportMessages(limit = 50, offset = 0): Promise<Message[]> {
+  const response = await api.get<{ messages: any[] }>('/support/conversation/messages', {
+    params: { limit, offset }
+  });
+  return (response.data.messages || []).map(normalizeMessage);
 }

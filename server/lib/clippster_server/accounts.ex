@@ -253,7 +253,7 @@ defmodule ClippsterServer.Accounts do
 
       user ->
         user
-        |> Ecto.Changeset.change(%{last_active_at: DateTime.utc_now()})
+        |> Ecto.Changeset.change(%{last_active_at: DateTime.utc_now() |> DateTime.truncate(:second)})
         |> Repo.update()
     end
   end
@@ -285,6 +285,26 @@ defmodule ClippsterServer.Accounts do
         user
         |> User.beta_activation_changeset()
         |> Repo.update()
+    end
+  end
+
+  @doc """
+  Admin function to reset a user's password.
+  Only works for email-based accounts.
+  """
+  def admin_reset_password(user_id, new_password) do
+    case get_user(user_id) do
+      nil ->
+        {:error, :not_found}
+
+      user ->
+        if user.provider != "email" do
+          {:error, :not_email_account}
+        else
+          user
+          |> User.password_changeset(%{password: new_password})
+          |> Repo.update()
+        end
     end
   end
 
@@ -765,5 +785,258 @@ defmodule ClippsterServer.Accounts do
       |> Repo.update()
 
     updated_user
+  end
+
+  # ============================================
+  # Moderator Management
+  # ============================================
+
+  @doc """
+  Promotes a user to moderator.
+  Validates that user is not on free tier.
+  """
+  def promote_user_to_moderator(user_id) do
+    user = get_user(user_id)
+
+    cond do
+      is_nil(user) ->
+        {:error, :user_not_found}
+
+      user.is_moderator ->
+        {:error, :already_moderator}
+
+      user.subscription_tier == nil or user.subscription_status != "active" ->
+        {:error, :must_have_active_subscription}
+
+      true ->
+        user
+        |> User.moderator_changeset(%{is_moderator: true})
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Demotes a moderator to regular user.
+  """
+  def demote_moderator(user_id) do
+    user = get_user(user_id)
+
+    cond do
+      is_nil(user) ->
+        {:error, :user_not_found}
+
+      not user.is_moderator ->
+        {:error, :not_moderator}
+
+      true ->
+        user
+        |> User.moderator_changeset(%{is_moderator: false})
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Lists all admins and moderators (for customer service routing).
+  """
+  def list_admins_and_moderators do
+    User
+    |> where([u], u.is_admin == true or u.is_moderator == true)
+    |> Repo.all()
+  end
+
+  # ============================================
+  # User Restrictions
+  # ============================================
+
+  @doc """
+  Restricts a user platform-wide.
+  """
+  def restrict_user(user_id, reason) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> User.restriction_changeset(%{
+        is_restricted: true,
+        restricted_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        restricted_reason: reason
+      })
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Unrestricts a user.
+  """
+  def unrestrict_user(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> User.restriction_changeset(%{
+        is_restricted: false,
+        restricted_at: nil,
+        restricted_reason: nil
+      })
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Schedules a user for deletion at end of billing cycle.
+  """
+  def schedule_user_deletion(user_id, deletion_date) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> User.restriction_changeset(%{scheduled_deletion_at: deletion_date})
+      |> Repo.update()
+    end
+  end
+
+  # ============================================
+  # User Discounts
+  # ============================================
+
+  @doc """
+  Applies an admin discount to a user.
+  Creates a Stripe coupon and applies it to the user's active subscription if they have one.
+  """
+  def apply_admin_discount(user_id, percent_off, months) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      # If user has active Stripe subscription, create and apply coupon
+      coupon_id = if user.stripe_subscription_id do
+        case create_and_apply_stripe_discount(user, percent_off, months) do
+          {:ok, coupon_id} -> coupon_id
+          {:error, _reason} -> nil
+        end
+      else
+        nil
+      end
+
+      user
+      |> User.discount_changeset(%{
+        admin_discount_percent: percent_off,
+        admin_discount_months_remaining: months,
+        admin_discount_applied_at: DateTime.utc_now() |> DateTime.truncate(:second),
+        admin_discount_stripe_coupon_id: coupon_id
+      })
+      |> Repo.update()
+    end
+  end
+
+  defp create_and_apply_stripe_discount(user, percent_off, months) do
+    try do
+      # Create Stripe coupon
+      coupon_params = %{
+        percent_off: percent_off,
+        duration: "repeating",
+        duration_in_months: months,
+        name: "Admin Discount - #{percent_off}% for #{months} months"
+      }
+      
+      case Stripe.Coupon.create(coupon_params) do
+        {:ok, coupon} ->
+          # Apply coupon to subscription
+          case Stripe.Subscription.update(user.stripe_subscription_id, %{coupon: coupon.id}) do
+            {:ok, _subscription} -> {:ok, coupon.id}
+            {:error, reason} -> {:error, reason}
+          end
+        {:error, reason} -> {:error, reason}
+      end
+    rescue
+      e -> {:error, e}
+    end
+  end
+
+  @doc """
+  Enables moderator discount for a user.
+  Creates a recurring 10% Stripe coupon if user has active subscription.
+  """
+  def enable_mod_discount(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      # If user has active Stripe subscription, create and apply 10% recurring coupon
+      coupon_id = if user.stripe_subscription_id do
+        case create_and_apply_mod_discount(user) do
+          {:ok, coupon_id} -> coupon_id
+          {:error, _reason} -> nil
+        end
+      else
+        nil
+      end
+
+      user
+      |> User.mod_discount_changeset(%{
+        mod_discount_enabled: true,
+        mod_discount_stripe_coupon_id: coupon_id
+      })
+      |> Repo.update()
+    end
+  end
+
+  defp create_and_apply_mod_discount(user) do
+    try do
+      # Create recurring 10% Stripe coupon
+      coupon_params = %{
+        percent_off: 10,
+        duration: "forever",
+        name: "Moderator Discount - 10%"
+      }
+      
+      case Stripe.Coupon.create(coupon_params) do
+        {:ok, coupon} ->
+          # Apply coupon to subscription
+          case Stripe.Subscription.update(user.stripe_subscription_id, %{coupon: coupon.id}) do
+            {:ok, _subscription} -> {:ok, coupon.id}
+            {:error, reason} -> {:error, reason}
+          end
+        {:error, reason} -> {:error, reason}
+      end
+    rescue
+      e -> {:error, e}
+    end
+  end
+
+  @doc """
+  Disables moderator discount for a user.
+  Removes the Stripe coupon from their subscription if they have one.
+  """
+  def disable_mod_discount(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      # Remove coupon from Stripe subscription if present
+      if user.stripe_subscription_id && user.mod_discount_stripe_coupon_id do
+        try do
+          Stripe.Subscription.update(user.stripe_subscription_id, %{coupon: ""})
+        rescue
+          _ -> :ok
+        end
+      end
+
+      user
+      |> User.mod_discount_changeset(%{
+        mod_discount_enabled: false,
+        mod_discount_stripe_coupon_id: nil
+      })
+      |> Repo.update()
+    end
   end
 end

@@ -156,7 +156,8 @@ defmodule ClippsterServerWeb.AuthController do
         "exp" => DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.to_unix(),
         "wallet_address" => public_key,
         "user_id" => user.id,
-        "is_admin" => user.is_admin
+        "is_admin" => user.is_admin,
+        "is_moderator" => user.is_moderator
       }
 
       case TokenGenerator.generate_token(token_claims) do
@@ -171,6 +172,7 @@ defmodule ClippsterServerWeb.AuthController do
               id: user.id,
               wallet_address: user.wallet_address,
               is_admin: user.is_admin,
+              is_moderator: user.is_moderator,
               account_type: user.account_type,
               owned_organization_id: user.owned_organization_id,
               created_by_organization_id: user.created_by_organization_id,
@@ -391,6 +393,7 @@ defmodule ClippsterServerWeb.AuthController do
                     "provider_id" => google_user["id"],
                     "user_id" => user.id,
                     "is_admin" => user.is_admin,
+                    "is_moderator" => user.is_moderator,
                     "email" => user.email
                   }
 
@@ -525,6 +528,12 @@ defmodule ClippsterServerWeb.AuthController do
     # Tauri mode: redirect to local callback server
     ai_allowed = check_ai_allowed_for_user(user)
 
+    # Get subscription status
+    subscription_status = ClippsterServer.Subscriptions.get_subscription_status(user.id)
+
+    # Get credits balance
+    {:ok, credits_balance} = ClippsterServer.Credits.get_user_balance(user.id)
+
     params = URI.encode_query(%{
       "success" => "true",
       "token" => token,
@@ -539,7 +548,13 @@ defmodule ClippsterServerWeb.AuthController do
       "created_by_organization_id" => user.created_by_organization_id || "",
       "ai_allowed" => ai_allowed,
       "beta_activated" => user.beta_activated,
-      "is_new_user" => to_string(is_new_user)
+      "is_new_user" => to_string(is_new_user),
+      "subscription_status" => subscription_status.status,
+      "subscription_tier" => subscription_status.tier || "",
+      "subscription_tier_name" => subscription_status.tier_name || "",
+      "subscription_needs_subscription" => subscription_status.needs_subscription,
+      "subscription_days_remaining" => subscription_status.days_remaining,
+      "credits_hours_remaining" => Decimal.to_string(credits_balance.hours_remaining)
     })
 
     redirect(conn, external: "http://localhost:54321/google-callback?#{params}")
@@ -615,6 +630,12 @@ defmodule ClippsterServerWeb.AuthController do
     # Check if AI is allowed for this user
     ai_allowed = check_ai_allowed_for_user(user)
 
+    # Get subscription status
+    subscription_status = ClippsterServer.Subscriptions.get_subscription_status(user.id)
+
+    # Get credits balance
+    {:ok, credits_balance} = ClippsterServer.Credits.get_user_balance(user.id)
+
     json(conn, %{
       success: true,
       user: %{
@@ -629,7 +650,12 @@ defmodule ClippsterServerWeb.AuthController do
         created_by_organization_id: user.created_by_organization_id,
         ai_allowed: ai_allowed,
         beta_activated: user.beta_activated,
-        is_affiliate: Affiliates.is_affiliate?(user.id)
+        is_affiliate: Affiliates.is_affiliate?(user.id),
+        subscription: subscription_status,
+        credits: %{
+          hours_remaining: credits_balance.hours_remaining,
+          minutes_remaining: Decimal.mult(credits_balance.hours_remaining, Decimal.new("60"))
+        }
       }
     })
   end

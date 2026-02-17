@@ -890,7 +890,7 @@ commands::file_utils::generate_video_thumbnail,
             storage::get_audio_metadata,
             storage::get_image_metadata,
             storage::copy_watermark_to_storage,
-// ... (rest of the code remains the same)
+            storage::delete_watermark_file,
             storage::copy_font_to_storage,
             storage::delete_font_file,
             storage::copy_audio_to_storage,

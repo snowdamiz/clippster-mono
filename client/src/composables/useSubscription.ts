@@ -78,6 +78,13 @@ export function useSubscription() {
       return null;
     }
 
+    // First check if we already have subscription data from authStore.user
+    // This is populated by /api/auth/me on login
+    if (authStore.user?.subscription) {
+      subscriptionStatus.value = authStore.user.subscription as SubscriptionStatus;
+      return subscriptionStatus.value;
+    }
+
     loading.value = true;
     error.value = null;
 

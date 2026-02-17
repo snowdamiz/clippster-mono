@@ -67,12 +67,20 @@ defmodule ClippsterServerWeb.AdminController do
         # Get subscription info
         subscription_info = Subscriptions.get_subscription_status(user.id)
 
+        # Check if user is an affiliate
+        affiliate = ClippsterServer.Affiliates.get_affiliate_by_user(user.id)
+        is_affiliate = affiliate != nil
+        affiliate_status = if affiliate, do: affiliate.status, else: nil
+
         %{
           id: user.id,
           wallet_address: user.wallet_address,
           email: user.email,
           provider: user.provider,
           is_admin: user.is_admin,
+          is_moderator: user.is_moderator,
+          is_affiliate: is_affiliate,
+          affiliate_status: affiliate_status,
           created_at: user.inserted_at,
           updated_at: user.updated_at,
           credits: credits_info,
@@ -1395,6 +1403,552 @@ defmodule ClippsterServerWeb.AdminController do
 
       _ ->
         default
+    end
+  end
+
+  # ============================================
+  # Moderator Management
+  # ============================================
+
+  @doc """
+  Promotes a user to moderator.
+  """
+  def promote_to_moderator(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.promote_user_to_moderator(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "User promoted to moderator",
+              user: %{id: user.id, is_moderator: user.is_moderator}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, :already_moderator} ->
+            conn |> put_status(400) |> json(%{success: false, error: "User is already a moderator"})
+
+          {:error, :must_have_active_subscription} ->
+            conn |> put_status(400) |> json(%{success: false, error: "User must have an active subscription to become a moderator"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Demotes a moderator to regular user.
+  """
+  def demote_moderator(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.demote_moderator(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Moderator demoted",
+              user: %{id: user.id, is_moderator: user.is_moderator}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, :not_moderator} ->
+            conn |> put_status(400) |> json(%{success: false, error: "User is not a moderator"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Enables moderator discount for a user.
+  """
+  def enable_mod_discount(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.enable_mod_discount(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Moderator discount enabled",
+              user: %{id: user.id, mod_discount_enabled: user.mod_discount_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Disables moderator discount for a user.
+  """
+  def disable_mod_discount(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.disable_mod_discount(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Moderator discount disabled",
+              user: %{id: user.id, mod_discount_enabled: user.mod_discount_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  # ============================================
+  # User Restrictions
+  # ============================================
+
+  @doc """
+  Restricts a user platform-wide.
+  """
+  def restrict_user(conn, %{"user_id" => user_id_string} = params) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        reason = Map.get(params, "reason", "No reason provided")
+
+        case Accounts.restrict_user(user_id, reason) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "User restricted",
+              user: %{id: user.id, is_restricted: user.is_restricted, restricted_reason: user.restricted_reason}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Unrestricts a user.
+  """
+  def unrestrict_user(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.unrestrict_user(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "User unrestricted",
+              user: %{id: user.id, is_restricted: user.is_restricted}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  # ============================================
+  # User Discounts
+  # ============================================
+
+  @doc """
+  Applies an admin discount to a user.
+  """
+  def apply_user_discount(conn, %{"user_id" => user_id_string} = params) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        with {:ok, percent_off} <- require_param(params, "percent_off"),
+             {:ok, months} <- require_param(params, "months"),
+             {percent_int, ""} <- Integer.parse(to_string(percent_off)),
+             {months_int, ""} <- Integer.parse(to_string(months)) do
+          case Accounts.apply_admin_discount(user_id, percent_int, months_int) do
+            {:ok, user} ->
+              json(conn, %{
+                success: true,
+                message: "Discount applied",
+                user: %{
+                  id: user.id,
+                  admin_discount_percent: user.admin_discount_percent,
+                  admin_discount_months_remaining: user.admin_discount_months_remaining
+                }
+              })
+
+            {:error, :user_not_found} ->
+              conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+            {:error, reason} ->
+              conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+          end
+        else
+          {:error, msg} ->
+            conn |> put_status(400) |> json(%{success: false, error: msg})
+
+          _ ->
+            conn |> put_status(400) |> json(%{success: false, error: "Invalid percent_off or months value"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Grants a free month to a user.
+  """
+  def grant_free_month(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        # Free month = 100% discount for 1 month
+        case Accounts.apply_admin_discount(user_id, 100, 1) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Free month granted",
+              user: %{id: user.id}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  # ============================================
+  # User Deletion
+  # ============================================
+
+  @doc """
+  Schedules a user for deletion.
+  """
+  def delete_user(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        user = Accounts.get_user(user_id)
+
+        if is_nil(user) do
+          conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+        else
+          # If user has active Stripe subscription, schedule deletion at end of billing cycle
+          deletion_date =
+            if user.subscription_status == "active" and user.subscription_end_date do
+              user.subscription_end_date
+            else
+              DateTime.utc_now() |> DateTime.truncate(:second)
+            end
+
+          case Accounts.schedule_user_deletion(user_id, deletion_date) do
+            {:ok, user} ->
+              json(conn, %{
+                success: true,
+                message: "User scheduled for deletion",
+                deletion_date: user.scheduled_deletion_at
+              })
+
+            {:error, reason} ->
+              conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+          end
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  # ============================================
+  # User & Organization Profiles
+  # ============================================
+
+  @doc """
+  Gets detailed user profile for admin view.
+  """
+  def get_user_profile(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        user = Accounts.get_user(user_id)
+
+        if is_nil(user) do
+          conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+        else
+          # Get credits info
+          {:ok, balance} = Credits.get_user_balance(user_id)
+
+          # Get subscription info
+          subscription_info = Subscriptions.get_subscription_status(user_id)
+
+          # Get organization memberships
+          org_memberships = Organizations.list_user_organizations(user_id)
+
+          json(conn, %{
+            success: true,
+            user: %{
+              id: user.id,
+              wallet_address: user.wallet_address,
+              email: user.email,
+              name: user.name,
+              avatar_url: user.avatar_url,
+              provider: user.provider,
+              is_admin: user.is_admin,
+              is_moderator: user.is_moderator,
+              is_restricted: user.is_restricted,
+              restricted_at: user.restricted_at,
+              restricted_reason: user.restricted_reason,
+              scheduled_deletion_at: user.scheduled_deletion_at,
+              account_type: user.account_type,
+              owned_organization_id: user.owned_organization_id,
+              created_at: user.inserted_at,
+              last_active_at: user.last_active_at,
+              credits: %{
+                hours_remaining: Decimal.to_float(balance.hours_remaining),
+                hours_used: Decimal.to_float(balance.hours_used)
+              },
+              subscription: subscription_info,
+              discount: %{
+                admin_discount_percent: user.admin_discount_percent,
+                admin_discount_months_remaining: user.admin_discount_months_remaining,
+                mod_discount_enabled: user.mod_discount_enabled
+              },
+              organizations: org_memberships
+            }
+          })
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Gets detailed organization info for admin view.
+  """
+  def get_org_details(conn, %{"id" => org_id_string}) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        org = Organizations.get_organization(org_id)
+
+        if is_nil(org) do
+          conn |> put_status(404) |> json(%{success: false, error: "Organization not found"})
+        else
+          # Get subscription info
+          subscription_info = OrganizationSubscriptions.get_subscription_status(org_id)
+
+          # Get member count
+          member_count = Organizations.count_members(org_id)
+
+          # Get members list with user details
+          members = Organizations.list_members(org_id)
+          |> Enum.map(fn member ->
+            %{
+              id: member.id,
+              user_id: member.user_id,
+              role: member.role,
+              user: if member.user do
+                %{
+                  id: member.user.id,
+                  name: member.user.name,
+                  email: member.user.email,
+                  avatar_url: member.user.avatar_url
+                }
+              else
+                nil
+              end
+            }
+          end)
+
+          # Get owner details
+          owner = if org.owner_id do
+            Accounts.get_user(org.owner_id)
+          else
+            nil
+          end
+
+          owner_info = if owner do
+            %{
+              id: owner.id,
+              name: owner.name,
+              email: owner.email,
+              avatar_url: owner.avatar_url
+            }
+          else
+            nil
+          end
+
+          json(conn, %{
+            success: true,
+            organization: %{
+              id: org.id,
+              name: org.name,
+              description: org.description,
+              logo_url: org.logo_url,
+              owner_id: org.owner_id,
+              owner: owner_info,
+              created_at: org.inserted_at,
+              member_count: member_count,
+              members: members,
+              subscription: subscription_info
+            }
+          })
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  @doc """
+  Admin endpoint to reset a user's password.
+  Only works for email-based accounts.
+  """
+  def reset_user_password(conn, %{"user_id" => user_id_string, "new_password" => new_password}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.admin_reset_password(user_id, new_password) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Password successfully reset",
+              user: %{
+                id: user.id,
+                email: user.email
+              }
+            })
+
+          {:error, :not_found} ->
+            conn
+            |> put_status(404)
+            |> json(%{success: false, error: "User not found"})
+
+          {:error, :not_email_account} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "Cannot reset password for non-email accounts (wallet/OAuth)"})
+
+          {:error, changeset} ->
+            errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "Invalid password", details: errors})
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  # ============================================
+  # Moderator Action Logs
+  # ============================================
+
+  @doc """
+  Lists all moderator action logs.
+  """
+  def list_mod_logs(conn, params) do
+    page = Map.get(params, "page", "1") |> String.to_integer()
+    per_page = Map.get(params, "per_page", "50") |> String.to_integer()
+
+    logs = ClippsterServer.ModLogs.list_all_logs(page: page, per_page: per_page)
+    total = ClippsterServer.ModLogs.count_all_logs()
+
+    logs_data =
+      Enum.map(logs, fn log ->
+        %{
+          id: log.id,
+          moderator: %{
+            id: log.moderator.id,
+            name: log.moderator.name || log.moderator.email || log.moderator.wallet_address
+          },
+          action_type: log.action_type,
+          target_type: log.target_type,
+          target_id: log.target_id,
+          details: log.details,
+          created_at: log.inserted_at
+        }
+      end)
+
+    json(conn, %{
+      success: true,
+      logs: logs_data,
+      total: total,
+      page: page,
+      per_page: per_page
+    })
+  end
+
+  @doc """
+  Gets moderator action logs for a specific user.
+  """
+  def get_mod_logs_for_user(conn, %{"mod_id" => mod_id_string} = params) do
+    case parse_integer(mod_id_string) do
+      {:ok, mod_id} ->
+        page = Map.get(params, "page", "1") |> String.to_integer()
+        per_page = Map.get(params, "per_page", "50") |> String.to_integer()
+
+        logs = ClippsterServer.ModLogs.list_logs_for_moderator(mod_id, page: page, per_page: per_page)
+        total = ClippsterServer.ModLogs.count_logs_for_moderator(mod_id)
+
+        logs_data =
+          Enum.map(logs, fn log ->
+            %{
+              id: log.id,
+              action_type: log.action_type,
+              target_type: log.target_type,
+              target_id: log.target_id,
+              details: log.details,
+              created_at: log.inserted_at
+            }
+          end)
+
+        json(conn, %{
+          success: true,
+          logs: logs_data,
+          total: total,
+          page: page,
+          per_page: per_page
+        })
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid moderator ID"})
     end
   end
 end

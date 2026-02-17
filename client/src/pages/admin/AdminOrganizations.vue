@@ -65,7 +65,7 @@
                 </tr>
               </thead>
               <tbody class="admin-orgs__tbody">
-                <tr v-for="org in organizations" :key="org.id" class="admin-orgs__row">
+                <tr v-for="org in organizations" :key="org.id" class="admin-orgs__row admin-orgs__row--clickable" @click="navigateToOrgDetail(org.id)">
                   <td class="admin-orgs__td">
                     <span class="admin-orgs__id">#{{ org.id }}</span>
                   </td>
@@ -104,18 +104,18 @@
                   <td class="admin-orgs__td">
                     <span class="admin-orgs__date">{{ formatDate(org.created_at) }}</span>
                   </td>
-                  <td class="admin-orgs__td">
+                  <td class="admin-orgs__td" @click.stop>
                     <div class="admin-orgs__actions-cell">
-                      <button class="admin-orgs__set-credits-btn" @click="openOrgCreditDialog(org)">
+                      <button class="admin-orgs__set-credits-btn" @click.stop="openOrgCreditDialog(org)">
                         <CreditCard class="admin-orgs__btn-icon" /> Credits
                       </button>
-                      <button class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--sub" @click="openGrantSubDialog(org)">
+                      <button class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--sub" @click.stop="openGrantSubDialog(org)">
                         <Crown class="admin-orgs__btn-icon" /> Sub
                       </button>
-                      <button v-if="org.subscription_status === 'active'" class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--edit" @click="openEditSubDialog(org)">
+                      <button v-if="org.subscription_status === 'active'" class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--edit" @click.stop="openEditSubDialog(org)">
                         <Settings class="admin-orgs__btn-icon" /> Edit
                       </button>
-                      <button v-if="org.subscription_status === 'active'" class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--cancel" @click="cancelOrgSub(org)">
+                      <button v-if="org.subscription_status === 'active'" class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--cancel" @click.stop="cancelOrgSub(org)">
                         <XCircle class="admin-orgs__btn-icon" />
                       </button>
                     </div>
@@ -166,17 +166,12 @@
                   </div>
                   <div class="admin-orgs__modal-field">
                     <label class="admin-orgs__modal-label">Tier</label>
-                    <Select v-model="createOrgForm.tier">
-                      <SelectTrigger class="admin-orgs__select-trigger">
-                        <SelectValue placeholder="Select tier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="solo">Solo ($149.99)</SelectItem>
-                        <SelectItem value="enterprise_base">Enterprise Base ($300)</SelectItem>
-                        <SelectItem value="enterprise_ai">Enterprise AI ($500)</SelectItem>
-                        <SelectItem value="enterprise_unlimited">Enterprise Unlimited ($1800)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <CustomDropdown
+                      v-model="createOrgForm.tier"
+                      :options="createTierOptions"
+                      placeholder="Select tier"
+                      trigger-class="admin-orgs__dropdown-trigger"
+                    />
                   </div>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
                     <div class="admin-orgs__modal-field">
@@ -228,17 +223,12 @@
                 <form class="admin-orgs__modal-form" @submit.prevent="grantSubscription">
                   <div class="admin-orgs__modal-field">
                     <label class="admin-orgs__modal-label">Tier</label>
-                    <Select v-model="grantSubForm.tier">
-                      <SelectTrigger class="admin-orgs__select-trigger">
-                        <SelectValue placeholder="Select tier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="solo">Solo</SelectItem>
-                        <SelectItem value="enterprise_base">Enterprise Base</SelectItem>
-                        <SelectItem value="enterprise_ai">Enterprise AI</SelectItem>
-                        <SelectItem value="enterprise_unlimited">Enterprise Unlimited</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <CustomDropdown
+                      v-model="grantSubForm.tier"
+                      :options="availableTiers"
+                      placeholder="Select tier"
+                      trigger-class="admin-orgs__dropdown-trigger"
+                    />
                   </div>
                   <div class="admin-orgs__modal-field">
                     <label class="admin-orgs__modal-label">Days</label>
@@ -283,17 +273,12 @@
                 <form class="admin-orgs__modal-form" @submit.prevent="updateOrgSub">
                   <div class="admin-orgs__modal-field">
                     <label class="admin-orgs__modal-label">Tier</label>
-                    <Select v-model="editSubForm.tier">
-                      <SelectTrigger class="admin-orgs__select-trigger">
-                        <SelectValue placeholder="Select tier" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="solo">Solo</SelectItem>
-                        <SelectItem value="enterprise_base">Enterprise Base</SelectItem>
-                        <SelectItem value="enterprise_ai">Enterprise AI</SelectItem>
-                        <SelectItem value="enterprise_unlimited">Enterprise Unlimited</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <CustomDropdown
+                      v-model="editSubForm.tier"
+                      :options="availableTiers"
+                      placeholder="Select tier"
+                      trigger-class="admin-orgs__dropdown-trigger"
+                    />
                   </div>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
                     <div class="admin-orgs__modal-field">
@@ -440,10 +425,11 @@
 
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
-  import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle, Plus, Crown, Settings, XCircle } from 'lucide-vue-next';
+  import { useRouter } from 'vue-router';
+  import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle, Plus, Crown, Settings, XCircle, ChevronDown } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
   import api from '@/services/api';
-  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
   interface Organization {
     id: number;
@@ -475,8 +461,17 @@
 
   // Create Org Account
   const showCreateOrgDialog = ref(false);
+  const newOrgName = ref('');
+  const newOrgDescription = ref('');
   const creatingOrg = ref(false);
   const createOrgError = ref<string | null>(null);
+
+  const router = useRouter();
+
+  const navigateToOrgDetail = (orgId: number) => {
+    router.push(`/admin/organizations/${orgId}`);
+  };
+
   const createOrgForm = ref({
     org_name: '',
     email: '',
@@ -493,6 +488,31 @@
   const grantingSubId = ref<number | null>(null);
   const grantSubError = ref<string | null>(null);
   const grantSubForm = ref({ tier: 'enterprise_base', days: 30, grant_credits: false });
+  const showTierDropdown = ref(false);
+
+  const availableTiers = [
+    { value: 'solo', label: 'Solo' },
+    { value: 'enterprise_base', label: 'Enterprise Base' },
+    { value: 'enterprise_ai', label: 'Enterprise AI' },
+    { value: 'enterprise_unlimited', label: 'Enterprise Unlimited' },
+  ];
+
+  const createTierOptions = [
+    { value: 'solo', label: 'Solo ($149.99)' },
+    { value: 'enterprise_base', label: 'Enterprise Base ($300)' },
+    { value: 'enterprise_ai', label: 'Enterprise AI ($500)' },
+    { value: 'enterprise_unlimited', label: 'Enterprise Unlimited ($1800)' },
+  ];
+
+  const getTierDisplayName = (tierValue: string) => {
+    const tier = availableTiers.find(t => t.value === tierValue);
+    return tier ? tier.label : 'Select tier';
+  };
+
+  const selectTier = (tierValue: string) => {
+    grantSubForm.value.tier = tierValue;
+    showTierDropdown.value = false;
+  };
 
   // Edit Subscription
   const showEditSubDialog = ref(false);
@@ -869,6 +889,14 @@
 
   .admin-orgs__row {
     transition: background-color 150ms ease;
+  }
+
+  .admin-orgs__row--clickable {
+    cursor: pointer;
+  }
+
+  .admin-orgs__row--clickable:hover {
+    background-color: var(--sidebar-hover);
   }
 
   .admin-orgs__row:hover {
@@ -1338,40 +1366,116 @@
   }
 
   .admin-orgs__modal-input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
-  }
 
-  /* ===== Select Trigger Styling ===== */
-  .admin-orgs__select-trigger {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-    height: auto;
-    justify-content: space-between;
-  }
+/* ===== Dropdown Trigger Styling ===== */
+:deep(.admin-orgs__dropdown-trigger) {
+  height: 38px !important;
+  padding: 0 0.75rem !important;
+  background-color: var(--sidebar-surface) !important;
+  border: 1px solid var(--sidebar-border) !important;
+  border-radius: 6px !important;
+  font-size: 0.875rem !important;
+  transition: all 150ms ease !important;
+}
 
-  .admin-orgs__select-trigger:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
-  }
+:deep(.admin-orgs__dropdown-trigger:hover) {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
 
-  .admin-orgs__select-trigger[data-placeholder] {
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
+:deep(.admin-orgs__dropdown-trigger span) {
+  color: var(--sidebar-text) !important;
+}
 
-  /* ===== Select Content (Dropdown) ===== */
-  :deep([role="listbox"]) {
-    z-index: 10000 !important;
-    background-color: var(--sidebar-hover);
+:deep(.admin-orgs__dropdown-trigger svg) {
+  width: 14px !important;
+  height: 14px !important;
+  color: var(--sidebar-text-muted) !important;
+}
+
+/* ===== Select Content (Dropdown) ===== */
+:deep([role="listbox"]) {
+  z-index: 10000 !important;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+:deep([role="option"]) {
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+:deep([role="option"]:hover) {
+  background-color: var(--sidebar-accent-hover);
+}
+
+:deep([role="option"][data-state="checked"]) {
+  background-color: var(--sidebar-accent);
+  color: white;
+}
+
+/* ===== Error Alert ===== */
+.admin-orgs__modal-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border-radius: 8px;
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.admin-orgs__modal-error-text {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ===== Footer ===== */
+.admin-orgs__modal-footer {
+  display: flex;
+  gap: 0.625rem;
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+/* ===== Buttons ===== */
+.admin-orgs__modal-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.admin-orgs__modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.admin-orgs__modal-btn--secondary {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-text);
+  border: 1px solid var(--sidebar-border);
+}
+
+.admin-orgs__modal-btn--secondary:hover:not(:disabled) {
+  background-color: var(--sidebar-active);
+  border-color: rgba(255, 255, 255, 0.1);
+}
     border: 1px solid var(--sidebar-border);
     border-radius: 8px;
     padding: 0.5rem;

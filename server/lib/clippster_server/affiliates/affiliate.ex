@@ -18,6 +18,12 @@ defmodule ClippsterServer.Affiliates.Affiliate do
     field :solana_usdc_address, :string
     field :paypal_email, :string
     field :notes, :string
+    
+    # Discount settings
+    field :discount_enabled, :boolean, default: false
+    field :discount_type, :string # "one_time", "recurring", "tiered"
+    field :first_month_discount_pct, :decimal
+    field :recurring_discount_pct, :decimal
 
     belongs_to :user, User
     belongs_to :approved_by_admin, User, foreign_key: :approved_by_admin_id
@@ -74,12 +80,19 @@ defmodule ClippsterServer.Affiliates.Affiliate do
       :payout_method,
       :solana_usdc_address,
       :paypal_email,
-      :notes
+      :notes,
+      :discount_enabled,
+      :discount_type,
+      :first_month_discount_pct,
+      :recurring_discount_pct
     ])
     |> validate_inclusion(:status, @statuses)
     |> validate_number(:signup_commission_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
     |> validate_number(:recurring_commission_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
     |> validate_number(:credit_pack_commission_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
+    |> validate_number(:first_month_discount_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
+    |> validate_number(:recurring_discount_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
+    |> validate_discount_type()
     |> validate_payout_method()
     |> maybe_normalize_referral_code()
     |> unique_constraint(:referral_code)
@@ -113,6 +126,14 @@ defmodule ClippsterServer.Affiliates.Affiliate do
       nil -> changeset
       method when method in @payout_methods -> changeset
       _ -> add_error(changeset, :payout_method, "must be crypto or paypal")
+    end
+  end
+
+  defp validate_discount_type(changeset) do
+    case get_field(changeset, :discount_type) do
+      nil -> changeset
+      type when type in ["one_time", "recurring", "tiered"] -> changeset
+      _ -> add_error(changeset, :discount_type, "must be one_time, recurring, or tiered")
     end
   end
 end

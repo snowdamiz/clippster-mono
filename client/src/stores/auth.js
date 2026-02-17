@@ -279,6 +279,7 @@ export const useAuthStore = defineStore('auth', {
         console.log('[Auth] Google login successful, user data:', {
           account_type: result.user.account_type,
           owned_organization_id: result.user.owned_organization_id,
+          subscription_tier: result.user.subscription?.tier,
         });
 
         // Store in localStorage for persistence
