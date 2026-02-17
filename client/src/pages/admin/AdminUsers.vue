@@ -945,8 +945,10 @@
       } else {
         throw new Error(response.data.error || 'Failed to promote user to moderator');
       }
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } catch (err: any) {
+      const errorMessage = err?.response?.data?.error || err?.message || 'Failed to promote user to moderator';
+      error.value = errorMessage;
+      console.error('Error promoting user to moderator:', err);
     } finally {
       promotingModUserId.value = null;
       showPromoteModDialog.value = false;
@@ -1093,16 +1095,25 @@
         grant_credits: subscriptionForm.value.grant_credits,
       });
       if (response.data.success) {
+        // Update the user in the list with the new subscription data
         const userIndex = users.value.findIndex((u) => u.id === userToEditSubscription.value!.id);
         if (userIndex !== -1) {
           users.value[userIndex] = { ...users.value[userIndex], subscription: response.data.subscription };
         }
+        // Update the dialog user reference
+        if (userToEditSubscription.value) {
+          userToEditSubscription.value = { ...userToEditSubscription.value, subscription: response.data.subscription };
+        }
         await fetchSubscriptionHistory(userToEditSubscription.value.id);
+        // Refresh the entire user list to ensure consistency
+        await fetchUsers();
       } else {
         throw new Error(response.data.error || 'Failed to grant subscription');
       }
-    } catch (err) {
-      subscriptionError.value = err instanceof Error ? err.message : 'Failed to grant subscription';
+    } catch (err: any) {
+      const errorMessage = err?.response?.data?.error || err?.message || 'Failed to grant subscription';
+      subscriptionError.value = errorMessage;
+      console.error('Error granting subscription:', err);
     } finally {
       updatingSubscriptionUserId.value = null;
     }
@@ -1771,7 +1782,7 @@
   .admin-users__dropdown-menu {
     position: fixed;
     z-index: 9999;
-    width: 180px;
+    width: 200px;
     background-color: rgba(24, 24, 27, 0.95);
     backdrop-filter: blur(12px);
     border: 1px solid var(--sidebar-border);

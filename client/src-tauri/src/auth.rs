@@ -35,6 +35,24 @@ pub struct GoogleAuthUser {
     pub ai_allowed: Option<bool>,
     #[serde(default)]
     pub beta_activated: Option<bool>,
+    #[serde(default)]
+    pub subscription: Option<GoogleAuthSubscription>,
+    #[serde(default)]
+    pub credits: Option<GoogleAuthCredits>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleAuthSubscription {
+    pub status: String,
+    pub tier: Option<String>,
+    pub tier_name: Option<String>,
+    pub needs_subscription: bool,
+    pub days_remaining: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoogleAuthCredits {
+    pub hours_remaining: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -424,6 +442,24 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                 let error = params.get("error").cloned();
 
                 if success {
+                    // Parse subscription data from query params
+                    let subscription = if let Some(status) = params.get("subscription_status") {
+                        Some(GoogleAuthSubscription {
+                            status: status.clone(),
+                            tier: params.get("subscription_tier").cloned().filter(|s| !s.is_empty()),
+                            tier_name: params.get("subscription_tier_name").cloned().filter(|s| !s.is_empty()),
+                            needs_subscription: params.get("subscription_needs_subscription").map(|s| s == "true").unwrap_or(true),
+                            days_remaining: params.get("subscription_days_remaining").and_then(|s| s.parse().ok()).unwrap_or(0),
+                        })
+                    } else {
+                        None
+                    };
+
+                    // Parse credits data from query params
+                    let credits = params.get("credits_hours_remaining").map(|hours| GoogleAuthCredits {
+                        hours_remaining: hours.clone(),
+                    });
+
                     // Parse user data from query params
                     let user = GoogleAuthUser {
                         id: params.get("user_id").and_then(|s| s.parse().ok()).unwrap_or(0),
@@ -436,6 +472,8 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                         created_by_organization_id: params.get("created_by_organization_id").and_then(|s| s.parse().ok()),
                         ai_allowed: Some(params.get("ai_allowed").map(|s| s == "true").unwrap_or(true)),
                         beta_activated: Some(params.get("beta_activated").map(|s| s == "true").unwrap_or(false)),
+                        subscription,
+                        credits,
                     };
 
                     let result = GoogleAuthResult {
@@ -500,6 +538,8 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                             created_by_organization_id: None,
                             ai_allowed: None,
                             beta_activated: None,
+                            subscription: None,
+                            credits: None,
                         },
                     };
 

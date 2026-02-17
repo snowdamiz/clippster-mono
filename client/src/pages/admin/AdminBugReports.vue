@@ -32,20 +32,20 @@
           </div>
         </div>
         <div class="admin-bugs__filters">
-          <select v-model="bugReportFilters.status" class="admin-bugs__filter-select" @change="fetchBugReports">
-            <option value="">All Status</option>
-            <option value="open">Open</option>
-            <option value="in_progress">In Progress</option>
-            <option value="resolved">Resolved</option>
-            <option value="closed">Closed</option>
-          </select>
-          <select v-model="bugReportFilters.severity" class="admin-bugs__filter-select" @change="fetchBugReports">
-            <option value="">All Severity</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="critical">Critical</option>
-          </select>
+          <CustomDropdown
+            v-model="bugReportFilters.status"
+            :options="statusOptions"
+            placeholder="All Status"
+            trigger-class="admin-bugs__dropdown-trigger"
+            @update:modelValue="fetchBugReports"
+          />
+          <CustomDropdown
+            v-model="bugReportFilters.severity"
+            :options="severityOptions"
+            placeholder="All Severity"
+            trigger-class="admin-bugs__dropdown-trigger"
+            @update:modelValue="fetchBugReports"
+          />
           <span class="admin-bugs__stats-count">
             {{ bugReports.length }} report{{ bugReports.length !== 1 ? 's' : '' }}
           </span>
@@ -171,6 +171,7 @@
   import { FileText, RefreshCw, Check, Trash2, Loader2 } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
   import { useAuthStore } from '@/stores/auth';
 
   interface BugReport {
@@ -193,6 +194,22 @@
   const deletingBugReportId = ref<number | null>(null);
   const showDeleteBugReportDialog = ref(false);
   const bugReportToDelete = ref<BugReport | null>(null);
+
+  const statusOptions = [
+    { label: 'All Status', value: '' },
+    { label: 'Open', value: 'open' },
+    { label: 'In Progress', value: 'in_progress' },
+    { label: 'Resolved', value: 'resolved' },
+    { label: 'Closed', value: 'closed' }
+  ];
+
+  const severityOptions = [
+    { label: 'All Severity', value: '' },
+    { label: 'Low', value: 'low' },
+    { label: 'Medium', value: 'medium' },
+    { label: 'High', value: 'high' },
+    { label: 'Critical', value: 'critical' }
+  ];
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
@@ -456,19 +473,29 @@
     flex-wrap: wrap;
   }
 
-  .admin-bugs__filter-select {
-    padding: 0.5rem 0.75rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    font-size: 0.875rem;
+  /* Dropdown trigger styling */
+  :deep(.admin-bugs__dropdown-trigger) {
+    height: 38px !important;
+    padding: 0 0.75rem !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 6px !important;
+    font-size: 0.875rem !important;
+    transition: all 150ms ease !important;
   }
 
-  .admin-bugs__filter-select:focus {
-    outline: none;
-    border-color: rgba(239, 68, 68, 0.5);
-    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.25);
+  :deep(.admin-bugs__dropdown-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.15) !important;
+  }
+
+  :deep(.admin-bugs__dropdown-trigger span) {
+    color: var(--sidebar-text) !important;
+  }
+
+  :deep(.admin-bugs__dropdown-trigger svg) {
+    width: 14px !important;
+    height: 14px !important;
+    color: var(--sidebar-text-muted) !important;
   }
 
   .admin-bugs__stats-count {

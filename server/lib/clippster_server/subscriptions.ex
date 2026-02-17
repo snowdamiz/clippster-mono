@@ -392,12 +392,13 @@ defmodule ClippsterServer.Subscriptions do
 
   @doc """
   Checks if a user needs a personal subscription.
-  Returns false for admins and org-created users.
+  Returns false for admins, org-created users, and users with active subscriptions.
   """
   def needs_subscription?(user) when is_map(user) do
     cond do
       user.is_admin -> false
       not is_nil(user.created_by_organization_id) -> false
+      user.subscription_status in ["active", "cancelled"] -> false
       true -> true
     end
   end

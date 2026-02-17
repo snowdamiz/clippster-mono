@@ -5,30 +5,29 @@
       description="View all moderator actions and activity"
       :show-header="true"
       :icon="ScrollText"
+      :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Moderator Logs' }]"
     >
       <div class="admin-mod-logs__content">
         <!-- Filters -->
         <div class="admin-mod-logs__filters">
           <div class="admin-mod-logs__filter">
             <label>Moderator</label>
-            <select v-model="filters.moderatorId">
-              <option value="">All Moderators</option>
-              <option v-for="mod in moderators" :key="mod.id" :value="mod.id">
-                {{ mod.name || mod.email }}
-              </option>
-            </select>
+            <CustomDropdown
+              v-model="filters.moderatorId"
+              :options="moderatorOptions"
+              placeholder="All Moderators"
+              trigger-class="admin-mod-logs__dropdown-trigger"
+            />
           </div>
           
           <div class="admin-mod-logs__filter">
             <label>Action Type</label>
-            <select v-model="filters.actionType">
-              <option value="">All Actions</option>
-              <option value="approve_org_application">Approve Org Application</option>
-              <option value="reject_org_application">Reject Org Application</option>
-              <option value="update_bug_report">Update Bug Report</option>
-              <option value="respond_to_support">Respond to Support</option>
-              <option value="archive_support_conversation">Archive Support</option>
-            </select>
+            <CustomDropdown
+              v-model="filters.actionType"
+              :options="actionTypeOptions"
+              placeholder="All Actions"
+              trigger-class="admin-mod-logs__dropdown-trigger"
+            />
           </div>
           
           <Button @click="loadLogs" size="sm">
@@ -132,6 +131,7 @@ import { ref, computed, onMounted } from 'vue';
 import { ScrollText, Filter, Loader2, AlertTriangle, User } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import PageLayout from '@/components/PageLayout.vue';
+import CustomDropdown from '@/components/CustomDropdown.vue';
 import api from '@/services/api';
 
 const logs = ref<any[]>([]);
@@ -146,6 +146,23 @@ const filters = ref({
   moderatorId: '',
   actionType: ''
 });
+
+const moderatorOptions = computed(() => [
+  { label: 'All Moderators', value: '' },
+  ...moderators.value.map(mod => ({
+    label: mod.name || mod.email,
+    value: mod.id
+  }))
+]);
+
+const actionTypeOptions = [
+  { label: 'All Actions', value: '' },
+  { label: 'Approve Org Application', value: 'approve_org_application' },
+  { label: 'Reject Org Application', value: 'reject_org_application' },
+  { label: 'Update Bug Report', value: 'update_bug_report' },
+  { label: 'Respond to Support', value: 'respond_to_support' },
+  { label: 'Archive Support', value: 'archive_support_conversation' }
+];
 
 const totalPages = computed(() => Math.ceil(total.value / perPage.value));
 
@@ -278,12 +295,29 @@ onMounted(() => {
   margin-bottom: 0.5rem;
 }
 
-.admin-mod-logs__filter select {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
-  background: var(--background);
+/* Dropdown trigger styling */
+:deep(.admin-mod-logs__dropdown-trigger) {
+  height: 38px !important;
+  padding: 0 0.75rem !important;
+  background-color: var(--sidebar-surface) !important;
+  border: 1px solid var(--sidebar-border) !important;
+  border-radius: 6px !important;
+  font-size: 0.875rem !important;
+  transition: all 150ms ease !important;
+}
+
+:deep(.admin-mod-logs__dropdown-trigger:hover) {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+:deep(.admin-mod-logs__dropdown-trigger span) {
+  color: var(--sidebar-text) !important;
+}
+
+:deep(.admin-mod-logs__dropdown-trigger svg) {
+  width: 14px !important;
+  height: 14px !important;
+  color: var(--sidebar-text-muted) !important;
 }
 
 .admin-mod-logs__loading,

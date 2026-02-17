@@ -5,6 +5,7 @@
       description="Manage support conversations and tickets"
       :show-header="true"
       :icon="Headset"
+      :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Customer Service' }]"
     >
       <div class="admin-customer-service__container">
         <!-- Conversations List -->

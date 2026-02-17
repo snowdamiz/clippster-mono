@@ -5,106 +5,211 @@
       description="Internal messaging for admins and moderators"
       :show-header="true"
       :icon="MessagesSquare"
+      :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Staff Messages' }]"
     >
-      <div class="admin-staff-messages__container">
-        <!-- Conversations List -->
-        <div class="admin-staff-messages__sidebar">
-          <div class="admin-staff-messages__sidebar-header">
-            <h3>Conversations</h3>
-            <Button @click="showNewConversationDialog = true" size="sm">
-              <Plus class="admin-staff-messages__button-icon" />
-              New
-            </Button>
-          </div>
-          
-          <div v-if="loadingConversations" class="admin-staff-messages__loading">
-            <Loader2 class="admin-staff-messages__spinner" />
-          </div>
-          
-          <div v-else-if="conversations.length === 0" class="admin-staff-messages__empty">
-            <MessagesSquare class="admin-staff-messages__empty-icon" />
-            <p>No conversations yet</p>
-          </div>
-          
-          <div v-else class="admin-staff-messages__conversations">
-            <div
-              v-for="conv in conversations"
-              :key="conv.id"
-              @click="selectConversation(conv)"
-              :class="[
-                'admin-staff-messages__conversation',
-                { 'admin-staff-messages__conversation--active': selectedConversation?.id === conv.id }
-              ]"
-            >
-              <div class="admin-staff-messages__conversation-info">
-                <h4>{{ getConversationName(conv) }}</h4>
-                <p>{{ conv.last_message_preview || 'No messages yet' }}</p>
-              </div>
-              <div class="admin-staff-messages__conversation-meta">
-                <span v-if="conv.last_message_at">{{ formatTime(conv.last_message_at) }}</span>
-              </div>
-            </div>
-          </div>
+      <template #actions>
+        <button @click="showNewConversationDialog = true" class="admin-staff-messages-header__new-btn">
+          <Plus class="admin-staff-messages-header__new-btn-icon" />
+          New Conversation
+        </button>
+      </template>
+
+      <div class="admin-staff-messages__content">
+        <!-- Page Heading -->
+        <div class="admin-staff-messages__heading">
+          <h1 class="admin-staff-messages__title">Staff Messages</h1>
+          <p class="admin-staff-messages__subtitle">Internal messaging for admins and moderators</p>
         </div>
 
-        <!-- Messages Panel -->
+        <!-- Main Messages Container -->
         <div class="admin-staff-messages__main">
-          <div v-if="!selectedConversation" class="admin-staff-messages__placeholder">
-            <MessagesSquare class="admin-staff-messages__placeholder-icon" />
-            <h3>Select a conversation</h3>
-            <p>Choose a conversation from the list to view messages</p>
-          </div>
-          
-          <div v-else class="admin-staff-messages__chat">
-            <div class="admin-staff-messages__chat-header">
-              <h3>{{ getConversationName(selectedConversation) }}</h3>
-              <p>{{ getParticipantNames(selectedConversation) }}</p>
-            </div>
-            
-            <div class="admin-staff-messages__messages" ref="messagesContainer">
-              <div v-if="loadingMessages" class="admin-staff-messages__loading">
-                <Loader2 class="admin-staff-messages__spinner" />
-              </div>
-              
-              <div v-else-if="messages.length === 0" class="admin-staff-messages__no-messages">
-                <p>No messages yet. Start the conversation!</p>
-              </div>
-              
-              <div v-else class="admin-staff-messages__messages-list">
-                <div
-                  v-for="message in messages"
-                  :key="message.id"
-                  :class="[
-                    'admin-staff-messages__message',
-                    { 'admin-staff-messages__message--own': message.sender_id === currentUserId }
-                  ]"
-                >
-                  <div class="admin-staff-messages__message-content">
-                    <div class="admin-staff-messages__message-header">
-                      <span class="admin-staff-messages__message-sender">
-                        {{ getSenderName(message) }}
-                      </span>
-                      <span class="admin-staff-messages__message-time">
-                        {{ formatTime(message.inserted_at) }}
-                      </span>
-                    </div>
-                    <p class="admin-staff-messages__message-text">{{ message.content }}</p>
+          <!-- Conversations Panel (Left) -->
+          <div class="admin-staff-messages-panel">
+            <div class="admin-staff-messages-panel__inner">
+              <!-- Panel Header -->
+              <div class="admin-staff-messages-panel__header">
+                <div class="admin-staff-messages-panel__header-left">
+                  <div class="admin-staff-messages-panel__header-icon">
+                    <MessagesSquare />
+                  </div>
+                  <div class="admin-staff-messages-panel__header-text">
+                    <h2 class="admin-staff-messages-panel__title">Conversations</h2>
+                    <p class="admin-staff-messages-panel__subtitle">
+                      {{ conversations.length }} {{ conversations.length === 1 ? 'chat' : 'chats' }}
+                    </p>
                   </div>
                 </div>
+                <button @click="showNewConversationDialog = true" class="admin-staff-messages-panel__new-btn" title="New conversation">
+                  <Plus class="admin-staff-messages-panel__new-btn-icon" />
+                </button>
+              </div>
+
+              <!-- Conversations List -->
+              <div class="admin-staff-messages-panel__list">
+                <!-- Loading Skeleton -->
+                <template v-if="loadingConversations">
+                  <div v-for="i in 4" :key="i" class="admin-staff-messages-conv-skeleton">
+                    <div class="admin-staff-messages-conv-skeleton__avatar"></div>
+                    <div class="admin-staff-messages-conv-skeleton__content">
+                      <div class="admin-staff-messages-conv-skeleton__line admin-staff-messages-conv-skeleton__line--name"></div>
+                      <div class="admin-staff-messages-conv-skeleton__line admin-staff-messages-conv-skeleton__line--preview"></div>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- Conversations -->
+                <template v-else>
+                  <div
+                    v-for="conv in conversations"
+                    :key="conv.id"
+                    class="admin-staff-messages-conv"
+                    :class="{ 'admin-staff-messages-conv--active': conv.id === selectedConversation?.id }"
+                    @click="selectConversation(conv)"
+                  >
+                    <div
+                      class="admin-staff-messages-conv__indicator"
+                      :class="{ 'admin-staff-messages-conv__indicator--active': conv.id === selectedConversation?.id }"
+                    ></div>
+                    <div class="admin-staff-messages-conv__inner">
+                      <!-- Avatar -->
+                      <div class="admin-staff-messages-conv__avatar-wrapper">
+                        <div
+                          class="admin-staff-messages-conv__avatar"
+                          :class="{
+                            'admin-staff-messages-conv__avatar--direct': conv.type === 'direct',
+                            'admin-staff-messages-conv__avatar--group': conv.type === 'group',
+                          }"
+                        >
+                          <Users v-if="conv.type === 'group'" class="admin-staff-messages-conv__avatar-icon" />
+                          <span v-else class="admin-staff-messages-conv__avatar-initial">
+                            {{ getConversationName(conv).charAt(0).toUpperCase() }}
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- Content -->
+                      <div class="admin-staff-messages-conv__content">
+                        <div class="admin-staff-messages-conv__header">
+                          <span class="admin-staff-messages-conv__name">{{ getConversationName(conv) }}</span>
+                          <span class="admin-staff-messages-conv__time">{{ formatTime(conv.last_message_at) }}</span>
+                        </div>
+                        <div class="admin-staff-messages-conv__footer">
+                          <span class="admin-staff-messages-conv__preview">{{ conv.last_message_preview || 'No messages yet' }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Empty State -->
+                  <div v-if="conversations.length === 0" class="admin-staff-messages-panel__empty">
+                    <div class="admin-staff-messages-panel__empty-icon">
+                      <MessageSquare />
+                    </div>
+                    <p class="admin-staff-messages-panel__empty-title">No conversations yet</p>
+                    <p class="admin-staff-messages-panel__empty-text">Start chatting with staff members</p>
+                    <button @click="showNewConversationDialog = true" class="admin-staff-messages-panel__empty-btn">
+                      <Plus class="admin-staff-messages-panel__empty-btn-icon" />
+                      New Conversation
+                    </button>
+                  </div>
+                </template>
               </div>
             </div>
-            
-            <div class="admin-staff-messages__input">
-              <textarea
-                v-model="newMessage"
-                @keydown.enter.prevent="sendMessage"
-                placeholder="Type a message..."
-                rows="3"
-              ></textarea>
-              <Button @click="sendMessage" :disabled="!newMessage.trim()">
-                <Send class="admin-staff-messages__button-icon" />
-                Send
-              </Button>
+          </div>
+
+          <!-- Chat Panel (Right) -->
+          <div class="admin-staff-messages-chat">
+            <div class="admin-staff-messages-chat__inner">
+              <template v-if="selectedConversation">
+                <!-- Chat Header -->
+                <div class="admin-staff-messages-chat__header">
+                  <div class="admin-staff-messages-chat__header-left">
+                    <div
+                      class="admin-staff-messages-chat__avatar"
+                      :class="{
+                        'admin-staff-messages-chat__avatar--direct': selectedConversation.type === 'direct',
+                        'admin-staff-messages-chat__avatar--group': selectedConversation.type === 'group',
+                      }"
+                    >
+                      <Users v-if="selectedConversation.type === 'group'" class="admin-staff-messages-chat__avatar-icon" />
+                      <span v-else class="admin-staff-messages-chat__avatar-initial">
+                        {{ getConversationName(selectedConversation).charAt(0).toUpperCase() }}
+                      </span>
+                    </div>
+                    <div class="admin-staff-messages-chat__header-info">
+                      <h3 class="admin-staff-messages-chat__name">{{ getConversationName(selectedConversation) }}</h3>
+                      <p class="admin-staff-messages-chat__meta">
+                        {{ selectedConversation.type === 'direct' ? 'Direct message' : `${selectedConversation.participants?.length || 0} members` }}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Messages Container -->
+                <div ref="messagesContainer" class="admin-staff-messages-chat__messages">
+                  <!-- Loading Messages -->
+                  <div v-if="loadingMessages" class="admin-staff-messages-chat__loading">
+                    <Loader2 class="admin-staff-messages-chat__loading-spinner" />
+                  </div>
+
+                  <!-- Messages List -->
+                  <div
+                    v-for="message in messages"
+                    :key="message.id"
+                    class="message-row"
+                    :class="{ 'message-row--sent': message.sender_id === currentUserId }"
+                  >
+                    <div
+                      class="message-bubble"
+                      :class="{
+                        'message-bubble--sent': message.sender_id === currentUserId,
+                        'message-bubble--received': message.sender_id !== currentUserId,
+                      }"
+                    >
+                      <!-- Sender Name -->
+                      <div v-if="message.sender_id !== currentUserId" class="message-bubble__sender">
+                        {{ getSenderName(message) }}
+                      </div>
+
+                      <!-- Message Content -->
+                      <p class="message-bubble__content">{{ message.content }}</p>
+
+                      <!-- Meta Info -->
+                      <div class="message-bubble__meta">
+                        <span class="message-bubble__time">{{ formatMessageTime(message.inserted_at) }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Message Input -->
+                <div class="admin-staff-messages-chat__input-area">
+                  <textarea
+                    v-model="newMessage"
+                    placeholder="Write a message..."
+                    rows="1"
+                    @keydown.enter.prevent="sendMessage"
+                    class="admin-staff-messages-chat__input"
+                  ></textarea>
+                  <button
+                    class="admin-staff-messages-chat__send-btn"
+                    :class="{ 'admin-staff-messages-chat__send-btn--disabled': !newMessage.trim() }"
+                    :disabled="!newMessage.trim()"
+                    @click="sendMessage"
+                  >
+                    <Send class="admin-staff-messages-chat__send-icon" />
+                  </button>
+                </div>
+              </template>
+
+              <!-- No Conversation Selected -->
+              <div v-else class="admin-staff-messages-chat__empty">
+                <div class="admin-staff-messages-chat__empty-icon">
+                  <MessageSquare />
+                </div>
+                <h2 class="admin-staff-messages-chat__empty-title">Select a conversation</h2>
+                <p class="admin-staff-messages-chat__empty-text">Choose from your existing conversations or start a new one</p>
+              </div>
             </div>
           </div>
         </div>
@@ -112,52 +217,109 @@
     </PageLayout>
 
     <!-- New Conversation Dialog -->
-    <Dialog v-model:open="showNewConversationDialog">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>New Staff Conversation</DialogTitle>
-        </DialogHeader>
-        <div class="admin-staff-messages__dialog-content">
-          <div class="admin-staff-messages__dialog-field">
-            <label>Type</label>
-            <CustomDropdown
-              v-model="newConversationType"
-              :options="conversationTypeOptions"
-              placeholder="Select type"
-              trigger-class="admin-staff-messages__dropdown-trigger"
-            />
-          </div>
-          
-          <div v-if="newConversationType === 'group'" class="admin-staff-messages__dialog-field">
-            <label>Group Name</label>
-            <input v-model="newConversationName" type="text" placeholder="Enter group name" />
-          </div>
-          
-          <div class="admin-staff-messages__dialog-field">
-            <label>{{ newConversationType === 'direct' ? 'Recipient' : 'Participants' }}</label>
-            <CustomDropdown
-              v-model="selectedStaffMembers"
-              :options="staffMemberOptions"
-              :placeholder="newConversationType === 'direct' ? 'Select recipient' : 'Select participants'"
-              trigger-class="admin-staff-messages__dropdown-trigger"
-            />
-          </div>
-          
-          <div class="admin-staff-messages__dialog-actions">
-            <Button @click="showNewConversationDialog = false" variant="outline">Cancel</Button>
-            <Button @click="createConversation" :disabled="!canCreateConversation">Create</Button>
-          </div>
+    <Teleport to="body">
+      <Transition name="staff-modal">
+        <div v-if="showNewConversationDialog" class="staff-modal__overlay" @click.self="showNewConversationDialog = false">
+          <Transition name="staff-dialog" appear>
+            <div class="staff-modal">
+              <!-- Accent Bar -->
+              <div class="staff-modal__accent" />
+
+              <!-- Header -->
+              <div class="staff-modal__header">
+                <button class="staff-modal__close" @click="showNewConversationDialog = false" title="Close">
+                  <X :size="18" />
+                </button>
+                <div class="staff-modal__icon">
+                  <MessagesSquare :size="24" />
+                </div>
+                <h2 class="staff-modal__title">New Staff Conversation</h2>
+                <p class="staff-modal__subtitle">Start a conversation with staff members</p>
+              </div>
+
+              <!-- Content -->
+              <div class="staff-content">
+                <!-- Conversation Type -->
+                <div class="staff-section">
+                  <h3 class="staff-section__title">Conversation Type</h3>
+                  <div class="staff-field">
+                    <label class="staff-field__label">
+                      Type
+                      <span class="staff-field__required">*</span>
+                    </label>
+                    <CustomDropdown
+                      v-model="newConversationType"
+                      :options="conversationTypeOptions"
+                      placeholder="Select type"
+                      trigger-class="staff-field__dropdown-trigger"
+                    />
+                  </div>
+                </div>
+
+                <!-- Group Name (if group type) -->
+                <div v-if="newConversationType === 'group'" class="staff-section">
+                  <h3 class="staff-section__title">Group Details</h3>
+                  <div class="staff-field">
+                    <label for="group-name" class="staff-field__label">
+                      Group Name
+                      <span class="staff-field__required">*</span>
+                    </label>
+                    <input
+                      id="group-name"
+                      v-model="newConversationName"
+                      type="text"
+                      placeholder="Enter group name"
+                      class="staff-field__input"
+                    />
+                  </div>
+                </div>
+
+                <!-- Recipient/Participants -->
+                <div class="staff-section">
+                  <h3 class="staff-section__title">{{ newConversationType === 'direct' ? 'Recipient' : 'Participants' }}</h3>
+                  <div class="staff-field">
+                    <label class="staff-field__label">
+                      {{ newConversationType === 'direct' ? 'Select Recipient' : 'Select Participants' }}
+                      <span class="staff-field__required">*</span>
+                    </label>
+                    <CustomDropdown
+                      v-model="selectedStaffMembers"
+                      :options="staffMemberOptions"
+                      :placeholder="newConversationType === 'direct' ? 'Select recipient' : 'Select participants'"
+                      trigger-class="staff-field__dropdown-trigger"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div class="staff-modal__footer">
+                <button
+                  type="button"
+                  @click="showNewConversationDialog = false"
+                  class="staff-btn staff-btn--secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  @click="createConversation"
+                  :disabled="!canCreateConversation"
+                  class="staff-btn staff-btn--primary"
+                >
+                  Create Conversation
+                </button>
+              </div>
+            </div>
+          </Transition>
         </div>
-      </DialogContent>
-    </Dialog>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue';
-import { MessagesSquare, Plus, Send, Loader2 } from 'lucide-vue-next';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { MessagesSquare, Plus, Send, Loader2, Users, MessageSquare, X } from 'lucide-vue-next';
 import CustomDropdown from '@/components/CustomDropdown.vue';
 import PageLayout from '@/components/PageLayout.vue';
 import { useAuthStore } from '@/stores/auth';
@@ -310,6 +472,7 @@ const getSenderName = (message: any) => {
 };
 
 const formatTime = (timestamp: string) => {
+  if (!timestamp) return '';
   const date = new Date(timestamp);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
@@ -318,6 +481,12 @@ const formatTime = (timestamp: string) => {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
   return date.toLocaleDateString();
+};
+
+const formatMessageTime = (timestamp: string) => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 const scrollToBottom = () => {
@@ -333,266 +502,1007 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* ===== Header Actions ===== */
+.admin-staff-messages-header__new-btn {
+  height: 32px;
+  padding: 0 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background-color: var(--sidebar-accent);
+  color: var(--sidebar-bg);
+  border: none;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.admin-staff-messages-header__new-btn:hover {
+  opacity: 0.9;
+}
+
+.admin-staff-messages-header__new-btn-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ===== Page Container ===== */
 .admin-staff-messages {
   width: 100%;
-  min-height: 100%;
+  height: 100%;
 }
 
-.admin-staff-messages__container {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  height: calc(100vh - 200px);
-  gap: 1px;
-  background: var(--border);
+.admin-staff-messages__content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  padding-bottom: 2rem;
+  max-width: 1600px;
+  margin: 0 auto;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
 }
 
-.admin-staff-messages__sidebar {
-  background: var(--background);
+/* ===== Page Heading ===== */
+.admin-staff-messages__heading {
+  flex-shrink: 0;
+}
+
+.admin-staff-messages__title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  margin: 0 0 0.2rem;
+  letter-spacing: -0.02em;
+}
+
+.admin-staff-messages__subtitle {
+  font-size: 0.875rem;
+  color: var(--sidebar-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* ===== Main Container ===== */
+.admin-staff-messages__main {
+  display: flex;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+  margin-top: 0.8rem;
+  overflow: hidden;
+}
+
+/* ===== Conversations Panel ===== */
+.admin-staff-messages-panel {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  background-color: var(--sidebar-surface);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.admin-staff-messages-panel__inner {
+  flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
-.admin-staff-messages__sidebar-header {
-  padding: 1rem;
-  border-bottom: 1px solid var(--border);
+.admin-staff-messages-panel__header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.875rem;
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--sidebar-border);
 }
 
-.admin-staff-messages__conversations {
+.admin-staff-messages-panel__header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.admin-staff-messages-panel__header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background-color: rgba(6, 182, 212, 0.15);
+  flex-shrink: 0;
+}
+
+.admin-staff-messages-panel__header-icon svg {
+  width: 20px;
+  height: 20px;
+  color: var(--sidebar-accent);
+  stroke: var(--sidebar-accent);
+}
+
+.admin-staff-messages-panel__title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.admin-staff-messages-panel__subtitle {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  margin: 0.125rem 0 0;
+}
+
+.admin-staff-messages-panel__new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background-color: var(--sidebar-accent);
+  color: var(--sidebar-bg);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.admin-staff-messages-panel__new-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.admin-staff-messages-panel__new-btn-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* Conversations List */
+.admin-staff-messages-panel__list {
   flex: 1;
   overflow-y: auto;
+  padding: 0.5rem;
 }
 
-.admin-staff-messages__conversation {
-  padding: 1rem;
-  border-bottom: 1px solid var(--border);
+.admin-staff-messages-panel__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-staff-messages-panel__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-staff-messages-panel__list::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+/* Conversation Item */
+.admin-staff-messages-conv {
+  display: flex;
+  margin-bottom: 0.375rem;
+  background-color: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  overflow: hidden;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 150ms ease;
 }
 
-.admin-staff-messages__conversation:hover {
-  background: var(--accent);
+.admin-staff-messages-conv:hover {
+  background-color: var(--sidebar-hover);
 }
 
-.admin-staff-messages__conversation--active {
-  background: var(--accent);
-  border-left: 3px solid var(--primary);
+.admin-staff-messages-conv--active {
+  background-color: var(--sidebar-active);
 }
 
-.admin-staff-messages__conversation-info h4 {
+.admin-staff-messages-conv__indicator {
+  width: 3px;
+  flex-shrink: 0;
+  background-color: transparent;
+  border-radius: 3px 0 0 3px;
+}
+
+.admin-staff-messages-conv__indicator--active {
+  background-color: var(--sidebar-accent);
+}
+
+.admin-staff-messages-conv__inner {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+}
+
+.admin-staff-messages-conv__avatar-wrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.admin-staff-messages-conv__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   font-size: 0.875rem;
   font-weight: 600;
-  margin-bottom: 0.25rem;
+  color: white;
 }
 
-.admin-staff-messages__conversation-info p {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
+.admin-staff-messages-conv__avatar--direct {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+}
+
+.admin-staff-messages-conv__avatar--group {
+  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+}
+
+.admin-staff-messages-conv__avatar-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.admin-staff-messages-conv__avatar-initial {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.admin-staff-messages-conv__content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-staff-messages-conv__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.admin-staff-messages-conv__name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.admin-staff-messages__main {
-  background: var(--background);
-  display: flex;
-  flex-direction: column;
+.admin-staff-messages-conv__time {
+  font-size: 0.6875rem;
+  color: var(--sidebar-text-muted);
+  flex-shrink: 0;
 }
 
-.admin-staff-messages__placeholder {
+.admin-staff-messages-conv__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.admin-staff-messages-conv__preview {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   flex: 1;
+}
+
+/* Empty State */
+.admin-staff-messages-panel__empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1rem;
-  color: var(--muted-foreground);
+  padding: 3rem 1.5rem;
+  text-align: center;
 }
 
-.admin-staff-messages__placeholder-icon {
-  width: 4rem;
-  height: 4rem;
-  opacity: 0.5;
+.admin-staff-messages-panel__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  background-color: var(--sidebar-hover);
+  border-radius: 12px;
+  margin-bottom: 1rem;
+  color: var(--sidebar-text-muted);
 }
 
-.admin-staff-messages__chat {
+.admin-staff-messages-panel__empty-icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.admin-staff-messages-panel__empty-title {
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+  margin: 0 0 0.25rem;
+}
+
+.admin-staff-messages-panel__empty-text {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  margin: 0 0 1.25rem;
+}
+
+.admin-staff-messages-panel__empty-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.625rem 1rem;
+  background-color: var(--sidebar-accent);
+  color: var(--sidebar-bg);
+  border: none;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.admin-staff-messages-panel__empty-btn:hover {
+  opacity: 0.9;
+}
+
+.admin-staff-messages-panel__empty-btn-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Skeleton Loading */
+.admin-staff-messages-conv-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  margin-bottom: 0.375rem;
+}
+
+.admin-staff-messages-conv-skeleton__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.admin-staff-messages-conv-skeleton__content {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  gap: 0.5rem;
 }
 
-.admin-staff-messages__chat-header {
-  padding: 1rem;
-  border-bottom: 1px solid var(--border);
+.admin-staff-messages-conv-skeleton__line {
+  background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
 }
 
-.admin-staff-messages__chat-header h3 {
+.admin-staff-messages-conv-skeleton__line--name {
+  height: 14px;
+  width: 60%;
+}
+
+.admin-staff-messages-conv-skeleton__line--preview {
+  height: 12px;
+  width: 80%;
+}
+
+/* ===== Chat Panel ===== */
+.admin-staff-messages-chat {
+  flex: 1;
+  display: flex;
+  background-color: var(--sidebar-surface);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.admin-staff-messages-chat__inner {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Chat Header */
+.admin-staff-messages-chat__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--sidebar-border);
+  background-color: rgba(0, 0, 0, 0.15);
+}
+
+.admin-staff-messages-chat__header-left {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.admin-staff-messages-chat__avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: white;
+  flex-shrink: 0;
+}
+
+.admin-staff-messages-chat__avatar--direct {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+}
+
+.admin-staff-messages-chat__avatar--group {
+  background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+}
+
+.admin-staff-messages-chat__avatar-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.admin-staff-messages-chat__avatar-initial {
   font-size: 1rem;
   font-weight: 600;
 }
 
-.admin-staff-messages__chat-header p {
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
+.admin-staff-messages-chat__header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
 }
 
-.admin-staff-messages__messages {
+.admin-staff-messages-chat__name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.admin-staff-messages-chat__meta {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  margin: 0;
+}
+
+/* Messages Container */
+.admin-staff-messages-chat__messages {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem;
-}
-
-.admin-staff-messages__messages-list {
+  padding: 1.25rem;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
-.admin-staff-messages__message {
+.admin-staff-messages-chat__messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.admin-staff-messages-chat__messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-staff-messages-chat__messages::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.admin-staff-messages-chat__loading {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
 }
 
-.admin-staff-messages__message--own {
-  align-items: flex-end;
+.admin-staff-messages-chat__loading-spinner {
+  width: 24px;
+  height: 24px;
+  color: var(--sidebar-accent);
+  animation: spin 0.8s linear infinite;
 }
 
-.admin-staff-messages__message-content {
+/* Message Row */
+.message-row {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.message-row--sent {
+  justify-content: flex-end;
+}
+
+/* Message Bubble */
+.message-bubble {
+  position: relative;
   max-width: 70%;
-  background: var(--accent);
-  padding: 0.75rem;
-  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 16px;
 }
 
-.admin-staff-messages__message--own .admin-staff-messages__message-content {
-  background: var(--primary);
-  color: var(--primary-foreground);
+.message-bubble--sent {
+  background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
+  color: white;
+  border-bottom-right-radius: 4px;
 }
 
-.admin-staff-messages__message-header {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.25rem;
-  font-size: 0.75rem;
+.message-bubble--received {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-text);
+  border-bottom-left-radius: 4px;
 }
 
-.admin-staff-messages__message-sender {
+.message-bubble__sender {
+  font-size: 0.6875rem;
   font-weight: 600;
+  color: var(--sidebar-accent);
+  margin-bottom: 0.375rem;
 }
 
-.admin-staff-messages__message-time {
+.message-bubble__content {
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+.message-bubble__meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.375rem;
+}
+
+.message-bubble__time {
+  font-size: 0.625rem;
   opacity: 0.7;
 }
 
-.admin-staff-messages__message-text {
-  font-size: 0.875rem;
-  white-space: pre-wrap;
-  word-break: break-word;
+.message-bubble--sent .message-bubble__time {
+  color: white;
+  opacity: 1;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
-.admin-staff-messages__input {
-  padding: 1rem;
-  border-top: 1px solid var(--border);
+/* Input Area */
+.admin-staff-messages-chat__input-area {
   display: flex;
-  gap: 0.5rem;
+  align-items: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--sidebar-border);
+  background-color: rgba(0, 0, 0, 0.15);
 }
 
-.admin-staff-messages__input textarea {
+.admin-staff-messages-chat__input {
   flex: 1;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  color: var(--sidebar-text);
   resize: none;
-  font-family: inherit;
+  max-height: 120px;
+  transition: all 150ms ease;
 }
 
-.admin-staff-messages__loading,
-.admin-staff-messages__empty,
-.admin-staff-messages__no-messages {
+.admin-staff-messages-chat__input::placeholder {
+  color: var(--sidebar-text-muted);
+}
+
+.admin-staff-messages-chat__input:hover {
+  border-color: var(--sidebar-border);
+}
+
+.admin-staff-messages-chat__input:focus {
+  outline: none;
+  border-color: var(--sidebar-border);
+  background-color: var(--sidebar-surface);
+}
+
+.admin-staff-messages-chat__send-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 150ms ease;
+  flex-shrink: 0;
+}
+
+.admin-staff-messages-chat__send-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.admin-staff-messages-chat__send-btn--disabled {
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text-muted);
+  cursor: not-allowed;
+}
+
+.admin-staff-messages-chat__send-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Empty State */
+.admin-staff-messages-chat__empty {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  color: var(--muted-foreground);
+  text-align: center;
 }
 
-.admin-staff-messages__spinner {
-  width: 2rem;
-  height: 2rem;
-  animation: spin 1s linear infinite;
+.admin-staff-messages-chat__empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  background-color: var(--sidebar-hover);
+  border-radius: 16px;
+  margin-bottom: 1.5rem;
+  color: var(--sidebar-text-muted);
 }
 
-.admin-staff-messages__empty-icon {
-  width: 3rem;
-  height: 3rem;
-  opacity: 0.5;
-  margin-bottom: 0.5rem;
+.admin-staff-messages-chat__empty-icon svg {
+  width: 32px;
+  height: 32px;
 }
 
-.admin-staff-messages__button-icon {
-  width: 1rem;
-  height: 1rem;
-  margin-right: 0.5rem;
+.admin-staff-messages-chat__empty-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--sidebar-text);
+  margin: 0 0 0.5rem;
 }
 
-.admin-staff-messages__dialog-content {
+.admin-staff-messages-chat__empty-text {
+  font-size: 0.875rem;
+  color: var(--sidebar-text-muted);
+  margin: 0;
+  max-width: 280px;
+}
+
+/* ===== Modal Overlay & Container ===== */
+.staff-modal__overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+}
+
+.staff-modal {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  overflow: hidden;
 }
 
-.admin-staff-messages__dialog-field label {
-  display: block;
-  font-size: 0.875rem;
+.staff-modal__accent {
+  height: 3px;
+  background: linear-gradient(90deg, #06b6d4 0%, #0891b2 100%);
+  flex-shrink: 0;
+}
+
+/* ===== Modal Header ===== */
+.staff-modal__header {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem 1.5rem 1.25rem;
+  border-bottom: 1px solid var(--sidebar-border);
+  text-align: center;
+}
+
+.staff-modal__close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background-color: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--sidebar-text-muted);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.staff-modal__close:hover {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-text);
+}
+
+.staff-modal__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  margin-bottom: 0.875rem;
+  background-color: rgba(6, 182, 212, 0.15);
+  color: #06b6d4;
+}
+
+.staff-modal__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.staff-modal__subtitle {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  margin: 0.25rem 0 0;
+}
+
+/* ===== Content Area ===== */
+.staff-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 1.5rem 1.5rem;
+}
+
+.staff-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.staff-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.staff-content::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.staff-content::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* ===== Sections ===== */
+.staff-section {
+  margin-bottom: 1.25rem;
+}
+
+.staff-section:last-child {
+  margin-bottom: 0;
+}
+
+.staff-section__title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sidebar-text-muted);
+  margin: 0 0 0.625rem;
+}
+
+/* ===== Form Fields ===== */
+.staff-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.staff-field__label {
+  font-size: 0.8125rem;
   font-weight: 500;
-  margin-bottom: 0.5rem;
+  color: var(--sidebar-text);
 }
 
-.admin-staff-messages__dialog-field input {
+.staff-field__required {
+  color: #ef4444;
+  margin-left: 0.125rem;
+}
+
+.staff-field__input {
   width: 100%;
-  padding: 0.5rem;
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
+  padding: 0.625rem 0.875rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: var(--sidebar-text);
+  transition: all 150ms ease;
 }
 
-/* Dropdown trigger styling */
-:deep(.admin-staff-messages__dropdown-trigger) {
-  height: 38px !important;
-  padding: 0 0.75rem !important;
-  background-color: var(--sidebar-surface) !important;
+.staff-field__input::placeholder {
+  color: var(--sidebar-text-muted);
+  opacity: 0.6;
+}
+
+.staff-field__input:focus {
+  outline: none;
+  border-color: transparent;
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+}
+
+/* Dropdown trigger button styling */
+:deep(.staff-field__dropdown-trigger) {
+  width: 100% !important;
+  padding: 0.625rem 0.875rem !important;
+  background-color: var(--sidebar-hover) !important;
   border: 1px solid var(--sidebar-border) !important;
-  border-radius: 6px !important;
+  border-radius: 8px !important;
   font-size: 0.875rem !important;
+  color: var(--sidebar-text) !important;
   transition: all 150ms ease !important;
+  justify-content: space-between !important;
 }
 
-:deep(.admin-staff-messages__dropdown-trigger:hover) {
-  border-color: rgba(255, 255, 255, 0.15) !important;
+:deep(.staff-field__dropdown-trigger:hover) {
+  border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
-:deep(.admin-staff-messages__dropdown-trigger span) {
+:deep(.staff-field__dropdown-trigger:focus-within) {
+  border-color: transparent !important;
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3) !important;
+}
+
+:deep(.staff-field__dropdown-trigger span) {
   color: var(--sidebar-text) !important;
 }
 
-:deep(.admin-staff-messages__dropdown-trigger svg) {
+:deep(.staff-field__dropdown-trigger svg) {
   width: 14px !important;
   height: 14px !important;
   color: var(--sidebar-text-muted) !important;
 }
 
-.admin-staff-messages__dialog-actions {
+/* ===== Modal Footer ===== */
+.staff-modal__footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 1rem;
+  gap: 0.625rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--sidebar-border);
+  background-color: rgba(0, 0, 0, 0.15);
 }
 
+.staff-btn {
+  padding: 0.625rem 1.25rem;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.staff-btn--secondary {
+  background-color: transparent;
+  color: var(--sidebar-text);
+  border: 1px solid var(--sidebar-border);
+}
+
+.staff-btn--secondary:hover {
+  background-color: var(--sidebar-hover);
+}
+
+.staff-btn--primary {
+  background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
+  color: white;
+}
+
+.staff-btn--primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+}
+
+.staff-btn--primary:disabled {
+  background: var(--sidebar-hover);
+  color: var(--sidebar-text-muted);
+  cursor: not-allowed;
+}
+
+/* ===== Modal Transitions ===== */
+.staff-modal-enter-active,
+.staff-modal-leave-active {
+  transition: opacity 200ms ease;
+}
+
+.staff-modal-enter-from,
+.staff-modal-leave-to {
+  opacity: 0;
+}
+
+.staff-dialog-enter-active {
+  transition: all 250ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.staff-dialog-leave-active {
+  transition: all 200ms ease;
+}
+
+.staff-dialog-enter-from {
+  opacity: 0;
+  transform: scale(0.95) translateY(-10px);
+}
+
+.staff-dialog-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+/* ===== Animations ===== */
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 </style>

@@ -5,6 +5,7 @@
       description="System administration and management tools"
       :show-header="true"
       :icon="ShieldCheck"
+      :breadcrumbs="[{ label: 'Admin', path: '/admin' }]"
     >
       <template #badge>
         <span v-if="loading" class="admin-hub__role admin-hub__role--loading">
