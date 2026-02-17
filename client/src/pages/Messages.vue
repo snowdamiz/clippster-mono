@@ -5,6 +5,7 @@
   import { useAuthStore } from '@/stores/auth';
   import api from '@/services/api';
   import type { Conversation, Message } from '@/services/messagingApi';
+  import { getOrCreateSupportConversation } from '@/services/messagingApi';
   import PageLayout from '@/components/PageLayout.vue';
   import {
     MessageSquare,
@@ -25,6 +26,7 @@
     UserMinus,
     LogOut,
     MessagesSquare,
+    Headset,
   } from 'lucide-vue-next';
 
   const messagingStore = useMessagingStore();
@@ -62,6 +64,8 @@
   const isKickingUser = ref<number | null>(null);
   const menuButtonRef = ref<HTMLElement | null>(null);
   const menuPosition = ref({ top: 0, right: 0 });
+  const supportConversation = ref<Conversation | null>(null);
+  const isLoadingSupportConversation = ref(false);
 
   // Confirmation dialog state
   const showConfirmDialog = ref(false);
@@ -277,10 +281,33 @@
           console.error(`Failed to load members for org ${org.id}:`, e);
         }
       }
+      
+      // Load support conversation
+      await loadSupportConversation();
     } catch (error) {
       console.error('Failed to load organizations:', error);
     } finally {
       isLoadingMembers.value = false;
+    }
+  }
+
+  async function loadSupportConversation() {
+    try {
+      isLoadingSupportConversation.value = true;
+      supportConversation.value = await getOrCreateSupportConversation();
+    } catch (error) {
+      console.error('Failed to load support conversation:', error);
+    } finally {
+      isLoadingSupportConversation.value = false;
+    }
+  }
+
+  async function selectSupportConversation() {
+    if (!supportConversation.value) {
+      await loadSupportConversation();
+    }
+    if (supportConversation.value) {
+      await messagingStore.setActiveConversation(supportConversation.value.id);
     }
   }
 
@@ -686,6 +713,49 @@
 
                 <!-- Conversations -->
                 <template v-else>
+                  <!-- Pinned Support Chat -->
+                  <div
+                    v-if="supportConversation"
+                    class="messages-conv messages-conv--pinned"
+                    :class="{
+                      'messages-conv--active': supportConversation.id === messagingStore.activeConversationId,
+                      'messages-conv--unread': getUnreadCount(supportConversation.id) > 0,
+                    }"
+                    @click="selectSupportConversation"
+                  >
+                    <div
+                      class="messages-conv__indicator"
+                      :class="{
+                        'messages-conv__indicator--active': supportConversation.id === messagingStore.activeConversationId,
+                        'messages-conv__indicator--unread':
+                          getUnreadCount(supportConversation.id) > 0 && supportConversation.id !== messagingStore.activeConversationId,
+                      }"
+                    ></div>
+                    <div class="messages-conv__inner">
+                      <!-- Avatar -->
+                      <div class="messages-conv__avatar-wrapper">
+                        <div class="messages-conv__avatar messages-conv__avatar--support">
+                          <Headset class="messages-conv__avatar-icon" />
+                        </div>
+                      </div>
+
+                      <!-- Content -->
+                      <div class="messages-conv__content">
+                        <div class="messages-conv__header">
+                          <span class="messages-conv__name">Customer Support</span>
+                          <span class="messages-conv__time">{{ formatTime(supportConversation.lastMessageAt) }}</span>
+                        </div>
+                        <div class="messages-conv__footer">
+                          <span class="messages-conv__preview">{{ supportConversation.lastMessagePreview || 'Get help from our support team' }}</span>
+                          <span v-if="getUnreadCount(supportConversation.id) > 0" class="messages-conv__badge">
+                            {{ getUnreadCount(supportConversation.id) > 99 ? '99+' : getUnreadCount(supportConversation.id) }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Regular Conversations -->
                   <div
                     v-for="conv in filteredConversations"
                     :key="conv.id"
@@ -1592,6 +1662,16 @@
 
   .messages-conv__avatar--announcement {
     background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
+  }
+
+  .messages-conv__avatar--support {
+    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
+  }
+
+  .messages-conv--pinned {
+    border-bottom: 1px solid var(--sidebar-border);
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.5rem;
   }
 
   .messages-conv__avatar-img {
