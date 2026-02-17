@@ -969,7 +969,7 @@
   const router = useRouter();
   const authStore = useAuthStore();
   const { success, error: showError } = useToast();
-  const { showGate } = useSubscriptionGate();
+  const { showGate, requireSubscription } = useSubscriptionGate();
   const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, hasDvrRecording } =
     useLivestreamMonitoring();
   const { isLiveClipEnabled } = useFeatureFlags();
@@ -1546,22 +1546,15 @@
   const activeTab = ref<'streamer' | 'global'>('streamer');
   const profileDialogScope = ref<'streamer' | 'global'>('streamer');
 
-  function openCreateDialog() {
+  async function openCreateDialog() {
     if (!authStore.isAuthenticated) {
       showAuthModal.value = true;
       return;
     }
     
-    // Check if user is free tier
-    const user = authStore.user;
-    const isFreeTier = user && !user.is_admin && !user.created_by_organization_id &&
-      (!(user as any).subscription_status || (user as any).subscription_status === 'none' || (user as any).subscription_status === 'expired');
-    
-    if (isFreeTier) {
-      const context = activeTab.value === 'global' ? 'Add Global Profile' : 'Add Creator';
-      showGate(context, 'general');
-      return;
-    }
+    const context = activeTab.value === 'global' ? 'Add Global Profile' : 'Add Creator';
+    const hasAccess = await requireSubscription({ context, type: 'general' });
+    if (!hasAccess) return;
     
     creatorToEdit.value = null;
     profileDialogScope.value = activeTab.value;

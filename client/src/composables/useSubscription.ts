@@ -78,13 +78,6 @@ export function useSubscription() {
       return null;
     }
 
-    // First check if we already have subscription data from authStore.user
-    // This is populated by /api/auth/me on login
-    if (authStore.user?.subscription) {
-      subscriptionStatus.value = authStore.user.subscription as SubscriptionStatus;
-      return subscriptionStatus.value;
-    }
-
     loading.value = true;
     error.value = null;
 
@@ -93,6 +86,17 @@ export function useSubscription() {
 
       if (response.data.success) {
         subscriptionStatus.value = response.data.subscription;
+        // Keep authStore.user in sync so inline subscription_status checks
+        // across the app (CreatorProfiles, Projects, ExportButton, etc.) also
+        // reflect the latest server state without requiring a full re-login.
+        if (authStore.user) {
+          const sub = response.data.subscription as SubscriptionStatus;
+          (authStore.user as any).subscription = sub;
+          (authStore.user as any).subscription_status = sub.status;
+          (authStore.user as any).subscription_tier = sub.tier;
+          // Persist so the next app launch also has fresh data
+          localStorage.setItem('user', JSON.stringify(authStore.user));
+        }
         return subscriptionStatus.value;
       } else {
         throw new Error(response.data.error || 'Failed to fetch subscription status');

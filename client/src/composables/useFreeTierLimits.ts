@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { getUsageCount, recordUsage, getAllUsageCounts } from '@/services/database/free-tier-usage';
+import { useSubscription } from '@/composables/useSubscription';
 
 /** Daily action limits for free tier users */
 export const FREE_TIER_LIMITS = {
@@ -75,6 +76,9 @@ export function useFreeTierLimits() {
 
   /** Check if a free tier action can be performed (within daily limit) */
   async function canPerformAction(action: FreeTierAction): Promise<boolean> {
+    // Refresh subscription status from server so admin-granted subscriptions are recognized
+    const { fetchSubscriptionStatus } = useSubscription();
+    await fetchSubscriptionStatus();
     // Non-free-tier users have no daily limits
     if (!isFreeTier.value) return true;
 

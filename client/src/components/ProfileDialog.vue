@@ -766,6 +766,7 @@
   import type { LayoutOverlay, PerRatioOverlaySettings } from '@/types';
   import { invoke } from '@tauri-apps/api/core';
   import { useAuthStore } from '@/stores/auth';
+  import { useSubscription } from '@/composables/useSubscription';
 
   type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
 
@@ -810,8 +811,13 @@
 
   const { success: showSuccess, error: showError } = useToast();
 
-  // Free tier detection
+  // Free tier detection — refresh subscription from server when dialog opens
+  // so admin-granted subscriptions are recognized without re-login
   const authStoreForTier = useAuthStore();
+  const { fetchSubscriptionStatus } = useSubscription();
+  watch(() => props.show, (isOpen) => {
+    if (isOpen) fetchSubscriptionStatus();
+  });
   const isFreeTierUser = computed(() => {
     if (props.mode === 'organization') return false; // org mode doesn't apply
     const user = authStoreForTier.user;
