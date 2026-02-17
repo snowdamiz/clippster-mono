@@ -839,6 +839,7 @@
                         'messages-chat__avatar--group': messagingStore.activeConversation.type === 'group',
                         'messages-chat__avatar--announcement':
                           messagingStore.activeConversation.type === 'announcement',
+                        'messages-chat__avatar--support': messagingStore.activeConversation.type === 'support',
                       }"
                     >
                       <img
@@ -846,6 +847,10 @@
                         :src="getConversationAvatar(messagingStore.activeConversation)!"
                         alt=""
                         class="messages-chat__avatar-img"
+                      />
+                      <Headset
+                        v-else-if="messagingStore.activeConversation.type === 'support'"
+                        class="messages-chat__avatar-icon"
                       />
                       <Users
                         v-else-if="messagingStore.activeConversation.type === 'group'"
@@ -1907,6 +1912,10 @@
 
   .messages-chat__avatar--announcement {
     background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
+  }
+
+  .messages-chat__avatar--support {
+    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
   }
 
   .messages-chat__avatar-img {
