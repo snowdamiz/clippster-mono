@@ -1,4 +1,4 @@
-export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
+export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble';
 
 export interface PlatformConfig {
   id: PlatformId;
@@ -19,6 +19,19 @@ export interface PlatformConfig {
 }
 
 export const platformConfigs: Record<PlatformId, PlatformConfig> = {
+  rumble: {
+    id: 'rumble',
+    name: 'Rumble',
+    description: 'Download VODs directly from Rumble',
+    icon: '/rumble.svg',
+    searchPlaceholder: 'Channel name or Rumble URL',
+    searchLabel: 'Channel',
+    emptyStateTitle: 'Search for VODs',
+    emptyStateDescription: 'Paste a Rumble channel URL or name to find VODs.',
+    isComingSoon: false,
+    provider: 'rumble',
+    localStorageKey: 'rumble_recent_searches',
+  },
   pumpfun: {
     id: 'pumpfun',
     name: 'PumpFun',

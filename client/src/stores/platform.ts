@@ -9,6 +9,7 @@ import {
 import { getKickClips, extractChannelSlug, checkKickLivestream } from '@/services/kick';
 import { getTwitchVods, extractChannelName, checkTwitchLivestream, type TwitchVod } from '@/services/twitch';
 import { getYouTubeVods, extractYouTubeChannel, type YouTubeVod } from '@/services/youtube';
+import { getRumbleVods, extractRumbleChannel, type RumbleVod } from '@/services/rumble';
 
 // Unified clip type that works across platforms
 export interface PlatformClip {
@@ -69,12 +70,13 @@ function loadRecentSearches(): RecentSearch[] {
 // Migrate old per-platform searches to unified format
 function migrateOldSearches(): RecentSearch[] {
   const allSearches: RecentSearch[] = [];
-  const platforms: PlatformId[] = ['pumpfun', 'kick', 'twitch', 'youtube'];
+  const platforms: PlatformId[] = ['pumpfun', 'kick', 'twitch', 'youtube', 'rumble'];
   const oldKeys: Record<PlatformId, string> = {
     pumpfun: 'pumpfun_recent_searches',
     kick: 'kick_recent_searches',
     twitch: 'twitch_recent_searches',
     youtube: 'youtube_recent_searches',
+    rumble: 'rumble_recent_searches',
   };
 
   for (const platform of platforms) {
@@ -397,6 +399,18 @@ export const usePlatformStore = defineStore('platform', {
             break;
           }
 
+          case 'rumble': {
+            extractedId = extractRumbleChannel(trimmedInput) || trimmedInput.trim();
+            if (!extractedId) {
+              this.error = 'Invalid Rumble channel URL or name';
+              this.loading = false;
+              return { success: false, error: this.error };
+            }
+            this.currentSearchId = extractedId;
+            result = await this.getRumbleClips(extractedId, limit);
+            break;
+          }
+
           default:
             this.error = 'Platform not supported yet';
             this.loading = false;
@@ -481,6 +495,59 @@ export const usePlatformStore = defineStore('platform', {
           hasMore: false,
           total: 0,
           error: error instanceof Error ? error.message : 'Failed to fetch Twitch VODs',
+        };
+      }
+    },
+
+    // Helper to convert Rumble VODs to PlatformClip format
+    async getRumbleClips(channelName: string, limit: number = 20): Promise<{
+      success: boolean;
+      clips: PlatformClip[];
+      hasMore: boolean;
+      total: number;
+      error?: string;
+    }> {
+      try {
+        const vods = await getRumbleVods(channelName, limit);
+        const clips: PlatformClip[] = vods.map((vod: RumbleVod) => {
+          // upload_date from yt-dlp is YYYYMMDD — convert to ISO
+          let createdAt: string | undefined;
+          if (vod.uploadDate) {
+            const raw = vod.uploadDate;
+            if (/^\d{8}$/.test(raw)) {
+              createdAt = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+            } else if (/^\d{9,13}$/.test(raw)) {
+              const ms = raw.length <= 10 ? Number(raw) * 1000 : Number(raw);
+              createdAt = new Date(ms).toISOString();
+            } else {
+              createdAt = raw;
+            }
+          }
+          return {
+            clipId: vod.videoId,
+            title: vod.title || `Video ${vod.videoId}`,
+            duration: vod.duration || 0,
+            thumbnailUrl: vod.thumbnailUrl,
+            playlistUrl: vod.url,
+            mp4Url: vod.url,
+            clipType: 'COMPLETE' as const,
+            createdAt,
+            views: vod.viewCount ?? undefined,
+          };
+        });
+        return {
+          success: true,
+          clips,
+          hasMore: clips.length >= limit,
+          total: clips.length,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          clips: [],
+          hasMore: false,
+          total: 0,
+          error: error instanceof Error ? error.message : 'Failed to fetch Rumble VODs',
         };
       }
     },

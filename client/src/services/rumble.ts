@@ -41,7 +41,15 @@ export function extractRumbleChannel(input: string): string | null {
       if (url.pathname.includes('/c/')) {
         const parts = url.pathname.split('/c/');
         if (parts.length > 1) {
-          return parts[1].split('/')[0];
+          return 'c/' + parts[1].split('/')[0];
+        }
+      }
+
+      // Handle /user/channelname format
+      if (url.pathname.includes('/user/')) {
+        const parts = url.pathname.split('/user/');
+        if (parts.length > 1) {
+          return 'user/' + parts[1].split('/')[0];
         }
       }
 
@@ -51,6 +59,7 @@ export function extractRumbleChannel(input: string): string | null {
     }
   }
 
+  // Plain channel name — assume /c/ format
   return trimmed;
 }
 

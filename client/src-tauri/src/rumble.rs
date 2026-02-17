@@ -112,50 +112,56 @@ pub struct RumbleVod {
 pub async fn check_rumble_livestream(channel: String) -> Result<String, String> {
     let channel_name = normalize_channel_name(&channel);
     let ytdlp_path = resolve_ytdlp_binary()?;
-    
-    let channel_url = format!("https://rumble.com/c/{}", channel_name);
-    
+
+    // Use --flat-playlist to list the channel's videos without downloading.
+    // The live stream (if any) will have is_live=true in the entry.
+    let channel_url = channel_to_url(&channel_name);
+
     let mut cmd = tokio::process::Command::new(&ytdlp_path);
     no_window(&mut cmd);
-    
-    cmd.arg("--dump-json")
-        .arg("--skip-download")
-        .arg(&channel_url)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    
+
+    cmd.arg("--flat-playlist")
+        .arg("--dump-single-json")
+        .arg("--no-warnings")
+        .arg("--playlist-end").arg("5")
+        .arg(&channel_url);
+
     let output = cmd.output().await
         .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    // Parse JSON metadata
-    let is_live = if let Ok(json) = serde_json::from_str::<serde_json::Value>(&stdout) {
-        let live = json["is_live"].as_bool().unwrap_or(false);
-        
-        let status = RumbleLiveStatus {
-            is_live: live,
-            channel_name: Some(channel_name.clone()),
-            stream_title: json["title"].as_str().map(String::from),
-            viewer_count: json["view_count"].as_i64(),
-            thumbnail_url: json["thumbnail"].as_str().map(String::from),
-            started_at: json["timestamp"].as_i64().map(|t| t.to_string()),
-        };
-        
-        return Ok(serde_json::to_string(&status).unwrap());
-    } else {
-        // If yt-dlp fails, assume not live
-        RumbleLiveStatus {
-            is_live: false,
-            channel_name: Some(channel_name),
-            stream_title: None,
-            viewer_count: None,
-            thumbnail_url: None,
-            started_at: None,
+
+    // Parse the playlist JSON and look for a live entry
+    if let Ok(playlist) = serde_json::from_str::<serde_json::Value>(stdout.trim()) {
+        if let Some(entries) = playlist["entries"].as_array() {
+            for entry in entries {
+                let is_live = entry["is_live"].as_bool().unwrap_or(false)
+                    || entry["live_status"].as_str().map(|s| s == "is_live").unwrap_or(false);
+                if is_live {
+                    let status = RumbleLiveStatus {
+                        is_live: true,
+                        channel_name: Some(channel_name),
+                        stream_title: entry["title"].as_str().map(String::from),
+                        viewer_count: entry["view_count"].as_i64(),
+                        thumbnail_url: entry["thumbnail"].as_str().map(String::from),
+                        started_at: entry["timestamp"].as_i64().map(|t| t.to_string()),
+                    };
+                    return Ok(serde_json::to_string(&status).unwrap());
+                }
+            }
         }
+    }
+
+    // Not live
+    let status = RumbleLiveStatus {
+        is_live: false,
+        channel_name: Some(channel_name),
+        stream_title: None,
+        viewer_count: None,
+        thumbnail_url: None,
+        started_at: None,
     };
-    
-    Ok(serde_json::to_string(&is_live).unwrap())
+    Ok(serde_json::to_string(&status).unwrap())
 }
 
 /// Get list of VODs from a Rumble channel using yt-dlp
@@ -165,42 +171,61 @@ pub async fn get_rumble_vods(channel: String, limit: Option<u32>) -> Result<Stri
     let ytdlp_path = resolve_ytdlp_binary()?;
     
     let limit_str = limit.unwrap_or(10).to_string();
-    let channel_url = format!("https://rumble.com/c/{}", channel_name);
+    let channel_url = channel_to_url(&channel_name);
     
+    println!("[Rumble VODs] Fetching from: {}", channel_url);
+
     let mut cmd = tokio::process::Command::new(&ytdlp_path);
     no_window(&mut cmd);
-    
+
     cmd.arg("--dump-json")
-        .arg("--playlist-end").arg(&limit_str)
         .arg("--skip-download")
+        .arg("--no-warnings")
+        .arg("--ignore-errors")
+        .arg("--playlist-end").arg(&limit_str)
         .arg(&channel_url);
-    
+
     let output = cmd.output().await
         .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("yt-dlp failed: {}", stderr));
-    }
-    
+
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut vods = Vec::new();
-    
-    for line in stdout.lines() {
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-            let vod = RumbleVod {
-                video_id: json["id"].as_str().unwrap_or("").to_string(),
-                title: json["title"].as_str().map(String::from),
-                duration: json["duration"].as_f64(),
-                view_count: json["view_count"].as_i64(),
-                thumbnail_url: json["thumbnail"].as_str().map(String::from),
-                upload_date: json["upload_date"].as_str().map(String::from),
-                url: json["webpage_url"].as_str().unwrap_or("").to_string(),
-            };
-            vods.push(vod);
-        }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if stdout.trim().is_empty() {
+        return Err(format!("yt-dlp returned no output. stderr: {}", &stderr[..stderr.len().min(500)]));
     }
-    
+
+    let mut vods = Vec::new();
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let json: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let video_id = match json["id"].as_str() {
+            Some(id) if !id.is_empty() => id.to_string(),
+            _ => continue,
+        };
+
+        let url = json["webpage_url"].as_str()
+            .map(String::from)
+            .unwrap_or_else(|| format!("https://rumble.com/v{}.html", video_id));
+
+        let vod = RumbleVod {
+            video_id,
+            title: json["title"].as_str().map(String::from),
+            duration: json["duration"].as_f64(),
+            view_count: json["view_count"].as_i64(),
+            thumbnail_url: json["thumbnail"].as_str().map(String::from),
+            upload_date: json["upload_date"].as_str().map(String::from),
+            url,
+        };
+        vods.push(vod);
+    }
+
     Ok(serde_json::to_string(&vods).unwrap())
 }
 
@@ -208,9 +233,10 @@ pub async fn get_rumble_vods(channel: String, limit: Option<u32>) -> Result<Stri
 #[tauri::command]
 pub async fn download_rumble_vod(
     app: tauri::AppHandle,
-    vod_url: String,
-    output_path: String,
     download_id: String,
+    title: String,
+    vod_url: String,
+    channel_name: String,
 ) -> Result<(), String> {
     let ytdlp_path = resolve_ytdlp_binary()?;
     let ffmpeg_path = resolve_ffmpeg_binary()?;
@@ -224,12 +250,23 @@ pub async fn download_rumble_vod(
         }
         downloads.insert(download_id.clone(), true);
     }
-    
-    let output_dir = PathBuf::from(&output_path);
-    std::fs::create_dir_all(&output_dir)
-        .map_err(|e| format!("Failed to create output directory: {}", e))?;
-    
-    let output_file = output_dir.join("%(title)s.%(ext)s");
+
+    // Resolve output path from storage (same as Twitch/Kick)
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+
+    let safe_title = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    let filename = format!("rumble_{}_{}_{}.mp4", channel_name, safe_title, timestamp);
+    let output_file = paths.videos.join(&filename);
     
     // Clean up when done
     let cleanup_download = {
@@ -250,12 +287,13 @@ pub async fn download_rumble_vod(
     
     let download_id_clone = download_id.clone();
     let app_clone = app.clone();
-    
+    let output_file_str = output_file.to_string_lossy().to_string();
+
     // Store download metadata
     {
         let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
         metadata_map.insert(download_id.clone(), DownloadMetadata {
-            output_path: Some(output_path.clone()),
+            output_path: Some(output_file_str.clone()),
             thumbnail_path: None,
             started_at: std::time::SystemTime::now(),
             process_id: None,
@@ -267,7 +305,7 @@ pub async fn download_rumble_vod(
         no_window(&mut cmd);
         
         cmd.arg("--ffmpeg-location").arg(&ffmpeg_path)
-            .arg("-o").arg(output_file.to_string_lossy().to_string())
+            .arg("-o").arg(&output_file_str)
             .arg("--newline")
             .arg(&vod_url)
             .stdout(std::process::Stdio::piped())
@@ -331,7 +369,7 @@ pub async fn download_rumble_vod(
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: true,
-                            file_path: Some(output_path),
+                            file_path: Some(output_file_str),
                             thumbnail_path: None,
                             duration: None,
                             width: None,
@@ -477,11 +515,47 @@ async fn run_rumble_recorder(
     let playlist_path = PathBuf::from(&output_dir).join("playlist.m3u8");
     let segment_pattern = PathBuf::from(&output_dir).join("segment_%04d.ts");
     
-    let stream_url = format!("https://rumble.com/c/{}", channel_name);
-    
+    // Resolve the live video URL from the channel page first.
+    // The channel page is a playlist; we need the actual live video URL for streaming.
+    let channel_url = channel_to_url(&channel_name);
+    println!("[RumbleRecorder] Resolving live stream URL from: {}", channel_url);
+
+    let mut resolve_cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut resolve_cmd);
+    resolve_cmd
+        .arg("--flat-playlist")
+        .arg("--dump-single-json")
+        .arg("--no-warnings")
+        .arg("--playlist-end").arg("5")
+        .arg(&channel_url);
+
+    let resolve_output = resolve_cmd.output().await
+        .map_err(|e| format!("Failed to resolve live URL: {}", e))?;
+    let resolve_stdout = String::from_utf8_lossy(&resolve_output.stdout);
+
+    // Find the live entry and get its URL
+    let stream_url = if let Ok(playlist) = serde_json::from_str::<serde_json::Value>(resolve_stdout.trim()) {
+        if let Some(entries) = playlist["entries"].as_array() {
+            entries.iter().find(|e| {
+                e["is_live"].as_bool().unwrap_or(false)
+                    || e["live_status"].as_str().map(|s| s == "is_live").unwrap_or(false)
+            }).and_then(|e| {
+                e["url"].as_str().map(String::from)
+                    .or_else(|| e["id"].as_str().map(|id| format!("https://rumble.com/v{}.html", id)))
+            })
+        } else { None }
+    } else { None };
+
+    let stream_url = stream_url.unwrap_or_else(|| {
+        println!("[RumbleRecorder] No live entry found, falling back to channel URL");
+        channel_url.clone()
+    });
+
+    println!("[RumbleRecorder] Streaming from: {}", stream_url);
+
     let mut ytdlp_cmd = tokio::process::Command::new(&ytdlp_path);
     no_window(&mut ytdlp_cmd);
-    
+
     ytdlp_cmd
         .arg(&stream_url)
         .arg("-o").arg("-")
@@ -687,14 +761,27 @@ pub fn get_active_rumble_recordings() -> Result<Vec<String>, String> {
 
 fn normalize_channel_name(input: &str) -> String {
     let trimmed = input.trim();
-    
-    if trimmed.contains("rumble.com/c/") {
-        if let Some(channel_part) = trimmed.split("/c/").nth(1) {
-            return channel_part.split('/').next().unwrap_or(trimmed).to_string();
+
+    // Full URL: extract path segment after /c/ or /user/
+    if trimmed.contains("rumble.com") {
+        if let Some(part) = trimmed.split("/c/").nth(1) {
+            return format!("c/{}", part.split('/').next().unwrap_or(part));
+        }
+        if let Some(part) = trimmed.split("/user/").nth(1) {
+            return format!("user/{}", part.split('/').next().unwrap_or(part));
         }
     }
-    
+
+    // Frontend already normalised to "c/name" or "user/name" or plain name
     trimmed.to_string()
+}
+
+fn channel_to_url(channel_name: &str) -> String {
+    if channel_name.starts_with("c/") || channel_name.starts_with("user/") {
+        format!("https://rumble.com/{}", channel_name)
+    } else {
+        format!("https://rumble.com/c/{}", channel_name)
+    }
 }
 
 fn resolve_ytdlp_binary() -> Result<PathBuf, String> {

@@ -642,6 +642,7 @@
       kick: '/kick.svg',
       twitch: '/twitch.svg',
       youtube: '/youtube.svg',
+      rumble: '/rumble.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -652,6 +653,7 @@
       kick: 'Kick',
       twitch: 'Twitch',
       youtube: 'YouTube',
+      rumble: 'Rumble',
     };
     return names[platform] || platform;
   }
@@ -883,7 +885,7 @@
         try {
           // Try local profiles first
           const localProfile = await getCreatorProfileByPlatformId(
-            detectedPlatform.value,
+            detectedPlatform.value as any,
             platformStore.currentSearchId
           );
           if (localProfile?.watermark_id && localProfile?.watermark_settings) {
@@ -985,7 +987,7 @@
         {
           autoSegment: shouldAutoSegment,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick' | 'twitch' | 'youtube',
+          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble',
           creatorWatermarkSettings,
         }
       );
