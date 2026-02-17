@@ -15,7 +15,6 @@ use crate::downloads::{
     DownloadProgress, DownloadResult, ACTIVE_DOWNLOADS, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA,
     DownloadMetadata,
 };
-use crate::ffmpeg_utils::{get_video_info, parse_ffmpeg_time};
 
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
@@ -61,14 +60,6 @@ struct YouTubeRecorderLogPayload {
     channel_id: String,
     message: String,
     level: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct YouTubeStreamEndedPayload {
-    streamer_id: String,
-    session_id: String,
-    channel_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -371,11 +362,32 @@ pub async fn download_youtube_vod(
     let ytdlp_path = resolve_ytdlp_binary()?;
     let ffmpeg_path = resolve_ffmpeg_binary()?;
     
+    // Check if download already exists
+    {
+        let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+        if downloads.contains_key(&download_id) {
+            println!("[YouTube] Download already in progress: {}", download_id);
+            return Err("Download already in progress".to_string());
+        }
+        downloads.insert(download_id.clone(), true);
+    }
+    
     let output_dir = PathBuf::from(&output_path);
     std::fs::create_dir_all(&output_dir)
         .map_err(|e| format!("Failed to create output directory: {}", e))?;
     
     let output_file = output_dir.join("%(title)s.%(ext)s");
+    
+    // Clean up when done
+    let cleanup_download = {
+        let download_id = download_id.clone();
+        let downloads = ACTIVE_DOWNLOADS.clone();
+        move || {
+            println!("[YouTube] Cleaning up download: {}", download_id);
+            let mut downloads = downloads.lock().unwrap();
+            downloads.remove(&download_id);
+        }
+    };
     
     let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
     {
@@ -385,6 +397,17 @@ pub async fn download_youtube_vod(
     
     let download_id_clone = download_id.clone();
     let app_clone = app.clone();
+    
+    // Store download metadata
+    {
+        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+        metadata_map.insert(download_id.clone(), DownloadMetadata {
+            output_path: Some(output_path.clone()),
+            thumbnail_path: None,
+            started_at: std::time::SystemTime::now(),
+            process_id: None,
+        });
+    }
     
     tokio::spawn(async move {
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
@@ -416,7 +439,7 @@ pub async fn download_youtube_vod(
             }
         };
         
-        let stdout = child.stdout.take().unwrap();
+        let _stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
         
         // Monitor progress
@@ -453,6 +476,7 @@ pub async fn download_youtube_vod(
                 
                 match status {
                     Ok(exit_status) if exit_status.success() => {
+                        cleanup_download();
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: true,
@@ -467,6 +491,7 @@ pub async fn download_youtube_vod(
                         });
                     }
                     Ok(exit_status) => {
+                        cleanup_download();
                         let _ = app_clone.emit("download-error", DownloadResult {
                             download_id: download_id_clone,
                             success: false,
@@ -481,6 +506,7 @@ pub async fn download_youtube_vod(
                         });
                     }
                     Err(e) => {
+                        cleanup_download();
                         let _ = app_clone.emit("download-error", DownloadResult {
                             download_id: download_id_clone,
                             success: false,
@@ -502,6 +528,7 @@ pub async fn download_youtube_vod(
                     let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
                     cancellers.remove(&download_id_clone);
                 }
+                cleanup_download();
                 
                 let _ = app_clone.emit("download-cancelled", DownloadResult {
                     download_id: download_id_clone,
@@ -700,12 +727,24 @@ async fn run_youtube_recorder(
                 println!("[YouTubeRecorder] FFmpeg exited: {:?}", status);
                 let _ = ytdlp_child.kill().await;
                 
+                let exit_status = status.ok();
                 let _ = app.emit("youtube-recorder-exit", YouTubeRecorderExitPayload {
                     streamer_id: streamer_id.clone(),
                     session_id: session_id.clone(),
                     channel_id: channel_id.clone(),
-                    code: status.ok().and_then(|s| s.code()),
+                    code: exit_status.as_ref().and_then(|s| s.code()),
                 });
+                
+                // If FFmpeg exited unsuccessfully, stream likely ended
+                if let Some(exit_status) = exit_status {
+                    if !exit_status.success() {
+                        let _ = app.emit("stream-ended", YouTubeStreamEndedPayload {
+                            streamer_id: streamer_id.clone(),
+                            session_id: session_id.clone(),
+                            channel_id: channel_id.clone(),
+                        });
+                    }
+                }
                 
                 break;
             }

@@ -5,7 +5,7 @@ use std::{
 };
 
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tokio::sync::oneshot;
 use tauri::Emitter;
 
@@ -264,12 +264,24 @@ async fn run_twitter_recorder(
                 println!("[TwitterRecorder] FFmpeg exited: {:?}", status);
                 let _ = ytdlp_child.kill().await;
                 
+                let exit_status = status.ok();
                 let _ = app.emit("twitter-recorder-exit", TwitterRecorderExitPayload {
                     streamer_id: streamer_id.clone(),
                     session_id: session_id.clone(),
                     broadcast_id: broadcast_id.clone(),
-                    code: status.ok().and_then(|s| s.code()),
+                    code: exit_status.as_ref().and_then(|s| s.code()),
                 });
+                
+                // If FFmpeg exited unsuccessfully, stream likely ended
+                if let Some(exit_status) = exit_status {
+                    if !exit_status.success() {
+                        let _ = app.emit("stream-ended", TwitterStreamEndedPayload {
+                            streamer_id: streamer_id.clone(),
+                            session_id: session_id.clone(),
+                            broadcast_id: broadcast_id.clone(),
+                        });
+                    }
+                }
                 
                 break;
             }
