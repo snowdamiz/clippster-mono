@@ -253,3 +253,16 @@ export async function stopKickRecording(channelSlug: string): Promise<void> {
 export async function stopAllKickRecordings(): Promise<void> {
   await invoke('stop_all_kick_recordings');
 }
+
+/**
+ * Check if a Kick recording is currently active for a channel
+ * @param channelSlug - The Kick channel slug
+ * @returns true if a recording process is actively running
+ */
+export async function isKickRecordingActive(channelSlug: string): Promise<boolean> {
+  try {
+    return await invoke<boolean>('is_kick_recording_active', { channelSlug });
+  } catch {
+    return false;
+  }
+}

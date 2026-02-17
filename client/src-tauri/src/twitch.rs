@@ -475,6 +475,10 @@ pub async fn start_twitch_recording(
         level: "info".to_string(),
     });
 
+    let channel_for_cleanup = channel_name.clone();
+    let streamer_for_err = streamer_id.clone();
+    let channel_for_err = channel_name.clone();
+    let app_for_err = app.clone();
     let task = tokio::spawn(async move {
         if let Err(err) = run_twitch_recorder(
             app_handle,
@@ -488,7 +492,17 @@ pub async fn start_twitch_recording(
         .await
         {
             eprintln!("[TwitchRecorder] {}", err);
+            // Emit error to frontend so it's visible in WebView console
+            let _ = app_for_err.emit("recorder-log", TwitchRecorderLogPayload {
+                streamer_id: streamer_for_err,
+                channel_name: channel_for_err,
+                message: format!("Recording failed: {}", err),
+                level: "error".to_string(),
+            });
         }
+        // Clean up the recording entry when the task exits (success or error)
+        TWITCH_ACTIVE_RECORDINGS.lock().unwrap().remove(&channel_for_cleanup);
+        println!("[TwitchRecorder] Cleaned up recording entry for {}", channel_for_cleanup);
     });
 
     TWITCH_ACTIVE_RECORDINGS.lock().unwrap().insert(
@@ -567,7 +581,15 @@ async fn run_twitch_recorder(
     let ytdlp_path = resolve_ytdlp_binary()?;
     let ffmpeg_path = resolve_ffmpeg_binary()?;
     let twitch_url = format!("https://twitch.tv/{}", channel_name);
-    
+
+    // Log resolved binary paths and output dir for debugging macOS production issues
+    let _ = app.emit("recorder-log", TwitchRecorderLogPayload {
+        streamer_id: streamer_id.clone(),
+        channel_name: channel_name.clone(),
+        message: format!("Resolved binaries - yt-dlp: {}, ffmpeg: {}, output: {}", ytdlp_path, ffmpeg_path, output_dir),
+        level: "info".to_string(),
+    });
+
     // HLS segment duration in seconds
     // For Auto-Detect/Record: use user-configured segment duration (e.g., 5 minutes = 300 seconds)
     // For Watch mode (segment_duration_minutes <= 1): use 4-second segments for low-latency playback
@@ -713,7 +735,13 @@ async fn run_twitch_recorder(
                 match status {
                     Ok(exit_status) => {
                         println!("[TwitchRecorder] FFmpeg exited with status: {:?}", exit_status);
-                        
+                        let _ = app.emit("recorder-log", TwitchRecorderLogPayload {
+                            streamer_id: streamer_id.clone(),
+                            channel_name: channel_name.clone(),
+                            message: format!("FFmpeg exited with status: {:?} (after {:.0}s, {} segments)", exit_status, recording_start.elapsed().as_secs_f64(), last_emitted_segment),
+                            level: if exit_status.success() { "info".to_string() } else { "error".to_string() },
+                        });
+
                         // Kill yt-dlp too
                         let _ = ytdlp_child.kill().await;
                         
