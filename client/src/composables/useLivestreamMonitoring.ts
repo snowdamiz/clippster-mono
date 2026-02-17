@@ -34,6 +34,26 @@ import {
   getTwitchSessionOutputDir,
   type TwitchLiveStatus,
 } from '@/services/twitch';
+import {
+  checkYouTubeLivestream,
+  startYouTubeRecording,
+  stopYouTubeRecording,
+  getYouTubeSessionOutputDir,
+  type YouTubeLiveStatus,
+} from '@/services/youtube';
+import {
+  checkRumbleLivestream,
+  startRumbleRecording,
+  stopRumbleRecording,
+  getRumbleSessionOutputDir,
+  type RumbleLiveStatus,
+} from '@/services/rumble';
+import {
+  validateTwitterUrl,
+  startTwitterRecording,
+  stopTwitterRecording,
+  getTwitterSessionOutputDir,
+} from '@/services/twitter';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useCreditBalance } from './useCreditBalance';
 import { useDvrRecording } from './useDvrRecording';
@@ -176,6 +196,46 @@ async function fetchTwitchLiveStatus(channelName: string): Promise<LiveStatus> {
   }
 }
 
+async function fetchYouTubeLiveStatus(channel: string): Promise<LiveStatus> {
+  try {
+    const youtubeStatus: YouTubeLiveStatus = await checkYouTubeLivestream(channel);
+    return {
+      isLive: youtubeStatus.isLive,
+      streamId: youtubeStatus.channelId,
+      streamStartTimestamp: youtubeStatus.startedAt
+        ? new Date(youtubeStatus.startedAt).getTime()
+        : undefined,
+      numParticipants: youtubeStatus.viewerCount
+        ? parseInt(youtubeStatus.viewerCount.replace(/,/g, ''))
+        : undefined,
+      profileImageUrl: youtubeStatus.thumbnailUrl,
+      raw: youtubeStatus,
+    };
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to check YouTube live status', error);
+    return { isLive: false };
+  }
+}
+
+async function fetchRumbleLiveStatus(channel: string): Promise<LiveStatus> {
+  try {
+    const rumbleStatus: RumbleLiveStatus = await checkRumbleLivestream(channel);
+    return {
+      isLive: rumbleStatus.isLive,
+      streamId: rumbleStatus.channelName,
+      streamStartTimestamp: rumbleStatus.startedAt
+        ? new Date(rumbleStatus.startedAt).getTime()
+        : undefined,
+      numParticipants: rumbleStatus.viewerCount,
+      profileImageUrl: rumbleStatus.thumbnailUrl,
+      raw: rumbleStatus,
+    };
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to check Rumble live status', error);
+    return { isLive: false };
+  }
+}
+
 async function fetchLiveStatus(
   platformId: string,
   platform: SupportedLivestreamPlatform = 'PumpFun'
@@ -185,6 +245,10 @@ async function fetchLiveStatus(
       return fetchKickLiveStatus(platformId);
     case 'Twitch':
       return fetchTwitchLiveStatus(platformId);
+    case 'YouTube':
+      return fetchYouTubeLiveStatus(platformId);
+    case 'Rumble':
+      return fetchRumbleLiveStatus(platformId);
     case 'PumpFun':
     default:
       return fetchPumpFunLiveStatus(platformId);
@@ -322,6 +386,12 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
       await stopKickRecording(streamer.mintId);
     } else if (streamer.platform === 'Twitch') {
       await stopTwitchRecording(streamer.mintId);
+    } else if (streamer.platform === 'YouTube' || streamer.platform === 'Youtube') {
+      await stopYouTubeRecording(streamer.mintId);
+    } else if (streamer.platform === 'Rumble') {
+      await stopRumbleRecording(streamer.mintId);
+    } else if (streamer.platform === 'Twitter') {
+      await stopTwitterRecording(streamer.mintId);
     } else {
       // PumpFun - process any remaining DVR chunks before stopping
       const state = chunkAggregationState.get(streamer.id);
@@ -1391,6 +1461,31 @@ export function useLivestreamMonitoring() {
         console.log('[LiveMonitor] Starting Twitch recording via yt-dlp/FFmpeg');
         await startTwitchRecording(
           streamer.mintId, // For Twitch, mintId is the channel name
+          streamer.id,
+          sessionInfo.sessionId,
+          segmentDuration
+        );
+      } else if (streamer.platform === 'YouTube' || streamer.platform === 'Youtube') {
+        console.log('[LiveMonitor] Starting YouTube recording via yt-dlp/FFmpeg');
+        await startYouTubeRecording(
+          streamer.mintId, // For YouTube, mintId is the channel ID or handle
+          streamer.id,
+          sessionInfo.sessionId,
+          segmentDuration
+        );
+      } else if (streamer.platform === 'Rumble') {
+        console.log('[LiveMonitor] Starting Rumble recording via yt-dlp/FFmpeg');
+        await startRumbleRecording(
+          streamer.mintId, // For Rumble, mintId is the channel name
+          streamer.id,
+          sessionInfo.sessionId,
+          segmentDuration
+        );
+      } else if (streamer.platform === 'Twitter') {
+        console.log('[LiveMonitor] Starting Twitter recording via yt-dlp/FFmpeg');
+        // For Twitter, mintId should be the broadcast/Space URL
+        await startTwitterRecording(
+          streamer.mintId, // For Twitter, mintId is the broadcast/Space URL
           streamer.id,
           sessionInfo.sessionId,
           segmentDuration

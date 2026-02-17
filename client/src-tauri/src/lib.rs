@@ -13,6 +13,9 @@ mod ui_utils;
 mod pumpfun;
 mod kick;
 mod twitch;
+mod youtube;
+mod rumble;
+mod twitter;
 mod waveform;
 mod audio_peaks;
 mod focal_detection;
@@ -845,6 +848,34 @@ commands::file_utils::generate_video_thumbnail,
             twitch::stop_all_twitch_recordings,
             twitch::get_twitch_session_output_dir,
             twitch::get_active_twitch_recordings,
+
+            // YouTube commands
+            youtube::check_youtube_livestream,
+            youtube::get_youtube_vods,
+            youtube::download_youtube_vod,
+            youtube::start_youtube_recording,
+            youtube::stop_youtube_recording,
+            youtube::stop_all_youtube_recordings,
+            youtube::get_youtube_session_output_dir,
+            youtube::get_active_youtube_recordings,
+
+            // Rumble commands
+            rumble::check_rumble_livestream,
+            rumble::get_rumble_vods,
+            rumble::download_rumble_vod,
+            rumble::start_rumble_recording,
+            rumble::stop_rumble_recording,
+            rumble::stop_all_rumble_recordings,
+            rumble::get_rumble_session_output_dir,
+            rumble::get_active_rumble_recordings,
+
+            // Twitter commands
+            twitter::validate_twitter_url,
+            twitter::start_twitter_recording,
+            twitter::stop_twitter_recording,
+            twitter::stop_all_twitter_recordings,
+            twitter::get_twitter_session_output_dir,
+            twitter::get_active_twitter_recordings,
 
             // Download commands
             downloads::download_pumpfun_vod,
