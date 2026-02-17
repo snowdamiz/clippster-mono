@@ -681,7 +681,7 @@ pub fn run() {
                         tauri_plugin_sql::Migration {
                             version: 87,
                             description: "add_transcript_raw_json_to_clip_segments",
-                            sql: include_str!("../migrations/083_add_transcript_raw_json_to_clip_segments.sql"),
+                            sql: include_str!("../migrations/091_add_transcript_raw_json_to_clip_segments.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
