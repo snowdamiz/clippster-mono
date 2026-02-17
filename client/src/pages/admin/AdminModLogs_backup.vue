@@ -1,41 +1,14 @@
 <template>
-  <PageLayout
-    title="Moderator Logs"
-    description="View all moderator actions and activity"
-    :show-header="true"
-    :icon="ScrollText"
-    :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Moderator Logs' }]"
-  >
-    <template #actions>
-      <button class="admin-mod-logs__action-btn" :disabled="loading" @click="loadLogs">
-        <RefreshCw v-if="!loading" class="admin-mod-logs__action-icon" />
-        <Loader2 v-else class="admin-mod-logs__action-icon admin-mod-logs__action-icon--spin" />
-        Refresh Logs
-      </button>
-    </template>
-
-    <div class="admin-mod-logs">
-      <!-- Page Heading -->
-      <div class="admin-mod-logs__heading">
-        <h1 class="admin-mod-logs__title">Moderator Logs</h1>
-        <p class="admin-mod-logs__subtitle">View all moderator actions and activity</p>
-      </div>
-
-      <!-- Stats Header -->
-      <div class="admin-mod-logs__stats-header">
-        <div class="admin-mod-logs__stats-info">
-          <div class="admin-mod-logs__stats-icon">
-            <ScrollText class="admin-mod-logs__stats-icon-svg" />
-          </div>
-          <div>
-            <h2 class="admin-mod-logs__stats-title">Moderation Activity</h2>
-            <p class="admin-mod-logs__stats-desc">Track moderator actions and decisions</p>
-          </div>
-        </div>
-        <span v-if="logs.length > 0" class="admin-mod-logs__stats-count">{{ logs.length }} log{{ logs.length !== 1 ? 's' : '' }}</span>
-      </div>
-
-      <!-- Filters -->
+  <div class="admin-mod-logs">
+    <PageLayout
+      title="Moderator Logs"
+      description="View all moderator actions and activity"
+      :show-header="true"
+      :icon="ScrollText"
+      :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Moderator Logs' }]"
+    >
+      <div class="admin-mod-logs__content">
+        <!-- Filters -->
         <div class="admin-mod-logs__filters">
           <div class="admin-mod-logs__filter">
             <label>Moderator</label>
@@ -148,13 +121,14 @@
             </Button>
           </div>
         </div>
-    </div>
-  </PageLayout>
+      </div>
+    </PageLayout>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
-import { ScrollText, Filter, Loader2, AlertTriangle, User, RefreshCw } from 'lucide-vue-next';
+import { ScrollText, Filter, Loader2, AlertTriangle, User } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import PageLayout from '@/components/PageLayout.vue';
 import CustomDropdown from '@/components/CustomDropdown.vue';
@@ -291,130 +265,23 @@ onMounted(() => {
 
 <style scoped>
 .admin-mod-logs {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  width: 100%;
+  min-height: 100%;
+}
+
+.admin-mod-logs__content {
   padding: 1.5rem;
   max-width: 1400px;
   margin: 0 auto;
-  width: 100%;
-}
-
-.admin-mod-logs__heading {
-  margin-bottom: 0.5rem;
-}
-
-.admin-mod-logs__title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  margin: 0 0 0.2rem;
-  letter-spacing: -0.02em;
-}
-
-.admin-mod-logs__subtitle {
-  font-size: 0.875rem;
-  color: var(--sidebar-text-muted);
-  margin: 0;
-}
-
-.admin-mod-logs__stats-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
-  background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-}
-
-.admin-mod-logs__stats-info {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.admin-mod-logs__stats-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.2) 100%);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-}
-
-.admin-mod-logs__stats-icon-svg {
-  width: 20px;
-  height: 20px;
-  color: #3b82f6;
-}
-
-.admin-mod-logs__stats-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0;
-}
-
-.admin-mod-logs__stats-desc {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  margin: 0;
-}
-
-.admin-mod-logs__stats-count {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sidebar-text-muted);
-  padding: 0.375rem 0.75rem;
-  background-color: var(--sidebar-hover);
-  border-radius: 6px;
-}
-
-.admin-mod-logs__action-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  height: 32px;
-  padding: 0 0.875rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 150ms ease;
-  border: none;
-  background-color: var(--sidebar-accent);
-  color: var(--sidebar-bg);
-}
-
-.admin-mod-logs__action-btn:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.admin-mod-logs__action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.admin-mod-logs__action-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.admin-mod-logs__action-icon--spin {
-  animation: spin 1s linear infinite;
 }
 
 .admin-mod-logs__filters {
   display: flex;
   gap: 1rem;
-  align-items: flex-end;
-  padding: 1rem 1.25rem;
-  background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--accent);
+  border-radius: 0.5rem;
 }
 
 .admin-mod-logs__filter {
@@ -424,8 +291,7 @@ onMounted(() => {
 .admin-mod-logs__filter label {
   display: block;
   font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
+  font-weight: 500;
   margin-bottom: 0.5rem;
 }
 
@@ -454,90 +320,35 @@ onMounted(() => {
   color: var(--sidebar-text-muted) !important;
 }
 
-.admin-mod-logs__loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem;
-}
-
-.admin-mod-logs__spinner {
-  width: 32px;
-  height: 32px;
-  color: #3b82f6;
-  animation: spin 1s linear infinite;
-  margin-bottom: 1rem;
-}
-
-.admin-mod-logs__loading p {
-  font-size: 0.875rem;
-  color: var(--sidebar-text-muted);
-  margin: 0;
-}
-
-.admin-mod-logs__error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem;
-  gap: 0.75rem;
-}
-
-.admin-mod-logs__error-icon {
-  width: 2.5rem;
-  height: 2.5rem;
-  color: #ef4444;
-}
-
-.admin-mod-logs__error h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0;
-}
-
-.admin-mod-logs__error p {
-  font-size: 0.875rem;
-  color: var(--sidebar-text-muted);
-  margin: 0;
-}
-
+.admin-mod-logs__loading,
+.admin-mod-logs__error,
 .admin-mod-logs__empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 4rem 2rem;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
-.admin-mod-logs__empty-icon {
+.admin-mod-logs__spinner {
   width: 3rem;
   height: 3rem;
-  color: var(--sidebar-text-muted);
+  animation: spin 1s linear infinite;
+}
+
+.admin-mod-logs__error-icon,
+.admin-mod-logs__empty-icon {
+  width: 4rem;
+  height: 4rem;
   opacity: 0.5;
 }
 
-.admin-mod-logs__empty h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0;
-}
-
-.admin-mod-logs__empty p {
-  font-size: 0.875rem;
-  color: var(--sidebar-text-muted);
-  margin: 0;
-}
-
 .admin-mod-logs__table-container {
-  border-radius: 10px;
-  border: 1px solid var(--sidebar-border);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
   overflow: hidden;
-  background-color: var(--sidebar-surface);
 }
 
 .admin-mod-logs__table {
@@ -545,34 +356,23 @@ onMounted(() => {
   border-collapse: collapse;
 }
 
-.admin-mod-logs__table thead {
-  background: rgba(255, 255, 255, 0.02);
-}
-
 .admin-mod-logs__table th {
+  background: var(--accent);
   padding: 0.75rem 1rem;
   text-align: left;
-  font-size: 0.6875rem;
-  font-weight: 700;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-}
-
-.admin-mod-logs__table tbody tr {
-  border-top: 1px solid var(--sidebar-border);
-  transition: background-color 150ms ease;
-}
-
-.admin-mod-logs__table tbody tr:hover {
-  background-color: var(--sidebar-hover);
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
 }
 
 .admin-mod-logs__table td {
-  padding: 0.75rem 1rem;
-  font-size: 0.8125rem;
-  color: var(--sidebar-text);
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.admin-mod-logs__table tbody tr:hover {
+  background: var(--accent);
 }
 
 .admin-mod-logs__timestamp {
@@ -582,13 +382,12 @@ onMounted(() => {
 }
 
 .admin-mod-logs__date {
-  font-weight: 600;
-  color: var(--sidebar-text);
+  font-weight: 500;
 }
 
 .admin-mod-logs__time {
   font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
+  color: var(--muted-foreground);
 }
 
 .admin-mod-logs__moderator {
@@ -605,36 +404,30 @@ onMounted(() => {
 
 .admin-mod-logs__action-badge {
   display: inline-block;
-  padding: 0.25rem 0.625rem;
+  padding: 0.25rem 0.75rem;
   border-radius: 9999px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .admin-mod-logs__action-badge--success {
-  background: rgba(16, 185, 129, 0.15);
+  background: #10b98120;
   color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.3);
 }
 
 .admin-mod-logs__action-badge--danger {
-  background: rgba(239, 68, 68, 0.15);
+  background: #ef444420;
   color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .admin-mod-logs__action-badge--warning {
-  background: rgba(245, 158, 11, 0.15);
+  background: #f59e0b20;
   color: #f59e0b;
-  border: 1px solid rgba(245, 158, 11, 0.3);
 }
 
 .admin-mod-logs__action-badge--default {
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: var(--accent);
+  color: var(--foreground);
 }
 
 .admin-mod-logs__target {
@@ -644,13 +437,12 @@ onMounted(() => {
 }
 
 .admin-mod-logs__target-type {
-  font-weight: 600;
-  color: var(--sidebar-text);
+  font-weight: 500;
 }
 
 .admin-mod-logs__target-id {
   font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
+  color: var(--muted-foreground);
 }
 
 .admin-mod-logs__details {
@@ -669,11 +461,11 @@ onMounted(() => {
 }
 
 .admin-mod-logs__detail-value {
-  color: var(--sidebar-text-muted);
+  color: var(--muted-foreground);
 }
 
 .admin-mod-logs__no-details {
-  color: var(--sidebar-text-muted);
+  color: var(--muted-foreground);
 }
 
 .admin-mod-logs__pagination {
@@ -682,14 +474,12 @@ onMounted(() => {
   align-items: center;
   gap: 1rem;
   padding: 1rem;
-  border-top: 1px solid var(--sidebar-border);
-  background: rgba(255, 255, 255, 0.01);
+  border-top: 1px solid var(--border);
 }
 
 .admin-mod-logs__page-info {
   font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sidebar-text-muted);
+  color: var(--muted-foreground);
 }
 
 .admin-mod-logs__button-icon {

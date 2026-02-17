@@ -24,21 +24,7 @@
       <!-- Page Heading -->
       <div class="admin-aff__heading">
         <h1 class="admin-aff__title">Affiliates</h1>
-        <p class="admin-aff__subtitle">Manage affiliate accounts and commissions</p>
-      </div>
-
-      <!-- Stats Header -->
-      <div class="admin-aff__stats-header">
-        <div class="admin-aff__stats-info">
-          <div class="admin-aff__stats-icon">
-            <Handshake class="admin-aff__stats-icon-svg" />
-          </div>
-          <div>
-            <h2 class="admin-aff__stats-title">Affiliate Management</h2>
-            <p class="admin-aff__stats-desc">Track referrals, commissions, and payouts</p>
-          </div>
-        </div>
-        <span v-if="affiliates.length > 0" class="admin-aff__stats-count">{{ affiliates.length }} affiliate{{ affiliates.length !== 1 ? 's' : '' }}</span>
+        <p class="admin-aff__subtitle">Manage affiliate accounts, commissions, and payouts</p>
       </div>
 
       <!-- Stats Cards -->
@@ -110,7 +96,7 @@
               </tr>
             </thead>
             <tbody class="admin-aff__tbody">
-              <tr v-for="aff in affiliates" :key="aff.id" class="admin-aff__row admin-aff__row--clickable" @click="$router.push(`/admin/affiliates/${aff.id}`)">
+              <tr v-for="aff in affiliates" :key="aff.id" class="admin-aff__row">
                 <td class="admin-aff__td">
                   <div class="admin-aff__user">
                     <span class="admin-aff__user-name">{{ aff.user?.name || aff.user?.email || 'Unknown' }}</span>
@@ -142,7 +128,7 @@
                     {{ aff.status }}
                   </span>
                 </td>
-                <td class="admin-aff__td" @click.stop>
+                <td class="admin-aff__td">
                   <router-link :to="`/admin/affiliates/${aff.id}`" class="admin-aff__view-btn">
                     View
                   </router-link>
@@ -443,334 +429,102 @@
   .aff-header__action-btn {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    border-radius: 6px;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+    background: transparent;
+    color: var(--color-foreground, #e5e5e5);
+    font-size: 0.8125rem;
+    font-weight: 500;
     cursor: pointer;
-    transition: all 150ms ease;
-    border: none;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
+    transition: all 0.15s;
+    white-space: nowrap;
   }
-  .aff-header__action-btn:hover:not(:disabled) { opacity: 0.9; }
+  .aff-header__action-btn:hover { background: rgba(255, 255, 255, 0.05); }
   .aff-header__action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .aff-header__action-btn--primary {
-    background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
+    background: #7c3aed;
+    border-color: #7c3aed;
     color: white;
   }
-  .aff-header__action-btn--primary:hover:not(:disabled) { opacity: 0.9; }
-  .aff-header__action-icon { width: 14px; height: 14px; }
+  .aff-header__action-btn--primary:hover { opacity: 0.9; }
+  .aff-header__action-icon { width: 1rem; height: 1rem; }
   .aff-header__action-icon--spin { animation: spin 1s linear infinite; }
 
-  .admin-aff { display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem; max-width: 1400px; margin: 0 auto; width: 100%; }
+  .admin-aff { display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem; }
+  .admin-aff__heading { margin-bottom: 0.5rem; }
+  .admin-aff__title { font-size: 1.5rem; font-weight: 700; color: var(--color-foreground, #e5e5e5); }
+  .admin-aff__subtitle { font-size: 0.875rem; color: var(--color-muted-foreground, #a3a3a3); margin-top: 0.25rem; }
 
-  .admin-aff__heading {
-    margin-bottom: 0.5rem;
-  }
-
-  .admin-aff__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.2rem;
-    letter-spacing: -0.02em;
-  }
-
-  .admin-aff__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .admin-aff__stats-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .admin-aff__stats-info {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .admin-aff__stats-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(124, 58, 237, 0.2) 100%);
-    border: 1px solid rgba(168, 85, 247, 0.3);
-  }
-
-  .admin-aff__stats-icon-svg {
-    width: 20px;
-    height: 20px;
-    color: #a855f7;
-  }
-
-  .admin-aff__stats-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .admin-aff__stats-desc {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .admin-aff__stats-count {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    padding: 0.375rem 0.75rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 6px;
-  }
-
-  .admin-aff__cards {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 1rem;
-  }
-
-  @media (min-width: 640px) {
-    .admin-aff__cards {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (min-width: 1024px) {
-    .admin-aff__cards {
-      grid-template-columns: repeat(4, 1fr);
-    }
-  }
-
+  .admin-aff__cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
   .admin-aff__card {
-    padding: 1rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    transition: background-color 150ms ease;
+    padding: 1rem 1.25rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+    background: var(--color-card, rgba(255, 255, 255, 0.02));
   }
-
-  .admin-aff__card:hover {
-    background-color: rgba(39, 39, 42, 0.6);
-  }
-
-  .admin-aff__card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+  .admin-aff__card-header { display: flex; align-items: center; gap: 0.625rem; margin-bottom: 0.75rem; }
   .admin-aff__card-icon {
-    width: 32px; height: 32px; border-radius: 8px;
+    width: 2rem; height: 2rem; border-radius: 0.5rem;
     display: flex; align-items: center; justify-content: center;
   }
-  .admin-aff__card-icon--cyan {
-    background: linear-gradient(135deg, rgba(34, 211, 238, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%);
-    border: 1px solid rgba(34, 211, 238, 0.3);
-  }
-  .admin-aff__card-icon--green {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(22, 163, 74, 0.2) 100%);
-    border: 1px solid rgba(34, 197, 94, 0.3);
-  }
-  .admin-aff__card-icon--amber {
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(217, 119, 6, 0.2) 100%);
-    border: 1px solid rgba(245, 158, 11, 0.3);
-  }
-  .admin-aff__card-icon--purple {
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(124, 58, 237, 0.2) 100%);
-    border: 1px solid rgba(168, 85, 247, 0.3);
-  }
-  .admin-aff__card-icon-svg { width: 16px; height: 16px; }
-  .admin-aff__card-icon--cyan .admin-aff__card-icon-svg { color: #22d3ee; }
-  .admin-aff__card-icon--green .admin-aff__card-icon-svg { color: #22c55e; }
-  .admin-aff__card-icon--amber .admin-aff__card-icon-svg { color: #f59e0b; }
-  .admin-aff__card-icon--purple .admin-aff__card-icon-svg { color: #a855f7; }
-  .admin-aff__card-label { font-size: 0.75rem; font-weight: 600; color: var(--sidebar-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
-  .admin-aff__card-value { font-size: 1.5rem; font-weight: 700; color: var(--sidebar-text); margin: 0; }
+  .admin-aff__card-icon--cyan { background: rgba(34, 211, 238, 0.1); color: #22d3ee; }
+  .admin-aff__card-icon--green { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+  .admin-aff__card-icon--amber { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+  .admin-aff__card-icon--purple { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
+  .admin-aff__card-icon-svg { width: 1rem; height: 1rem; }
+  .admin-aff__card-label { font-size: 0.75rem; font-weight: 500; color: var(--color-muted-foreground, #a3a3a3); }
+  .admin-aff__card-value { font-size: 1.5rem; font-weight: 700; color: var(--color-foreground, #e5e5e5); }
   .admin-aff__card-value--green { color: #22c55e; }
   .admin-aff__card-value--amber { color: #f59e0b; }
   .admin-aff__card-value--purple { color: #a855f7; }
 
-  .admin-aff__error {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-    gap: 0.75rem;
-  }
+  .admin-aff__error { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); }
+  .admin-aff__error-icon { width: 1rem; height: 1rem; color: #ef4444; flex-shrink: 0; }
+  .admin-aff__error-text { font-size: 0.8125rem; color: #fca5a5; }
 
-  .admin-aff__error-icon {
-    width: 2.5rem;
-    height: 2.5rem;
-    color: #ef4444;
-  }
+  .admin-aff__loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem; gap: 0.75rem; }
+  .admin-aff__loading-icon { width: 2rem; height: 2rem; color: var(--color-muted-foreground); animation: spin 1s linear infinite; }
+  .admin-aff__loading-text { font-size: 0.875rem; color: var(--color-muted-foreground); }
 
-  .admin-aff__error-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .admin-aff__error-text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .admin-aff__loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-  }
-
-  .admin-aff__loading-icon {
-    width: 32px;
-    height: 32px;
-    color: #a855f7;
-    animation: spin 1s linear infinite;
-    margin-bottom: 1rem;
-  }
-
-  .admin-aff__loading-text {
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .admin-aff__table-wrapper {
-    border-radius: 10px;
-    border: 1px solid var(--sidebar-border);
-    overflow: hidden;
-    background-color: var(--sidebar-surface);
-  }
-
+  .admin-aff__table-wrapper { border-radius: 0.75rem; border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08)); overflow: hidden; }
   .admin-aff__table-scroll { overflow-x: auto; }
   .admin-aff__table { width: 100%; border-collapse: collapse; }
   .admin-aff__thead { background: rgba(255, 255, 255, 0.02); }
-  .admin-aff__th {
-    padding: 0.75rem 1rem;
-    text-align: left;
-    font-size: 0.6875rem;
-    font-weight: 700;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-  }
+  .admin-aff__th { padding: 0.75rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: var(--color-muted-foreground, #a3a3a3); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
   .admin-aff__tbody {}
-  .admin-aff__row {
-    border-top: 1px solid var(--sidebar-border);
-    transition: background-color 150ms ease;
-  }
-  .admin-aff__row:hover { background-color: var(--sidebar-hover); }
-  .admin-aff__row--clickable { cursor: pointer; }
-  .admin-aff__td {
-    padding: 0.75rem 1rem;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-  }
-  .admin-aff__td--green { color: #22c55e; font-weight: 600; }
-  .admin-aff__td--amber { color: #f59e0b; font-weight: 600; }
+  .admin-aff__row { border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.06)); transition: background 0.15s; }
+  .admin-aff__row:hover { background: rgba(255, 255, 255, 0.02); }
+  .admin-aff__td { padding: 0.75rem 1rem; font-size: 0.8125rem; color: var(--color-foreground, #e5e5e5); white-space: nowrap; }
+  .admin-aff__td--green { color: #22c55e; }
+  .admin-aff__td--amber { color: #f59e0b; }
 
   .admin-aff__user { display: flex; flex-direction: column; gap: 0.125rem; }
-  .admin-aff__user-name { font-weight: 600; color: var(--sidebar-text); }
-  .admin-aff__user-id { font-size: 0.6875rem; color: var(--sidebar-text-muted); }
+  .admin-aff__user-name { font-weight: 500; }
+  .admin-aff__user-id { font-size: 0.6875rem; color: var(--color-muted-foreground); }
 
-  .admin-aff__code {
-    font-family: 'Courier New', monospace;
-    font-size: 0.8125rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    background: rgba(168, 85, 247, 0.1);
-    color: #c084fc;
-    border: 1px solid rgba(168, 85, 247, 0.2);
-  }
+  .admin-aff__code { font-family: monospace; font-size: 0.8125rem; padding: 0.125rem 0.375rem; border-radius: 0.25rem; background: rgba(255, 255, 255, 0.05); color: #a855f7; }
 
-  .admin-aff__rates { display: flex; flex-direction: column; gap: 0.125rem; font-size: 0.75rem; color: var(--sidebar-text-muted); }
+  .admin-aff__rates { display: flex; flex-direction: column; gap: 0.125rem; font-size: 0.75rem; color: var(--color-muted-foreground); }
 
-  .admin-aff__status {
-    display: inline-block;
-    padding: 0.25rem 0.625rem;
-    border-radius: 9999px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .admin-aff__status--active {
-    background: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
-    border: 1px solid rgba(34, 197, 94, 0.3);
-  }
-  .admin-aff__status--suspended {
-    background: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
-    border: 1px solid rgba(245, 158, 11, 0.3);
-  }
-  .admin-aff__status--deactivated {
-    background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
-    border: 1px solid rgba(239, 68, 68, 0.3);
-  }
+  .admin-aff__status { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .admin-aff__status--active { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
+  .admin-aff__status--suspended { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+  .admin-aff__status--deactivated { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
 
   .admin-aff__view-btn {
-    padding: 0.375rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-    text-decoration: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-    display: inline-block;
+    padding: 0.25rem 0.625rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500;
+    background: rgba(255, 255, 255, 0.05); color: var(--color-foreground);
+    border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
+    text-decoration: none; cursor: pointer; transition: all 0.15s;
   }
-  .admin-aff__view-btn:hover {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.15);
-  }
+  .admin-aff__view-btn:hover { background: rgba(255, 255, 255, 0.1); }
 
-  .admin-aff__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    gap: 0.75rem;
-  }
-  .admin-aff__empty-icon {
-    width: 3rem;
-    height: 3rem;
-    color: var(--sidebar-text-muted);
-    opacity: 0.5;
-  }
-  .admin-aff__empty-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-  .admin-aff__empty-text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
+  .admin-aff__empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 2rem; gap: 0.75rem; }
+  .admin-aff__empty-icon { width: 3rem; height: 3rem; color: var(--color-muted-foreground); opacity: 0.5; }
+  .admin-aff__empty-title { font-size: 1.125rem; font-weight: 600; color: var(--color-foreground); }
+  .admin-aff__empty-text { font-size: 0.875rem; color: var(--color-muted-foreground); }
 
   /* ===== Create Affiliate Dialog ===== */
   .create-aff__overlay {

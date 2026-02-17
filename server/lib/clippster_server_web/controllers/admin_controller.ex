@@ -67,12 +67,20 @@ defmodule ClippsterServerWeb.AdminController do
         # Get subscription info
         subscription_info = Subscriptions.get_subscription_status(user.id)
 
+        # Check if user is an affiliate
+        affiliate = ClippsterServer.Affiliates.get_affiliate_by_user(user.id)
+        is_affiliate = affiliate != nil
+        affiliate_status = if affiliate, do: affiliate.status, else: nil
+
         %{
           id: user.id,
           wallet_address: user.wallet_address,
           email: user.email,
           provider: user.provider,
           is_admin: user.is_admin,
+          is_moderator: user.is_moderator,
+          is_affiliate: is_affiliate,
+          affiliate_status: affiliate_status,
           created_at: user.inserted_at,
           updated_at: user.updated_at,
           credits: credits_info,

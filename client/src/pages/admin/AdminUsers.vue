@@ -102,18 +102,24 @@
                     </div>
                   </td>
                   <td class="admin-users__td">
-                    <span v-if="user.is_admin" class="admin-users__role admin-users__role--admin">
-                      <Shield class="admin-users__role-icon" />
-                      Admin
-                    </span>
-                    <span v-else-if="user.is_moderator" class="admin-users__role admin-users__role--moderator">
-                      <Shield class="admin-users__role-icon" />
-                      Moderator
-                    </span>
-                    <span v-else class="admin-users__role admin-users__role--user">
-                      <User class="admin-users__role-icon" />
-                      User
-                    </span>
+                    <div class="admin-users__role-container">
+                      <span v-if="user.is_admin" class="admin-users__role admin-users__role--admin">
+                        <Shield class="admin-users__role-icon" />
+                        Admin
+                      </span>
+                      <span v-else-if="user.is_moderator" class="admin-users__role admin-users__role--moderator">
+                        <Shield class="admin-users__role-icon" />
+                        Moderator
+                      </span>
+                      <span v-else class="admin-users__role admin-users__role--user">
+                        <User class="admin-users__role-icon" />
+                        User
+                      </span>
+                      <span v-if="user.is_affiliate" class="admin-users__affiliate-badge" :class="`admin-users__affiliate-badge--${user.affiliate_status || 'active'}`">
+                        <Handshake class="admin-users__affiliate-badge-icon" />
+                        Affiliate
+                      </span>
+                    </div>
                   </td>
                   <td class="admin-users__td">
                     <button
@@ -704,6 +710,7 @@
     Layers,
     X,
     ChevronDown,
+    Handshake,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -718,6 +725,8 @@
     provider: string;
     is_admin: boolean;
     is_moderator: boolean;
+    is_affiliate: boolean;
+    affiliate_status: string | null;
     created_at: string;
     updated_at: string;
     credits: {
@@ -1608,6 +1617,48 @@
     width: 12px;
     height: 12px;
     margin-right: 0.375rem;
+  }
+
+  .admin-users__role-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .admin-users__affiliate-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    border-radius: 8px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    width: fit-content;
+  }
+
+  .admin-users__affiliate-badge--active {
+    background-color: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+  }
+
+  .admin-users__affiliate-badge--suspended {
+    background-color: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+
+  .admin-users__affiliate-badge--deactivated {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  .admin-users__affiliate-badge-icon {
+    width: 10px;
+    height: 10px;
+    margin-right: 0.25rem;
   }
 
   /* ===== Subscription Cell ===== */

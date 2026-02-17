@@ -368,6 +368,9 @@ defmodule ClippsterServer.Affiliates do
           :commission_usd
         ) || Decimal.new("0")
 
+      # Allow manual amount for testing or manual payouts
+      total = if attrs[:manual_amount], do: Decimal.new(to_string(attrs[:manual_amount])), else: total
+
       if Decimal.equal?(total, Decimal.new("0")) do
         Repo.rollback(:no_pending_commissions)
       end
