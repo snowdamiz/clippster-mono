@@ -301,54 +301,103 @@
     </PageLayout>
 
     <!-- Endorsement Dialog -->
-    <Dialog v-model:open="showEndorsementDialog">
-      <DialogContent class="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Endorse {{ profile?.display_name }}</DialogTitle>
-          <DialogDescription>Leave a public endorsement for this clipper</DialogDescription>
-        </DialogHeader>
-        <div class="space-y-4">
-          <div class="space-y-2">
-            <Label>Rating</Label>
-            <div class="flex gap-1">
-              <button
-                v-for="i in 5"
-                :key="i"
-                @click="endorsementRating = i"
-                class="p-1 hover:scale-110 transition-transform"
-              >
-                <Star
-                  class="w-6 h-6"
-                  :class="i <= endorsementRating ? 'text-amber-500 fill-amber-500' : 'text-muted-foreground'"
-                />
-              </button>
+    <Teleport to="body">
+      <Transition name="endorse-modal">
+        <div v-if="showEndorsementDialog" class="endorse-dialog__overlay" @click.self="showEndorsementDialog = false">
+          <Transition name="endorse-dialog" appear>
+            <div v-if="showEndorsementDialog" class="endorse-dialog" role="dialog" aria-modal="true">
+              <!-- Accent bar -->
+              <div class="endorse-dialog__accent"></div>
+
+              <!-- Header -->
+              <div class="endorse-dialog__header">
+                <button class="endorse-dialog__close" @click="showEndorsementDialog = false" :disabled="submittingEndorsement" title="Close">
+                  <X :size="18" />
+                </button>
+                <div class="endorse-dialog__icon">
+                  <Award :size="24" />
+                </div>
+                <h2 class="endorse-dialog__title">Endorse {{ profile?.display_name }}</h2>
+                <p class="endorse-dialog__subtitle">Leave a public endorsement for this clipper</p>
+              </div>
+
+              <!-- Content -->
+              <div class="endorse-dialog__content">
+                <!-- No org warning -->
+                <div v-if="!authStore.user?.owned_organization_id" class="endorse-dialog__alert endorse-dialog__alert--warning">
+                  <Building2 :size="16" />
+                  <div class="flex-1">
+                    <p class="font-medium text-xs mb-0.5">Organization Required</p>
+                    <p class="text-[10px] opacity-80">You must own an organization to endorse clippers. Endorsements represent your organization's working relationship with this clipper.</p>
+                  </div>
+                </div>
+
+                <!-- Rating -->
+                <div class="endorse-dialog__field">
+                  <label class="endorse-dialog__label">Rating</label>
+                  <div class="endorse-dialog__stars">
+                    <button
+                      v-for="i in 5"
+                      :key="i"
+                      @click="endorsementRating = i"
+                      class="endorse-dialog__star-btn"
+                    >
+                      <Star
+                        :size="28"
+                        :class="i <= endorsementRating ? 'endorse-dialog__star--filled' : 'endorse-dialog__star--empty'"
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Content -->
+                <div class="endorse-dialog__field">
+                  <label class="endorse-dialog__label">Endorsement <span class="endorse-dialog__optional">(optional)</span></label>
+                  <textarea
+                    v-model="endorsementContent"
+                    class="endorse-dialog__textarea"
+                    placeholder="Great clipper! Delivered high-quality content on time..."
+                    rows="3"
+                    maxlength="300"
+                  />
+                  <p class="endorse-dialog__char-count">{{ endorsementContent.length }}/300</p>
+                </div>
+
+                <!-- Error -->
+                <div v-if="endorsementError" class="endorse-dialog__alert endorse-dialog__alert--error">
+                  <p class="text-xs">{{ endorsementError }}</p>
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div class="endorse-dialog__footer">
+                <button
+                  @click="showEndorsementDialog = false"
+                  :disabled="submittingEndorsement"
+                  class="endorse-dialog__btn endorse-dialog__btn--secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  @click="submitEndorsement"
+                  :disabled="submittingEndorsement || endorsementRating === 0 || !authStore.user?.owned_organization_id"
+                  class="endorse-dialog__btn endorse-dialog__btn--primary"
+                >
+                  <Loader2 v-if="submittingEndorsement" :size="16" class="endorse-dialog__spinner" />
+                  {{ submittingEndorsement ? 'Submitting...' : 'Submit Endorsement' }}
+                </button>
+              </div>
             </div>
-          </div>
-          <div class="space-y-2">
-            <Label>Endorsement (optional)</Label>
-            <Textarea
-              v-model="endorsementContent"
-              placeholder="Great clipper! Delivered high-quality content on time..."
-              rows="3"
-              maxlength="300"
-            />
-            <p class="text-xs text-muted-foreground">{{ endorsementContent.length }}/300 characters</p>
-          </div>
+          </Transition>
         </div>
-        <DialogFooter>
-          <Button variant="outline" @click="showEndorsementDialog = false">Cancel</Button>
-          <Button @click="submitEndorsement" :disabled="submittingEndorsement || endorsementRating === 0">
-            <Loader2 v-if="submittingEndorsement" class="w-4 h-4 mr-2 animate-spin" />
-            Submit Endorsement
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
+  import { useAuthStore } from '@/stores/auth';
   import { useRoute, useRouter } from 'vue-router';
   import {
     UserCircle,
@@ -376,20 +425,10 @@
     Link,
     Share2,
     Handshake,
+    X,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
-  import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
-  import { Label } from '@/components/ui/label';
-  import { Textarea } from '@/components/ui/textarea';
-  import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-    DialogFooter,
-  } from '@/components/ui/dialog';
   import {
     getClipperBySlug,
     createEndorsement,
@@ -408,6 +447,7 @@
   const route = useRoute();
   const router = useRouter();
   const { toast } = useToast();
+  const authStore = useAuthStore();
 
   const loading = ref(true);
   const profile = ref<ClipperProfile | null>(null);
@@ -439,6 +479,7 @@
   const endorsementContent = ref('');
   const endorsementRating = ref(0);
   const submittingEndorsement = ref(false);
+  const endorsementError = ref('');
 
   const openMessageDialog = () => {
     if (!profile.value) return;
@@ -448,6 +489,7 @@
   const openEndorsementDialog = () => {
     endorsementContent.value = '';
     endorsementRating.value = 0;
+    endorsementError.value = '';
     showEndorsementDialog.value = true;
   };
 
@@ -463,13 +505,22 @@
 
   const submitEndorsement = async () => {
     if (!profile.value || endorsementRating.value === 0) return;
+    if (!authStore.user?.owned_organization_id) {
+      endorsementError.value = 'You must own an organization to endorse clippers.';
+      return;
+    }
 
     submittingEndorsement.value = true;
+    endorsementError.value = '';
     try {
-      const response = await createEndorsement(profile.value.slug!, 0, {
-        content: endorsementContent.value || undefined,
-        rating: endorsementRating.value,
-      });
+      const response = await createEndorsement(
+        profile.value.slug!,
+        Number(authStore.user.owned_organization_id),
+        {
+          content: endorsementContent.value || undefined,
+          rating: endorsementRating.value,
+        }
+      );
 
       if (response.success) {
         toast({
@@ -479,17 +530,12 @@
         showEndorsementDialog.value = false;
         loadProfile();
       } else {
-        toast({
-          title: 'Error',
-          description: response.error || 'Failed to submit endorsement.',
-        });
+        endorsementError.value = response.error || 'Failed to submit endorsement.';
       }
-    } catch (error) {
-      console.error('Failed to submit endorsement:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to submit endorsement. Please try again.',
-      });
+    } catch (err: unknown) {
+      console.error('Failed to submit endorsement:', err);
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      endorsementError.value = axiosErr?.response?.data?.error || 'Failed to submit endorsement. Please try again.';
     } finally {
       submittingEndorsement.value = false;
     }
@@ -1421,5 +1467,288 @@
     .about-grid {
       grid-template-columns: 1fr;
     }
+  }
+
+  /* ===== Endorsement Dialog ===== */
+  .endorse-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+
+  .endorse-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 440px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .endorse-dialog__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  .endorse-dialog__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .endorse-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .endorse-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .endorse-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .endorse-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .endorse-dialog__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .endorse-dialog__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  .endorse-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .endorse-dialog__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .endorse-dialog__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .endorse-dialog__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .endorse-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .endorse-dialog__label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .endorse-dialog__optional {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--sidebar-text-muted);
+  }
+
+  .endorse-dialog__stars {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .endorse-dialog__star-btn {
+    background: transparent;
+    border: none;
+    padding: 0.25rem;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: transform 150ms ease;
+  }
+
+  .endorse-dialog__star-btn:hover {
+    transform: scale(1.15);
+  }
+
+  .endorse-dialog__star--filled {
+    color: #f59e0b;
+    fill: #f59e0b;
+  }
+
+  .endorse-dialog__star--empty {
+    color: var(--sidebar-text-muted);
+  }
+
+  .endorse-dialog__textarea {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    resize: vertical;
+    font-family: inherit;
+    transition: all 150ms ease;
+  }
+
+  .endorse-dialog__textarea::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .endorse-dialog__textarea:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .endorse-dialog__char-count {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    text-align: right;
+    margin: 0;
+  }
+
+  .endorse-dialog__alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .endorse-dialog__alert--warning {
+    background-color: rgba(245, 158, 11, 0.08);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+  }
+
+  .endorse-dialog__alert--error {
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #f87171;
+  }
+
+  .endorse-dialog__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .endorse-dialog__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .endorse-dialog__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .endorse-dialog__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .endorse-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .endorse-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: #000;
+  }
+
+  .endorse-dialog__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .endorse-dialog__spinner {
+    animation: spin 1s linear infinite;
+  }
+
+  /* ===== Dialog Transitions ===== */
+  .endorse-modal-enter-active,
+  .endorse-modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .endorse-modal-enter-from,
+  .endorse-modal-leave-to {
+    opacity: 0;
+  }
+
+  .endorse-dialog-enter-active,
+  .endorse-dialog-leave-active {
+    transition: opacity 200ms ease, transform 200ms ease;
+  }
+
+  .endorse-dialog-enter-from,
+  .endorse-dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
   }
 </style>
