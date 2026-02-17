@@ -76,7 +76,7 @@ defmodule ClippsterServerWeb.SupportController do
     total = Messaging.count_support_conversations(status)
 
     json(conn, %{
-      conversations: conversations,
+      conversations: Enum.map(conversations, &MessagingJSON.conversation/1),
       total: total,
       page: page,
       per_page: per_page
@@ -93,7 +93,7 @@ defmodule ClippsterServerWeb.SupportController do
         offset = Map.get(params, "offset", "0") |> String.to_integer()
 
         messages = Messaging.get_conversation_messages(conversation_id, limit, offset)
-        json(conn, %{messages: messages})
+        json(conn, %{messages: MessagingJSON.messages(messages)})
 
       {:error, _} ->
         conn
@@ -121,7 +121,7 @@ defmodule ClippsterServerWeb.SupportController do
               %{content_preview: String.slice(content, 0, 100)}
             )
 
-            json(conn, %{message: message})
+            json(conn, %{message: MessagingJSON.message(message)})
 
           {:error, reason} ->
             conn
