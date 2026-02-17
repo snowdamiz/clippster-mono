@@ -54,7 +54,7 @@ export interface ActiveDownload {
   // Project grouping
   projectId?: string;
   parentProjectId?: string;
-  provider?: 'pumpfun' | 'kick' | 'twitch';
+  provider?: 'pumpfun' | 'kick' | 'twitch' | 'youtube';
   groupId?: string;
   totalSegments?: number;
   currentSegmentIndex?: number;
@@ -415,7 +415,7 @@ export function useDownloads() {
     options: {
       autoSegment?: boolean;
       segmentDuration?: number;
-      provider?: 'pumpfun' | 'kick' | 'twitch';
+      provider?: 'pumpfun' | 'kick' | 'twitch' | 'youtube';
       // Watermark settings from creator profile (stored with project for automatic application)
       creatorWatermarkSettings?: {
         watermarkId: string;
@@ -521,24 +521,9 @@ export function useDownloads() {
           ? JSON.stringify(options.creatorWatermarkSettings)
           : undefined;
 
-        if (existingProjects.length > 0) {
-          // Found an existing parent project owned by current user
-          parentProjectId = existingProjects[0].id;
-        } else {
-          // Create a new parent project
-          const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : provider === 'twitch' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
-          const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun';
-          parentProjectId = await createProject(
-            title,
-            `Manual downloads from ${providerLabel} (${sourceLabel})`,
-            undefined,
-            providerLabel,
-            watermarkSettingsJson
-          );
-        }
 
         // Create the child project for this specific segment
-        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun';
+        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : provider === 'youtube' ? 'YouTube' : 'PumpFun';
         projectId = await createProject(
           finalTitle,
           `Segment ${segmentNumber} of ${title}`,
@@ -553,8 +538,8 @@ export function useDownloads() {
           : undefined;
 
         // Full stream download - create a standard project
-        const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : provider === 'twitch' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
-        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun';
+        const sourceLabel = provider === 'kick' || provider === 'twitch' || provider === 'youtube' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
+        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : provider === 'youtube' ? 'YouTube' : 'PumpFun';
         projectId = await createProject(
           finalTitle,
           `Downloaded from ${providerLabel} (${sourceLabel})`,
@@ -641,6 +626,16 @@ export function useDownloads() {
             activeDownloads.delete(downloadId);
           });
         }
+      } else if (provider === 'youtube') {
+        // YouTube VODs use yt-dlp based download
+        invoke('download_youtube_vod', {
+          downloadId,
+          title: finalTitle,
+          vodUrl: videoUrl,
+          channelName: mintId,
+        }).catch((_error) => {
+          activeDownloads.delete(downloadId);
+        });
       } else {
         // PumpFun (default)
         if (isSegmentDownload) {
@@ -682,7 +677,7 @@ export function useDownloads() {
     sourceClipId: string,
     totalDuration: number,
     maxSegmentDuration: number = 3600,
-    provider: 'pumpfun' | 'kick' | 'twitch' = 'pumpfun',
+    provider: 'pumpfun' | 'kick' | 'twitch' | 'youtube' = 'pumpfun',
     creatorWatermarkSettings?: { watermarkId: string; watermarkSettings: string }
   ): Promise<string> {
     await initialize();
@@ -719,11 +714,13 @@ export function useDownloads() {
         ? JSON.stringify(creatorWatermarkSettings)
         : undefined;
 
+      const providerLabelAuto = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : provider === 'youtube' ? 'YouTube' : 'PumpFun';
+      const sourceLabelAuto = provider === 'kick' || provider === 'twitch' || provider === 'youtube' ? 'Channel' : 'Mint';
       parentProjectId = await createProject(
         title,
-        `Auto-segmented download from ${provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun'} (${provider === 'kick' || provider === 'twitch' ? 'Channel' : 'Mint'}: ${mintId}). ${numberOfSegments} parts.`,
+        `Auto-segmented download from ${providerLabelAuto} (${sourceLabelAuto}: ${mintId}). ${numberOfSegments} parts.`,
         undefined,
-        provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun',
+        providerLabelAuto,
         watermarkSettingsJson
       );
     } catch (error) {

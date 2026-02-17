@@ -8,6 +8,7 @@ import {
 } from '@/services/pumpfun';
 import { getKickClips, extractChannelSlug, checkKickLivestream } from '@/services/kick';
 import { getTwitchVods, extractChannelName, checkTwitchLivestream, type TwitchVod } from '@/services/twitch';
+import { getYouTubeVods, extractYouTubeChannel, type YouTubeVod } from '@/services/youtube';
 
 // Unified clip type that works across platforms
 export interface PlatformClip {
@@ -384,6 +385,18 @@ export const usePlatformStore = defineStore('platform', {
             result = await this.getTwitchClips(extractedId, limit);
             break;
 
+          case 'youtube': {
+            extractedId = extractYouTubeChannel(trimmedInput) || trimmedInput.trim();
+            if (!extractedId) {
+              this.error = 'Invalid YouTube channel URL or @handle';
+              this.loading = false;
+              return { success: false, error: this.error };
+            }
+            this.currentSearchId = extractedId;
+            result = await this.getYouTubeClips(extractedId, limit);
+            break;
+          }
+
           default:
             this.error = 'Platform not supported yet';
             this.loading = false;
@@ -468,6 +481,44 @@ export const usePlatformStore = defineStore('platform', {
           hasMore: false,
           total: 0,
           error: error instanceof Error ? error.message : 'Failed to fetch Twitch VODs',
+        };
+      }
+    },
+
+    // Helper to convert YouTube VODs to PlatformClip format
+    async getYouTubeClips(channelId: string, limit: number = 20): Promise<{
+      success: boolean;
+      clips: PlatformClip[];
+      hasMore: boolean;
+      total: number;
+      error?: string;
+    }> {
+      try {
+        const vods = await getYouTubeVods(channelId, limit);
+        const clips: PlatformClip[] = vods.map((vod: YouTubeVod) => ({
+          clipId: vod.videoId,
+          title: vod.title || `Video ${vod.videoId}`,
+          duration: vod.duration || 0,
+          thumbnailUrl: vod.thumbnailUrl,
+          playlistUrl: vod.url,
+          mp4Url: vod.url,
+          clipType: 'COMPLETE' as const,
+          createdAt: vod.uploadDate,
+          views: vod.viewCount ?? undefined,
+        }));
+        return {
+          success: true,
+          clips,
+          hasMore: clips.length >= limit,
+          total: clips.length,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          clips: [],
+          hasMore: false,
+          total: 0,
+          error: error instanceof Error ? error.message : 'Failed to fetch YouTube VODs',
         };
       }
     },

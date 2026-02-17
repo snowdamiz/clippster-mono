@@ -985,7 +985,7 @@
         {
           autoSegment: shouldAutoSegment,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick' | 'twitch',
+          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick' | 'twitch' | 'youtube',
           creatorWatermarkSettings,
         }
       );

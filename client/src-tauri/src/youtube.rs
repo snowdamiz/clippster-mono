@@ -227,9 +227,10 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
 #[tauri::command]
 pub async fn download_youtube_vod(
     app: tauri::AppHandle,
-    vod_url: String,
-    output_path: String,
     download_id: String,
+    title: String,
+    vod_url: String,
+    channel_name: String,
 ) -> Result<(), String> {
     let ytdlp_path = resolve_ytdlp_binary()?;
     let ffmpeg_path = resolve_ffmpeg_binary()?;
@@ -243,12 +244,23 @@ pub async fn download_youtube_vod(
         }
         downloads.insert(download_id.clone(), true);
     }
-    
-    let output_dir = PathBuf::from(&output_path);
-    std::fs::create_dir_all(&output_dir)
-        .map_err(|e| format!("Failed to create output directory: {}", e))?;
-    
-    let output_file = output_dir.join("%(title)s.%(ext)s");
+
+    // Resolve output path from storage (same as Twitch/Kick)
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+
+    let safe_title = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    let filename = format!("youtube_{}_{}_{}.mp4", channel_name, safe_title, timestamp);
+    let output_file = paths.videos.join(&filename);
     
     // Clean up when done
     let cleanup_download = {
@@ -269,12 +281,13 @@ pub async fn download_youtube_vod(
     
     let download_id_clone = download_id.clone();
     let app_clone = app.clone();
-    
+    let output_file_str = output_file.to_string_lossy().to_string();
+
     // Store download metadata
     {
         let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
         metadata_map.insert(download_id.clone(), DownloadMetadata {
-            output_path: Some(output_path.clone()),
+            output_path: Some(output_file_str.clone()),
             thumbnail_path: None,
             started_at: std::time::SystemTime::now(),
             process_id: None,
@@ -286,7 +299,7 @@ pub async fn download_youtube_vod(
         no_window(&mut cmd);
         
         cmd.arg("--ffmpeg-location").arg(&ffmpeg_path)
-            .arg("-o").arg(output_file.to_string_lossy().to_string())
+            .arg("-o").arg(&output_file_str)
             .arg("--newline")
             .arg(&vod_url)
             .stdout(std::process::Stdio::piped())
@@ -352,7 +365,7 @@ pub async fn download_youtube_vod(
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: true,
-                            file_path: Some(output_path),
+                            file_path: Some(output_file_str),
                             thumbnail_path: None,
                             duration: None,
                             width: None,

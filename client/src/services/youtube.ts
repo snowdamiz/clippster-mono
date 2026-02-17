@@ -115,14 +115,16 @@ export async function getYouTubeVods(channel: string, limit: number = 20): Promi
  * Download a YouTube VOD
  */
 export async function downloadYouTubeVod(
+  downloadId: string,
+  title: string,
   vodUrl: string,
-  outputPath: string,
-  downloadId: string
+  channelName: string
 ): Promise<void> {
   await invoke('download_youtube_vod', {
-    vodUrl,
-    outputPath,
     downloadId,
+    title,
+    vodUrl,
+    channelName,
   });
 }
 
