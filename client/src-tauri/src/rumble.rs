@@ -421,7 +421,11 @@ pub async fn start_rumble_recording(
     std::fs::create_dir_all(&session_dir)
         .map_err(|e| format!("Failed to create session directory: {}", e))?;
     
-    let segment_duration = segment_duration_minutes.unwrap_or(5);
+    // Use 4-second segments by default for smooth live playback.
+    // If segment_duration_minutes is provided (persistent recording), convert to seconds.
+    let segment_duration_secs = segment_duration_minutes
+        .map(|m| m * 60)
+        .unwrap_or(4);
     let (stop_tx, stop_rx) = oneshot::channel();
     
     let channel_clone = channel_name.clone();
@@ -437,7 +441,7 @@ pub async fn start_rumble_recording(
             streamer_clone,
             session_clone,
             output_str,
-            segment_duration,
+            segment_duration_secs,
             stop_rx,
         ).await {
             eprintln!("[RumbleRecorder] {}", err);
@@ -463,13 +467,13 @@ async fn run_rumble_recorder(
     streamer_id: String,
     session_id: String,
     output_dir: String,
-    segment_duration_minutes: u32,
+    segment_duration_secs: u32,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
     let ytdlp_path = resolve_ytdlp_binary()?;
     let ffmpeg_path = resolve_ffmpeg_binary()?;
     
-    let hls_segment_seconds = segment_duration_minutes * 60;
+    let hls_segment_seconds = segment_duration_secs;
     let playlist_path = PathBuf::from(&output_dir).join("playlist.m3u8");
     let segment_pattern = PathBuf::from(&output_dir).join("segment_%04d.ts");
     

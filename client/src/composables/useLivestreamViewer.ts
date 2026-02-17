@@ -957,7 +957,7 @@ export function useLivestreamViewer() {
         console.log('[LiveViewer] Starting new YouTube recording:', channelId);
 
         try {
-          await startYouTubeRecording(channelId, streamerId, sessionId, 1);
+          await startYouTubeRecording(channelId, streamerId, sessionId, undefined);
         } catch (recordingError) {
           console.error('[LiveViewer] Failed to start YouTube recording:', recordingError);
           state.value.connectionState = 'failed';
@@ -1070,7 +1070,7 @@ export function useLivestreamViewer() {
         console.log('[LiveViewer] Starting new Rumble recording:', channelId);
 
         try {
-          await startRumbleRecording(channelId, streamerId, sessionId, 1);
+          await startRumbleRecording(channelId, streamerId, sessionId, undefined);
         } catch (recordingError) {
           console.error('[LiveViewer] Failed to start Rumble recording:', recordingError);
           state.value.connectionState = 'failed';
@@ -1933,6 +1933,12 @@ export function useLivestreamViewer() {
       } else if (platform === 'Twitch') {
         const twitchStatus = await checkTwitchLivestream(mintId);
         isLive = twitchStatus.isLive;
+      } else if (platform === 'YouTube' || platform === 'Youtube') {
+        const ytStatus = await checkYouTubeLivestream(mintId);
+        isLive = ytStatus.isLive;
+      } else if (platform === 'Rumble') {
+        const rumbleStatus = await checkRumbleLivestream(mintId);
+        isLive = rumbleStatus.isLive;
       } else {
         // PumpFun - use the existing fetchLiveStatus function
         const pumpFunStatus = await fetchLiveStatus(mintId);
@@ -1945,17 +1951,20 @@ export function useLivestreamViewer() {
         );
         state.value.isBuffering = true;
 
-        if (platform === 'Kick' || platform === 'Twitch') {
-          // Kick/Twitch restart logic (both use yt-dlp + FFmpeg HLS)
-          // CRITICAL: Resume in same directory to preserve DVR content (same as PumpFun approach)
+        if (platform === 'Kick' || platform === 'Twitch' || platform === 'YouTube' || platform === 'Youtube' || platform === 'Rumble') {
+          // yt-dlp based platforms: restart recorder in same directory to preserve DVR content
           const currentOutputDir = hlsOutputDir.value;
           const currentSessionId = state.value.tempSessionId;
           
           try {
             if (platform === 'Kick') {
               await stopKickRecording(mintId);
-            } else {
+            } else if (platform === 'Twitch') {
               await stopTwitchRecording(mintId);
+            } else if (platform === 'YouTube' || platform === 'Youtube') {
+              await stopYouTubeRecording(mintId);
+            } else if (platform === 'Rumble') {
+              await stopRumbleRecording(mintId);
             }
           } catch (stopError) {
             console.warn(`[LiveViewer] Error stopping old ${platform} recording:`, stopError);
@@ -1967,8 +1976,12 @@ export function useLivestreamViewer() {
             // Reuse the same session ID to resume in the same directory
             if (platform === 'Kick') {
               await startKickRecording(mintId, streamerId, currentSessionId!, 1);
-            } else {
+            } else if (platform === 'Twitch') {
               await startTwitchRecording(mintId, streamerId, currentSessionId!, 1);
+            } else if (platform === 'YouTube' || platform === 'Youtube') {
+              await startYouTubeRecording(mintId, streamerId, currentSessionId!, undefined);
+            } else if (platform === 'Rumble') {
+              await startRumbleRecording(mintId, streamerId, currentSessionId!, undefined);
             }
 
             console.log(`[LiveViewer] ${platform} recorder resumed in existing dir:`, currentOutputDir);
