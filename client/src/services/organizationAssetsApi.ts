@@ -166,7 +166,7 @@ export async function uploadOrganizationAsset(
       formData,
       {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Content-Type': undefined,
         },
         // Allow longer timeout for file uploads
         timeout: 600000, // 10 minutes

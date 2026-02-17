@@ -293,7 +293,7 @@ export async function recordPayout(
     if (data.screenshot) formData.append('screenshot', data.screenshot);
 
     const response = await api.post(`/admin/affiliates/${id}/payout`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
+      headers: { 'Content-Type': undefined },
     });
     return response.data;
   } catch (error: any) {
