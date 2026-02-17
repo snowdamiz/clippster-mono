@@ -512,7 +512,6 @@ async fn run_youtube_recorder(
         .arg("-o").arg("-")
         .arg("--quiet")
         .arg("--no-part")
-        .arg("--live-from-start")
         .arg("--ffmpeg-location").arg(&ffmpeg_path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -559,7 +558,7 @@ async fn run_youtube_recorder(
         .arg("-f").arg("hls")
         .arg("-hls_time").arg(hls_segment_seconds.to_string())
         .arg("-hls_list_size").arg("0")
-        .arg("-hls_flags").arg("append_list+omit_endlist+temp_file")
+        .arg("-hls_flags").arg("omit_endlist+temp_file")
         .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
         .stdin(ytdlp_stdout_std)
