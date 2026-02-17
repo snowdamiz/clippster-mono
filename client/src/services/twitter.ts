@@ -1,6 +1,45 @@
 import { invoke } from '@tauri-apps/api/core';
 
 /**
+ * Extract Twitter username from URL or handle
+ */
+export function extractTwitterUsername(input: string): string | null {
+  if (!input || typeof input !== 'string') {
+    return null;
+  }
+
+  const trimmed = input.trim();
+
+  // URL parsing
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const url = new URL(trimmed);
+      if (!url.hostname.includes('twitter.com') && !url.hostname.includes('x.com')) {
+        return null;
+      }
+
+      // Extract username from path (e.g., /username or /username/status/...)
+      const pathParts = url.pathname.split('/').filter(Boolean);
+      if (pathParts.length > 0 && !pathParts[0].startsWith('i')) {
+        return pathParts[0];
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Handle @username format
+  if (trimmed.startsWith('@')) {
+    return trimmed.substring(1);
+  }
+
+  // Plain username
+  return trimmed;
+}
+
+/**
  * Validate and normalize a Twitter/X URL
  */
 export async function validateTwitterUrl(url: string): Promise<string> {

@@ -487,11 +487,14 @@
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer, type TokenSearchResult } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
+  import { extractYouTubeChannel } from '@/services/youtube';
+  import { extractRumbleChannel } from '@/services/rumble';
+  import { extractTwitterUsername } from '@/services/twitter';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
 
-  type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'PumpFun';
+  type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter' | 'PumpFun';
 
   interface PendingMetadataFetch {
     streamerId: string;
@@ -502,7 +505,8 @@
   const { gates, requireSubscription } = useSubscriptionGate();
   const { success } = useToast();
 
-  type ExtendedStreamer = MonitoredStreamer & {
+  type ExtendedStreamer = Omit<MonitoredStreamer, 'platform'> & {
+    platform: Platform;
     isDetecting: boolean;
     mode?: 'Auto-Detect' | 'Record Only' | null;
     status?: 'LIVE' | 'WAITING' | 'IDLE' | 'STOPPING';
@@ -908,6 +912,8 @@
           kick: 'Kick',
           twitch: 'Twitch',
           youtube: 'Youtube',
+          rumble: 'Rumble',
+          twitter: 'Twitter',
         };
         const platform = platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
 
@@ -954,6 +960,10 @@
       detectedPlatform.value = 'Twitch';
     } else if (lowerVal.includes('kick.com')) {
       detectedPlatform.value = 'Kick';
+    } else if (lowerVal.includes('rumble.com')) {
+      detectedPlatform.value = 'Rumble';
+    } else if (lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) {
+      detectedPlatform.value = 'Twitter';
     } else {
       detectedPlatform.value = null;
     }
@@ -967,6 +977,10 @@
         return '/twitch.svg';
       case 'Kick':
         return '/kick.svg';
+      case 'Rumble':
+        return '/rumble.svg';
+      case 'Twitter':
+        return '/x.svg';
       case 'PumpFun':
         return '/capsule.svg';
       default:
@@ -982,6 +996,10 @@
         return 'monitor-card__avatar-fallback--twitch';
       case 'Kick':
         return 'monitor-card__avatar-fallback--kick';
+      case 'Rumble':
+        return 'monitor-card__avatar-fallback--rumble';
+      case 'Twitter':
+        return 'monitor-card__avatar-fallback--twitter';
       case 'PumpFun':
         return 'monitor-card__avatar-fallback--pumpfun';
       default:
@@ -993,9 +1011,11 @@
     switch (platform) {
       case 'Youtube':
       case 'Twitch':
+      case 'Rumble':
       case 'PumpFun':
         return 'brightness-200';
       case 'Kick':
+      case 'Twitter':
         return 'brightness-0';
       default:
         return '';
@@ -1010,6 +1030,10 @@
         return 'monitor-card__platform--twitch';
       case 'Kick':
         return 'monitor-card__platform--kick';
+      case 'Rumble':
+        return 'monitor-card__platform--rumble';
+      case 'Twitter':
+        return 'monitor-card__platform--twitter';
       case 'PumpFun':
         return 'monitor-card__platform--pumpfun';
       default:
@@ -1025,6 +1049,10 @@
         return 'activity-log__dot--twitch';
       case 'Kick':
         return 'activity-log__dot--kick';
+      case 'Rumble':
+        return 'activity-log__dot--rumble';
+      case 'Twitter':
+        return 'activity-log__dot--twitter';
       case 'PumpFun':
         return 'activity-log__dot--pumpfun';
       default:
@@ -1057,6 +1085,57 @@
 
   async function addStreamer() {
     if (!inputValue.value) return;
+
+    // Handle YouTube
+    if (detectedPlatform.value === 'Youtube') {
+      const channelId = extractYouTubeChannel(inputValue.value);
+      if (channelId) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Youtube',
+          message: `Adding YouTube channel "${channelId}"...`,
+          status: 'loading',
+        });
+
+        await confirmAddStreamer(channelId, channelId, undefined, 'youtube');
+        return;
+      }
+    }
+
+    // Handle Rumble
+    if (detectedPlatform.value === 'Rumble') {
+      const channelName = extractRumbleChannel(inputValue.value);
+      if (channelName) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Rumble',
+          message: `Adding Rumble channel "${channelName}"...`,
+          status: 'loading',
+        });
+
+        await confirmAddStreamer(channelName, channelName, undefined, 'rumble');
+        return;
+      }
+    }
+
+    // Handle Twitter
+    if (detectedPlatform.value === 'Twitter') {
+      const username = extractTwitterUsername(inputValue.value);
+      if (username) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Twitter',
+          message: `Adding Twitter account "${username}"...`,
+          status: 'loading',
+        });
+
+        await confirmAddStreamer(username, username, undefined, 'twitter');
+        return;
+      }
+    }
 
     // Handle Twitch
     if (detectedPlatform.value === 'Twitch') {
@@ -1173,7 +1252,13 @@
     profileImageUrl?: string,
     platform: string = 'pumpfun'
   ) {
-    const platformDisplay = platform === 'kick' ? 'Kick' : platform === 'twitch' ? 'Twitch' : 'PumpFun';
+    const platformDisplay = 
+      platform === 'youtube' ? 'Youtube' : 
+      platform === 'rumble' ? 'Rumble' :
+      platform === 'twitter' ? 'Twitter' :
+      platform === 'kick' ? 'Kick' : 
+      platform === 'twitch' ? 'Twitch' : 
+      'PumpFun';
     try {
       // Check if streamer already exists
       const existingStreamer = streamers.value.find(s => s.mintId === platformId && s.platform === platformDisplay);
