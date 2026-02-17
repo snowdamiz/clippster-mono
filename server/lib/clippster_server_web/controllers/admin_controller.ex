@@ -1834,6 +1834,48 @@ defmodule ClippsterServerWeb.AdminController do
     end
   end
 
+  @doc """
+  Admin endpoint to reset a user's password.
+  Only works for email-based accounts.
+  """
+  def reset_user_password(conn, %{"user_id" => user_id_string, "new_password" => new_password}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.admin_reset_password(user_id, new_password) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Password successfully reset",
+              user: %{
+                id: user.id,
+                email: user.email
+              }
+            })
+
+          {:error, :not_found} ->
+            conn
+            |> put_status(404)
+            |> json(%{success: false, error: "User not found"})
+
+          {:error, :not_email_account} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "Cannot reset password for non-email accounts (wallet/OAuth)"})
+
+          {:error, changeset} ->
+            errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "Invalid password", details: errors})
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
   # ============================================
   # Moderator Action Logs
   # ============================================

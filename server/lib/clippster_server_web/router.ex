@@ -620,6 +620,7 @@ defmodule ClippsterServerWeb.Router do
     # User-level messaging endpoints
     get("/me/conversations", MessagingController, :list_all_conversations)
     get("/me/unread-count", MessagingController, :get_total_unread)
+    get("/messaging/search-users", MessagingController, :search_users)
     post("/messaging/conversations/global-direct", MessagingController, :create_global_direct)
     # Analytics tracking (requires authentication)
     post("/analytics/track", AnalyticsController, :track)
@@ -973,6 +974,7 @@ defmodule ClippsterServerWeb.Router do
     get("/admin/users/:user_id/profile", AdminController, :get_user_profile)
     post("/admin/users/:user_id/promote", AdminController, :promote_user)
     put("/admin/users/:user_id/credits", AdminController, :update_user_credits)
+    post("/admin/users/:user_id/reset-password", AdminController, :reset_user_password)
     
     # Moderator management
     post("/admin/users/:user_id/moderator", AdminController, :promote_to_moderator)

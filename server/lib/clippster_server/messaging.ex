@@ -798,6 +798,92 @@ defmodule ClippsterServer.Messaging do
   end
 
   # ============================================================================
+  # User Search for Messaging
+  # ============================================================================
+
+  @doc """
+  Searches for users that the current user can message.
+  - Admins/moderators can search all users
+  - Organization owners can search all users
+  - Regular users can only search users in their organizations
+  Returns clipper profile display_name if available, otherwise user name/email.
+  """
+  def search_messageable_users(current_user_id, query, opts \\ []) do
+    limit = Keyword.get(opts, :limit, 20)
+    current_user = Repo.get(ClippsterServer.Accounts.User, current_user_id)
+    
+    if is_nil(current_user) do
+      []
+    else
+      base_query = 
+        ClippsterServer.Accounts.User
+        |> where([u], u.id != ^current_user_id)
+        |> where([u], is_nil(u.deactivated_at))
+        |> limit(^limit)
+        # Left join with clipper_profiles to get display_name
+        |> join(:left, [u], cp in ClippsterServer.ClipperProfiles.ClipperProfile,
+          on: cp.user_id == u.id
+        )
+      
+      # Apply search filter if query provided
+      filtered_query = if query && String.trim(query) != "" do
+        search_term = "%#{String.downcase(query)}%"
+        base_query
+        |> where([u, cp], 
+          fragment("LOWER(COALESCE(?, ?)) LIKE ?", cp.display_name, u.name, ^search_term) or
+          fragment("LOWER(?) LIKE ?", u.email, ^search_term)
+        )
+      else
+        base_query
+      end
+      
+      # Apply role-based filtering
+      final_query = cond do
+        # Admins and moderators can see all users
+        current_user.is_admin or current_user.is_moderator ->
+          filtered_query
+        
+        # Organization owners can see all users
+        current_user.account_type == "organization" and not is_nil(current_user.owned_organization_id) ->
+          filtered_query
+        
+        # Regular users can only see users in their organizations
+        true ->
+          # Get all organization IDs where current user is a member
+          org_ids = 
+            ClippsterServer.Organizations.OrganizationMember
+            |> where([m], m.user_id == ^current_user_id)
+            |> select([m], m.organization_id)
+            |> Repo.all()
+          
+          if Enum.empty?(org_ids) do
+            # No organizations, return empty
+            filtered_query |> where([u, cp], false)
+          else
+            # Return users who are members of the same organizations
+            filtered_query
+            |> join(:inner, [u, cp], m in ClippsterServer.Organizations.OrganizationMember,
+              on: m.user_id == u.id
+            )
+            |> where([u, cp, m], m.organization_id in ^org_ids)
+            |> distinct([u, cp], u.id)
+          end
+      end
+      
+      final_query
+      |> select([u, cp], %{
+        id: u.id,
+        name: fragment("COALESCE(?, ?, ?)", cp.display_name, u.name, u.email),
+        email: u.email,
+        avatar_url: fragment("COALESCE(?, ?)", cp.avatar_url, u.avatar_url),
+        account_type: u.account_type,
+        has_clipper_profile: not is_nil(cp.id)
+      })
+      |> Repo.all()
+    end
+  end
+
+  # ============================================================================
   # Support Conversations (Customer Service)
   # ============================================================================
 

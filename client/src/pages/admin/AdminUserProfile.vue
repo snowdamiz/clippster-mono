@@ -121,6 +121,17 @@
                 </div>
               </div>
 
+              <!-- Account Security Group (Email accounts only) -->
+              <div class="action-group" v-if="user.provider === 'email'">
+                <div class="action-group__label">Account Security</div>
+                <div class="action-group__buttons">
+                  <button @click="showResetPasswordDialog = true" class="action-btn action-btn--outline">
+                    <Key :size="18" />
+                    <span>Reset Password</span>
+                  </button>
+                </div>
+              </div>
+
               <!-- Billing Group -->
               <div class="action-group">
                 <div class="action-group__label">Billing & Discounts</div>
@@ -438,6 +449,50 @@
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Reset Password Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showResetPasswordDialog" class="admin-dialog__overlay" @click.self="showResetPasswordDialog = false">
+          <Transition name="dialog" appear>
+            <div v-if="showResetPasswordDialog" class="admin-dialog" role="dialog" aria-modal="true">
+              <div class="admin-dialog__accent"></div>
+              <div class="admin-dialog__header">
+                <button class="admin-dialog__close" @click="showResetPasswordDialog = false" :disabled="resettingPassword"><X :size="18" /></button>
+                <div class="admin-dialog__icon"><Key :size="24" /></div>
+                <h2 class="admin-dialog__title">Reset Password</h2>
+                <p class="admin-dialog__subtitle">Set a new password for this email account</p>
+              </div>
+              <div class="admin-dialog__content">
+                <div class="admin-dialog__field">
+                  <label class="admin-dialog__label">New Password</label>
+                  <input v-model="newPassword" type="password" placeholder="Enter new password (min 8 characters)" class="admin-dialog__input" :disabled="resettingPassword" />
+                </div>
+                <div class="admin-dialog__field">
+                  <label class="admin-dialog__label">Confirm Password</label>
+                  <input v-model="confirmPassword" type="password" placeholder="Confirm new password" class="admin-dialog__input" :disabled="resettingPassword" @keyup.enter="resetPassword" />
+                </div>
+                <div v-if="resetPasswordError" class="admin-dialog__alert admin-dialog__alert--error">
+                  <AlertTriangle :size="16" />
+                  <p class="text-xs sm:text-sm">{{ resetPasswordError }}</p>
+                </div>
+                <div class="admin-dialog__alert admin-dialog__alert--info">
+                  <Info :size="16" />
+                  <p class="text-xs sm:text-sm">The user will be able to log in immediately with the new password. Make sure to communicate the new password securely.</p>
+                </div>
+              </div>
+              <div class="admin-dialog__footer">
+                <button class="admin-dialog__btn admin-dialog__btn--secondary" @click="showResetPasswordDialog = false" :disabled="resettingPassword">Cancel</button>
+                <button class="admin-dialog__btn admin-dialog__btn--primary" @click="resetPassword" :disabled="resettingPassword || !newPassword || !confirmPassword">
+                  <Loader2 v-if="resettingPassword" :size="16" class="admin-dialog__spinner" />
+                  {{ resettingPassword ? 'Resetting...' : 'Reset Password' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -462,6 +517,7 @@ import {
   AlertTriangle,
   Info,
   X,
+  Key,
 } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import PageLayout from '@/components/PageLayout.vue';
@@ -482,11 +538,16 @@ const showRestrictDialog = ref(false);
 const showDiscountDialog = ref(false);
 const showDeleteDialog = ref(false);
 const showModDiscountDialog = ref(false);
+const showResetPasswordDialog = ref(false);
 
 // Form data
 const restrictReason = ref('');
 const discountPercent = ref(50);
 const discountMonths = ref(1);
+const newPassword = ref('');
+const confirmPassword = ref('');
+const resetPasswordError = ref<string | null>(null);
+const resettingPassword = ref(false);
 
 const userId = computed(() => route.params.id as string);
 
@@ -628,6 +689,45 @@ const unrestrictUser = async () => {
     }
   } catch (err: any) {
     toastError(err.response?.data?.error || 'Failed to unrestrict user');
+  }
+};
+
+const resetPassword = async () => {
+  if (!newPassword.value || !confirmPassword.value) {
+    resetPasswordError.value = 'Please enter and confirm the new password';
+    return;
+  }
+
+  if (newPassword.value !== confirmPassword.value) {
+    resetPasswordError.value = 'Passwords do not match';
+    return;
+  }
+
+  if (newPassword.value.length < 8) {
+    resetPasswordError.value = 'Password must be at least 8 characters';
+    return;
+  }
+
+  resettingPassword.value = true;
+  resetPasswordError.value = null;
+
+  try {
+    const response = await api.post(`/admin/users/${userId.value}/reset-password`, {
+      new_password: newPassword.value
+    });
+
+    if (response.data.success) {
+      toast('Password successfully reset!');
+      showResetPasswordDialog.value = false;
+      newPassword.value = '';
+      confirmPassword.value = '';
+    } else {
+      resetPasswordError.value = response.data.error || 'Failed to reset password';
+    }
+  } catch (err: any) {
+    resetPasswordError.value = err.response?.data?.error || 'Failed to reset password';
+  } finally {
+    resettingPassword.value = false;
   }
 };
 

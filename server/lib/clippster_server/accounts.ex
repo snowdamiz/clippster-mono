@@ -288,6 +288,26 @@ defmodule ClippsterServer.Accounts do
     end
   end
 
+  @doc """
+  Admin function to reset a user's password.
+  Only works for email-based accounts.
+  """
+  def admin_reset_password(user_id, new_password) do
+    case get_user(user_id) do
+      nil ->
+        {:error, :not_found}
+
+      user ->
+        if user.provider != "email" do
+          {:error, :not_email_account}
+        else
+          user
+          |> User.password_changeset(%{password: new_password})
+          |> Repo.update()
+        end
+    end
+  end
+
   # ============================================
   # Email Authentication Functions
   # ============================================
