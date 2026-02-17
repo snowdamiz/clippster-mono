@@ -126,7 +126,12 @@ function resolveFfmpegBinary() {
 
   const binName = FFMPEG_BINARIES[process.platform];
   if (binName) {
+    // On macOS .app bundles, the node sidecar runs from Contents/MacOS/ but
+    // this script is in Contents/Resources/pumpfun-service/. FFmpeg is next
+    // to the node binary in Contents/MacOS/, so check process.execPath's dir.
+    const execDir = path.dirname(process.execPath);
     const candidates = [
+      path.join(execDir, binName),
       path.resolve(__dirname, '../binaries', binName),
       path.resolve(__dirname, '..', binName),
       path.resolve(__dirname, binName)
@@ -137,10 +142,11 @@ function resolveFfmpegBinary() {
         return candidate;
       }
     }
-    
+
     if (process.platform === 'darwin' && process.arch === 'arm64') {
        const x86Name = 'ffmpeg-x86_64-apple-darwin';
        const x86Candidates = [
+          path.join(execDir, x86Name),
           path.resolve(__dirname, '../binaries', x86Name),
           path.resolve(__dirname, '..', x86Name)
        ];

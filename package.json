@@ -19,7 +19,8 @@
     "type-check": "cd client && vue-tsc --noEmit",
     "api-demo": "node server.js",
     "api-test": "node kick_api_demo_node.js",
-    "css-to-tailwind": "node scripts/css-to-tailwind.mjs"
+    "css-to-tailwind": "node scripts/css-to-tailwind.mjs",
+    "wipe-db": "node scripts/wipe-db.mjs"
   },
   "devDependencies": {
     "@vue/compiler-sfc": "^3.5.13",

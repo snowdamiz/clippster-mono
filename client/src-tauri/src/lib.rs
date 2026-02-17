@@ -835,6 +835,7 @@ commands::file_utils::generate_video_thumbnail,
             kick::stop_all_kick_recordings,
             kick::get_kick_session_output_dir,
             kick::get_active_kick_recordings,
+            kick::is_kick_recording_active,
 
             // Twitch commands
             twitch::check_twitch_livestream,

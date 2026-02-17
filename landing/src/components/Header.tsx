@@ -7,7 +7,6 @@ import { useDownloadContext } from '../context/DownloadContext'
 const navLinks: { href: string; label: string; isPage?: boolean }[] = [
   { href: '#product', label: 'Product' },
   { href: '#features', label: 'Features' },
-  { href: '#marketplace', label: 'Marketplace' },
   { href: '#how-it-works', label: 'How it Works' },
   { href: '/pricing', label: 'Pricing', isPage: true },
 ]
