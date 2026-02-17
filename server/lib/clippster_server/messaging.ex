@@ -812,7 +812,11 @@ defmodule ClippsterServer.Messaging do
       conversation ->
         # If archived, reopen it
         if conversation.status == "archived" do
-          reopen_support_conversation(conversation.id)
+          case reopen_support_conversation(conversation.id) do
+            {:ok, reopened_conversation} ->
+              {:ok, Repo.preload(reopened_conversation, [participants: :user])}
+            error -> error
+          end
         else
           {:ok, conversation}
         end
@@ -831,6 +835,10 @@ defmodule ClippsterServer.Messaging do
     |> order_by([c], desc: c.inserted_at)
     |> limit(1)
     |> Repo.one()
+    |> case do
+      nil -> nil
+      conversation -> Repo.preload(conversation, [participants: :user])
+    end
   end
 
   @doc """
@@ -870,18 +878,6 @@ defmodule ClippsterServer.Messaging do
 
       Repo.insert_all(ConversationParticipant, participants)
 
-      # Send automated welcome message
-      auto_message_content = get_support_auto_message()
-      
-      %Message{}
-      |> Message.changeset(%{
-        conversation_id: conversation.id,
-        sender_id: nil,
-        content: auto_message_content,
-        message_type: "system"
-      })
-      |> Repo.insert!()
-
       Repo.preload(conversation, [:participants, participants: :user])
     end)
   end
@@ -896,6 +892,7 @@ defmodule ClippsterServer.Messaging do
   @doc """
   Sends a message to a user's support conversation.
   Auto-reopens if conversation was archived.
+  Sends automated welcome message on first user message.
   """
   def send_support_message(user_id, content) do
     case get_user_support_conversation(user_id) do
@@ -908,7 +905,31 @@ defmodule ClippsterServer.Messaging do
           reopen_support_conversation(conversation.id)
         end
         
-        send_message(conversation.id, user_id, content)
+        # Check if this is the first user message (no messages from this user yet)
+        user_message_count = 
+          Message
+          |> where([m], m.conversation_id == ^conversation.id)
+          |> where([m], m.sender_id == ^user_id)
+          |> Repo.aggregate(:count, :id)
+        
+        # Send user's message first
+        result = send_message(conversation.id, user_id, content)
+        
+        # If this was the first message, send automated welcome response
+        if user_message_count == 0 do
+          auto_message_content = get_support_auto_message()
+          
+          %Message{}
+          |> Message.changeset(%{
+            conversation_id: conversation.id,
+            sender_id: nil,
+            content: auto_message_content,
+            message_type: "system"
+          })
+          |> Repo.insert!()
+        end
+        
+        result
     end
   end
 

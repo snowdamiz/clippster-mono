@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.SupportController do
 
   alias ClippsterServer.Messaging
   alias ClippsterServer.ModLogs
+  alias ClippsterServerWeb.MessagingJSON
 
   @doc """
   Gets or creates a support conversation for the current user.
@@ -12,7 +13,7 @@ defmodule ClippsterServerWeb.SupportController do
 
     case Messaging.get_or_create_support_conversation(user_id) do
       {:ok, conversation} ->
-        json(conn, %{conversation: conversation})
+        json(conn, %{conversation: MessagingJSON.conversation(conversation)})
 
       {:error, reason} ->
         conn

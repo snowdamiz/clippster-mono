@@ -86,9 +86,12 @@
   let typingTimeout: number | null = null;
 
   const filteredConversations = computed(() => {
-    if (!searchQuery.value) return messagingStore.conversationList;
+    // Filter out support conversations (they appear as pinned entry)
+    const regularConversations = messagingStore.conversationList.filter((conv) => conv.type !== 'support');
+    
+    if (!searchQuery.value) return regularConversations;
     const query = searchQuery.value.toLowerCase();
-    return messagingStore.conversationList.filter((conv) => {
+    return regularConversations.filter((conv) => {
       const name = getConversationName(conv).toLowerCase();
       return name.includes(query);
     });
@@ -319,6 +322,8 @@
 
   function getConversationName(conversation: Conversation): string {
     if (conversation.name) return conversation.name;
+
+    if (conversation.type === 'support') return 'Clippster Customer Support';
 
     if (conversation.type === 'direct') {
       const otherParticipant = conversation.participants.find((p) => {
@@ -742,7 +747,7 @@
                       <!-- Content -->
                       <div class="messages-conv__content">
                         <div class="messages-conv__header">
-                          <span class="messages-conv__name">Customer Support</span>
+                          <span class="messages-conv__name">Clippster Customer Support</span>
                           <span class="messages-conv__time">{{ formatTime(supportConversation.lastMessageAt) }}</span>
                         </div>
                         <div class="messages-conv__footer">
@@ -815,18 +820,6 @@
                     </div>
                   </div>
 
-                  <!-- Empty State -->
-                  <div v-if="filteredConversations.length === 0" class="messages-panel__empty">
-                    <div class="messages-panel__empty-icon">
-                      <MessageSquare />
-                    </div>
-                    <p class="messages-panel__empty-title">No conversations yet</p>
-                    <p class="messages-panel__empty-text">Start chatting with your team</p>
-                    <button @click="openNewConversationDialog" class="messages-panel__empty-btn">
-                      <Plus class="messages-panel__empty-btn-icon" />
-                      New Conversation
-                    </button>
-                  </div>
                 </template>
               </div>
             </div>
@@ -1669,9 +1662,9 @@
   }
 
   .messages-conv--pinned {
-    border-bottom: 1px solid var(--sidebar-border);
-    margin-bottom: 0.5rem;
-    padding-bottom: 0.5rem;
+    border-bottom: 2px solid rgba(139, 92, 246, 0.3);
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
   }
 
   .messages-conv__avatar-img {
