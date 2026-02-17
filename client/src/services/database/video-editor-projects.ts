@@ -58,11 +58,23 @@ export async function createVideoEditorProject(
   const now = timestamp();
   const userId = getCurrentUserId();
 
-  await db.execute(
-    `INSERT INTO video_editor_projects (id, name, description, thumbnail_path, total_duration, user_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, name, description || null, null, 0, userId, now, now]
-  );
+  // Ensure user_id column exists before trying to insert
+  await ensureUserIdColumn();
+
+  if (userIdColumnExists) {
+    await db.execute(
+      `INSERT INTO video_editor_projects (id, name, description, thumbnail_path, total_duration, user_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, name, description || null, null, 0, userId, now, now]
+    );
+  } else {
+    // Fallback for databases without user_id column
+    await db.execute(
+      `INSERT INTO video_editor_projects (id, name, description, thumbnail_path, total_duration, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, name, description || null, null, 0, now, now]
+    );
+  }
 
   return id;
 }
@@ -79,6 +91,16 @@ export async function getVideoEditorProject(id: string): Promise<VideoEditorProj
 export async function getAllVideoEditorProjects(): Promise<VideoEditorProject[]> {
   const db = await getDatabase();
   const userId = getCurrentUserId();
+
+  // Ensure user_id column exists
+  await ensureUserIdColumn();
+
+  if (!userIdColumnExists) {
+    // Fallback: return all projects if user_id column doesn't exist
+    return await db.select<VideoEditorProject[]>(
+      'SELECT * FROM video_editor_projects ORDER BY updated_at DESC'
+    );
+  }
 
   if (userId === null) {
     return await db.select<VideoEditorProject[]>(
@@ -282,6 +304,37 @@ async function ensureKeyframesDataColumn() {
       console.log('[video-editor-projects] Successfully added keyframes_data column');
     } catch (alterError) {
       console.error('[video-editor-projects] Failed to add keyframes_data column:', alterError);
+    }
+  }
+}
+
+// Check if user_id column exists in video_editor_projects, if not add it
+let userIdColumnExists = false;
+async function ensureUserIdColumn() {
+  if (userIdColumnExists) return;
+
+  const db = await getDatabase();
+  try {
+    // Try to query the column - if it fails, it doesn't exist
+    await db.execute('SELECT user_id FROM video_editor_projects LIMIT 1', []);
+    userIdColumnExists = true;
+  } catch (error) {
+    // Column doesn't exist, add it
+    console.log('[video-editor-projects] Adding user_id column to video_editor_projects');
+    try {
+      await db.execute(
+        'ALTER TABLE video_editor_projects ADD COLUMN user_id INTEGER DEFAULT NULL',
+        []
+      );
+      // Create index for faster lookups
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_video_editor_projects_user_id ON video_editor_projects(user_id)',
+        []
+      );
+      userIdColumnExists = true;
+      console.log('[video-editor-projects] Successfully added user_id column and index');
+    } catch (alterError) {
+      console.error('[video-editor-projects] Failed to add user_id column:', alterError);
     }
   }
 }
