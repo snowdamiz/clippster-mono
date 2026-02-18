@@ -114,13 +114,17 @@ export function usePreviewInteraction({
 		const ch = canvasHeight.value;
 		const result: ElementBounds[] = [];
 
-		// Match scene builder render order: main track first (bottom), overlays last (top).
-		// hitTest iterates in reverse, so overlays (stickers, text) get checked before main video.
+		// Mirror scene-builder's orderedTracksBottomToTop:
+		//   orderedTracksTopToBottom = [non-main..., main]
+		//   orderedTracksBottomToTop = [main, ...non-main reversed]
+		// Main is rendered first (bottom), non-main tracks rendered on top in reverse order.
+		// hitTest iterates result in reverse, so the last entry (topmost rendered) is checked first.
 		const allTracks = tracks.value;
 		const visibleTracks = allTracks.filter((t) => !("hidden" in t && t.hidden));
+		const nonMainTracks = visibleTracks.filter((t) => !isMainTrack(t));
 		const orderedTracks = [
 			...visibleTracks.filter((t) => isMainTrack(t)),
-			...visibleTracks.filter((t) => !isMainTrack(t)),
+			...nonMainTracks.slice().reverse(),
 		];
 
 		for (const track of orderedTracks) {
@@ -366,6 +370,10 @@ export function usePreviewInteraction({
 
 	// --- Interaction handlers ---
 
+	function isTrackLocked(trackId: string): boolean {
+		return editor.timeline.getTracks().find((t) => t.id === trackId)?.locked === true;
+	}
+
 	function handleCanvasMouseDown(event: MouseEvent) {
 		const pos = screenToCanvas(event.clientX, event.clientY);
 		if (!pos) return;
@@ -378,6 +386,8 @@ export function usePreviewInteraction({
 			if (!alreadySelected) {
 				selectElement({ trackId: hit.trackId, elementId: hit.elementId });
 			}
+			// Prevent drag on locked tracks (still allow selection)
+			if (isTrackLocked(hit.trackId)) return;
 			startDrag(event, hit, "move");
 		} else {
 			clearElementSelection();
@@ -386,6 +396,8 @@ export function usePreviewInteraction({
 
 	function handleHandleMouseDown(event: MouseEvent, handle: HandlePosition, bounds: ElementBounds) {
 		event.stopPropagation();
+		// Prevent resize/rotate on locked tracks
+		if (isTrackLocked(bounds.trackId)) return;
 		if (handle === "rotate") {
 			startDrag(event, bounds, "rotate");
 		} else {

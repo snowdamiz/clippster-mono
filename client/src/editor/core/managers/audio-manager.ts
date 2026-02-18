@@ -432,6 +432,10 @@ export class AudioManager {
 	}
 
 	private disposeSinks(): void {
+		// Bump session ID first so any in-flight runClipIterator bails immediately
+		// before it can call .next() on a disposed Input (prevents InputDisposedError)
+		this.playbackSessionId++;
+
 		for (const iterator of this.clipIterators.values()) {
 			void iterator.return();
 		}

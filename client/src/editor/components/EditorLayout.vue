@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onUnmounted } from "vue";
 import { useEditorActions } from "../composables/actions/useEditorActions";
 import { useKeybindingsListener } from "../composables/useKeybindings";
 import EditorHeader from "./EditorHeader.vue";
@@ -59,6 +59,42 @@ const tabConfig: Record<Tab, { icon: any; label: string }> = {
 };
 
 const activeTab = ref<Tab>("media");
+
+// Timeline resize
+const TIMELINE_MIN_HEIGHT = 160;
+const TIMELINE_MAX_HEIGHT = 600;
+const timelineHeight = ref(330);
+
+function startTimelineResize(e: MouseEvent) {
+	e.preventDefault();
+	const startY = e.clientY;
+	const startHeight = timelineHeight.value;
+
+	function onMove(ev: MouseEvent) {
+		const delta = startY - ev.clientY;
+		timelineHeight.value = Math.min(
+			TIMELINE_MAX_HEIGHT,
+			Math.max(TIMELINE_MIN_HEIGHT, startHeight + delta),
+		);
+	}
+
+	function onUp() {
+		document.removeEventListener("mousemove", onMove);
+		document.removeEventListener("mouseup", onUp);
+		document.body.style.cursor = "";
+		document.body.style.userSelect = "";
+	}
+
+	document.body.style.cursor = "row-resize";
+	document.body.style.userSelect = "none";
+	document.addEventListener("mousemove", onMove);
+	document.addEventListener("mouseup", onUp);
+}
+
+onUnmounted(() => {
+	document.body.style.cursor = "";
+	document.body.style.userSelect = "";
+});
 </script>
 
 <template>
@@ -103,8 +139,21 @@ const activeTab = ref<Tab>("media");
 			</div>
 		</div>
 
+		<!-- Timeline resize handle -->
+		<div
+			class="group relative h-[5px] shrink-0 cursor-row-resize bg-transparent hover:bg-blue-500/30 active:bg-blue-500/50 transition-colors"
+			@mousedown="startTimelineResize"
+		>
+			<div class="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-center">
+				<div class="h-[3px] w-10 rounded-full bg-white/20 group-hover:bg-blue-400/60 transition-colors" />
+			</div>
+		</div>
+
 		<!-- Bottom: Timeline -->
-		<div class="h-[330px] shrink-0 border-t border-white/10 overflow-hidden bg-[#18181b]">
+		<div
+			class="shrink-0 border-t border-white/10 overflow-hidden bg-[#18181b]"
+			:style="{ height: `${timelineHeight}px` }"
+		>
 			<Timeline />
 		</div>
 	</div>
