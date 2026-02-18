@@ -1766,8 +1766,8 @@
           showError('Upload Failed', response.error || 'Failed to upload watermark');
         }
       } else {
-        // Local mode
-        const result = await uploadWatermark();
+        // Local mode - pass the file to avoid double file dialog
+        const result = await uploadWatermark(file);
         if (result.success && result.watermarkId) {
           await loadLocalAssets();
           formData.value.watermark_id = result.watermarkId;

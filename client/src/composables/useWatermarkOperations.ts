@@ -31,26 +31,43 @@ export function useWatermarkOperations() {
     }
   }
 
-  async function uploadWatermark() {
+  async function uploadWatermark(file?: File) {
     if (uploading.value) return { success: false };
 
     try {
       uploading.value = true;
 
-      // Open native file dialog for image selection
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const selected = await open({
-        multiple: false,
-        filters: [
-          {
-            name: 'Images',
-            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
-          },
-        ],
-      });
+      let sourcePath: string;
 
-      if (!selected) return { success: false, cancelled: true }; // User cancelled
-      const sourcePath = selected;
+      if (file) {
+        // Use the provided File object (web file input)
+        // Write to a temporary location first
+        const { writeFile } = await import('@tauri-apps/plugin-fs');
+        const { tempDir } = await import('@tauri-apps/api/path');
+        
+        const tempDirPath = await tempDir();
+        const tempFilePath = `${tempDirPath}watermark_upload_${Date.now()}_${file.name}`;
+        
+        // Read file as array buffer and write to temp location
+        const arrayBuffer = await file.arrayBuffer();
+        await writeFile(tempFilePath, new Uint8Array(arrayBuffer));
+        sourcePath = tempFilePath;
+      } else {
+        // Open native file dialog for image selection
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const selected = await open({
+          multiple: false,
+          filters: [
+            {
+              name: 'Images',
+              extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+            },
+          ],
+        });
+
+        if (!selected) return { success: false, cancelled: true }; // User cancelled
+        sourcePath = selected;
+      }
       const originalFilename = sourcePath.split(/[\\\/]/).pop() || 'Unknown';
 
       console.log('Starting watermark upload:', { sourcePath, originalFilename });
