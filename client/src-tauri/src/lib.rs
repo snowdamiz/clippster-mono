@@ -703,6 +703,7 @@ pub fn run() {
                 )
                 .build(),
         )
+        .plugin(tauri_plugin_localhost::Builder::new(1420).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -721,8 +722,27 @@ pub fn run() {
                 video_server::start_video_server_impl().await;
             });
 
-            // Get the main window (defined in tauri.conf.json)
-            let window = app.get_webview_window("main").unwrap();
+            // Create main window programmatically.
+            // In production, use localhost:1420 (served by tauri-plugin-localhost)
+            // so the origin is http://localhost:1420 (loopback), which allows
+            // fetches to the video server on localhost:48276 (loopback→loopback).
+            // Without this, the origin would be http://tauri.localhost which
+            // Chrome's Private Network Access policy blocks from reaching loopback.
+            let url = if cfg!(dev) {
+                WebviewUrl::App("/".into())
+            } else {
+                WebviewUrl::External("http://localhost:1420".parse().unwrap())
+            };
+
+            let window = WebviewWindowBuilder::new(app, "main", url)
+                .title("Clippster")
+                .inner_size(1400.0, 850.0)
+                .decorations(false)
+                .visible(false)
+                .transparent(true)
+                .drag_and_drop(false)
+                .build()
+                .expect("Failed to create main window");
 
             // Enable devtools in production for debugging
             #[cfg(feature = "devtools")]
