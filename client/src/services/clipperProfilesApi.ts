@@ -359,10 +359,7 @@ export async function uploadPortfolioClip(
 
     const response = await api.post<UploadPortfolioClipResponse>(
       '/user/clipper-profile/portfolio-clips/upload',
-      formData,
-      {
-        headers: { 'Content-Type': undefined },
-      }
+      formData
     );
     return response.data;
   } catch (error: any) {
@@ -415,10 +412,7 @@ export async function uploadClipperAvatar(file: File): Promise<UploadAvatarRespo
 
     const response = await api.post<UploadAvatarResponse>(
       '/user/clipper-profile/avatar',
-      formData,
-      {
-        headers: { 'Content-Type': undefined },
-      }
+      formData
     );
     return response.data;
   } catch (error: any) {

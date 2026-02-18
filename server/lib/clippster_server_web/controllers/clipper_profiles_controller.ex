@@ -161,22 +161,30 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
 
     link_params = Map.take(params, ["platform", "url", "username", "display_order"])
 
-    with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
-         {:ok, link} <- ClipperProfiles.add_channel_link(profile.id, link_params) do
-      conn
-      |> put_status(:created)
-      |> json(%{success: true, channel_link: serialize_channel_link(link)})
-    else
-      {:error, %Ecto.Changeset{} = changeset} ->
+    try do
+      with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
+           {:ok, link} <- ClipperProfiles.add_channel_link(profile.id, link_params) do
         conn
-        |> put_status(:unprocessable_entity)
-        |> json(%{success: false, error: format_changeset_errors(changeset)})
+        |> put_status(:created)
+        |> json(%{success: true, channel_link: serialize_channel_link(link)})
+      else
+        {:error, %Ecto.Changeset{} = changeset} ->
+          conn
+          |> put_status(:unprocessable_entity)
+          |> json(%{success: false, error: format_changeset_errors(changeset)})
 
-      {:error, reason} ->
-        Logger.error("[ClipperProfiles] create_channel_link error: #{inspect(reason)}")
+        {:error, reason} ->
+          Logger.error("[ClipperProfiles] create_channel_link error: #{inspect(reason)}")
+          conn
+          |> put_status(:unprocessable_entity)
+          |> json(%{success: false, error: "Failed to save channel link"})
+      end
+    rescue
+      e ->
+        Logger.error("[ClipperProfiles] create_channel_link exception: #{inspect(e)}\n#{inspect(__STACKTRACE__)}")
         conn
         |> put_status(:unprocessable_entity)
-        |> json(%{success: false, error: "Failed to save channel link"})
+        |> json(%{success: false, error: "An unexpected error occurred"})
     end
   end
 
