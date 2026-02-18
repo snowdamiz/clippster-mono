@@ -1044,6 +1044,9 @@ defmodule ClippsterServerWeb.Router do
     patch("/admin/promos/:id", AdminController, :update_promo)
     post("/admin/promos/:id/toggle", AdminController, :toggle_promo_active)
 
+    # Admin leaderboard management
+    post("/admin/leaderboard/refresh", AdminController, :refresh_leaderboard)
+
     # Admin waitlist management
     get("/admin/waitlist", WaitlistController, :index)
 

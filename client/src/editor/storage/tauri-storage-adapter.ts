@@ -539,66 +539,22 @@ class TauriStorageService {
 
 	/**
 	 * Create a File object from a filesystem path.
-	 * Uses the Rust video server which has no scope restrictions.
-	 * For large files (>50MB), the server requires Range requests,
-	 * so we use HEAD first to determine size and avoid 416 errors.
+	 * Uses Tauri's asset protocol (convertFileSrc → https://asset.localhost/...)
+	 * which is same-origin with tauri.localhost and not subject to Chromium's
+	 * Private Network Access policy that blocks http://localhost fetches.
 	 */
 	private async fileFromPath(filePath: string, name: string): Promise<File> {
-		const { invoke } = await import("@tauri-apps/api/core");
-		let videoServerPort: number;
-		try {
-			videoServerPort = await invoke<number>("get_video_server_port");
-		} catch {
-			videoServerPort = 8642;
-		}
-
-		const encodedPath = btoa(filePath);
-		const serverUrl = `http://localhost:${videoServerPort}/video/${encodedPath}`;
-
-		// Use HEAD to determine file size before fetching
-		const headResp = await fetch(serverUrl, { method: "HEAD" });
-		if (!headResp.ok) {
-			throw new Error(`Failed to HEAD file from video server (${headResp.status}): ${filePath}`);
-		}
-		const fileSize = parseInt(headResp.headers.get("Content-Length") || "0", 10);
-		if (fileSize === 0) {
-			throw new Error(`Cannot determine file size for: ${filePath}`);
-		}
-
-		const MAX_SIMPLE_SIZE = 50 * 1024 * 1024; // 50MB
+		const { convertFileSrc } = await import("@tauri-apps/api/core");
 		const mimeType = this.mimeFromPath(filePath);
 
-		// Small files: simple fetch
-		if (fileSize <= MAX_SIMPLE_SIZE) {
-			const response = await fetch(serverUrl);
-			if (!response.ok) {
-				throw new Error(`Failed to load file from video server (${response.status}): ${filePath}`);
-			}
-			const blob = await response.blob();
-			return new File([blob], name, {
-				type: blob.type || mimeType,
-				lastModified: Date.now(),
-			});
+		const assetUrl = convertFileSrc(filePath);
+		const response = await fetch(assetUrl);
+		if (!response.ok) {
+			throw new Error(`Failed to load file via asset protocol (${response.status}): ${filePath}`);
 		}
-
-		// Large files: fetch in chunks via Range requests
-		const CHUNK_SIZE = MAX_SIMPLE_SIZE;
-		const chunks: Blob[] = [];
-
-		for (let start = 0; start < fileSize; start += CHUNK_SIZE) {
-			const end = Math.min(start + CHUNK_SIZE - 1, fileSize - 1);
-			const chunkResp = await fetch(serverUrl, {
-				headers: { Range: `bytes=${start}-${end}` },
-			});
-			if (!chunkResp.ok && chunkResp.status !== 206) {
-				throw new Error(`Failed to fetch chunk ${start}-${end} (${chunkResp.status}): ${filePath}`);
-			}
-			chunks.push(await chunkResp.blob());
-		}
-
-		const fullBlob = new Blob(chunks, { type: mimeType });
-		return new File([fullBlob], name, {
-			type: mimeType,
+		const blob = await response.blob();
+		return new File([blob], name, {
+			type: blob.type || mimeType,
 			lastModified: Date.now(),
 		});
 	}

@@ -20,7 +20,6 @@
     Check,
     Pencil,
     Trash2,
-    Loader2,
     Megaphone,
     MoreVertical,
     UserMinus,
@@ -83,7 +82,6 @@
 
   const supportConversation = ref<Conversation | null>(null);
   const isLoadingSupportConversation = ref(false);
-  const isStartingSupport = ref(false);
 
   let typingTimeout: number | null = null;
 
@@ -605,22 +603,12 @@
   }
 
   async function selectSupportConversation() {
-    if (!supportConversation.value) {
-      await loadSupportConversation();
-    }
-    if (supportConversation.value) {
-      await messagingStore.setActiveConversation(supportConversation.value.id);
-    }
-  }
-
-  async function openSupportChat() {
-    isStartingSupport.value = true;
     try {
-      await selectSupportConversation();
+      const conversation = await messagingStore.startSupportConversation();
+      supportConversation.value = conversation;
+      await messagingStore.setActiveConversation(conversation.id);
     } catch (error) {
-      console.error('Failed to open support chat:', error);
-    } finally {
-      isStartingSupport.value = false;
+      console.error('Failed to open support conversation:', error);
     }
   }
 
@@ -820,18 +808,6 @@
                 </template>
               </div>
 
-              <!-- Contact Support Footer -->
-              <div class="messages-panel__footer">
-                <button
-                  @click="openSupportChat"
-                  :disabled="isStartingSupport"
-                  class="messages-panel__support-btn"
-                >
-                  <Loader2 v-if="isStartingSupport" class="messages-panel__support-icon messages-panel__support-icon--spin" />
-                  <Headset v-else class="messages-panel__support-icon" />
-                  <span>Contact Support</span>
-                </button>
-              </div>
             </div>
           </div>
 
