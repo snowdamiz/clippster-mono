@@ -4,11 +4,23 @@
   "description": "Permissions for the main application window",
   "windows": ["main"],
   "permissions": [
+    "core:default",
     "core:window:default",
     "core:window:allow-unminimize",
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "core:window:allow-request-user-attention",
-    "global-shortcut:default"
+    "core:window:allow-is-maximized",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:path:default",
+    "core:path:allow-resolve-directory",
+    "global-shortcut:default",
+    "sql:default",
+    "sql:allow-load",
+    "sql:allow-execute",
+    "sql:allow-select",
+    "updater:default",
+    "updater:allow-check"
   ]
 }
