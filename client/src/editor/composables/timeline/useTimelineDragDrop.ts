@@ -20,6 +20,7 @@ import { getDragData, hasDragData } from "../../lib/drag-data";
 import type { TrackType, DropTarget, ElementType } from "../../types/timeline";
 import type { MediaDragData, StickerDragData, EffectDragData, TransitionDragData } from "../../types/drag";
 import { generateUUID } from "../../utils/id";
+import { SetTransitionCommand } from "../../lib/commands/scene";
 
 interface UseTimelineDragDropProps {
 	containerRef: Ref<HTMLDivElement | null>;
@@ -260,27 +261,16 @@ export function useTimelineDragDrop({
 		const junction = findNearestJunction(timeAtCursor);
 		if (!junction) return;
 
-		let scene;
-		try { scene = editor.scenes.getActiveScene(); } catch { return; }
-		if (!scene) return;
-
-		const currentTransitions = [...(scene.transitions ?? [])];
-		// Remove existing transition for this element
-		const filtered = currentTransitions.filter((t) => t.targetElementId !== junction.rightElementId);
-		// Add new transition
-		filtered.push({
+		const transition = {
 			id: generateUUID(),
 			type: dragData.transitionType as any,
 			duration: dragData.duration,
 			targetElementId: junction.rightElementId,
 			trackId: junction.trackId,
-		});
+		};
 
-		const updatedScene = { ...scene, transitions: filtered };
-		const scenes = editor.scenes.getScenes().map((s) =>
-			s.id === scene.id ? updatedScene : s,
-		);
-		editor.scenes.setScenes({ scenes, activeSceneId: scene.id });
+		const command = new SetTransitionCommand(transition, junction.rightElementId);
+		editor.command.execute({ command });
 	}
 
 	/**

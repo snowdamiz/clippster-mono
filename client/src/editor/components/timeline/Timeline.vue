@@ -45,6 +45,7 @@ import {
 	Plus,
 	Trash2,
 	ImageIcon,
+	ArrowRightLeft,
 } from "lucide-vue-next";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -249,6 +250,35 @@ const effectDropTargetId = computed(() => {
 const effectDropTargetTrackId = computed(() => {
 	if (!isDragOver.value || !dropTarget.value?.targetTrackId) return null;
 	return dropTarget.value.targetTrackId;
+});
+
+/**
+ * Existing transitions rendered as badges on the timeline between segments.
+ * Each entry: { trackId, xPx, label, transitionId, targetElementId }
+ */
+const existingTransitionBadges = computed(() => {
+	void version.value;
+	let scene;
+	try { scene = editor.scenes.getActiveSceneOrNull(); } catch { return []; }
+	if (!scene?.transitions?.length) return [];
+
+	const result: { trackId: string; xPx: number; label: string; targetElementId: string }[] = [];
+	const pps = TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
+
+	for (const transition of scene.transitions) {
+		const track = tracks.value.find((t) => t.id === transition.trackId);
+		if (!track) continue;
+		const targetEl = track.elements.find((e) => e.id === transition.targetElementId);
+		if (!targetEl) continue;
+		// Badge sits at the junction (start of the right element)
+		result.push({
+			trackId: transition.trackId,
+			xPx: targetEl.startTime * pps,
+			label: transition.type,
+			targetElementId: transition.targetElementId,
+		});
+	}
+	return result;
 });
 
 /** Pixel position of a transition junction drop indicator */
@@ -634,6 +664,36 @@ function closeKeyframePopup() {
 										@track-click="handleTracksClick"
 										@keyframe-click="handleKeyframeClick"
 									/>
+									<!-- Existing transition badges -->
+									<template v-for="badge in existingTransitionBadges" :key="badge.targetElementId">
+										<div
+											v-if="badge.trackId === track.id"
+											class="pointer-events-none absolute top-0 z-40"
+											:style="{
+												left: `${badge.xPx - 1}px`,
+												width: '2px',
+												height: '100%',
+											}"
+										>
+											<div class="h-full w-[2px] bg-[#E040FB]/70" />
+										</div>
+										<button
+											v-if="badge.trackId === track.id"
+											class="absolute z-50 flex items-center gap-0.5 rounded-full border border-[#E040FB]/50 bg-[#1a0a1e] px-1.5 py-0.5 text-[9px] font-medium text-[#E040FB] shadow-md hover:bg-[#E040FB]/20 transition-colors"
+											:style="{
+												left: `${badge.xPx}px`,
+												top: '50%',
+												transform: 'translate(-50%, -50%)',
+												pointerEvents: 'auto',
+											}"
+											:title="`Transition: ${badge.label} — click to edit`"
+											@click.stop="handleElementClick({ event: $event, element: { id: badge.targetElementId } as any, track })"
+										>
+											<ArrowRightLeft class="size-2.5" />
+											<span class="max-w-[40px] truncate capitalize">{{ badge.label }}</span>
+										</button>
+									</template>
+
 									<!-- Transition junction drop indicator -->
 									<div
 										v-if="transitionJunctionPx && transitionJunctionPx.trackId === track.id"
