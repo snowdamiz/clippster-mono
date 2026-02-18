@@ -6,7 +6,7 @@
  * with media assets and timeline elements.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { EditorCore } from "../core";
 import { storageService } from "../storage/service";
 import type { TProject, TProjectSettings } from "../types/project";
@@ -236,20 +236,12 @@ async function buildMediaAssetsFromSources(
 	sources: VideoEditorSource[],
 ): Promise<MediaAsset[]> {
 	const assets: MediaAsset[] = [];
-	let videoServerPort: number;
-
-	try {
-		videoServerPort = await invoke<number>("get_video_server_port");
-	} catch {
-		videoServerPort = 8642;
-	}
 
 	for (const source of sources) {
 		if (!source.source_path) continue;
 
 		const mediaType = inferMediaType(source.source_path);
-		const encodedPath = btoa(source.source_path);
-		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
+		const url = convertFileSrc(source.source_path);
 
 		const file = new File([], source.source_name || "source", {
 			type: mediaType === "video" ? "video/mp4" : mediaType === "audio" ? "audio/mpeg" : "image/jpeg",
