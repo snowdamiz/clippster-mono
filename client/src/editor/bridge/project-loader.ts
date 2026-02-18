@@ -6,7 +6,7 @@
  * with media assets and timeline elements.
  */
 
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { EditorCore } from "../core";
 import { storageService } from "../storage/service";
 import type { TProject, TProjectSettings } from "../types/project";
@@ -236,18 +236,24 @@ async function buildMediaAssetsFromSources(
 	sources: VideoEditorSource[],
 ): Promise<MediaAsset[]> {
 	const assets: MediaAsset[] = [];
+	let videoServerPort: number;
+
+	try {
+		videoServerPort = await invoke<number>("get_video_server_port");
+	} catch {
+		videoServerPort = 8642;
+	}
 
 	for (const source of sources) {
 		if (!source.source_path) continue;
 
 		const mediaType = inferMediaType(source.source_path);
-		const url = convertFileSrc(source.source_path);
+		const encodedPath = btoa(source.source_path);
+		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
 		const file = new File([], source.source_name || "source", {
 			type: mediaType === "video" ? "video/mp4" : mediaType === "audio" ? "audio/mpeg" : "image/jpeg",
 		});
-
-		const dims = await probeMediaDimensions(url, mediaType);
 
 		assets.push({
 			id: source.id,
@@ -255,8 +261,8 @@ async function buildMediaAssetsFromSources(
 			type: mediaType,
 			file,
 			url,
-			width: dims?.width,
-			height: dims?.height,
+			width: undefined,
+			height: undefined,
 			duration: source.source_duration ?? undefined,
 			fps: undefined,
 			thumbnailUrl: source.source_thumbnail ?? undefined,
