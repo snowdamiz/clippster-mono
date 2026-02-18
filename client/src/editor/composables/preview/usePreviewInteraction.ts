@@ -183,22 +183,25 @@ export function usePreviewInteraction({
 		let height: number;
 
 		if (element.type === "video" || element.type === "image") {
-			// Account for crop: when cropped, the visible region is contain-fitted
+			// Get source dimensions from media asset — needed for both cropped and uncropped paths
+			const mediaAsset = editor.media.getAssets().find((a) => a.id === (element as any).mediaId);
+			const srcW = mediaAsset?.width ?? cw;
+			const srcH = mediaAsset?.height ?? ch;
+
 			const crop = (element as any).crop;
 			const hasCrop = crop && (crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0);
 			if (hasCrop) {
-				// Get source dimensions from media asset
-				const mediaAsset = editor.media.getAssets().find((a) => a.id === (element as any).mediaId);
-				const srcW = mediaAsset?.width ?? cw;
-				const srcH = mediaAsset?.height ?? ch;
+				// Cropped: contain-fit the cropped region into the canvas
 				const croppedW = srcW * (1 - crop.left - crop.right);
 				const croppedH = srcH * (1 - crop.top - crop.bottom);
 				const containScale = Math.min(cw / croppedW, ch / croppedH);
 				width = croppedW * containScale * transform.scale;
 				height = croppedH * containScale * transform.scale;
 			} else {
-				width = cw * transform.scale;
-				height = ch * transform.scale;
+				// No crop: contain-fit the full media into the canvas (matches VideoNode.render exactly)
+				const containScale = Math.min(cw / srcW, ch / srcH);
+				width = srcW * containScale * transform.scale;
+				height = srcH * containScale * transform.scale;
 			}
 		} else if (element.type === "text") {
 			const textEl = element as TextElement;

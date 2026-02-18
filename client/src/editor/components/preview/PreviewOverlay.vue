@@ -39,14 +39,17 @@ const { isCropMode, enterCropMode } = useEditorUIState();
 
 const overlayRef = ref<HTMLDivElement | null>(null);
 
-// Canvas center and size in screen (overlay) coordinates for guide lines
+// Canvas center and size in screen (overlay) coordinates for guide lines.
+// Reads canvasWidth/canvasHeight props directly so Vue recomputes on aspect ratio change.
 const canvasScreenCenter = computed(() => {
 	const canvas = props.canvasRef;
 	if (!canvas) return { x: 0, y: 0 };
 	const rect = canvas.getBoundingClientRect();
+	const scaleX = rect.width / props.canvasWidth;
+	const scaleY = rect.height / props.canvasHeight;
 	return {
-		x: rect.width / 2,
-		y: rect.height / 2,
+		x: (props.canvasWidth / 2) * scaleX,
+		y: (props.canvasHeight / 2) * scaleY,
 	};
 });
 
@@ -54,7 +57,12 @@ const canvasScreenSize = computed(() => {
 	const canvas = props.canvasRef;
 	if (!canvas) return { w: 0, h: 0 };
 	const rect = canvas.getBoundingClientRect();
-	return { w: rect.width, h: rect.height };
+	const scaleX = rect.width / props.canvasWidth;
+	const scaleY = rect.height / props.canvasHeight;
+	return {
+		w: props.canvasWidth * scaleX,
+		h: props.canvasHeight * scaleY,
+	};
 });
 
 const HANDLE_SIZE = 10;
