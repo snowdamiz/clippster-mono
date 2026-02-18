@@ -638,6 +638,54 @@ defmodule ClippsterServer.Social do
   alias ClippsterServer.Social.ExternalPostSubmission
 
   @doc """
+  Creates a personal external post submission (no org required).
+  Used by individual clippers to track posts on their own profile.
+  """
+  def create_personal_external_post_submission(attrs, %User{} = user) do
+    %ExternalPostSubmission{}
+    |> ExternalPostSubmission.create_personal_changeset(
+      attrs
+      |> Map.put(:submitted_by_user_id, user.id)
+    )
+    |> Repo.insert()
+  end
+
+  @doc """
+  Lists personal external post submissions for a user (no org filter).
+  """
+  def list_personal_external_post_submissions(user_id, opts \\ []) do
+    status = Keyword.get(opts, :status)
+    creator_profile_id = Keyword.get(opts, :creator_profile_id)
+    limit = Keyword.get(opts, :limit, 50)
+    offset = Keyword.get(opts, :offset, 0)
+
+    query =
+      from e in ExternalPostSubmission,
+        where: e.submitted_by_user_id == ^user_id,
+        order_by: [desc: e.inserted_at],
+        limit: ^limit,
+        offset: ^offset,
+        preload: [:submitted_by_user, :organization_creator_profile, :campaign]
+
+    query = if status, do: where(query, [e], e.status == ^status), else: query
+    query = if creator_profile_id, do: where(query, [e], e.organization_creator_profile_id == ^creator_profile_id), else: query
+
+    posts = Repo.all(query)
+
+    count_query =
+      from e in ExternalPostSubmission,
+        where: e.submitted_by_user_id == ^user_id,
+        select: count(e.id)
+
+    count_query = if status, do: where(count_query, [e], e.status == ^status), else: count_query
+    count_query = if creator_profile_id, do: where(count_query, [e], e.organization_creator_profile_id == ^creator_profile_id), else: count_query
+
+    total = Repo.one(count_query)
+
+    {:ok, %{posts: posts, total: total}}
+  end
+
+  @doc """
   Creates an external post submission (link submission).
   """
   def create_external_post_submission(organization_id, attrs, %User{} = user) do

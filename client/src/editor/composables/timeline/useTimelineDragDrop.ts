@@ -51,7 +51,7 @@ export function useTimelineDragDrop({
 	});
 	const activeProject = computed(() => {
 		void version.value;
-		return editor.project.getActive();
+		return editor.project.getActiveOrNull();
 	});
 
 	function getSnappedTime(time: number): number {

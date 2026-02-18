@@ -71,6 +71,7 @@ export interface TProjectSettings {
 	originalCanvasSize?: TCanvasSize | null;
 	background: TBackground;
 	brandingConfig?: BrandingConfig;
+	sourceProjectId?: string | null;
 }
 
 export interface TTimelineViewState {

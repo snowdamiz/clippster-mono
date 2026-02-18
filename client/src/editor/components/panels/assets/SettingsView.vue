@@ -8,7 +8,7 @@ const { editor, version } = useEditor();
 
 const activeProject = computed(() => {
 	void version.value;
-	return editor.project.getActive();
+	return editor.project.getActiveOrNull();
 });
 
 const activeSettingsTab = ref<"project-info" | "background">("project-info");

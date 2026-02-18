@@ -365,7 +365,7 @@ export function useChunkedClipDetection() {
             checkCancelled();
 
             const response = await api.post('/clips/transcribe', formData, {
-              headers: { 'Content-Type': 'multipart/form-data' },
+              headers: { 'Content-Type': undefined },
               signal: abortController?.signal,
             });
 
@@ -496,7 +496,7 @@ export function useChunkedClipDetection() {
       // Use extended timeout (20 minutes) since AI processing each chunk can take 1-2 min
       const response = await api.post('/clips/detect-chunked', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Content-Type': undefined,
         },
         signal: abortController?.signal,
         timeout: 1200000, // 20 minutes - chunked AI detection is very long-running
@@ -685,7 +685,7 @@ export function useChunkedClipDetection() {
 
       const response = await api.post('/clips/detect', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Content-Type': undefined,
         },
         signal: abortController?.signal,
         timeout: 900000, // 15 minutes for AI detection
@@ -790,7 +790,7 @@ export function useChunkedClipDetection() {
 
       const response = await api.post('/clips/detect', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Content-Type': undefined,
         },
         signal: abortController?.signal,
         timeout: 900000, // 15 minutes for AI detection
@@ -892,7 +892,7 @@ export function useChunkedClipDetection() {
 
       const response = await api.post('/clips/detect', formData, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Content-Type': undefined,
         },
         signal: abortController?.signal,
         timeout: 900000, // 15 minutes for AI detection

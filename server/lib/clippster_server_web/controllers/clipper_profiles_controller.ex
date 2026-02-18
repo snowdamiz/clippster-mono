@@ -155,18 +155,28 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   Add a channel link.
   """
   def create_channel_link(conn, params) do
+    require Logger
     user = conn.assigns.current_user
+    Logger.debug("[ClipperProfiles] create_channel_link params: #{inspect(params)}")
+
+    link_params = Map.take(params, ["platform", "url", "username", "display_order"])
 
     with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
-         {:ok, link} <- ClipperProfiles.add_channel_link(profile.id, params) do
+         {:ok, link} <- ClipperProfiles.add_channel_link(profile.id, link_params) do
       conn
       |> put_status(:created)
       |> json(%{success: true, channel_link: serialize_channel_link(link)})
     else
-      {:error, changeset} ->
+      {:error, %Ecto.Changeset{} = changeset} ->
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{success: false, error: format_changeset_errors(changeset)})
+
+      {:error, reason} ->
+        Logger.error("[ClipperProfiles] create_channel_link error: #{inspect(reason)}")
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{success: false, error: "Failed to save channel link"})
     end
   end
 
@@ -371,10 +381,12 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     end
   end
 
-  def upload_portfolio_clip(conn, _params) do
+  def upload_portfolio_clip(conn, params) do
+    require Logger
+    Logger.error("[ClipperProfiles] upload_portfolio_clip fallback - params keys: #{inspect(Map.keys(params))}")
     conn
     |> put_status(:bad_request)
-    |> json(%{success: false, error: "No file provided"})
+    |> json(%{success: false, error: "No file provided. Expected multipart/form-data with 'file' field."})
   end
 
   defp generate_portfolio_clip_key(user_id, filename) do
@@ -451,9 +463,23 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   """
   def create_endorsement(conn, %{"slug" => slug} = params) do
     user = conn.assigns.current_user
-    organization_id = params["organization_id"]
+
+    # Use provided organization_id, or fall back to the user's own organization
+    organization_id =
+      case params["organization_id"] do
+        nil -> user.owned_organization_id
+        0 -> user.owned_organization_id
+        id when is_integer(id) and id > 0 -> id
+        id when is_binary(id) ->
+          case Integer.parse(id) do
+            {n, ""} when n > 0 -> n
+            _ -> user.owned_organization_id
+          end
+        _ -> user.owned_organization_id
+      end
 
     with %ClipperProfile{} = profile <- ClipperProfiles.get_profile_by_slug(slug),
+         {:org, true} <- {:org, not is_nil(organization_id)},
          true <- ClipperProfiles.can_endorse?(organization_id, profile.user_id),
          {:ok, endorsement} <- ClipperProfiles.create_endorsement(profile.id, organization_id, %{
            endorsed_by_user_id: user.id,
@@ -468,8 +494,10 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     else
       nil ->
         conn |> put_status(:not_found) |> json(%{success: false, error: "Profile not found"})
+      {:org, false} ->
+        conn |> put_status(:forbidden) |> json(%{success: false, error: "You must own an organization to endorse clippers"})
       false ->
-        conn |> put_status(:forbidden) |> json(%{success: false, error: "Cannot endorse - no working relationship"})
+        conn |> put_status(:forbidden) |> json(%{success: false, error: "Cannot endorse - your organization has not worked with this clipper"})
       {:error, changeset} ->
         conn
         |> put_status(:unprocessable_entity)

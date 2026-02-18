@@ -47,7 +47,7 @@ const mediaFiles = computed(() => {
 
 const activeProject = computed(() => {
 	void version.value;
-	return editor.project.getActive();
+	return editor.project.getActiveOrNull();
 });
 
 const filteredMedia = computed(() => {
