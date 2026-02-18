@@ -1062,21 +1062,38 @@
     showChannelLinkForm.value = true;
   };
 
+  const normalizeUrl = (url: string): string => {
+    const trimmed = url.trim();
+    if (trimmed && !/^https?:\/\//i.test(trimmed)) {
+      return `https://${trimmed}`;
+    }
+    return trimmed;
+  };
+
   const saveChannelLink = async () => {
     savingChannelLink.value = true;
     error.value = null;
     try {
+      const normalizedForm = {
+        ...channelLinkForm,
+        url: normalizeUrl(channelLinkForm.url),
+      };
       let response;
       if (editingChannelLink.value) {
-        response = await updateChannelLink(editingChannelLink.value.id, channelLinkForm);
+        response = await updateChannelLink(editingChannelLink.value.id, normalizedForm);
       } else {
-        response = await createChannelLink(channelLinkForm);
+        response = await createChannelLink(normalizedForm);
       }
       if (response.success) {
         showChannelLinkForm.value = false;
         await loadChannelLinks();
       } else {
-        error.value = response.error || 'Failed to save channel link';
+        const errMsg = response.error;
+        error.value = typeof errMsg === 'string'
+          ? errMsg
+          : Array.isArray(errMsg)
+            ? (errMsg as string[]).join('; ')
+            : 'Failed to save channel link';
       }
     } catch (err: any) {
       console.error('Failed to save channel link:', err);
