@@ -42,7 +42,24 @@ pub struct HlsSegmentInfo {
     pub end_time: f64,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecorderErrorPayload {
+    mint_id: String,
+    session_id: String,
+    exit_code: Option<i32>,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecorderLogPayload {
+    mint_id: String,
+    message: String,
+    level: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SegmentReadyPayload {
     streamer_id: String,
@@ -509,26 +526,79 @@ async fn run_hls_recorder(
                                     }
                                     "started" => {
                                         println!("[HLS Recorder] Recording started for {}", mint_id);
+                                        let _ = app.emit("recorder-log", RecorderLogPayload {
+                                            mint_id: mint_id.clone(),
+                                            message: "Recording started".to_string(),
+                                            level: "info".to_string(),
+                                        });
                                     }
                                     "stream_ended" => {
                                         println!("[HLS Recorder] Stream ended for {}", mint_id);
                                     }
-                                    "info" | "error" => {
-                                        println!("[HLS Recorder] {}: {:?}", recorder_event.event_type, recorder_event.message);
+                                    "info" | "log" | "waiting_for_stream" => {
+                                        let msg = recorder_event.message.clone().unwrap_or_default();
+                                        println!("[HLS Recorder] {}: {}", recorder_event.event_type, msg);
+                                        // Forward all info/log messages to frontend for visibility
+                                        let _ = app.emit("recorder-log", RecorderLogPayload {
+                                            mint_id: mint_id.clone(),
+                                            message: msg,
+                                            level: "info".to_string(),
+                                        });
+                                    }
+                                    "error" => {
+                                        let msg = recorder_event.message.clone().unwrap_or_default();
+                                        eprintln!("[HLS Recorder] ERROR: {}", msg);
+                                        let _ = app.emit("recorder-log", RecorderLogPayload {
+                                            mint_id: mint_id.clone(),
+                                            message: msg,
+                                            level: "error".to_string(),
+                                        });
                                     }
                                     _ => {
-                                        println!("[HLS Recorder] Event: {}", recorder_event.event_type);
+                                        println!("[HLS Recorder] Event: {} msg={:?}", recorder_event.event_type, recorder_event.message);
                                     }
+                                }
+                            } else {
+                                // Non-JSON stdout line - log it directly
+                                let trimmed = chunk.trim();
+                                if !trimmed.is_empty() {
+                                    println!("[HLS Recorder raw] {}", trimmed);
+                                    let _ = app.emit("recorder-log", RecorderLogPayload {
+                                        mint_id: mint_id.clone(),
+                                        message: trimmed.to_string(),
+                                        level: "debug".to_string(),
+                                    });
                                 }
                             }
                         }
                     }
                     Some(CommandEvent::Stderr(line)) => {
                         let line_str = String::from_utf8_lossy(&line);
-                        eprintln!("[HLS Recorder stderr] {}", line_str.trim());
+                        let trimmed = line_str.trim();
+                        eprintln!("[HLS Recorder stderr] {}", trimmed);
+                        // Forward stderr to frontend too - critical for FFmpeg errors
+                        if !trimmed.is_empty() {
+                            let _ = app.emit("recorder-log", RecorderLogPayload {
+                                mint_id: mint_id.clone(),
+                                message: format!("[stderr] {}", trimmed),
+                                level: "error".to_string(),
+                            });
+                        }
                     }
                     Some(CommandEvent::Terminated(payload)) => {
-                        println!("[HLS Recorder] Process terminated: {:?}", payload.code);
+                        let code = payload.code;
+                        println!("[HLS Recorder] Process terminated with code: {:?}", code);
+                        // Emit error event if process exited unexpectedly (non-zero or no code)
+                        if code != Some(0) {
+                            let msg = format!("Node.js recorder exited with code {:?}. Check logs for details.", code);
+                            eprintln!("[HLS Recorder] UNEXPECTED EXIT: {}", msg);
+                            let _ = app.emit("recorder-error", RecorderErrorPayload {
+                                mint_id: mint_id.clone(),
+                                session_id: session_id.clone(),
+                                exit_code: code,
+                                message: msg,
+                            });
+                        }
                         break;
                     }
                     Some(CommandEvent::Error(err)) => {

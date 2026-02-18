@@ -26,7 +26,7 @@ export class CanvasRenderer {
 			this.canvas.height = height;
 		}
 
-		const context = this.canvas.getContext("2d");
+		const context = this.canvas.getContext("2d", { willReadFrequently: true });
 		if (!context) {
 			throw new Error("Failed to get canvas context");
 		}
@@ -47,7 +47,7 @@ export class CanvasRenderer {
 			this.canvas.height = height;
 		}
 
-		const context = this.canvas.getContext("2d");
+		const context = this.canvas.getContext("2d", { willReadFrequently: true });
 		if (!context) {
 			throw new Error("Failed to get canvas context");
 		}

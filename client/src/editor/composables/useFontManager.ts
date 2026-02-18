@@ -29,53 +29,48 @@ async function loadFontFace(family: string, filePath?: string): Promise<void> {
 
 	const promise = (async () => {
 		try {
-			let fontUrl: string;
-
 			if (filePath) {
-				// Custom font: read file bytes via Tauri and create blob URL
+				// Custom font: read file bytes via Tauri and load directly from ArrayBuffer
+				// (avoids CSP font-src blob: restriction)
 				const bytes = await invoke<number[]>("read_font_file", { path: filePath });
 				const uint8 = new Uint8Array(bytes);
-				const blob = new Blob([uint8], { type: "font/ttf" });
-				fontUrl = URL.createObjectURL(blob);
-			} else {
-				// Built-in font: try to use system font first, then bundled
-				// System fonts like Arial, Impact, etc. are already available
-				const systemFonts = [
-					"Arial", "Helvetica", "Georgia", "Times New Roman",
-					"Courier New", "Verdana", "Impact", "Comic Sans MS",
-				];
-				if (systemFonts.includes(family)) {
-					loadedFontFamilies.add(family);
-					return;
-				}
-
-				// For bundled fonts (Roboto, Montserrat, etc.), load from Tauri resource
-				const fontFileName = getFontFileName(family);
-				if (!fontFileName) {
-					// Fallback: assume it's a system font
-					loadedFontFamilies.add(family);
-					return;
-				}
-
-				try {
-					const bytes = await invoke<number[]>("read_bundled_font", { fontName: fontFileName });
-					const uint8 = new Uint8Array(bytes);
-					const blob = new Blob([uint8], { type: "font/ttf" });
-					fontUrl = URL.createObjectURL(blob);
-				} catch {
-					// Font not bundled, assume system font
-					loadedFontFamilies.add(family);
-					return;
-				}
+				const fontFace = new FontFace(family, uint8.buffer as ArrayBuffer);
+				await fontFace.load();
+				document.fonts.add(fontFace);
+				loadedFontFamilies.add(family);
+				return;
 			}
 
-			const fontFace = new FontFace(family, `url(${fontUrl})`);
-			await fontFace.load();
-			document.fonts.add(fontFace);
-			loadedFontFamilies.add(family);
+			// Built-in font: try to use system font first, then bundled
+			const systemFonts = [
+				"Arial", "Helvetica", "Georgia", "Times New Roman",
+				"Courier New", "Verdana", "Impact", "Comic Sans MS",
+			];
+			if (systemFonts.includes(family)) {
+				loadedFontFamilies.add(family);
+				return;
+			}
+
+			// For bundled fonts (Roboto, Montserrat, etc.), load from Tauri resource
+			const fontFileName = getFontFileName(family);
+			if (!fontFileName) {
+				loadedFontFamilies.add(family);
+				return;
+			}
+
+			try {
+				const bytes = await invoke<number[]>("read_bundled_font", { fontName: fontFileName });
+				const uint8 = new Uint8Array(bytes);
+				const fontFace = new FontFace(family, uint8.buffer as ArrayBuffer);
+				await fontFace.load();
+				document.fonts.add(fontFace);
+				loadedFontFamilies.add(family);
+			} catch {
+				// Font not bundled, assume system font
+				loadedFontFamilies.add(family);
+			}
 		} catch (err) {
 			console.warn(`Failed to load font "${family}":`, err);
-			// Still mark as loaded to prevent retries
 			loadedFontFamilies.add(family);
 		}
 	})();

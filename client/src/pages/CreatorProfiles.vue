@@ -238,6 +238,14 @@
                           <Link class="creator-dropdown__item-icon" />
                           Submit Post Link
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          v-if="!creator.isOrgProfile"
+                          class="creator-dropdown__item"
+                          @click="openPersonalPostDialog(creator)"
+                        >
+                          <Link class="creator-dropdown__item-icon" />
+                          Submit Post Link
+                        </DropdownMenuItem>
                         <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
                           <DropdownMenuSeparator class="creator-dropdown__separator" />
                           <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
@@ -249,13 +257,6 @@
                             >
                               {{ isCreatorAutoDvrEnabled(creator) ? 'ON' : 'OFF' }}
                             </span>
-                          </DropdownMenuItem>
-                        </template>
-                        <template v-if="creator.isOrgProfile && creator.organization_id">
-                          <DropdownMenuSeparator class="creator-dropdown__separator" />
-                          <DropdownMenuItem class="creator-dropdown__item" @click="toggleProfileDisabled(creator)">
-                            <component :is="creator.disabled ? 'Eye' : 'EyeOff'" class="creator-dropdown__item-icon" />
-                            {{ creator.disabled ? 'Enable' : 'Disable' }} Profile
                           </DropdownMenuItem>
                         </template>
                         <template v-if="!creator.isOrgProfile">
@@ -509,6 +510,10 @@
                         </template>
                         <template v-if="!creator.isOrgProfile">
                           <DropdownMenuSeparator class="creator-dropdown__separator" />
+                          <DropdownMenuItem class="creator-dropdown__item" @click="toggleProfileDisabled(creator)">
+                            <component :is="creator.disabled ? 'Eye' : 'EyeOff'" class="creator-dropdown__item-icon" />
+                            {{ creator.disabled ? 'Enable' : 'Disable' }} Profile
+                          </DropdownMenuItem>
                           <DropdownMenuItem
                             class="creator-dropdown__item creator-dropdown__item--danger"
                             @click="confirmDeleteCreator(creator)"
@@ -723,6 +728,12 @@
     <!-- Auth Modal -->
     <AuthModal v-model="showAuthModal" />
 
+    <!-- Personal Post Dialog (for non-org creators) -->
+    <AddPostDialog
+      v-model="showPersonalPostDialog"
+      @submitted="handlePersonalPostSubmitted"
+    />
+
     <!-- External Post Submit Dialog -->
     <ExternalPostSubmitDialog
       :open="showPostSubmitDialog"
@@ -753,10 +764,12 @@
   import ProfileDialog from '@/components/ProfileDialog.vue';
   import CreatorDownloadDialog from '@/components/CreatorDownloadDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
+  import AddPostDialog from '@/components/AddPostDialog.vue';
   import ExternalPostSubmitDialog from '@/components/organization/ExternalPostSubmitDialog.vue';
   import {
     getAllCreatorProfiles,
     deleteCreatorProfile,
+    toggleLocalProfileDisabled,
     getMonitoredStreamer,
     getMonitoredStreamerByMint,
     updateMonitoredStreamer,
@@ -969,7 +982,7 @@
   const router = useRouter();
   const authStore = useAuthStore();
   const { success, error: showError } = useToast();
-  const { showGate } = useSubscriptionGate();
+  const { showGate, requireSubscription } = useSubscriptionGate();
   const { activeSessions, monitoredStreamers, startMonitoring, stopMonitoring, hasDvrRecording } =
     useLivestreamMonitoring();
   const { isLiveClipEnabled } = useFeatureFlags();
@@ -988,6 +1001,8 @@
   const showAuthModal = ref(false);
   const showPostSubmitDialog = ref(false);
   const creatorForPostSubmit = ref<DisplayCreatorProfile | null>(null);
+  const showPersonalPostDialog = ref(false);
+  const personalPostCreator = ref<DisplayCreatorProfile | null>(null);
 
   // Live status tracking
   const liveStatusMap = ref<
@@ -1313,6 +1328,7 @@
 
       const displayProfiles: DisplayCreatorProfile[] = localProfiles.map((p) => ({
         ...p,
+        disabled: p.disabled ? true : false,
         isOrgProfile: false,
       }));
 
@@ -1546,22 +1562,15 @@
   const activeTab = ref<'streamer' | 'global'>('streamer');
   const profileDialogScope = ref<'streamer' | 'global'>('streamer');
 
-  function openCreateDialog() {
+  async function openCreateDialog() {
     if (!authStore.isAuthenticated) {
       showAuthModal.value = true;
       return;
     }
     
-    // Check if user is free tier
-    const user = authStore.user;
-    const isFreeTier = user && !user.is_admin && !user.created_by_organization_id &&
-      (!(user as any).subscription_status || (user as any).subscription_status === 'none' || (user as any).subscription_status === 'expired');
-    
-    if (isFreeTier) {
-      const context = activeTab.value === 'global' ? 'Add Global Profile' : 'Add Creator';
-      showGate(context, 'general');
-      return;
-    }
+    const context = activeTab.value === 'global' ? 'Add Global Profile' : 'Add Creator';
+    const hasAccess = await requireSubscription({ context, type: 'general' });
+    if (!hasAccess) return;
     
     creatorToEdit.value = null;
     profileDialogScope.value = activeTab.value;
@@ -1615,19 +1624,25 @@
   }
 
   async function toggleProfileDisabled(creator: DisplayCreatorProfile) {
-    if (!creator.isOrgProfile || !creator.organization_id || !creator.server_id) {
-      showError('Toggle Failed', 'This profile cannot be toggled');
-      return;
-    }
-
     try {
-      const response = await toggleCreatorProfileDisabled(creator.organization_id, creator.server_id);
-      if (response.success && response.profile) {
-        const action = response.profile.disabled ? 'disabled' : 'enabled';
+      if (!creator.isOrgProfile) {
+        // User-created local profile — toggle via SQLite
+        const nowDisabled = await toggleLocalProfileDisabled(creator.id);
+        const action = nowDisabled ? 'disabled' : 'enabled';
         success('Profile Updated', `"${creator.name}" has been ${action}`);
         await loadCreators();
+      } else if (creator.organization_id && creator.server_id) {
+        // Org-assigned profile — toggle via server API
+        const response = await toggleCreatorProfileDisabled(creator.organization_id, creator.server_id);
+        if (response.success && response.profile) {
+          const action = response.profile.disabled ? 'disabled' : 'enabled';
+          success('Profile Updated', `"${creator.name}" has been ${action}`);
+          await loadCreators();
+        } else {
+          showError('Toggle Failed', response.error || 'Failed to toggle profile');
+        }
       } else {
-        showError('Toggle Failed', response.error || 'Failed to toggle profile');
+        showError('Toggle Failed', 'This profile cannot be toggled');
       }
     } catch (err) {
       console.error('Failed to toggle profile:', err);
@@ -1665,6 +1680,17 @@
     showPostSubmitDialog.value = false;
     creatorForPostSubmit.value = null;
     success('Post Submitted', 'Your post link has been submitted for review.');
+  }
+
+  function openPersonalPostDialog(creator: DisplayCreatorProfile) {
+    personalPostCreator.value = creator;
+    showPersonalPostDialog.value = true;
+  }
+
+  function handlePersonalPostSubmitted() {
+    showPersonalPostDialog.value = false;
+    personalPostCreator.value = null;
+    success('Post Added', 'Your post link has been tracked successfully.');
   }
 
   async function startCreatorMonitoring(creator: DisplayCreatorProfile, detectClips: boolean) {

@@ -196,7 +196,7 @@ interface ChannelLinksResponse {
 
 interface ChannelLinkResponse {
   success: boolean;
-  channel_link: ChannelLink;
+  channel_link?: ChannelLink;
   error?: string;
 }
 
@@ -261,8 +261,15 @@ export async function createChannelLink(data: {
   username?: string;
   display_order?: number;
 }): Promise<ChannelLinkResponse> {
-  const response = await api.post('/user/clipper-profile/channel-links', data);
-  return response.data;
+  try {
+    const response = await api.post('/user/clipper-profile/channel-links', data);
+    return response.data;
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to save channel link',
+    };
+  }
 }
 
 export async function updateChannelLink(
@@ -273,8 +280,15 @@ export async function updateChannelLink(
     display_order?: number;
   }
 ): Promise<ChannelLinkResponse> {
-  const response = await api.put(`/user/clipper-profile/channel-links/${id}`, data);
-  return response.data;
+  try {
+    const response = await api.put(`/user/clipper-profile/channel-links/${id}`, data);
+    return response.data;
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to update channel link',
+    };
+  }
 }
 
 export async function deleteChannelLink(id: number): Promise<DeleteResponse> {
@@ -331,19 +345,19 @@ interface UploadPortfolioClipResponse {
 
 /**
  * Upload a portfolio clip video file to R2 storage.
- * Max file size: 100MB
+ * Max file size: 200MB
  */
 export async function uploadPortfolioClip(
   file: File,
   title?: string,
   thumbnail?: File
 ): Promise<UploadPortfolioClipResponse> {
-  // Validate file size (100MB max)
-  const MAX_SIZE = 100 * 1024 * 1024; // 100MB in bytes
+  // Validate file size (200MB max)
+  const MAX_SIZE = 200 * 1024 * 1024; // 200MB in bytes
   if (file.size > MAX_SIZE) {
     return {
       success: false,
-      error: `File size exceeds 100MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`,
+      error: `File size exceeds 200MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`,
     };
   }
 
@@ -359,12 +373,7 @@ export async function uploadPortfolioClip(
 
     const response = await api.post<UploadPortfolioClipResponse>(
       '/user/clipper-profile/portfolio-clips/upload',
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
+      formData
     );
     return response.data;
   } catch (error: any) {
@@ -417,12 +426,7 @@ export async function uploadClipperAvatar(file: File): Promise<UploadAvatarRespo
 
     const response = await api.post<UploadAvatarResponse>(
       '/user/clipper-profile/avatar',
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      }
+      formData
     );
     return response.data;
   } catch (error: any) {

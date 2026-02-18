@@ -335,7 +335,7 @@
                 <div class="profile-dialog__section-header">
                   <div>
                     <h3 class="profile-dialog__section-title">Portfolio Clips</h3>
-                    <p class="profile-dialog__section-desc">Showcase up to 3 of your best clips (max 100MB each)</p>
+                    <p class="profile-dialog__section-desc">Showcase up to 3 of your best clips (max 200MB each)</p>
                   </div>
                   <button
                     @click="
@@ -380,7 +380,7 @@
                     </div>
                     <div class="profile-dialog__option-info">
                       <div class="profile-dialog__option-title">Upload Video File</div>
-                      <div class="profile-dialog__option-desc">Max 100MB, MP4/MOV/WebM</div>
+                      <div class="profile-dialog__option-desc">Max 200MB, MP4/MOV/WebM</div>
                     </div>
                     <Loader2 v-if="uploadingClip" class="profile-dialog__option-loader" />
                   </div>
@@ -641,7 +641,7 @@
   const uploadingClip = ref(false);
   const uploadProgress = ref(0);
   const fileInputRef = ref<HTMLInputElement | null>(null);
-  const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+  const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
   const clipThumbnailCache = ref<Map<string, string>>(new Map());
 
   // Avatar upload state
@@ -897,7 +897,7 @@
 
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
-      error.value = `File size exceeds 100MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`;
+      error.value = `File size exceeds 200MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`;
       input.value = '';
       return;
     }
@@ -961,7 +961,7 @@
 
       // Check file size
       if (file.size > MAX_FILE_SIZE) {
-        error.value = `Clip exceeds 100MB limit. Size: ${(file.size / (1024 * 1024)).toFixed(1)}MB`;
+        error.value = `Clip exceeds 200MB limit. Size: ${(file.size / (1024 * 1024)).toFixed(1)}MB`;
         savingPortfolioClip.value = false;
         return;
       }
@@ -1062,21 +1062,42 @@
     showChannelLinkForm.value = true;
   };
 
+  const normalizeUrl = (url: string): string => {
+    const trimmed = url.trim();
+    if (trimmed && !/^https?:\/\//i.test(trimmed)) {
+      return `https://${trimmed}`;
+    }
+    return trimmed;
+  };
+
   const saveChannelLink = async () => {
     savingChannelLink.value = true;
+    error.value = null;
     try {
+      const normalizedForm = {
+        ...channelLinkForm,
+        url: normalizeUrl(channelLinkForm.url),
+      };
       let response;
       if (editingChannelLink.value) {
-        response = await updateChannelLink(editingChannelLink.value.id, channelLinkForm);
+        response = await updateChannelLink(editingChannelLink.value.id, normalizedForm);
       } else {
-        response = await createChannelLink(channelLinkForm);
+        response = await createChannelLink(normalizedForm);
       }
       if (response.success) {
         showChannelLinkForm.value = false;
         await loadChannelLinks();
+      } else {
+        const errMsg = response.error;
+        error.value = typeof errMsg === 'string'
+          ? errMsg
+          : Array.isArray(errMsg)
+            ? (errMsg as string[]).join('; ')
+            : 'Failed to save channel link';
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save channel link:', err);
+      error.value = err?.response?.data?.error || err?.message || 'Failed to save channel link';
     } finally {
       savingChannelLink.value = false;
     }
@@ -1107,6 +1128,7 @@
 
   const savePortfolioClip = async () => {
     savingPortfolioClip.value = true;
+    error.value = null;
     try {
       let response;
       if (editingPortfolioClip.value) {
@@ -1117,9 +1139,12 @@
       if (response.success) {
         showPortfolioClipForm.value = false;
         await loadPortfolioClips();
+      } else {
+        error.value = response.error || 'Failed to save portfolio clip';
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save portfolio clip:', err);
+      error.value = err?.response?.data?.error || err?.message || 'Failed to save portfolio clip';
     } finally {
       savingPortfolioClip.value = false;
     }

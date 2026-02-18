@@ -1365,11 +1365,13 @@
   import { useAuthStore } from '@/stores/auth';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
+  import { useSubscription } from '@/composables/useSubscription';
   import { useAIPermission } from '@/composables/useAIPermission';
   const router = useRouter();
   // AI Permission check
   const { isAIAllowed } = useAIPermission();
   const { gates } = useSubscriptionGate();
+  const { fetchSubscriptionStatus } = useSubscription();
   import { utf8ToBase64 } from '@/utils/encoding';
   import { save } from '@tauri-apps/plugin-dialog';
   import VodPresetEditor from '@/components/VodPresetEditor.vue';
@@ -3458,6 +3460,7 @@
     if (!folderClipToBuild.value) return;
 
     // Check free tier daily limit
+    await fetchSubscriptionStatus();
     const user = authStore.user;
     const isFree = user && !user.is_admin && !user.created_by_organization_id &&
       (!(user as any).subscription_status || (user as any).subscription_status === 'none' || (user as any).subscription_status === 'expired');

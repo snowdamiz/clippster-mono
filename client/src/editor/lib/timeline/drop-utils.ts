@@ -198,6 +198,25 @@ export function computeDropTarget({
 	// Allow drop on compatible tracks even with overlap — MoveElementCommand
 	// will ripple-push overlapping elements forward automatically.
 	if (isTrackCompatible) {
+		// Enforce z-order rules:
+		// - Audio tracks must stay below the main track
+		// - Non-audio tracks (video, text, sticker, effect, caption) must stay above the main track
+		if (elementType === "audio" && mainTrackIndex >= 0 && trackIndex <= mainTrackIndex) {
+			return {
+				trackIndex: mainTrackIndex + 1,
+				isNewTrack: true,
+				insertPosition: "below",
+				xPosition,
+			};
+		}
+		if (elementType !== "audio" && mainTrackIndex >= 0 && trackIndex > mainTrackIndex) {
+			return {
+				trackIndex: mainTrackIndex,
+				isNewTrack: false,
+				insertPosition: null,
+				xPosition,
+			};
+		}
 		return {
 			trackIndex,
 			isNewTrack: false,

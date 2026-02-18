@@ -5,6 +5,7 @@
   import { useAuthStore } from '@/stores/auth';
   import api from '@/services/api';
   import type { Conversation, Message } from '@/services/messagingApi';
+  import { getOrCreateSupportConversation } from '@/services/messagingApi';
   import PageLayout from '@/components/PageLayout.vue';
   import {
     MessageSquare,
@@ -19,7 +20,6 @@
     Check,
     Pencil,
     Trash2,
-    Loader2,
     Megaphone,
     MoreVertical,
     UserMinus,
@@ -80,12 +80,14 @@
     onConfirm: () => {},
   });
 
+  const supportConversation = ref<Conversation | null>(null);
+  const isLoadingSupportConversation = ref(false);
+
   let typingTimeout: number | null = null;
 
   const filteredConversations = computed(() => {
-    // Filter out support conversations (they appear as pinned entry)
+    // Filter out support conversations — they appear as a pinned entry above the list
     const regularConversations = messagingStore.conversationList.filter((conv) => conv.type !== 'support');
-    
     if (!searchQuery.value) return regularConversations;
     const query = searchQuery.value.toLowerCase();
     return regularConversations.filter((conv) => {
@@ -237,6 +239,9 @@
         // Initialize with first org
         await messagingStore.initialize(organizations.value[0].id);
       }
+
+      // Always load/create the pinned support conversation
+      await loadSupportConversation();
     } catch (error) {
       console.error('Failed to load organizations:', error);
     }
@@ -586,6 +591,27 @@
     });
   }
 
+  async function loadSupportConversation() {
+    try {
+      isLoadingSupportConversation.value = true;
+      supportConversation.value = await getOrCreateSupportConversation();
+    } catch (error) {
+      console.error('Failed to load support conversation:', error);
+    } finally {
+      isLoadingSupportConversation.value = false;
+    }
+  }
+
+  async function selectSupportConversation() {
+    try {
+      const conversation = await messagingStore.startSupportConversation();
+      supportConversation.value = conversation;
+      await messagingStore.setActiveConversation(conversation.id);
+    } catch (error) {
+      console.error('Failed to open support conversation:', error);
+    }
+  }
+
   function handleLeaveConversation() {
     if (!messagingStore.activeConversation) return;
     const conversationId = messagingStore.activeConversation.id;
@@ -678,6 +704,46 @@
 
                 <!-- Conversations -->
                 <template v-else>
+                  <!-- Pinned Support Chat -->
+                  <div
+                    v-if="supportConversation"
+                    class="messages-conv messages-conv--pinned"
+                    :class="{
+                      'messages-conv--active': supportConversation.id === messagingStore.activeConversationId,
+                      'messages-conv--unread': getUnreadCount(supportConversation.id) > 0,
+                    }"
+                    @click="selectSupportConversation"
+                  >
+                    <div
+                      class="messages-conv__indicator"
+                      :class="{
+                        'messages-conv__indicator--active': supportConversation.id === messagingStore.activeConversationId,
+                        'messages-conv__indicator--unread':
+                          getUnreadCount(supportConversation.id) > 0 && supportConversation.id !== messagingStore.activeConversationId,
+                      }"
+                    ></div>
+                    <div class="messages-conv__inner">
+                      <div class="messages-conv__avatar-wrapper">
+                        <div class="messages-conv__avatar messages-conv__avatar--support">
+                          <Headset class="messages-conv__avatar-icon" />
+                        </div>
+                      </div>
+                      <div class="messages-conv__content">
+                        <div class="messages-conv__header">
+                          <span class="messages-conv__name">Clippster Customer Support</span>
+                          <span class="messages-conv__time">{{ formatTime(supportConversation.lastMessageAt) }}</span>
+                        </div>
+                        <div class="messages-conv__footer">
+                          <span class="messages-conv__preview">{{ supportConversation.lastMessagePreview || 'Get help from our support team' }}</span>
+                          <span v-if="getUnreadCount(supportConversation.id) > 0" class="messages-conv__badge">
+                            {{ getUnreadCount(supportConversation.id) > 99 ? '99+' : getUnreadCount(supportConversation.id) }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Regular Conversations -->
                   <div
                     v-for="conv in filteredConversations"
                     :key="conv.id"
@@ -705,6 +771,7 @@
                             'messages-conv__avatar--direct': conv.type === 'direct',
                             'messages-conv__avatar--group': conv.type === 'group',
                             'messages-conv__avatar--announcement': conv.type === 'announcement',
+                            'messages-conv__avatar--support': conv.type === 'support',
                           }"
                         >
                           <img
@@ -713,6 +780,7 @@
                             alt=""
                             class="messages-conv__avatar-img"
                           />
+                          <Headset v-else-if="conv.type === 'support'" class="messages-conv__avatar-icon" />
                           <Users v-else-if="conv.type === 'group'" class="messages-conv__avatar-icon" />
                           <Megaphone v-else-if="conv.type === 'announcement'" class="messages-conv__avatar-icon" />
                           <span v-else class="messages-conv__avatar-initial">
@@ -739,6 +807,7 @@
 
                 </template>
               </div>
+
             </div>
           </div>
 
@@ -1511,6 +1580,50 @@
     border-radius: 3px;
   }
 
+  /* Contact Support Footer */
+  .messages-panel__footer {
+    flex-shrink: 0;
+    padding: 0.75rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .messages-panel__support-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.625rem 1rem;
+    background-color: rgba(139, 92, 246, 0.1);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    border-radius: 8px;
+    color: #a855f7;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .messages-panel__support-btn:hover:not(:disabled) {
+    background-color: rgba(139, 92, 246, 0.2);
+    border-color: rgba(139, 92, 246, 0.4);
+  }
+
+  .messages-panel__support-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .messages-panel__support-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  .messages-panel__support-icon--spin {
+    animation: spin 0.8s linear infinite;
+  }
+
   /* Conversation Item */
   .messages-conv {
     display: flex;
@@ -1584,14 +1697,14 @@
     background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
   }
 
-  .messages-conv__avatar--support {
-    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
-  }
-
   .messages-conv--pinned {
     border-bottom: 2px solid rgba(139, 92, 246, 0.3);
     margin-bottom: 0.75rem;
     padding-bottom: 0.75rem;
+  }
+
+  .messages-conv__avatar--support {
+    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
   }
 
   .messages-conv__avatar-img {

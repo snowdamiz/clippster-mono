@@ -675,13 +675,13 @@ pub fn run() {
                         tauri_plugin_sql::Migration {
                             version: 86,
                             description: "add_source_start_time_to_audio_tracks",
-                            sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            sql: include_str!("../migrations/086_add_source_start_time_to_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
                             version: 87,
                             description: "add_transcript_raw_json_to_clip_segments",
-                            sql: include_str!("../migrations/091_add_transcript_raw_json_to_clip_segments.sql"),
+                            sql: include_str!("../migrations/087_add_transcript_raw_json_to_clip_segments.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
@@ -693,7 +693,7 @@ pub fn run() {
                         tauri_plugin_sql::Migration {
                             version: 89,
                             description: "add_project_media",
-                            sql: include_str!("../migrations/069_add_project_media.sql"),
+                            sql: include_str!("../migrations/089_add_project_media.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
@@ -702,10 +702,17 @@ pub fn run() {
                             sql: include_str!("../migrations/090_fix_monitored_streamers_user_unique.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 91,
+                            description: "add_track_index_to_sources",
+                            sql: include_str!("../migrations/091_add_track_index_to_sources.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
         )
+        .plugin(tauri_plugin_localhost::Builder::new(1420).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -724,8 +731,26 @@ pub fn run() {
                 video_server::start_video_server_impl().await;
             });
 
-            // Get the main window (defined in tauri.conf.json)
-            let window = app.get_webview_window("main").unwrap();
+            // Create main window programmatically.
+            // In production, use localhost:1420 (served by tauri-plugin-localhost)
+            // so the origin is http://localhost:1420 (loopback), which allows
+            // fetches to the video server on localhost:48276 (loopback→loopback).
+            // Without this, the origin would be http://tauri.localhost which
+            // Chrome's Private Network Access policy blocks from reaching loopback.
+            let url = if cfg!(dev) {
+                WebviewUrl::App("/".into())
+            } else {
+                WebviewUrl::External("http://localhost:1420".parse().unwrap())
+            };
+
+            let window = WebviewWindowBuilder::new(app, "main", url)
+                .title("Clippster")
+                .inner_size(1400.0, 850.0)
+                .decorations(false)
+                .visible(false)
+                .transparent(true)
+                .build()
+                .expect("Failed to create main window");
 
             // Enable devtools in production for debugging
             #[cfg(feature = "devtools")]

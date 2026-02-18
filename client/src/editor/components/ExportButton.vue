@@ -30,12 +30,12 @@ const exportedPath = ref<string | null>(null);
 
 const hasProject = computed(() => {
 	void version.value;
-	return !!editor.project.getActive();
+	return !!editor.project.getActiveOrNull();
 });
 
 const activeProject = computed(() => {
 	void version.value;
-	return editor.project.getActive();
+	return editor.project.getActiveOrNull();
 });
 
 const projectName = computed(() => activeProject.value?.metadata.name || "Untitled Project");
@@ -258,6 +258,9 @@ async function handleExport() {
 	const { useAuthStore } = await import("@/stores/auth");
 	const _authStore = useAuthStore();
 	const _user = _authStore.user;
+	const { useSubscription } = await import("@/composables/useSubscription");
+	const { fetchSubscriptionStatus } = useSubscription();
+	await fetchSubscriptionStatus();
 	const _isFree = _user && !_user.is_admin && !_user.created_by_organization_id &&
 		(!(_user as any).subscription_status || (_user as any).subscription_status === "none" || (_user as any).subscription_status === "expired");
 	if (_isFree) {
@@ -300,6 +303,23 @@ async function handleExport() {
 			exportedPath.value = result.outputPath || null;
 			isOpen.value = false;
 			progress.value = 0;
+
+			// Register the exported file as a built clip so it appears in Built Clips
+			if (result.outputPath) {
+				try {
+					const { getVideoEditorSourcesByProjectId } = await import("@/services/database/video-editor-projects");
+					const { updateClipBuildStatus } = await import("@/services/database/clip-build");
+					const sources = await getVideoEditorSourcesByProjectId(project.metadata.id);
+					const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
+					if (clipSource?.source_id) {
+						await updateClipBuildStatus(clipSource.source_id, "completed", {
+							builtFilePath: result.outputPath,
+						});
+					}
+				} catch (e) {
+					console.warn("[ExportButton] Failed to register export as built clip:", e);
+				}
+			}
 		} else {
 			exportError.value = result.error || "Unknown error occurred";
 		}

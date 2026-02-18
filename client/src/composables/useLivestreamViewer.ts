@@ -2447,17 +2447,37 @@ export function useLivestreamViewer() {
 
     // Listen for recorder log events (errors, warnings, binary paths) visible in WebView console
     const recorderLogUnlisten = await listen<{
-      streamer_id?: string;
-      streamerId?: string;
+      mintId?: string;
+      mint_id?: string;
       message: string;
       level: string;
     }>('recorder-log', (event) => {
       const p = event.payload;
-      const msg = `[RecorderLog] ${p.message}`;
+      const mintId = p.mintId || p.mint_id || '';
+      const msg = `[RecorderLog][${mintId.slice(0, 8)}] ${p.message}`;
       if (p.level === 'error') {
         console.error(msg);
+      } else if (p.level === 'debug') {
+        console.debug(msg);
       } else {
         console.log(msg);
+      }
+    });
+
+    // Listen for recorder-error events (Node.js process exited with non-zero code)
+    const recorderErrorUnlisten = await listen<{
+      mintId?: string;
+      mint_id?: string;
+      sessionId?: string;
+      exitCode?: number | null;
+      message: string;
+    }>('recorder-error', (event) => {
+      const p = event.payload;
+      const mintId = p.mintId || p.mint_id || '';
+      console.error(`[LiveViewer] RECORDER PROCESS ERROR for mint ${mintId.slice(0, 8)}: exit code=${p.exitCode}, msg=${p.message}`);
+      // Only surface error if this is our current stream
+      if (mintId === state.value.mintId) {
+        console.error('[LiveViewer] Recorder process died - this is why segments are not being produced!');
       }
     });
 
@@ -2473,7 +2493,7 @@ export function useLivestreamViewer() {
       clearInterval(hlsUpdateInterval);
     };
 
-    unlistenFunctions.push(unlisten, hlsSegmentUnlisten, recorderExitUnlisten, recorderLogUnlisten, cleanupHlsInterval as any);
+    unlistenFunctions.push(unlisten, hlsSegmentUnlisten, recorderExitUnlisten, recorderLogUnlisten, recorderErrorUnlisten, cleanupHlsInterval as any);
   }
 
   // Disconnect from livestream

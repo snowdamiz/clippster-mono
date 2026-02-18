@@ -1,5 +1,6 @@
 import { Command } from "../../../../lib/commands/base-command";
 import type { TimelineTrack } from "../../../../types/timeline";
+import type { Transition } from "../../../../types/transitions";
 import { generateUUID } from "../../../../utils/id";
 import { EditorCore } from "../../../../core";
 
@@ -118,6 +119,29 @@ export class SplitElementsCommand extends Command {
 
 		editor.timeline.updateTracks(updatedTracks);
 
+		// Clean up transitions whose targetElementId no longer exists in the updated tracks.
+		// We do NOT save/restore these — SetTransitionCommand handles its own undo.
+		try {
+			const scene = editor.scenes.getActiveScene();
+			if (scene?.transitions?.length) {
+				const allElementIds = new Set(
+					updatedTracks.flatMap((t) => t.elements.map((e) => e.id)),
+				);
+				const cleanedTransitions = scene.transitions.filter(
+					(t: Transition) => allElementIds.has(t.targetElementId),
+				);
+				if (cleanedTransitions.length !== scene.transitions.length) {
+					const updatedScene = { ...scene, transitions: cleanedTransitions };
+					const scenes = editor.scenes.getScenes().map((s) =>
+						s.id === scene.id ? updatedScene : s,
+					);
+					editor.scenes.setScenes({ scenes, activeSceneId: scene.id });
+				}
+			}
+		} catch {
+			// no active scene
+		}
+
 		if (this.rightSideElements.length > 0) {
 			editor.selection.setSelectedElements({ elements: this.rightSideElements });
 		}
@@ -128,6 +152,9 @@ export class SplitElementsCommand extends Command {
 			const editor = EditorCore.getInstance();
 			editor.timeline.updateTracks(this.savedState);
 			editor.selection.setSelectedElements({ elements: this.previousSelection });
+			// Do NOT restore transitions here — SetTransitionCommand handles its own undo
+			// in the command stack. Restoring here would cause transitions to reappear
+			// after undo+re-split sequences.
 		}
 	}
 }

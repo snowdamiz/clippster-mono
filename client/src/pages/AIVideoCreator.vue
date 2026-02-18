@@ -936,7 +936,7 @@ async function generateTranscriptForUploadedFile(item: AIVideoMediaItem, path: s
     
     const res = await api.post('/clips/transcribe', formData, {
       params: { project_id: 'ai-creator' },
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': undefined }
     });
     
     const m = mediaItems.value.find(x => x.id === item.id);

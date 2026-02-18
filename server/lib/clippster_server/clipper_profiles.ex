@@ -23,7 +23,19 @@ defmodule ClippsterServer.ClipperProfiles do
   """
   def get_or_create_profile(user_id) do
     case get_profile_by_user_id(user_id) do
-      nil -> create_profile(%{user_id: user_id})
+      nil ->
+        case create_profile(%{user_id: user_id}) do
+          {:ok, profile} -> {:ok, profile}
+          {:error, %Ecto.Changeset{errors: errors}} ->
+            if Keyword.has_key?(errors, :user_id) do
+              case get_profile_by_user_id(user_id) do
+                nil -> {:error, :profile_not_found}
+                profile -> {:ok, profile}
+              end
+            else
+              {:error, :profile_creation_failed}
+            end
+        end
       profile -> {:ok, profile}
     end
   end

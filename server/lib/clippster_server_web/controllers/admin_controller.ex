@@ -9,6 +9,7 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.Subscriptions
   alias ClippsterServer.OrganizationSubscriptions
   alias ClippsterServer.PromoCodes
+  alias ClippsterServer.ClipperProfiles.LeaderboardWorker
 
   def get_ai_usage_stats(conn, _params) do
     stats = AI.get_usage_stats()
@@ -1950,5 +1951,39 @@ defmodule ClippsterServerWeb.AdminController do
       {:error, _} ->
         conn |> put_status(400) |> json(%{success: false, error: "Invalid moderator ID"})
     end
+  end
+
+  # ============================================================================
+  # Leaderboard Management
+  # ============================================================================
+
+  @doc """
+  Manually trigger leaderboard recalculation for a given period type.
+  Accepts period_type: "weekly" | "monthly" | "both" (default: "both")
+  """
+  def refresh_leaderboard(conn, params) do
+    period_type = Map.get(params, "period_type", "both")
+
+    results =
+      case period_type do
+        "weekly" ->
+          LeaderboardWorker.calculate_weekly_leaderboard()
+          %{weekly: true, monthly: false}
+
+        "monthly" ->
+          LeaderboardWorker.calculate_monthly_leaderboard()
+          %{weekly: false, monthly: true}
+
+        _ ->
+          LeaderboardWorker.calculate_weekly_leaderboard()
+          LeaderboardWorker.calculate_monthly_leaderboard()
+          %{weekly: true, monthly: true}
+      end
+
+    json(conn, %{
+      success: true,
+      message: "Leaderboard recalculated successfully",
+      recalculated: results
+    })
   end
 end

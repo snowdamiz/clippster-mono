@@ -229,7 +229,9 @@ if config_env() == :prod do
       # Tauri custom protocol
       "tauri://localhost",
       "https://tauri.localhost",
-      "http://tauri.localhost"
+      "http://tauri.localhost",
+      # Tauri production app served via tauri-plugin-localhost
+      "http://localhost:1420"
     ]
 
   # ## SSL Support

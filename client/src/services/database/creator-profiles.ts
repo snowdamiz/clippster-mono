@@ -37,6 +37,14 @@ async function ensureLayoutOverlaysColumn(db: any) {
   }
 }
 
+async function ensureDisabledColumn(db: any) {
+  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
+  const has = columns.some((c: { name: string }) => c.name === 'disabled');
+  if (!has) {
+    await db.execute('ALTER TABLE creator_profiles ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
 async function ensureSelectedBrandingColumn(db: any) {
   const columns = (await db.select('PRAGMA table_info(projects)')) as { name: string }[];
   const has = columns.some((c: { name: string }) => c.name === 'selected_branding_profile_id');
@@ -53,6 +61,7 @@ export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]
   await ensureRatioSettingsColumns(db);
   await ensureScopeColumn(db);
   await ensureLayoutOverlaysColumn(db);
+  await ensureDisabledColumn(db);
   const userId = getCurrentUserId();
 
   // Get all profiles for current user
@@ -303,6 +312,22 @@ export async function deleteCreatorProfile(id: string): Promise<void> {
   const db = await getDatabase();
   // Platform links will be cascade deleted
   await db.execute('DELETE FROM creator_profiles WHERE id = ?', [id]);
+}
+
+export async function toggleLocalProfileDisabled(id: string): Promise<boolean> {
+  const db = await getDatabase();
+  await ensureDisabledColumn(db);
+  const rows = await db.select<{ disabled: number }[]>(
+    'SELECT disabled FROM creator_profiles WHERE id = ?',
+    [id]
+  );
+  if (rows.length === 0) throw new Error('Profile not found');
+  const newDisabled = rows[0].disabled ? 0 : 1;
+  await db.execute(
+    'UPDATE creator_profiles SET disabled = ?, updated_at = ? WHERE id = ?',
+    [newDisabled, Date.now(), id]
+  );
+  return newDisabled === 1;
 }
 
 // ==================== Global Branding Profiles ====================

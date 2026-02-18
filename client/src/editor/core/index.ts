@@ -58,6 +58,8 @@ export class EditorCore {
 	}
 
 	static reset(): void {
+		EditorCore.instance?.save.stop();
+		EditorCore.instance?.playback.pause();
 		EditorCore.instance = null;
 	}
 }

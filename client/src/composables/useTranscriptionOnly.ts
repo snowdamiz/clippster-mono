@@ -253,7 +253,7 @@ export function useTranscriptionOnly() {
           checkCancelled();
 
           const response = await api.post('/clips/transcribe', formData, {
-            headers: { 'Content-Type': 'multipart/form-data' },
+            headers: { 'Content-Type': undefined },
             signal: abortController?.signal,
           });
 

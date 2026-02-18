@@ -79,6 +79,49 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 			await resolveAndInitBranding(sources);
 		}
 
+		// Backfill sourceProjectId if missing (for projects created before this was added)
+		if (!loadedProject?.settings?.sourceProjectId) {
+			try {
+				const sources = await getVideoEditorSourcesByProjectId(projectId);
+				const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
+				if (clipSource?.source_id) {
+					const clip = await getClip(clipSource.source_id);
+					if (clip?.project_id) {
+						editor.project.setActiveProject({
+							project: {
+								...loadedProject,
+								settings: { ...loadedProject.settings, sourceProjectId: clip.project_id },
+							},
+						});
+						await editor.project.saveCurrentProject();
+					}
+				}
+			} catch {
+				// Non-fatal
+			}
+		}
+
+		// Backfill missing media asset dimensions (for projects saved before dimension probing was added)
+		try {
+			const assets = editor.media.getAssets();
+			const needsBackfill = assets.filter((a) => a.type !== "audio" && (!a.width || !a.height) && a.url);
+			if (needsBackfill.length > 0) {
+				const updatedAssets = [...assets];
+				for (const asset of needsBackfill) {
+					const dims = await probeMediaDimensions(asset.url!, asset.type as "video" | "image");
+					if (dims) {
+						const updated: MediaAsset = { ...asset, width: dims.width, height: dims.height };
+						await storageService.saveMediaAsset({ projectId, mediaAsset: updated });
+						const idx = updatedAssets.findIndex((a) => a.id === asset.id);
+						if (idx !== -1) updatedAssets[idx] = updated;
+					}
+				}
+				editor.media.setAssets({ assets: updatedAssets });
+			}
+		} catch {
+			// Non-fatal — dimensions will fall back to canvas size
+		}
+
 		return editor;
 	}
 
@@ -90,6 +133,21 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 
 	// Build timeline tracks
 	const tracks = await buildTimelineTracks(projectId, sources, mediaAssets);
+
+	// Resolve the original Clippster project ID (for transcript lookup)
+	// Chain: video_editor_source (source_type='clip') → clip → clip.project_id
+	let sourceProjectId: string | null = null;
+	try {
+		const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
+		if (clipSource?.source_id) {
+			const clip = await getClip(clipSource.source_id);
+			if (clip?.project_id) {
+				sourceProjectId = clip.project_id;
+			}
+		}
+	} catch {
+		// Non-fatal — transcript just won't load
+	}
 
 	// Create the OpenCut project
 	const now = new Date();
@@ -115,7 +173,7 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 			},
 		],
 		currentSceneId: sceneId,
-		settings: DEFAULT_PROJECT_SETTINGS,
+		settings: { ...DEFAULT_PROJECT_SETTINGS, sourceProjectId },
 		version: 1,
 		timelineViewState: {
 			zoomLevel: 1,
@@ -137,6 +195,38 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 	await resolveAndInitBranding(sources);
 
 	return editor;
+}
+
+/**
+ * Probe video/image dimensions from a URL.
+ * Returns { width, height } or null if probing fails.
+ */
+async function probeMediaDimensions(url: string, mediaType: "video" | "audio" | "image"): Promise<{ width: number; height: number } | null> {
+	if (mediaType === "audio") return null;
+	return new Promise((resolve) => {
+		const timeout = setTimeout(() => resolve(null), 5000);
+		if (mediaType === "video") {
+			const video = document.createElement("video");
+			video.preload = "metadata";
+			video.onloadedmetadata = () => {
+				clearTimeout(timeout);
+				const w = video.videoWidth;
+				const h = video.videoHeight;
+				video.src = "";
+				resolve(w > 0 && h > 0 ? { width: w, height: h } : null);
+			};
+			video.onerror = () => { clearTimeout(timeout); resolve(null); };
+			video.src = url;
+		} else {
+			const img = new Image();
+			img.onload = () => {
+				clearTimeout(timeout);
+				resolve(img.naturalWidth > 0 ? { width: img.naturalWidth, height: img.naturalHeight } : null);
+			};
+			img.onerror = () => { clearTimeout(timeout); resolve(null); };
+			img.src = url;
+		}
+	});
 }
 
 /**
