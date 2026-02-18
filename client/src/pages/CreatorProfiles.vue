@@ -259,13 +259,6 @@
                             </span>
                           </DropdownMenuItem>
                         </template>
-                        <template v-if="creator.isOrgProfile && creator.organization_id">
-                          <DropdownMenuSeparator class="creator-dropdown__separator" />
-                          <DropdownMenuItem class="creator-dropdown__item" @click="toggleProfileDisabled(creator)">
-                            <component :is="creator.disabled ? 'Eye' : 'EyeOff'" class="creator-dropdown__item-icon" />
-                            {{ creator.disabled ? 'Enable' : 'Disable' }} Profile
-                          </DropdownMenuItem>
-                        </template>
                         <template v-if="!creator.isOrgProfile">
                           <DropdownMenuSeparator class="creator-dropdown__separator" />
                           <DropdownMenuItem
@@ -517,6 +510,10 @@
                         </template>
                         <template v-if="!creator.isOrgProfile">
                           <DropdownMenuSeparator class="creator-dropdown__separator" />
+                          <DropdownMenuItem class="creator-dropdown__item" @click="toggleProfileDisabled(creator)">
+                            <component :is="creator.disabled ? 'Eye' : 'EyeOff'" class="creator-dropdown__item-icon" />
+                            {{ creator.disabled ? 'Enable' : 'Disable' }} Profile
+                          </DropdownMenuItem>
                           <DropdownMenuItem
                             class="creator-dropdown__item creator-dropdown__item--danger"
                             @click="confirmDeleteCreator(creator)"
@@ -772,6 +769,7 @@
   import {
     getAllCreatorProfiles,
     deleteCreatorProfile,
+    toggleLocalProfileDisabled,
     getMonitoredStreamer,
     getMonitoredStreamerByMint,
     updateMonitoredStreamer,
@@ -1330,6 +1328,7 @@
 
       const displayProfiles: DisplayCreatorProfile[] = localProfiles.map((p) => ({
         ...p,
+        disabled: p.disabled ? true : false,
         isOrgProfile: false,
       }));
 
@@ -1625,19 +1624,25 @@
   }
 
   async function toggleProfileDisabled(creator: DisplayCreatorProfile) {
-    if (!creator.isOrgProfile || !creator.organization_id || !creator.server_id) {
-      showError('Toggle Failed', 'This profile cannot be toggled');
-      return;
-    }
-
     try {
-      const response = await toggleCreatorProfileDisabled(creator.organization_id, creator.server_id);
-      if (response.success && response.profile) {
-        const action = response.profile.disabled ? 'disabled' : 'enabled';
+      if (!creator.isOrgProfile) {
+        // User-created local profile — toggle via SQLite
+        const nowDisabled = await toggleLocalProfileDisabled(creator.id);
+        const action = nowDisabled ? 'disabled' : 'enabled';
         success('Profile Updated', `"${creator.name}" has been ${action}`);
         await loadCreators();
+      } else if (creator.organization_id && creator.server_id) {
+        // Org-assigned profile — toggle via server API
+        const response = await toggleCreatorProfileDisabled(creator.organization_id, creator.server_id);
+        if (response.success && response.profile) {
+          const action = response.profile.disabled ? 'disabled' : 'enabled';
+          success('Profile Updated', `"${creator.name}" has been ${action}`);
+          await loadCreators();
+        } else {
+          showError('Toggle Failed', response.error || 'Failed to toggle profile');
+        }
       } else {
-        showError('Toggle Failed', response.error || 'Failed to toggle profile');
+        showError('Toggle Failed', 'This profile cannot be toggled');
       }
     } catch (err) {
       console.error('Failed to toggle profile:', err);

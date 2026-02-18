@@ -284,6 +284,7 @@ export {
   createCreatorProfile,
   updateCreatorProfile,
   deleteCreatorProfile,
+  toggleLocalProfileDisabled,
   addPlatformLink,
   updatePlatformLink,
   deletePlatformLink,
