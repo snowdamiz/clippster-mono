@@ -6,6 +6,7 @@ import {
 	type HandlePosition,
 } from "../../composables/preview/usePreviewInteraction";
 import { useEditorUIState } from "../../composables/useEditorUIState";
+import { useEditor } from "../../composables/useEditor";
 import CropOverlay from "./CropOverlay.vue";
 
 const props = defineProps<{
@@ -34,7 +35,7 @@ const {
 	canvasHeight: canvasHeightRef,
 });
 
-const { isCropMode } = useEditorUIState();
+const { isCropMode, enterCropMode } = useEditorUIState();
 
 const overlayRef = ref<HTMLDivElement | null>(null);
 
@@ -136,6 +137,24 @@ function onOverlayMouseDown(event: MouseEvent) {
 	handleCanvasMouseDown(event);
 }
 
+const { editor: editorCore } = useEditor();
+
+function onOverlayDblClick(_event: MouseEvent) {
+	if (isCropMode.value) return;
+	if (!selectedBounds.value) return;
+
+	const tracks = editorCore.timeline.getTracks();
+	const selId = selectedBounds.value.elementId;
+
+	for (const track of tracks) {
+		const el = track.elements.find((e) => e.id === selId);
+		if (el && (el.type === "video" || el.type === "image")) {
+			enterCropMode((el as any).crop);
+			return;
+		}
+	}
+}
+
 function onOverlayMouseMove(event: MouseEvent) {
 	if (isCropMode.value) return;
 	handleCanvasMouseMove(event);
@@ -159,6 +178,7 @@ const cursorStyle = computed(() => {
 		:style="{ cursor: cursorStyle }"
 		@mousedown="onOverlayMouseDown"
 		@mousemove="onOverlayMouseMove"
+		@dblclick="onOverlayDblClick"
 	>
 		<!-- Hover outline (non-selected elements) -->
 		<svg
