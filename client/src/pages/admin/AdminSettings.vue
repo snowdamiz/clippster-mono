@@ -139,6 +139,63 @@
         </div>
       </div>
 
+      <!-- Leaderboard Management Section -->
+      <div class="admin-settings__section">
+        <div class="admin-settings__section-header">
+          <h3 class="admin-settings__section-title">Leaderboard Management</h3>
+          <p class="admin-settings__section-desc">
+            Manually trigger leaderboard recalculation. Normally runs automatically on Monday (weekly) and the 1st of each month (monthly). Use this to populate data immediately without waiting for the scheduled run.
+          </p>
+        </div>
+
+        <div class="admin-settings__leaderboard">
+          <div class="admin-settings__leaderboard-status">
+            <div class="admin-settings__leaderboard-indicator">
+              <Trophy :size="14" />
+            </div>
+            <div>
+              <span class="admin-settings__branding-label">Scheduled Recalculation</span>
+              <p class="admin-settings__branding-hint">Weekly: every Monday 00:00 UTC &nbsp;·&nbsp; Monthly: 1st of month 00:00 UTC</p>
+            </div>
+          </div>
+
+          <div class="admin-settings__leaderboard-actions">
+            <button
+              class="admin-settings__lb-btn admin-settings__lb-btn--weekly"
+              :disabled="refreshingLeaderboard !== null"
+              @click="refreshLeaderboard('weekly')"
+            >
+              <Loader2 v-if="refreshingLeaderboard === 'weekly'" :size="14" class="admin-settings__flag-loading-icon" />
+              <RefreshCw v-else :size="14" />
+              {{ refreshingLeaderboard === 'weekly' ? 'Refreshing...' : 'Refresh Weekly' }}
+            </button>
+            <button
+              class="admin-settings__lb-btn admin-settings__lb-btn--monthly"
+              :disabled="refreshingLeaderboard !== null"
+              @click="refreshLeaderboard('monthly')"
+            >
+              <Loader2 v-if="refreshingLeaderboard === 'monthly'" :size="14" class="admin-settings__flag-loading-icon" />
+              <RefreshCw v-else :size="14" />
+              {{ refreshingLeaderboard === 'monthly' ? 'Refreshing...' : 'Refresh Monthly' }}
+            </button>
+            <button
+              class="admin-settings__lb-btn admin-settings__lb-btn--both"
+              :disabled="refreshingLeaderboard !== null"
+              @click="refreshLeaderboard('both')"
+            >
+              <Loader2 v-if="refreshingLeaderboard === 'both'" :size="14" class="admin-settings__flag-loading-icon" />
+              <RefreshCw v-else :size="14" />
+              {{ refreshingLeaderboard === 'both' ? 'Refreshing...' : 'Refresh Both' }}
+            </button>
+          </div>
+
+          <div v-if="leaderboardRefreshResult" class="admin-settings__lb-result" :class="{ 'admin-settings__lb-result--success': leaderboardRefreshResult.success, 'admin-settings__lb-result--error': !leaderboardRefreshResult.success }">
+            <Check v-if="leaderboardRefreshResult.success" :size="14" />
+            <span>{{ leaderboardRefreshResult.message }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Free Tier Branding Section -->
       <div class="admin-settings__section">
         <div class="admin-settings__section-header">
@@ -219,7 +276,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
-  import { Settings, Radio, KeyRound, Check, Loader2, ImageIcon } from 'lucide-vue-next';
+  import { Settings, Radio, KeyRound, Check, Loader2, ImageIcon, Trophy, RefreshCw } from 'lucide-vue-next';
   import api from '@/services/api';
   import PageLayout from '@/components/PageLayout.vue';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
@@ -305,6 +362,29 @@
     outro_url: '',
   });
   const savingBranding = ref(false);
+
+  const refreshingLeaderboard = ref<'weekly' | 'monthly' | 'both' | null>(null);
+  const leaderboardRefreshResult = ref<{ success: boolean; message: string } | null>(null);
+
+  async function refreshLeaderboard(periodType: 'weekly' | 'monthly' | 'both') {
+    refreshingLeaderboard.value = periodType;
+    leaderboardRefreshResult.value = null;
+    try {
+      const response = await api.post('/admin/leaderboard/refresh', { period_type: periodType });
+      leaderboardRefreshResult.value = {
+        success: response.data.success,
+        message: response.data.message || 'Leaderboard recalculated successfully',
+      };
+    } catch (err: any) {
+      leaderboardRefreshResult.value = {
+        success: false,
+        message: err?.response?.data?.error || 'Failed to refresh leaderboard',
+      };
+    } finally {
+      refreshingLeaderboard.value = null;
+      setTimeout(() => { leaderboardRefreshResult.value = null; }, 5000);
+    }
+  }
 
   const freeTierBrandingConfigured = computed(() => {
     return !!(freeTierBranding.value.watermark_url || freeTierBranding.value.intro_url || freeTierBranding.value.outro_url);
@@ -657,6 +737,111 @@
 
   .admin-settings__platform-reset:hover {
     color: #bfdbfe;
+  }
+
+  /* Leaderboard Management */
+  .admin-settings__leaderboard {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .admin-settings__leaderboard-status {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .admin-settings__leaderboard-indicator {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    flex-shrink: 0;
+  }
+
+  .admin-settings__leaderboard-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .admin-settings__lb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+  }
+
+  .admin-settings__lb-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .admin-settings__lb-btn--weekly {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border-color: rgba(59, 130, 246, 0.3);
+  }
+
+  .admin-settings__lb-btn--weekly:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.25);
+  }
+
+  .admin-settings__lb-btn--monthly {
+    background: rgba(139, 92, 246, 0.15);
+    color: #a78bfa;
+    border-color: rgba(139, 92, 246, 0.3);
+  }
+
+  .admin-settings__lb-btn--monthly:hover:not(:disabled) {
+    background: rgba(139, 92, 246, 0.25);
+  }
+
+  .admin-settings__lb-btn--both {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.3);
+  }
+
+  .admin-settings__lb-btn--both:hover:not(:disabled) {
+    background: rgba(16, 185, 129, 0.25);
+  }
+
+  .admin-settings__lb-result {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.875rem;
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
+  .admin-settings__lb-result--success {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    color: #34d399;
+  }
+
+  .admin-settings__lb-result--error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
   }
 
   /* Free Tier Branding */
