@@ -23,6 +23,7 @@ const props = defineProps<{
 }>();
 
 const activeTransition = computed<Transition | null>(() => {
+	void version.value;
 	try {
 		const scene = editor.scenes.getActiveScene();
 		if (!scene?.transitions) return null;
@@ -51,7 +52,7 @@ const videoSubTabs: { id: VideoSubTab; label: string }[] = [
 	{ id: 'chromakey', label: 'Chroma Key' },
 ];
 
-const { editor } = useEditor();
+const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
 const { cropPanelRequested, clearCropPanelRequest } = useEditorUIState();
 

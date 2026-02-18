@@ -114,13 +114,17 @@ export function usePreviewInteraction({
 		const ch = canvasHeight.value;
 		const result: ElementBounds[] = [];
 
-		// Match scene builder render order: main track first (bottom), overlays last (top).
-		// hitTest iterates in reverse, so overlays (stickers, text) get checked before main video.
+		// Mirror scene-builder's orderedTracksBottomToTop:
+		//   orderedTracksTopToBottom = [non-main..., main]
+		//   orderedTracksBottomToTop = [main, ...non-main reversed]
+		// Main is rendered first (bottom), non-main tracks rendered on top in reverse order.
+		// hitTest iterates result in reverse, so the last entry (topmost rendered) is checked first.
 		const allTracks = tracks.value;
 		const visibleTracks = allTracks.filter((t) => !("hidden" in t && t.hidden));
+		const nonMainTracks = visibleTracks.filter((t) => !isMainTrack(t));
 		const orderedTracks = [
 			...visibleTracks.filter((t) => isMainTrack(t)),
-			...visibleTracks.filter((t) => !isMainTrack(t)),
+			...nonMainTracks.slice().reverse(),
 		];
 
 		for (const track of orderedTracks) {
@@ -183,22 +187,25 @@ export function usePreviewInteraction({
 		let height: number;
 
 		if (element.type === "video" || element.type === "image") {
-			// Account for crop: when cropped, the visible region is contain-fitted
+			// Get source dimensions from media asset — needed for both cropped and uncropped paths
+			const mediaAsset = editor.media.getAssets().find((a) => a.id === (element as any).mediaId);
+			const srcW = mediaAsset?.width ?? cw;
+			const srcH = mediaAsset?.height ?? ch;
+
 			const crop = (element as any).crop;
 			const hasCrop = crop && (crop.top > 0 || crop.right > 0 || crop.bottom > 0 || crop.left > 0);
 			if (hasCrop) {
-				// Get source dimensions from media asset
-				const mediaAsset = editor.media.getAssets().find((a) => a.id === (element as any).mediaId);
-				const srcW = mediaAsset?.width ?? cw;
-				const srcH = mediaAsset?.height ?? ch;
+				// Cropped: contain-fit the cropped region into the canvas
 				const croppedW = srcW * (1 - crop.left - crop.right);
 				const croppedH = srcH * (1 - crop.top - crop.bottom);
 				const containScale = Math.min(cw / croppedW, ch / croppedH);
 				width = croppedW * containScale * transform.scale;
 				height = croppedH * containScale * transform.scale;
 			} else {
-				width = cw * transform.scale;
-				height = ch * transform.scale;
+				// No crop: contain-fit the full media into the canvas (matches VideoNode.render exactly)
+				const containScale = Math.min(cw / srcW, ch / srcH);
+				width = srcW * containScale * transform.scale;
+				height = srcH * containScale * transform.scale;
 			}
 		} else if (element.type === "text") {
 			const textEl = element as TextElement;
@@ -363,6 +370,10 @@ export function usePreviewInteraction({
 
 	// --- Interaction handlers ---
 
+	function isTrackLocked(trackId: string): boolean {
+		return editor.timeline.getTracks().find((t) => t.id === trackId)?.locked === true;
+	}
+
 	function handleCanvasMouseDown(event: MouseEvent) {
 		const pos = screenToCanvas(event.clientX, event.clientY);
 		if (!pos) return;
@@ -375,6 +386,8 @@ export function usePreviewInteraction({
 			if (!alreadySelected) {
 				selectElement({ trackId: hit.trackId, elementId: hit.elementId });
 			}
+			// Prevent drag on locked tracks (still allow selection)
+			if (isTrackLocked(hit.trackId)) return;
 			startDrag(event, hit, "move");
 		} else {
 			clearElementSelection();
@@ -383,6 +396,8 @@ export function usePreviewInteraction({
 
 	function handleHandleMouseDown(event: MouseEvent, handle: HandlePosition, bounds: ElementBounds) {
 		event.stopPropagation();
+		// Prevent resize/rotate on locked tracks
+		if (isTrackLocked(bounds.trackId)) return;
 		if (handle === "rotate") {
 			startDrag(event, bounds, "rotate");
 		} else {

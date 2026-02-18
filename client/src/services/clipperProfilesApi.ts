@@ -196,7 +196,7 @@ interface ChannelLinksResponse {
 
 interface ChannelLinkResponse {
   success: boolean;
-  channel_link: ChannelLink;
+  channel_link?: ChannelLink;
   error?: string;
 }
 
@@ -261,8 +261,15 @@ export async function createChannelLink(data: {
   username?: string;
   display_order?: number;
 }): Promise<ChannelLinkResponse> {
-  const response = await api.post('/user/clipper-profile/channel-links', data);
-  return response.data;
+  try {
+    const response = await api.post('/user/clipper-profile/channel-links', data);
+    return response.data;
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to save channel link',
+    };
+  }
 }
 
 export async function updateChannelLink(
@@ -273,8 +280,15 @@ export async function updateChannelLink(
     display_order?: number;
   }
 ): Promise<ChannelLinkResponse> {
-  const response = await api.put(`/user/clipper-profile/channel-links/${id}`, data);
-  return response.data;
+  try {
+    const response = await api.put(`/user/clipper-profile/channel-links/${id}`, data);
+    return response.data;
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to update channel link',
+    };
+  }
 }
 
 export async function deleteChannelLink(id: number): Promise<DeleteResponse> {

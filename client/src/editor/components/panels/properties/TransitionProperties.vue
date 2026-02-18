@@ -5,6 +5,7 @@ import type { Transition, TransitionType } from "../../../types/transitions";
 import { TRANSITION_PRESETS, TRANSITION_CATEGORIES } from "../../../constants/transition-constants";
 import TransitionPreviewCanvas from "../assets/TransitionPreviewCanvas.vue";
 import { ArrowRightLeft, Trash2 } from "lucide-vue-next";
+import { SetTransitionCommand } from "../../../lib/commands/scene";
 
 const props = defineProps<{
 	transition: Transition;
@@ -34,29 +35,14 @@ function updateDuration() {
 }
 
 function removeTransition() {
-	try {
-		const scene = editor.scenes.getActiveScene();
-		const filtered = (scene.transitions ?? []).filter((t) => t.id !== props.transition.id);
-		const updatedScene = { ...scene, transitions: filtered };
-		const scenes = editor.scenes.getScenes().map((s) => (s.id === scene.id ? updatedScene : s));
-		editor.scenes.setScenes({ scenes, activeSceneId: scene.id });
-	} catch {
-		// no scene
-	}
+	const command = new SetTransitionCommand(null, props.transition.targetElementId);
+	editor.command.execute({ command });
 }
 
 function updateTransition(updates: Partial<Transition>) {
-	try {
-		const scene = editor.scenes.getActiveScene();
-		const updated = (scene.transitions ?? []).map((t) =>
-			t.id === props.transition.id ? { ...t, ...updates } : t,
-		);
-		const updatedScene = { ...scene, transitions: updated };
-		const scenes = editor.scenes.getScenes().map((s) => (s.id === scene.id ? updatedScene : s));
-		editor.scenes.setScenes({ scenes, activeSceneId: scene.id });
-	} catch {
-		// no scene
-	}
+	const updated = { ...props.transition, ...updates };
+	const command = new SetTransitionCommand(updated, props.transition.targetElementId);
+	editor.command.execute({ command });
 }
 </script>
 

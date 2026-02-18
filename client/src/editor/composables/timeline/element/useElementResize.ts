@@ -53,7 +53,7 @@ export function useTimelineElementResize({
 
 	function canExtendElementDuration(): boolean {
 		const t = element.value.type;
-		return t === "text" || t === "image";
+		return t === "text" || t === "image" || t === "effect" || t === "sticker" || t === "caption";
 	}
 
 	function handleResizeStart({
