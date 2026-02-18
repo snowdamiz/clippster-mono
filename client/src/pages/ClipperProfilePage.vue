@@ -1185,7 +1185,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted, onUnmounted, markRaw, computed, watch } from 'vue';
+  import { ref, reactive, onMounted, onUnmounted, markRaw, computed, watch, h } from 'vue';
   import {
     UserCircle,
     Share2,
@@ -1197,7 +1197,6 @@
     Loader2,
     Music2,
     Instagram,
-    Twitter,
     Youtube,
     Globe,
     CreditCard,
@@ -1645,13 +1644,21 @@
   let cleanupInstagramAuth: (() => void) | null = null;
   let cleanupTwitterAuth: (() => void) | null = null;
 
+  const XLogo = markRaw({
+    render() {
+      return h('svg', { viewBox: '0 0 24 24', fill: 'currentColor', width: '1em', height: '1em' }, [
+        h('path', { d: 'M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z' }),
+      ]);
+    },
+  });
+
   const availablePlatforms = [
     {
       id: 'instagram',
       name: 'Instagram',
       icon: markRaw(Instagram),
       iconClass: 'platform-card__icon--instagram',
-      available: true,
+      available: false,
     },
     {
       id: 'tiktok',
@@ -1663,7 +1670,7 @@
     {
       id: 'x',
       name: 'X (Twitter)',
-      icon: markRaw(Twitter),
+      icon: markRaw(XLogo),
       iconClass: 'platform-card__icon--x',
       available: true,
     },
@@ -1679,7 +1686,7 @@
   const paymentMethodForm = reactive({ method_type: '', is_default: false, details: {} as Record<string, string> });
 
   const getPlatformIcon = (platform: string) => {
-    const icons: Record<string, any> = { tiktok: Music2, instagram: Instagram, x: Twitter, twitter: Twitter, youtube: Youtube };
+    const icons: Record<string, any> = { tiktok: Music2, instagram: Instagram, x: XLogo, twitter: XLogo, youtube: Youtube };
     return icons[platform] || Globe;
   };
 
