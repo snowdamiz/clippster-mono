@@ -94,6 +94,43 @@ defmodule ClippsterServer.Social.ExternalPostSubmission do
   end
 
   @doc """
+  Changeset for creating a personal external post submission (no org required).
+  Used by individual clippers to track posts on their own profile.
+  """
+  def create_personal_changeset(submission, attrs) do
+    submission
+    |> cast(attrs, [
+      :organization_creator_profile_id,
+      :campaign_id,
+      :submitted_by_user_id,
+      :platform,
+      :post_url,
+      :post_id,
+      :caption,
+      :media_type,
+      :clip_id,
+      :view_count,
+      :like_count,
+      :comment_count,
+      :share_count,
+      :save_count,
+      :notes,
+      :author_username,
+      :author_name,
+      :author_profile_image
+    ])
+    |> validate_required([:submitted_by_user_id, :platform, :post_url])
+    |> validate_inclusion(:platform, @platforms)
+    |> validate_inclusion(:media_type, @media_types ++ [nil])
+    |> validate_post_url()
+    |> extract_post_id()
+    |> put_change(:status, "pending")
+    |> foreign_key_constraint(:campaign_id)
+    |> foreign_key_constraint(:organization_creator_profile_id)
+    |> foreign_key_constraint(:submitted_by_user_id)
+  end
+
+  @doc """
   Changeset for updating analytics.
   """
   def update_analytics_changeset(submission, attrs) do

@@ -659,6 +659,10 @@ defmodule ClippsterServerWeb.Router do
     put("/user/payment-methods/:id", ClipperProfileController, :update_payment_method)
     delete("/user/payment-methods/:id", ClipperProfileController, :delete_payment_method)
 
+    # Personal external post submissions (link submissions for individual clippers)
+    post("/user/external-posts", SchedulingController, :submit_personal_external_post)
+    get("/user/external-posts", SchedulingController, :list_personal_external_posts)
+
     # User social media posts (personal posting, not campaigns)
     post("/user/posts/upload-media", UserPostsController, :upload_media)
     post("/user/instagram/publish", UserPostsController, :publish)

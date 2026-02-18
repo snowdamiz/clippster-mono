@@ -554,6 +554,57 @@
                 </div>
               </div>
             </section>
+
+            <!-- Submitted Post Links -->
+            <section class="section">
+              <div class="section__header">
+                <div class="section__header-icon">
+                  <Link2 />
+                </div>
+                <div class="section__header-text">
+                  <h2 class="section-title">Submitted Post Links</h2>
+                  <p class="section-subtitle">External posts you've manually tracked</p>
+                </div>
+                <button class="action-btn" @click="showAddPostDialog = true">
+                  <Plus />
+                  Add Post
+                </button>
+              </div>
+
+              <div v-if="loadingExternalPosts" class="loading-rows">
+                <div v-for="i in 3" :key="i" class="skeleton-row"></div>
+              </div>
+              <div v-else-if="externalPosts.length === 0" class="empty-state empty-state--compact">
+                <Link2 class="empty-state__icon" />
+                <p class="empty-state__title">No submitted posts yet</p>
+                <p class="empty-state__text">Add a post link to track it here</p>
+                <button class="empty-state__btn empty-state__btn--primary" @click="showAddPostDialog = true">
+                  <Plus />
+                  Add Post
+                </button>
+              </div>
+              <div v-else class="submission-list">
+                <div v-for="post in externalPosts" :key="post.id" class="submission-row">
+                  <div class="submission-row__platform" :class="getSubmissionPlatformClass(post.platform)">
+                    <component :is="getPlatformIcon(post.platform)" />
+                  </div>
+                  <div class="submission-row__content">
+                    <a :href="post.post_url" target="_blank" class="submission-row__link">
+                      {{ truncateUrl(post.post_url) }}
+                    </a>
+                    <span class="submission-row__meta">
+                      <template v-if="post.creator_profile">{{ post.creator_profile.name }} · </template>
+                      <template v-else>Personal · </template>
+                      {{ formatViews(post.analytics?.view_count || 0) }} views
+                    </span>
+                  </div>
+                  <span class="status-badge" :class="`status-badge--${post.status}`">
+                    {{ post.status }}
+                  </span>
+                  <span class="submission-row__date">{{ formatDate(post.inserted_at) }}</span>
+                </div>
+              </div>
+            </section>
           </template>
 
           <!-- Hiring Tab -->
@@ -1125,6 +1176,11 @@
       @close="showOnboardingWizard = false"
       @complete="onOnboardingComplete"
     />
+
+    <AddPostDialog
+      v-model="showAddPostDialog"
+      @submitted="onPostAdded"
+    />
   </div>
 </template>
 
@@ -1176,6 +1232,7 @@
   import UserPostsList from '@/components/UserPostsList.vue';
   import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
   import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
+  import AddPostDialog from '@/components/AddPostDialog.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
@@ -1189,6 +1246,10 @@
     DialogDescription,
     DialogFooter,
   } from '@/components/ui/dialog';
+  import {
+    listPersonalExternalPosts,
+    type ExternalPostSubmission,
+  } from '@/services/schedulingApi';
   import {
     listPaymentMethods,
     createPaymentMethod,
@@ -1383,6 +1444,29 @@
   const postsAnalytics = ref<UserAnalyticsSummary | null>(null);
   const userPosts = ref<UserPost[]>([]);
 
+  // External post submissions (manually submitted links)
+  const loadingExternalPosts = ref(false);
+  const externalPosts = ref<ExternalPostSubmission[]>([]);
+  const showAddPostDialog = ref(false);
+
+  const loadExternalPosts = async () => {
+    loadingExternalPosts.value = true;
+    try {
+      const res = await listPersonalExternalPosts({ limit: 50 });
+      if (res.success) {
+        externalPosts.value = res.submissions;
+      }
+    } catch (err) {
+      console.error('Failed to load external posts:', err);
+    } finally {
+      loadingExternalPosts.value = false;
+    }
+  };
+
+  function onPostAdded(submission: ExternalPostSubmission) {
+    externalPosts.value.unshift(submission);
+  }
+
   interface LeaderboardEntry {
     id: number;
     rank: number;
@@ -1405,6 +1489,7 @@
     (newTab) => {
       if (newTab === 'posts' && userPosts.value.length === 0) {
         loadPostsAnalytics();
+        loadExternalPosts();
       }
       if (newTab === 'hiring' && !hiringPosts.value.length) {
         loadHiringPosts();
@@ -4453,6 +4538,187 @@
   }
   .hiring-tab__dialog-textarea:focus { outline: none; border-color: #22d3ee; }
   .hiring-tab__dialog-note { font-size: 0.75rem; color: var(--sidebar-text-muted); margin: 0; }
+
+  /* ===== Action Button (Add Post etc.) ===== */
+  .action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: filter 150ms ease;
+    flex-shrink: 0;
+  }
+
+  .action-btn:hover {
+    filter: brightness(1.1);
+  }
+
+  .action-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ===== Submission List ===== */
+  .submission-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .submission-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    transition: border-color 150ms ease;
+  }
+
+  .submission-row:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .submission-row__platform {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .submission-row__platform svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .platform--instagram {
+    background: rgba(236, 72, 153, 0.15);
+    color: #f472b6;
+  }
+
+  .platform--tiktok {
+    background: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .platform--youtube {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .platform--x {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--sidebar-text);
+  }
+
+  .submission-row__content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+  }
+
+  .submission-row__link {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .submission-row__link:hover {
+    text-decoration: underline;
+  }
+
+  .submission-row__meta {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .submission-row__date {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ===== Status Badge ===== */
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+
+  .status-badge--pending {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.25);
+  }
+
+  .status-badge--approved {
+    background: rgba(16, 185, 129, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.25);
+  }
+
+  .status-badge--rejected {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+  }
+
+  /* ===== Empty State Compact + Button ===== */
+  .empty-state--compact {
+    padding: 2rem 1rem;
+  }
+
+  .empty-state__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: filter 150ms ease;
+    margin-top: 0.75rem;
+  }
+
+  .empty-state__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: #000;
+  }
+
+  .empty-state__btn--primary:hover {
+    filter: brightness(1.1);
+  }
+
+  .empty-state__btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
 </style>
 
 <!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->

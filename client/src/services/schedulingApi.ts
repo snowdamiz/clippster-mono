@@ -292,6 +292,29 @@ export async function listExternalPosts(
 }
 
 /**
+ * Submit a personal external post link (no org required)
+ */
+export async function submitPersonalExternalPost(
+  data: SubmitExternalPostData
+): Promise<ExternalPostResponse> {
+  const response = await api.post('/user/external-posts', data);
+  return response.data;
+}
+
+/**
+ * List personal external post submissions for the current user
+ */
+export async function listPersonalExternalPosts(options?: {
+  status?: string;
+  creator_profile_id?: number;
+  limit?: number;
+  offset?: number;
+}): Promise<ExternalPostsListResponse> {
+  const response = await api.get('/user/external-posts', { params: options });
+  return response.data;
+}
+
+/**
  * Approve an external post submission
  */
 export async function approveExternalPost(

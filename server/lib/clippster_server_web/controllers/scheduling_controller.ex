@@ -538,6 +538,100 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   @doc """
+  Submit a personal external post link (no org required).
+  POST /user/external-posts
+
+  Body:
+  {
+    "platform": "instagram",
+    "post_url": "https://www.instagram.com/reel/...",
+    "creator_profile_id": 1,
+    "campaign_id": 2,
+    "clip_id": "optional-clip-id"
+  }
+  """
+  def submit_personal_external_post(conn, params) do
+    user = conn.assigns.current_user
+
+    with :ok <- validate_instagram_account_if_needed(params["platform"], user) do
+      platform_analytics = case params["platform"] do
+        "twitter" -> fetch_twitter_analytics_if_applicable(params["platform"], params["post_url"])
+        "instagram" -> fetch_instagram_analytics_if_applicable(params["post_url"], user)
+        _ -> %{}
+      end
+
+      attrs = %{
+        platform: params["platform"],
+        post_url: params["post_url"],
+        caption: params["caption"],
+        media_type: params["media_type"],
+        organization_creator_profile_id: params["creator_profile_id"],
+        campaign_id: params["campaign_id"],
+        clip_id: params["clip_id"],
+        view_count: platform_analytics[:view_count] || params["view_count"],
+        like_count: platform_analytics[:like_count] || params["like_count"],
+        comment_count: platform_analytics[:comment_count] || params["comment_count"],
+        share_count: params["share_count"],
+        save_count: platform_analytics[:save_count] || params["save_count"],
+        notes: params["notes"],
+        author_username: platform_analytics[:author_username],
+        author_name: platform_analytics[:author_name],
+        author_profile_image: platform_analytics[:author_profile_image]
+      }
+
+      case Social.create_personal_external_post_submission(attrs, user) do
+        {:ok, submission} ->
+          conn
+          |> put_status(201)
+          |> json(%{
+            success: true,
+            submission: serialize_external_post(submission),
+            message: "Post submitted successfully"
+          })
+
+        {:error, %Ecto.Changeset{} = changeset} ->
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: format_errors(changeset)})
+
+        {:error, reason} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: to_string(reason)})
+      end
+    else
+      {:error, :instagram_not_connected} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "You must connect your Instagram account before submitting Instagram links."})
+    end
+  end
+
+  @doc """
+  List personal external post submissions for the current user.
+  GET /user/external-posts
+  """
+  def list_personal_external_posts(conn, params) do
+    user = conn.assigns.current_user
+
+    opts = [
+      status: params["status"],
+      creator_profile_id: params["creator_profile_id"],
+      limit: parse_int(params["limit"], 50),
+      offset: parse_int(params["offset"], 0)
+    ]
+    |> Enum.reject(fn {_, v} -> is_nil(v) end)
+
+    {:ok, %{posts: posts, total: total}} = Social.list_personal_external_post_submissions(user.id, opts)
+
+    json(conn, %{
+      success: true,
+      submissions: Enum.map(posts, &serialize_external_post/1),
+      total: total
+    })
+  end
+
+  @doc """
   Sync analytics for all posts in an organization (on-demand).
   POST /organizations/:organization_id/sync-analytics
   """
