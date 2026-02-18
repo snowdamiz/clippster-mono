@@ -740,7 +740,6 @@ pub fn run() {
                 .decorations(false)
                 .visible(false)
                 .transparent(true)
-                .drag_and_drop(false)
                 .build()
                 .expect("Failed to create main window");
 
