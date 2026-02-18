@@ -1,5 +1,7 @@
 import Database from '@tauri-apps/plugin-sql';
 import { invoke } from '@tauri-apps/api/core';
+import { exists, remove } from '@tauri-apps/plugin-fs';
+import { appDataDir } from '@tauri-apps/api/path';
 
 let db: Database | null = null;
 let initializing: Promise<Database> | null = null;
@@ -35,6 +37,21 @@ export async function initDatabase() {
     try {
       await waitForRuntimeReady();
       const dbName = import.meta.env.DEV ? 'clippster_v25_dev.db' : 'clippster_v25.db';
+
+      // In production, delete any existing database before initializing a fresh one
+      if (!import.meta.env.DEV) {
+        try {
+          const dataDir = await appDataDir();
+          const dbPath = `${dataDir}${dbName}`;
+          if (await exists(dbPath)) {
+            console.log('[Database] Existing database found, deleting before fresh init:', dbPath);
+            await remove(dbPath);
+          }
+        } catch (err) {
+          console.error('[Database] Failed to check/delete existing database:', err);
+        }
+      }
+
       const instance = await Database.load(`sqlite:${dbName}`);
 
       db = instance;
