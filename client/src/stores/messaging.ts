@@ -19,6 +19,7 @@ import {
   addParticipant as apiAddParticipant,
   removeParticipant as apiRemoveParticipant,
   deleteConversation as apiDeleteConversation,
+  getOrCreateSupportConversation,
   type Conversation,
   type Message,
   type UnreadCounts,
@@ -361,6 +362,34 @@ export const useMessagingStore = defineStore('messaging', () => {
   }
 
   /**
+   * Get or create the user's support conversation with Clippster staff.
+   */
+  async function startSupportConversation() {
+    const authStore = useAuthStore();
+    if (!authStore.user?.id || !authStore.token) {
+      throw new Error('Not authenticated');
+    }
+
+    // Initialize WebSocket connection if not connected
+    if (!isSocketConnected.value) {
+      await messagingSocket.connect(authStore.token, authStore.user.id);
+      isSocketConnected.value = true;
+
+      messagingSocket.setOnNewMessageNotification((notification) => {
+        handleNewMessageNotification(notification.conversationId, notification.message);
+      });
+
+      messagingSocket.setOnConversationCreated((conversation) => {
+        conversations.value.set(conversation.id, conversation);
+      });
+    }
+
+    const conversation = await getOrCreateSupportConversation();
+    conversations.value.set(conversation.id, conversation);
+    return conversation;
+  }
+
+  /**
    * Create a group conversation.
    */
   async function startGroupConversation(name: string, memberIds: number[]) {
@@ -619,6 +648,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     sendTyping,
     startDirectConversation,
     startGlobalDirectConversation,
+    startSupportConversation,
     startGroupConversation,
     sendAnnouncement,
     leaveConversation,

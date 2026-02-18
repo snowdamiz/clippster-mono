@@ -1064,6 +1064,7 @@
 
   const saveChannelLink = async () => {
     savingChannelLink.value = true;
+    error.value = null;
     try {
       let response;
       if (editingChannelLink.value) {
@@ -1074,9 +1075,12 @@
       if (response.success) {
         showChannelLinkForm.value = false;
         await loadChannelLinks();
+      } else {
+        error.value = response.error || 'Failed to save channel link';
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save channel link:', err);
+      error.value = err?.response?.data?.error || err?.message || 'Failed to save channel link';
     } finally {
       savingChannelLink.value = false;
     }
@@ -1107,6 +1111,7 @@
 
   const savePortfolioClip = async () => {
     savingPortfolioClip.value = true;
+    error.value = null;
     try {
       let response;
       if (editingPortfolioClip.value) {
@@ -1117,9 +1122,12 @@
       if (response.success) {
         showPortfolioClipForm.value = false;
         await loadPortfolioClips();
+      } else {
+        error.value = response.error || 'Failed to save portfolio clip';
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to save portfolio clip:', err);
+      error.value = err?.response?.data?.error || err?.message || 'Failed to save portfolio clip';
     } finally {
       savingPortfolioClip.value = false;
     }
