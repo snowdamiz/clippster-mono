@@ -55,17 +55,19 @@ const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
 const { isCropMode, toggleCropMode } = useEditorUIState();
 
-const hasVideoOrImageSelected = computed(() => {
+const selectedVideoOrImage = computed(() => {
 	void version.value;
-	if (selectedElements.value.length === 0) return false;
+	if (selectedElements.value.length === 0) return null;
 	const tracks = editor.timeline.getTracks();
 	for (const sel of selectedElements.value) {
 		const track = tracks.find((t) => t.id === sel.trackId);
 		const el = track?.elements.find((e) => e.id === sel.elementId);
-		if (el && (el.type === "video" || el.type === "image")) return true;
+		if (el && (el.type === "video" || el.type === "image")) return el as any;
 	}
-	return false;
+	return null;
 });
+
+const hasVideoOrImageSelected = computed(() => !!selectedVideoOrImage.value);
 
 const currentTime = computed(() => {
 	void version.value;
@@ -236,7 +238,7 @@ function handleAction(action: string, event?: MouseEvent) {
 							size="icon"
 							:disabled="!hasVideoOrImageSelected"
 							:class="{ 'bg-primary/20 text-primary': isCropMode }"
-							@click="toggleCropMode()"
+							@click="toggleCropMode(selectedVideoOrImage?.crop)"
 						>
 							<Crop class="size-4" />
 						</Button>
