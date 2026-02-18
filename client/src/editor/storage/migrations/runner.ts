@@ -1,7 +1,4 @@
-import {
-	IndexedDBAdapter,
-	deleteDatabase,
-} from "../../storage/indexeddb-adapter";
+import { IndexedDBAdapter } from "../../storage/indexeddb-adapter";
 import type { StorageMigration } from "./base";
 import type { ProjectRecord } from "./transformers/types";
 import { getProjectId, isRecord } from "./transformers/utils";
@@ -17,8 +14,6 @@ export interface MigrationProgress {
 	projectName: string | null;
 }
 
-let hasCleanedUpMetaDb = false;
-
 const MIN_MIGRATION_DISPLAY_MS = 1000;
 
 export async function runStorageMigrations({
@@ -28,16 +23,6 @@ export async function runStorageMigrations({
 	migrations: StorageMigration[];
 	onProgress?: (progress: MigrationProgress) => void;
 }): Promise<StorageMigrationResult> {
-	// One-time cleanup: delete the old global version database
-	if (!hasCleanedUpMetaDb) {
-		try {
-			await deleteDatabase({ dbName: "video-editor-meta" });
-		} catch {
-			// Ignore errors - DB might not exist
-		}
-		hasCleanedUpMetaDb = true;
-	}
-
 	const projectsAdapter = new IndexedDBAdapter<ProjectRecord>(
 		"video-editor-projects",
 		"projects",
