@@ -238,6 +238,14 @@
                           <Link class="creator-dropdown__item-icon" />
                           Submit Post Link
                         </DropdownMenuItem>
+                        <DropdownMenuItem
+                          v-if="!creator.isOrgProfile"
+                          class="creator-dropdown__item"
+                          @click="openPersonalPostDialog(creator)"
+                        >
+                          <Link class="creator-dropdown__item-icon" />
+                          Submit Post Link
+                        </DropdownMenuItem>
                         <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
                           <DropdownMenuSeparator class="creator-dropdown__separator" />
                           <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
@@ -723,6 +731,12 @@
     <!-- Auth Modal -->
     <AuthModal v-model="showAuthModal" />
 
+    <!-- Personal Post Dialog (for non-org creators) -->
+    <AddPostDialog
+      v-model="showPersonalPostDialog"
+      @submitted="handlePersonalPostSubmitted"
+    />
+
     <!-- External Post Submit Dialog -->
     <ExternalPostSubmitDialog
       :open="showPostSubmitDialog"
@@ -753,6 +767,7 @@
   import ProfileDialog from '@/components/ProfileDialog.vue';
   import CreatorDownloadDialog from '@/components/CreatorDownloadDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
+  import AddPostDialog from '@/components/AddPostDialog.vue';
   import ExternalPostSubmitDialog from '@/components/organization/ExternalPostSubmitDialog.vue';
   import {
     getAllCreatorProfiles,
@@ -988,6 +1003,8 @@
   const showAuthModal = ref(false);
   const showPostSubmitDialog = ref(false);
   const creatorForPostSubmit = ref<DisplayCreatorProfile | null>(null);
+  const showPersonalPostDialog = ref(false);
+  const personalPostCreator = ref<DisplayCreatorProfile | null>(null);
 
   // Live status tracking
   const liveStatusMap = ref<
@@ -1658,6 +1675,17 @@
     showPostSubmitDialog.value = false;
     creatorForPostSubmit.value = null;
     success('Post Submitted', 'Your post link has been submitted for review.');
+  }
+
+  function openPersonalPostDialog(creator: DisplayCreatorProfile) {
+    personalPostCreator.value = creator;
+    showPersonalPostDialog.value = true;
+  }
+
+  function handlePersonalPostSubmitted() {
+    showPersonalPostDialog.value = false;
+    personalPostCreator.value = null;
+    success('Post Added', 'Your post link has been tracked successfully.');
   }
 
   async function startCreatorMonitoring(creator: DisplayCreatorProfile, detectClips: boolean) {
