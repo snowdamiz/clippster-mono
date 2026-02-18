@@ -464,7 +464,7 @@
     error: backendError,
     setProjectId: setProgressProjectId,
     reset: resetProgress,
-  } = useProgressSocket(props.project?.id || null);
+  } = useProgressSocket(null);
 
   // Frontend progress tracking (for chunked detection preparation)
   const frontendProgress = ref(0);
@@ -2253,24 +2253,20 @@
   watch(
     () => props.project?.id,
     (newProjectId, oldProjectId) => {
-      if (newProjectId) {
-        setProgressProjectId(newProjectId.toString());
-      } else {
-        setProgressProjectId(null);
-      }
-
       // When switching projects, restore state from global tracking if available
       if (newProjectId && newProjectId !== oldProjectId) {
         const detectionState = getDetectionState(newProjectId);
         if (detectionState && detectionState.isActive) {
-          // Restore active detection state for this project
+          // Restore active detection state for this project - connect socket
           clipGenerationInProgress.value = true;
           frontendProgress.value = detectionState.progress;
           frontendStage.value = detectionState.stage;
           frontendMessage.value = detectionState.message;
           frontendError.value = detectionState.error;
+          setProgressProjectId(newProjectId.toString());
         } else {
-          // No active detection - start with clean slate
+          // No active detection - disconnect socket and start with clean slate
+          setProgressProjectId(null);
           clipGenerationInProgress.value = false;
           frontendProgress.value = 0;
           frontendStage.value = '';
@@ -2278,6 +2274,8 @@
           frontendError.value = '';
           resetProgress();
         }
+      } else if (!newProjectId) {
+        setProgressProjectId(null);
       }
     }
   );
