@@ -3,12 +3,52 @@
   "identifier": "main-window-permissions",
   "description": "Permissions for the main application window",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://localhost:1420/*"]
+  },
   "permissions": [
+    "core:default",
     "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-is-maximized",
     "core:window:allow-unminimize",
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "core:window:allow-request-user-attention",
-    "global-shortcut:default"
-  ]
+    "core:event:default",
+    "core:path:default",
+    "core:path:allow-resolve",
+    "updater:default",
+    "process:allow-restart",
+    "sql:default",
+    "sql:allow-load",
+    "sql:allow-execute",
+    "sql:allow-select",
+    "sql:allow-close",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-message",
+    "fs:default",
+    "fs:allow-read-file",
+    "shell:allow-execute",
+    "shell:allow-open",
+    "opener:default",
+    "global-shortcut:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-is-registered",
+    "global-shortcut:allow-unregister",
+    {
+      "identifier": "opener:allow-reveal-item-in-dir",
+      "allow": [
+        {
+          "path": "$APPLOCALDATA/**"
+        }
+      ]
+    }
+  ],
+  "platforms": ["windows", "macOS", "linux"]
 }

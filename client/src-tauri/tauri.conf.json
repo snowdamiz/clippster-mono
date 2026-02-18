@@ -33,12 +33,6 @@
     "withGlobalTauri": true
   },
   "plugins": {
-    "core": {
-      "capabilities": [
-        "main-window-permissions",
-        "pip-window-permissions"
-      ]
-    },
     "sql": {
       "preload": []
     },

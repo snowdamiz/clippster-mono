@@ -703,7 +703,6 @@ pub fn run() {
                 )
                 .build(),
         )
-        .plugin(tauri_plugin_localhost::Builder::new(1420).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -715,6 +714,13 @@ pub fn run() {
         .setup(|app| {
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
+
+            // Only start the localhost plugin in production.
+            // In dev mode, Vite already runs on port 1420 — starting the plugin
+            // would conflict and prevent the dev server from launching.
+            if !cfg!(dev) {
+                app.handle().plugin(tauri_plugin_localhost::Builder::new(1420).build())?;
+            }
 
             // Start video streaming server in Tauri's async runtime
             let _app_handle = app.handle().clone();
