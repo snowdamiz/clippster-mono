@@ -672,13 +672,13 @@ pub fn run() {
                         tauri_plugin_sql::Migration {
                             version: 86,
                             description: "add_source_start_time_to_audio_tracks",
-                            sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            sql: include_str!("../migrations/086_add_source_start_time_to_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
                             version: 87,
                             description: "add_transcript_raw_json_to_clip_segments",
-                            sql: include_str!("../migrations/083_add_transcript_raw_json_to_clip_segments.sql"),
+                            sql: include_str!("../migrations/087_add_transcript_raw_json_to_clip_segments.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
@@ -690,13 +690,19 @@ pub fn run() {
                         tauri_plugin_sql::Migration {
                             version: 89,
                             description: "add_project_media",
-                            sql: include_str!("../migrations/069_add_project_media.sql"),
+                            sql: include_str!("../migrations/089_add_project_media.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
                             version: 90,
                             description: "fix_monitored_streamers_user_unique",
                             sql: include_str!("../migrations/090_fix_monitored_streamers_user_unique.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
+                        tauri_plugin_sql::Migration {
+                            version: 91,
+                            description: "add_track_index_to_sources",
+                            sql: include_str!("../migrations/091_add_track_index_to_sources.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                     ],
