@@ -38,26 +38,14 @@ export async function initDatabase() {
       await waitForRuntimeReady();
       const dbName = import.meta.env.DEV ? 'clippster_v25_dev.db' : 'clippster_v25.db';
 
-      // In production, delete any existing database before initializing a fresh one
-      if (!import.meta.env.DEV) {
-        try {
-          const dataDir = await appDataDir();
-          const dbPath = `${dataDir}${dbName}`;
-          if (await exists(dbPath)) {
-            console.log('[Database] Existing database found, deleting before fresh init:', dbPath);
-            await remove(dbPath);
-          }
-        } catch (err) {
-          console.error('[Database] Failed to check/delete existing database:', err);
-        }
-      }
-
+      console.log('[Database] Initializing database:', dbName);
       const instance = await Database.load(`sqlite:${dbName}`);
+      console.log('[Database] Database initialized successfully');
 
       db = instance;
       return instance;
     } catch (error) {
-      // For now, just rethrow the error so we can see what's happening
+      console.error('[Database] Failed to initialize database:', error);
       throw error;
     } finally {
       initializing = null;
