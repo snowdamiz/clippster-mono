@@ -330,7 +330,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   POST /api/user/clipper-profile/portfolio-clips/upload
   Upload a portfolio clip video file to R2 storage (max 100MB).
   """
-  @max_file_size 100 * 1024 * 1024  # 100MB
+  @max_file_size 200 * 1024 * 1024  # 200MB
   def upload_portfolio_clip(conn, %{"file" => %Plug.Upload{} = upload} = params) do
     user = conn.assigns.current_user
 
@@ -339,7 +339,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       {:ok, %{size: size}} when size > @max_file_size ->
         conn
         |> put_status(:request_entity_too_large)
-        |> json(%{success: false, error: "File size exceeds 100MB limit"})
+        |> json(%{success: false, error: "File size exceeds 200MB limit"})
 
       {:ok, %{size: file_size}} ->
         with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),

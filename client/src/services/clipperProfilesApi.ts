@@ -345,19 +345,19 @@ interface UploadPortfolioClipResponse {
 
 /**
  * Upload a portfolio clip video file to R2 storage.
- * Max file size: 100MB
+ * Max file size: 200MB
  */
 export async function uploadPortfolioClip(
   file: File,
   title?: string,
   thumbnail?: File
 ): Promise<UploadPortfolioClipResponse> {
-  // Validate file size (100MB max)
-  const MAX_SIZE = 100 * 1024 * 1024; // 100MB in bytes
+  // Validate file size (200MB max)
+  const MAX_SIZE = 200 * 1024 * 1024; // 200MB in bytes
   if (file.size > MAX_SIZE) {
     return {
       success: false,
-      error: `File size exceeds 100MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`,
+      error: `File size exceeds 200MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`,
     };
   }
 
