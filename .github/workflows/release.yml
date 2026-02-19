@@ -659,19 +659,18 @@ jobs:
           if [ -n "$DMG_FILE" ]; then
             APP_NAME=$(basename "$APP_BUNDLE" .app)
             ABS_APP_BUNDLE="$(cd "$(dirname "$APP_BUNDLE")" && pwd)/$(basename "$APP_BUNDLE")"
-            ABS_ICON="$(pwd)/client/src-tauri/icons/icon.icns"
             APPDMG_CONFIG="$RUNNER_TEMP/appdmg.json"
             cat > "$APPDMG_CONFIG" <<APPDMG_EOF
           {
             "title": "$APP_NAME",
-            "icon": "$ABS_ICON",
             "icon-size": 80,
+            "background-color": "#171726",
             "window": {
               "size": { "width": 540, "height": 380 }
             },
             "contents": [
-              { "x": 140, "y": 180, "type": "file", "path": "$ABS_APP_BUNDLE" },
-              { "x": 400, "y": 180, "type": "link", "path": "/Applications" }
+              { "x": 140, "y": 170, "type": "file", "path": "$ABS_APP_BUNDLE" },
+              { "x": 400, "y": 170, "type": "link", "path": "/Applications" }
             ],
             "format": "UDZO"
           }
