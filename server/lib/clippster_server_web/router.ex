@@ -777,12 +777,19 @@ defmodule ClippsterServerWeb.Router do
       :delete_portfolio_clip
     )
 
+    get(
+      "/user/clipper-profile/portfolio-clips/:id/presigned-url",
+      ClipperProfilesController,
+      :portfolio_clip_presigned_url
+    )
+
     # ============================================================================
     # Clipper Directory - Public Profiles
     # ============================================================================
     get("/clippers", ClipperProfilesController, :index)
     get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
     get("/clippers/:slug", ClipperProfilesController, :show)
+    get("/clippers/:slug/portfolio-clips/:clip_id/presigned-url", ClipperProfilesController, :public_portfolio_clip_presigned_url)
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 
     # ============================================================================

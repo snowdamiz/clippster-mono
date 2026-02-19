@@ -386,6 +386,32 @@ export async function uploadPortfolioClip(
 }
 
 // ============================================================================
+// Presigned URL API (for video playback - bypasses R2 native URL auth)
+// ============================================================================
+
+export async function getPortfolioClipPresignedUrl(clipId: number): Promise<string | null> {
+  try {
+    const response = await api.get<{ success: boolean; url: string }>(
+      `/user/clipper-profile/portfolio-clips/${clipId}/presigned-url`
+    );
+    return response.data.success ? response.data.url : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getPublicPortfolioClipPresignedUrl(slug: string, clipId: number): Promise<string | null> {
+  try {
+    const response = await api.get<{ success: boolean; url: string }>(
+      `/clippers/${slug}/portfolio-clips/${clipId}/presigned-url`
+    );
+    return response.data.success ? response.data.url : null;
+  } catch {
+    return null;
+  }
+}
+
+// ============================================================================
 // Avatar Upload API
 // ============================================================================
 

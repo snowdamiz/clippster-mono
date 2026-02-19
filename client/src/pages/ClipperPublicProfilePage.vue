@@ -311,8 +311,12 @@
               </button>
             </div>
             <div class="video-modal__body">
+              <div v-if="loadingVideo" class="video-modal__loading">
+                <div class="video-modal__spinner"></div>
+              </div>
               <video
-                :src="selectedClip.video_url"
+                v-else-if="videoPlaybackUrl"
+                :src="videoPlaybackUrl"
                 controls
                 autoplay
                 class="video-modal__video"
@@ -465,6 +469,7 @@
     getLanguageName,
     getBadgeLabel,
     getBadgeColor,
+    getPublicPortfolioClipPresignedUrl,
   } from '@/services/clipperProfilesApi';
   import { useToast } from '@/composables/useToast';
   import { formatLastActive, isOnline } from '@/utils/timeUtils';
@@ -502,15 +507,33 @@
   // Video player state
   const showVideoPlayer = ref(false);
   const selectedClip = ref<PortfolioClip | null>(null);
+  const videoPlaybackUrl = ref<string | null>(null);
+  const loadingVideo = ref(false);
 
-  const openVideoPlayer = (clip: PortfolioClip) => {
+  const openVideoPlayer = async (clip: PortfolioClip) => {
     selectedClip.value = clip;
     showVideoPlayer.value = true;
+    videoPlaybackUrl.value = null;
+    loadingVideo.value = true;
+    try {
+      const slug = profile.value?.slug;
+      if (slug) {
+        const url = await getPublicPortfolioClipPresignedUrl(slug, clip.id);
+        videoPlaybackUrl.value = url ?? clip.video_url;
+      } else {
+        videoPlaybackUrl.value = clip.video_url;
+      }
+    } catch {
+      videoPlaybackUrl.value = clip.video_url;
+    } finally {
+      loadingVideo.value = false;
+    }
   };
 
   const closeVideoPlayer = () => {
     showVideoPlayer.value = false;
     selectedClip.value = null;
+    videoPlaybackUrl.value = null;
   };
 
   // Endorsement dialog state
@@ -1277,6 +1300,28 @@
     width: 100%;
     height: 100%;
     display: block;
+  }
+
+  .video-modal__loading {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+
+  .video-modal__spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(255, 255, 255, 0.15);
+    border-top-color: var(--sidebar-accent);
+    border-radius: 50%;
+    animation: video-spin 0.7s linear infinite;
+  }
+
+  @keyframes video-spin {
+    to { transform: rotate(360deg); }
   }
 
   .video-modal-enter-active,

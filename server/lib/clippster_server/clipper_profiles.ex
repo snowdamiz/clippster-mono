@@ -45,7 +45,7 @@ defmodule ClippsterServer.ClipperProfiles do
     Repo.get_by(ClipperProfile, slug: slug)
     |> case do
       nil -> nil
-      profile -> Repo.preload(profile, [:user, :channel_links, :portfolio_clips, :badges, endorsements: [:organization]])
+      profile -> Repo.preload(profile, [:user, :channel_links, :portfolio_clips, :badges, endorsements: [:organization, :endorsed_by_user]])
     end
   end
 
