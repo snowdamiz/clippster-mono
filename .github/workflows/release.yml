@@ -141,7 +141,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: client/src-tauri -> target
-          shared-key: ${{ matrix.platform }}-${{ matrix.artifact_suffix }}
+          shared-key: ${{ matrix.platform }}-${{ matrix.artifact_suffix }}-v2
 
       - name: Install frontend dependencies (for tauri build)
         run: yarn install
