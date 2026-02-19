@@ -6,6 +6,7 @@ defmodule ClippsterServerWeb.MessagingSocket do
   ## Channels
   channel "messaging:user:*", ClippsterServerWeb.MessagingChannel
   channel "messaging:conversation:*", ClippsterServerWeb.MessagingChannel
+  channel "announcements:lobby", ClippsterServerWeb.AnnouncementsChannel
 
   @impl true
   def connect(%{"token" => token}, socket, _connect_info) do

@@ -11,6 +11,8 @@
   import MandatoryUpdateDialog from '@/components/MandatoryUpdateDialog.vue';
   import SubscriptionGate from '@/components/SubscriptionGate.vue';
   import BrandingProfileSelector from '@/components/BrandingProfileSelector.vue';
+  import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
+  import { useAnnouncements } from '@/composables/useAnnouncements';
   import { initDatabase, seedDefaultPrompt, seedGamingPrompt, seedGamblingPrompt, seedBreakingNewsPrompt, ensureOrganizationAssetColumns } from '@/services/database';
   import { healSchema } from '@/services/database/schema-healing';
   import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
@@ -36,6 +38,8 @@
   // Track user activity to update last_active_at
   // Will be initialized after authentication check completes
   const { startTracking } = useActivityTracker();
+
+  const { fetchAndEnqueue, subscribeToChannel, unsubscribe } = useAnnouncements();
 
   // Update check must complete before app continues
   const isCheckingForUpdates = ref(true);
@@ -104,13 +108,19 @@
   };
 
   // Handle auth state changes (login/logout) by refreshing the router view
-  const handleAuthStateChanged = (event: CustomEvent) => {
+  const handleAuthStateChanged = async (event: CustomEvent) => {
     console.log('[App] Auth state changed, refreshing data. User ID:', event.detail?.userId);
     
-    // Start activity tracking if user just logged in
     if (event.detail?.userId && authStore.isAuthenticated) {
       console.log('[App] User logged in, starting activity tracker');
       startTracking();
+
+      // Fetch and show any unseen announcements for the newly logged-in user
+      await fetchAndEnqueue();
+      subscribeToChannel(authStore.user?.account_type ?? 'personal');
+    } else if (!event.detail?.userId) {
+      // User logged out — clear announcement queue and leave channel
+      unsubscribe();
     }
     
     // Increment key to force Vue to re-mount all route components
@@ -204,6 +214,10 @@
       if (authStore.isAuthenticated) {
         console.log('[App] User authenticated, starting activity tracker');
         startTracking();
+
+        // Fetch unseen announcements for already-authenticated users
+        await fetchAndEnqueue();
+        subscribeToChannel(authStore.user?.account_type ?? 'personal');
       }
     } catch (error) {
       console.error('[App] Failed to check authentication:', error);
@@ -225,7 +239,7 @@
     });
 
     // Listen for auth state changes (login/logout) to refresh data
-    window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
+    window.addEventListener('auth-state-changed', handleAuthStateChanged as unknown as EventListener);
 
     // Listen for platform override events from Admin panel
     window.addEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
@@ -278,7 +292,7 @@
       showAuthModal.value = true;
     });
     window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
-    window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
+    window.removeEventListener('auth-state-changed', handleAuthStateChanged as unknown as EventListener);
     window.removeEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
 
     // Cleanup global clip build event handler
@@ -329,6 +343,9 @@
 
       <!-- Global Branding Profile Selector Dialog -->
       <BrandingProfileSelector />
+
+      <!-- Global Announcement Dialog -->
+      <AnnouncementDialog />
 
       <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
       <LivestreamWatchDialog

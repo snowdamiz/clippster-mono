@@ -538,4 +538,88 @@ defmodule ClippsterServer.Emails do
     If you didn't sign up for this waitlist, you can safely ignore this email.
     """
   end
+
+  @doc """
+  Creates an admin broadcast email with a custom subject and HTML body.
+  """
+  def admin_broadcast_email(to_email, subject, body_html) do
+    config = Application.get_env(:clippster_server, :email_auth, [])
+    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
+    app_name = Keyword.get(config, :app_name, "Clippster")
+
+    new()
+    |> to(to_email)
+    |> from({app_name, from_email})
+    |> subject(subject)
+    |> html_body(admin_broadcast_html(body_html, app_name))
+    |> text_body(admin_broadcast_text(subject, body_html, app_name))
+  end
+
+  defp admin_broadcast_html(body_html, app_name) do
+    """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    </head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0a;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="min-height: 100vh;">
+        <tr>
+          <td align="center" style="padding: 40px 20px;">
+            <table role="presentation" width="100%" style="max-width: 600px;">
+              <!-- Logo/Header -->
+              <tr>
+                <td align="center" style="padding-bottom: 32px;">
+                  <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #ffffff;">#{app_name}</h1>
+                </td>
+              </tr>
+
+              <!-- Top accent bar -->
+              <tr>
+                <td style="height: 4px; background: linear-gradient(90deg, #8b5cf6, #a855f7, #6366f1); border-radius: 4px 4px 0 0;"></td>
+              </tr>
+
+              <!-- Main Card -->
+              <tr>
+                <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 0 0 16px 16px; border: 1px solid rgba(255, 255, 255, 0.1); border-top: none; padding: 40px;">
+                  <!-- Body content (admin-provided HTML) -->
+                  <div style="color: #d4d4d8; font-size: 15px; line-height: 1.7;">
+                    #{body_html}
+                  </div>
+                </td>
+              </tr>
+
+              <!-- Footer -->
+              <tr>
+                <td style="padding-top: 24px; text-align: center;">
+                  <p style="margin: 0; font-size: 12px; color: #52525b;">
+                    You're receiving this email because you have an account with #{app_name}.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+    """
+  end
+
+  defp admin_broadcast_text(subject, body_html, app_name) do
+    plain = body_html
+      |> String.replace(~r/<[^>]+>/, " ")
+      |> String.replace(~r/\s+/, " ")
+      |> String.trim()
+
+    """
+    #{app_name} — #{subject}
+
+    #{plain}
+
+    ---
+    You're receiving this email because you have an account with #{app_name}.
+    """
+  end
 end

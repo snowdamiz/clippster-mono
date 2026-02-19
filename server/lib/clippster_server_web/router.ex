@@ -947,6 +947,9 @@ defmodule ClippsterServerWeb.Router do
     get("/support/conversation", SupportController, :get_or_create)
     post("/support/conversation/messages", SupportController, :send_message)
     get("/support/conversation/messages", SupportController, :get_messages)
+
+    # Announcements (active, filtered by account type)
+    get("/announcements/active", AnnouncementsController, :active)
   end
 
   # Moderator + Admin routes
@@ -1069,6 +1072,16 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin organization application management (delete route only - index/approve/reject in mod scope)
     delete("/admin/organization-applications/:id", OrganizationApplicationController, :delete)
+
+    # Admin announcements management
+    get("/admin/announcements", AnnouncementsController, :index)
+    post("/admin/announcements", AnnouncementsController, :create)
+    put("/admin/announcements/:id", AnnouncementsController, :update)
+    delete("/admin/announcements/:id", AnnouncementsController, :delete)
+
+    # Admin messaging (bulk email campaigns)
+    post("/admin/messaging/send", AdminMessagingController, :send_campaign)
+    get("/admin/messaging/campaigns", AdminMessagingController, :list_campaigns)
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

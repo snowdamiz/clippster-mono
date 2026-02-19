@@ -332,6 +332,44 @@ class MessagingSocket {
   }
 
   /**
+   * Join the announcements lobby channel and call handler on new announcements.
+   */
+  joinAnnouncementsChannel(onNewAnnouncement: (payload: any) => void): void {
+    if (!this.socket) {
+      console.warn('[MessagingSocket] Cannot join announcements channel: socket not connected');
+      return;
+    }
+
+    const channel = this.socket.channel('announcements:lobby');
+
+    channel.on('new_announcement', (payload: any) => {
+      onNewAnnouncement(payload);
+    });
+
+    channel
+      .join()
+      .receive('ok', () => {
+        console.log('[MessagingSocket] Joined announcements channel');
+      })
+      .receive('error', (reason: unknown) => {
+        console.error('[MessagingSocket] Failed to join announcements channel:', reason);
+      });
+
+    this.conversationChannels.set(-1, channel);
+  }
+
+  /**
+   * Leave the announcements channel.
+   */
+  leaveAnnouncementsChannel(): void {
+    const channel = this.conversationChannels.get(-1);
+    if (channel) {
+      channel.leave();
+      this.conversationChannels.delete(-1);
+    }
+  }
+
+  /**
    * Check if connected.
    */
   isConnected(): boolean {
