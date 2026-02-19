@@ -1021,6 +1021,7 @@ defmodule ClippsterServerWeb.Router do
     put("/admin/organizations/:organization_id/subscription", AdminController, :update_org_subscription)
     post("/admin/organizations/:organization_id/subscription/cancel", AdminController, :cancel_org_subscription)
     put("/admin/organizations/:organization_id/seats", AdminController, :set_org_seats)
+    delete("/admin/organizations/:id", AdminController, :delete_organization)
 
     # Admin bug report management (delete route only - index/update in mod scope)
     delete("/admin/bug-reports/:id", BugReportsController, :delete)

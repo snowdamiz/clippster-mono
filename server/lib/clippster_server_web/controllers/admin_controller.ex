@@ -390,7 +390,8 @@ defmodule ClippsterServerWeb.AdminController do
           admin_price_cents: org.admin_price_cents,
           created_by_admin: org.created_by_admin_id != nil,
           setup_completed: org.setup_completed,
-          created_at: org.inserted_at
+          created_at: org.inserted_at,
+          owner_id: org.owner_id
         }
       end)
 
@@ -399,6 +400,43 @@ defmodule ClippsterServerWeb.AdminController do
       organizations: orgs_data,
       count: length(orgs_data)
     })
+  end
+
+  @doc """
+  Deletes an organization as admin. Blocked if the org has an active subscription.
+  """
+  def delete_organization(conn, %{"id" => id_string}) do
+    case parse_integer(id_string) do
+      {:ok, org_id} ->
+        case Organizations.get_organization(org_id) do
+          nil ->
+            conn
+            |> put_status(404)
+            |> json(%{success: false, error: "Organization not found"})
+
+          org ->
+            if org.subscription_status == "active" do
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Cannot delete an organization with an active subscription. Cancel the subscription first."})
+            else
+              case Organizations.delete_organization_as_admin(org) do
+                {:ok, _} ->
+                  json(conn, %{success: true, message: "Organization deleted"})
+
+                {:error, reason} ->
+                  conn
+                  |> put_status(500)
+                  |> json(%{success: false, error: "Failed to delete organization: #{inspect(reason)}"})
+              end
+            end
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid organization ID"})
+    end
   end
 
   # Helper functions
