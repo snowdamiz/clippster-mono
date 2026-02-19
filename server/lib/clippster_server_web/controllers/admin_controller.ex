@@ -1755,6 +1755,15 @@ defmodule ClippsterServerWeb.AdminController do
 
           # Get organization memberships
           org_memberships = Organizations.list_user_organizations(user_id)
+          |> Enum.map(fn %{organization: org, role: role} ->
+            %{
+              id: org.id,
+              name: org.name,
+              slug: org.slug,
+              logo_url: org.logo_url,
+              role: role
+            }
+          end)
 
           json(conn, %{
             success: true,
