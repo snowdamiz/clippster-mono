@@ -652,14 +652,19 @@ jobs:
             echo "Re-signed updater bundle: ${APP_TAR}.sig"
           fi
 
-          # Re-create the DMG
+          # Re-create the DMG with Applications symlink for drag-to-install
           echo "=== Re-creating DMG ==="
           DMG_FILE=$(find client/src-tauri/target -name "*.dmg" -type f | head -1)
           if [ -n "$DMG_FILE" ]; then
-            APP_DIR=$(dirname "$APP_BUNDLE")
             APP_NAME=$(basename "$APP_BUNDLE" .app)
+            DMG_STAGING="$RUNNER_TEMP/dmg-staging"
+            rm -rf "$DMG_STAGING"
+            mkdir -p "$DMG_STAGING"
+            cp -R "$APP_BUNDLE" "$DMG_STAGING/"
+            ln -s /Applications "$DMG_STAGING/Applications"
             rm -f "$DMG_FILE"
-            hdiutil create -volname "$APP_NAME" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG_FILE"
+            hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGING" -ov -format UDZO "$DMG_FILE"
+            rm -rf "$DMG_STAGING"
             # Sign the DMG
             codesign --force --timestamp --sign "$IDENTITY" "$DMG_FILE"
             echo "Re-created DMG: $DMG_FILE"
