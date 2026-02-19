@@ -947,6 +947,7 @@ defmodule ClippsterServerWeb.Router do
     pipe_through(:api_mod)
 
     # Customer service (support conversations)
+    get("/admin/support/unread-count", SupportController, :unread_count)
     get("/admin/support/conversations", SupportController, :list_all)
     get("/admin/support/conversations/:id/messages", SupportController, :get_conversation_messages)
     post("/admin/support/conversations/:id/messages", SupportController, :respond)

@@ -65,6 +65,15 @@ defmodule ClippsterServerWeb.SupportController do
   end
 
   @doc """
+  Returns the total count of unread support messages for the current admin/mod user.
+  """
+  def unread_count(conn, _params) do
+    user_id = conn.assigns[:current_user_id]
+    count = Messaging.count_unread_support_messages(user_id)
+    json(conn, %{unread_count: count})
+  end
+
+  @doc """
   Lists all support conversations (admin/mod only).
   """
   def list_all(conn, params) do

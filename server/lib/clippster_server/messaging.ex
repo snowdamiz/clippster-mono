@@ -915,9 +915,8 @@ defmodule ClippsterServer.Messaging do
   def get_user_support_conversation(user_id) do
     Conversation
     |> where([c], c.type == "support")
-    |> join(:inner, [c], p in ConversationParticipant, on: p.conversation_id == c.id)
-    |> where([c, p], p.user_id == ^user_id and is_nil(p.left_at))
-    |> where([c, p], is_nil(c.organization_id))
+    |> where([c], c.created_by_user_id == ^user_id)
+    |> where([c], is_nil(c.organization_id))
     |> order_by([c], desc: c.inserted_at)
     |> limit(1)
     |> Repo.one()
@@ -1095,6 +1094,27 @@ defmodule ClippsterServer.Messaging do
     |> where([c], c.type == "support")
     |> where([c], c.status == ^status)
     |> Repo.aggregate(:count)
+  end
+
+  @doc """
+  Counts total unread messages across all open support conversations for a given admin/mod user.
+  A message is unread if it was sent after the user's last_read_at in that conversation.
+  """
+  def count_unread_support_messages(user_id) do
+    now = DateTime.utc_now()
+
+    Conversation
+    |> where([c], c.type == "support" and c.status == "open")
+    |> join(:inner, [c], p in ConversationParticipant,
+      on: p.conversation_id == c.id and p.user_id == ^user_id and is_nil(p.left_at)
+    )
+    |> join(:inner, [c, p], m in Message, on: m.conversation_id == c.id)
+    |> where([c, p, m], m.sender_id != ^user_id)
+    |> where([c, p, m], is_nil(p.last_read_at) or m.inserted_at > p.last_read_at)
+    |> where([c, p, m], m.inserted_at <= ^now)
+    |> select([c, p, m], count(m.id))
+    |> Repo.one()
+    |> Kernel.||(0)
   end
 
   # ============================================================================

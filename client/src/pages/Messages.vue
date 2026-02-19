@@ -819,19 +819,6 @@
 
                 </template>
               </div>
-
-              <!-- Contact Support Footer -->
-              <div class="messages-panel__footer">
-                <button
-                  @click="openSupportChat"
-                  :disabled="isStartingSupport"
-                  class="messages-panel__support-btn"
-                >
-                  <Loader2 v-if="isStartingSupport" class="messages-panel__support-icon messages-panel__support-icon--spin" />
-                  <Headset v-else class="messages-panel__support-icon" />
-                  <span>Contact Support</span>
-                </button>
-              </div>
             </div>
           </div>
 
@@ -1602,50 +1589,6 @@
   .messages-panel__list::-webkit-scrollbar-thumb {
     background-color: rgba(255, 255, 255, 0.15);
     border-radius: 3px;
-  }
-
-  /* Contact Support Footer */
-  .messages-panel__footer {
-    flex-shrink: 0;
-    padding: 0.75rem;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .messages-panel__support-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.625rem 1rem;
-    background-color: rgba(139, 92, 246, 0.1);
-    border: 1px solid rgba(139, 92, 246, 0.25);
-    border-radius: 8px;
-    color: #a855f7;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .messages-panel__support-btn:hover:not(:disabled) {
-    background-color: rgba(139, 92, 246, 0.2);
-    border-color: rgba(139, 92, 246, 0.4);
-  }
-
-  .messages-panel__support-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .messages-panel__support-icon {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-  }
-
-  .messages-panel__support-icon--spin {
-    animation: spin 0.8s linear infinite;
   }
 
   /* Conversation Item */
