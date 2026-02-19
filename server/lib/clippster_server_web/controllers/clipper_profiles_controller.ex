@@ -327,10 +327,36 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   end
 
   @doc """
-  POST /api/user/clipper-profile/portfolio-clips/upload
-  Upload a portfolio clip video file to R2 storage (max 100MB).
+  GET /api/user/clipper-profile/portfolio-clips/:id/presigned-url
+  Returns a presigned URL for streaming a portfolio clip video (1 hour expiry).
+  Works regardless of whether R2_PUBLIC_URL is configured.
   """
-  @max_file_size 100 * 1024 * 1024  # 100MB
+  def portfolio_clip_presigned_url(conn, %{"id" => id}) do
+    user = conn.assigns.current_user
+
+    with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
+         %ClipperPortfolioClip{} = clip <- ClipperProfiles.get_portfolio_clip(id),
+         true <- clip.clipper_profile_id == profile.id do
+      case Storage.presigned_url(clip.video_url, expires_in: 3600) do
+        {:ok, url} ->
+          json(conn, %{success: true, url: url})
+        {:error, _} ->
+          # Fall back to the stored URL if presigning fails
+          json(conn, %{success: true, url: clip.video_url})
+      end
+    else
+      nil ->
+        conn |> put_status(:not_found) |> json(%{success: false, error: "Portfolio clip not found"})
+      false ->
+        conn |> put_status(:forbidden) |> json(%{success: false, error: "Not authorized"})
+    end
+  end
+
+  @doc """
+  POST /api/user/clipper-profile/portfolio-clips/upload
+  Upload a portfolio clip video file to R2 storage (max 200MB).
+  """
+  @max_file_size 200 * 1024 * 1024  # 200MB
   def upload_portfolio_clip(conn, %{"file" => %Plug.Upload{} = upload} = params) do
     user = conn.assigns.current_user
 
@@ -339,7 +365,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       {:ok, %{size: size}} when size > @max_file_size ->
         conn
         |> put_status(:request_entity_too_large)
-        |> json(%{success: false, error: "File size exceeds 100MB limit"})
+        |> json(%{success: false, error: "File size exceeds 200MB limit"})
 
       {:ok, %{size: file_size}} ->
         with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
@@ -348,10 +374,27 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
              content_type <- upload.content_type || "video/mp4",
              {:ok, video_url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
 
+          # Upload thumbnail if provided
+          thumbnail_url =
+            case params["thumbnail"] do
+              %Plug.Upload{} = thumb ->
+                thumb_key = "portfolio-clips/#{user.id}/thumbnails/#{System.unique_integer([:positive])}_thumbnail.jpg"
+                case File.read(thumb.path) do
+                  {:ok, thumb_binary} ->
+                    case Storage.upload_file(thumb_binary, thumb_key, content_type: "image/jpeg") do
+                      {:ok, url} -> url
+                      _ -> nil
+                    end
+                  _ -> nil
+                end
+              _ -> nil
+            end
+
           # Create the portfolio clip record
           clip_params = %{
             "title" => params["title"] || Path.basename(upload.filename, Path.extname(upload.filename)),
             "video_url" => video_url,
+            "thumbnail_url" => thumbnail_url,
             "file_size" => file_size
           }
 
@@ -408,6 +451,27 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   # ============================================================================
   # Public Directory Endpoints
   # ============================================================================
+
+  @doc """
+  GET /api/clippers/:slug/portfolio-clips/:clip_id/presigned-url
+  Returns a presigned URL for streaming a portfolio clip video on a public profile.
+  No ownership check - clip must belong to the profile identified by slug.
+  """
+  def public_portfolio_clip_presigned_url(conn, %{"slug" => slug, "clip_id" => clip_id}) do
+    with %{} = profile <- ClipperProfiles.get_profile_by_slug(slug),
+         %ClipperPortfolioClip{} = clip <- ClipperProfiles.get_portfolio_clip(clip_id),
+         true <- clip.clipper_profile_id == profile.id do
+      case Storage.presigned_url(clip.video_url, expires_in: 3600) do
+        {:ok, url} ->
+          json(conn, %{success: true, url: url})
+        {:error, _} ->
+          json(conn, %{success: true, url: clip.video_url})
+      end
+    else
+      nil -> conn |> put_status(:not_found) |> json(%{success: false, error: "Not found"})
+      false -> conn |> put_status(:not_found) |> json(%{success: false, error: "Not found"})
+    end
+  end
 
   @doc """
   GET /api/clippers

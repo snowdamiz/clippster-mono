@@ -137,6 +137,21 @@ defmodule ClippsterServer.Organizations do
   end
 
   @doc """
+  Deletes an organization as an admin (bypasses owner check).
+  Should only be called after verifying no active subscription.
+  """
+  def delete_organization_as_admin(%Organization{} = organization) do
+    Repo.transaction(fn ->
+      Repo.update_all(
+        from(u in User, where: u.owned_organization_id == ^organization.id),
+        set: [owned_organization_id: nil, account_type: "personal"]
+      )
+
+      Repo.delete(organization)
+    end)
+  end
+
+  @doc """
   Lists all organizations where the user is a member.
   """
   def list_user_organizations(user_id) do

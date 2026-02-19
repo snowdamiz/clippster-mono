@@ -58,6 +58,33 @@ fn main() {
                  -IC:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt \
                  -IC:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared");
         }
+
+        // Auto-copy FFmpeg DLLs to the Cargo output directory so the binary can find them at runtime.
+        // This ensures DLLs survive cargo clean and are always present after any build.
+        let ffmpeg_bin_dir = manifest_dir
+            .join("ffmpeg-dev")
+            .join("ffmpeg-master-latest-win64-gpl-shared")
+            .join("bin");
+        if ffmpeg_bin_dir.exists() {
+            let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+            // OUT_DIR is something like target/debug/build/<pkg>/out — walk up 3 levels to get target/debug
+            if let Some(target_dir) = out_dir.ancestors().nth(3) {
+                if let Ok(entries) = fs::read_dir(&ffmpeg_bin_dir) {
+                    for entry in entries.filter_map(|e| e.ok()) {
+                        let path = entry.path();
+                        if path.extension().map(|e| e == "dll").unwrap_or(false) {
+                            let dest = target_dir.join(path.file_name().unwrap());
+                            if let Err(e) = fs::copy(&path, &dest) {
+                                println!("cargo:warning=Failed to copy FFmpeg DLL {:?}: {}", path.file_name().unwrap(), e);
+                            }
+                        }
+                    }
+                }
+                println!("cargo:warning=FFmpeg DLLs copied to {}", target_dir.display());
+            }
+        } else {
+            println!("cargo:warning=FFmpeg DLL source not found at {:?} — run will fail with DLL_NOT_FOUND", ffmpeg_bin_dir);
+        }
     }
 
     // Download ffmpeg

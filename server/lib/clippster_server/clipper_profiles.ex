@@ -45,7 +45,7 @@ defmodule ClippsterServer.ClipperProfiles do
     Repo.get_by(ClipperProfile, slug: slug)
     |> case do
       nil -> nil
-      profile -> Repo.preload(profile, [:user, :channel_links, :portfolio_clips, :badges, endorsements: [:organization]])
+      profile -> Repo.preload(profile, [:user, :channel_links, :portfolio_clips, :badges, endorsements: [:organization, :endorsed_by_user]])
     end
   end
 
@@ -218,7 +218,7 @@ defmodule ClippsterServer.ClipperProfiles do
       {:error, :max_clips_reached}
     else
       %ClipperPortfolioClip{}
-      |> ClipperPortfolioClip.create_changeset(Map.put(attrs, :clipper_profile_id, profile_id))
+      |> ClipperPortfolioClip.create_changeset(Map.put(attrs, "clipper_profile_id", profile_id))
       |> Repo.insert()
     end
   end

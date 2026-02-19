@@ -335,7 +335,7 @@
                 <div class="profile-dialog__section-header">
                   <div>
                     <h3 class="profile-dialog__section-title">Portfolio Clips</h3>
-                    <p class="profile-dialog__section-desc">Showcase up to 3 of your best clips (max 100MB each)</p>
+                    <p class="profile-dialog__section-desc">Showcase up to 3 of your best clips (max 200MB each)</p>
                   </div>
                   <button
                     @click="
@@ -380,7 +380,7 @@
                     </div>
                     <div class="profile-dialog__option-info">
                       <div class="profile-dialog__option-title">Upload Video File</div>
-                      <div class="profile-dialog__option-desc">Max 100MB, MP4/MOV/WebM</div>
+                      <div class="profile-dialog__option-desc">Max 200MB, MP4/MOV/WebM</div>
                     </div>
                     <Loader2 v-if="uploadingClip" class="profile-dialog__option-loader" />
                   </div>
@@ -466,11 +466,12 @@
                   <div v-for="clip in portfolioClips" :key="clip.id" class="profile-dialog__portfolio-card">
                     <div class="profile-dialog__portfolio-thumb">
                       <img
-                        v-if="clip.thumbnail_url"
-                        :src="clip.thumbnail_url"
+                        v-if="portfolioThumbnailBlobs.get(clip.id) || clip.thumbnail_url"
+                        :src="portfolioThumbnailBlobs.get(clip.id) ?? clip.thumbnail_url ?? undefined"
                         class="profile-dialog__portfolio-thumb-img"
+                        @error="(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.removeAttribute('style'); }"
                       />
-                      <div v-else class="profile-dialog__portfolio-thumb-placeholder">
+                      <div class="profile-dialog__portfolio-thumb-placeholder" :style="(portfolioThumbnailBlobs.get(clip.id) || clip.thumbnail_url) ? 'display:none' : ''">
                         <Video :size="24" />
                       </div>
                     </div>
@@ -641,8 +642,11 @@
   const uploadingClip = ref(false);
   const uploadProgress = ref(0);
   const fileInputRef = ref<HTMLInputElement | null>(null);
-  const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+  const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
   const clipThumbnailCache = ref<Map<string, string>>(new Map());
+  // Local blob URL cache for portfolio clip thumbnails (owner edit dialog only)
+  // Avoids relying on R2 native URL accessibility for <img> display
+  const portfolioThumbnailBlobs = ref<Map<number, string>>(new Map());
 
   // Avatar upload state
   const uploadingAvatar = ref(false);
@@ -889,6 +893,87 @@
     return getBuildOutputPath(completedBuild);
   };
 
+  // Generate a thumbnail image from a video File.
+  // Uses play+pause to force the WebView to decode a real frame before canvas capture.
+  const generateVideoThumbnail = (file: File): Promise<File | null> => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      // Must be in DOM and visible enough for Tauri WebView to decode frames
+      video.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:320px;height:180px;opacity:0.01;pointer-events:none;';
+      document.body.appendChild(video);
+
+      const objectUrl = URL.createObjectURL(file);
+      video.src = objectUrl;
+      video.muted = true;
+      video.playsInline = true;
+      video.preload = 'auto';
+      video.volume = 0;
+
+      let done = false;
+      const finish = (result: File | null) => {
+        if (done) return;
+        done = true;
+        video.pause();
+        URL.revokeObjectURL(objectUrl);
+        if (video.parentNode) video.parentNode.removeChild(video);
+        resolve(result);
+      };
+
+      const captureFrame = () => {
+        try {
+          const w = video.videoWidth;
+          const h = video.videoHeight;
+          if (!w || !h) { finish(null); return; }
+          const canvas = document.createElement('canvas');
+          canvas.width = 640;
+          canvas.height = Math.round(640 * (h / w));
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { finish(null); return; }
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob((blob) => {
+            if (!blob || blob.size < 500) { finish(null); return; }
+            finish(new File([blob], 'thumbnail.jpg', { type: 'image/jpeg' }));
+          }, 'image/jpeg', 0.85);
+        } catch {
+          finish(null);
+        }
+      };
+
+      // Once metadata is known, seek to 10% of duration then play briefly to force decode
+      video.addEventListener('loadedmetadata', () => {
+        video.currentTime = Math.min(1, video.duration * 0.1);
+      });
+
+      // After seeking, play for one frame then capture
+      const vid = video as HTMLVideoElement;
+      vid.addEventListener('seeked', () => {
+        if ('requestVideoFrameCallback' in vid) {
+          // Most reliable: fires exactly when a new decoded frame is painted
+          (vid as any).requestVideoFrameCallback(captureFrame);
+          vid.play().catch(() => {});
+        } else {
+          // Fallback: play briefly then capture after a short delay
+          const playPromise = (vid as HTMLVideoElement).play();
+          if (playPromise !== undefined) {
+            playPromise.then(() => {
+              setTimeout(() => {
+                (vid as HTMLVideoElement).pause();
+                captureFrame();
+              }, 200);
+            }).catch(() => {
+              setTimeout(captureFrame, 300);
+            });
+          } else {
+            setTimeout(captureFrame, 300);
+          }
+        }
+      });
+
+      video.addEventListener('error', () => finish(null));
+      setTimeout(() => finish(null), 15000);
+    });
+  };
+
   // Handle file upload
   const handleFileUpload = async (event: Event) => {
     const input = event.target as HTMLInputElement;
@@ -897,7 +982,7 @@
 
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
-      error.value = `File size exceeds 100MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`;
+      error.value = `File size exceeds 200MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`;
       input.value = '';
       return;
     }
@@ -913,11 +998,19 @@
     error.value = null;
 
     try {
-      const response = await uploadPortfolioClip(file, portfolioClipForm.title || file.name);
+      const thumbnail = await generateVideoThumbnail(file);
+      const localBlobUrl = thumbnail ? URL.createObjectURL(thumbnail) : null;
+      const response = await uploadPortfolioClip(file, portfolioClipForm.title || file.name, thumbnail ?? undefined);
       if (response.success) {
+        if (localBlobUrl && response.portfolio_clip?.id) {
+          portfolioThumbnailBlobs.value.set(response.portfolio_clip.id, localBlobUrl);
+        } else if (localBlobUrl) {
+          URL.revokeObjectURL(localBlobUrl);
+        }
         showPortfolioClipForm.value = false;
         await loadPortfolioClips();
       } else {
+        if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
         error.value = response.error || 'Failed to upload clip';
       }
     } catch (err) {
@@ -961,17 +1054,25 @@
 
       // Check file size
       if (file.size > MAX_FILE_SIZE) {
-        error.value = `Clip exceeds 100MB limit. Size: ${(file.size / (1024 * 1024)).toFixed(1)}MB`;
+        error.value = `Clip exceeds 200MB limit. Size: ${(file.size / (1024 * 1024)).toFixed(1)}MB`;
         savingPortfolioClip.value = false;
         return;
       }
 
-      const response = await uploadPortfolioClip(file, clip.name || 'Untitled Clip');
+      const thumbnail = await generateVideoThumbnail(file);
+      const localBlobUrl = thumbnail ? URL.createObjectURL(thumbnail) : null;
+      const response = await uploadPortfolioClip(file, clip.name || 'Untitled Clip', thumbnail ?? undefined);
       if (response.success) {
+        if (localBlobUrl && response.portfolio_clip?.id) {
+          portfolioThumbnailBlobs.value.set(response.portfolio_clip.id, localBlobUrl);
+        } else if (localBlobUrl) {
+          URL.revokeObjectURL(localBlobUrl);
+        }
         showClipSelector.value = false;
         showPortfolioClipForm.value = false;
         await loadPortfolioClips();
       } else {
+        if (localBlobUrl) URL.revokeObjectURL(localBlobUrl);
         error.value = response.error || 'Failed to add clip';
       }
     } catch (err) {
@@ -1066,6 +1167,11 @@
     savingChannelLink.value = true;
     error.value = null;
     try {
+      // Auto-prefix https:// if URL doesn't have a scheme
+      const url = channelLinkForm.url.trim();
+      if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
+        channelLinkForm.url = 'https://' + url;
+      }
       let response;
       if (editingChannelLink.value) {
         response = await updateChannelLink(editingChannelLink.value.id, channelLinkForm);
@@ -1149,8 +1255,13 @@
         response = await deleteChannelLink((deleteTarget.value as ChannelLink).id);
         if (response.success) await loadChannelLinks();
       } else {
-        response = await deletePortfolioClip((deleteTarget.value as PortfolioClip).id);
-        if (response.success) await loadPortfolioClips();
+        const clipId = (deleteTarget.value as PortfolioClip).id;
+        response = await deletePortfolioClip(clipId);
+        if (response.success) {
+          const blobUrl = portfolioThumbnailBlobs.value.get(clipId);
+          if (blobUrl) { URL.revokeObjectURL(blobUrl); portfolioThumbnailBlobs.value.delete(clipId); }
+          await loadPortfolioClips();
+        }
       }
       showDeleteConfirm.value = false;
     } catch (err) {
