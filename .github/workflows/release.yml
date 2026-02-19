@@ -652,22 +652,34 @@ jobs:
             echo "Re-signed updater bundle: ${APP_TAR}.sig"
           fi
 
-          # Re-create the DMG with Applications symlink for drag-to-install
-          echo "=== Re-creating DMG ==="
+          # Re-create the DMG with styled drag-to-install layout using appdmg
+          # appdmg generates .DS_Store programmatically (no AppleScript/Finder needed in CI)
+          echo "=== Re-creating styled DMG ==="
           DMG_FILE=$(find client/src-tauri/target -name "*.dmg" -type f | head -1)
           if [ -n "$DMG_FILE" ]; then
             APP_NAME=$(basename "$APP_BUNDLE" .app)
-            DMG_STAGING="$RUNNER_TEMP/dmg-staging"
-            rm -rf "$DMG_STAGING"
-            mkdir -p "$DMG_STAGING"
-            cp -R "$APP_BUNDLE" "$DMG_STAGING/"
-            ln -s /Applications "$DMG_STAGING/Applications"
+            APPDMG_CONFIG="$RUNNER_TEMP/appdmg.json"
+            cat > "$APPDMG_CONFIG" <<APPDMG_EOF
+          {
+            "title": "$APP_NAME",
+            "icon": "client/src-tauri/icons/icon.icns",
+            "icon-size": 80,
+            "window": {
+              "size": { "width": 540, "height": 380 }
+            },
+            "contents": [
+              { "x": 140, "y": 180, "type": "file", "path": "$APP_BUNDLE" },
+              { "x": 400, "y": 180, "type": "link", "path": "/Applications" }
+            ],
+            "format": "UDZO"
+          }
+          APPDMG_EOF
+            npm install -g appdmg
             rm -f "$DMG_FILE"
-            hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGING" -ov -format UDZO "$DMG_FILE"
-            rm -rf "$DMG_STAGING"
+            appdmg "$APPDMG_CONFIG" "$DMG_FILE"
             # Sign the DMG
             codesign --force --timestamp --sign "$IDENTITY" "$DMG_FILE"
-            echo "Re-created DMG: $DMG_FILE"
+            echo "Re-created styled DMG: $DMG_FILE"
           fi
 
           echo "=== Post-build signing and notarization complete ==="
