@@ -218,7 +218,7 @@ defmodule ClippsterServer.ClipperProfiles do
       {:error, :max_clips_reached}
     else
       %ClipperPortfolioClip{}
-      |> ClipperPortfolioClip.create_changeset(Map.put(attrs, :clipper_profile_id, profile_id))
+      |> ClipperPortfolioClip.create_changeset(Map.put(attrs, "clipper_profile_id", profile_id))
       |> Repo.insert()
     end
   end
