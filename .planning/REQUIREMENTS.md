@@ -41,6 +41,17 @@ Requirements for milestone v1.0: Official X API Posting. Each maps to roadmap ph
 - [ ] **REL-04**: System detects duplicate content before posting to avoid X's 403 duplicate error
 - [ ] **REL-05**: System logs all X API interactions via PulseKit for debugging
 
+## v1.1 Requirements
+
+Requirements for milestone v1.1: Admin Dashboard Web Parity.
+
+### Admin Web Parity
+
+- [x] **ADMIN-01**: Website exposes admin routes matching app admin path surface (`/admin/*`)
+- [x] **ADMIN-02**: Website enforces admin/moderator-only access for admin routes
+- [x] **ADMIN-03**: Website admin experience recreates app admin UI and functionality natively in React
+- [x] **ADMIN-04**: Admin deep links are supported for both `/admin/*` and `/dashboard/admin/*` route surfaces
+
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
@@ -79,34 +90,38 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 1 | Pending |
-| AUTH-02 | Phase 1 | Pending |
-| AUTH-03 | Phase 1 | Pending |
-| AUTH-04 | Phase 1 | Pending |
-| AUTH-05 | Phase 1 | Pending |
-| AUTH-06 | Phase 1 | Pending |
-| AUTH-07 | Phase 1 | Pending |
-| UPLOAD-01 | Phase 2 | Pending |
-| UPLOAD-02 | Phase 2 | Pending |
-| UPLOAD-03 | Phase 2 | Pending |
-| UPLOAD-04 | Phase 2 | Pending |
-| POST-01 | Phase 3 | Pending |
-| POST-02 | Phase 3 | Pending |
-| POST-03 | Phase 3 | Pending |
-| POST-04 | Phase 3 | Pending |
-| POST-05 | Phase 3 | Pending |
-| POST-06 | Phase 3 | Pending |
-| REL-01 | Phase 4 | Pending |
-| REL-02 | Phase 4 | Pending |
-| REL-03 | Phase 4 | Pending |
-| REL-04 | Phase 4 | Pending |
-| REL-05 | Phase 4 | Pending |
+| AUTH-01 | Phase 1 | Complete |
+| AUTH-02 | Phase 1 | Complete |
+| AUTH-03 | Phase 1 | Complete |
+| AUTH-04 | Phase 1 | Complete |
+| AUTH-05 | Phase 1 | Complete |
+| AUTH-06 | Phase 1 | Complete |
+| AUTH-07 | Phase 1 | Complete |
+| UPLOAD-01 | Phase 2 | Complete |
+| UPLOAD-02 | Phase 2 | Complete |
+| UPLOAD-03 | Phase 2 | Complete |
+| UPLOAD-04 | Phase 2 | Complete |
+| POST-01 | Phase 3 | Complete |
+| POST-02 | Phase 3 | Complete |
+| POST-03 | Phase 3 | Complete |
+| POST-04 | Phase 3 | Complete |
+| POST-05 | Phase 3 | Complete |
+| POST-06 | Phase 3 | Complete |
+| REL-01 | Phase 4 | Complete |
+| REL-02 | Phase 4 | Complete |
+| REL-03 | Phase 4 | Complete |
+| REL-04 | Phase 4 | Complete |
+| REL-05 | Phase 4 | Complete |
+| ADMIN-01 | Phase 5 | Complete |
+| ADMIN-02 | Phase 5 | Complete |
+| ADMIN-03 | Phase 5 | Complete |
+| ADMIN-04 | Phase 5 | Complete |
 
 **Coverage:**
-- v1 requirements: 22 total
-- Mapped to phases: 22
+- v1 + v1.1 requirements: 26 total
+- Mapped to phases: 26
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-02-09*
-*Last updated: 2026-02-09 after roadmap creation*
+*Last updated: 2026-02-20 after phase 5 completion*

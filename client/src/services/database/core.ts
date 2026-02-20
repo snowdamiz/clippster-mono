@@ -1,7 +1,4 @@
 import Database from '@tauri-apps/plugin-sql';
-import { invoke } from '@tauri-apps/api/core';
-import { exists, remove } from '@tauri-apps/plugin-fs';
-import { appDataDir } from '@tauri-apps/api/path';
 
 let db: Database | null = null;
 let initializing: Promise<Database> | null = null;
@@ -9,60 +6,21 @@ let initializing: Promise<Database> | null = null;
 // Current user context for multi-user support
 let currentUserId: number | null = null;
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function waitForRuntimeReady(timeoutMs = 7000) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      // Any simple invoke ensures the runtime is ready for this window
-      await invoke<string>('greet', { name: 'db-init' });
-      return;
-    } catch {
-      // Not ready yet
-    }
-    await sleep(100);
-  }
-  throw new Error('Tauri runtime not ready');
-}
-
 // Initialize database connection
 export async function initDatabase() {
   if (db) return db;
   if (initializing) return initializing;
 
-  initializing = (async () => {
-    try {
-      await waitForRuntimeReady();
-      const dbName = import.meta.env.DEV ? 'clippster_v25_dev.db' : 'clippster_v25.db';
+  const dbName = import.meta.env.DEV ? 'clippster_v25_dev.db' : 'clippster_v25.db';
 
-      // In production, delete any existing database before initializing a fresh one
-      if (!import.meta.env.DEV) {
-        try {
-          const dataDir = await appDataDir();
-          const dbPath = `${dataDir}${dbName}`;
-          if (await exists(dbPath)) {
-            console.log('[Database] Existing database found, deleting before fresh init:', dbPath);
-            await remove(dbPath);
-          }
-        } catch (err) {
-          console.error('[Database] Failed to check/delete existing database:', err);
-        }
-      }
-
-      const instance = await Database.load(`sqlite:${dbName}`);
-
+  initializing = Database.load(`sqlite:${dbName}`)
+    .then((instance) => {
       db = instance;
       return instance;
-    } catch (error) {
-      // For now, just rethrow the error so we can see what's happening
-      throw error;
-    } finally {
+    })
+    .finally(() => {
       initializing = null;
-    }
-  })();
+    });
 
   return initializing;
 }
