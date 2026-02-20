@@ -1,124 +1,173 @@
 <template>
-  <div class="admin-messaging">
-    <PageLayout
-      title="Messaging"
-      description="Send emails to waitlist members, all users, or individual users"
-      :show-header="true"
-      :icon="Mail"
-      :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Messaging' }]"
-    >
-      <div class="admin-messaging__content">
-        <!-- Composer Panel -->
-        <div class="admin-messaging__composer">
-          <h2 class="admin-messaging__section-title">Compose Email</h2>
+  <PageLayout
+    title="Messaging"
+    description="Send emails to waitlist members, all users, or individual users"
+    :show-header="true"
+    :icon="Mail"
+    :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Messaging' }]"
+  >
+    <template #actions>
+      <button class="msg-action-btn" :disabled="loadingHistory" @click="fetchHistory">
+        <RefreshCw class="msg-action-icon" :class="{ 'msg-spin': loadingHistory }" />
+        Refresh
+      </button>
+    </template>
 
-          <div class="admin-messaging__field">
-            <label class="admin-messaging__label">Audience</label>
-            <div class="admin-messaging__audience-grid">
-              <button
-                v-for="opt in audienceOptions"
-                :key="opt.value"
-                class="admin-messaging__audience-btn"
-                :class="{ 'admin-messaging__audience-btn--active': form.audience === opt.value }"
-                @click="form.audience = opt.value"
-              >
-                <component :is="opt.icon" class="admin-messaging__audience-icon" />
-                <span class="admin-messaging__audience-label">{{ opt.label }}</span>
-                <span class="admin-messaging__audience-desc">{{ opt.desc }}</span>
-              </button>
-            </div>
+    <div class="admin-msg">
+      <!-- Heading -->
+      <div class="admin-msg__heading">
+        <h1 class="admin-msg__title">Email Campaigns</h1>
+        <p class="admin-msg__subtitle">Send targeted emails to your users, waitlist, or individual recipients</p>
+      </div>
+
+      <!-- Compose Card -->
+      <div class="admin-msg__compose-card">
+        <div class="admin-msg__compose-header">
+          <div class="admin-msg__compose-icon-wrap">
+            <Send class="admin-msg__compose-icon-svg" />
           </div>
-
-          <div v-if="form.audience === 'individual'" class="admin-messaging__field">
-            <label class="admin-messaging__label">Recipient Email</label>
-            <input v-model="form.targetEmail" type="email" placeholder="user@example.com" class="admin-messaging__input" />
-          </div>
-
-          <div class="admin-messaging__field">
-            <label class="admin-messaging__label">Subject</label>
-            <input v-model="form.subject" type="text" placeholder="Enter email subject..." class="admin-messaging__input" />
-          </div>
-
-          <div class="admin-messaging__field">
-            <label class="admin-messaging__label">Body</label>
-            <div class="admin-messaging__editor-tabs">
-              <button class="admin-messaging__editor-tab" :class="{ 'admin-messaging__editor-tab--active': editorMode === 'visual' }" @click="switchMode('visual')">
-                <Type class="admin-messaging__tab-icon" /> Visual
-              </button>
-              <button class="admin-messaging__editor-tab" :class="{ 'admin-messaging__editor-tab--active': editorMode === 'html' }" @click="switchMode('html')">
-                <Code class="admin-messaging__tab-icon" /> HTML
-              </button>
-              <button class="admin-messaging__editor-tab" :class="{ 'admin-messaging__editor-tab--active': editorMode === 'preview' }" @click="editorMode = 'preview'">
-                <Eye class="admin-messaging__tab-icon" /> Preview
-              </button>
-            </div>
-
-            <div v-if="editorMode === 'visual'" class="admin-messaging__tiptap-wrapper">
-              <div class="admin-messaging__toolbar">
-                <button class="admin-messaging__toolbar-btn" :class="{ 'admin-messaging__toolbar-btn--active': editor?.isActive('bold') }" @click="editor?.chain().focus().toggleBold().run()"><Bold class="admin-messaging__toolbar-icon" /></button>
-                <button class="admin-messaging__toolbar-btn" :class="{ 'admin-messaging__toolbar-btn--active': editor?.isActive('italic') }" @click="editor?.chain().focus().toggleItalic().run()"><Italic class="admin-messaging__toolbar-icon" /></button>
-                <button class="admin-messaging__toolbar-btn" :class="{ 'admin-messaging__toolbar-btn--active': editor?.isActive('underline') }" @click="editor?.chain().focus().toggleUnderline().run()"><UnderlineIcon class="admin-messaging__toolbar-icon" /></button>
-                <div class="admin-messaging__toolbar-divider" />
-                <button class="admin-messaging__toolbar-btn" :class="{ 'admin-messaging__toolbar-btn--active': editor?.isActive('heading', { level: 2 }) }" @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()"><Heading2 class="admin-messaging__toolbar-icon" /></button>
-                <button class="admin-messaging__toolbar-btn" :class="{ 'admin-messaging__toolbar-btn--active': editor?.isActive('bulletList') }" @click="editor?.chain().focus().toggleBulletList().run()"><List class="admin-messaging__toolbar-icon" /></button>
-                <button class="admin-messaging__toolbar-btn" :class="{ 'admin-messaging__toolbar-btn--active': editor?.isActive('orderedList') }" @click="editor?.chain().focus().toggleOrderedList().run()"><ListOrdered class="admin-messaging__toolbar-icon" /></button>
-                <div class="admin-messaging__toolbar-divider" />
-                <button class="admin-messaging__toolbar-btn" @click="setLink"><LinkIcon class="admin-messaging__toolbar-icon" /></button>
-              </div>
-              <editor-content :editor="editor" class="admin-messaging__editor-content" />
-            </div>
-
-            <textarea v-else-if="editorMode === 'html'" v-model="form.body" class="admin-messaging__html-textarea" placeholder="<p>Enter your HTML email body here...</p>" spellcheck="false" />
-
-            <div v-else class="admin-messaging__preview-wrapper">
-              <div v-if="form.body" class="admin-messaging__preview-body" v-html="form.body" />
-              <div v-else class="admin-messaging__preview-empty">
-                <Eye class="admin-messaging__preview-empty-icon" />
-                <p>No content to preview</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="admin-messaging__actions">
-            <button class="admin-messaging__send-btn" :disabled="!canSend || sending" @click="confirmSend">
-              <Loader2 v-if="sending" class="admin-messaging__send-icon admin-messaging__send-icon--spin" />
-              <Send v-else class="admin-messaging__send-icon" />
-              {{ sending ? 'Sending...' : 'Send Campaign' }}
-            </button>
+          <div>
+            <h2 class="admin-msg__compose-title">Compose Email</h2>
+            <p class="admin-msg__compose-desc">Fill in the details below to send a campaign</p>
           </div>
         </div>
 
-        <!-- Campaign History -->
-        <div class="admin-messaging__history">
-          <div class="admin-messaging__history-header">
-            <h2 class="admin-messaging__section-title">Campaign History</h2>
-            <button class="admin-messaging__refresh-btn" :disabled="loadingHistory" @click="fetchHistory">
-              <RefreshCw class="admin-messaging__refresh-icon" :class="{ 'admin-messaging__send-icon--spin': loadingHistory }" />
-            </button>
+        <div class="admin-msg__compose-body">
+          <!-- Left col: audience + subject + recipient -->
+          <div class="admin-msg__compose-col">
+            <div class="admin-msg__field">
+              <label class="admin-msg__label">Audience</label>
+              <div class="admin-msg__audience-grid">
+                <button
+                  v-for="opt in audienceOptions"
+                  :key="opt.value"
+                  class="admin-msg__audience-btn"
+                  :class="{ 'admin-msg__audience-btn--active': form.audience === opt.value }"
+                  @click="form.audience = opt.value"
+                >
+                  <component :is="opt.icon" class="admin-msg__audience-icon" />
+                  <span class="admin-msg__audience-label">{{ opt.label }}</span>
+                  <span class="admin-msg__audience-desc">{{ opt.desc }}</span>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="form.audience === 'individual'" class="admin-msg__field">
+              <label class="admin-msg__label">Recipient Email</label>
+              <input v-model="form.targetEmail" type="email" placeholder="user@example.com" class="admin-msg__input" />
+            </div>
+
+            <div class="admin-msg__field">
+              <label class="admin-msg__label">Subject</label>
+              <input v-model="form.subject" type="text" placeholder="Enter email subject..." class="admin-msg__input" />
+            </div>
           </div>
-          <div v-if="loadingHistory" class="admin-messaging__history-empty">
-            <Loader2 class="admin-messaging__loading-icon admin-messaging__send-icon--spin" />
-          </div>
-          <div v-else-if="campaigns.length === 0" class="admin-messaging__history-empty">
-            <Mail class="admin-messaging__history-empty-icon" />
-            <p>No campaigns sent yet</p>
-          </div>
-          <div v-else class="admin-messaging__campaign-list">
-            <div v-for="campaign in campaigns" :key="campaign.id" class="admin-messaging__campaign-row">
-              <div class="admin-messaging__campaign-info">
-                <p class="admin-messaging__campaign-subject">{{ campaign.subject }}</p>
-                <div class="admin-messaging__campaign-meta">
-                  <span class="admin-messaging__campaign-chip">{{ audienceLabel(campaign.audience) }}</span>
-                  <span class="admin-messaging__campaign-chip">{{ campaign.recipient_count }} recipients</span>
-                  <span class="admin-messaging__campaign-chip">{{ formatDate(campaign.sent_at) }}</span>
+
+          <!-- Right col: body editor -->
+          <div class="admin-msg__compose-col">
+            <div class="admin-msg__field admin-msg__field--grow">
+              <label class="admin-msg__label">Body</label>
+              <div class="admin-msg__editor-tabs">
+                <button class="admin-msg__editor-tab" :class="{ 'admin-msg__editor-tab--active': editorMode === 'visual' }" @click="switchMode('visual')">
+                  <Type class="admin-msg__tab-icon" /> Visual
+                </button>
+                <button class="admin-msg__editor-tab" :class="{ 'admin-msg__editor-tab--active': editorMode === 'html' }" @click="switchMode('html')">
+                  <Code class="admin-msg__tab-icon" /> HTML
+                </button>
+                <button class="admin-msg__editor-tab" :class="{ 'admin-msg__editor-tab--active': editorMode === 'preview' }" @click="editorMode = 'preview'">
+                  <Eye class="admin-msg__tab-icon" /> Preview
+                </button>
+              </div>
+
+              <div v-if="editorMode === 'visual'" class="admin-msg__tiptap-wrapper">
+                <div class="admin-msg__toolbar">
+                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('bold') }" @click="editor?.chain().focus().toggleBold().run()"><Bold class="admin-msg__toolbar-icon" /></button>
+                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('italic') }" @click="editor?.chain().focus().toggleItalic().run()"><Italic class="admin-msg__toolbar-icon" /></button>
+                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('underline') }" @click="editor?.chain().focus().toggleUnderline().run()"><UnderlineIcon class="admin-msg__toolbar-icon" /></button>
+                  <div class="admin-msg__toolbar-divider" />
+                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('heading', { level: 2 }) }" @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()"><Heading2 class="admin-msg__toolbar-icon" /></button>
+                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('bulletList') }" @click="editor?.chain().focus().toggleBulletList().run()"><List class="admin-msg__toolbar-icon" /></button>
+                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('orderedList') }" @click="editor?.chain().focus().toggleOrderedList().run()"><ListOrdered class="admin-msg__toolbar-icon" /></button>
+                  <div class="admin-msg__toolbar-divider" />
+                  <button class="admin-msg__toolbar-btn" @click="setLink"><LinkIcon class="admin-msg__toolbar-icon" /></button>
+                </div>
+                <editor-content :editor="editor" class="admin-msg__editor-content" />
+              </div>
+
+              <textarea v-else-if="editorMode === 'html'" v-model="form.body" class="admin-msg__html-textarea" placeholder="<p>Enter your HTML email body here...</p>" spellcheck="false" />
+
+              <div v-else class="admin-msg__preview-wrapper">
+                <div v-if="form.body" class="admin-msg__preview-body" v-html="form.body" />
+                <div v-else class="admin-msg__preview-empty">
+                  <Eye class="admin-msg__preview-empty-icon" />
+                  <p>No content to preview</p>
                 </div>
               </div>
-              <span class="admin-messaging__campaign-status" :class="`admin-messaging__campaign-status--${campaign.status}`">{{ campaign.status }}</span>
             </div>
           </div>
         </div>
+
+        <div class="admin-msg__compose-footer">
+          <button class="admin-msg__send-btn" :disabled="!canSend || sending" @click="confirmSend">
+            <Loader2 v-if="sending" class="admin-msg__send-icon msg-spin" />
+            <Send v-else class="admin-msg__send-icon" />
+            {{ sending ? 'Sending...' : 'Send Campaign' }}
+          </button>
+        </div>
       </div>
-    </PageLayout>
+
+      <!-- Campaign History Table -->
+      <div class="admin-msg__history-card">
+        <div class="admin-msg__history-header">
+          <div class="admin-msg__history-header-left">
+            <div class="admin-msg__history-icon-wrap">
+              <Mail class="admin-msg__history-icon-svg" />
+            </div>
+            <div>
+              <h2 class="admin-msg__history-title">Campaign History</h2>
+              <p class="admin-msg__history-desc">Previously sent email campaigns</p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="loadingHistory" class="admin-msg__loading">
+          <Loader2 class="admin-msg__loading-icon msg-spin" />
+          <p class="admin-msg__loading-text">Loading campaigns...</p>
+        </div>
+
+        <div v-else-if="campaigns.length === 0" class="admin-msg__empty">
+          <div class="admin-msg__empty-icon-wrap"><Mail class="admin-msg__empty-icon-svg" /></div>
+          <p class="admin-msg__empty-text">No campaigns sent yet</p>
+        </div>
+
+        <div v-else class="admin-msg__table-scroll">
+          <table class="admin-msg__table">
+            <thead class="admin-msg__thead">
+              <tr>
+                <th class="admin-msg__th">Subject</th>
+                <th class="admin-msg__th">Audience</th>
+                <th class="admin-msg__th">Recipients</th>
+                <th class="admin-msg__th">Status</th>
+                <th class="admin-msg__th">Sent</th>
+              </tr>
+            </thead>
+            <tbody class="admin-msg__tbody">
+              <tr v-for="campaign in campaigns" :key="campaign.id" class="admin-msg__row">
+                <td class="admin-msg__td admin-msg__td--subject">{{ campaign.subject }}</td>
+                <td class="admin-msg__td">
+                  <span class="admin-msg__chip">{{ audienceLabel(campaign.audience) }}</span>
+                </td>
+                <td class="admin-msg__td admin-msg__td--muted">{{ campaign.recipient_count }}</td>
+                <td class="admin-msg__td">
+                  <span class="admin-msg__status" :class="`admin-msg__status--${campaign.status}`">{{ campaign.status }}</span>
+                </td>
+                <td class="admin-msg__td admin-msg__td--muted">{{ formatDate(campaign.sent_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
 
     <!-- Confirm Dialog -->
     <Teleport to="body">
@@ -146,7 +195,7 @@
         </div>
       </Transition>
     </Teleport>
-  </div>
+  </PageLayout>
 </template>
 
 <script setup lang="ts">
@@ -180,7 +229,7 @@
 
   function switchMode(mode: 'visual' | 'html') {
     if (mode === 'visual' && editorMode.value === 'html') {
-      editor.value?.commands.setContent(form.value.body, false);
+      editor.value?.commands.setContent(form.value.body);
     }
     editorMode.value = mode;
   }
@@ -249,107 +298,117 @@
 </script>
 
 <style scoped>
-  .admin-messaging { width: 100%; min-height: 100%; }
+  .msg-action-btn { display: flex; align-items: center; gap: 0.5rem; height: 32px; padding: 0 0.875rem; font-size: 0.75rem; font-weight: 600; border-radius: 6px; cursor: pointer; transition: all 150ms; border: 1px solid var(--sidebar-border); background-color: var(--sidebar-hover); color: var(--sidebar-text); }
+  .msg-action-btn:hover:not(:disabled) { background: rgba(63,63,70,0.8); }
+  .msg-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .msg-action-icon { width: 14px; height: 14px; }
+  .msg-spin { animation: spin 1s linear infinite; }
 
-  .admin-messaging__content {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    max-width: 1200px;
-    margin: 0 auto;
-  }
+  .admin-msg { display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem; max-width: 1400px; margin: 0 auto; width: 100%; }
 
-  @media (min-width: 1024px) {
-    .admin-messaging__content { grid-template-columns: 1fr 380px; }
-  }
+  .admin-msg__heading { margin-bottom: 0.5rem; }
+  .admin-msg__title { font-size: 1.5rem; font-weight: 700; color: var(--sidebar-text); margin: 0 0 0.2rem; letter-spacing: -0.02em; }
+  .admin-msg__subtitle { font-size: 0.875rem; color: var(--sidebar-text-muted); margin: 0; }
 
-  .admin-messaging__section-title { font-size: 0.875rem; font-weight: 600; color: var(--sidebar-text); margin: 0 0 1rem; }
+  /* ── Compose card ── */
+  .admin-msg__compose-card { background-color: var(--sidebar-surface); border: 1px solid var(--sidebar-border); border-radius: 10px; overflow: hidden; }
+  .admin-msg__compose-header { display: flex; align-items: center; gap: 0.875rem; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--sidebar-border); }
+  .admin-msg__compose-icon-wrap { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(139,92,246,0.2), rgba(109,40,217,0.2)); border: 1px solid rgba(139,92,246,0.3); flex-shrink: 0; }
+  .admin-msg__compose-icon-svg { width: 18px; height: 18px; color: #a78bfa; }
+  .admin-msg__compose-title { font-size: 1rem; font-weight: 600; color: var(--sidebar-text); margin: 0; }
+  .admin-msg__compose-desc { font-size: 0.75rem; color: var(--sidebar-text-muted); margin: 0.125rem 0 0; }
 
-  .admin-messaging__composer,
-  .admin-messaging__history {
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    padding: 1.25rem;
-  }
+  .admin-msg__compose-body { display: grid; grid-template-columns: 1fr; gap: 1.5rem; padding: 1.5rem; }
+  @media (min-width: 900px) { .admin-msg__compose-body { grid-template-columns: 1fr 1fr; } }
+  .admin-msg__compose-col { display: flex; flex-direction: column; }
 
-  .admin-messaging__history { height: fit-content; }
+  .admin-msg__compose-footer { display: flex; align-items: center; justify-content: flex-end; padding: 1rem 1.5rem; border-top: 1px solid var(--sidebar-border); background-color: rgba(24,24,27,0.4); }
 
-  .admin-messaging__field { margin-bottom: 1rem; }
+  /* ── Fields ── */
+  .admin-msg__field { margin-bottom: 1.25rem; }
+  .admin-msg__field--grow { flex: 1; display: flex; flex-direction: column; }
+  .admin-msg__label { display: block; font-size: 0.6875rem; font-weight: 600; color: var(--sidebar-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+  .admin-msg__input { width: 100%; background-color: var(--sidebar-hover); border: 1px solid var(--sidebar-border); border-radius: 8px; padding: 0.625rem 0.875rem; font-size: 0.875rem; color: var(--sidebar-text); outline: none; transition: border-color 150ms; box-sizing: border-box; }
+  .admin-msg__input:focus { border-color: rgba(139,92,246,0.5); box-shadow: 0 0 0 2px rgba(139,92,246,0.15); }
 
-  .admin-messaging__label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--sidebar-text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+  /* ── Audience ── */
+  .admin-msg__audience-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+  .admin-msg__audience-btn { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: 0.75rem 0.5rem; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); border-radius: 8px; cursor: pointer; transition: all 150ms; text-align: center; }
+  .admin-msg__audience-btn:hover { border-color: rgba(139,92,246,0.4); }
+  .admin-msg__audience-btn--active { border-color: rgba(139,92,246,0.6); background: rgba(139,92,246,0.1); }
+  .admin-msg__audience-icon { width: 18px; height: 18px; color: var(--sidebar-text-muted); }
+  .admin-msg__audience-btn--active .admin-msg__audience-icon { color: #a78bfa; }
+  .admin-msg__audience-label { font-size: 0.75rem; font-weight: 600; color: var(--sidebar-text); }
+  .admin-msg__audience-desc { font-size: 0.625rem; color: var(--sidebar-text-muted); }
 
-  .admin-messaging__input { width: 100%; background: var(--sidebar-bg); border: 1px solid var(--sidebar-border); border-radius: 8px; padding: 0.625rem 0.875rem; font-size: 0.875rem; color: var(--sidebar-text); outline: none; transition: border-color 150ms; box-sizing: border-box; }
-  .admin-messaging__input:focus { border-color: rgba(139, 92, 246, 0.5); }
+  /* ── Editor ── */
+  .admin-msg__editor-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--sidebar-border); }
+  .admin-msg__editor-tab { display: flex; align-items: center; gap: 0.375rem; padding: 0.5rem 0.875rem; font-size: 0.75rem; font-weight: 500; color: var(--sidebar-text-muted); background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 150ms; margin-bottom: -1px; }
+  .admin-msg__editor-tab:hover { color: var(--sidebar-text); }
+  .admin-msg__editor-tab--active { color: #a78bfa; border-bottom-color: #a78bfa; }
+  .admin-msg__tab-icon { width: 13px; height: 13px; }
+  .admin-msg__tiptap-wrapper { border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; overflow: hidden; flex: 1; }
+  .admin-msg__toolbar { display: flex; align-items: center; gap: 0.125rem; padding: 0.375rem 0.5rem; background: var(--sidebar-bg); border-bottom: 1px solid var(--sidebar-border); flex-wrap: wrap; }
+  .admin-msg__toolbar-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 5px; border: none; background: transparent; color: var(--sidebar-text-muted); cursor: pointer; transition: all 150ms; }
+  .admin-msg__toolbar-btn:hover { background: var(--sidebar-hover); color: var(--sidebar-text); }
+  .admin-msg__toolbar-btn--active { background: rgba(139,92,246,0.15); color: #a78bfa; }
+  .admin-msg__toolbar-icon { width: 14px; height: 14px; }
+  .admin-msg__toolbar-divider { width: 1px; height: 18px; background: var(--sidebar-border); margin: 0 0.25rem; }
+  .admin-msg__editor-content { min-height: 240px; background: var(--sidebar-bg); }
+  .admin-msg__editor-content :deep(.ProseMirror) { min-height: 240px; padding: 0.875rem; outline: none; font-size: 0.875rem; color: var(--sidebar-text); line-height: 1.6; }
+  .admin-msg__editor-content :deep(.ProseMirror p) { margin: 0 0 0.5rem; }
+  .admin-msg__editor-content :deep(.ProseMirror ul), .admin-msg__editor-content :deep(.ProseMirror ol) { padding-left: 1.25rem; margin: 0 0 0.5rem; }
+  .admin-msg__editor-content :deep(.ProseMirror h2) { font-size: 1.125rem; font-weight: 600; margin: 0 0 0.5rem; color: var(--sidebar-text); }
+  .admin-msg__editor-content :deep(.ProseMirror a) { color: #a78bfa; text-decoration: underline; }
+  .admin-msg__html-textarea { width: 100%; min-height: 240px; background: var(--sidebar-bg); border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; padding: 0.875rem; font-size: 0.8125rem; font-family: 'Fira Code', 'Consolas', monospace; color: var(--sidebar-text); outline: none; resize: vertical; box-sizing: border-box; line-height: 1.6; flex: 1; }
+  .admin-msg__preview-wrapper { border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; min-height: 240px; background: var(--sidebar-bg); flex: 1; }
+  .admin-msg__preview-body { padding: 1rem; font-size: 0.875rem; color: var(--sidebar-text); line-height: 1.6; }
+  .admin-msg__preview-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; min-height: 240px; color: var(--sidebar-text-muted); font-size: 0.875rem; }
+  .admin-msg__preview-empty-icon { width: 28px; height: 28px; opacity: 0.4; }
 
-  .admin-messaging__audience-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+  /* ── Send button ── */
+  .admin-msg__send-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.625rem 1.25rem; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 150ms; }
+  .admin-msg__send-btn:hover:not(:disabled) { opacity: 0.9; }
+  .admin-msg__send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .admin-msg__send-icon { width: 15px; height: 15px; }
 
-  .admin-messaging__audience-btn { display: flex; flex-direction: column; align-items: center; gap: 0.25rem; padding: 0.75rem 0.5rem; background: var(--sidebar-bg); border: 1px solid var(--sidebar-border); border-radius: 8px; cursor: pointer; transition: all 150ms; text-align: center; }
-  .admin-messaging__audience-btn:hover { border-color: rgba(139, 92, 246, 0.4); background: rgba(139, 92, 246, 0.05); }
-  .admin-messaging__audience-btn--active { border-color: rgba(139, 92, 246, 0.6); background: rgba(139, 92, 246, 0.1); }
-  .admin-messaging__audience-icon { width: 18px; height: 18px; color: var(--sidebar-text-muted); }
-  .admin-messaging__audience-btn--active .admin-messaging__audience-icon { color: #a78bfa; }
-  .admin-messaging__audience-label { font-size: 0.75rem; font-weight: 600; color: var(--sidebar-text); }
-  .admin-messaging__audience-desc { font-size: 0.625rem; color: var(--sidebar-text-muted); }
+  /* ── History card ── */
+  .admin-msg__history-card { background-color: var(--sidebar-surface); border: 1px solid var(--sidebar-border); border-radius: 10px; overflow: hidden; }
+  .admin-msg__history-header { display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--sidebar-border); }
+  .admin-msg__history-header-left { display: flex; align-items: center; gap: 0.875rem; }
+  .admin-msg__history-icon-wrap { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(37,99,235,0.2)); border: 1px solid rgba(59,130,246,0.3); flex-shrink: 0; }
+  .admin-msg__history-icon-svg { width: 18px; height: 18px; color: #60a5fa; }
+  .admin-msg__history-title { font-size: 1rem; font-weight: 600; color: var(--sidebar-text); margin: 0; }
+  .admin-msg__history-desc { font-size: 0.75rem; color: var(--sidebar-text-muted); margin: 0.125rem 0 0; }
 
-  .admin-messaging__editor-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--sidebar-border); }
-  .admin-messaging__editor-tab { display: flex; align-items: center; gap: 0.375rem; padding: 0.5rem 0.875rem; font-size: 0.75rem; font-weight: 500; color: var(--sidebar-text-muted); background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 150ms; margin-bottom: -1px; }
-  .admin-messaging__editor-tab:hover { color: var(--sidebar-text); }
-  .admin-messaging__editor-tab--active { color: #a78bfa; border-bottom-color: #a78bfa; }
-  .admin-messaging__tab-icon { width: 13px; height: 13px; }
+  /* ── Loading / empty ── */
+  .admin-msg__loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem; }
+  .admin-msg__loading-icon { width: 32px; height: 32px; color: #a78bfa; margin-bottom: 1rem; }
+  .admin-msg__loading-text { color: var(--sidebar-text-muted); margin: 0; }
+  .admin-msg__empty { display: flex; flex-direction: column; align-items: center; padding: 3rem; text-align: center; }
+  .admin-msg__empty-icon-wrap { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(37,99,235,0.2)); border: 1px solid rgba(59,130,246,0.3); margin-bottom: 1rem; }
+  .admin-msg__empty-icon-svg { width: 28px; height: 28px; color: #60a5fa; }
+  .admin-msg__empty-text { color: var(--sidebar-text-muted); margin: 0; }
 
-  .admin-messaging__tiptap-wrapper { border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; overflow: hidden; }
-  .admin-messaging__toolbar { display: flex; align-items: center; gap: 0.125rem; padding: 0.375rem 0.5rem; background: var(--sidebar-bg); border-bottom: 1px solid var(--sidebar-border); flex-wrap: wrap; }
-  .admin-messaging__toolbar-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 5px; border: none; background: transparent; color: var(--sidebar-text-muted); cursor: pointer; transition: all 150ms; }
-  .admin-messaging__toolbar-btn:hover { background: var(--sidebar-hover); color: var(--sidebar-text); }
-  .admin-messaging__toolbar-btn--active { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
-  .admin-messaging__toolbar-icon { width: 14px; height: 14px; }
-  .admin-messaging__toolbar-divider { width: 1px; height: 18px; background: var(--sidebar-border); margin: 0 0.25rem; }
-
-  .admin-messaging__editor-content { min-height: 200px; background: var(--sidebar-bg); }
-  .admin-messaging__editor-content :deep(.ProseMirror) { min-height: 200px; padding: 0.875rem; outline: none; font-size: 0.875rem; color: var(--sidebar-text); line-height: 1.6; }
-  .admin-messaging__editor-content :deep(.ProseMirror p) { margin: 0 0 0.5rem; }
-  .admin-messaging__editor-content :deep(.ProseMirror ul), .admin-messaging__editor-content :deep(.ProseMirror ol) { padding-left: 1.25rem; margin: 0 0 0.5rem; }
-  .admin-messaging__editor-content :deep(.ProseMirror h2) { font-size: 1.125rem; font-weight: 600; margin: 0 0 0.5rem; color: var(--sidebar-text); }
-  .admin-messaging__editor-content :deep(.ProseMirror a) { color: #a78bfa; text-decoration: underline; }
-
-  .admin-messaging__html-textarea { width: 100%; min-height: 240px; background: var(--sidebar-bg); border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; padding: 0.875rem; font-size: 0.8125rem; font-family: 'Fira Code', 'Consolas', monospace; color: var(--sidebar-text); outline: none; resize: vertical; box-sizing: border-box; line-height: 1.6; }
-
-  .admin-messaging__preview-wrapper { border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; min-height: 200px; background: var(--sidebar-bg); }
-  .admin-messaging__preview-body { padding: 1rem; font-size: 0.875rem; color: var(--sidebar-text); line-height: 1.6; }
-  .admin-messaging__preview-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; min-height: 200px; color: var(--sidebar-text-muted); font-size: 0.875rem; }
-  .admin-messaging__preview-empty-icon { width: 28px; height: 28px; opacity: 0.4; }
-
-  .admin-messaging__actions { display: flex; justify-content: flex-end; padding-top: 0.5rem; }
-  .admin-messaging__send-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.625rem 1.25rem; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 150ms; }
-  .admin-messaging__send-btn:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
-  .admin-messaging__send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .admin-messaging__send-icon { width: 15px; height: 15px; }
-  .admin-messaging__send-icon--spin { animation: spin 0.8s linear infinite; }
-
-  .admin-messaging__history-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-  .admin-messaging__history-header .admin-messaging__section-title { margin: 0; }
-  .admin-messaging__refresh-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--sidebar-border); background: transparent; color: var(--sidebar-text-muted); cursor: pointer; transition: all 150ms; }
-  .admin-messaging__refresh-btn:hover { background: var(--sidebar-hover); color: var(--sidebar-text); }
-  .admin-messaging__refresh-icon { width: 13px; height: 13px; }
-
-  .admin-messaging__history-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; padding: 2rem; color: var(--sidebar-text-muted); font-size: 0.875rem; }
-  .admin-messaging__loading-icon, .admin-messaging__history-empty-icon { width: 28px; height: 28px; opacity: 0.4; }
-
-  .admin-messaging__campaign-list { display: flex; flex-direction: column; gap: 0.5rem; }
-  .admin-messaging__campaign-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.75rem; background: var(--sidebar-bg); border: 1px solid var(--sidebar-border); border-radius: 8px; }
-  .admin-messaging__campaign-info { flex: 1; min-width: 0; }
-  .admin-messaging__campaign-subject { font-size: 0.8125rem; font-weight: 500; color: var(--sidebar-text); margin: 0 0 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .admin-messaging__campaign-meta { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
-  .admin-messaging__campaign-chip { font-size: 0.6875rem; color: var(--sidebar-text-muted); background: var(--sidebar-hover); padding: 0.125rem 0.375rem; border-radius: 4px; }
-  .admin-messaging__campaign-status { font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 0.2rem 0.5rem; border-radius: 4px; flex-shrink: 0; }
-  .admin-messaging__campaign-status--sent { background: rgba(34, 197, 94, 0.1); color: #4ade80; }
-  .admin-messaging__campaign-status--failed { background: rgba(239, 68, 68, 0.1); color: #f87171; }
-  .admin-messaging__campaign-status--draft { background: rgba(161, 161, 170, 0.1); color: #a1a1aa; }
+  /* ── Table ── */
+  .admin-msg__table-scroll { overflow-x: auto; }
+  .admin-msg__table { width: 100%; border-collapse: collapse; }
+  .admin-msg__thead { background-color: rgba(24,24,27,0.8); }
+  .admin-msg__th { padding: 0.875rem 1.25rem; text-align: left; font-size: 0.6875rem; font-weight: 600; color: var(--sidebar-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .admin-msg__tbody { border-top: 1px solid var(--sidebar-border); }
+  .admin-msg__row { transition: background-color 150ms; }
+  .admin-msg__row:hover { background-color: rgba(39,39,42,0.3); }
+  .admin-msg__row:not(:last-child) { border-bottom: 1px solid rgba(39,39,42,0.5); }
+  .admin-msg__td { padding: 1rem 1.25rem; font-size: 0.875rem; color: var(--sidebar-text); white-space: nowrap; }
+  .admin-msg__td--subject { font-weight: 500; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+  .admin-msg__td--muted { color: var(--sidebar-text-muted); font-size: 0.8125rem; }
+  .admin-msg__chip { display: inline-flex; align-items: center; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.6875rem; font-weight: 500; background: var(--sidebar-hover); color: var(--sidebar-text-muted); border: 1px solid var(--sidebar-border); }
+  .admin-msg__status { display: inline-flex; align-items: center; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .admin-msg__status--sent { background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+  .admin-msg__status--failed { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+  .admin-msg__status--draft { background: rgba(161,161,170,0.1); color: #a1a1aa; border: 1px solid rgba(161,161,170,0.2); }
 
   .modal-enter-active, .modal-leave-active { transition: opacity 0.2s ease; }
   .modal-enter-from, .modal-leave-to { opacity: 0; }
-
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>

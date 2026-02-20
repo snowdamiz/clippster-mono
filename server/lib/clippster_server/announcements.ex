@@ -97,7 +97,7 @@ defmodule ClippsterServer.Announcements do
   Publishes an announcement immediately (sets active + published_at + broadcasts).
   """
   def publish(%Announcement{} = announcement) do
-    update(announcement, %{
+    __MODULE__.update(announcement, %{
       "is_active" => true,
       "published_at" => DateTime.utc_now() |> DateTime.truncate(:second)
     })
