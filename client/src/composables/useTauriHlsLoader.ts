@@ -1,5 +1,30 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Loader, LoaderContext, LoaderResponse, LoaderConfiguration, LoaderCallbacks, LoaderStats } from 'hls.js';
+import type {
+  Loader,
+  LoaderContext,
+  LoaderResponse,
+  LoaderConfiguration,
+  LoaderCallbacks,
+  LoaderStats,
+} from 'hls.js';
+
+const TS_PACKET_SIZE = 188;
+const MIN_LOCAL_TS_BYTES = 5 * 1024;
+
+function isLikelyValidTsSegment(content: number[]): boolean {
+  if (!Array.isArray(content) || content.length < TS_PACKET_SIZE * 2) return false;
+  if (content.length < MIN_LOCAL_TS_BYTES) return false;
+  if (content.length % TS_PACKET_SIZE !== 0) return false;
+
+  const packetChecks = Math.min(10, Math.floor(content.length / TS_PACKET_SIZE));
+  for (let i = 0; i < packetChecks; i++) {
+    if (content[i * TS_PACKET_SIZE] !== 0x47) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 /**
  * Custom HLS.js loader that uses Tauri commands instead of HTTP fetch
@@ -57,7 +82,7 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
       // Parse the URL to extract encoded directory and filename
       // Expected format: asset://hls/{encodedDir}/{filename}
       const urlObj = new URL(url);
-      
+
       if (urlObj.protocol !== 'asset:') {
         // Fallback to regular fetch for non-asset URLs (e.g., Kick proxy)
         return this.loadViaFetch(context, callbacks);
@@ -66,7 +91,7 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
       // For asset:// URLs, 'hls' is parsed as the hostname (not a path segment)
       // asset://hls/{encodedDir}/{filename} → hostname='hls', pathname='/{encodedDir}/{filename}'
       const pathParts = urlObj.pathname.split('/').filter(Boolean);
-      
+
       if (urlObj.hostname !== 'hls' || pathParts.length < 2) {
         throw new Error(`Invalid Asset HLS URL format: ${url}`);
       }
@@ -95,6 +120,9 @@ export class TauriHlsLoader implements Loader<LoaderContext> {
           encodedDir,
           filename,
         });
+        if (!isLikelyValidTsSegment(content)) {
+          throw new Error(`HLS segment not ready or invalid: ${filename} (${content.length}B)`);
+        }
 
         data = new Uint8Array(content);
         this.stats.loaded = data.byteLength;
@@ -195,7 +223,10 @@ export function getTauriHlsUrl(outputDir: string, filename = 'playlist.m3u8'): s
 /**
  * Helper function to check if playlist exists via Tauri command
  */
-export async function checkPlaylistExists(outputDir: string, filename = 'playlist.m3u8'): Promise<boolean> {
+export async function checkPlaylistExists(
+  outputDir: string,
+  filename = 'playlist.m3u8'
+): Promise<boolean> {
   const encodedDir = btoa(outputDir);
   try {
     return await invoke<boolean>('check_hls_playlist_exists', {

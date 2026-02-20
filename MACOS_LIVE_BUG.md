@@ -1,6 +1,6 @@
 # macOS Production Livestream Watching Bug
 
-**Status:** ROOT CAUSE RECONFIRMED - PIPELINE PATCHED, REBUILD REQUIRED
+**Status:** ROOT CAUSE RECONFIRMED - PIPELINE HARDENED, REBUILD REQUIRED
 **Severity:** Critical - All livestream watching broken on macOS production builds
 **Affected:** PumpFun, Kick, Twitch - ALL platforms, macOS production only
 **Works in:** Dev mode (all platforms), Windows production, Linux production
@@ -18,9 +18,13 @@ When watching any livestream on macOS production build, the video never loads. T
 [Error] Refused to connect to ipc://localhost/get_platform because it does not appear in the connect-src directive of the Content Security Policy.
 [Warning] IPC custom protocol failed, Tauri will now use the postMessage interface instead – TypeError: Load failed
 [Debug] [LiveViewer] No segments returned from get_hls_segments (x34+)
+[Log] [RecorderLog] PumpFun recorder: Using FFmpeg binary: /Applications/Clippster.app/Contents/MacOS/ffmpeg
+[Log] [HlsPlayback] Error: mediaError fragParsingError fatal: false | Buffer ahead: 0.0s, currentTime: 0.5s, liveEdge: 0.0s
 ```
 
 The `get_hls_segments` Tauri command returns empty results 34+ times (polled every 2s = ~68 seconds of no segments). This means the output directory either doesn't exist or contains no `.ts` segments and no `.m3u8` playlist.
+
+Latest runs show FFmpeg path resolution now succeeds in production, but playback can still enter a startup failure mode where the first segment is invalid (empty/partial), producing repeated `fragParsingError` and no usable buffer.
 
 ---
 
@@ -29,24 +33,28 @@ The `get_hls_segments` Tauri command returns empty results 34+ times (polled eve
 ### Livestream Recording Pipeline (per platform)
 
 **PumpFun:**
+
 1. Frontend calls `start_hls_recording` Tauri command
 2. Rust creates output dir: `~/Library/Application Support/Clippster/videos/hls_live/{mint_id}/{session_id}/`
 3. Rust spawns **Node.js sidecar** via `app.shell().sidecar("node")` with `record-livestream.mjs`
 4. Node.js connects to PumpFun's LiveKit server, receives WebRTC media, pipes to FFmpeg, outputs HLS segments
 
 **Kick/Twitch:**
+
 1. Frontend calls `start_kick_recording` / `start_twitch_recording`
 2. Rust creates output dir: `~/Library/Application Support/Clippster/livestream_recordings/{session_id}/`
 3. Rust spawns **yt-dlp** (piped to **FFmpeg**) via `tokio::process::Command`
 4. yt-dlp captures stream, FFmpeg re-encodes to HLS segments
 
 ### HLS Playback Pipeline
+
 1. `updateHlsSegments()` polls `get_hls_segments` every 2 seconds
 2. `get_hls_segments` reads the output directory for `.m3u8` playlist and `.ts` files
 3. Once segments exist, hls.js initializes with custom `TauriHlsLoader` (reads files via Tauri IPC)
 4. Video plays in `<video>` element with DVR rewind capability
 
 ### Key Files
+
 - `client/src/composables/useLivestreamViewer.ts` - Main viewer logic, segment polling
 - `client/src/composables/useHlsPlayback.ts` - hls.js configuration and playback
 - `client/src/composables/useTauriHlsLoader.ts` - Custom HLS loader using Tauri IPC
@@ -67,6 +75,7 @@ The `get_hls_segments` Tauri command returns empty results 34+ times (polled eve
 ### Root Cause 1: Entitlements NOT Applied - Sidecar Binaries Crash (CONFIRMED)
 
 **Entitlements check (`codesign -d --entitlements -`) shows ZERO entitlements on ALL binaries:**
+
 - `clippster-ui` - No entitlements
 - `node` - No entitlements (needs `allow-jit`, `disable-library-validation`, `allow-unsigned-executable-memory`)
 - `yt-dlp` - No entitlements (needs `disable-library-validation`, `allow-unsigned-executable-memory`)
@@ -125,11 +134,11 @@ Static binary, no JIT or dynamic library loading needed. Works fine under harden
 
 **`resolve_sidecar_binary()` in `kick.rs:299` expects triple-suffixed names, but bundle has bare names:**
 
-| Expected by code | Actual in bundle |
-|---|---|
-| `ffmpeg-aarch64-apple-darwin` | `ffmpeg` |
-| `yt-dlp-aarch64-apple-darwin` | `yt-dlp` |
-| `node-aarch64-apple-darwin` | `node` |
+| Expected by code              | Actual in bundle |
+| ----------------------------- | ---------------- |
+| `ffmpeg-aarch64-apple-darwin` | `ffmpeg`         |
+| `yt-dlp-aarch64-apple-darwin` | `yt-dlp`         |
+| `node-aarch64-apple-darwin`   | `node`           |
 
 Tauri strips the target triple suffix when bundling sidecars into the `.app`. The custom `resolve_sidecar_binary()` doesn't account for this. It falls back to returning the bare name (e.g., `"ffmpeg"`), but then `Path::new("ffmpeg").exists()` fails because it's a relative path that doesn't match any file in the working directory.
 
@@ -140,6 +149,7 @@ Tauri strips the target triple suffix when bundling sidecars into the `.app`. Th
 ### Root Cause 3: CSP Missing `ipc://localhost` (CONFIRMED - Secondary)
 
 **The error:**
+
 ```
 Refused to connect to ipc://localhost/get_platform because it does not appear in the connect-src directive of the Content Security Policy.
 ```
@@ -159,11 +169,40 @@ path: 'ffmpeg'
 
 This indicates `record-livestream.mjs` failed to resolve the bundled FFmpeg path and fell back to plain `ffmpeg` (PATH lookup). In macOS Tauri bundles, sidecars are placed as bare names in `Contents/MacOS/` (e.g. `ffmpeg`), but the resolver prioritized triple-suffixed names and could still miss the bare bundle path in some production layouts.
 
+### Root Cause 5: Zero-Byte Startup Segment Treated as Playable (CONFIRMED)
+
+After FFmpeg resolution was fixed, recorder started, but the first playlist/segment pair could still be invalid during startup:
+
+```
+#EXT-X-TARGETDURATION:0
+#EXTINF:0.000000,
+segment_00000.ts
+```
+
+Observed on disk:
+
+- `segment_00000.ts` size: `0B`
+- `ffmpeg -i segment_00000.ts`: `Invalid data found when processing input`
+
+`useHlsPlayback.waitForFirstSegment()` previously treated any `#EXTINF` entry as ready, and `get_hls_segments` previously accepted playlist entries without verifying segment size, allowing hls.js to repeatedly parse invalid fragments (`fragParsingError` loop).
+
+### Root Cause 6: Startup Validation Too Weak for Degenerate HLS Entries (CONFIRMED)
+
+New logs show this sequence in production:
+
+1. recorder starts with correct FFmpeg bundle path
+2. temporary connectivity instability (`ping timeout`, reconnect attempts)
+3. initial playlist/fragment state can still be malformed or too early for playback init
+4. hls.js enters repeated non-fatal `fragParsingError` with `liveEdge: 0.0s`
+
+The startup gate must require multiple valid media segments (duration + TS structure), not just playlist existence plus a single referenced file.
+
 ---
 
 ## Diagnostic Results
 
 ### Step 1: Binary Existence in Bundle
+
 ```
 $ ls -la /Applications/Clippster.app/Contents/MacOS/
 clippster-ui    53MB   (main app)
@@ -171,31 +210,38 @@ ffmpeg          45MB   (static binary - WORKS)
 node            93MB   (V8 JIT binary - CRASHES)
 yt-dlp          36MB   (PyInstaller binary - CRASHES)
 ```
+
 Binaries present but named WITHOUT target triple suffix.
 
 ### Step 2: Entitlements Check
+
 ```
 $ codesign -d --entitlements - /Applications/Clippster.app/Contents/MacOS/node
 Executable=/Applications/Clippster.app/Contents/MacOS/node
 (NO ENTITLEMENTS OUTPUT - empty)
 ```
+
 Same for `/Applications/Clippster.app/Contents/MacOS/yt-dlp`. Zero entitlements applied in the installed production app.
 
 ### Step 3: Codesign Details
+
 All binaries signed with:
+
 - Authority: `Developer ID Application: OpenWorth Technologies, LLC (CD2RXM358N)`
 - Hardened runtime: `flags=0x10000(runtime)` - **ENABLED**
 - Properly validated
 
 ### Step 4: Direct Binary Execution Tests
-| Binary | Command | Result |
-|---|---|---|
-| `node` | `--version` | `v20.11.0` (no JS executed) |
-| `node` | `-e "console.log(1)"` | `Fatal process OOM in Failed to reserve virtual memory for CodeRange` |
-| `yt-dlp` | `--version` | `[PYI-59055:ERROR] Failed to load Python shared library ... different Team IDs` |
-| `ffmpeg` | `-version` | `ffmpeg version 6.0` (works) |
+
+| Binary   | Command               | Result                                                                          |
+| -------- | --------------------- | ------------------------------------------------------------------------------- |
+| `node`   | `--version`           | `v20.11.0` (no JS executed)                                                     |
+| `node`   | `-e "console.log(1)"` | `Fatal process OOM in Failed to reserve virtual memory for CodeRange`           |
+| `yt-dlp` | `--version`           | `[PYI-59055:ERROR] Failed to load Python shared library ... different Team IDs` |
+| `ffmpeg` | `-version`            | `ffmpeg version 6.0` (works)                                                    |
 
 ### Step 5: Bundle Resources
+
 ```
 $ ls /Applications/Clippster.app/Contents/Resources/pumpfun-service/
 fetch-clips.mjs
@@ -204,6 +250,7 @@ record-livestream.mjs
 package.json
 ...
 ```
+
 PumpFun service scripts are present in the bundle.
 
 ---
@@ -237,6 +284,7 @@ codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" 
 Using `--deep` at this stage can re-sign nested binaries and remove sidecar entitlements.
 
 **Implementation options:**
+
 - Add a post-build script that runs after `tauri build`
 - Use Tauri's `beforeBundleCommand` or a custom build hook
 - Add to CI/CD pipeline after the build step
@@ -296,6 +344,7 @@ Prevents the IPC fallback to `postMessage` and eliminates the CSP warning.
 ### Fix 4: Add Sidecar Failure Detection (RECOMMENDED)
 
 Implemented in `client/src-tauri/src/hls.rs`:
+
 1. Emits `recorder-log` events for PumpFun sidecar startup, stderr, and process errors
 2. Emits `recorder-exit` with exit code on termination
 3. Frontend already listens for `recorder-log`, so sidecar failures are now visible in production logs
@@ -303,25 +352,42 @@ Implemented in `client/src-tauri/src/hls.rs`:
 ### Fix 5: PumpFun FFmpeg Path Resolution for Bundled macOS Sidecar (CRITICAL)
 
 Implemented in `client/src-tauri/pumpfun-service/record-livestream.mjs`:
+
 1. `resolveFfmpegBinary()` now checks both triple-suffixed names and bare-name sidecars (`ffmpeg`) in `Contents/MacOS`
 2. Added explicit `../../MacOS` bundle-path candidates from script location
 3. Added FFmpeg spawn error handler to avoid unhandled `'error'` crashes and emit structured logs
 4. Added `ffmpegPath` to startup diagnostics so resolved binary is visible in production logs
 
+### Fix 6: Ignore Invalid Startup Segments and Require Real Segment Bytes (CRITICAL)
+
+Implemented:
+
+1. `client/src-tauri/src/hls.rs` (`get_hls_segments`) now ignores `.ts` files smaller than `5KB`
+2. `client/src-tauri/src/hls.rs` now ignores tiny `#EXTINF` durations (`< 0.5s`) and uses safe fallback duration for timeline continuity
+3. `client/src/composables/useHlsPlayback.ts` now requires at least 2 valid startup segments with:
+   - duration `>= 0.5s`
+   - non-trivial segment bytes
+   - MPEG-TS sync-byte sanity checks
+4. `client/src-tauri/pumpfun-service/record-livestream.mjs` now uses `-hls_flags ...+temp_file` to avoid exposing partially-written segments
+5. `client/src/composables/useTauriHlsLoader.ts` now rejects invalid local TS payloads before handing bytes to hls.js (prevents parsing malformed startup files)
+
 ---
 
 ## Fix History
 
-| Date | Version | Change | Result |
-|------|---------|--------|--------|
-| v0.1.95 | d75abf02 | Added entitlements `.plist` files to repo | Files created but never applied during build. Node.js and yt-dlp still crash. |
-| v0.1.95 | pending | Fix 1: CI post-build re-sign with entitlements + notarize | Removes auto-notarize from tauri-action, adds manual re-sign/notarize step |
-| v0.1.95 | pending | Fix 2: Bare-name sidecar fallback in kick.rs, twitch.rs, sidecar/mod.rs | Resolves binary naming mismatch in macOS `.app` bundle |
-| v0.1.95 | pending | Fix 3: Added `ipc://localhost` to CSP connect-src | Prevents IPC fallback to postMessage |
-| 2026-02-20 | v0.1.108 | Verified installed production app still has empty entitlements on `node`/`yt-dlp` | Reproduced runtime failures directly from `/Applications/Clippster.app` |
-| 2026-02-20 | v0.1.108 | Fix 1B: Remove `--deep` from post-build app re-sign and add required-entitlement assertions in CI | Prevents nested sidecar entitlements from being clobbered |
-| 2026-02-20 | v0.1.108 | Fix 4 implemented in `hls.rs` (`recorder-log`, `recorder-exit`) | PumpFun sidecar failures now visible in frontend logs |
-| 2026-02-20 | v0.1.108 | Fix 5 implemented in `record-livestream.mjs` for bundled `ffmpeg` resolution | Prevents PumpFun `spawn ffmpeg ENOENT` in macOS production bundle |
+| Date       | Version  | Change                                                                                              | Result                                                                        |
+| ---------- | -------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| v0.1.95    | d75abf02 | Added entitlements `.plist` files to repo                                                           | Files created but never applied during build. Node.js and yt-dlp still crash. |
+| v0.1.95    | pending  | Fix 1: CI post-build re-sign with entitlements + notarize                                           | Removes auto-notarize from tauri-action, adds manual re-sign/notarize step    |
+| v0.1.95    | pending  | Fix 2: Bare-name sidecar fallback in kick.rs, twitch.rs, sidecar/mod.rs                             | Resolves binary naming mismatch in macOS `.app` bundle                        |
+| v0.1.95    | pending  | Fix 3: Added `ipc://localhost` to CSP connect-src                                                   | Prevents IPC fallback to postMessage                                          |
+| 2026-02-20 | v0.1.108 | Verified installed production app still has empty entitlements on `node`/`yt-dlp`                   | Reproduced runtime failures directly from `/Applications/Clippster.app`       |
+| 2026-02-20 | v0.1.108 | Fix 1B: Remove `--deep` from post-build app re-sign and add required-entitlement assertions in CI   | Prevents nested sidecar entitlements from being clobbered                     |
+| 2026-02-20 | v0.1.108 | Fix 4 implemented in `hls.rs` (`recorder-log`, `recorder-exit`)                                     | PumpFun sidecar failures now visible in frontend logs                         |
+| 2026-02-20 | v0.1.108 | Fix 5 implemented in `record-livestream.mjs` for bundled `ffmpeg` resolution                        | Prevents PumpFun `spawn ffmpeg ENOENT` in macOS production bundle             |
+| 2026-02-20 | v0.1.108 | Confirmed startup invalid fragment behavior (`segment_00000.ts` = `0B`, playlist `EXTINF:0.000000`) | Explains persistent `fragParsingError` loop after FFmpeg path fix             |
+| 2026-02-20 | v0.1.108 | Fix 6 implemented across `hls.rs`, `useHlsPlayback.ts`, and `record-livestream.mjs`                 | Blocks HLS init on invalid startup segments and reduces partial-file exposure |
+| 2026-02-20 | v0.1.108 | Fix 6 hardening: stricter startup gate + TS payload validation in loader                            | Prevents early HLS init on malformed first fragments (`liveEdge: 0.0s`)       |
 
 ---
 
@@ -345,4 +411,7 @@ Implemented in `client/src-tauri/pumpfun-service/record-livestream.mjs`:
 - [x] Added PumpFun recorder telemetry (`recorder-log` + `recorder-exit`) to surface sidecar failures
 - [x] Confirmed PumpFun recorder crash details in production logs: `Error: spawn ffmpeg ENOENT`
 - [x] Patched PumpFun FFmpeg resolver to handle macOS bundled bare-name sidecar in `Contents/MacOS/ffmpeg`
+- [x] Confirmed invalid startup media on disk (`playlist EXTINF:0.000000`, `segment_00000.ts` size `0B`)
+- [x] Patched HLS readiness/parsing flow to require valid segment bytes and ignore zero-duration startup entries
+- [x] Hardened startup validation to require multiple valid segments and reject malformed TS payloads in Tauri loader
 - [ ] Rebuild macOS artifacts, verify entitlements in shipped app, and re-test PumpFun/Kick/Twitch live playback

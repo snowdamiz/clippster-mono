@@ -1753,7 +1753,7 @@ class PumpfunRecorder {
       // Event-style playlist that only grows (no sliding window)
       '-hls_playlist_type', 'event',
       // Write timestamps, keep live (no ENDLIST), independent segments for robustness
-      '-hls_flags', 'program_date_time+omit_endlist+independent_segments',
+      '-hls_flags', 'program_date_time+omit_endlist+independent_segments+temp_file',
       '-hls_segment_type', 'mpegts',
       '-hls_segment_filename', segmentPattern,
       '-start_number', String(startNumber),
