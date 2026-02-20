@@ -1,7 +1,6 @@
 import Database from '@tauri-apps/plugin-sql';
 import { invoke } from '@tauri-apps/api/core';
-import { exists, remove } from '@tauri-apps/plugin-fs';
-import { appDataDir } from '@tauri-apps/api/path';
+import { BaseDirectory, exists, remove } from '@tauri-apps/plugin-fs';
 
 let db: Database | null = null;
 let initializing: Promise<Database> | null = null;
@@ -40,12 +39,21 @@ export async function initDatabase() {
 
       // In production, delete any existing database before initializing a fresh one
       if (!import.meta.env.DEV) {
+        const appDirs = [
+          { baseDir: BaseDirectory.AppConfig, label: 'AppConfig' },
+          { baseDir: BaseDirectory.AppData, label: 'AppData' },
+          { baseDir: BaseDirectory.AppLocalData, label: 'AppLocalData' },
+        ];
+
         try {
-          const dataDir = await appDataDir();
-          const dbPath = `${dataDir}${dbName}`;
-          if (await exists(dbPath)) {
-            console.log('[Database] Existing database found, deleting before fresh init:', dbPath);
-            await remove(dbPath);
+          for (const { baseDir, label } of appDirs) {
+            if (await exists(dbName, { baseDir })) {
+              console.log(
+                `[Database] Existing database found in ${label}, deleting before fresh init:`,
+                dbName,
+              );
+              await remove(dbName, { baseDir });
+            }
           }
         } catch (err) {
           console.error('[Database] Failed to check/delete existing database:', err);
