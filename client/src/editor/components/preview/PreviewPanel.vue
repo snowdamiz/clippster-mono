@@ -6,12 +6,13 @@ import { useRafLoop } from "../../composables/useRafLoop";
 import { useEditorUIState } from "../../composables/useEditorUIState";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
+import { useImageMode } from "../../composables/useImageMode";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
 import type { TimelineTrack } from "../../types/timeline";
 import type { AspectRatioId } from "../../types/project";
-import { ChevronDown, Smartphone } from "lucide-vue-next";
+import { ChevronDown, Smartphone, Link2 } from "lucide-vue-next";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
 import { SOCIAL_OVERLAY_PRESETS } from "../../constants/social-overlay-constants";
@@ -20,6 +21,7 @@ import type { SocialOverlayPreset } from "../../types/social-overlays";
 const { editor, version } = useEditor();
 const { isCropMode } = useEditorUIState();
 const { selectedElements } = useElementSelection();
+const { isImageMode } = useImageMode();
 
 const aspectPresets = [
 	{ width: 1920, height: 1080, label: "16:9" },
@@ -31,6 +33,35 @@ const aspectPresets = [
 const showAspectMenu = ref(false);
 const showSocialMenu = ref(false);
 const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
+
+// Custom canvas size
+const showCustomSize = ref(false);
+const customWidth = ref(1920);
+const customHeight = ref(1080);
+const linkDimensions = ref(false);
+const customAspect = computed(() => customWidth.value / customHeight.value);
+
+function applyCustomSize() {
+	const w = Math.max(100, Math.min(7680, Math.round(customWidth.value)));
+	const h = Math.max(100, Math.min(7680, Math.round(customHeight.value)));
+	editor.project.updateSettings({ settings: { canvasSize: { width: w, height: h } } });
+	showCustomSize.value = false;
+	showAspectMenu.value = false;
+}
+
+function onCustomWidthChange(val: number) {
+	customWidth.value = val;
+	if (linkDimensions.value) {
+		customHeight.value = Math.round(val / customAspect.value);
+	}
+}
+
+function onCustomHeightChange(val: number) {
+	customHeight.value = val;
+	if (linkDimensions.value) {
+		customWidth.value = Math.round(val * customAspect.value);
+	}
+}
 
 function toggleSocialOverlay(preset: SocialOverlayPreset) {
 	if (activeSocialOverlay.value?.platform === preset.platform) {
@@ -80,7 +111,7 @@ const is916 = computed(() => {
 });
 
 watch(is916, (val) => {
-	if (!val) {
+	if (!val && !isImageMode.value) {
 		activeSocialOverlay.value = null;
 		showSocialMenu.value = false;
 	}
@@ -360,13 +391,68 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					{{ preset.label }}
 					<span class="text-zinc-500">{{ preset.width }}×{{ preset.height }}</span>
 				</button>
+
+				<!-- Custom size toggle -->
+				<div class="border-t border-white/10 mt-1 pt-1">
+					<button
+						type="button"
+						class="flex w-full items-center gap-2 px-4 py-1.5 text-xs text-zinc-300 hover:bg-white/5 transition-colors"
+						@click="showCustomSize = !showCustomSize; customWidth = canvasWidth; customHeight = canvasHeight"
+					>
+						Custom Size
+					</button>
+				</div>
+
+				<!-- Custom size inputs -->
+				<div v-if="showCustomSize" class="border-t border-white/10 px-3 py-2.5 space-y-2">
+					<div class="flex items-center gap-2">
+						<div class="flex-1">
+							<label class="text-[9px] uppercase tracking-wider text-zinc-600 mb-0.5 block">Width</label>
+							<input
+								type="number"
+								:value="customWidth"
+								min="100"
+								max="7680"
+								class="w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-blue-500/50"
+								@input="onCustomWidthChange(Number(($event.target as HTMLInputElement).value))"
+							/>
+						</div>
+						<button
+							type="button"
+							class="mt-3.5 rounded p-1 transition-colors"
+							:class="linkDimensions ? 'text-blue-400 bg-blue-500/10' : 'text-zinc-600 hover:text-zinc-400'"
+							title="Link dimensions"
+							@click="linkDimensions = !linkDimensions"
+						>
+							<Link2 class="size-3" />
+						</button>
+						<div class="flex-1">
+							<label class="text-[9px] uppercase tracking-wider text-zinc-600 mb-0.5 block">Height</label>
+							<input
+								type="number"
+								:value="customHeight"
+								min="100"
+								max="7680"
+								class="w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-blue-500/50"
+								@input="onCustomHeightChange(Number(($event.target as HTMLInputElement).value))"
+							/>
+						</div>
+					</div>
+					<button
+						type="button"
+						class="w-full rounded bg-blue-600/80 py-1 text-[10px] font-medium text-white hover:bg-blue-600 transition-colors"
+						@click="applyCustomSize"
+					>
+						Apply
+					</button>
+				</div>
 			</div>
 
 			<!-- Click-away -->
-			<div v-if="showAspectMenu" class="fixed inset-0 z-40" @click="showAspectMenu = false" />
+			<div v-if="showAspectMenu" class="fixed inset-0 z-40" @click="showAspectMenu = false; showCustomSize = false" />
 
-			<!-- Social overlay toggle (9:16 only) -->
-			<div v-if="is916" class="absolute right-2 top-1/2 -translate-y-1/2">
+			<!-- Social overlay toggle (image mode: always, video mode: 9:16 only) -->
+			<div v-if="isImageMode || is916" class="absolute right-2 top-1/2 -translate-y-1/2">
 				<button
 					type="button"
 					:class="[

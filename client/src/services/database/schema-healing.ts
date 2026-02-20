@@ -95,6 +95,20 @@ export async function healSchema(): Promise<void> {
       FOREIGN KEY (creator_profile_id) REFERENCES creator_profiles(id) ON DELETE SET NULL
     )`);
 
+    // --- Design Studio: image_assets new columns ---
+    await addColumnIfMissing(db, 'image_assets', 'image_type', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'source_type', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'source_clip_id', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'source_project_id', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'canvas_width', 'INTEGER');
+    await addColumnIfMissing(db, 'image_assets', 'canvas_height', 'INTEGER');
+    await addColumnIfMissing(db, 'image_assets', 'export_format', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'editor_project_json', 'TEXT');
+
+    // --- Design Studio: clips cover image columns ---
+    await addColumnIfMissing(db, 'clips', 'cover_image_id', 'TEXT');
+    await addColumnIfMissing(db, 'clips', 'cover_image_path', 'TEXT');
+
     healed = true;
     console.log('[schema-healing] Schema healing complete');
   } catch (e) {

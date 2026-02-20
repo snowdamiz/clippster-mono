@@ -41,6 +41,7 @@ const OrgPosts = lazy(() => import('./pages/dashboard/OrgPosts').then(m => ({ de
 const OrgHiring = lazy(() => import('./pages/dashboard/OrgHiring').then(m => ({ default: m.OrgHiring })))
 const OrgMessages = lazy(() => import('./pages/dashboard/OrgMessages').then(m => ({ default: m.OrgMessages })))
 const OrgSubscriptionRequired = lazy(() => import('./pages/dashboard/OrgSubscriptionRequired').then(m => ({ default: m.OrgSubscriptionRequired })))
+const LiteEditorPage = lazy(() => import('./pages/LiteEditorPage').then(m => ({ default: m.LiteEditorPage })))
 
 function LoadingFallback() {
   return (
@@ -64,6 +65,9 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
+
+                {/* Lite editor (public) */}
+                <Route path="/editor" element={<LiteEditorPage />} />
 
                 {/* Auth pages */}
                 <Route path="/login" element={<LoginPage />} />

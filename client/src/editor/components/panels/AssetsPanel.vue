@@ -14,6 +14,7 @@ import type { MediaAsset } from "../../types/assets";
 import type { CreateTimelineElement } from "../../types/timeline";
 import { Button } from "@/components/ui/button";
 import { Upload, Image, Film, Music, Grid, List, Wand2, ArrowRightLeft, Palette, SlidersHorizontal, FolderOpen, Clapperboard } from "lucide-vue-next";
+import { useImageMode } from "../../composables/useImageMode";
 import TextView from "./assets/TextView.vue";
 import CaptionsView from "./assets/CaptionsView.vue";
 import SettingsView from "./assets/SettingsView.vue";
@@ -27,12 +28,17 @@ import AdjustmentsView from "./assets/AdjustmentsView.vue";
 import TransitionsView from "./assets/TransitionsView.vue";
 import BrandingView from "./assets/BrandingView.vue";
 import TranscriptView from "./assets/TranscriptView.vue";
+import ImageSourcesView from "./assets/ImageSourcesView.vue";
+import TemplatesView from "./assets/TemplatesView.vue";
+import BrandKitView from "./assets/BrandKitView.vue";
+import AIToolsView from "./assets/AIToolsView.vue";
 
 const props = defineProps<{
 	activeTab: string;
 }>();
 
 const { editor, version } = useEditor();
+const { isImageMode } = useImageMode();
 const mediaSubTab = ref<"upload" | "built" | "projects">("upload");
 const viewMode = ref<"grid" | "list">("grid");
 const isProcessing = ref(false);
@@ -154,8 +160,11 @@ function getMediaIcon(type: string) {
 
 <template>
 	<div class="flex h-full flex-col bg-transparent text-zinc-200">
-		<!-- Media view -->
-		<div v-if="activeTab === 'media'" class="flex flex-1 flex-col overflow-hidden">
+		<!-- Image mode: show ImageSourcesView for media tab -->
+		<ImageSourcesView v-if="activeTab === 'media' && isImageMode" />
+
+		<!-- Video mode: standard media view -->
+		<div v-else-if="activeTab === 'media'" class="flex flex-1 flex-col overflow-hidden">
 			<input
 			:ref="(el) => { inputRef = el as HTMLInputElement | null }"
 			type="file"
@@ -325,6 +334,15 @@ function getMediaIcon(type: string) {
 			<!-- Projects sub-tab -->
 			<ProjectClipsView v-else-if="mediaSubTab === 'projects'" />
 		</div>
+
+		<!-- Templates view (image mode only) -->
+		<TemplatesView v-else-if="activeTab === 'templates'" />
+
+		<!-- Brand Kit view (image mode only) -->
+		<BrandKitView v-else-if="activeTab === 'brandkit'" />
+
+		<!-- AI Tools view (image mode only) -->
+		<AIToolsView v-else-if="activeTab === 'aitools'" />
 
 		<!-- Text view -->
 		<TextView v-else-if="activeTab === 'text'" />

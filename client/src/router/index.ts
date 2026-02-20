@@ -69,6 +69,24 @@ const router = createRouter({
       ],
     },
     {
+      path: '/design-studio',
+      name: 'design-studio',
+      component: () => import('@/pages/ImageEditor.vue'),
+      meta: { noLayout: true },
+    },
+    {
+      path: '/my-images',
+      name: 'my-images',
+      component: () => import('@/layouts/DashboardLayout.vue'),
+      children: [
+        {
+          path: '',
+          name: 'my-images-home',
+          component: () => import('@/pages/ImageGallery.vue'),
+        },
+      ],
+    },
+    {
       path: '/editor',
       name: 'opencut-editor',
       component: () => import('@/pages/OpenCutEditor.vue'),

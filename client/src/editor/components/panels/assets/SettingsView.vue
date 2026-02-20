@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
+import { useImageMode } from "../../../composables/useImageMode";
 import { Button } from "@/components/ui/button";
 import { ChevronDown } from "lucide-vue-next";
 
 const { editor, version } = useEditor();
+const { isImageMode } = useImageMode();
 
 const activeProject = computed(() => {
 	void version.value;
@@ -13,14 +15,40 @@ const activeProject = computed(() => {
 
 const activeSettingsTab = ref<"project-info" | "background">("project-info");
 
-// Canvas presets
-const canvasPresets = [
+// Canvas presets for video mode
+const videoCanvasPresets = [
 	{ width: 1080, height: 1920, label: "9:16" },
 	{ width: 1920, height: 1080, label: "16:9" },
 	{ width: 1080, height: 1080, label: "1:1" },
 	{ width: 1080, height: 1350, label: "4:5" },
 	{ width: 1920, height: 1920, label: "1:1 HD" },
 ];
+
+// Canvas presets for image mode
+const imageCanvasPresets = [
+	{ width: 1280, height: 720, label: "YT Thumbnail", desc: "YouTube Thumbnail" },
+	{ width: 1080, height: 1080, label: "IG Post", desc: "Instagram Post" },
+	{ width: 1080, height: 1920, label: "IG Story", desc: "Instagram Story / TikTok" },
+	{ width: 1500, height: 500, label: "X Banner", desc: "Twitter/X Banner" },
+	{ width: 1920, height: 1080, label: "Twitch", desc: "Twitch Offline Screen" },
+	{ width: 1080, height: 1350, label: "4:5 Poster", desc: "Stream Poster" },
+	{ width: 1920, height: 1080, label: "16:9", desc: "Landscape" },
+	{ width: 1080, height: 1080, label: "1:1", desc: "Square" },
+];
+
+const canvasPresets = computed(() => isImageMode.value ? imageCanvasPresets : videoCanvasPresets);
+
+// Custom size inputs for image mode
+const customWidth = ref("");
+const customHeight = ref("");
+
+function applyCustomSize() {
+	const w = parseInt(customWidth.value);
+	const h = parseInt(customHeight.value);
+	if (w > 0 && h > 0 && w <= 7680 && h <= 7680) {
+		handleAspectRatioChange({ width: w, height: h });
+	}
+}
 
 const fpsPresets = [
 	{ value: "24", label: "24 fps" },
@@ -98,12 +126,13 @@ const currentBlurIntensity = computed(() => isBlurBg.value ? (currentBackground.
 			</div>
 
 			<div class="space-y-1.5">
-				<label class="text-zinc-500 text-xs">Aspect ratio</label>
+				<label class="text-zinc-500 text-xs">{{ isImageMode ? 'Canvas size' : 'Aspect ratio' }}</label>
 				<div class="grid grid-cols-3 gap-2">
 					<button
 						v-for="preset in canvasPresets"
 						:key="preset.label"
 						type="button"
+						:title="(preset as any).desc || preset.label"
 						:class="[
 							'rounded-md border px-3 py-1.5 text-xs transition-colors',
 							currentCanvasSize.width === preset.width && currentCanvasSize.height === preset.height
@@ -115,9 +144,39 @@ const currentBlurIntensity = computed(() => isBlurBg.value ? (currentBackground.
 						{{ preset.label }}
 					</button>
 				</div>
+				<!-- Image mode: show current dimensions + custom size -->
+				<div v-if="isImageMode" class="mt-2 space-y-2">
+					<p class="text-zinc-500 text-[10px]">{{ currentCanvasSize.width }} × {{ currentCanvasSize.height }}px</p>
+					<div class="flex items-center gap-1.5">
+						<input
+							v-model="customWidth"
+							type="number"
+							placeholder="W"
+							min="1"
+							max="7680"
+							class="w-16 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200"
+						/>
+						<span class="text-zinc-500 text-xs">×</span>
+						<input
+							v-model="customHeight"
+							type="number"
+							placeholder="H"
+							min="1"
+							max="7680"
+							class="w-16 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200"
+						/>
+						<button
+							type="button"
+							class="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:bg-white/5 transition-colors"
+							@click="applyCustomSize"
+						>
+							Apply
+						</button>
+					</div>
+				</div>
 			</div>
 
-			<div class="space-y-1.5">
+			<div v-if="!isImageMode" class="space-y-1.5">
 				<label class="text-zinc-500 text-xs">Frame rate</label>
 				<div class="grid grid-cols-3 gap-2">
 					<button

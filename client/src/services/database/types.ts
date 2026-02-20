@@ -118,6 +118,9 @@ export interface Clip {
   current_version_id: string | null;
   // Campaign integration
   campaign_id: number | null;
+  // Cover image (from image editor)
+  cover_image_id: string | null;
+  cover_image_path: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -429,6 +432,10 @@ export interface AudioAsset {
   sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
+export type ImageAssetType = 'thumbnail' | 'cover' | 'watermark' | 'overlay' | 'banner' | 'poster' | 'logo' | 'social' | 'custom';
+export type ImageSourceType = 'upload' | 'clip_thumbnail' | 'frame_extract' | 'ai_generated' | 'template' | 'editor';
+export type ImageExportFormat = 'png' | 'svg' | 'webp';
+
 export interface ImageAsset {
   id: string;
   name: string;
@@ -437,6 +444,14 @@ export interface ImageAsset {
   height: number | null;
   file_size: number | null;
   mime_type: string | null;
+  image_type: ImageAssetType | null;
+  source_type: ImageSourceType | null;
+  source_clip_id: string | null;
+  source_project_id: string | null;
+  canvas_width: number | null;
+  canvas_height: number | null;
+  export_format: ImageExportFormat | null;
+  editor_project_json: string | null;
   created_at: number;
   updated_at: number;
   // Organization asset fields (null for local assets)

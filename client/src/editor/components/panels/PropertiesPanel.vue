@@ -11,10 +11,12 @@ import StickerProperties from "./properties/StickerProperties.vue";
 import EffectProperties from "./properties/EffectProperties.vue";
 import CaptionProperties from "./properties/CaptionProperties.vue";
 import KeyframeEditorPanel from "./KeyframeEditorPanel.vue";
-import { Settings } from "lucide-vue-next";
+import { Settings, SlidersHorizontal } from "lucide-vue-next";
+import { useImageMode } from "../../composables/useImageMode";
 
 const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
+const { isImageMode } = useImageMode();
 
 const elementsWithTracks = computed(() => {
 	void version.value;
@@ -78,13 +80,15 @@ const elementsWithTracks = computed(() => {
 		</template>
 
 		<!-- Empty state -->
-		<div v-else class="flex h-full flex-col items-center justify-center gap-3 p-4">
-			<Settings class="text-zinc-500/75 size-10" :stroke-width="1" />
-			<div class="flex flex-col gap-2 text-center">
-				<p class="text-sm font-medium text-zinc-300">It's empty here</p>
-				<p class="text-zinc-500 text-xs text-balance">
-					Click an element on the timeline to edit its properties
-				</p>
+		<div v-else class="flex h-full flex-col">
+			<!-- Header -->
+			<div v-if="isImageMode" class="flex items-center gap-1.5 border-b border-white/[0.06] px-3 py-2">
+				<SlidersHorizontal class="size-3.5 text-zinc-500" />
+				<span class="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">Properties</span>
+			</div>
+			<div class="flex flex-1 flex-col items-center justify-center gap-2 p-4">
+				<Settings class="text-zinc-700 size-7" :stroke-width="1" />
+				<p class="text-[11px] text-zinc-600 text-center">Select a layer to edit</p>
 			</div>
 		</div>
 	</div>

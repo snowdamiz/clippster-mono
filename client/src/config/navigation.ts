@@ -17,6 +17,8 @@ import {
   Wand2,
   Handshake,
   CalendarDays,
+  Paintbrush,
+  Image,
 } from 'lucide-vue-next';
 
 export type NavigationGroup = 'browse' | 'create' | 'manage' | 'system';
@@ -55,6 +57,18 @@ export const navigationItems: NavigationItem[] = [
     restrictedHidden: true,
   },
   {
+    name: 'Live',
+    path: '/live-clip',
+    icon: Radio,
+    group: 'browse',
+  },
+  {
+    name: 'Stream VODs',
+    path: '/vods',
+    icon: Video,
+    group: 'browse',
+  },
+  {
     name: 'Campaigns',
     path: '/campaigns',
     icon: Megaphone,
@@ -78,29 +92,30 @@ export const navigationItems: NavigationItem[] = [
     group: 'create',
   },
   {
+    name: 'My Images',
+    path: '/my-images',
+    icon: Image,
+    group: 'create',
+  },
+  {
     name: 'Video Editor',
     path: '/video-editor',
     icon: Clapperboard,
     group: 'create',
   },
   {
-    name: 'AI Video',
-    path: '/ai-video',
-    icon: Wand2,
+    name: 'Design Studio',
+    path: '/design-studio',
+    icon: Paintbrush,
     group: 'create',
     badge: 'Beta',
   },
   {
-    name: 'Live',
-    path: '/live-clip',
-    icon: Radio,
+    name: 'AI Video Creator',
+    path: '/ai-video',
+    icon: Wand2,
     group: 'create',
-  },
-  {
-    name: 'Stream VODs',
-    path: '/vods',
-    icon: Video,
-    group: 'create',
+    badge: 'Beta',
   },
 
   // Manage group - organization/settings
