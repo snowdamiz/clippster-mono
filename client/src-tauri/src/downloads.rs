@@ -180,6 +180,15 @@ async fn run_segment_download_with_encoder(
                                 println!("[Rust] Failed to parse time: '{}'", time_str);
                             }
                         }
+                    } else if line == "progress=end" {
+                        println!("[Rust] FFmpeg signaled progress=end, finalizing segment file...");
+                        let _ = app_clone.emit("download-progress", DownloadProgress {
+                            download_id: download_id_owned.clone(),
+                            progress: 97.0,
+                            current_time: None,
+                            total_time: None,
+                            status: "Finalizing file...".to_string(),
+                        });
                     } else if !line.starts_with("frame=") && !line.starts_with("fps=") 
                         && !line.starts_with("stream_") && !line.starts_with("bitrate=")
                         && !line.starts_with("total_size=") && !line.starts_with("out_time_ms=")
@@ -373,6 +382,17 @@ async fn run_full_download_with_encoder(
                                 println!("[Rust] Failed to parse time: '{}'", time_str);
                             }
                         }
+                    } else if line == "progress=end" {
+                        // FFmpeg finished processing - moov atom rewrite (faststart) is about to begin
+                        // This can take minutes for large files with no further output
+                        println!("[Rust] FFmpeg signaled progress=end, finalizing file (faststart moov rewrite)...");
+                        let _ = app_clone.emit("download-progress", DownloadProgress {
+                            download_id: download_id_owned.clone(),
+                            progress: 97.0,
+                            current_time: None,
+                            total_time: None,
+                            status: "Finalizing file...".to_string(),
+                        });
                     } else if !line.starts_with("frame=") && !line.starts_with("fps=") 
                         && !line.starts_with("stream_") && !line.starts_with("bitrate=")
                         && !line.starts_with("total_size=") && !line.starts_with("out_time_ms=")
