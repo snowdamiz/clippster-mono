@@ -16,6 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Chunked Video Upload** - Upload and process video media for X ✓
 - [x] **Phase 3: Tweet Creation & Scheduling** - Post clips to X immediately or scheduled ✓
 - [x] **Phase 4: Rate Limiting & Reliability** - Production-grade error handling and quota management ✓
+- [x] **Phase 5: Web Admin Dashboard Parity** - Ship website admin dashboard with identical app UI/behavior ✓
 
 ## Phase Details
 
@@ -103,7 +104,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -111,3 +112,20 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 2. Chunked Video Upload | 2/2 | ✓ Complete | 2026-02-09 |
 | 3. Tweet Creation & Scheduling | 2/2 | ✓ Complete | 2026-02-09 |
 | 4. Rate Limiting & Reliability | 2/2 | ✓ Complete | 2026-02-09 |
+| 5. Web Admin Dashboard Parity | 1/1 | ✓ Complete | 2026-02-20 |
+
+### Phase 5: Web Admin Dashboard Parity
+
+**Goal:** Website admins access the same admin dashboard UI and functionality as the app implementation
+**Depends on:** Phase 4
+
+**Success Criteria** (what must be TRUE):
+  1. Website exposes admin routes matching app admin paths (`/admin/*`)
+  2. Non-admin users cannot access website admin routes
+  3. Website admin surface renders the exact app admin interface (same components/behavior)
+  4. Auth context syncs into embedded app admin route so admins stay signed in
+
+**Plans:** 1 plan
+
+Plans:
+- [x] 05-01-PLAN.md — Admin web route parity via app-embedded dashboard and auth sync bridge

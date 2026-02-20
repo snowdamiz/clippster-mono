@@ -8,16 +8,15 @@ A desktop application for automated long-form to short-form video clip generatio
 
 Content creators can generate, edit, and distribute short-form clips from long-form video with minimal manual effort.
 
-## Current Milestone: v1.0 Official X API Posting
+## Current Milestone: v1.1 Admin Dashboard Web Parity
 
-**Goal:** Add direct posting to X (Twitter) via the official X API v2, matching Instagram's integration depth — OAuth for org and personal accounts, immediate and scheduled posting, media upload.
+**Goal:** Deliver a browser-accessible admin dashboard with the same interface and behavior as the app admin dashboard.
 
 **Target features:**
-- X OAuth 2.0 with PKCE for organization accounts
-- X OAuth 2.0 with PKCE for personal/clipper accounts
-- Tweet creation with media (images and video)
-- Scheduled posting via existing scheduling infrastructure
-- Platform-specific validation (280 char limit, media constraints)
+- Web route surface for admin (`/admin/*`) aligned with app route structure
+- Admin/moderator-only access control on website admin routes
+- Identical admin UI/behavior rendered in website context
+- Session continuity between website auth and admin dashboard context
 
 ## Requirements
 
@@ -38,48 +37,44 @@ Content creators can generate, edit, and distribute short-form clips from long-f
 - Clipper profiles with portfolios and performance metrics
 - Social media scheduling with retry logic
 - Encrypted token storage with auto-refresh
+- Official X API posting (OAuth PKCE, media upload, scheduling, reliability hardening)
 
 ### Active
 
-- [ ] X OAuth 2.0 with PKCE (org accounts)
-- [ ] X OAuth 2.0 with PKCE (personal/clipper accounts)
-- [ ] Tweet creation with media upload via official X API v2
-- [ ] Scheduled X posting via existing scheduling system
-- [ ] Platform-specific caption validation for X
+- [ ] Web admin route parity (`/admin/*`)
+- [ ] Website admin/moderator route guard
+- [ ] Embedded app-admin rendering in website with auth sync bridge
+- [ ] Verify full admin page coverage from website deep links
 
 ### Out of Scope
 
-- Replacing twitterapi.io for analytics — current read-only stats work fine
-- TikTok API integration — future milestone
-- YouTube API integration — future milestone
-- X Premium features (long tweets, extended video) — v1.0 targets standard limits
+- Rewriting admin pages into a second independently maintained frontend surface
+- New admin backend APIs (reuse existing `/api/admin/*` endpoints)
+- Organization dashboard redesign (scope is admin web parity only)
+- TikTok/YouTube net-new platform integrations
 
 ## Context
 
-- Instagram integration is fully operational and serves as the reference implementation
-- The `Platform` behavior pattern (`authorize_url`, `exchange_code`, `refresh_tokens`, `get_user_profile`, `publish_media`, `get_insights`) provides the contract
-- Existing scheduling worker, token refresh worker, and analytics sync worker are platform-agnostic
-- Client-side PublishDialog and ScheduledPostsList already support platform selection
-- X API v2 uses OAuth 2.0 with PKCE (different from Instagram's server-side OAuth)
-- X media upload uses the v1.1 upload endpoint (`upload.twitter.com`) even with v2 tweet creation
-- twitterapi.io remains for external post analytics (separate concern)
+- App admin dashboard already exists and is feature-complete in `client/src/pages/admin/*`
+- Website currently supports org dashboards but lacks admin parity routes
+- Website and app auth both rely on shared JWT/user local storage conventions
+- Backend admin APIs and permissions are already in place and production-used by app admin
 
 ## Constraints
 
-- **Tech stack**: Must follow existing Platform behavior pattern — no one-off implementations
-- **Auth**: X OAuth 2.0 with PKCE (required by X API v2 for user-context endpoints)
-- **Token storage**: Must use existing `TokenEncryption` module and encrypted columns
-- **Character limit**: 280 characters for standard accounts (not Premium)
-- **Media**: v1.1 upload endpoint for media, v2 for tweet creation
-- **Existing infra**: Reuse scheduling worker, token refresh worker, post_submissions table
+- **Parity requirement**: UI and behavior must match app admin implementation
+- **Access control**: Admin routes must enforce `is_admin` and allow moderator scope parity
+- **No backend churn**: Reuse existing `/api/admin/*` and support endpoints
+- **Operational safety**: Avoid duplicating 20+ complex admin pages into divergent implementations
+- **Config**: Website must resolve client app URL for embedded admin rendering
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Keep twitterapi.io for analytics | Works for external submissions, separate concern from posting | -- Pending |
-| Follow Instagram pattern exactly | Proven architecture, minimal new abstractions needed | -- Pending |
-| Standard account limits only | Simpler scope, Premium features can be added later | -- Pending |
+| Render app admin UI in website via embedded route | Guarantees exact UI/behavior parity without maintaining a second admin codebase | Adopted |
+| Add explicit website admin route guard | Keeps permissions enforcement aligned with app admin access rules | Adopted |
+| Add cross-context auth sync message (`clippster-auth-sync`) | Ensures embedded admin remains authenticated in website flow | Adopted |
 
 ---
-*Last updated: 2026-02-09 after milestone v1.0 started*
+*Last updated: 2026-02-20 after milestone v1.1 started*

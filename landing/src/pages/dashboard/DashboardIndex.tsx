@@ -69,6 +69,11 @@ export function DashboardIndex() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
 
   const checkAndRedirect = useCallback(async () => {
+    if (user?.is_admin || user?.is_moderator) {
+      navigate('/admin', { replace: true })
+      return true
+    }
+
     // If user already has an owned org, redirect immediately
     if (user?.owned_organization_id) {
       navigate(`/dashboard/org/${user.owned_organization_id}`, { replace: true })
