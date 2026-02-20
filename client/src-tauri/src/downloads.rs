@@ -58,6 +58,40 @@ fn format_time_for_filename(seconds: f64) -> String {
     format!("{:02}{:02}{:02}", h, m, s)
 }
 
+/// Remux input_path → output_path adding -movflags +faststart (moves moov atom to front).
+/// This is a fast stream-copy operation — no re-encoding, typically 5-15 seconds even for 2hr VODs.
+/// Deletes input_path on success.
+async fn remux_with_faststart(app: &tauri::AppHandle, input_path: &str, output_path: &str) -> Result<(), String> {
+    use tauri_plugin_shell::ShellExt;
+
+    println!("[Rust] Remuxing for faststart: {} -> {}", input_path, output_path);
+
+    let shell = app.shell();
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args([
+            "-i", input_path,
+            "-c", "copy",
+            "-movflags", "+faststart",
+            "-y",
+            output_path,
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run faststart remux: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Faststart remux failed: {}", stderr));
+    }
+
+    // Delete the raw temp file now that the faststart version exists
+    let _ = std::fs::remove_file(input_path);
+
+    println!("[Rust] Faststart remux completed successfully");
+    Ok(())
+}
+
 /// Helper function to run FFmpeg segment download with a specific encoder
 /// Returns Ok(()) on success, Err(error_message) on failure
 async fn run_segment_download_with_encoder(
@@ -83,6 +117,10 @@ async fn run_segment_download_with_encoder(
     let segment_duration_str = format!("{:.3}", segment_duration);
     let referer_header = "Referer: https://kick.com\r\nOrigin: https://kick.com\r\n";
     let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+    // Write to a temp file first (no faststart), then do a fast remux pass to add faststart.
+    // This avoids the slow in-place moov rewrite that causes the "stuck at 99%" stall.
+    let temp_output_path = format!("{}.dl.tmp.mp4", output_path);
     
     let mut args: Vec<&str> = Vec::new();
     // HLS-specific input options must come before -i
@@ -106,11 +144,10 @@ async fn run_segment_download_with_encoder(
         "-map", "0:v:0?",
         "-map", "0:a:0?",
         "-avoid_negative_ts", "make_zero",
-        "-movflags", "+faststart",
         "-progress", "pipe:2",
         "-v", "warning",
         "-y",
-        output_path,
+        &temp_output_path,
     ]);
     
     let (mut rx, child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
@@ -180,15 +217,6 @@ async fn run_segment_download_with_encoder(
                                 println!("[Rust] Failed to parse time: '{}'", time_str);
                             }
                         }
-                    } else if line == "progress=end" {
-                        println!("[Rust] FFmpeg signaled progress=end, finalizing segment file...");
-                        let _ = app_clone.emit("download-progress", DownloadProgress {
-                            download_id: download_id_owned.clone(),
-                            progress: 97.0,
-                            current_time: None,
-                            total_time: None,
-                            status: "Finalizing file...".to_string(),
-                        });
                     } else if !line.starts_with("frame=") && !line.starts_with("fps=") 
                         && !line.starts_with("stream_") && !line.starts_with("bitrate=")
                         && !line.starts_with("total_size=") && !line.starts_with("out_time_ms=")
@@ -236,8 +264,29 @@ async fn run_segment_download_with_encoder(
     }
 
     if success {
+        // Emit "Optimizing for playback..." before the fast remux pass
+        let _ = app.emit("download-progress", DownloadProgress {
+            download_id: download_id.to_string(),
+            progress: 97.0,
+            current_time: None,
+            total_time: None,
+            status: "Optimizing for playback...".to_string(),
+        });
+
+        // Fast remux pass: move moov atom to front for instant seeking.
+        // Reads from temp_output_path, writes final file to output_path, deletes temp on success.
+        if let Err(e) = remux_with_faststart(app, &temp_output_path, output_path).await {
+            // Remux failed — rename temp file to output so we at least have the video
+            println!("[Rust] Faststart remux failed ({}), using raw download file", e);
+            if let Err(rename_err) = std::fs::rename(&temp_output_path, output_path) {
+                let _ = std::fs::remove_file(&temp_output_path);
+                return Err(format!("Download succeeded but file move failed: {}", rename_err));
+            }
+        }
         Ok(())
     } else {
+        // Clean up temp file on failure
+        let _ = std::fs::remove_file(&temp_output_path);
         Err(format!("FFmpeg segment download failed: {}", 
             last_error.unwrap_or_else(|| "Unknown error".to_string())))
     }
@@ -266,6 +315,10 @@ async fn run_full_download_with_encoder(
     let referer_header = "Referer: https://kick.com\r\nOrigin: https://kick.com\r\n";
     let user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
     
+    // Write to a temp file first (no faststart), then do a fast remux pass to add faststart.
+    // This avoids the slow in-place moov rewrite that causes the "stuck at 99%" stall.
+    let temp_output_path = format!("{}.dl.tmp.mp4", output_path);
+
     // Build args based on whether we're copying or encoding
     let mut args: Vec<&str> = Vec::new();
     // HLS-specific input options must come before -i
@@ -286,12 +339,11 @@ async fn run_full_download_with_encoder(
             "-b:a", "128k",
             "-map", "0:v:0?",
             "-map", "0:a:0?",
-            "-movflags", "+faststart",
             "-progress", "pipe:2",
             "-v", "warning",
             "-y",
             "-bsf:a", "aac_adtstoasc",
-            output_path,
+            &temp_output_path,
         ]);
     } else {
         args.extend_from_slice(&[
@@ -303,11 +355,10 @@ async fn run_full_download_with_encoder(
             "-map", "0:v:0?",
             "-map", "0:a:0?",
             "-avoid_negative_ts", "make_zero",
-            "-movflags", "+faststart",
             "-progress", "pipe:2",
             "-v", "warning",
             "-y",
-            output_path,
+            &temp_output_path,
         ]);
     }
     
@@ -382,17 +433,6 @@ async fn run_full_download_with_encoder(
                                 println!("[Rust] Failed to parse time: '{}'", time_str);
                             }
                         }
-                    } else if line == "progress=end" {
-                        // FFmpeg finished processing - moov atom rewrite (faststart) is about to begin
-                        // This can take minutes for large files with no further output
-                        println!("[Rust] FFmpeg signaled progress=end, finalizing file (faststart moov rewrite)...");
-                        let _ = app_clone.emit("download-progress", DownloadProgress {
-                            download_id: download_id_owned.clone(),
-                            progress: 97.0,
-                            current_time: None,
-                            total_time: None,
-                            status: "Finalizing file...".to_string(),
-                        });
                     } else if !line.starts_with("frame=") && !line.starts_with("fps=") 
                         && !line.starts_with("stream_") && !line.starts_with("bitrate=")
                         && !line.starts_with("total_size=") && !line.starts_with("out_time_ms=")
@@ -439,8 +479,29 @@ async fn run_full_download_with_encoder(
     }
 
     if success {
+        // Emit "Optimizing for playback..." before the fast remux pass
+        let _ = app.emit("download-progress", DownloadProgress {
+            download_id: download_id.to_string(),
+            progress: 97.0,
+            current_time: None,
+            total_time: None,
+            status: "Optimizing for playback...".to_string(),
+        });
+
+        // Fast remux pass: move moov atom to front for instant seeking.
+        // Reads from temp_output_path, writes final file to output_path, deletes temp on success.
+        if let Err(e) = remux_with_faststart(app, &temp_output_path, output_path).await {
+            // Remux failed — rename temp file to output so we at least have the video
+            println!("[Rust] Faststart remux failed ({}), using raw download file", e);
+            if let Err(rename_err) = std::fs::rename(&temp_output_path, output_path) {
+                let _ = std::fs::remove_file(&temp_output_path);
+                return Err(format!("Download succeeded but file move failed: {}", rename_err));
+            }
+        }
         Ok(())
     } else {
+        // Clean up temp file on failure
+        let _ = std::fs::remove_file(&temp_output_path);
         Err(format!("FFmpeg download failed: {}", 
             last_error.unwrap_or_else(|| "Unknown error".to_string())))
     }
@@ -626,8 +687,7 @@ pub async fn download_pumpfun_vod_segment(
         let thumbnail_result = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
                 match ffmpeg.args([
-                    "-hwaccel", "auto",
-                    "-ss", "00:00:01",  // Use 1 second into the segment (same as regular download)
+                    "-ss", "00:00:05",
                     "-i", video_path.to_str().ok_or("Invalid video path")?,
                     "-vframes", "1",
                     "-vf", "scale=320:-1",
@@ -978,8 +1038,7 @@ pub async fn download_pumpfun_vod(
         let thumbnail_result = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
                 match ffmpeg.args([
-                    "-hwaccel", "auto",
-                    "-ss", "00:00:01",
+                    "-ss", "00:00:05",
                     "-i", video_path.to_str().ok_or("Invalid video path")?,
                     "-vframes", "1",
                     "-vf", "scale=320:-1",
@@ -1317,8 +1376,7 @@ pub async fn download_kick_vod_segment(
         let thumbnail_result = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
                 match ffmpeg.args([
-                    "-hwaccel", "auto",
-                    "-ss", "00:00:01",  // Use 1 second into the segment (same as regular download)
+                    "-ss", "00:00:05",
                     "-i", video_path.to_str().ok_or("Invalid video path")?,
                     "-vframes", "1",
                     "-vf", "scale=320:-1",
@@ -1655,8 +1713,7 @@ pub async fn download_kick_vod(
         let thumbnail_result = match shell.sidecar("ffmpeg") {
             Ok(ffmpeg) => {
                 (ffmpeg.args([
-                    "-hwaccel", "auto",
-                    "-ss", "00:00:01",
+                    "-ss", "00:00:05",
                     "-i", video_path.to_str().ok_or("Invalid video path")?,
                     "-vframes", "1",
                     "-vf", "scale=320:-1",

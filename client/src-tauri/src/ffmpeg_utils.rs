@@ -158,8 +158,6 @@ pub async fn get_video_duration_sync(app: &tauri::AppHandle, video_path: &str) -
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-i", video_path,
-            "-f", "null",
-            "-",
         ])
         .output()
         .await
@@ -181,8 +179,6 @@ pub async fn get_video_info(app: &tauri::AppHandle, video_path: &std::path::Path
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-i", video_path.to_str().ok_or("Invalid video path")?,
-            "-f", "null",
-            "-"
         ])
         .output()
         .await

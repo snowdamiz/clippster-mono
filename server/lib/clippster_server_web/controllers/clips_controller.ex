@@ -13,7 +13,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
   require Logger
 
-  @max_parallel_chunks 4
+  @max_parallel_chunks 10
   @chunk_timeout_normal 180_000      # 3 minutes per chunk for normal mode
   @chunk_timeout_multimodal 300_000  # 5 minutes per chunk for multimodal mode
 

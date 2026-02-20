@@ -255,14 +255,12 @@ pub async fn extract_and_chunk_audio(
     let video_path_hash = crate::waveform::generate_video_path_hash(&video_path);
     let cached_audio_path_result = crate::waveform::get_audio_cache_file_path(&video_path_hash);
 
-    // First, get video duration using FFmpeg
-    println!("[Rust] Getting video duration...");
+    // Get video duration using FFmpeg header probe (just -i, no decoding)
+    println!("[Rust] Getting video duration (header probe)...");
     let duration_output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-i", &video_path,
-            "-f", "null",
-            "-"
         ])
         .output()
         .await
@@ -287,8 +285,6 @@ pub async fn extract_and_chunk_audio(
                 .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
                 .args([
                     "-i", cached_path.to_str().ok_or("Invalid cached path")?,
-                    "-f", "null",
-                    "-"
                 ])
                 .output()
                 .await
@@ -352,9 +348,9 @@ pub async fn extract_and_chunk_audio(
         }
     }
 
-    // Limit concurrent FFmpeg processes to avoid saturating CPU on lower-end machines.
-    // 3 concurrent processes gives a good speedup (3x) without destroying performance.
-    let concurrency: usize = 3;
+    // Allow higher concurrency since each chunk extraction is I/O-bound (fast seeking).
+    // With -ss before -i, each FFmpeg process starts near-instantly.
+    let concurrency: usize = 6;
     println!("[Rust] Extracting {} chunks with concurrency={}", chunk_specs.len(), concurrency);
 
     let videos_dir = paths.videos.clone();
@@ -380,9 +376,11 @@ pub async fn extract_and_chunk_audio(
 
             println!("[Rust] Chunk {}: {:.2}s - {:.2}s starting", idx, start_time, end_time);
 
+            // Place -ss BEFORE -i for fast input seeking (keyframe-based)
+            // instead of slow output seeking (decodes from start to seek point)
             let mut args = vec![
-                "-i".to_string(), source.clone(),
                 "-ss".to_string(), format!("{:.3}", start_time),
+                "-i".to_string(), source.clone(),
                 "-t".to_string(), format!("{:.3}", actual_duration),
             ];
 
@@ -577,13 +575,11 @@ pub async fn extract_audio_to_file(
 
     println!("[Rust] FFmpeg extraction completed successfully");
 
-    // Get audio duration using FFmpeg
+    // Get audio duration using FFmpeg header probe (no decoding)
     let duration_output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-i", output_path.to_str().ok_or("Invalid output path")?,
-            "-f", "null",
-            "-"
         ])
         .output()
         .await
@@ -617,8 +613,6 @@ pub async fn get_audio_duration(
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-i", &file_path,
-            "-f", "null",
-            "-"
         ])
         .output()
         .await
