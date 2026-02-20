@@ -92,8 +92,11 @@
           <div class="admin-hub__grid">
             <router-link v-for="tool in contentTools" :key="tool.id" :to="tool.route" class="admin-hub__card">
               <div class="admin-hub__card-content">
-                <div class="admin-hub__card-icon">
-                  <component :is="tool.icon" class="admin-hub__card-icon-svg" />
+                <div class="admin-hub__card-icon-wrapper">
+                  <div class="admin-hub__card-icon">
+                    <component :is="tool.icon" class="admin-hub__card-icon-svg" />
+                  </div>
+                  <span v-if="tool.badge" class="admin-hub__card-badge">{{ tool.badge > 99 ? '99+' : tool.badge }}</span>
                 </div>
                 <div class="admin-hub__card-info">
                   <h3 class="admin-hub__card-title">{{ tool.title }}</h3>
@@ -157,7 +160,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import {
     ShieldCheck,
     Shield,
@@ -180,10 +183,13 @@
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
   import { useAuthStore } from '@/stores/auth';
+  import api from '@/services/api';
 
   const authStore = useAuthStore();
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const unreadSupportCount = ref(0);
+  let unreadPollInterval: ReturnType<typeof setInterval> | null = null;
 
   // Role checks
   const isAdmin = computed(() => authStore.user?.is_admin || false);
@@ -197,6 +203,7 @@
     route: string;
     stat?: number | string;
     statLabel?: string;
+    badge?: number;
   }
 
   // Admin-only tools
@@ -270,6 +277,7 @@
           description: 'Manage support conversations and tickets',
           icon: Headset,
           route: '/admin/customer-service',
+          badge: unreadSupportCount.value || undefined,
         },
         {
           id: 'staff-messages',
@@ -347,8 +355,24 @@
     // Admin hub is static, no data to load
   };
 
+  async function fetchUnreadSupportCount() {
+    if (!isAdmin.value && !isModerator.value) return;
+    try {
+      const response = await api.get('/admin/support/unread-count');
+      unreadSupportCount.value = response.data.unread_count ?? 0;
+    } catch {
+      // silently ignore
+    }
+  }
+
   onMounted(() => {
     loadData();
+    fetchUnreadSupportCount();
+    unreadPollInterval = setInterval(fetchUnreadSupportCount, 30_000);
+  });
+
+  onUnmounted(() => {
+    if (unreadPollInterval) clearInterval(unreadPollInterval);
   });
 </script>
 
@@ -575,6 +599,11 @@
     min-width: 0;
   }
 
+  .admin-hub__card-icon-wrapper {
+    position: relative;
+    flex-shrink: 0;
+  }
+
   .admin-hub__card-icon {
     width: 40px;
     height: 40px;
@@ -582,11 +611,30 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
     background-color: var(--sidebar-hover);
     transition:
       background-color 180ms ease,
       transform 180ms ease;
+  }
+
+  .admin-hub__card-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    background-color: #ef4444;
+    color: #fff;
+    font-size: 0.625rem;
+    font-weight: 700;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    border: 2px solid var(--sidebar-surface);
+    pointer-events: none;
   }
 
   .admin-hub__card:hover .admin-hub__card-icon {

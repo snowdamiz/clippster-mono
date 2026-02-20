@@ -777,12 +777,19 @@ defmodule ClippsterServerWeb.Router do
       :delete_portfolio_clip
     )
 
+    get(
+      "/user/clipper-profile/portfolio-clips/:id/presigned-url",
+      ClipperProfilesController,
+      :portfolio_clip_presigned_url
+    )
+
     # ============================================================================
     # Clipper Directory - Public Profiles
     # ============================================================================
     get("/clippers", ClipperProfilesController, :index)
     get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
     get("/clippers/:slug", ClipperProfilesController, :show)
+    get("/clippers/:slug/portfolio-clips/:clip_id/presigned-url", ClipperProfilesController, :public_portfolio_clip_presigned_url)
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 
     # ============================================================================
@@ -947,6 +954,7 @@ defmodule ClippsterServerWeb.Router do
     pipe_through(:api_mod)
 
     # Customer service (support conversations)
+    get("/admin/support/unread-count", SupportController, :unread_count)
     get("/admin/support/conversations", SupportController, :list_all)
     get("/admin/support/conversations/:id/messages", SupportController, :get_conversation_messages)
     post("/admin/support/conversations/:id/messages", SupportController, :respond)
@@ -1021,6 +1029,7 @@ defmodule ClippsterServerWeb.Router do
     put("/admin/organizations/:organization_id/subscription", AdminController, :update_org_subscription)
     post("/admin/organizations/:organization_id/subscription/cancel", AdminController, :cancel_org_subscription)
     put("/admin/organizations/:organization_id/seats", AdminController, :set_org_seats)
+    delete("/admin/organizations/:id", AdminController, :delete_organization)
 
     # Admin bug report management (delete route only - index/update in mod scope)
     delete("/admin/bug-reports/:id", BugReportsController, :delete)

@@ -6,7 +6,9 @@ const API_BASE = import.meta.env.VITE_API_URL || 'https://clippster-server.fly.d
 export const AuthContext = createContext<AuthContextType | null>(null)
 
 function getStoredToken(): string | null {
-  return localStorage.getItem('auth_token')
+  const token = localStorage.getItem('auth_token')
+  if (!token || token === 'null' || token === 'undefined') return null
+  return token
 }
 
 function getStoredUser(): AuthUser | null {
@@ -19,7 +21,9 @@ function getStoredUser(): AuthUser | null {
 }
 
 function getStoredProvider(): 'wallet' | 'google' | 'email' | null {
-  return localStorage.getItem('auth_provider') as any
+  const provider = localStorage.getItem('auth_provider')
+  if (provider === 'wallet' || provider === 'google' || provider === 'email') return provider
+  return null
 }
 
 async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
@@ -38,6 +42,7 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!getStoredToken())
+  const [authChecked, setAuthChecked] = useState(() => !getStoredToken())
   const [user, setUser] = useState<AuthUser | null>(getStoredUser)
   const [token, setToken] = useState<string | null>(getStoredToken)
   const [authProvider, setAuthProvider] = useState<'wallet' | 'google' | 'email' | null>(getStoredProvider)
@@ -64,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null)
     setAuthProvider(null)
     setIsAuthenticated(false)
+    setAuthChecked(true)
     setError(null)
     setPendingVerificationEmail(null)
     localStorage.removeItem('auth_token')
@@ -531,13 +537,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Verify token on mount
   useEffect(() => {
-    if (getStoredToken()) {
-      checkAuth()
+    let active = true
+
+    async function initAuth() {
+      if (!getStoredToken()) {
+        if (active) setAuthChecked(true)
+        return
+      }
+
+      try {
+        await checkAuth()
+      } finally {
+        if (active) setAuthChecked(true)
+      }
+    }
+
+    initAuth()
+
+    return () => {
+      active = false
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const value: AuthContextType = {
     isAuthenticated,
+    authChecked,
     user,
     token,
     authProvider,

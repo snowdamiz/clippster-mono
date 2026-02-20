@@ -70,6 +70,24 @@ struct SegmentReadyPayload {
     duration: f64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HlsRecorderLogPayload {
+    streamer_id: String,
+    mint_id: String,
+    message: String,
+    level: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HlsRecorderExitPayload {
+    streamer_id: String,
+    session_id: String,
+    mint_id: String,
+    code: Option<i32>,
+}
+
 #[derive(Debug)]
 struct HlsRecordingEntry {
     stop_tx: Option<oneshot::Sender<()>>,
@@ -80,6 +98,36 @@ struct HlsRecordingEntry {
 
 static HLS_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, HlsRecordingEntry>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
+fn emit_hls_recorder_log(
+    app: &tauri::AppHandle,
+    streamer_id: &str,
+    mint_id: &str,
+    message: impl Into<String>,
+    level: &str,
+) {
+    let _ = app.emit("recorder-log", HlsRecorderLogPayload {
+        streamer_id: streamer_id.to_string(),
+        mint_id: mint_id.to_string(),
+        message: message.into(),
+        level: level.to_string(),
+    });
+}
+
+fn emit_hls_recorder_exit(
+    app: &tauri::AppHandle,
+    streamer_id: &str,
+    session_id: &str,
+    mint_id: &str,
+    code: Option<i32>,
+) {
+    let _ = app.emit("recorder-exit", HlsRecorderExitPayload {
+        streamer_id: streamer_id.to_string(),
+        session_id: session_id.to_string(),
+        mint_id: mint_id.to_string(),
+        code,
+    });
+}
 
 fn resolve_service_script(app: &tauri::AppHandle, script_name: &str) -> Result<String, String> {
     use tauri::path::BaseDirectory;
@@ -182,6 +230,10 @@ pub async fn start_hls_recording(
     let output_dir_clone = output_dir.clone();
 
     let task = tokio::spawn(async move {
+        let mint_for_events = mint_clone.clone();
+        let streamer_for_events = streamer_clone.clone();
+        let session_for_events = session_clone.clone();
+        let app_for_events = app_handle.clone();
         if let Err(err) = run_hls_recorder(
             app_handle,
             script_path,
@@ -194,6 +246,20 @@ pub async fn start_hls_recording(
         .await
         {
             eprintln!("[HLS Recorder] {}", err);
+            emit_hls_recorder_log(
+                &app_for_events,
+                &streamer_for_events,
+                &mint_for_events,
+                format!("PumpFun recording failed: {}", err),
+                "error",
+            );
+            emit_hls_recorder_exit(
+                &app_for_events,
+                &streamer_for_events,
+                &session_for_events,
+                &mint_for_events,
+                None,
+            );
         }
     });
 
@@ -461,6 +527,13 @@ async fn run_hls_recorder(
     println!("[HLS Recorder] Script path: {}", script_path);
     println!("[HLS Recorder] Output directory: {}", output_dir);
     println!("[HLS Recorder] Session ID: {}", session_id);
+    emit_hls_recorder_log(
+        &app,
+        &streamer_id,
+        &mint_id,
+        format!("Starting PumpFun recording (session {})", session_id),
+        "info",
+    );
 
     // Script expects: record-livestream.mjs <mintId> <sessionId> <outputDir> [segmentMinutes]
     // For HLS, we pass "0" as segment minutes to signal HLS mode with short segments
@@ -473,15 +546,29 @@ async fn run_hls_recorder(
     ];
     println!("[HLS Recorder] Spawning with args: {:?}", args);
     
-    let (mut rx, mut child) = app
+    let mut sidecar = app
         .shell()
         .sidecar("node")
-        .map_err(|e| format!("Failed to create node sidecar: {}", e))?
-        .args(args)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn recorder: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("Failed to create node sidecar: {}", e);
+            emit_hls_recorder_log(&app, &streamer_id, &mint_id, msg.clone(), "error");
+            msg
+        })?;
+    sidecar = sidecar.args(args);
+    let (mut rx, mut child) = sidecar.spawn().map_err(|e| {
+        let msg = format!("Failed to spawn recorder: {}", e);
+        emit_hls_recorder_log(&app, &streamer_id, &mint_id, msg.clone(), "error");
+        msg
+    })?;
     
     println!("[HLS Recorder] Process spawned successfully, PID: {:?}", child.pid());
+    emit_hls_recorder_log(
+        &app,
+        &streamer_id,
+        &mint_id,
+        format!("PumpFun sidecar spawned (pid {:?})", child.pid()),
+        "info",
+    );
 
     let mint_for_cleanup = mint_id.clone();
     let mut stopping = false;
@@ -526,33 +613,40 @@ async fn run_hls_recorder(
                                     }
                                     "started" => {
                                         println!("[HLS Recorder] Recording started for {}", mint_id);
-                                        let _ = app.emit("recorder-log", RecorderLogPayload {
-                                            mint_id: mint_id.clone(),
-                                            message: "Recording started".to_string(),
-                                            level: "info".to_string(),
-                                        });
+                                        emit_hls_recorder_log(
+                                            &app,
+                                            &streamer_id,
+                                            &mint_id,
+                                            "PumpFun recorder reported started".to_string(),
+                                            "info",
+                                        );
                                     }
                                     "stream_ended" => {
                                         println!("[HLS Recorder] Stream ended for {}", mint_id);
+                                        emit_hls_recorder_log(
+                                            &app,
+                                            &streamer_id,
+                                            &mint_id,
+                                            "PumpFun stream ended".to_string(),
+                                            "info",
+                                        );
                                     }
-                                    "info" | "log" | "waiting_for_stream" => {
-                                        let msg = recorder_event.message.clone().unwrap_or_default();
-                                        println!("[HLS Recorder] {}: {}", recorder_event.event_type, msg);
-                                        // Forward all info/log messages to frontend for visibility
-                                        let _ = app.emit("recorder-log", RecorderLogPayload {
-                                            mint_id: mint_id.clone(),
-                                            message: msg,
-                                            level: "info".to_string(),
-                                        });
-                                    }
-                                    "error" => {
-                                        let msg = recorder_event.message.clone().unwrap_or_default();
-                                        eprintln!("[HLS Recorder] ERROR: {}", msg);
-                                        let _ = app.emit("recorder-log", RecorderLogPayload {
-                                            mint_id: mint_id.clone(),
-                                            message: msg,
-                                            level: "error".to_string(),
-                                        });
+                                    "info" | "error" => {
+                                        println!("[HLS Recorder] {}: {:?}", recorder_event.event_type, recorder_event.message);
+                                        if let Some(message) = recorder_event.message {
+                                            let level = if recorder_event.event_type == "error" {
+                                                "error"
+                                            } else {
+                                                "info"
+                                            };
+                                            emit_hls_recorder_log(
+                                                &app,
+                                                &streamer_id,
+                                                &mint_id,
+                                                format!("PumpFun recorder: {}", message),
+                                                level,
+                                            );
+                                        }
                                     }
                                     _ => {
                                         println!("[HLS Recorder] Event: {} msg={:?}", recorder_event.event_type, recorder_event.message);
@@ -574,35 +668,50 @@ async fn run_hls_recorder(
                     }
                     Some(CommandEvent::Stderr(line)) => {
                         let line_str = String::from_utf8_lossy(&line);
+                        eprintln!("[HLS Recorder stderr] {}", line_str.trim());
                         let trimmed = line_str.trim();
-                        eprintln!("[HLS Recorder stderr] {}", trimmed);
-                        // Forward stderr to frontend too - critical for FFmpeg errors
                         if !trimmed.is_empty() {
-                            let _ = app.emit("recorder-log", RecorderLogPayload {
-                                mint_id: mint_id.clone(),
-                                message: format!("[stderr] {}", trimmed),
-                                level: "error".to_string(),
-                            });
+                            emit_hls_recorder_log(
+                                &app,
+                                &streamer_id,
+                                &mint_id,
+                                format!("PumpFun stderr: {}", trimmed),
+                                "error",
+                            );
                         }
                     }
                     Some(CommandEvent::Terminated(payload)) => {
-                        let code = payload.code;
-                        println!("[HLS Recorder] Process terminated with code: {:?}", code);
-                        // Emit error event if process exited unexpectedly (non-zero or no code)
-                        if code != Some(0) {
-                            let msg = format!("Node.js recorder exited with code {:?}. Check logs for details.", code);
-                            eprintln!("[HLS Recorder] UNEXPECTED EXIT: {}", msg);
-                            let _ = app.emit("recorder-error", RecorderErrorPayload {
-                                mint_id: mint_id.clone(),
-                                session_id: session_id.clone(),
-                                exit_code: code,
-                                message: msg,
-                            });
+                        println!("[HLS Recorder] Process terminated: {:?}", payload.code);
+                        emit_hls_recorder_exit(
+                            &app,
+                            &streamer_id,
+                            &session_id,
+                            &mint_id,
+                            payload.code,
+                        );
+                        if !stopping && payload.code.unwrap_or(-1) != 0 {
+                            emit_hls_recorder_log(
+                                &app,
+                                &streamer_id,
+                                &mint_id,
+                                format!(
+                                    "PumpFun recorder exited unexpectedly with code {:?}",
+                                    payload.code
+                                ),
+                                "error",
+                            );
                         }
                         break;
                     }
                     Some(CommandEvent::Error(err)) => {
                         eprintln!("[HLS Recorder] Process error: {}", err);
+                        emit_hls_recorder_log(
+                            &app,
+                            &streamer_id,
+                            &mint_id,
+                            format!("PumpFun process error: {}", err),
+                            "error",
+                        );
                     }
                     None => {
                         println!("[HLS Recorder] Event channel closed");
@@ -618,6 +727,13 @@ async fn run_hls_recorder(
                 // Try to write to stdin for graceful shutdown
                 if let Err(e) = child.write(b"STOP\n") {
                     eprintln!("[HLS Recorder] Failed to write to stdin: {}, falling back to kill", e);
+                    emit_hls_recorder_log(
+                        &app,
+                        &streamer_id,
+                        &mint_id,
+                        format!("Failed to send graceful stop to recorder: {}", e),
+                        "error",
+                    );
                     if let Err(err) = child.kill() {
                         eprintln!("[HLS Recorder] Failed to kill child: {}", err);
                     }
@@ -647,4 +763,3 @@ async fn run_hls_recorder(
 
     Ok(())
 }
-

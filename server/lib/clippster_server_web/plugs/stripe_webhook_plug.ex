@@ -6,22 +6,22 @@ defmodule ClippsterServerWeb.StripeWebhookPlug do
 
   @doc """
   Reads the body and caches it in conn.assigns for Stripe webhook verification.
-  For all other paths, delegates directly to Plug.Conn.read_body/2 so that
-  multipart uploads are streamed and parsed correctly by Plug.Parsers.
+  For non-Stripe routes, delegates directly to Plug.Conn.read_body to allow
+  multipart streaming (required for large file uploads).
   """
-  def read_body(%{request_path: "/api/stripe/webhook"} = conn, opts) do
-    case read_full_body(conn, opts, []) do
-      {:ok, body, conn} ->
-        conn = Plug.Conn.assign(conn, :raw_body, body)
-        {:ok, body, conn}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
   def read_body(conn, opts) do
-    Plug.Conn.read_body(conn, opts)
+    if conn.request_path == "/api/stripe/webhook" do
+      case read_full_body(conn, opts, []) do
+        {:ok, body, conn} ->
+          conn = Plug.Conn.assign(conn, :raw_body, body)
+          {:ok, body, conn}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      Plug.Conn.read_body(conn, opts)
+    end
   end
 
   defp read_full_body(conn, opts, acc) do

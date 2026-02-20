@@ -1999,11 +1999,9 @@
 
   const onProfileSaved = () => loadClipperProfile();
 
-  // Check if profile is configured
+  // Check if profile is configured - profile exists if we have a record from the server
   const isProfileConfigured = computed(() => {
-    return (
-      clipperProfile.value && clipperProfile.value.display_name && clipperProfile.value.display_name.trim().length > 0
-    );
+    return !!clipperProfile.value;
   });
 
   // Handle onboarding completion
