@@ -124,37 +124,46 @@ function resolveFfmpegBinary() {
     return process.env.FFMPEG_PATH;
   }
 
+  const execDir = path.dirname(process.execPath);
+  const isWindows = process.platform === 'win32';
+  const bareName = isWindows ? 'ffmpeg.exe' : 'ffmpeg';
   const binName = FFMPEG_BINARIES[process.platform];
+  const candidates = [];
+
   if (binName) {
-    // On macOS .app bundles, the node sidecar runs from Contents/MacOS/ but
-    // this script is in Contents/Resources/pumpfun-service/. FFmpeg is next
-    // to the node binary in Contents/MacOS/, so check process.execPath's dir.
-    const execDir = path.dirname(process.execPath);
-    const candidates = [
+    candidates.push(
       path.join(execDir, binName),
       path.resolve(__dirname, '../binaries', binName),
       path.resolve(__dirname, '..', binName),
-      path.resolve(__dirname, binName)
-    ];
-
-    for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    }
+      path.resolve(__dirname, binName),
+      // Bundle layout: Resources/pumpfun-service -> ../../MacOS/<binary>
+      path.resolve(__dirname, '../../MacOS', binName),
+    );
 
     if (process.platform === 'darwin' && process.arch === 'arm64') {
        const x86Name = 'ffmpeg-x86_64-apple-darwin';
-       const x86Candidates = [
+       candidates.push(
           path.join(execDir, x86Name),
           path.resolve(__dirname, '../binaries', x86Name),
-          path.resolve(__dirname, '..', x86Name)
-       ];
-       for (const candidate of x86Candidates) {
-          if (fs.existsSync(candidate)) {
-            return candidate;
-          }
-       }
+          path.resolve(__dirname, '..', x86Name),
+          path.resolve(__dirname, '../../MacOS', x86Name),
+       );
+    }
+  }
+
+  // Tauri macOS bundles strip sidecar target-triple suffixes (e.g. "ffmpeg").
+  candidates.push(
+    path.join(execDir, bareName),
+    path.resolve(__dirname, '../binaries', bareName),
+    path.resolve(__dirname, '..', bareName),
+    path.resolve(__dirname, bareName),
+    path.resolve(__dirname, '../../MacOS', bareName),
+  );
+
+  const uniqueCandidates = [...new Set(candidates)];
+  for (const candidate of uniqueCandidates) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
     }
   }
 
@@ -1700,6 +1709,7 @@ class PumpfunRecorder {
     const gopSize = 30 * this.segmentDurationSeconds;
     
     log('STARTING FFMPEG ENCODER', {
+      ffmpegPath: this.ffmpegPath,
       resolution: `${width}x${height}`,
       note: 'Fixed output resolution - no encoder restarts on source resolution changes',
       segmentDuration: this.segmentDurationSeconds,
@@ -1708,6 +1718,10 @@ class PumpfunRecorder {
       playlistPath: this.playlistPath,
       segmentPattern,
     });
+    console.log(JSON.stringify({
+      type: 'info',
+      message: `Using FFmpeg binary: ${this.ffmpegPath}`,
+    }));
     
     const args = [
       '-loglevel',
@@ -1755,6 +1769,15 @@ class PumpfunRecorder {
     this.ffmpeg.stderr.on('data', (data) => {
       const msg = data.toString();
       if (msg.trim()) console.error(`[ffmpeg] ${msg}`);
+    });
+    this.ffmpeg.on('error', (err) => {
+      log('ERROR: FFmpeg spawn failed', { ffmpegPath: this.ffmpegPath, error: err.message });
+      console.error(JSON.stringify({
+        type: 'error',
+        message: `FFmpeg spawn failed (${this.ffmpegPath}): ${err.message}`,
+      }));
+      // Avoid unhandled 'error' crashes leaving the recorder in limbo.
+      process.exit(1);
     });
 
     this.audioPipe = this.ffmpeg.stdin;

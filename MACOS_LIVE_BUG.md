@@ -146,6 +146,19 @@ Refused to connect to ipc://localhost/get_platform because it does not appear in
 
 CSP has `http://ipc.localhost` but macOS production uses `ipc://localhost` protocol scheme. Tauri falls back to `postMessage` interface. This is a performance/reliability issue but NOT the primary cause of the segment failure (sidecar spawning happens on the Rust side, not via IPC).
 
+### Root Cause 4: PumpFun FFmpeg Sidecar Name Resolution Misses macOS Bundle Name (CONFIRMED)
+
+New production logs show PumpFun recorder starts, then crashes with:
+
+```
+Error: spawn ffmpeg ENOENT
+code: 'ENOENT'
+syscall: 'spawn ffmpeg'
+path: 'ffmpeg'
+```
+
+This indicates `record-livestream.mjs` failed to resolve the bundled FFmpeg path and fell back to plain `ffmpeg` (PATH lookup). In macOS Tauri bundles, sidecars are placed as bare names in `Contents/MacOS/` (e.g. `ffmpeg`), but the resolver prioritized triple-suffixed names and could still miss the bare bundle path in some production layouts.
+
 ---
 
 ## Diagnostic Results
@@ -287,6 +300,14 @@ Implemented in `client/src-tauri/src/hls.rs`:
 2. Emits `recorder-exit` with exit code on termination
 3. Frontend already listens for `recorder-log`, so sidecar failures are now visible in production logs
 
+### Fix 5: PumpFun FFmpeg Path Resolution for Bundled macOS Sidecar (CRITICAL)
+
+Implemented in `client/src-tauri/pumpfun-service/record-livestream.mjs`:
+1. `resolveFfmpegBinary()` now checks both triple-suffixed names and bare-name sidecars (`ffmpeg`) in `Contents/MacOS`
+2. Added explicit `../../MacOS` bundle-path candidates from script location
+3. Added FFmpeg spawn error handler to avoid unhandled `'error'` crashes and emit structured logs
+4. Added `ffmpegPath` to startup diagnostics so resolved binary is visible in production logs
+
 ---
 
 ## Fix History
@@ -300,6 +321,7 @@ Implemented in `client/src-tauri/src/hls.rs`:
 | 2026-02-20 | v0.1.108 | Verified installed production app still has empty entitlements on `node`/`yt-dlp` | Reproduced runtime failures directly from `/Applications/Clippster.app` |
 | 2026-02-20 | v0.1.108 | Fix 1B: Remove `--deep` from post-build app re-sign and add required-entitlement assertions in CI | Prevents nested sidecar entitlements from being clobbered |
 | 2026-02-20 | v0.1.108 | Fix 4 implemented in `hls.rs` (`recorder-log`, `recorder-exit`) | PumpFun sidecar failures now visible in frontend logs |
+| 2026-02-20 | v0.1.108 | Fix 5 implemented in `record-livestream.mjs` for bundled `ffmpeg` resolution | Prevents PumpFun `spawn ffmpeg ENOENT` in macOS production bundle |
 
 ---
 
@@ -321,4 +343,6 @@ Implemented in `client/src-tauri/src/hls.rs`:
 - [x] Identified CI regression mechanism: post-build `codesign --deep` can clobber sidecar entitlements
 - [x] Patched CI post-build signing to re-sign app wrapper non-deep and fail if entitlements are missing
 - [x] Added PumpFun recorder telemetry (`recorder-log` + `recorder-exit`) to surface sidecar failures
+- [x] Confirmed PumpFun recorder crash details in production logs: `Error: spawn ffmpeg ENOENT`
+- [x] Patched PumpFun FFmpeg resolver to handle macOS bundled bare-name sidecar in `Contents/MacOS/ffmpeg`
 - [ ] Rebuild macOS artifacts, verify entitlements in shipped app, and re-test PumpFun/Kick/Twitch live playback
