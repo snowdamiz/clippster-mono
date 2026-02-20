@@ -604,17 +604,43 @@ jobs:
             codesign --force --options runtime --timestamp --entitlements "$YTDLP_ENTITLEMENTS" --sign "$IDENTITY" "$MACOS_DIR/yt-dlp"
           fi
 
-          # Re-sign the outer .app to update the seal after modifying inner binaries
-          echo "Re-signing .app bundle"
-          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP_BUNDLE"
+          # Re-sign the outer .app wrapper to update the seal after modifying inner binaries.
+          # IMPORTANT: Do NOT use --deep here; deep-signing re-signs nested binaries and can
+          # strip the sidecar entitlements we just applied.
+          echo "Re-signing .app bundle wrapper (non-deep)"
+          codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP_BUNDLE"
 
-          # Verify entitlements were applied
-          echo "=== Verifying entitlements ==="
+          # Verify signatures and required entitlements were applied.
+          echo "=== Verifying signatures and entitlements ==="
+          codesign --verify --strict --deep "$APP_BUNDLE"
+
+          verify_entitlement() {
+            local binary="$1"
+            local entitlement_key="$2"
+            local dump
+            dump=$(codesign -d --entitlements - "$binary" 2>&1 || true)
+            echo "$dump"
+            if ! echo "$dump" | grep -q "$entitlement_key"; then
+              echo "ERROR: Missing entitlement '$entitlement_key' on $binary"
+              exit 1
+            fi
+          }
+
           if [ -f "$MACOS_DIR/node" ]; then
-            codesign -d --entitlements - "$MACOS_DIR/node" 2>&1 || true
+            verify_entitlement "$MACOS_DIR/node" "com.apple.security.cs.allow-jit"
+            verify_entitlement "$MACOS_DIR/node" "com.apple.security.cs.disable-library-validation"
+            verify_entitlement "$MACOS_DIR/node" "com.apple.security.cs.allow-unsigned-executable-memory"
+          else
+            echo "ERROR: node sidecar missing at $MACOS_DIR/node"
+            exit 1
           fi
+
           if [ -f "$MACOS_DIR/yt-dlp" ]; then
-            codesign -d --entitlements - "$MACOS_DIR/yt-dlp" 2>&1 || true
+            verify_entitlement "$MACOS_DIR/yt-dlp" "com.apple.security.cs.disable-library-validation"
+            verify_entitlement "$MACOS_DIR/yt-dlp" "com.apple.security.cs.allow-unsigned-executable-memory"
+          else
+            echo "ERROR: yt-dlp sidecar missing at $MACOS_DIR/yt-dlp"
+            exit 1
           fi
 
           # Notarize the .app bundle
