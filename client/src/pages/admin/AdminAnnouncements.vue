@@ -59,72 +59,73 @@
           </div>
 
           <div class="admin-ann__form-body">
-            <div class="admin-ann__form-col">
-              <div class="admin-ann__field">
-                <label class="admin-ann__label">Title</label>
-                <input v-model="form.title" type="text" placeholder="Announcement title..." class="admin-ann__input" />
-              </div>
-
-              <div class="admin-ann__field">
-                <label class="admin-ann__label">Type</label>
-                <div class="admin-ann__type-grid">
-                  <button v-for="t in typeOptions" :key="t.value" class="admin-ann__type-btn" :class="[`admin-ann__type-btn--${t.value}`, { 'admin-ann__type-btn--active': form.type === t.value }]" @click="form.type = t.value">
-                    <component :is="t.icon" class="admin-ann__type-icon" />{{ t.label }}
-                  </button>
+            <!-- Row 1: metadata fields -->
+            <div class="admin-ann__form-meta-row">
+              <div class="admin-ann__form-meta-left">
+                <div class="admin-ann__field">
+                  <label class="admin-ann__label">Title</label>
+                  <input v-model="form.title" type="text" placeholder="Announcement title..." class="admin-ann__input" />
+                </div>
+                <div class="admin-ann__field-row">
+                  <div class="admin-ann__field admin-ann__field--flex">
+                    <label class="admin-ann__label">Expires At <span class="admin-ann__label-hint">(optional)</span></label>
+                    <input v-model="form.expires_at" type="datetime-local" class="admin-ann__input" />
+                  </div>
+                  <div class="admin-ann__field admin-ann__field--shrink">
+                    <label class="admin-ann__label">Publish Now</label>
+                    <button class="admin-ann__toggle" :class="{ 'admin-ann__toggle--on': form.is_active }" @click="form.is_active = !form.is_active">
+                      <span class="admin-ann__toggle-knob" />
+                    </button>
+                  </div>
                 </div>
               </div>
-
-              <div class="admin-ann__field">
-                <label class="admin-ann__label">Audience</label>
-                <div class="admin-ann__audience-grid">
-                  <button v-for="a in audienceOptions" :key="a.value" class="admin-ann__audience-btn" :class="{ 'admin-ann__audience-btn--active': form.audience === a.value }" @click="form.audience = a.value">
-                    <component :is="a.icon" class="admin-ann__audience-icon" />
-                    <span class="admin-ann__audience-label">{{ a.label }}</span>
-                  </button>
+              <div class="admin-ann__form-meta-right">
+                <div class="admin-ann__field">
+                  <label class="admin-ann__label">Type</label>
+                  <div class="admin-ann__type-grid">
+                    <button v-for="t in typeOptions" :key="t.value" class="admin-ann__type-btn" :class="[`admin-ann__type-btn--${t.value}`, { 'admin-ann__type-btn--active': form.type === t.value }]" @click="form.type = t.value">
+                      <component :is="t.icon" class="admin-ann__type-icon" />{{ t.label }}
+                    </button>
+                  </div>
                 </div>
-              </div>
-
-              <div class="admin-ann__field-row">
-                <div class="admin-ann__field admin-ann__field--flex">
-                  <label class="admin-ann__label">Expires At <span class="admin-ann__label-hint">(optional)</span></label>
-                  <input v-model="form.expires_at" type="datetime-local" class="admin-ann__input" />
-                </div>
-                <div class="admin-ann__field admin-ann__field--shrink">
-                  <label class="admin-ann__label">Publish Now</label>
-                  <button class="admin-ann__toggle" :class="{ 'admin-ann__toggle--on': form.is_active }" @click="form.is_active = !form.is_active">
-                    <span class="admin-ann__toggle-knob" />
-                  </button>
+                <div class="admin-ann__field">
+                  <label class="admin-ann__label">Audience</label>
+                  <div class="admin-ann__audience-grid">
+                    <button v-for="a in audienceOptions" :key="a.value" class="admin-ann__audience-btn" :class="{ 'admin-ann__audience-btn--active': form.audience === a.value }" @click="form.audience = a.value">
+                      <component :is="a.icon" class="admin-ann__audience-icon" />
+                      <span class="admin-ann__audience-label">{{ a.label }}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div class="admin-ann__form-col">
-              <div class="admin-ann__field admin-ann__field--grow">
-                <label class="admin-ann__label">Body</label>
-                <div class="admin-ann__editor-tabs">
-                  <button class="admin-ann__editor-tab" :class="{ 'admin-ann__editor-tab--active': editorMode === 'visual' }" @click="switchMode('visual')"><Type class="admin-ann__tab-icon" /> Visual</button>
-                  <button class="admin-ann__editor-tab" :class="{ 'admin-ann__editor-tab--active': editorMode === 'html' }" @click="switchMode('html')"><Code class="admin-ann__tab-icon" /> HTML</button>
-                  <button class="admin-ann__editor-tab" :class="{ 'admin-ann__editor-tab--active': editorMode === 'preview' }" @click="editorMode = 'preview'"><Eye class="admin-ann__tab-icon" /> Preview</button>
+            <!-- Row 2: full-width body editor -->
+            <div class="admin-ann__field">
+              <label class="admin-ann__label">Body</label>
+              <div class="admin-ann__editor-tabs">
+                <button class="admin-ann__editor-tab" :class="{ 'admin-ann__editor-tab--active': editorMode === 'visual' }" @click="switchMode('visual')"><Type class="admin-ann__tab-icon" /> Visual</button>
+                <button class="admin-ann__editor-tab" :class="{ 'admin-ann__editor-tab--active': editorMode === 'html' }" @click="switchMode('html')"><Code class="admin-ann__tab-icon" /> HTML</button>
+                <button class="admin-ann__editor-tab" :class="{ 'admin-ann__editor-tab--active': editorMode === 'preview' }" @click="editorMode = 'preview'"><Eye class="admin-ann__tab-icon" /> Preview</button>
+              </div>
+              <div v-if="editorMode === 'visual'" class="admin-ann__tiptap-wrapper">
+                <div class="admin-ann__toolbar">
+                  <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('bold') }" @click="editor?.chain().focus().toggleBold().run()"><Bold class="admin-ann__toolbar-icon" /></button>
+                  <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('italic') }" @click="editor?.chain().focus().toggleItalic().run()"><Italic class="admin-ann__toolbar-icon" /></button>
+                  <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('underline') }" @click="editor?.chain().focus().toggleUnderline().run()"><UnderlineIcon class="admin-ann__toolbar-icon" /></button>
+                  <div class="admin-ann__toolbar-divider" />
+                  <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('heading', { level: 2 }) }" @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()"><Heading2 class="admin-ann__toolbar-icon" /></button>
+                  <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('bulletList') }" @click="editor?.chain().focus().toggleBulletList().run()"><List class="admin-ann__toolbar-icon" /></button>
+                  <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('orderedList') }" @click="editor?.chain().focus().toggleOrderedList().run()"><ListOrdered class="admin-ann__toolbar-icon" /></button>
+                  <div class="admin-ann__toolbar-divider" />
+                  <button class="admin-ann__toolbar-btn" @click="setLink"><LinkIcon class="admin-ann__toolbar-icon" /></button>
                 </div>
-                <div v-if="editorMode === 'visual'" class="admin-ann__tiptap-wrapper">
-                  <div class="admin-ann__toolbar">
-                    <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('bold') }" @click="editor?.chain().focus().toggleBold().run()"><Bold class="admin-ann__toolbar-icon" /></button>
-                    <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('italic') }" @click="editor?.chain().focus().toggleItalic().run()"><Italic class="admin-ann__toolbar-icon" /></button>
-                    <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('underline') }" @click="editor?.chain().focus().toggleUnderline().run()"><UnderlineIcon class="admin-ann__toolbar-icon" /></button>
-                    <div class="admin-ann__toolbar-divider" />
-                    <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('heading', { level: 2 }) }" @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()"><Heading2 class="admin-ann__toolbar-icon" /></button>
-                    <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('bulletList') }" @click="editor?.chain().focus().toggleBulletList().run()"><List class="admin-ann__toolbar-icon" /></button>
-                    <button class="admin-ann__toolbar-btn" :class="{ 'admin-ann__toolbar-btn--active': editor?.isActive('orderedList') }" @click="editor?.chain().focus().toggleOrderedList().run()"><ListOrdered class="admin-ann__toolbar-icon" /></button>
-                    <div class="admin-ann__toolbar-divider" />
-                    <button class="admin-ann__toolbar-btn" @click="setLink"><LinkIcon class="admin-ann__toolbar-icon" /></button>
-                  </div>
-                  <editor-content :editor="editor" class="admin-ann__editor-content" />
-                </div>
-                <textarea v-else-if="editorMode === 'html'" v-model="form.body" class="admin-ann__html-textarea" placeholder="<p>Enter HTML body...</p>" spellcheck="false" />
-                <div v-else class="admin-ann__preview-wrapper">
-                  <div v-if="form.body" class="admin-ann__preview-body" v-html="form.body" />
-                  <div v-else class="admin-ann__preview-empty"><Eye class="admin-ann__preview-empty-icon" /><p>No content to preview</p></div>
-                </div>
+                <editor-content :editor="editor" class="admin-ann__editor-content" />
+              </div>
+              <textarea v-else-if="editorMode === 'html'" v-model="form.body" class="admin-ann__html-textarea" placeholder="<p>Enter HTML body...</p>" spellcheck="false" />
+              <div v-else class="admin-ann__preview-wrapper">
+                <div v-if="form.body" class="admin-ann__preview-body" v-html="form.body" />
+                <div v-else class="admin-ann__preview-empty"><Eye class="admin-ann__preview-empty-icon" /><p>No content to preview</p></div>
               </div>
             </div>
           </div>
@@ -385,9 +386,11 @@
   .admin-ann__form-close { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; border: 1px solid var(--sidebar-border); background: transparent; color: var(--sidebar-text-muted); cursor: pointer; transition: all 150ms; }
   .admin-ann__form-close:hover { background: var(--sidebar-hover); color: var(--sidebar-text); }
   .admin-ann__form-close-icon { width: 14px; height: 14px; }
-  .admin-ann__form-body { display: grid; grid-template-columns: 1fr; gap: 1.5rem; padding: 1.5rem; }
-  @media (min-width: 900px) { .admin-ann__form-body { grid-template-columns: 1fr 1fr; } }
-  .admin-ann__form-col { display: flex; flex-direction: column; }
+  .admin-ann__form-body { display: flex; flex-direction: column; gap: 1.25rem; padding: 1.5rem; }
+  .admin-ann__form-meta-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  @media (max-width: 700px) { .admin-ann__form-meta-row { grid-template-columns: 1fr; } }
+  .admin-ann__form-meta-left { display: flex; flex-direction: column; }
+  .admin-ann__form-meta-right { display: flex; flex-direction: column; }
   .admin-ann__form-footer { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; padding: 1rem 1.5rem; border-top: 1px solid var(--sidebar-border); background-color: rgba(24,24,27,0.4); }
   .admin-ann__field { margin-bottom: 1.25rem; }
   .admin-ann__field--grow { flex: 1; display: flex; flex-direction: column; }
@@ -429,16 +432,16 @@
   .admin-ann__toolbar-btn--active { background: rgba(139,92,246,0.15); color: #a78bfa; }
   .admin-ann__toolbar-icon { width: 14px; height: 14px; }
   .admin-ann__toolbar-divider { width: 1px; height: 18px; background: var(--sidebar-border); margin: 0 0.25rem; }
-  .admin-ann__editor-content { min-height: 220px; background: var(--sidebar-bg); }
-  .admin-ann__editor-content :deep(.ProseMirror) { min-height: 220px; padding: 0.875rem; outline: none; font-size: 0.875rem; color: var(--sidebar-text); line-height: 1.6; }
+  .admin-ann__editor-content { min-height: 320px; background: var(--sidebar-bg); }
+  .admin-ann__editor-content :deep(.ProseMirror) { min-height: 320px; padding: 0.875rem; outline: none; font-size: 0.875rem; color: var(--sidebar-text); line-height: 1.6; }
   .admin-ann__editor-content :deep(.ProseMirror p) { margin: 0 0 0.5rem; }
   .admin-ann__editor-content :deep(.ProseMirror ul), .admin-ann__editor-content :deep(.ProseMirror ol) { padding-left: 1.25rem; margin: 0 0 0.5rem; }
   .admin-ann__editor-content :deep(.ProseMirror h2) { font-size: 1.125rem; font-weight: 600; margin: 0 0 0.5rem; }
   .admin-ann__editor-content :deep(.ProseMirror a) { color: #a78bfa; text-decoration: underline; }
-  .admin-ann__html-textarea { width: 100%; min-height: 220px; background: var(--sidebar-bg); border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; padding: 0.875rem; font-size: 0.8125rem; font-family: 'Fira Code', 'Consolas', monospace; color: var(--sidebar-text); outline: none; resize: vertical; box-sizing: border-box; line-height: 1.6; flex: 1; }
-  .admin-ann__preview-wrapper { border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; min-height: 220px; background: var(--sidebar-bg); flex: 1; }
+  .admin-ann__html-textarea { width: 100%; min-height: 320px; background: var(--sidebar-bg); border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; padding: 0.875rem; font-size: 0.8125rem; font-family: 'Fira Code', 'Consolas', monospace; color: var(--sidebar-text); outline: none; resize: vertical; box-sizing: border-box; line-height: 1.6; flex: 1; }
+  .admin-ann__preview-wrapper { border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; min-height: 320px; background: var(--sidebar-bg); flex: 1; }
   .admin-ann__preview-body { padding: 1rem; font-size: 0.875rem; color: var(--sidebar-text); line-height: 1.6; }
-  .admin-ann__preview-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; min-height: 220px; color: var(--sidebar-text-muted); font-size: 0.875rem; }
+  .admin-ann__preview-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; min-height: 320px; color: var(--sidebar-text-muted); font-size: 0.875rem; }
   .admin-ann__preview-empty-icon { width: 28px; height: 28px; opacity: 0.4; }
   .admin-ann__cancel-btn { padding: 0.5rem 1rem; background: var(--sidebar-hover); border: 1px solid var(--sidebar-border); border-radius: 8px; font-size: 0.875rem; font-weight: 500; color: var(--sidebar-text); cursor: pointer; transition: all 150ms; }
   .admin-ann__cancel-btn:hover { background: rgba(63,63,70,0.8); }

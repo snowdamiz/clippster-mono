@@ -33,8 +33,8 @@
         </div>
 
         <div class="admin-msg__compose-body">
-          <!-- Left col: audience + subject + recipient -->
-          <div class="admin-msg__compose-col">
+          <!-- Row 1: audience + subject -->
+          <div class="admin-msg__top-row">
             <div class="admin-msg__field">
               <label class="admin-msg__label">Audience</label>
               <div class="admin-msg__audience-grid">
@@ -52,56 +52,55 @@
               </div>
             </div>
 
-            <div v-if="form.audience === 'individual'" class="admin-msg__field">
-              <label class="admin-msg__label">Recipient Email</label>
-              <input v-model="form.targetEmail" type="email" placeholder="user@example.com" class="admin-msg__input" />
-            </div>
-
-            <div class="admin-msg__field">
-              <label class="admin-msg__label">Subject</label>
-              <input v-model="form.subject" type="text" placeholder="Enter email subject..." class="admin-msg__input" />
+            <div class="admin-msg__subject-col">
+              <div v-if="form.audience === 'individual'" class="admin-msg__field">
+                <label class="admin-msg__label">Recipient Email</label>
+                <input v-model="form.targetEmail" type="email" placeholder="user@example.com" class="admin-msg__input" />
+              </div>
+              <div class="admin-msg__field">
+                <label class="admin-msg__label">Subject</label>
+                <input v-model="form.subject" type="text" placeholder="Enter email subject..." class="admin-msg__input" />
+              </div>
             </div>
           </div>
 
-          <!-- Right col: body editor -->
-          <div class="admin-msg__compose-col">
-            <div class="admin-msg__field admin-msg__field--grow">
-              <label class="admin-msg__label">Body</label>
-              <div class="admin-msg__editor-tabs">
-                <button class="admin-msg__editor-tab" :class="{ 'admin-msg__editor-tab--active': editorMode === 'visual' }" @click="switchMode('visual')">
-                  <Type class="admin-msg__tab-icon" /> Visual
-                </button>
-                <button class="admin-msg__editor-tab" :class="{ 'admin-msg__editor-tab--active': editorMode === 'html' }" @click="switchMode('html')">
-                  <Code class="admin-msg__tab-icon" /> HTML
-                </button>
-                <button class="admin-msg__editor-tab" :class="{ 'admin-msg__editor-tab--active': editorMode === 'preview' }" @click="editorMode = 'preview'">
-                  <Eye class="admin-msg__tab-icon" /> Preview
-                </button>
+          <!-- Row 2: full-width body editor -->
+          <div class="admin-msg__field">
+            <label class="admin-msg__label">Body</label>
+            <div class="admin-msg__editor-tabs">
+              <button class="admin-msg__editor-tab" :class="{ 'admin-msg__editor-tab--active': editorMode === 'visual' }" @click="switchMode('visual')">
+                <Type class="admin-msg__tab-icon" /> Visual
+              </button>
+              <button class="admin-msg__editor-tab" :class="{ 'admin-msg__editor-tab--active': editorMode === 'html' }" @click="switchMode('html')">
+                <Code class="admin-msg__tab-icon" /> HTML
+              </button>
+              <button class="admin-msg__editor-tab" :class="{ 'admin-msg__editor-tab--active': editorMode === 'preview' }" @click="editorMode = 'preview'">
+                <Eye class="admin-msg__tab-icon" /> Preview
+              </button>
+            </div>
+
+            <div v-if="editorMode === 'visual'" class="admin-msg__tiptap-wrapper">
+              <div class="admin-msg__toolbar">
+                <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('bold') }" @click="editor?.chain().focus().toggleBold().run()"><Bold class="admin-msg__toolbar-icon" /></button>
+                <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('italic') }" @click="editor?.chain().focus().toggleItalic().run()"><Italic class="admin-msg__toolbar-icon" /></button>
+                <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('underline') }" @click="editor?.chain().focus().toggleUnderline().run()"><UnderlineIcon class="admin-msg__toolbar-icon" /></button>
+                <div class="admin-msg__toolbar-divider" />
+                <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('heading', { level: 2 }) }" @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()"><Heading2 class="admin-msg__toolbar-icon" /></button>
+                <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('bulletList') }" @click="editor?.chain().focus().toggleBulletList().run()"><List class="admin-msg__toolbar-icon" /></button>
+                <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('orderedList') }" @click="editor?.chain().focus().toggleOrderedList().run()"><ListOrdered class="admin-msg__toolbar-icon" /></button>
+                <div class="admin-msg__toolbar-divider" />
+                <button class="admin-msg__toolbar-btn" @click="setLink"><LinkIcon class="admin-msg__toolbar-icon" /></button>
               </div>
+              <editor-content :editor="editor" class="admin-msg__editor-content" />
+            </div>
 
-              <div v-if="editorMode === 'visual'" class="admin-msg__tiptap-wrapper">
-                <div class="admin-msg__toolbar">
-                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('bold') }" @click="editor?.chain().focus().toggleBold().run()"><Bold class="admin-msg__toolbar-icon" /></button>
-                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('italic') }" @click="editor?.chain().focus().toggleItalic().run()"><Italic class="admin-msg__toolbar-icon" /></button>
-                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('underline') }" @click="editor?.chain().focus().toggleUnderline().run()"><UnderlineIcon class="admin-msg__toolbar-icon" /></button>
-                  <div class="admin-msg__toolbar-divider" />
-                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('heading', { level: 2 }) }" @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()"><Heading2 class="admin-msg__toolbar-icon" /></button>
-                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('bulletList') }" @click="editor?.chain().focus().toggleBulletList().run()"><List class="admin-msg__toolbar-icon" /></button>
-                  <button class="admin-msg__toolbar-btn" :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('orderedList') }" @click="editor?.chain().focus().toggleOrderedList().run()"><ListOrdered class="admin-msg__toolbar-icon" /></button>
-                  <div class="admin-msg__toolbar-divider" />
-                  <button class="admin-msg__toolbar-btn" @click="setLink"><LinkIcon class="admin-msg__toolbar-icon" /></button>
-                </div>
-                <editor-content :editor="editor" class="admin-msg__editor-content" />
-              </div>
+            <textarea v-else-if="editorMode === 'html'" v-model="form.body" class="admin-msg__html-textarea" placeholder="<p>Enter your HTML email body here...</p>" spellcheck="false" />
 
-              <textarea v-else-if="editorMode === 'html'" v-model="form.body" class="admin-msg__html-textarea" placeholder="<p>Enter your HTML email body here...</p>" spellcheck="false" />
-
-              <div v-else class="admin-msg__preview-wrapper">
-                <div v-if="form.body" class="admin-msg__preview-body" v-html="form.body" />
-                <div v-else class="admin-msg__preview-empty">
-                  <Eye class="admin-msg__preview-empty-icon" />
-                  <p>No content to preview</p>
-                </div>
+            <div v-else class="admin-msg__preview-wrapper">
+              <div v-if="form.body" class="admin-msg__preview-body" v-html="form.body" />
+              <div v-else class="admin-msg__preview-empty">
+                <Eye class="admin-msg__preview-empty-icon" />
+                <p>No content to preview</p>
               </div>
             </div>
           </div>
@@ -318,9 +317,10 @@
   .admin-msg__compose-title { font-size: 1rem; font-weight: 600; color: var(--sidebar-text); margin: 0; }
   .admin-msg__compose-desc { font-size: 0.75rem; color: var(--sidebar-text-muted); margin: 0.125rem 0 0; }
 
-  .admin-msg__compose-body { display: grid; grid-template-columns: 1fr; gap: 1.5rem; padding: 1.5rem; }
-  @media (min-width: 900px) { .admin-msg__compose-body { grid-template-columns: 1fr 1fr; } }
-  .admin-msg__compose-col { display: flex; flex-direction: column; }
+  .admin-msg__compose-body { display: flex; flex-direction: column; gap: 1.25rem; padding: 1.5rem; }
+  .admin-msg__top-row { display: grid; grid-template-columns: auto 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 700px) { .admin-msg__top-row { grid-template-columns: 1fr; } }
+  .admin-msg__subject-col { display: flex; flex-direction: column; justify-content: flex-end; }
 
   .admin-msg__compose-footer { display: flex; align-items: center; justify-content: flex-end; padding: 1rem 1.5rem; border-top: 1px solid var(--sidebar-border); background-color: rgba(24,24,27,0.4); }
 
@@ -354,16 +354,16 @@
   .admin-msg__toolbar-btn--active { background: rgba(139,92,246,0.15); color: #a78bfa; }
   .admin-msg__toolbar-icon { width: 14px; height: 14px; }
   .admin-msg__toolbar-divider { width: 1px; height: 18px; background: var(--sidebar-border); margin: 0 0.25rem; }
-  .admin-msg__editor-content { min-height: 240px; background: var(--sidebar-bg); }
-  .admin-msg__editor-content :deep(.ProseMirror) { min-height: 240px; padding: 0.875rem; outline: none; font-size: 0.875rem; color: var(--sidebar-text); line-height: 1.6; }
+  .admin-msg__editor-content { min-height: 360px; background: var(--sidebar-bg); }
+  .admin-msg__editor-content :deep(.ProseMirror) { min-height: 360px; padding: 0.875rem; outline: none; font-size: 0.875rem; color: var(--sidebar-text); line-height: 1.6; }
   .admin-msg__editor-content :deep(.ProseMirror p) { margin: 0 0 0.5rem; }
   .admin-msg__editor-content :deep(.ProseMirror ul), .admin-msg__editor-content :deep(.ProseMirror ol) { padding-left: 1.25rem; margin: 0 0 0.5rem; }
   .admin-msg__editor-content :deep(.ProseMirror h2) { font-size: 1.125rem; font-weight: 600; margin: 0 0 0.5rem; color: var(--sidebar-text); }
   .admin-msg__editor-content :deep(.ProseMirror a) { color: #a78bfa; text-decoration: underline; }
-  .admin-msg__html-textarea { width: 100%; min-height: 240px; background: var(--sidebar-bg); border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; padding: 0.875rem; font-size: 0.8125rem; font-family: 'Fira Code', 'Consolas', monospace; color: var(--sidebar-text); outline: none; resize: vertical; box-sizing: border-box; line-height: 1.6; flex: 1; }
-  .admin-msg__preview-wrapper { border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; min-height: 240px; background: var(--sidebar-bg); flex: 1; }
+  .admin-msg__html-textarea { width: 100%; min-height: 360px; background: var(--sidebar-bg); border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; padding: 0.875rem; font-size: 0.8125rem; font-family: 'Fira Code', 'Consolas', monospace; color: var(--sidebar-text); outline: none; resize: vertical; box-sizing: border-box; line-height: 1.6; flex: 1; }
+  .admin-msg__preview-wrapper { border: 1px solid var(--sidebar-border); border-top: none; border-radius: 0 0 8px 8px; min-height: 360px; background: var(--sidebar-bg); flex: 1; }
   .admin-msg__preview-body { padding: 1rem; font-size: 0.875rem; color: var(--sidebar-text); line-height: 1.6; }
-  .admin-msg__preview-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; min-height: 240px; color: var(--sidebar-text-muted); font-size: 0.875rem; }
+  .admin-msg__preview-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; min-height: 360px; color: var(--sidebar-text-muted); font-size: 0.875rem; }
   .admin-msg__preview-empty-icon { width: 28px; height: 28px; opacity: 0.4; }
 
   /* ── Send button ── */

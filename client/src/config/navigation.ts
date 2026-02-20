@@ -55,6 +55,18 @@ export const navigationItems: NavigationItem[] = [
     restrictedHidden: true,
   },
   {
+    name: 'Live',
+    path: '/live-clip',
+    icon: Radio,
+    group: 'browse',
+  },
+  {
+    name: 'Stream VODs',
+    path: '/vods',
+    icon: Video,
+    group: 'browse',
+  },
+  {
     name: 'Campaigns',
     path: '/campaigns',
     icon: Megaphone,
@@ -89,18 +101,6 @@ export const navigationItems: NavigationItem[] = [
     icon: Wand2,
     group: 'create',
     badge: 'Beta',
-  },
-  {
-    name: 'Live',
-    path: '/live-clip',
-    icon: Radio,
-    group: 'create',
-  },
-  {
-    name: 'Stream VODs',
-    path: '/vods',
-    icon: Video,
-    group: 'create',
   },
 
   // Manage group - organization/settings
