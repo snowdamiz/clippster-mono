@@ -2,88 +2,66 @@
 phase: 05-web-admin-dashboard-parity
 plan: 01
 subsystem: landing/admin-web
-tags: [admin, web-dashboard, parity, routing, auth-sync]
+tags: [admin, web-dashboard, parity, routing, react]
 
 dependency_graph:
   requires:
     - phase: 04-02
       provides: "Completed prior roadmap phase; project ready for phase 05"
   provides:
-    - "Admin-only web routes (/admin/*, /dashboard/admin/*)"
+    - "Native React admin route surface in landing"
     - "Admin/moderator route guard in landing"
-    - "Embedded app-admin UI in website shell"
-    - "PostMessage auth sync from landing -> client app iframe"
+    - "Deep-link parity across /admin/* and /dashboard/admin/*"
+    - "Expanded admin API coverage and native page implementations"
   affects:
-    - "Website admins can access identical app admin interface"
-    - "Future web-admin work can remain single-source in client admin pages"
+    - "Website admins use admin tools directly in browser without iframe/Tauri dependencies"
+    - "Admin behavior remains aligned with existing backend APIs used by app admin"
 
 key_files:
   created:
     - path: "landing/src/components/AdminRoute.tsx"
       exports: ["AdminRoute"]
-    - path: "landing/src/pages/admin/AdminDashboardEmbed.tsx"
-      exports: ["AdminDashboardEmbed"]
-    - path: ".planning/phases/05-web-admin-dashboard-parity/05-01-PLAN.md"
-      change: "Phase plan created"
+    - path: "landing/src/components/admin/AdminSidebar.tsx"
+      exports: ["AdminSidebar"]
+    - path: "landing/src/layouts/AdminLayout.tsx"
+      exports: ["AdminLayout"]
   modified:
     - path: "landing/src/main.tsx"
-      change: "Added admin web routes and lazy-loaded embed page"
-    - path: "landing/src/pages/dashboard/DashboardIndex.tsx"
-      change: "Admins/moderators redirect to /admin"
-    - path: "landing/src/types/auth.ts"
-      change: "Added is_moderator to auth user typing"
-    - path: "client/src/main.ts"
-      change: "Added clippster-auth-sync message listener"
+      change: "Added native admin routes and deep-link coverage for /admin/* and /dashboard/admin/*"
+    - path: "landing/src/services/adminApi.ts"
+      change: "Expanded admin API client coverage for all admin pages"
+    - path: "landing/src/pages/admin/*.tsx"
+      change: "Implemented native React admin pages and table/action workflows"
 
 metrics:
   tasks_completed: 2
   files_created: 3
-  files_modified: 4
+  files_modified: 20
   tests_added: 0
   completed_date: "2026-02-20"
 
 verification:
   - "landing: yarn build (pass)"
-  - "client: yarn build (pass)"
 ---
 
 # Phase 05 Plan 01 Summary
 
-Implemented a web-admin parity route by embedding the existing app admin dashboard inside the website, guarded by admin/moderator access and backed by auth sync for iframe context.
+Implemented native React admin dashboard parity in `landing` and removed reliance on embedded app/Tauri runtime behavior in browser.
 
 ## What shipped
 
-- Added `AdminRoute` access control in landing:
-  - unauthenticated -> `/login`
-  - authenticated non-admin/non-moderator -> `/dashboard`
-- Added website admin routes:
-  - `/admin/*`
-  - `/dashboard/admin/*`
-- Added admin embed page (`AdminDashboardEmbed`) that:
-  - resolves target client admin URL from `VITE_CLIENT_APP_URL`
-  - maps nested route paths to matching app admin paths
-  - renders full-height iframe for exact UI/functionality parity
-  - includes "Open full admin app" link fallback
-- Added cross-app auth sync:
-  - landing posts `clippster-auth-sync` token/user/provider to iframe
-  - client listens for allowed origins, persists auth values, and refreshes auth state
-- Updated dashboard index routing so admins/moderators land on `/admin`.
+- Added website admin route guard (`AdminRoute`) for authentication and role checks (`is_admin` / `is_moderator`).
+- Added full native admin route map under `/admin/*`.
+- Added mirrored deep-link support under `/dashboard/admin/*` using the same route children.
+- Added admin shell components (`AdminLayout`, `AdminSidebar`) and consistent navigation behavior.
+- Expanded `landing` admin API service coverage for users, organizations, bug reports, analytics, settings, applications, affiliates, support, staff messaging, and mod logs.
+- Replaced placeholder admin surfaces with native React admin pages wired to backend endpoints.
+- Added higher-parity list actions on users and organizations (role updates, credits, subscription operations, org account management helpers).
 
 ## Build/validation
 
 - `landing`: `yarn build` passed
-- `client`: `yarn build` passed
-
-## Config required for production
-
-Set `VITE_CLIENT_APP_URL` in `landing` so `/admin/*` can embed the web-served client app admin routes.
-
-Example:
-
-```bash
-VITE_CLIENT_APP_URL=https://app.your-domain.com
-```
 
 ## Notes
 
-This implementation keeps admin UI and behavior identical by using the same source admin pages from `client/src/pages/admin/*` rather than duplicating a second admin implementation in landing.
+This implementation keeps admin functionality browser-native while reusing the same backend API contract as the app admin dashboard.

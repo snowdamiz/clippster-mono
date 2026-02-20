@@ -5,7 +5,7 @@
 **Started:** 2026-02-20
 **Goal:** Deliver a browser-accessible admin dashboard with identical UI and functionality to the app admin dashboard.
 
-**Status:** Phase 05 implemented (web admin parity routes, access guard, embedded app admin, auth sync bridge)
+**Status:** Phase 05 implemented (native React admin routes/pages, admin guard, deep-link parity)
 
 ---
 

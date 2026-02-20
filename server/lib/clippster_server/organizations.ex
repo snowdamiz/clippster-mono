@@ -7,6 +7,7 @@ defmodule ClippsterServer.Organizations do
   alias ClippsterServer.Repo
   alias ClippsterServer.Accounts
   alias ClippsterServer.Accounts.User
+
   alias ClippsterServer.Organizations.{
     Organization,
     OrganizationMember,
@@ -22,6 +23,7 @@ defmodule ClippsterServer.Organizations do
     SharedClipRecipient,
     OrganizationApplication
   }
+
   alias ClippsterServer.{Emails, Mailer}
   alias ClippsterServer.Storage
 
@@ -36,12 +38,14 @@ defmodule ClippsterServer.Organizations do
   def create_organization(%User{} = owner, attrs) do
     Repo.transaction(fn ->
       # Create the organization
-      {:ok, organization} = %Organization{}
+      {:ok, organization} =
+        %Organization{}
         |> Organization.create_changeset(Map.put(attrs, :owner_id, owner.id))
         |> Repo.insert()
 
       # Add owner as a member
-      {:ok, _member} = %OrganizationMember{}
+      {:ok, _member} =
+        %OrganizationMember{}
         |> OrganizationMember.create_changeset(%{
           organization_id: organization.id,
           user_id: owner.id,
@@ -50,12 +54,14 @@ defmodule ClippsterServer.Organizations do
         |> Repo.insert()
 
       # Initialize org credits
-      {:ok, _credits} = %OrganizationCredit{}
+      {:ok, _credits} =
+        %OrganizationCredit{}
         |> OrganizationCredit.changeset(%{organization_id: organization.id})
         |> Repo.insert()
 
       # Update user to organization account type
-      {:ok, _user} = owner
+      {:ok, _user} =
+        owner
         |> User.account_type_changeset(%{
           account_type: "organization",
           owned_organization_id: organization.id
@@ -89,6 +95,8 @@ defmodule ClippsterServer.Organizations do
   Gets an organization by ID with preloaded associations.
   """
   def get_organization_with_members(id) do
+    ensure_owner_membership_for_org(id)
+
     Organization
     |> where([o], o.id == ^id)
     |> preload([:owner, members: :user])
@@ -155,11 +163,29 @@ defmodule ClippsterServer.Organizations do
   Lists all organizations where the user is a member.
   """
   def list_user_organizations(user_id) do
-    Organization
-    |> join(:inner, [o], m in OrganizationMember, on: m.organization_id == o.id)
-    |> where([o, m], m.user_id == ^user_id)
-    |> select([o, m], %{organization: o, role: m.role})
-    |> Repo.all()
+    case normalize_id(user_id) do
+      nil ->
+        []
+
+      user_id_int ->
+        ensure_owned_organization_memberships(user_id_int)
+
+        member_orgs =
+          Organization
+          |> join(:inner, [o], m in OrganizationMember, on: m.organization_id == o.id)
+          |> where([_o, m], m.user_id == ^user_id_int)
+          |> select([o, m], %{organization: o, role: m.role})
+          |> Repo.all()
+
+        owner_orgs =
+          Organization
+          |> where([o], o.owner_id == ^user_id_int)
+          |> select([o], %{organization: o, role: "owner"})
+          |> Repo.all()
+
+        (member_orgs ++ owner_orgs)
+        |> Enum.uniq_by(fn %{organization: org} -> org.id end)
+    end
   end
 
   # ============================================================================
@@ -195,11 +221,11 @@ defmodule ClippsterServer.Organizations do
     with {:ok, _} <- verify_admin(organization_id, requester.id),
          member when not is_nil(member) <- get_member(organization_id, user_id),
          false <- member.role == "owner" do
-
       # Also delete their credit allocation
       Repo.delete_all(
         from(a in MemberCreditAllocation,
-          where: a.organization_id == ^organization_id and a.user_id == ^user_id)
+          where: a.organization_id == ^organization_id and a.user_id == ^user_id
+        )
       )
 
       Repo.delete(member)
@@ -216,7 +242,6 @@ defmodule ClippsterServer.Organizations do
   def update_member_role(organization_id, user_id, new_role, %User{} = requester) do
     with {:ok, _} <- verify_admin(organization_id, requester.id),
          member when not is_nil(member) <- get_member(organization_id, user_id) do
-
       # Cannot change owner role unless transferring ownership
       if member.role == "owner" and new_role != "owner" do
         {:error, :cannot_demote_owner}
@@ -235,21 +260,38 @@ defmodule ClippsterServer.Organizations do
   Gets a specific member record.
   """
   def get_member(organization_id, user_id) do
-    OrganizationMember
-    |> where([m], m.organization_id == ^organization_id and m.user_id == ^user_id)
-    |> preload(:user)
-    |> Repo.one()
+    with org_id when is_integer(org_id) <- normalize_id(organization_id),
+         user_id_int when is_integer(user_id_int) <- normalize_id(user_id) do
+      case fetch_member(org_id, user_id_int) do
+        nil ->
+          maybe_backfill_owner_membership(org_id, user_id_int)
+          fetch_member(org_id, user_id_int)
+
+        member ->
+          member
+      end
+    else
+      _ -> nil
+    end
   end
 
   @doc """
   Lists all members of an organization.
   """
   def list_members(organization_id) do
-    OrganizationMember
-    |> where([m], m.organization_id == ^organization_id)
-    |> preload(:user)
-    |> order_by([m], asc: m.joined_at)
-    |> Repo.all()
+    case normalize_id(organization_id) do
+      nil ->
+        []
+
+      org_id ->
+        ensure_owner_membership_for_org(org_id)
+
+        OrganizationMember
+        |> where([m], m.organization_id == ^org_id)
+        |> preload(:user)
+        |> order_by([m], asc: m.joined_at)
+        |> Repo.all()
+    end
   end
 
   @doc """
@@ -275,6 +317,73 @@ defmodule ClippsterServer.Organizations do
     get_member(organization_id, user_id) != nil
   end
 
+  defp fetch_member(organization_id, user_id) do
+    OrganizationMember
+    |> where([m], m.organization_id == ^organization_id and m.user_id == ^user_id)
+    |> preload(:user)
+    |> Repo.one()
+  end
+
+  defp ensure_owner_membership_for_org(organization_id) do
+    with org_id when is_integer(org_id) <- normalize_id(organization_id),
+         %Organization{owner_id: owner_id} when is_integer(owner_id) <-
+           Repo.get(Organization, org_id) do
+      ensure_owner_membership(org_id, owner_id)
+    else
+      _ -> :ok
+    end
+  end
+
+  defp ensure_owned_organization_memberships(user_id) do
+    Organization
+    |> where([o], o.owner_id == ^user_id)
+    |> select([o], o.id)
+    |> Repo.all()
+    |> Enum.each(fn org_id -> ensure_owner_membership(org_id, user_id) end)
+  end
+
+  defp maybe_backfill_owner_membership(organization_id, user_id) do
+    case Repo.get(Organization, organization_id) do
+      %Organization{owner_id: ^user_id} ->
+        ensure_owner_membership(organization_id, user_id)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp ensure_owner_membership(organization_id, owner_id) do
+    if is_nil(fetch_member(organization_id, owner_id)) do
+      %OrganizationMember{}
+      |> OrganizationMember.create_changeset(%{
+        organization_id: organization_id,
+        user_id: owner_id,
+        role: "owner"
+      })
+      |> Repo.insert(
+        on_conflict: [set: [role: "owner"]],
+        conflict_target: [:organization_id, :user_id]
+      )
+      |> case do
+        {:ok, _} -> :ok
+        {:error, _} -> :ok
+      end
+    else
+      :ok
+    end
+  end
+
+  defp normalize_id(value) when is_integer(value), do: value
+
+  defp normalize_id(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} -> int
+      _ -> nil
+    end
+  end
+
+  defp normalize_id(_), do: nil
+
   defp verify_admin(organization_id, user_id) do
     if is_admin?(organization_id, user_id) do
       {:ok, :authorized}
@@ -285,6 +394,7 @@ defmodule ClippsterServer.Organizations do
 
   defp check_not_solo_tier(organization_id) do
     org = Repo.get(Organization, organization_id)
+
     if org && org.subscription_tier == "solo" do
       {:error, :solo_tier_no_accounts}
     else
@@ -305,11 +415,12 @@ defmodule ClippsterServer.Organizations do
     with {:ok, _} <- verify_admin(organization_id, inviter.id),
          {:ok, _} <- ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id),
          organization when not is_nil(organization) <- get_organization(organization_id),
-         nil <- Accounts.get_user_by_email(email) |> then(fn user ->
-           if user && is_member?(organization_id, user.id), do: :already_member, else: nil
-         end),
+         nil <-
+           Accounts.get_user_by_email(email)
+           |> then(fn user ->
+             if user && is_member?(organization_id, user.id), do: :already_member, else: nil
+           end),
          nil <- get_pending_invitation(organization_id, email) do
-
       # Generate plain token first
       plain_token = OrganizationInvitation.generate_token()
       hashed_token = OrganizationInvitation.hash_token(plain_token)
@@ -322,7 +433,8 @@ defmodule ClippsterServer.Organizations do
         invited_by: inviter.id
       }
 
-      changeset = %OrganizationInvitation{}
+      changeset =
+        %OrganizationInvitation{}
         |> OrganizationInvitation.create_changeset(invitation_attrs)
         |> Ecto.Changeset.put_change(:token, hashed_token)
 
@@ -407,7 +519,8 @@ defmodule ClippsterServer.Organizations do
           {:ok, _member} = add_member(invitation.organization_id, user.id, invitation.role)
 
           # Initialize credit allocation
-          {:ok, _allocation} = %MemberCreditAllocation{}
+          {:ok, _allocation} =
+            %MemberCreditAllocation{}
             |> MemberCreditAllocation.changeset(%{
               organization_id: invitation.organization_id,
               user_id: user.id
@@ -415,7 +528,8 @@ defmodule ClippsterServer.Organizations do
             |> Repo.insert()
 
           # Mark invitation as accepted
-          {:ok, updated_invitation} = invitation
+          {:ok, updated_invitation} =
+            invitation
             |> OrganizationInvitation.accept_changeset()
             |> Repo.update()
 
@@ -523,7 +637,6 @@ defmodule ClippsterServer.Organizations do
          {:ok, _} <- check_not_solo_tier(organization_id),
          {:ok, _} <- ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id),
          nil <- Accounts.get_user_by_email(email) do
-
       Repo.transaction(fn ->
         # Create the user account (already verified since admin is creating it)
         case create_verified_user(email, password, organization_id, name) do
@@ -535,14 +648,18 @@ defmodule ClippsterServer.Organizations do
             case get_global_branding_profile(organization_id) do
               %OrganizationCreatorProfile{id: profile_id} ->
                 member
-                |> OrganizationMember.update_branding_profile_changeset(%{branding_profile_id: profile_id})
+                |> OrganizationMember.update_branding_profile_changeset(%{
+                  branding_profile_id: profile_id
+                })
                 |> Repo.update()
 
-              nil -> :ok
+              nil ->
+                :ok
             end
 
             # Initialize credit allocation
-            {:ok, _allocation} = %MemberCreditAllocation{}
+            {:ok, _allocation} =
+              %MemberCreditAllocation{}
               |> MemberCreditAllocation.changeset(%{
                 organization_id: organization_id,
                 user_id: user.id
@@ -588,24 +705,28 @@ defmodule ClippsterServer.Organizations do
     }
 
     # Ensure organization_id is an integer (route params come as strings)
-    org_id_int = if is_binary(created_by_organization_id) do
-      String.to_integer(created_by_organization_id)
-    else
-      created_by_organization_id
-    end
+    org_id_int =
+      if is_binary(created_by_organization_id) do
+        String.to_integer(created_by_organization_id)
+      else
+        created_by_organization_id
+      end
 
-    changeset = %User{}
-    |> User.email_registration_changeset(user_attrs)
-    |> Ecto.Changeset.put_change(:email_verified, true)
-    |> Ecto.Changeset.put_change(:account_type, "personal")  # Auto-set to personal (they're a member, not an org owner)
-    |> Ecto.Changeset.put_change(:created_by_organization_id, org_id_int)
+    changeset =
+      %User{}
+      |> User.email_registration_changeset(user_attrs)
+      |> Ecto.Changeset.put_change(:email_verified, true)
+      # Auto-set to personal (they're a member, not an org owner)
+      |> Ecto.Changeset.put_change(:account_type, "personal")
+      |> Ecto.Changeset.put_change(:created_by_organization_id, org_id_int)
 
     # Add name if provided
-    changeset = if name && name != "" do
-      Ecto.Changeset.put_change(changeset, :name, name)
-    else
-      changeset
-    end
+    changeset =
+      if name && name != "" do
+        Ecto.Changeset.put_change(changeset, :name, name)
+      else
+        changeset
+      end
 
     Repo.insert(changeset)
   end
@@ -674,17 +795,17 @@ defmodule ClippsterServer.Organizations do
   Returns {:ok, %{org_credit: ..., transaction: ...}} or {:error, reason}
   """
   def create_org_credit_transaction_and_add_credits(
-    organization_id,
-    user_id,
-    pack_type,
-    hours,
-    amount_usd,
-    amount_sol,
-    sol_usd_rate,
-    tx_signature,
-    payment_method,
-    stripe_opts \\ []
-  ) do
+        organization_id,
+        user_id,
+        pack_type,
+        hours,
+        amount_usd,
+        amount_sol,
+        sol_usd_rate,
+        tx_signature,
+        payment_method,
+        stripe_opts \\ []
+      ) do
     # Check if transaction already exists (idempotency)
     case get_org_transaction_by_signature(tx_signature) do
       nil ->
@@ -705,11 +826,12 @@ defmodule ClippsterServer.Organizations do
             stripe_payment_intent_id: Keyword.get(stripe_opts, :stripe_payment_intent_id)
           }
 
-          changeset = if payment_method == "stripe" do
-            OrganizationCreditTransaction.stripe_changeset(tx_attrs)
-          else
-            OrganizationCreditTransaction.solana_changeset(tx_attrs)
-          end
+          changeset =
+            if payment_method == "stripe" do
+              OrganizationCreditTransaction.stripe_changeset(tx_attrs)
+            else
+              OrganizationCreditTransaction.solana_changeset(tx_attrs)
+            end
 
           case Repo.insert(changeset) do
             {:ok, transaction} ->
@@ -733,6 +855,7 @@ defmodule ClippsterServer.Organizations do
   def get_org_transaction_by_signature(tx_signature) when is_binary(tx_signature) do
     Repo.get_by(OrganizationCreditTransaction, tx_signature: tx_signature)
   end
+
   def get_org_transaction_by_signature(_), do: nil
 
   @doc """
@@ -741,6 +864,7 @@ defmodule ClippsterServer.Organizations do
   def get_org_transaction_by_stripe_session(session_id) when is_binary(session_id) do
     Repo.get_by(OrganizationCreditTransaction, stripe_session_id: session_id)
   end
+
   def get_org_transaction_by_stripe_session(_), do: nil
 
   @doc """
@@ -751,19 +875,21 @@ defmodule ClippsterServer.Organizations do
     limit = Keyword.get(opts, :limit, 50)
     offset = Keyword.get(opts, :offset, 0)
 
-    query = from t in OrganizationCreditTransaction,
-      where: t.organization_id == ^organization_id,
-      order_by: [desc: t.inserted_at],
-      limit: ^limit,
-      offset: ^offset,
-      preload: [:purchased_by]
+    query =
+      from t in OrganizationCreditTransaction,
+        where: t.organization_id == ^organization_id,
+        order_by: [desc: t.inserted_at],
+        limit: ^limit,
+        offset: ^offset,
+        preload: [:purchased_by]
 
     transactions = Repo.all(query)
 
     # Get total count
-    count_query = from t in OrganizationCreditTransaction,
-      where: t.organization_id == ^organization_id,
-      select: count(t.id)
+    count_query =
+      from t in OrganizationCreditTransaction,
+        where: t.organization_id == ^organization_id,
+        select: count(t.id)
 
     total = Repo.one(count_query)
 
@@ -777,7 +903,6 @@ defmodule ClippsterServer.Organizations do
     with {:ok, _} <- verify_admin(organization_id, allocator.id),
          true <- is_member?(organization_id, user_id),
          org_credit when not is_nil(org_credit) <- Repo.get(OrganizationCredit, organization_id) do
-
       hours_decimal = Decimal.new(to_string(hours))
 
       # Check if org has enough credits
@@ -786,7 +911,8 @@ defmodule ClippsterServer.Organizations do
       else
         Repo.transaction(fn ->
           # Deduct from org pool
-          {:ok, _} = org_credit
+          {:ok, _} =
+            org_credit
             |> OrganizationCredit.deduct_hours_changeset(hours)
             |> Repo.update()
 
@@ -794,7 +920,8 @@ defmodule ClippsterServer.Organizations do
           allocation = get_or_create_member_allocation(organization_id, user_id)
 
           # Add to member allocation
-          {:ok, updated_allocation} = allocation
+          {:ok, updated_allocation} =
+            allocation
             |> MemberCreditAllocation.allocate_hours_changeset(hours)
             |> Repo.update()
 
@@ -818,12 +945,14 @@ defmodule ClippsterServer.Organizations do
   defp get_or_create_member_allocation(organization_id, user_id) do
     case get_member_allocation(organization_id, user_id) do
       nil ->
-        {:ok, allocation} = %MemberCreditAllocation{}
+        {:ok, allocation} =
+          %MemberCreditAllocation{}
           |> MemberCreditAllocation.changeset(%{
             organization_id: organization_id,
             user_id: user_id
           })
           |> Repo.insert()
+
         allocation
 
       allocation ->
@@ -857,7 +986,8 @@ defmodule ClippsterServer.Organizations do
             else
               # Deduct from org pool AND track the usage for this user
               Repo.transaction(fn ->
-                {:ok, _updated_credit} = org_credit
+                {:ok, _updated_credit} =
+                  org_credit
                   |> OrganizationCredit.deduct_hours_changeset(hours)
                   |> Repo.update()
 
@@ -866,7 +996,9 @@ defmodule ClippsterServer.Organizations do
 
                 # Track the usage (this may result in negative remaining, but that's ok for tracking)
                 new_used = Decimal.add(member_allocation.hours_used, hours_decimal)
-                {:ok, updated_allocation} = member_allocation
+
+                {:ok, updated_allocation} =
+                  member_allocation
                   |> Ecto.Changeset.change(hours_used: new_used)
                   |> Repo.update()
 
@@ -900,11 +1032,13 @@ defmodule ClippsterServer.Organizations do
         changes = %{
           hours_remaining: Decimal.new(to_string(hours_remaining))
         }
-        changes = if hours_used do
-          Map.put(changes, :hours_used, Decimal.new(to_string(hours_used)))
-        else
-          changes
-        end
+
+        changes =
+          if hours_used do
+            Map.put(changes, :hours_used, Decimal.new(to_string(hours_used)))
+          else
+            changes
+          end
 
         org_credit
         |> Ecto.Changeset.change(changes)
@@ -942,16 +1076,18 @@ defmodule ClippsterServer.Organizations do
   def list_organization_assets(organization_id, opts \\ []) do
     asset_type = Keyword.get(opts, :asset_type)
 
-    query = from a in OrganizationAsset,
-      where: a.organization_id == ^organization_id,
-      order_by: [desc: a.inserted_at],
-      preload: [:uploaded_by]
+    query =
+      from a in OrganizationAsset,
+        where: a.organization_id == ^organization_id,
+        order_by: [desc: a.inserted_at],
+        preload: [:uploaded_by]
 
-    query = if asset_type do
-      where(query, [a], a.asset_type == ^asset_type)
-    else
-      query
-    end
+    query =
+      if asset_type do
+        where(query, [a], a.asset_type == ^asset_type)
+      else
+        query
+      end
 
     Repo.all(query)
   end
@@ -980,7 +1116,14 @@ defmodule ClippsterServer.Organizations do
   Uploads the file to R2 storage and creates the database record.
   Checks for existing assets with the same content hash to prevent duplicates.
   """
-  def create_organization_asset(organization_id, user_id, asset_type, file_binary, filename, opts \\ []) do
+  def create_organization_asset(
+        organization_id,
+        user_id,
+        asset_type,
+        file_binary,
+        filename,
+        opts \\ []
+      ) do
     content_type = Keyword.get(opts, :content_type, "application/octet-stream")
     thumbnail_binary = Keyword.get(opts, :thumbnail_binary)
     duration = Keyword.get(opts, :duration)
@@ -1003,8 +1146,8 @@ defmodule ClippsterServer.Organizations do
         key = Storage.generate_key(organization_id, asset_type, filename)
 
         with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type),
-             {:ok, thumbnail_url} <- maybe_upload_thumbnail(organization_id, asset_type, filename, thumbnail_binary) do
-
+             {:ok, thumbnail_url} <-
+               maybe_upload_thumbnail(organization_id, asset_type, filename, thumbnail_binary) do
           # Create database record with content hash
           attrs = %{
             organization_id: organization_id,
@@ -1040,11 +1183,14 @@ defmodule ClippsterServer.Organizations do
   end
 
   defp maybe_upload_thumbnail(_org_id, _asset_type, _filename, nil), do: {:ok, nil}
+
   defp maybe_upload_thumbnail(organization_id, asset_type, filename, thumbnail_binary) do
     key = Storage.generate_thumbnail_key(organization_id, asset_type, filename)
+
     case Storage.upload_file(thumbnail_binary, key, content_type: "image/jpeg") do
       {:ok, url} -> {:ok, url}
-      {:error, _} -> {:ok, nil}  # Don't fail if thumbnail upload fails
+      # Don't fail if thumbnail upload fails
+      {:error, _} -> {:ok, nil}
     end
   end
 
@@ -1138,16 +1284,18 @@ defmodule ClippsterServer.Organizations do
   def list_creator_profiles(organization_id, opts \\ []) do
     include_disabled = Keyword.get(opts, :include_disabled, false)
 
-    query = OrganizationCreatorProfile
-    |> where([p], p.organization_id == ^organization_id)
-    |> preload([:platform_links, :intro, :outro, :watermark, assignments: :user])
-    |> order_by([p], desc: p.inserted_at)
+    query =
+      OrganizationCreatorProfile
+      |> where([p], p.organization_id == ^organization_id)
+      |> preload([:platform_links, :intro, :outro, :watermark, assignments: :user])
+      |> order_by([p], desc: p.inserted_at)
 
-    query = if include_disabled do
-      query
-    else
-      where(query, [p], p.disabled == false)
-    end
+    query =
+      if include_disabled do
+        query
+      else
+        where(query, [p], p.disabled == false)
+      end
 
     Repo.all(query)
   end
@@ -1158,7 +1306,10 @@ defmodule ClippsterServer.Organizations do
   """
   def get_global_branding_profile(organization_id) do
     OrganizationCreatorProfile
-    |> where([p], p.organization_id == ^organization_id and p.scope == "global" and p.disabled == false)
+    |> where(
+      [p],
+      p.organization_id == ^organization_id and p.scope == "global" and p.disabled == false
+    )
     |> limit(1)
     |> Repo.one()
   end
@@ -1174,9 +1325,9 @@ defmodule ClippsterServer.Organizations do
     members_with_streamer_profile =
       from(a in OrganizationProfileAssignment,
         join: p in OrganizationCreatorProfile,
-          on: a.organization_creator_profile_id == p.id,
+        on: a.organization_creator_profile_id == p.id,
         join: m in OrganizationMember,
-          on: m.user_id == a.user_id and m.organization_id == ^organization_id,
+        on: m.user_id == a.user_id and m.organization_id == ^organization_id,
         where: p.organization_id == ^organization_id and p.scope == "streamer",
         select: a.user_id
       )
@@ -1192,19 +1343,22 @@ defmodule ClippsterServer.Organizations do
   Lists creator profiles for an organization filtered by scope.
   Optionally include disabled profiles (default: false).
   """
-  def list_creator_profiles_by_scope(organization_id, scope, opts \\ []) when scope in ["streamer", "global"] do
+  def list_creator_profiles_by_scope(organization_id, scope, opts \\ [])
+      when scope in ["streamer", "global"] do
     include_disabled = Keyword.get(opts, :include_disabled, false)
 
-    query = OrganizationCreatorProfile
-    |> where([p], p.organization_id == ^organization_id and p.scope == ^scope)
-    |> preload([:platform_links, :intro, :outro, :watermark, assignments: :user])
-    |> order_by([p], desc: p.inserted_at)
+    query =
+      OrganizationCreatorProfile
+      |> where([p], p.organization_id == ^organization_id and p.scope == ^scope)
+      |> preload([:platform_links, :intro, :outro, :watermark, assignments: :user])
+      |> order_by([p], desc: p.inserted_at)
 
-    query = if include_disabled do
-      query
-    else
-      where(query, [p], p.disabled == false)
-    end
+    query =
+      if include_disabled do
+        query
+      else
+        where(query, [p], p.disabled == false)
+      end
 
     Repo.all(query)
   end
@@ -1249,6 +1403,7 @@ defmodule ClippsterServer.Organizations do
           end
 
           {:ok, get_creator_profile(profile.id)}
+
         error ->
           error
       end
@@ -1274,6 +1429,7 @@ defmodule ClippsterServer.Organizations do
           end
 
           {:ok, get_creator_profile(updated.id)}
+
         error ->
           error
       end
@@ -1369,7 +1525,6 @@ defmodule ClippsterServer.Organizations do
   def add_creator_platform_link(organization_id, profile_id, attrs, %User{} = user) do
     with true <- is_admin?(organization_id, user.id),
          profile when not is_nil(profile) <- get_creator_profile(organization_id, profile_id) do
-
       %OrganizationCreatorPlatformLink{}
       |> OrganizationCreatorPlatformLink.create_changeset(
         Map.put(attrs, :organization_creator_profile_id, profile.id)
@@ -1386,8 +1541,9 @@ defmodule ClippsterServer.Organizations do
   Admin only.
   """
   def update_creator_platform_link(organization_id, link_id, attrs, %User{} = user) do
-    link = Repo.get(OrganizationCreatorPlatformLink, link_id)
-    |> Repo.preload(:organization_creator_profile)
+    link =
+      Repo.get(OrganizationCreatorPlatformLink, link_id)
+      |> Repo.preload(:organization_creator_profile)
 
     cond do
       is_nil(link) ->
@@ -1411,8 +1567,9 @@ defmodule ClippsterServer.Organizations do
   Admin only.
   """
   def delete_creator_platform_link(organization_id, link_id, %User{} = user) do
-    link = Repo.get(OrganizationCreatorPlatformLink, link_id)
-    |> Repo.preload(:organization_creator_profile)
+    link =
+      Repo.get(OrganizationCreatorPlatformLink, link_id)
+      |> Repo.preload(:organization_creator_profile)
 
     cond do
       is_nil(link) ->
@@ -1437,28 +1594,31 @@ defmodule ClippsterServer.Organizations do
   Assigns a creator profile to one or more users.
   Admin only. Users must be members of the organization.
   """
-  def assign_creator_profile(organization_id, profile_id, user_ids, %User{} = admin) when is_list(user_ids) do
+  def assign_creator_profile(organization_id, profile_id, user_ids, %User{} = admin)
+      when is_list(user_ids) do
     with true <- is_admin?(organization_id, admin.id),
          profile when not is_nil(profile) <- get_creator_profile(organization_id, profile_id) do
-
       # Filter to only users who are members
-      valid_user_ids = user_ids
-      |> Enum.filter(fn uid -> is_member?(organization_id, uid) end)
+      valid_user_ids =
+        user_ids
+        |> Enum.filter(fn uid -> is_member?(organization_id, uid) end)
 
-      results = Enum.map(valid_user_ids, fn user_id ->
-        %OrganizationProfileAssignment{}
-        |> OrganizationProfileAssignment.changeset(%{
-          organization_creator_profile_id: profile.id,
-          user_id: user_id
-        })
-        |> Repo.insert(on_conflict: :nothing)
-      end)
+      results =
+        Enum.map(valid_user_ids, fn user_id ->
+          %OrganizationProfileAssignment{}
+          |> OrganizationProfileAssignment.changeset(%{
+            organization_creator_profile_id: profile.id,
+            user_id: user_id
+          })
+          |> Repo.insert(on_conflict: :nothing)
+        end)
 
       # Return count of successful assignments
-      successful = Enum.count(results, fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+      successful =
+        Enum.count(results, fn
+          {:ok, _} -> true
+          _ -> false
+        end)
 
       {:ok, %{assigned: successful, total: length(user_ids)}}
     else
@@ -1474,11 +1634,11 @@ defmodule ClippsterServer.Organizations do
   def unassign_creator_profile(organization_id, profile_id, user_id, %User{} = admin) do
     with true <- is_admin?(organization_id, admin.id),
          profile when not is_nil(profile) <- get_creator_profile(organization_id, profile_id) do
-
-      assignment = Repo.get_by(OrganizationProfileAssignment,
-        organization_creator_profile_id: profile.id,
-        user_id: user_id
-      )
+      assignment =
+        Repo.get_by(OrganizationProfileAssignment,
+          organization_creator_profile_id: profile.id,
+          user_id: user_id
+        )
 
       case assignment do
         nil -> {:error, :not_assigned}
@@ -1496,7 +1656,8 @@ defmodule ClippsterServer.Organizations do
   def list_profile_assignments(organization_id, profile_id) do
     OrganizationProfileAssignment
     |> join(:inner, [a], p in OrganizationCreatorProfile,
-      on: a.organization_creator_profile_id == p.id)
+      on: a.organization_creator_profile_id == p.id
+    )
     |> where([a, p], p.organization_id == ^organization_id and p.id == ^profile_id)
     |> preload(:user)
     |> Repo.all()
@@ -1509,7 +1670,8 @@ defmodule ClippsterServer.Organizations do
   def get_assigned_creator_profiles(user_id) do
     OrganizationCreatorProfile
     |> join(:inner, [p], a in OrganizationProfileAssignment,
-      on: a.organization_creator_profile_id == p.id)
+      on: a.organization_creator_profile_id == p.id
+    )
     |> where([p, a], a.user_id == ^user_id)
     |> preload([:platform_links, :intro, :outro, :watermark, :organization])
     |> order_by([p], desc: p.inserted_at)
@@ -1532,10 +1694,12 @@ defmodule ClippsterServer.Organizations do
 
       true ->
         # Check if assigned
-        assignment = Repo.get_by(OrganizationProfileAssignment,
-          organization_creator_profile_id: profile_id,
-          user_id: user_id
-        )
+        assignment =
+          Repo.get_by(OrganizationProfileAssignment,
+            organization_creator_profile_id: profile_id,
+            user_id: user_id
+          )
+
         assignment != nil
     end
   end
@@ -1557,18 +1721,20 @@ defmodule ClippsterServer.Organizations do
     key = Storage.generate_key(organization_id, "shared-clips", filename)
 
     with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type),
-         {:ok, thumbnail_url} <- maybe_upload_shared_clip_thumbnail(organization_id, filename, thumbnail_binary) do
-
+         {:ok, thumbnail_url} <-
+           maybe_upload_shared_clip_thumbnail(organization_id, filename, thumbnail_binary) do
       Repo.transaction(fn ->
         # Create the shared clip record
-        clip_attrs = attrs
+        clip_attrs =
+          attrs
           |> Map.put(:organization_id, organization_id)
           |> Map.put(:uploaded_by_user_id, user_id)
           |> Map.put(:url, url)
           |> Map.put(:thumbnail_url, thumbnail_url)
           |> Map.put(:file_size, byte_size(file_binary))
 
-        {:ok, clip} = %OrganizationSharedClip{}
+        {:ok, clip} =
+          %OrganizationSharedClip{}
           |> OrganizationSharedClip.create_changeset(clip_attrs)
           |> Repo.insert()
 
@@ -1589,8 +1755,10 @@ defmodule ClippsterServer.Organizations do
   end
 
   defp maybe_upload_shared_clip_thumbnail(_org_id, _filename, nil), do: {:ok, nil}
+
   defp maybe_upload_shared_clip_thumbnail(organization_id, filename, thumbnail_binary) do
     key = Storage.generate_thumbnail_key(organization_id, "shared-clips", filename)
+
     case Storage.upload_file(thumbnail_binary, key, content_type: "image/jpeg") do
       {:ok, url} -> {:ok, url}
       {:error, _} -> {:ok, nil}
@@ -1634,7 +1802,7 @@ defmodule ClippsterServer.Organizations do
   def get_shared_clip_with_recipients(clip_id) do
     OrganizationSharedClip
     |> where([c], c.id == ^clip_id)
-    |> preload([recipients: :user, uploaded_by: []])
+    |> preload(recipients: :user, uploaded_by: [])
     |> Repo.one()
   end
 
@@ -1644,7 +1812,7 @@ defmodule ClippsterServer.Organizations do
   def get_shared_clip_for_org(organization_id, clip_id) do
     OrganizationSharedClip
     |> where([c], c.id == ^clip_id and c.organization_id == ^organization_id)
-    |> preload([recipients: :user, uploaded_by: []])
+    |> preload(recipients: :user, uploaded_by: [])
     |> Repo.one()
   end
 
@@ -1763,6 +1931,7 @@ defmodule ClippsterServer.Organizations do
       nil ->
         # Check if clip exists and user has access
         clip = get_shared_clip(clip_id)
+
         cond do
           is_nil(clip) ->
             {:error, :clip_not_found}
@@ -1790,14 +1959,15 @@ defmodule ClippsterServer.Organizations do
   Returns counts of viewed, downloaded, and posted.
   """
   def get_shared_clip_stats(clip_id) do
-    query = from r in SharedClipRecipient,
-      where: r.shared_clip_id == ^clip_id,
-      select: %{
-        total: count(r.id),
-        viewed: count(r.viewed_at),
-        downloaded: count(r.downloaded_at),
-        posted: count(r.posted_at)
-      }
+    query =
+      from r in SharedClipRecipient,
+        where: r.shared_clip_id == ^clip_id,
+        select: %{
+          total: count(r.id),
+          viewed: count(r.viewed_at),
+          downloaded: count(r.downloaded_at),
+          posted: count(r.posted_at)
+        }
 
     Repo.one(query) || %{total: 0, viewed: 0, downloaded: 0, posted: 0}
   end
@@ -1809,7 +1979,8 @@ defmodule ClippsterServer.Organizations do
   def cleanup_expired_shared_clips do
     now = DateTime.utc_now()
 
-    expired_clips = OrganizationSharedClip
+    expired_clips =
+      OrganizationSharedClip
       |> where([c], c.expires_at < ^now)
       |> Repo.all()
 
@@ -1869,10 +2040,11 @@ defmodule ClippsterServer.Organizations do
   """
   def get_user_restrictions(user_id) do
     # Get the first organization where user is a restricted member
-    member = OrganizationMember
-    |> where([m], m.user_id == ^user_id and m.is_restricted == true)
-    |> preload(:organization)
-    |> Repo.one()
+    member =
+      OrganizationMember
+      |> where([m], m.user_id == ^user_id and m.is_restricted == true)
+      |> preload(:organization)
+      |> Repo.one()
 
     case member do
       nil ->
@@ -1920,7 +2092,6 @@ defmodule ClippsterServer.Organizations do
   def update_restriction_defaults(organization_id, settings, %User{} = admin) do
     with {:ok, _} <- verify_admin(organization_id, admin.id),
          org when not is_nil(org) <- get_organization(organization_id) do
-
       org
       |> Organization.update_restriction_defaults_changeset(%{restriction_defaults: settings})
       |> Repo.update()
@@ -1937,7 +2108,6 @@ defmodule ClippsterServer.Organizations do
   def update_member_restrictions(organization_id, user_id, overrides, %User{} = admin) do
     with {:ok, _} <- verify_admin(organization_id, admin.id),
          member when not is_nil(member) <- get_member(organization_id, user_id) do
-
       member
       |> OrganizationMember.update_restriction_overrides_changeset(%{
         restriction_overrides: overrides
@@ -1956,7 +2126,6 @@ defmodule ClippsterServer.Organizations do
   def set_member_restricted(organization_id, user_id, is_restricted, %User{} = admin) do
     with {:ok, _} <- verify_admin(organization_id, admin.id),
          member when not is_nil(member) <- get_member(organization_id, user_id) do
-
       # Cannot restrict the owner
       if member.role == "owner" do
         {:error, :cannot_restrict_owner}
@@ -1997,10 +2166,12 @@ defmodule ClippsterServer.Organizations do
 
       true ->
         # Check if user is assigned to this creator profile
-        assignment = Repo.get_by(OrganizationProfileAssignment,
-          organization_creator_profile_id: creator_profile_id,
-          user_id: user_id
-        )
+        assignment =
+          Repo.get_by(OrganizationProfileAssignment,
+            organization_creator_profile_id: creator_profile_id,
+            user_id: user_id
+          )
+
         assignment != nil
     end
   end
@@ -2063,15 +2234,17 @@ defmodule ClippsterServer.Organizations do
   def list_organization_applications(opts \\ []) do
     status = Keyword.get(opts, :status)
 
-    query = from a in OrganizationApplication,
-      order_by: [desc: a.inserted_at],
-      preload: [:user, :reviewed_by]
+    query =
+      from a in OrganizationApplication,
+        order_by: [desc: a.inserted_at],
+        preload: [:user, :reviewed_by]
 
-    query = if status do
-      where(query, [a], a.status == ^status)
-    else
-      query
-    end
+    query =
+      if status do
+        where(query, [a], a.status == ^status)
+      else
+        query
+      end
 
     Repo.all(query)
   end
@@ -2123,7 +2296,8 @@ defmodule ClippsterServer.Organizations do
           case create_organization(application.user, org_attrs) do
             {:ok, organization} ->
               # Update application status
-              {:ok, updated_application} = application
+              {:ok, updated_application} =
+                application
                 |> OrganizationApplication.review_changeset(%{
                   status: "approved",
                   admin_notes: admin_notes,

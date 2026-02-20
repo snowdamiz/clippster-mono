@@ -644,11 +644,16 @@ export async function addOrganizationCredits(orgId: number, hoursToAdd: number) 
   )
 }
 
-export async function setOrganizationCredits(orgId: number, hoursRemaining: number) {
+export async function setOrganizationCredits(orgId: number, hoursRemaining: number, hoursUsed?: number) {
+  const payload: { hours_remaining: number; hours_used?: number } = {
+    hours_remaining: hoursRemaining,
+  }
+  if (typeof hoursUsed === 'number') {
+    payload.hours_used = hoursUsed
+  }
+
   return assertSuccess(
-    await api.put<{ success: boolean; error?: string }>(`/admin/organizations/${orgId}/credits`, {
-      hours_remaining: hoursRemaining,
-    }),
+    await api.put<{ success: boolean; error?: string }>(`/admin/organizations/${orgId}/credits`, payload),
     'Failed to set organization credits',
   )
 }
@@ -726,7 +731,7 @@ export async function listBugReports(filters?: { status?: string; severity?: str
 
 export async function updateBugReportStatus(id: number, status: BugReport['status']) {
   return assertSuccess(
-    await api.put<{ success: boolean; error?: string }>(`/admin/bug-reports/${id}`, { status }),
+    await api.put<{ success: boolean; bug_report?: BugReport; error?: string }>(`/admin/bug-reports/${id}`, { status }),
     'Failed to update bug report',
   )
 }
@@ -894,7 +899,7 @@ export async function listOrgApplications(status?: string): Promise<OrgApplicati
   return res.applications || []
 }
 
-export async function approveOrgApplication(id: number, adminNotes: string) {
+export async function approveOrgApplication(id: number, adminNotes: string | null) {
   return assertSuccess(
     await api.put<{ success: boolean; error?: string }>(`/admin/organization-applications/${id}/approve`, {
       admin_notes: adminNotes,
@@ -903,7 +908,7 @@ export async function approveOrgApplication(id: number, adminNotes: string) {
   )
 }
 
-export async function rejectOrgApplication(id: number, adminNotes: string) {
+export async function rejectOrgApplication(id: number, adminNotes: string | null) {
   return assertSuccess(
     await api.put<{ success: boolean; error?: string }>(`/admin/organization-applications/${id}/reject`, {
       admin_notes: adminNotes,

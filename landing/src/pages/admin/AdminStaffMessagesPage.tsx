@@ -1,14 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  AlertTriangle,
-  Loader2,
-  MessageSquare,
-  Plus,
-  Send,
-  User,
-  Users,
-  X,
-} from 'lucide-react'
+import { type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Loader2, MessageSquare, MessagesSquare, Plus, Send, Users, X } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import {
   createDirectStaffConversation,
@@ -21,422 +12,615 @@ import {
   type StaffConversation,
   type StaffMessage,
 } from '@/services/adminApi'
-import { formatDateTime } from './adminFormat'
 import { useAuth } from '@/hooks/useAuth'
+import './AdminStaffMessagesPage.css'
 
-function conversationName(conv: StaffConversation, currentUserId?: number): string {
-  if (conv.type === 'group') return conv.name || 'Group Chat'
+type StaffParticipant = StaffConversation['participants'][number] & {
+  userId?: number
+}
 
-  const other = conv.participants?.find((p) => p.user_id !== currentUserId)
-  return other?.user?.name || other?.user?.email || 'Direct Chat'
+type StaffConversationRecord = StaffConversation & {
+  lastMessageAt?: string | null
+  lastMessagePreview?: string | null
+  participants?: StaffParticipant[]
+}
+
+type StaffMessageRecord = StaffMessage & {
+  senderId?: number
+  insertedAt?: string
+}
+
+function getParticipantUserId(participant: StaffParticipant): number | null {
+  return participant.userId ?? participant.user_id ?? null
+}
+
+function getMessageSenderId(message: StaffMessageRecord): number | null {
+  return message.senderId ?? message.sender_id ?? null
+}
+
+function getConversationLastMessageAt(conversation: StaffConversationRecord): string | null {
+  return conversation.lastMessageAt || conversation.last_message_at || null
+}
+
+function getConversationLastPreview(conversation: StaffConversationRecord): string {
+  return conversation.lastMessagePreview || conversation.last_message_preview || 'No messages yet'
+}
+
+function getMessageInsertedAt(message: StaffMessageRecord): string | null {
+  return message.insertedAt || message.inserted_at || null
+}
+
+function formatTime(timestamp: string | null): string {
+  if (!timestamp) return ''
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+
+  if (diff < 60000) return 'Just now'
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
+  return date.toLocaleDateString()
+}
+
+function formatMessageTime(timestamp: string | null): string {
+  if (!timestamp) return ''
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function getConversationName(conversation: StaffConversationRecord, currentUserId?: number): string {
+  if (conversation.name) return conversation.name
+
+  if (conversation.type === 'direct') {
+    const otherParticipant = (conversation.participants || []).find(
+      (participant) => getParticipantUserId(participant) !== (currentUserId ?? null),
+    )
+    return otherParticipant?.user?.name || otherParticipant?.user?.email || 'Unknown'
+  }
+
+  return 'Group Chat'
 }
 
 export function AdminStaffMessagesPage() {
   const { user } = useAuth()
   const currentUserId = user?.id
 
-  const [conversations, setConversations] = useState<StaffConversation[]>([])
-  const [selectedConversation, setSelectedConversation] = useState<StaffConversation | null>(null)
-  const [messages, setMessages] = useState<StaffMessage[]>([])
-
-  const [loadingConversations, setLoadingConversations] = useState(true)
+  const [conversations, setConversations] = useState<StaffConversationRecord[]>([])
+  const [selectedConversation, setSelectedConversation] = useState<StaffConversationRecord | null>(null)
+  const [messages, setMessages] = useState<StaffMessageRecord[]>([])
+  const [newMessage, setNewMessage] = useState('')
+  const [loadingConversations, setLoadingConversations] = useState(false)
   const [loadingMessages, setLoadingMessages] = useState(false)
-  const [sending, setSending] = useState(false)
-  const [messageInput, setMessageInput] = useState('')
-  const [error, setError] = useState<string | null>(null)
 
-  const [showCreate, setShowCreate] = useState(false)
-  const [creating, setCreating] = useState(false)
-  const [staffUsers, setStaffUsers] = useState<AdminUser[]>([])
-  const [conversationType, setConversationType] = useState<'direct' | 'group'>('direct')
-  const [groupName, setGroupName] = useState('')
-  const [selectedMemberIds, setSelectedMemberIds] = useState<number[]>([])
+  const [showNewConversationDialog, setShowNewConversationDialog] = useState(false)
+  const [newConversationType, setNewConversationType] = useState<'direct' | 'group'>('direct')
+  const [newConversationName, setNewConversationName] = useState('')
+  const [selectedStaffMembers, setSelectedStaffMembers] = useState<number | number[]>(0)
+  const [staffMembers, setStaffMembers] = useState<AdminUser[]>([])
 
-  const messagesRef = useRef<HTMLDivElement | null>(null)
+  const messagesContainerRef = useRef<HTMLDivElement | null>(null)
+
+  const scrollToBottom = useCallback(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    }
+  }, [])
 
   const loadConversations = useCallback(async () => {
     setLoadingConversations(true)
-    setError(null)
     try {
-      const data = await listStaffConversations()
-      setConversations(data)
-      if (selectedConversation) {
-        const fresh = data.find((x) => x.id === selectedConversation.id) || null
-        setSelectedConversation(fresh)
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load staff conversations')
+      const rows = await listStaffConversations()
+      setConversations(rows as StaffConversationRecord[])
+    } catch (error) {
+      console.error('Failed to load conversations:', error)
     } finally {
       setLoadingConversations(false)
     }
-  }, [selectedConversation])
+  }, [])
 
-  useEffect(() => {
-    loadConversations()
-  }, [loadConversations])
-
-  useEffect(() => {
-    if (!showCreate) return
-
-    let active = true
-    listAdminUsers()
-      .then((rows) => {
-        if (!active) return
-        setStaffUsers(rows.filter((x) => x.is_admin || x.is_moderator))
-      })
-      .catch(() => {
-        if (!active) return
-        setStaffUsers([])
-      })
-
-    return () => {
-      active = false
+  const loadStaffMembers = useCallback(async () => {
+    try {
+      const rows = await listAdminUsers()
+      setStaffMembers(
+        rows.filter((row) => (row.is_admin || row.is_moderator) && row.id !== currentUserId),
+      )
+    } catch (error) {
+      console.error('Failed to load staff members:', error)
     }
-  }, [showCreate])
+  }, [currentUserId])
 
-  const sortedMessages = useMemo(
-    () =>
-      [...messages].sort(
-        (a, b) => new Date(a.inserted_at).getTime() - new Date(b.inserted_at).getTime(),
-      ),
-    [messages],
+  const loadMessages = useCallback(
+    async (conversationId: number) => {
+      setLoadingMessages(true)
+      try {
+        const rows = await getStaffConversationMessages(conversationId)
+        setMessages(rows as StaffMessageRecord[])
+        window.setTimeout(scrollToBottom, 0)
+      } catch (error) {
+        console.error('Failed to load messages:', error)
+      } finally {
+        setLoadingMessages(false)
+      }
+    },
+    [scrollToBottom],
   )
 
-  async function loadMessages(conversation: StaffConversation) {
-    setLoadingMessages(true)
-    setError(null)
-    try {
-      const data = await getStaffConversationMessages(conversation.id)
-      setMessages(data)
+  const selectConversation = useCallback(
+    async (conversation: StaffConversationRecord) => {
       setSelectedConversation(conversation)
-      window.setTimeout(() => {
-        if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight
-      }, 0)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load messages')
-    } finally {
-      setLoadingMessages(false)
-    }
-  }
+      await loadMessages(conversation.id)
+    },
+    [loadMessages],
+  )
 
-  async function handleSend() {
-    if (!selectedConversation || !messageInput.trim()) return
-    setSending(true)
-    setError(null)
+  const sendMessage = useCallback(async () => {
+    if (!newMessage.trim() || !selectedConversation) return
+
     try {
-      const sent = await sendStaffMessage(selectedConversation.id, messageInput.trim())
-      if (sent) setMessages((prev) => [...prev, sent])
-      setMessageInput('')
-      await loadConversations()
-      window.setTimeout(() => {
-        if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight
-      }, 0)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to send message')
-    } finally {
-      setSending(false)
+      const message = await sendStaffMessage(selectedConversation.id, newMessage)
+      if (message) {
+        setMessages((previous) => [...previous, message as StaffMessageRecord])
+      }
+      setNewMessage('')
+      window.setTimeout(scrollToBottom, 0)
+    } catch (error) {
+      console.error('Failed to send message:', error)
     }
-  }
+  }, [newMessage, selectedConversation, scrollToBottom])
 
-  function toggleMember(memberId: number) {
-    setSelectedMemberIds((prev) =>
-      prev.includes(memberId) ? prev.filter((x) => x !== memberId) : [...prev, memberId],
+  const canCreateConversation = useMemo(() => {
+    if (newConversationType === 'direct') {
+      return typeof selectedStaffMembers === 'number' && selectedStaffMembers > 0
+    }
+
+    return (
+      newConversationName.trim().length > 0 &&
+      Array.isArray(selectedStaffMembers) &&
+      selectedStaffMembers.length > 0
     )
-  }
+  }, [newConversationName, newConversationType, selectedStaffMembers])
 
-  function resetCreateDialog() {
-    setConversationType('direct')
-    setGroupName('')
-    setSelectedMemberIds([])
-  }
+  const selectedStaffMemberSet = useMemo(() => {
+    return new Set(Array.isArray(selectedStaffMembers) ? selectedStaffMembers : [])
+  }, [selectedStaffMembers])
 
-  async function handleCreateConversation() {
-    if (selectedMemberIds.length === 0) {
-      setError('Select at least one staff member')
-      return
-    }
+  const createConversation = useCallback(async () => {
+    if (!canCreateConversation) return
 
-    if (conversationType === 'group' && !groupName.trim()) {
-      setError('Group name is required')
-      return
-    }
-
-    setCreating(true)
-    setError(null)
     try {
-      let created: StaffConversation | null = null
-      if (conversationType === 'direct') {
-        created = await createDirectStaffConversation(selectedMemberIds[0])
+      let createdConversation: StaffConversation | null = null
+
+      if (newConversationType === 'direct') {
+        const targetUserId = typeof selectedStaffMembers === 'number' ? selectedStaffMembers : selectedStaffMembers[0]
+        createdConversation = await createDirectStaffConversation(targetUserId)
       } else {
-        created = await createGroupStaffConversation(groupName.trim(), selectedMemberIds)
+        const participantIds = Array.isArray(selectedStaffMembers)
+          ? selectedStaffMembers
+          : [selectedStaffMembers]
+        createdConversation = await createGroupStaffConversation(newConversationName, participantIds)
       }
 
-      await loadConversations()
-      if (created) {
-        await loadMessages(created)
-      }
+      if (!createdConversation) return
 
-      setShowCreate(false)
-      resetCreateDialog()
-    } catch (err: any) {
-      setError(err?.message || 'Failed to create conversation')
-    } finally {
-      setCreating(false)
+      const created = createdConversation as StaffConversationRecord
+      setConversations((previous) => [created, ...previous.filter((conversation) => conversation.id !== created.id)])
+      setShowNewConversationDialog(false)
+      setNewConversationType('direct')
+      setNewConversationName('')
+      setSelectedStaffMembers(0)
+      await selectConversation(created)
+    } catch (error) {
+      console.error('Failed to create conversation:', error)
     }
+  }, [
+    canCreateConversation,
+    newConversationName,
+    newConversationType,
+    selectConversation,
+    selectedStaffMembers,
+  ])
+
+  const getSenderName = useCallback(
+    (message: StaffMessageRecord): string => {
+      const senderId = getMessageSenderId(message)
+      if (senderId === null) return 'Unknown'
+
+      const sender = (selectedConversation?.participants || []).find(
+        (participant) => getParticipantUserId(participant) === senderId,
+      )
+
+      return sender?.user?.name || sender?.user?.email || 'Unknown'
+    },
+    [selectedConversation],
+  )
+
+  const handleMessageInputKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === 'Enter') {
+        event.preventDefault()
+        void sendMessage()
+      }
+    },
+    [sendMessage],
+  )
+
+  useEffect(() => {
+    void loadConversations()
+    void loadStaffMembers()
+  }, [loadConversations, loadStaffMembers])
+
+  const handleDirectRecipientChange = (value: string) => {
+    const parsed = Number.parseInt(value, 10)
+    setSelectedStaffMembers(Number.isNaN(parsed) ? 0 : parsed)
   }
 
-  function messageSender(message: StaffMessage): string {
-    if (message.sender_id === currentUserId) return 'You'
-
-    const participant = selectedConversation?.participants.find((p) => p.user_id === message.sender_id)
-    return participant?.user?.name || participant?.user?.email || `User #${message.sender_id}`
+  const handleGroupParticipantToggle = (memberId: number) => {
+    setSelectedStaffMembers((previous) => {
+      const current = Array.isArray(previous) ? previous : []
+      if (current.includes(memberId)) {
+        return current.filter((id) => id !== memberId)
+      }
+      return [...current, memberId]
+    })
   }
 
   return (
-    <PageLayout
-      icon={MessageSquare}
-      title="Staff Messages"
-      actions={
-        <button
-          onClick={() => setShowCreate(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-black bg-cyan-400 hover:bg-cyan-300"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          New Conversation
-        </button>
-      }
-    >
-      <div className="p-6 max-w-[1600px] w-full mx-auto h-full flex flex-col gap-4">
-        <div>
-          <h1 className="m-0 text-2xl font-bold text-white">Staff Messages</h1>
-          <p className="m-0 mt-1 text-sm text-zinc-400">Internal messaging for admins and moderators.</p>
-        </div>
-
-        {error && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            {error}
+    <div className="admin-staff-messages-page admin-staff-messages">
+      <PageLayout
+        title="Staff Messages"
+        icon={MessagesSquare}
+        actions={
+          <button
+            onClick={() => setShowNewConversationDialog(true)}
+            className="admin-staff-messages-header__new-btn"
+          >
+            <Plus className="admin-staff-messages-header__new-btn-icon" />
+            New Conversation
+          </button>
+        }
+      >
+        <div className="admin-staff-messages__content">
+          <div className="admin-staff-messages__heading">
+            <h1 className="admin-staff-messages__title">Staff Messages</h1>
+            <p className="admin-staff-messages__subtitle">Internal messaging for admins and moderators</p>
           </div>
-        )}
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-3">
-          <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 min-h-0 flex flex-col">
-            <div className="p-3 border-b border-zinc-800">
-              <h2 className="m-0 text-sm font-semibold text-white">Conversations</h2>
-              <p className="m-0 mt-0.5 text-xs text-zinc-500">{conversations.length} chat(s)</p>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-auto p-2 space-y-1">
-              {loadingConversations ? (
-                <div className="p-6 text-center text-zinc-400">
-                  <Loader2 className="inline-block w-4 h-4 animate-spin mr-1" />
-                  Loading conversations...
-                </div>
-              ) : conversations.length === 0 ? (
-                <div className="p-6 text-center text-zinc-500 text-sm">No staff conversations yet.</div>
-              ) : (
-                conversations.map((conv) => {
-                  const active = conv.id === selectedConversation?.id
-                  return (
-                    <button
-                      key={conv.id}
-                      onClick={() => void loadMessages(conv)}
-                      className={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${
-                        active
-                          ? 'border-cyan-500/30 bg-cyan-500/10'
-                          : 'border-zinc-800 bg-zinc-900/40 hover:bg-zinc-800/70'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div
-                          className={`w-7 h-7 rounded-md flex items-center justify-center ${
-                            conv.type === 'group'
-                              ? 'bg-violet-500/20 border border-violet-500/30'
-                              : 'bg-cyan-500/20 border border-cyan-500/30'
-                          }`}
-                        >
-                          {conv.type === 'group' ? (
-                            <Users className="w-3.5 h-3.5 text-violet-300" />
-                          ) : (
-                            <User className="w-3.5 h-3.5 text-cyan-300" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="m-0 text-sm font-medium text-zinc-100 truncate">{conversationName(conv, currentUserId)}</p>
-                          <p className="m-0 mt-0.5 text-xs text-zinc-500 truncate">{conv.last_message_preview || 'No messages yet'}</p>
-                        </div>
-                      </div>
-                    </button>
-                  )
-                })
-              )}
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 min-h-0 flex flex-col">
-            {selectedConversation ? (
-              <>
-                <div className="p-3 border-b border-zinc-800">
-                  <h2 className="m-0 text-sm font-semibold text-white">{conversationName(selectedConversation, currentUserId)}</h2>
-                  <p className="m-0 mt-0.5 text-xs text-zinc-500">
-                    {selectedConversation.type === 'group'
-                      ? `${selectedConversation.participants.length} participants`
-                      : 'Direct message'}
-                  </p>
-                </div>
-
-                <div ref={messagesRef} className="flex-1 min-h-0 overflow-auto p-4 space-y-2">
-                  {loadingMessages ? (
-                    <div className="text-center text-zinc-400">
-                      <Loader2 className="inline-block w-4 h-4 animate-spin mr-1" />
-                      Loading messages...
+          <div className="admin-staff-messages__main">
+            <div className="admin-staff-messages-panel">
+              <div className="admin-staff-messages-panel__inner">
+                <div className="admin-staff-messages-panel__header">
+                  <div className="admin-staff-messages-panel__header-left">
+                    <div className="admin-staff-messages-panel__header-icon">
+                      <MessagesSquare />
                     </div>
-                  ) : sortedMessages.length === 0 ? (
-                    <div className="text-center text-zinc-500 text-sm">No messages yet.</div>
-                  ) : (
-                    sortedMessages.map((msg) => {
-                      const mine = msg.sender_id === currentUserId
-                      return (
-                        <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                          <div
-                            className={`max-w-[75%] rounded-xl px-3 py-2 ${
-                              mine ? 'bg-cyan-500/20 border border-cyan-500/30' : 'bg-zinc-800 border border-zinc-700'
-                            }`}
-                          >
-                            {!mine && <p className="m-0 text-[11px] font-semibold text-cyan-300">{messageSender(msg)}</p>}
-                            <p className="m-0 text-sm text-zinc-100 whitespace-pre-wrap">{msg.content}</p>
-                            <p className="m-0 mt-1 text-[10px] text-zinc-500">{formatDateTime(msg.inserted_at)}</p>
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-
-                <div className="p-3 border-t border-zinc-800 flex items-end gap-2">
-                  <textarea
-                    rows={2}
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    placeholder="Write a message..."
-                    className="flex-1 px-3 py-2 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        void handleSend()
-                      }
-                    }}
-                  />
+                    <div className="admin-staff-messages-panel__header-text">
+                      <h2 className="admin-staff-messages-panel__title">Conversations</h2>
+                      <p className="admin-staff-messages-panel__subtitle">
+                        {conversations.length} {conversations.length === 1 ? 'chat' : 'chats'}
+                      </p>
+                    </div>
+                  </div>
                   <button
-                    onClick={() => void handleSend()}
-                    disabled={sending || !messageInput.trim()}
-                    className="h-10 px-3 rounded-md bg-cyan-400 text-black text-xs font-semibold hover:bg-cyan-300 disabled:opacity-50"
+                    onClick={() => setShowNewConversationDialog(true)}
+                    className="admin-staff-messages-panel__new-btn"
+                    title="New conversation"
                   >
-                    {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    <Plus className="admin-staff-messages-panel__new-btn-icon" />
                   </button>
                 </div>
-              </>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-zinc-500">
-                <MessageSquare className="w-6 h-6 mb-2" />
-                Select a conversation
-              </div>
-            )}
-          </section>
-        </div>
-      </div>
 
-      {showCreate && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowCreate(false)}>
-          <div className="w-full max-w-xl rounded-xl border border-zinc-700 bg-[#111113] p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="m-0 text-lg font-semibold text-white">New Staff Conversation</h2>
-                <p className="m-0 mt-1 text-xs text-zinc-500">Start a direct or group thread with staff members.</p>
-              </div>
-              <button onClick={() => setShowCreate(false)} className="text-zinc-500 hover:text-zinc-200">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              <label className="block text-xs text-zinc-400">
-                Conversation Type
-                <select
-                  value={conversationType}
-                  onChange={(e) => setConversationType(e.target.value as 'direct' | 'group')}
-                  className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                >
-                  <option value="direct">Direct Message</option>
-                  <option value="group">Group Chat</option>
-                </select>
-              </label>
-
-              {conversationType === 'group' && (
-                <label className="block text-xs text-zinc-400">
-                  Group Name
-                  <input
-                    value={groupName}
-                    onChange={(e) => setGroupName(e.target.value)}
-                    className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                  />
-                </label>
-              )}
-
-              <div>
-                <p className="m-0 text-xs text-zinc-400 mb-1">{conversationType === 'direct' ? 'Recipient' : 'Participants'}</p>
-                <div className="max-h-[220px] overflow-auto rounded-md border border-zinc-800 bg-zinc-900/50 p-2 space-y-1">
-                  {staffUsers.length === 0 ? (
-                    <p className="m-0 text-xs text-zinc-500 p-2">No staff users available.</p>
+                <div className="admin-staff-messages-panel__list">
+                  {loadingConversations ? (
+                    <>
+                      {Array.from({ length: 4 }).map((_, index) => (
+                        <div key={`staff-conversation-skeleton-${index}`} className="admin-staff-messages-conv-skeleton">
+                          <div className="admin-staff-messages-conv-skeleton__avatar" />
+                          <div className="admin-staff-messages-conv-skeleton__content">
+                            <div className="admin-staff-messages-conv-skeleton__line admin-staff-messages-conv-skeleton__line--name" />
+                            <div className="admin-staff-messages-conv-skeleton__line admin-staff-messages-conv-skeleton__line--preview" />
+                          </div>
+                        </div>
+                      ))}
+                    </>
                   ) : (
-                    staffUsers
-                      .filter((u) => u.id !== currentUserId)
-                      .map((u) => {
-                        const selected = selectedMemberIds.includes(u.id)
+                    <>
+                      {conversations.map((conversation) => {
+                        const active = conversation.id === selectedConversation?.id
+                        const name = getConversationName(conversation, currentUserId)
                         return (
-                          <label
-                            key={u.id}
-                            className={`flex items-center gap-2 rounded px-2 py-1.5 text-xs cursor-pointer ${
-                              selected ? 'bg-cyan-500/15 border border-cyan-500/25' : 'hover:bg-zinc-800'
-                            }`}
+                          <div
+                            key={conversation.id}
+                            className={`admin-staff-messages-conv ${active ? 'admin-staff-messages-conv--active' : ''}`}
+                            onClick={() => void selectConversation(conversation)}
                           >
-                            <input
-                              type={conversationType === 'direct' ? 'radio' : 'checkbox'}
-                              checked={selected}
-                              onChange={() => {
-                                if (conversationType === 'direct') setSelectedMemberIds([u.id])
-                                else toggleMember(u.id)
-                              }}
+                            <div
+                              className={`admin-staff-messages-conv__indicator ${active ? 'admin-staff-messages-conv__indicator--active' : ''}`}
                             />
-                            <span className="text-zinc-200">{u.email || u.wallet_address || `User #${u.id}`}</span>
-                            <span className="text-zinc-500">#{u.id}</span>
-                          </label>
+                            <div className="admin-staff-messages-conv__inner">
+                              <div className="admin-staff-messages-conv__avatar-wrapper">
+                                <div
+                                  className={`admin-staff-messages-conv__avatar ${
+                                    conversation.type === 'group'
+                                      ? 'admin-staff-messages-conv__avatar--group'
+                                      : 'admin-staff-messages-conv__avatar--direct'
+                                  }`}
+                                >
+                                  {conversation.type === 'group' ? (
+                                    <Users className="admin-staff-messages-conv__avatar-icon" />
+                                  ) : (
+                                    <span className="admin-staff-messages-conv__avatar-initial">
+                                      {(name.charAt(0) || '?').toUpperCase()}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="admin-staff-messages-conv__content">
+                                <div className="admin-staff-messages-conv__header">
+                                  <span className="admin-staff-messages-conv__name">{name}</span>
+                                  <span className="admin-staff-messages-conv__time">
+                                    {formatTime(getConversationLastMessageAt(conversation))}
+                                  </span>
+                                </div>
+                                <div className="admin-staff-messages-conv__footer">
+                                  <span className="admin-staff-messages-conv__preview">
+                                    {getConversationLastPreview(conversation)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         )
-                      })
+                      })}
+
+                      {conversations.length === 0 ? (
+                        <div className="admin-staff-messages-panel__empty">
+                          <div className="admin-staff-messages-panel__empty-icon">
+                            <MessageSquare />
+                          </div>
+                          <p className="admin-staff-messages-panel__empty-title">No conversations yet</p>
+                          <p className="admin-staff-messages-panel__empty-text">Start chatting with staff members</p>
+                          <button
+                            onClick={() => setShowNewConversationDialog(true)}
+                            className="admin-staff-messages-panel__empty-btn"
+                          >
+                            <Plus className="admin-staff-messages-panel__empty-btn-icon" />
+                            New Conversation
+                          </button>
+                        </div>
+                      ) : null}
+                    </>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="admin-staff-messages-chat">
+              <div className="admin-staff-messages-chat__inner">
+                {selectedConversation ? (
+                  <>
+                    <div className="admin-staff-messages-chat__header">
+                      <div className="admin-staff-messages-chat__header-left">
+                        <div
+                          className={`admin-staff-messages-chat__avatar ${
+                            selectedConversation.type === 'group'
+                              ? 'admin-staff-messages-chat__avatar--group'
+                              : 'admin-staff-messages-chat__avatar--direct'
+                          }`}
+                        >
+                          {selectedConversation.type === 'group' ? (
+                            <Users className="admin-staff-messages-chat__avatar-icon" />
+                          ) : (
+                            <span className="admin-staff-messages-chat__avatar-initial">
+                              {(getConversationName(selectedConversation, currentUserId).charAt(0) || '?').toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                        <div className="admin-staff-messages-chat__header-info">
+                          <h3 className="admin-staff-messages-chat__name">
+                            {getConversationName(selectedConversation, currentUserId)}
+                          </h3>
+                          <p className="admin-staff-messages-chat__meta">
+                            {selectedConversation.type === 'direct'
+                              ? 'Direct message'
+                              : `${selectedConversation.participants?.length || 0} members`}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div ref={messagesContainerRef} className="admin-staff-messages-chat__messages">
+                      {loadingMessages ? (
+                        <div className="admin-staff-messages-chat__loading">
+                          <Loader2 className="admin-staff-messages-chat__loading-spinner" />
+                        </div>
+                      ) : null}
+
+                      {messages.map((message) => {
+                        const sent = getMessageSenderId(message) === currentUserId
+                        return (
+                          <div key={message.id} className={`message-row ${sent ? 'message-row--sent' : ''}`}>
+                            <div className={`message-bubble ${sent ? 'message-bubble--sent' : 'message-bubble--received'}`}>
+                              {!sent ? (
+                                <div className="message-bubble__sender">{getSenderName(message)}</div>
+                              ) : null}
+
+                              <p className="message-bubble__content">{message.content}</p>
+                              <div className="message-bubble__meta">
+                                <span className="message-bubble__time">{formatMessageTime(getMessageInsertedAt(message))}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+
+                    <div className="admin-staff-messages-chat__input-area">
+                      <textarea
+                        value={newMessage}
+                        onChange={(event) => setNewMessage(event.target.value)}
+                        onKeyDown={handleMessageInputKeyDown}
+                        placeholder="Write a message..."
+                        rows={1}
+                        className="admin-staff-messages-chat__input"
+                      />
+                      <button
+                        className={`admin-staff-messages-chat__send-btn ${
+                          !newMessage.trim() ? 'admin-staff-messages-chat__send-btn--disabled' : ''
+                        }`}
+                        disabled={!newMessage.trim()}
+                        onClick={() => void sendMessage()}
+                      >
+                        <Send className="admin-staff-messages-chat__send-icon" />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="admin-staff-messages-chat__empty">
+                    <div className="admin-staff-messages-chat__empty-icon">
+                      <MessageSquare />
+                    </div>
+                    <h2 className="admin-staff-messages-chat__empty-title">Select a conversation</h2>
+                    <p className="admin-staff-messages-chat__empty-text">
+                      Choose from your existing conversations or start a new one
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </PageLayout>
+
+      {showNewConversationDialog ? (
+        <div className="staff-modal__overlay" onClick={() => setShowNewConversationDialog(false)}>
+          <div className="staff-modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="staff-modal__accent" />
+
+            <div className="staff-modal__header">
               <button
-                onClick={() => setShowCreate(false)}
-                className="px-3 py-2 rounded-md border border-zinc-700 text-xs font-semibold text-zinc-300 hover:bg-zinc-800"
+                className="staff-modal__close"
+                onClick={() => setShowNewConversationDialog(false)}
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+              <div className="staff-modal__icon">
+                <MessagesSquare size={24} />
+              </div>
+              <h2 className="staff-modal__title">New Staff Conversation</h2>
+              <p className="staff-modal__subtitle">Start a conversation with staff members</p>
+            </div>
+
+            <div className="staff-content">
+              <div className="staff-section">
+                <h3 className="staff-section__title">Conversation Type</h3>
+                <div className="staff-field">
+                  <label className="staff-field__label">
+                    Type
+                    <span className="staff-field__required">*</span>
+                  </label>
+                  <select
+                    value={newConversationType}
+                    onChange={(event) => setNewConversationType(event.target.value as 'direct' | 'group')}
+                    className="staff-field__dropdown-trigger"
+                  >
+                    <option value="direct">Direct Message</option>
+                    <option value="group">Group Chat</option>
+                  </select>
+                </div>
+              </div>
+
+              {newConversationType === 'group' ? (
+                <div className="staff-section">
+                  <h3 className="staff-section__title">Group Details</h3>
+                  <div className="staff-field">
+                    <label htmlFor="group-name" className="staff-field__label">
+                      Group Name
+                      <span className="staff-field__required">*</span>
+                    </label>
+                    <input
+                      id="group-name"
+                      value={newConversationName}
+                      onChange={(event) => setNewConversationName(event.target.value)}
+                      type="text"
+                      placeholder="Enter group name"
+                      className="staff-field__input"
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="staff-section">
+                <h3 className="staff-section__title">
+                  {newConversationType === 'direct' ? 'Recipient' : 'Participants'}
+                </h3>
+                <div className="staff-field">
+                  <label className="staff-field__label">
+                    {newConversationType === 'direct' ? 'Select Recipient' : 'Select Participants'}
+                    <span className="staff-field__required">*</span>
+                  </label>
+
+                  {newConversationType === 'direct' ? (
+                    <select
+                      value={typeof selectedStaffMembers === 'number' ? selectedStaffMembers : 0}
+                      onChange={(event) => handleDirectRecipientChange(event.target.value)}
+                      className="staff-field__dropdown-trigger"
+                    >
+                      <option value={0}>Select recipient</option>
+                      {staffMembers.map((staff) => (
+                        <option key={staff.id} value={staff.id}>
+                          {staff.name || staff.email || `User #${staff.id}`}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="staff-participants">
+                      {staffMembers.length === 0 ? (
+                        <p className="staff-participants__empty">No staff members available</p>
+                      ) : (
+                        staffMembers.map((staff) => {
+                          const selected = selectedStaffMemberSet.has(staff.id)
+                          return (
+                            <label key={staff.id} className={`staff-participant ${selected ? 'staff-participant--selected' : ''}`}>
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => handleGroupParticipantToggle(staff.id)}
+                              />
+                              <span className="staff-participant__label">{staff.name || staff.email || `User #${staff.id}`}</span>
+                            </label>
+                          )
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="staff-modal__footer">
+              <button
+                type="button"
+                onClick={() => setShowNewConversationDialog(false)}
+                className="staff-btn staff-btn--secondary"
               >
                 Cancel
               </button>
               <button
-                onClick={() => void handleCreateConversation()}
-                disabled={creating}
-                className="px-3 py-2 rounded-md text-xs font-semibold text-black bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50"
+                onClick={() => void createConversation()}
+                disabled={!canCreateConversation}
+                className="staff-btn staff-btn--primary"
               >
-                {creating ? <Loader2 className="inline-block w-3.5 h-3.5 animate-spin mr-1" /> : <Plus className="inline-block w-3.5 h-3.5 mr-1" />}
-                Create
+                Create Conversation
               </button>
             </div>
           </div>
         </div>
-      )}
-    </PageLayout>
+      ) : null}
+    </div>
   )
 }

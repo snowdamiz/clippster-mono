@@ -1,15 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import {
-  AlertTriangle,
-  Building2,
-  Check,
-  ExternalLink,
-  FileText,
-  Loader2,
-  RefreshCw,
-  Trash2,
-  X,
-} from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { AlertCircle, Building2, Check, ChevronDown, Eye, FileText, Loader2, Trash2, X } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import {
   approveOrgApplication,
@@ -18,97 +9,241 @@ import {
   rejectOrgApplication,
   type OrgApplication,
 } from '@/services/adminApi'
-import { formatDateTime, formatWalletAddress } from './adminFormat'
+import './AdminOrgApplicationsPage.css'
+
+interface ConfirmationModalProps {
+  show: boolean
+  title: string
+  message: string
+  itemName?: string
+  suffix?: string
+  confirmText?: string
+  onClose: () => void
+  onConfirm: () => void
+}
+
+function ConfirmationModal({
+  show,
+  title,
+  message,
+  itemName,
+  suffix = '?',
+  confirmText = 'Delete',
+  onClose,
+  onConfirm,
+}: ConfirmationModalProps) {
+  useEffect(() => {
+    if (!show) return
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onEscape)
+    return () => document.removeEventListener('keydown', onEscape)
+  }, [show, onClose])
+
+  if (!show) return null
+
+  return createPortal(
+    <div className="admin-apps-confirm__overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
+      <div className="admin-apps-confirm" role="dialog" aria-modal="true">
+        <div className="admin-apps-confirm__accent" />
+        <div className="admin-apps-confirm__header">
+          <button className="admin-apps-confirm__close" onClick={onClose}>
+            <X size={18} />
+          </button>
+          <div className="admin-apps-confirm__icon">
+            <AlertCircle size={24} />
+          </div>
+          <h2 className="admin-apps-confirm__title">{title}</h2>
+        </div>
+        <div className="admin-apps-confirm__content">
+          <p className="admin-apps-confirm__message">
+            {message} {itemName ? <span className="admin-apps-confirm__item">"{itemName}"</span> : null}
+            {suffix}
+          </p>
+          <p className="admin-apps-confirm__warning">This action cannot be undone.</p>
+        </div>
+        <div className="admin-apps-confirm__footer">
+          <button className="admin-apps-confirm__btn admin-apps-confirm__btn--secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="admin-apps-confirm__btn admin-apps-confirm__btn--danger" onClick={onConfirm}>
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
+function formatDate(value: string | null) {
+  if (!value) return 'N/A'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'N/A'
+
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatWalletAddress(address: string | null) {
+  if (!address) return 'N/A'
+  if (address.length <= 12) return address
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
+}
+
+function getStatusClass(status: OrgApplication['status']) {
+  switch (status) {
+    case 'pending':
+      return 'admin-apps__status--pending'
+    case 'approved':
+      return 'admin-apps__status--approved'
+    case 'rejected':
+      return 'admin-apps__status--rejected'
+    default:
+      return ''
+  }
+}
 
 const statusOptions: Array<{ label: string; value: '' | OrgApplication['status'] }> = [
-  { label: 'All', value: '' },
+  { label: 'All Status', value: '' },
   { label: 'Pending', value: 'pending' },
   { label: 'Approved', value: 'approved' },
   { label: 'Rejected', value: 'rejected' },
 ]
 
-function statusClass(status: OrgApplication['status']) {
-  if (status === 'approved') return 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-  if (status === 'rejected') return 'bg-red-500/20 text-red-300 border-red-500/30'
-  return 'bg-amber-500/20 text-amber-300 border-amber-500/30'
-}
-
 export function AdminOrgApplicationsPage() {
-  const [rows, setRows] = useState<OrgApplication[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [applications, setApplications] = useState<OrgApplication[]>([])
   const [statusFilter, setStatusFilter] = useState<'' | OrgApplication['status']>('')
-  const [selected, setSelected] = useState<OrgApplication | null>(null)
-  const [notes, setNotes] = useState('')
-  const [processing, setProcessing] = useState<'approve' | 'reject' | 'delete' | null>(null)
+  const [showStatusMenu, setShowStatusMenu] = useState(false)
+  const statusFilterMenuRef = useRef<HTMLDivElement | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await listOrgApplications(statusFilter || undefined)
-      setRows(data)
-      if (selected) {
-        const fresh = data.find((x) => x.id === selected.id) || null
-        setSelected(fresh)
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load organization applications')
-    } finally {
-      setLoading(false)
-    }
-  }, [selected, statusFilter])
+  const [deletingAppId, setDeletingAppId] = useState<number | null>(null)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [appToDelete, setAppToDelete] = useState<OrgApplication | null>(null)
+
+  const [selectedApp, setSelectedApp] = useState<OrgApplication | null>(null)
+  const [adminNotes, setAdminNotes] = useState('')
+  const [processing, setProcessing] = useState(false)
+  const [actionType, setActionType] = useState<'approve' | 'reject' | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const selectedStatusLabel = useMemo(() => {
+    const currentOption = statusOptions.find((option) => option.value === statusFilter)
+    return currentOption?.label || 'All Status'
+  }, [statusFilter])
 
   useEffect(() => {
-    load()
-  }, [load])
+    if (!showStatusMenu) return
 
-  function openDetails(app: OrgApplication) {
-    setSelected(app)
-    setNotes(app.admin_notes || '')
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (statusFilterMenuRef.current && !statusFilterMenuRef.current.contains(event.target as Node)) {
+        setShowStatusMenu(false)
+      }
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowStatusMenu(false)
+    }
+
+    document.addEventListener('mousedown', handleOutsideClick)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [showStatusMenu])
+
+  const fetchApplications = useCallback(async () => {
+    try {
+      const data = await listOrgApplications(statusFilter || undefined)
+      setApplications(data)
+    } catch (error) {
+      console.error('Failed to fetch applications:', error)
+    }
+  }, [statusFilter])
+
+  useEffect(() => {
+    void fetchApplications()
+  }, [fetchApplications])
+
+  const viewApplication = (app: OrgApplication) => {
+    setSelectedApp(app)
+    setAdminNotes('')
+    setActionError(null)
   }
 
-  async function handleApprove() {
-    if (!selected) return
-    setProcessing('approve')
+  const approveApplication = async () => {
+    if (!selectedApp || processing) return
+
+    setProcessing(true)
+    setActionType('approve')
+    setActionError(null)
+
     try {
-      await approveOrgApplication(selected.id, notes)
-      await load()
-      setSelected(null)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to approve application')
+      await approveOrgApplication(selectedApp.id, adminNotes.trim() || null)
+      await fetchApplications()
+      setSelectedApp(null)
+      setAdminNotes('')
+    } catch (error: any) {
+      console.error('Failed to approve application:', error)
+      setActionError(error?.response?.data?.error || error?.message || 'An error occurred while approving the application')
     } finally {
-      setProcessing(null)
+      setProcessing(false)
+      setActionType(null)
     }
   }
 
-  async function handleReject() {
-    if (!selected) return
-    setProcessing('reject')
+  const rejectApplication = async () => {
+    if (!selectedApp || processing) return
+
+    setProcessing(true)
+    setActionType('reject')
+    setActionError(null)
+
     try {
-      await rejectOrgApplication(selected.id, notes)
-      await load()
-      setSelected(null)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to reject application')
+      await rejectOrgApplication(selectedApp.id, adminNotes.trim() || null)
+      await fetchApplications()
+      setSelectedApp(null)
+      setAdminNotes('')
+    } catch (error: any) {
+      console.error('Failed to reject application:', error)
+      setActionError(error?.response?.data?.error || error?.message || 'An error occurred while rejecting the application')
     } finally {
-      setProcessing(null)
+      setProcessing(false)
+      setActionType(null)
     }
   }
 
-  async function handleDelete(app: OrgApplication) {
-    const ok = window.confirm(`Delete application from ${app.name}?`)
-    if (!ok) return
+  const confirmDeleteApplication = (app: OrgApplication) => {
+    setAppToDelete(app)
+    setShowDeleteDialog(true)
+  }
 
-    setProcessing('delete')
+  const handleDeleteDialogClose = () => {
+    setShowDeleteDialog(false)
+    setAppToDelete(null)
+  }
+
+  const deleteApplicationConfirmed = async () => {
+    if (!appToDelete) return
+
+    setDeletingAppId(appToDelete.id)
+
     try {
-      await deleteOrgApplication(app.id)
-      if (selected?.id === app.id) setSelected(null)
-      await load()
-    } catch (err: any) {
-      setError(err?.message || 'Failed to delete application')
+      await deleteOrgApplication(appToDelete.id)
+      await fetchApplications()
+    } catch (error) {
+      console.error('Failed to delete application:', error)
     } finally {
-      setProcessing(null)
+      setDeletingAppId(null)
+      setShowDeleteDialog(false)
+      setAppToDelete(null)
     }
   }
 
@@ -117,206 +252,297 @@ export function AdminOrgApplicationsPage() {
       icon={FileText}
       title="Organization Applications"
       actions={
-        <button
-          onClick={load}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-zinc-200 border border-zinc-700 bg-transparent hover:bg-zinc-800 disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          Refresh
-        </button>
+        <div className="admin-apps__filter-dropdown" ref={statusFilterMenuRef}>
+          <button
+            type="button"
+            className={`admin-apps__dropdown-trigger ${showStatusMenu ? 'admin-apps__dropdown-trigger--active' : ''}`}
+            aria-haspopup="menu"
+            aria-expanded={showStatusMenu}
+            onClick={() => setShowStatusMenu((previous) => !previous)}
+          >
+            <span>{selectedStatusLabel}</span>
+            <ChevronDown
+              className={`admin-apps__dropdown-chevron ${showStatusMenu ? 'admin-apps__dropdown-chevron--open' : ''}`}
+            />
+          </button>
+
+          {showStatusMenu ? (
+            <div className="admin-apps__dropdown-menu" role="menu" aria-label="Filter applications by status">
+              {statusOptions.map((option) => (
+                <button
+                  key={option.value || 'all'}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={statusFilter === option.value}
+                  className={`admin-apps__dropdown-item ${statusFilter === option.value ? 'admin-apps__dropdown-item--active' : ''}`}
+                  onClick={() => {
+                    setStatusFilter(option.value)
+                    setShowStatusMenu(false)
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
       }
     >
-      <div className="p-6 space-y-4 max-w-[1500px] w-full mx-auto">
-        <div>
-          <h1 className="m-0 text-2xl font-bold text-white">Organization Applications</h1>
-          <p className="m-0 mt-1 text-sm text-zinc-400">Review and process organization account requests.</p>
-        </div>
-
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 flex items-center gap-2">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as '' | OrgApplication['status'])}
-            className="h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-          >
-            {statusOptions.map((option) => (
-              <option key={option.label} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <button onClick={load} className="h-9 px-3 rounded-md border border-zinc-700 text-xs font-semibold text-zinc-200 hover:bg-zinc-800">
-            Apply
-          </button>
-          <span className="ml-auto text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            {rows.length} application{rows.length === 1 ? '' : 's'}
-          </span>
-        </div>
-
-        {error && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            {error}
+      <div className="admin-apps-page">
+        <div className="admin-apps">
+          <div className="admin-apps__heading">
+            <h1 className="admin-apps__title">Organization Applications</h1>
+            <p className="admin-apps__subtitle">Review and approve organization account requests</p>
           </div>
-        )}
 
-        {loading && rows.length === 0 ? (
-          <div className="py-12 flex items-center justify-center text-zinc-400">
-            <Loader2 className="w-5 h-5 animate-spin mr-2" />
-            Loading applications...
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-10 text-center text-zinc-400">No applications found.</div>
-        ) : (
-          <div className="overflow-auto rounded-xl border border-zinc-800 bg-zinc-900/40">
-            <table className="w-full min-w-[1200px] text-sm border-collapse">
-              <thead className="bg-zinc-900/80">
-                <tr className="text-left text-zinc-400">
-                  <th className="px-3 py-2 border-b border-zinc-800">Organization</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Applicant</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Team Size</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Status</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Submitted</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((app) => (
-                  <tr key={app.id} className="border-b border-zinc-800/70">
-                    <td className="px-3 py-2">
-                      <div className="flex items-start gap-2">
-                        <div className="w-9 h-9 rounded-md bg-cyan-500/15 border border-cyan-500/25 flex items-center justify-center shrink-0">
-                          <Building2 className="w-4 h-4 text-cyan-300" />
-                        </div>
-                        <div>
-                          <p className="m-0 text-zinc-100 font-medium">{app.name}</p>
-                          <p className="m-0 mt-0.5 text-xs text-zinc-500 line-clamp-1">{app.description}</p>
-                          {app.website && (
-                            <a
-                              href={app.website}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 mt-1 text-xs text-cyan-300 hover:text-cyan-200"
+          {applications.length > 0 ? (
+            <div className="admin-apps__table-wrapper">
+              <div className="admin-apps__table-scroll">
+                <table className="admin-apps__table">
+                  <thead className="admin-apps__thead">
+                    <tr>
+                      <th className="admin-apps__th">ID</th>
+                      <th className="admin-apps__th">Organization Name</th>
+                      <th className="admin-apps__th">User</th>
+                      <th className="admin-apps__th">Team Size</th>
+                      <th className="admin-apps__th">Status</th>
+                      <th className="admin-apps__th">Submitted</th>
+                      <th className="admin-apps__th">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="admin-apps__tbody">
+                    {applications.map((app) => (
+                      <tr key={app.id} className="admin-apps__row">
+                        <td className="admin-apps__td">
+                          <span className="admin-apps__id">#{app.id}</span>
+                        </td>
+                        <td className="admin-apps__td">
+                          <div className="admin-apps__org-cell">
+                            <p className="admin-apps__org-name">{app.name}</p>
+                            <p className="admin-apps__org-desc">{app.description}</p>
+                          </div>
+                        </td>
+                        <td className="admin-apps__td">
+                          <div className="admin-apps__user-cell">
+                            <p className="admin-apps__user-email">{app.user?.email || 'N/A'}</p>
+                            {app.contact_email !== app.user?.email ? (
+                              <p className="admin-apps__user-contact">{app.contact_email}</p>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="admin-apps__td">
+                          <span className="admin-apps__team-size">{app.team_size}</span>
+                        </td>
+                        <td className="admin-apps__td">
+                          <span className={`admin-apps__status ${getStatusClass(app.status)}`}>{app.status.toUpperCase()}</span>
+                        </td>
+                        <td className="admin-apps__td">
+                          <span className="admin-apps__date">{formatDate(app.inserted_at)}</span>
+                        </td>
+                        <td className="admin-apps__td">
+                          <div className="admin-apps__actions">
+                            {app.status === 'pending' ? (
+                              <button className="admin-apps__btn admin-apps__btn--view" onClick={() => viewApplication(app)}>
+                                <Eye className="admin-apps__btn-icon" />
+                                View
+                              </button>
+                            ) : null}
+                            <button
+                              className="admin-apps__btn admin-apps__btn--delete"
+                              disabled={deletingAppId === app.id}
+                              onClick={() => confirmDeleteApplication(app)}
                             >
-                              Website
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-zinc-300 text-xs">
-                      <p className="m-0">{app.user?.email || app.contact_email || 'N/A'}</p>
-                      <p className="m-0 mt-0.5 font-mono text-zinc-500">{formatWalletAddress(app.user?.wallet_address)}</p>
-                    </td>
-                    <td className="px-3 py-2 text-zinc-300">{app.team_size || 'N/A'}</td>
-                    <td className="px-3 py-2">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold border ${statusClass(app.status)}`}>
-                        {app.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-zinc-500 text-xs">{formatDateTime(app.inserted_at)}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => openDetails(app)}
-                          className="px-2 py-1 rounded border border-zinc-700 text-xs text-zinc-200 hover:bg-zinc-800"
-                        >
-                          Review
-                        </button>
-                        <button
-                          onClick={() => handleDelete(app)}
-                          disabled={processing === 'delete'}
-                          className="px-2 py-1 rounded border border-red-500/30 bg-red-500/15 text-xs text-red-300 hover:bg-red-500/25 disabled:opacity-50"
-                        >
-                          <Trash2 className="inline-block w-3 h-3 mr-1" />
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                              {deletingAppId === app.id ? (
+                                <Loader2 className="admin-apps__btn-icon admin-apps__btn-icon--spin" />
+                              ) : (
+                                <Trash2 className="admin-apps__btn-icon" />
+                              )}
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="admin-apps__empty">
+              <div className="admin-apps__empty-icon">
+                <FileText className="admin-apps__empty-icon-svg" />
+              </div>
+              <p className="admin-apps__empty-text">No applications found</p>
+            </div>
+          )}
+        </div>
       </div>
 
-      {selected && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setSelected(null)}>
-          <div className="w-full max-w-4xl rounded-xl border border-zinc-700 bg-[#111113] p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="m-0 text-lg font-semibold text-white">{selected.name}</h2>
-                <p className="m-0 mt-1 text-xs text-zinc-500">Application #{selected.id}</p>
-              </div>
-              <button onClick={() => setSelected(null)} className="text-zinc-500 hover:text-zinc-200">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+      {selectedApp
+        ? createPortal(
+            <div className="admin-apps__modal-overlay" onClick={(event) => event.target === event.currentTarget && setSelectedApp(null)}>
+              <div className="admin-apps__modal" role="dialog" aria-modal="true">
+                <div className="admin-apps__modal-accent" />
 
-            <div className="mt-4 grid md:grid-cols-2 gap-4">
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-                <h3 className="m-0 text-sm font-semibold text-white">Organization Info</h3>
-                <p className="m-0 mt-2 text-sm text-zinc-300">{selected.description}</p>
-                <p className="m-0 mt-2 text-xs text-zinc-500">Team size: {selected.team_size || 'N/A'}</p>
-                <p className="m-0 mt-1 text-xs text-zinc-500">Use case: {selected.use_case || 'N/A'}</p>
-                {selected.website && (
-                  <a href={selected.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-2 text-xs text-cyan-300">
-                    Visit website
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-              </div>
+                <div className="admin-apps__modal-header">
+                  <button
+                    className="admin-apps__modal-close"
+                    onClick={() => setSelectedApp(null)}
+                    disabled={processing}
+                    title="Close"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
 
-              <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-4">
-                <h3 className="m-0 text-sm font-semibold text-white">Applicant</h3>
-                <p className="m-0 mt-2 text-sm text-zinc-300">{selected.user?.email || selected.contact_email || 'N/A'}</p>
-                <p className="m-0 mt-1 text-xs text-zinc-500">{formatWalletAddress(selected.user?.wallet_address)}</p>
-                <p className="m-0 mt-2 text-xs text-zinc-500">Submitted: {formatDateTime(selected.inserted_at)}</p>
-                {selected.reviewed_by && (
-                  <p className="m-0 mt-1 text-xs text-zinc-500">
-                    Reviewed by {selected.reviewed_by.email || 'Unknown'} on {formatDateTime(selected.reviewed_at)}
-                  </p>
-                )}
-              </div>
-            </div>
+                <div className="admin-apps__modal-content">
+                  <div className="admin-apps__modal-header-card">
+                    {selectedApp.logo_url ? (
+                      <div className="admin-apps__modal-logo">
+                        <img src={selectedApp.logo_url} alt={selectedApp.name} className="admin-apps__modal-logo-img" />
+                      </div>
+                    ) : (
+                      <div className="admin-apps__modal-logo admin-apps__modal-logo--fallback">
+                        <Building2 size={32} />
+                      </div>
+                    )}
+                    <div className="admin-apps__modal-header-info">
+                      <h2 className="admin-apps__modal-title">{selectedApp.name}</h2>
+                      <span
+                        className={[
+                          'admin-apps__modal-status',
+                          selectedApp.status === 'pending'
+                            ? 'admin-apps__modal-status--pending'
+                            : selectedApp.status === 'approved'
+                              ? 'admin-apps__modal-status--approved'
+                              : 'admin-apps__modal-status--rejected',
+                        ].join(' ')}
+                      >
+                        {selectedApp.status}
+                      </span>
+                    </div>
+                  </div>
 
-            <div className="mt-4">
-              <label className="block text-xs text-zinc-400">
-                Admin Notes
-                <textarea
-                  rows={4}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="mt-1 w-full px-3 py-2 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                />
-              </label>
-            </div>
+                  <div className="admin-apps__modal-section">
+                    <h3 className="admin-apps__modal-section-title">Organization Details</h3>
+                    <div className="admin-apps__modal-grid">
+                      <div className="admin-apps__modal-grid-item">
+                        <span className="admin-apps__modal-label">Description</span>
+                        <p className="admin-apps__modal-value">{selectedApp.description}</p>
+                      </div>
+                      {selectedApp.website ? (
+                        <div className="admin-apps__modal-grid-item">
+                          <span className="admin-apps__modal-label">Website</span>
+                          <a href={selectedApp.website} target="_blank" rel="noreferrer" className="admin-apps__modal-link">
+                            {selectedApp.website}
+                          </a>
+                        </div>
+                      ) : null}
+                      <div className="admin-apps__modal-grid-item">
+                        <span className="admin-apps__modal-label">Team Size</span>
+                        <span className="admin-apps__modal-value">{selectedApp.team_size} members</span>
+                      </div>
+                    </div>
+                  </div>
 
-            {selected.status === 'pending' && (
-              <div className="mt-5 flex justify-end gap-2">
-                <button
-                  onClick={handleReject}
-                  disabled={processing !== null}
-                  className="px-3 py-2 rounded-md border border-red-500/30 bg-red-500/15 text-xs font-semibold text-red-300 hover:bg-red-500/25 disabled:opacity-50"
-                >
-                  {processing === 'reject' ? <Loader2 className="inline-block w-3.5 h-3.5 animate-spin mr-1" /> : null}
-                  Reject
-                </button>
-                <button
-                  onClick={handleApprove}
-                  disabled={processing !== null}
-                  className="px-3 py-2 rounded-md border border-emerald-500/30 bg-emerald-500/15 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-50"
-                >
-                  {processing === 'approve' ? <Loader2 className="inline-block w-3.5 h-3.5 animate-spin mr-1" /> : <Check className="inline-block w-3.5 h-3.5 mr-1" />}
-                  Approve
-                </button>
+                  <div className="admin-apps__modal-section">
+                    <h3 className="admin-apps__modal-section-title">Use Case</h3>
+                    <div className="admin-apps__modal-use-case">
+                      <p className="admin-apps__modal-text">{selectedApp.use_case}</p>
+                    </div>
+                  </div>
+
+                  <div className="admin-apps__modal-section">
+                    <h3 className="admin-apps__modal-section-title">Applicant Information</h3>
+                    <div className="admin-apps__modal-grid">
+                      <div className="admin-apps__modal-grid-item">
+                        <span className="admin-apps__modal-label">User Email</span>
+                        <span className="admin-apps__modal-value">{selectedApp.user?.email || 'N/A'}</span>
+                      </div>
+                      <div className="admin-apps__modal-grid-item">
+                        <span className="admin-apps__modal-label">Contact Email</span>
+                        <span className="admin-apps__modal-value">{selectedApp.contact_email}</span>
+                      </div>
+                      {selectedApp.user?.wallet_address ? (
+                        <div className="admin-apps__modal-grid-item">
+                          <span className="admin-apps__modal-label">Wallet Address</span>
+                          <code className="admin-apps__modal-code">{formatWalletAddress(selectedApp.user.wallet_address)}</code>
+                        </div>
+                      ) : null}
+                      <div className="admin-apps__modal-grid-item">
+                        <span className="admin-apps__modal-label">Submitted</span>
+                        <span className="admin-apps__modal-value">{formatDate(selectedApp.inserted_at)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {selectedApp.status === 'pending' ? (
+                    <div className="admin-apps__modal-section">
+                      <h3 className="admin-apps__modal-section-title">Admin Notes (Optional)</h3>
+                      <textarea
+                        value={adminNotes}
+                        onChange={(event) => setAdminNotes(event.target.value)}
+                        rows={3}
+                        placeholder="Add notes about this decision (visible to the applicant)..."
+                        className="admin-apps__modal-textarea"
+                      />
+                    </div>
+                  ) : null}
+
+                  {selectedApp.admin_notes ? (
+                    <div className="admin-apps__modal-section">
+                      <h3 className="admin-apps__modal-section-title">Review Notes</h3>
+                      <div className="admin-apps__modal-review-box">
+                        <p className="admin-apps__modal-text">{selectedApp.admin_notes}</p>
+                        {selectedApp.reviewed_by ? (
+                          <div className="admin-apps__modal-meta">
+                            Reviewed by {selectedApp.reviewed_by.email} on {formatDate(selectedApp.reviewed_at)}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {actionError ? (
+                    <div className="admin-apps__modal-alert admin-apps__modal-alert--error">
+                      <AlertCircle size={16} />
+                      <p className="admin-apps__modal-alert-text">{actionError}</p>
+                    </div>
+                  ) : null}
+                </div>
+
+                {selectedApp.status === 'pending' ? (
+                  <div className="admin-apps__modal-footer">
+                    <button onClick={rejectApplication} disabled={processing} className="admin-apps__modal-btn admin-apps__modal-btn--secondary">
+                      {processing && actionType === 'reject' ? <Loader2 size={16} className="admin-apps__spinner" /> : <X size={16} />}
+                      Reject
+                    </button>
+                    <button onClick={approveApplication} disabled={processing} className="admin-apps__modal-btn admin-apps__modal-btn--primary">
+                      {processing && actionType === 'approve' ? (
+                        <Loader2 size={16} className="admin-apps__spinner" />
+                      ) : (
+                        <Check size={16} />
+                      )}
+                      Approve &amp; Create Organization
+                    </button>
+                  </div>
+                ) : null}
               </div>
-            )}
-          </div>
-        </div>
-      )}
+            </div>,
+            document.body,
+          )
+        : null}
+
+      <ConfirmationModal
+        show={showDeleteDialog}
+        title="Delete Application"
+        message="Are you sure you want to delete the application for"
+        itemName={appToDelete?.name || ''}
+        suffix="?"
+        confirmText="Delete"
+        onClose={handleDeleteDialogClose}
+        onConfirm={deleteApplicationConfirmed}
+      />
     </PageLayout>
   )
 }

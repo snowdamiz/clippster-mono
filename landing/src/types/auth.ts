@@ -13,6 +13,7 @@ export interface AuthUser {
 
 export interface AuthState {
   isAuthenticated: boolean
+  authChecked: boolean
   user: AuthUser | null
   token: string | null
   authProvider: 'wallet' | 'google' | 'email' | null

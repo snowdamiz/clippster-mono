@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useLocation } from 'react-router-dom'
 import {
   Activity,
   BarChart3,
@@ -17,61 +17,22 @@ import {
   Users,
   Building2,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { HubToolSection, type HubTool } from '@/components/dashboard/HubToolSection'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useAuth } from '@/hooks/useAuth'
 import { getAdminUnreadSupportCount } from '@/services/adminApi'
 
-interface HubTool {
-  id: string
-  title: string
-  description: string
-  icon: LucideIcon
-  route: string
-  badge?: number
-}
-
-function ToolGrid({ title, tools }: { title: string; tools: HubTool[] }) {
-  if (!tools.length) return null
-  return (
-    <section>
-      <h2 className="m-0 mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">{title}</h2>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        {tools.map((tool) => {
-          const Icon = tool.icon
-          return (
-            <Link
-              key={tool.id}
-              to={tool.route}
-              className="no-underline border border-zinc-800 rounded-xl bg-zinc-900/40 hover:bg-zinc-900/70 hover:border-zinc-700 transition-colors p-4 flex items-start gap-3"
-            >
-              <div className="relative">
-                <div className="w-10 h-10 rounded-lg bg-zinc-800 text-cyan-400 flex items-center justify-center">
-                  <Icon className="w-5 h-5" />
-                </div>
-                {tool.badge && tool.badge > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 min-w-4 h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
-                    {tool.badge > 99 ? '99+' : tool.badge}
-                  </span>
-                )}
-              </div>
-              <div className="min-w-0">
-                <h3 className="m-0 text-sm font-semibold text-white">{tool.title}</h3>
-                <p className="m-0 mt-1 text-xs text-zinc-400 leading-relaxed">{tool.description}</p>
-              </div>
-            </Link>
-          )
-        })}
-      </div>
-    </section>
-  )
+function getAdminBasePath(pathname: string): '/admin' | '/dashboard/admin' {
+  return pathname.startsWith('/dashboard/admin') ? '/dashboard/admin' : '/admin'
 }
 
 export function AdminHubPage() {
+  const location = useLocation()
   const { user } = useAuth()
   const [supportUnread, setSupportUnread] = useState(0)
   const isAdmin = Boolean(user?.is_admin)
   const isModerator = Boolean(user?.is_moderator)
+  const adminBasePath = getAdminBasePath(location.pathname)
 
   useEffect(() => {
     let cancelled = false
@@ -100,14 +61,14 @@ export function AdminHubPage() {
           title: 'Users',
           description: 'Manage user accounts, roles, credits, and subscriptions',
           icon: Users,
-          route: '/admin/users',
+          route: `${adminBasePath}/users`,
         },
         {
           id: 'organizations',
           title: 'Organizations',
           description: 'Manage organizations, subscriptions, and credits',
           icon: Building2,
-          route: '/admin/organizations',
+          route: `${adminBasePath}/organizations`,
         },
       )
     }
@@ -117,11 +78,11 @@ export function AdminHubPage() {
         title: 'Org Applications',
         description: 'Review and process organization applications',
         icon: FileText,
-        route: '/admin/org-applications',
+        route: `${adminBasePath}/org-applications`,
       })
     }
     return tools
-  }, [isAdmin, isModerator])
+  }, [adminBasePath, isAdmin, isModerator])
 
   const contentTools = useMemo<HubTool[]>(
     () =>
@@ -132,40 +93,41 @@ export function AdminHubPage() {
               title: 'Bug Reports',
               description: 'Track and triage user-reported issues',
               icon: FileText,
-              route: '/admin/bug-reports',
+              route: `${adminBasePath}/bug-reports`,
             },
             {
               id: 'ai-usage',
               title: 'AI Usage',
               description: 'Monitor AI token and provider usage',
               icon: Activity,
-              route: '/admin/ai-usage',
+              route: `${adminBasePath}/ai-usage`,
             },
             {
               id: 'analytics',
               title: 'Analytics',
               description: 'Review platform-level event analytics',
               icon: BarChart3,
-              route: '/admin/analytics',
+              route: `${adminBasePath}/analytics`,
             },
             {
               id: 'customer-service',
               title: 'Customer Service',
               description: 'Manage support conversations',
               icon: Headset,
-              route: '/admin/customer-service',
-              badge: supportUnread || undefined,
+              route: `${adminBasePath}/customer-service`,
+              stat: supportUnread || undefined,
+              statLabel: 'unread',
             },
             {
               id: 'staff-messages',
               title: 'Staff Messages',
               description: 'Internal moderator/admin messaging',
               icon: MessageSquare,
-              route: '/admin/staff-messages',
+              route: `${adminBasePath}/staff-messages`,
             },
           ]
         : [],
-    [isAdmin, isModerator, supportUnread],
+    [adminBasePath, isAdmin, isModerator, supportUnread],
   )
 
   const revenueTools = useMemo<HubTool[]>(
@@ -177,11 +139,11 @@ export function AdminHubPage() {
               title: 'Affiliates',
               description: 'Manage affiliates, referrals, and payouts',
               icon: Handshake,
-              route: '/admin/affiliates',
+              route: `${adminBasePath}/affiliates`,
             },
           ]
         : [],
-    [isAdmin],
+    [adminBasePath, isAdmin],
   )
 
   const systemTools = useMemo<HubTool[]>(
@@ -193,39 +155,39 @@ export function AdminHubPage() {
               title: 'Beta Codes',
               description: 'Generate and manage beta access codes',
               icon: KeyRound,
-              route: '/admin/beta-codes',
+              route: `${adminBasePath}/beta-codes`,
             },
             {
               id: 'discount-codes',
               title: 'Discount Codes',
               description: 'Create and manage promo codes',
               icon: Percent,
-              route: '/admin/discount-codes',
+              route: `${adminBasePath}/discount-codes`,
             },
             {
               id: 'waitlist',
               title: 'Waitlist',
               description: 'View waitlist signups and conversion status',
               icon: UserPlus,
-              route: '/admin/waitlist',
+              route: `${adminBasePath}/waitlist`,
             },
             {
               id: 'mod-logs',
               title: 'Moderator Logs',
               description: 'Audit moderator actions across the platform',
               icon: ScrollText,
-              route: '/admin/mod-logs',
+              route: `${adminBasePath}/mod-logs`,
             },
             {
               id: 'settings',
               title: 'Settings',
               description: 'Feature flags and admin platform settings',
               icon: Settings,
-              route: '/admin/settings',
+              route: `${adminBasePath}/settings`,
             },
           ]
         : [],
-    [isAdmin],
+    [adminBasePath, isAdmin],
   )
 
   return (
@@ -243,16 +205,16 @@ export function AdminHubPage() {
         </span>
       }
     >
-      <div className="p-6 max-w-[1400px] w-full mx-auto space-y-6">
+      <div className="flex flex-col gap-6 p-6 max-w-[1400px] mx-auto w-full">
         <div>
-          <h1 className="m-0 text-2xl font-bold text-white">Administration Dashboard</h1>
-          <p className="m-0 mt-1 text-sm text-zinc-400">Manage users, organizations, and system operations</p>
+          <h1 className="text-2xl font-bold text-white mb-[0.2rem] tracking-[-0.02em] m-0">Administration Dashboard</h1>
+          <p className="text-sm text-zinc-500 leading-relaxed m-0">Manage users, organizations, and system operations</p>
         </div>
 
-        <ToolGrid title="Users & Access" tools={usersTools} />
-        <ToolGrid title="Content & Reports" tools={contentTools} />
-        <ToolGrid title="Revenue" tools={revenueTools} />
-        <ToolGrid title="System" tools={systemTools} />
+        <HubToolSection title="Users & Access" tools={usersTools} />
+        <HubToolSection title="Content & Reports" tools={contentTools} />
+        <HubToolSection title="Revenue" tools={revenueTools} />
+        <HubToolSection title="System" tools={systemTools} />
       </div>
     </PageLayout>
   )

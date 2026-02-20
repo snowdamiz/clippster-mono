@@ -43,12 +43,12 @@ Content creators can generate, edit, and distribute short-form clips from long-f
 
 - [ ] Web admin route parity (`/admin/*`)
 - [ ] Website admin/moderator route guard
-- [ ] Embedded app-admin rendering in website with auth sync bridge
+- [ ] Native React admin pages with app-parity UI and behavior
 - [ ] Verify full admin page coverage from website deep links
 
 ### Out of Scope
 
-- Rewriting admin pages into a second independently maintained frontend surface
+- Running the Tauri/Vue admin app inside the website via iframe/embed
 - New admin backend APIs (reuse existing `/api/admin/*` endpoints)
 - Organization dashboard redesign (scope is admin web parity only)
 - TikTok/YouTube net-new platform integrations
@@ -65,16 +65,15 @@ Content creators can generate, edit, and distribute short-form clips from long-f
 - **Parity requirement**: UI and behavior must match app admin implementation
 - **Access control**: Admin routes must enforce `is_admin` and allow moderator scope parity
 - **No backend churn**: Reuse existing `/api/admin/*` and support endpoints
-- **Operational safety**: Avoid duplicating 20+ complex admin pages into divergent implementations
-- **Config**: Website must resolve client app URL for embedded admin rendering
+- **Operational safety**: Keep one backend contract and preserve app parity as admin screens evolve
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Render app admin UI in website via embedded route | Guarantees exact UI/behavior parity without maintaining a second admin codebase | Adopted |
+| Recreate app admin dashboard natively in landing React | Required by product direction; avoids browser execution of Tauri-specific runtime code | Adopted |
 | Add explicit website admin route guard | Keeps permissions enforcement aligned with app admin access rules | Adopted |
-| Add cross-context auth sync message (`clippster-auth-sync`) | Ensures embedded admin remains authenticated in website flow | Adopted |
+| Support both `/admin/*` and `/dashboard/admin/*` route surfaces | Preserves deep-link compatibility while keeping one native React admin surface | Adopted |
 
 ---
 *Last updated: 2026-02-20 after milestone v1.1 started*

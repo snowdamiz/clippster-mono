@@ -1,227 +1,293 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, CheckCircle2, Copy, KeyRound, Loader2, Plus, RefreshCw, XCircle } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle, Copy, KeyRound, Loader2, Plus, RefreshCw, XCircle } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { generateBetaCodes, listBetaCodes, type BetaCode, type BetaCodeStats } from '@/services/adminApi'
-import { formatDateTime, formatWalletAddress } from './adminFormat'
+import './AdminBetaCodesPage.css'
+
+function formatWalletAddress(address: string) {
+  if (!address) return ''
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
+}
+
+function formatDate(dateString: string) {
+  if (!dateString) return 'N/A'
+  try {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return 'Invalid date'
+  }
+}
 
 export function AdminBetaCodesPage() {
-  const [rows, setRows] = useState<BetaCode[]>([])
-  const [stats, setStats] = useState<BetaCodeStats>({ total: 0, used: 0, available: 0 })
-  const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState(false)
-  const [count, setCount] = useState(10)
+  const [betaCodes, setBetaCodes] = useState<BetaCode[]>([])
+  const [betaCodeStats, setBetaCodeStats] = useState<BetaCodeStats>({ total: 0, used: 0, available: 0 })
+  const [loading, setLoading] = useState(false)
+  const [generatingCodes, setGeneratingCodes] = useState(false)
+  const [generateCodeCount, setGenerateCodeCount] = useState(10)
   const [error, setError] = useState<string | null>(null)
-  const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [copiedCodeId, setCopiedCodeId] = useState<number | null>(null)
 
-  const availableCodes = useMemo(() => rows.filter((x) => !x.used), [rows])
+  const availableBetaCodes = useMemo(() => betaCodes.filter((code) => !code.used), [betaCodes])
 
-  const load = useCallback(async () => {
+  const fetchBetaCodes = useCallback(async () => {
     setLoading(true)
     setError(null)
+
     try {
-      const data = await listBetaCodes()
-      setRows(data.codes)
-      setStats(data.stats)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load beta codes')
+      const result = await listBetaCodes()
+      setBetaCodes(result.codes)
+      setBetaCodeStats(result.stats)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error occurred')
     } finally {
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => {
-    load()
-  }, [load])
-
-  async function handleGenerate() {
-    if (!Number.isFinite(count) || count < 1 || count > 100) {
-      setError('Count must be between 1 and 100')
+  const handleGenerateCodes = useCallback(async () => {
+    if (generateCodeCount < 1 || generateCodeCount > 100) {
+      setError('Please enter a number between 1 and 100')
       return
     }
 
-    setGenerating(true)
+    setGeneratingCodes(true)
     setError(null)
-    try {
-      await generateBetaCodes(count)
-      await load()
-    } catch (err: any) {
-      setError(err?.message || 'Failed to generate beta codes')
-    } finally {
-      setGenerating(false)
-    }
-  }
 
-  async function copyCode(code: string, id: number) {
+    try {
+      await generateBetaCodes(generateCodeCount)
+      await fetchBetaCodes()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error occurred')
+    } finally {
+      setGeneratingCodes(false)
+    }
+  }, [fetchBetaCodes, generateCodeCount])
+
+  const copyBetaCode = useCallback(async (code: string, codeId: number) => {
     try {
       await navigator.clipboard.writeText(code)
-      setCopiedId(id)
-      window.setTimeout(() => setCopiedId(null), 1600)
-    } catch {
-      setError('Failed to copy code to clipboard')
+      setCopiedCodeId(codeId)
+      window.setTimeout(() => {
+        setCopiedCodeId(null)
+      }, 2000)
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err)
     }
-  }
+  }, [])
 
-  async function copyAllAvailable() {
-    const content = availableCodes.map((x) => x.code).join('\n')
-    if (!content) {
-      setError('No available beta codes to copy')
+  const copyAllAvailableCodes = useCallback(async () => {
+    const availableCodes = betaCodes
+      .filter((code) => !code.used)
+      .map((code) => code.code)
+      .join('\n')
+
+    if (!availableCodes) {
+      setError('No available codes to copy')
       return
     }
+
     try {
-      await navigator.clipboard.writeText(content)
-    } catch {
-      setError('Failed to copy available codes')
+      await navigator.clipboard.writeText(availableCodes)
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err)
     }
-  }
+  }, [betaCodes])
+
+  useEffect(() => {
+    void fetchBetaCodes()
+  }, [fetchBetaCodes])
 
   return (
     <PageLayout
-      icon={KeyRound}
       title="Beta Codes"
+      icon={KeyRound}
       actions={
-        <button
-          onClick={load}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-zinc-200 border border-zinc-700 bg-transparent hover:bg-zinc-800 disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          Refresh
+        <button className="admin-beta__action-btn" disabled={loading} onClick={() => void fetchBetaCodes()}>
+          {!loading ? (
+            <RefreshCw className="admin-beta__action-icon" />
+          ) : (
+            <Loader2 className="admin-beta__action-icon admin-beta__action-icon--spin" />
+          )}
+          Refresh Codes
         </button>
       }
     >
-      <div className="p-6 space-y-4 max-w-[1400px] w-full mx-auto">
-        <div>
-          <h1 className="m-0 text-2xl font-bold text-white">Beta Codes</h1>
-          <p className="m-0 mt-1 text-sm text-zinc-400">Generate and manage beta access codes.</p>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <p className="m-0 text-xs uppercase tracking-wide text-zinc-500">Total Codes</p>
-            <p className="m-0 mt-2 text-2xl font-bold text-white">{stats.total}</p>
-          </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <p className="m-0 text-xs uppercase tracking-wide text-zinc-500">Available</p>
-            <p className="m-0 mt-2 text-2xl font-bold text-emerald-300">{stats.available}</p>
-          </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <p className="m-0 text-xs uppercase tracking-wide text-zinc-500">Used</p>
-            <p className="m-0 mt-2 text-2xl font-bold text-amber-300">{stats.used}</p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 flex flex-wrap items-center gap-3">
-          <div>
-            <p className="m-0 text-sm font-semibold text-white">Generate Beta Codes</p>
-            <p className="m-0 mt-0.5 text-xs text-zinc-500">Create new codes for beta testers.</p>
+      <div className="admin-beta-page">
+        <div className="admin-beta">
+          <div className="admin-beta__heading">
+            <h1 className="admin-beta__title">Beta Codes</h1>
+            <p className="admin-beta__subtitle">Generate and manage beta access codes</p>
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
-            <input
-              type="number"
-              value={count}
-              min={1}
-              max={100}
-              onChange={(e) => setCount(Number(e.target.value))}
-              className="w-20 h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-            />
-            <button
-              onClick={handleGenerate}
-              disabled={generating}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-black bg-amber-400 hover:bg-amber-300 disabled:opacity-50"
-            >
-              {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-              Generate
-            </button>
-            {availableCodes.length > 0 && (
-              <button
-                onClick={copyAllAvailable}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-zinc-100 border border-zinc-700 hover:bg-zinc-800"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                Copy All
+          <div className="admin-beta__cards">
+            <div className="admin-beta__card">
+              <div className="admin-beta__card-header">
+                <div className="admin-beta__card-icon admin-beta__card-icon--amber">
+                  <KeyRound className="admin-beta__card-icon-svg" />
+                </div>
+                <h3 className="admin-beta__card-label">Total Codes</h3>
+              </div>
+              <p className="admin-beta__card-value">{betaCodeStats.total}</p>
+            </div>
+
+            <div className="admin-beta__card">
+              <div className="admin-beta__card-header">
+                <div className="admin-beta__card-icon admin-beta__card-icon--green">
+                  <CheckCircle className="admin-beta__card-icon-svg" />
+                </div>
+                <h3 className="admin-beta__card-label">Available</h3>
+              </div>
+              <p className="admin-beta__card-value admin-beta__card-value--green">{betaCodeStats.available}</p>
+            </div>
+
+            <div className="admin-beta__card">
+              <div className="admin-beta__card-header">
+                <div className="admin-beta__card-icon admin-beta__card-icon--amber">
+                  <XCircle className="admin-beta__card-icon-svg" />
+                </div>
+                <h3 className="admin-beta__card-label">Used</h3>
+              </div>
+              <p className="admin-beta__card-value admin-beta__card-value--amber">{betaCodeStats.used}</p>
+            </div>
+          </div>
+
+          <div className="admin-beta__generate">
+            <div className="admin-beta__generate-info">
+              <div className="admin-beta__generate-icon">
+                <KeyRound className="admin-beta__generate-icon-svg" />
+              </div>
+              <div>
+                <h2 className="admin-beta__generate-title">Generate Beta Codes</h2>
+                <p className="admin-beta__generate-desc">Create new codes for beta testers</p>
+              </div>
+            </div>
+
+            <div className="admin-beta__generate-actions">
+              <input
+                value={generateCodeCount}
+                type="number"
+                min={1}
+                max={100}
+                className="admin-beta__generate-input"
+                onChange={(event) => setGenerateCodeCount(Number(event.target.value))}
+              />
+
+              <button className="admin-beta__generate-btn" disabled={generatingCodes} onClick={() => void handleGenerateCodes()}>
+                {generatingCodes ? (
+                  <Loader2 className="admin-beta__generate-btn-icon admin-beta__generate-btn-icon--spin" />
+                ) : (
+                  <Plus className="admin-beta__generate-btn-icon" />
+                )}
+                Generate
               </button>
-            )}
-          </div>
-        </div>
 
-        {error && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            {error}
+              {availableBetaCodes.length > 0 ? (
+                <button className="admin-beta__copy-all-btn" onClick={() => void copyAllAvailableCodes()}>
+                  <Copy className="admin-beta__copy-all-icon" />
+                  Copy All
+                </button>
+              ) : null}
+            </div>
           </div>
-        )}
 
-        {loading && rows.length === 0 ? (
-          <div className="py-12 flex items-center justify-center text-zinc-400">
-            <Loader2 className="w-5 h-5 animate-spin mr-2" />
-            Loading beta codes...
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-10 text-center text-zinc-400">No beta codes generated yet.</div>
-        ) : (
-          <div className="overflow-auto rounded-xl border border-zinc-800 bg-zinc-900/40">
-            <table className="w-full min-w-[980px] text-sm border-collapse">
-              <thead className="bg-zinc-900/80">
-                <tr className="text-left text-zinc-400">
-                  <th className="px-3 py-2 border-b border-zinc-800">Code</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Status</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Used By</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Created</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-b border-zinc-800/70">
-                    <td className="px-3 py-2">
-                      <code className="inline-block text-amber-200 bg-zinc-800 px-2 py-1 rounded text-xs">{row.code}</code>
-                    </td>
-                    <td className="px-3 py-2">
-                      {row.used ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold border bg-amber-500/20 text-amber-300 border-amber-500/30">
-                          <XCircle className="w-3 h-3" />
-                          Used
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold border bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Available
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-zinc-300 text-xs">
-                      {row.used_by?.email || formatWalletAddress(row.used_by?.wallet_address) || '-'}
-                    </td>
-                    <td className="px-3 py-2 text-zinc-500 text-xs">{formatDateTime(row.created_at)}</td>
-                    <td className="px-3 py-2">
-                      {!row.used ? (
-                        <button
-                          onClick={() => copyCode(row.code, row.id)}
-                          className="px-2 py-1 rounded border border-zinc-700 text-zinc-200 text-xs hover:bg-zinc-800"
-                        >
-                          {copiedId === row.id ? (
-                            <>
-                              <Check className="inline-block w-3 h-3 mr-1 text-emerald-300" />
-                              Copied
-                            </>
+          {error ? (
+            <div className="admin-beta__error">
+              <AlertTriangle className="admin-beta__error-icon" />
+              <p className="admin-beta__error-text">{error}</p>
+            </div>
+          ) : null}
+
+          {loading && !betaCodes.length ? (
+            <div className="admin-beta__loading">
+              <Loader2 className="admin-beta__loading-icon" />
+              <p className="admin-beta__loading-text">Loading beta codes...</p>
+            </div>
+          ) : betaCodes.length > 0 ? (
+            <div className="admin-beta__table-wrapper">
+              <div className="admin-beta__table-scroll">
+                <table className="admin-beta__table">
+                  <thead className="admin-beta__thead">
+                    <tr>
+                      <th className="admin-beta__th">Code</th>
+                      <th className="admin-beta__th">Status</th>
+                      <th className="admin-beta__th">Used By</th>
+                      <th className="admin-beta__th">Created</th>
+                      <th className="admin-beta__th">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="admin-beta__tbody">
+                    {betaCodes.map((code) => (
+                      <tr key={code.id} className="admin-beta__row">
+                        <td className="admin-beta__td">
+                          <code className="admin-beta__code">{code.code}</code>
+                        </td>
+                        <td className="admin-beta__td">
+                          {code.used ? (
+                            <span className="admin-beta__status admin-beta__status--used">
+                              <XCircle className="admin-beta__status-icon" />
+                              Used
+                            </span>
                           ) : (
-                            <>
-                              <Copy className="inline-block w-3 h-3 mr-1" />
-                              Copy
-                            </>
+                            <span className="admin-beta__status admin-beta__status--available">
+                              <CheckCircle className="admin-beta__status-icon" />
+                              Available
+                            </span>
                           )}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-zinc-500">{row.used_at ? `Used ${formatDateTime(row.used_at)}` : 'Used'}</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                        </td>
+                        <td className="admin-beta__td">
+                          {code.used_by ? (
+                            code.used_by.email ? (
+                              <span className="admin-beta__user">{code.used_by.email}</span>
+                            ) : code.used_by.wallet_address ? (
+                              <code className="admin-beta__wallet">{formatWalletAddress(code.used_by.wallet_address)}</code>
+                            ) : (
+                              <span className="admin-beta__user">User #{code.used_by.id}</span>
+                            )
+                          ) : (
+                            <span className="admin-beta__no-user">-</span>
+                          )}
+                        </td>
+                        <td className="admin-beta__td">
+                          <span className="admin-beta__date">{formatDate(code.created_at)}</span>
+                        </td>
+                        <td className="admin-beta__td">
+                          {!code.used ? (
+                            <button className="admin-beta__copy-btn" onClick={() => void copyBetaCode(code.code, code.id)}>
+                              {copiedCodeId === code.id ? (
+                                <Check className="admin-beta__copy-icon admin-beta__copy-icon--success" />
+                              ) : (
+                                <Copy className="admin-beta__copy-icon" />
+                              )}
+                              {copiedCodeId === code.id ? 'Copied!' : 'Copy'}
+                            </button>
+                          ) : (
+                            <span className="admin-beta__used-at">Used {code.used_at ? formatDate(code.used_at) : ''}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="admin-beta__empty">
+              <div className="admin-beta__empty-icon">
+                <KeyRound className="admin-beta__empty-icon-svg" />
+              </div>
+              <p className="admin-beta__empty-text">No beta codes generated yet</p>
+              <button className="admin-beta__empty-btn" disabled={generatingCodes} onClick={() => void handleGenerateCodes()}>
+                Generate Your First Codes
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </PageLayout>
   )

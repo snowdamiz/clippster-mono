@@ -1,27 +1,28 @@
-import { useEffect } from 'react'
-import { Outlet, useParams, useNavigate, useLocation } from 'react-router-dom'
+import { Outlet } from 'react-router-dom'
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar'
 import { useOrganization } from '@/hooks/useOrganization'
 
 export function DashboardLayout() {
-  const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const location = useLocation()
-  const { subscription, subscriptionLoading, orgLoaded } = useOrganization()
+  const { subscription, error, isAdmin } = useOrganization()
+  const status = subscription?.status
+  const isSubscriptionBlocked =
+    !isAdmin && (error === 'subscription_required' || status === 'none' || status === 'expired')
 
-  useEffect(() => {
-    if (!id || subscriptionLoading || !orgLoaded) return
-
-    // Exempt billing and subscribe pages from the gate
-    const isBillingPage = location.pathname.endsWith('/billing')
-    const isSubscribePage = location.pathname.endsWith('/subscribe')
-    if (isBillingPage || isSubscribePage) return
-
-    const status = subscription?.status
-    if (status === 'none' || status === 'expired') {
-      navigate(`/dashboard/org/${id}/subscribe`, { replace: true })
-    }
-  }, [id, subscription, subscriptionLoading, orgLoaded, location.pathname, navigate])
+  if (isSubscriptionBlocked) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-[#0a0a0b] px-6">
+        <div className="w-full max-w-xl rounded-xl border border-zinc-800 bg-zinc-900/70 p-8 text-center">
+          <h1 className="m-0 text-2xl font-bold text-white">Subscription Required</h1>
+          <p className="mt-3 mb-0 text-zinc-300">
+            Your organization needs an active subscription before members can access this dashboard.
+          </p>
+          <p className="mt-2 mb-0 text-sm text-zinc-400">
+            Please ask an organization admin to purchase a plan in the Clippster desktop app (Tauri).
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex h-screen bg-[#0a0a0b]">

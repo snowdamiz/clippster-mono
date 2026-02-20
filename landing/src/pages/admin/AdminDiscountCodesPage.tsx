@@ -1,15 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
-  Calendar,
-  ChevronRight,
+  CheckCircle,
   Copy,
+  Edit,
   Eye,
   Loader2,
   Percent,
   Plus,
+  Power,
+  PowerOff,
   RefreshCw,
-  Save,
+  Search,
+  Tag,
+  Users,
+  X,
+  XCircle,
 } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import {
@@ -21,657 +27,1016 @@ import {
   type PromoCode,
   type PromoRedemption,
 } from '@/services/adminApi'
-import { formatDate, formatDateTime, formatNumber } from './adminFormat'
+import './AdminDiscountCodesPage.css'
 
-interface PromoFormState {
+type PromoCodeWithRedemptions = PromoCode & { redemptions?: PromoRedemption[] }
+
+type PromoDuration = 'once' | 'repeating' | 'forever'
+
+interface PromoFormData {
   code: string
   name: string
   percent_off: number
-  duration_kind: 'once' | 'repeating' | 'forever'
+  duration_kind: PromoDuration
   duration_months: number
   allowed_tiers: string[]
   allowed_org_tiers: string[]
   allowed_credit_packs: string[]
-  max_redemptions: number
+  max_redemptions: number | null
   redeem_by: string
   notes: string
 }
 
-const consumerTiers = ['starter', 'creator', 'pro'] as const
-const orgTiers = ['solo', 'enterprise_base', 'enterprise_ai', 'enterprise_unlimited'] as const
-const creditPacks = ['20', '60', '120'] as const
+const initialFormData: PromoFormData = {
+  code: '',
+  name: '',
+  percent_off: 10,
+  duration_kind: 'repeating',
+  duration_months: 3,
+  allowed_tiers: [],
+  allowed_org_tiers: [],
+  allowed_credit_packs: [],
+  max_redemptions: null,
+  redeem_by: '',
+  notes: '',
+}
 
-function defaultForm(): PromoFormState {
+const userTiers = ['starter', 'creator', 'pro'] as const
+const orgTiers = ['enterprise', 'enterprise_ai', 'addon_5_seats', 'addon_5_seats_ai', 'addon_10_seats', 'addon_10_seats_ai'] as const
+const creditPacks = ['starter', 'creator', 'pro', 'enterprise'] as const
+
+function calculateStats(codes: PromoCode[]) {
   return {
-    code: '',
-    name: '',
-    percent_off: 20,
-    duration_kind: 'once',
-    duration_months: 1,
-    allowed_tiers: ['starter', 'creator', 'pro'],
-    allowed_org_tiers: [],
-    allowed_credit_packs: [],
-    max_redemptions: 0,
-    redeem_by: '',
-    notes: '',
+    total: codes.length,
+    active: codes.filter((code) => code.is_active).length,
+    redemptions: codes.reduce((sum, code) => sum + code.redemption_count, 0),
   }
 }
 
-function randomCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  let result = ''
-  for (let i = 0; i < 8; i += 1) {
-    result += chars[Math.floor(Math.random() * chars.length)]
-  }
-  return result
+function formatDuration(promo: PromoCode): string {
+  if (promo.duration_kind === 'forever') return 'Forever'
+  if (promo.duration_kind === 'once') return 'One-time'
+  return `${promo.duration_months} month${(promo.duration_months || 0) > 1 ? 's' : ''}`
 }
 
-function durationLabel(code: PromoCode): string {
-  if (code.duration_kind === 'forever') return 'Forever'
-  if (code.duration_kind === 'once') return 'One-time'
-  return `${code.duration_months || 0} months`
+function getStatusClass(promo: PromoCode): string {
+  return promo.is_active ? 'admin-promo__status--active' : 'admin-promo__status--inactive'
+}
+
+function getUsageClass(promo: PromoCode): string {
+  if (!promo.max_redemptions) return 'admin-promo__usage--unlimited'
+  if (promo.redemption_count >= promo.max_redemptions) return 'admin-promo__usage--exhausted'
+  if (promo.redemption_count / promo.max_redemptions > 0.8) return 'admin-promo__usage--warning'
+  return 'admin-promo__usage--good'
+}
+
+function getRedemptionStatusClass(redemption: PromoRedemption): string {
+  switch (redemption.status) {
+    case 'active':
+      return 'promo-dialog__redemption-badge--active'
+    case 'cancelled':
+      return 'promo-dialog__redemption-badge--cancelled'
+    case 'ended':
+      return 'promo-dialog__redemption-badge--ended'
+    default:
+      return ''
+  }
+}
+
+function formatDate(dateString: string | null): string {
+  if (!dateString) return 'Never'
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return 'Invalid date'
+
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function humanizeTier(value: string) {
+  return value
+    .replace(/_/g, ' ')
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
 }
 
 export function AdminDiscountCodesPage() {
-  const [rows, setRows] = useState<PromoCode[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [busyId, setBusyId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState('')
 
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
+  const [promoCodes, setPromoCodes] = useState<PromoCode[]>([])
+  const [stats, setStats] = useState({ total: 0, active: 0, redemptions: 0 })
 
-  const [showEditor, setShowEditor] = useState(false)
+  const [filters, setFilters] = useState({
+    search: '',
+    is_active: null as boolean | null,
+    tier: null as string | null,
+    expired: false,
+  })
+
+  const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingPromo, setEditingPromo] = useState<PromoCode | null>(null)
-  const [form, setForm] = useState<PromoFormState>(defaultForm)
+  const [viewingPromo, setViewingPromo] = useState<PromoCodeWithRedemptions | null>(null)
 
-  const [showDetail, setShowDetail] = useState(false)
-  const [detailPromo, setDetailPromo] = useState<PromoCode | null>(null)
-  const [detailRedemptions, setDetailRedemptions] = useState<PromoRedemption[]>([])
-  const [loadingDetail, setLoadingDetail] = useState(false)
+  const [formData, setFormData] = useState<PromoFormData>(initialFormData)
+  const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await listPromoCodes({
-        is_active: statusFilter === 'all' ? undefined : statusFilter === 'active',
-        search: search || undefined,
+  const filteredPromoCodes = useMemo(() => {
+    let codes = promoCodes
+
+    if (filters.search) {
+      const search = filters.search.toLowerCase()
+      codes = codes.filter(
+        (code) => code.code.toLowerCase().includes(search) || (code.name && code.name.toLowerCase().includes(search)),
+      )
+    }
+
+    if (filters.is_active !== null) {
+      codes = codes.filter((code) => code.is_active === filters.is_active)
+    }
+
+    if (filters.tier) {
+      codes = codes.filter((code) => code.allowed_tiers.includes(filters.tier as string))
+    }
+
+    if (filters.expired) {
+      const now = new Date()
+      codes = codes.filter((code) => {
+        if (!code.redeem_by) return false
+        return new Date(code.redeem_by) < now
       })
-      setRows(data)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load discount codes')
+    }
+
+    return codes
+  }, [filters.expired, filters.is_active, filters.search, filters.tier, promoCodes])
+
+  async function fetchPromoCodes() {
+    setLoading(true)
+    setError('')
+
+    try {
+      const apiFilters: { search?: string; is_active?: boolean; tier?: string } = {}
+
+      if (filters.search) {
+        apiFilters.search = filters.search
+      }
+
+      if (filters.is_active !== null) {
+        apiFilters.is_active = filters.is_active
+      }
+
+      if (filters.tier) {
+        apiFilters.tier = filters.tier
+      }
+
+      const promos = await listPromoCodes(apiFilters)
+      setPromoCodes(promos)
+      setStats(calculateStats(promos))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'An error occurred')
     } finally {
       setLoading(false)
     }
-  }, [search, statusFilter])
+  }
 
-  useEffect(() => {
-    load()
-  }, [load])
+  async function copyCode(code: string) {
+    try {
+      await navigator.clipboard.writeText(code)
+    } catch {
+      setError('Unable to copy code to clipboard')
+    }
+  }
 
-  const stats = useMemo(() => {
-    const total = rows.length
-    const active = rows.filter((x) => x.is_active).length
-    const redemptions = rows.reduce((acc, x) => acc + x.redemption_count, 0)
-    return { total, active, redemptions }
-  }, [rows])
+  function generateRandomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    let code = ''
 
-  function resetEditor(promo?: PromoCode) {
-    if (!promo) {
-      setEditingPromo(null)
-      setForm({ ...defaultForm(), code: randomCode() })
-      return
+    for (let i = 0; i < 8; i += 1) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length))
     }
 
+    setFormData((prev) => ({ ...prev, code }))
+  }
+
+  function toggleTier(tier: string) {
+    setFormData((prev) => ({
+      ...prev,
+      allowed_tiers: prev.allowed_tiers.includes(tier)
+        ? prev.allowed_tiers.filter((item) => item !== tier)
+        : [...prev.allowed_tiers, tier],
+    }))
+  }
+
+  function toggleOrgTier(tier: string) {
+    setFormData((prev) => ({
+      ...prev,
+      allowed_org_tiers: prev.allowed_org_tiers.includes(tier)
+        ? prev.allowed_org_tiers.filter((item) => item !== tier)
+        : [...prev.allowed_org_tiers, tier],
+    }))
+  }
+
+  function toggleCreditPack(pack: string) {
+    setFormData((prev) => ({
+      ...prev,
+      allowed_credit_packs: prev.allowed_credit_packs.includes(pack)
+        ? prev.allowed_credit_packs.filter((item) => item !== pack)
+        : [...prev.allowed_credit_packs, pack],
+    }))
+  }
+
+  function editPromo(promo: PromoCode) {
     setEditingPromo(promo)
-    setForm({
+    setFormData({
       code: promo.code,
       name: promo.name || '',
       percent_off: promo.percent_off,
       duration_kind: promo.duration_kind,
-      duration_months: promo.duration_months || 1,
-      allowed_tiers: promo.allowed_tiers || [],
-      allowed_org_tiers: promo.allowed_org_tiers || [],
-      allowed_credit_packs: promo.allowed_credit_packs || [],
-      max_redemptions: promo.max_redemptions || 0,
-      redeem_by: promo.redeem_by ? promo.redeem_by.slice(0, 10) : '',
+      duration_months: promo.duration_months || 3,
+      allowed_tiers: [...promo.allowed_tiers],
+      allowed_org_tiers: [...(promo.allowed_org_tiers || [])],
+      allowed_credit_packs: [...(promo.allowed_credit_packs || [])],
+      max_redemptions: promo.max_redemptions,
+      redeem_by: promo.redeem_by ? promo.redeem_by.slice(0, 16) : '',
       notes: promo.notes || '',
     })
+    setErrors({})
+    setShowCreateModal(true)
   }
 
-  function toggleString(items: string[], value: string) {
-    return items.includes(value) ? items.filter((x) => x !== value) : [...items, value]
+  async function viewPromo(promo: PromoCode) {
+    try {
+      const response = await getPromoCode(promo.id)
+
+      if (response.promo) {
+        setViewingPromo({
+          ...response.promo,
+          redemptions: response.redemptions,
+        })
+      } else {
+        setError('Could not load promo code details')
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load promo code details')
+    }
   }
 
-  async function handleSave() {
-    if (!form.code.trim()) {
-      setError('Code is required')
-      return
-    }
+  function resetForm() {
+    setFormData(initialFormData)
+    setErrors({})
+  }
 
-    if (!form.allowed_tiers.length && !form.allowed_org_tiers.length && !form.allowed_credit_packs.length) {
-      setError('At least one target tier is required')
-      return
-    }
+  function closeCreateModal() {
+    setShowCreateModal(false)
+    setEditingPromo(null)
+    resetForm()
+  }
 
+  async function savePromoCode() {
+    setErrors({})
     setSaving(true)
-    setError(null)
+
+    if (!formData.code.trim()) {
+      setErrors({ code: 'Code is required' })
+      setSaving(false)
+      return
+    }
+
+    if (!formData.allowed_tiers.length && !formData.allowed_org_tiers.length && !formData.allowed_credit_packs.length) {
+      setErrors({ allowed_tiers: 'At least one tier, organization tier, or credit pack must be selected' })
+      setSaving(false)
+      return
+    }
+
     try {
       if (editingPromo) {
         await updatePromoCode(editingPromo.id, {
-          name: form.name || undefined,
-          max_redemptions: form.max_redemptions > 0 ? form.max_redemptions : undefined,
-          redeem_by: form.redeem_by || undefined,
-          notes: form.notes || undefined,
+          name: formData.name || undefined,
+          max_redemptions: formData.max_redemptions || undefined,
+          redeem_by: formData.redeem_by || undefined,
+          notes: formData.notes || undefined,
         })
       } else {
         await createPromoCode({
-          code: form.code.toUpperCase(),
-          name: form.name || undefined,
-          percent_off: form.percent_off,
-          duration_kind: form.duration_kind,
-          duration_months: form.duration_kind === 'repeating' ? form.duration_months : undefined,
-          allowed_tiers: form.allowed_tiers,
-          allowed_org_tiers: form.allowed_org_tiers,
-          allowed_credit_packs: form.allowed_credit_packs,
-          max_redemptions: form.max_redemptions > 0 ? form.max_redemptions : undefined,
-          redeem_by: form.redeem_by || undefined,
-          notes: form.notes || undefined,
+          code: formData.code.toUpperCase().trim(),
+          name: formData.name || undefined,
+          percent_off: formData.percent_off,
+          duration_kind: formData.duration_kind,
+          duration_months: formData.duration_kind === 'repeating' ? formData.duration_months : undefined,
+          allowed_tiers: formData.allowed_tiers,
+          allowed_org_tiers: formData.allowed_org_tiers,
+          allowed_credit_packs: formData.allowed_credit_packs,
+          max_redemptions: formData.max_redemptions || undefined,
+          redeem_by: formData.redeem_by || undefined,
+          notes: formData.notes || undefined,
         })
       }
 
-      setShowEditor(false)
-      await load()
-    } catch (err: any) {
-      setError(err?.message || 'Failed to save discount code')
+      closeCreateModal()
+      await fetchPromoCodes()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save discount code')
     } finally {
       setSaving(false)
     }
   }
 
-  async function handleToggle(promo: PromoCode) {
-    setBusyId(promo.id)
+  async function togglePromo(promo: PromoCode) {
     try {
       await togglePromoCode(promo.id, !promo.is_active)
-      await load()
-    } catch (err: any) {
-      setError(err?.message || 'Failed to toggle discount code')
-    } finally {
-      setBusyId(null)
+      await fetchPromoCodes()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not toggle discount code status')
     }
   }
 
-  async function openDetail(promo: PromoCode) {
-    setLoadingDetail(true)
-    setShowDetail(true)
-    setDetailPromo(promo)
-    setDetailRedemptions([])
-
-    try {
-      const result = await getPromoCode(promo.id)
-      if (result.promo) setDetailPromo(result.promo)
-      setDetailRedemptions(result.redemptions)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load promo details')
-    } finally {
-      setLoadingDetail(false)
-    }
-  }
-
-  async function copyText(value: string) {
-    try {
-      await navigator.clipboard.writeText(value)
-    } catch {
-      setError('Failed to copy to clipboard')
-    }
-  }
+  useEffect(() => {
+    void fetchPromoCodes()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <PageLayout
-      icon={Percent}
       title="Discount Codes"
+      icon={Percent}
       actions={
-        <div className="flex items-center gap-2">
-          <button
-            onClick={load}
-            disabled={loading}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-zinc-200 border border-zinc-700 bg-transparent hover:bg-zinc-800 disabled:opacity-50"
-          >
-            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-            Refresh
+        <div className="promo-header-actions">
+          <div className="promo-header__search">
+            <Search className="promo-header__search-icon" />
+            <input
+              value={filters.search}
+              type="text"
+              placeholder="Search codes..."
+              className="promo-header__search-input"
+              onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
+            />
+          </div>
+
+          <div className="promo-header__filter">
+            <select
+              className="promo-header__select"
+              value={filters.is_active === null ? 'all' : filters.is_active ? 'active' : 'inactive'}
+              onChange={(event) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  is_active: event.target.value === 'all' ? null : event.target.value === 'active',
+                }))
+              }
+            >
+              <option value="all">All Statuses</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+
+          <div className="promo-header__filter">
+            <select
+              className="promo-header__select"
+              value={filters.tier ?? 'all'}
+              onChange={(event) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  tier: event.target.value === 'all' ? null : event.target.value,
+                }))
+              }
+            >
+              <option value="all">All Tiers</option>
+              <option value="starter">Starter</option>
+              <option value="creator">Creator</option>
+              <option value="pro">Pro</option>
+            </select>
+          </div>
+
+          <button className="promo-header__action-btn" disabled={loading} onClick={() => void fetchPromoCodes()}>
+            {!loading ? (
+              <RefreshCw className="promo-header__action-icon" />
+            ) : (
+              <Loader2 className="promo-header__action-icon promo-header__action-icon--spin" />
+            )}
+            Refresh Codes
           </button>
+
           <button
+            className="promo-header__action-btn promo-header__action-btn--primary"
             onClick={() => {
-              resetEditor()
-              setShowEditor(true)
+              resetForm()
+              setShowCreateModal(true)
             }}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-black bg-cyan-400 hover:bg-cyan-300"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="promo-header__action-icon" />
             New Code
           </button>
         </div>
       }
     >
-      <div className="p-6 space-y-4 max-w-[1500px] w-full mx-auto">
-        <div>
-          <h1 className="m-0 text-2xl font-bold text-white">Discount Codes</h1>
-          <p className="m-0 mt-1 text-sm text-zinc-400">Create, activate, and manage promo campaigns.</p>
+      <div className="admin-promo-page">
+        <div className="admin-promo">
+          <div className="admin-promo__heading">
+            <h1 className="admin-promo__title">Discount Codes</h1>
+            <p className="admin-promo__subtitle">Create and manage promotional discount codes</p>
+          </div>
+
+          <div className="admin-promo__cards">
+            <div className="admin-promo__card">
+              <div className="admin-promo__card-header">
+                <div className="admin-promo__card-icon admin-promo__card-icon--cyan">
+                  <Tag className="admin-promo__card-icon-svg" />
+                </div>
+                <h3 className="admin-promo__card-label">Total Codes</h3>
+              </div>
+              <p className="admin-promo__card-value">{stats.total}</p>
+            </div>
+
+            <div className="admin-promo__card">
+              <div className="admin-promo__card-header">
+                <div className="admin-promo__card-icon admin-promo__card-icon--green">
+                  <CheckCircle className="admin-promo__card-icon-svg" />
+                </div>
+                <h3 className="admin-promo__card-label">Active</h3>
+              </div>
+              <p className="admin-promo__card-value admin-promo__card-value--green">{stats.active}</p>
+            </div>
+
+            <div className="admin-promo__card">
+              <div className="admin-promo__card-header">
+                <div className="admin-promo__card-icon admin-promo__card-icon--amber">
+                  <Users className="admin-promo__card-icon-svg" />
+                </div>
+                <h3 className="admin-promo__card-label">Redemptions</h3>
+              </div>
+              <p className="admin-promo__card-value admin-promo__card-value--amber">{stats.redemptions}</p>
+            </div>
+          </div>
+
+          {error ? (
+            <div className="admin-promo__error">
+              <AlertTriangle className="admin-promo__error-icon" />
+              <p className="admin-promo__error-text">{error}</p>
+            </div>
+          ) : null}
+
+          {loading && !promoCodes.length ? (
+            <div className="admin-promo__loading">
+              <Loader2 className="admin-promo__loading-icon" />
+              <p className="admin-promo__loading-text">Loading discount codes...</p>
+            </div>
+          ) : promoCodes.length > 0 ? (
+            <div className="admin-promo__table-wrapper">
+              <div className="admin-promo__table-scroll">
+                <table className="admin-promo__table">
+                  <thead className="admin-promo__thead">
+                    <tr>
+                      <th className="admin-promo__th">Code</th>
+                      <th className="admin-promo__th">Discount</th>
+                      <th className="admin-promo__th">Duration</th>
+                      <th className="admin-promo__th">Tiers</th>
+                      <th className="admin-promo__th">Usage</th>
+                      <th className="admin-promo__th">Status</th>
+                      <th className="admin-promo__th">Created</th>
+                      <th className="admin-promo__th">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="admin-promo__tbody">
+                    {filteredPromoCodes.map((promo) => (
+                      <tr key={promo.id} className="admin-promo__row">
+                        <td className="admin-promo__td">
+                          <div className="admin-promo__code-cell">
+                            <code className="admin-promo__code">{promo.code}</code>
+                            {promo.name ? <span className="admin-promo__code-name">{promo.name}</span> : null}
+                          </div>
+                        </td>
+                        <td className="admin-promo__td">
+                          <span className="admin-promo__discount-badge">{promo.percent_off}%</span>
+                        </td>
+                        <td className="admin-promo__td">
+                          <span className="admin-promo__duration">{formatDuration(promo)}</span>
+                        </td>
+                        <td className="admin-promo__td">
+                          <div className="admin-promo__tiers">
+                            {promo.allowed_tiers?.length ? <span className="admin-promo__tier-section">User:</span> : null}
+                            {promo.allowed_tiers.map((tier) => (
+                              <span key={`user-${promo.id}-${tier}`} className="admin-promo__tier-badge admin-promo__tier-badge--user">
+                                {tier}
+                              </span>
+                            ))}
+
+                            {promo.allowed_org_tiers?.length ? <span className="admin-promo__tier-section">Org:</span> : null}
+                            {(promo.allowed_org_tiers || []).map((tier) => (
+                              <span key={`org-${promo.id}-${tier}`} className="admin-promo__tier-badge admin-promo__tier-badge--org">
+                                {tier.replace(/_/g, ' ')}
+                              </span>
+                            ))}
+
+                            {promo.allowed_credit_packs?.length ? <span className="admin-promo__tier-section">Packs:</span> : null}
+                            {(promo.allowed_credit_packs || []).map((pack) => (
+                              <span key={`pack-${promo.id}-${pack}`} className="admin-promo__tier-badge admin-promo__tier-badge--pack">
+                                {pack}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="admin-promo__td">
+                          <span className={getUsageClass(promo)}>
+                            {promo.redemption_count}
+                            {promo.max_redemptions ? `/${promo.max_redemptions}` : ''}
+                          </span>
+                        </td>
+                        <td className="admin-promo__td">
+                          <span className={`admin-promo__status ${getStatusClass(promo)}`}>
+                            {promo.is_active ? (
+                              <CheckCircle className="admin-promo__status-icon" />
+                            ) : (
+                              <XCircle className="admin-promo__status-icon" />
+                            )}
+                            {promo.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="admin-promo__td">
+                          <span className="admin-promo__date">{formatDate(promo.created_at)}</span>
+                        </td>
+                        <td className="admin-promo__td">
+                          <div className="admin-promo__actions">
+                            <button className="admin-promo__action-btn-small" title="Copy code" onClick={() => void copyCode(promo.code)}>
+                              <Copy className="admin-promo__action-btn-icon-small" />
+                            </button>
+                            <button className="admin-promo__action-btn-small" title="View details" onClick={() => void viewPromo(promo)}>
+                              <Eye className="admin-promo__action-btn-icon-small" />
+                            </button>
+                            <button className="admin-promo__action-btn-small" title="Edit" onClick={() => editPromo(promo)}>
+                              <Edit className="admin-promo__action-btn-icon-small" />
+                            </button>
+                            <button
+                              className={`admin-promo__action-btn-small ${
+                                promo.is_active
+                                  ? 'admin-promo__action-btn-small--danger'
+                                  : 'admin-promo__action-btn-small--success'
+                              }`}
+                              title={promo.is_active ? 'Deactivate' : 'Activate'}
+                              onClick={() => void togglePromo(promo)}
+                            >
+                              {promo.is_active ? (
+                                <Power className="admin-promo__action-btn-icon-small" />
+                              ) : (
+                                <PowerOff className="admin-promo__action-btn-icon-small" />
+                              )}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="admin-promo__empty">
+              <div className="admin-promo__empty-icon">
+                <Percent className="admin-promo__empty-icon-svg" />
+              </div>
+              <p className="admin-promo__empty-text">No discount codes yet</p>
+              <button
+                className="admin-promo__empty-btn"
+                onClick={() => {
+                  resetForm()
+                  setShowCreateModal(true)
+                }}
+              >
+                Create Your First Code
+              </button>
+            </div>
+          )}
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <p className="m-0 text-xs uppercase tracking-wide text-zinc-500">Total Codes</p>
-            <p className="m-0 mt-2 text-2xl font-bold text-white">{formatNumber(stats.total)}</p>
-          </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <p className="m-0 text-xs uppercase tracking-wide text-zinc-500">Active</p>
-            <p className="m-0 mt-2 text-2xl font-bold text-emerald-300">{formatNumber(stats.active)}</p>
-          </div>
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <p className="m-0 text-xs uppercase tracking-wide text-zinc-500">Redemptions</p>
-            <p className="m-0 mt-2 text-2xl font-bold text-cyan-300">{formatNumber(stats.redemptions)}</p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 flex flex-wrap items-center gap-2">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by code or name"
-            className="h-9 px-3 min-w-[240px] rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-          />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'inactive')}
-            className="h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-          >
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="inactive">Inactive</option>
-          </select>
-          <button
-            onClick={load}
-            className="h-9 px-3 rounded-md border border-zinc-700 text-xs font-semibold text-zinc-200 hover:bg-zinc-800"
-          >
-            Apply
-          </button>
-        </div>
-
-        {error && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            {error}
-          </div>
-        )}
-
-        {loading && rows.length === 0 ? (
-          <div className="py-12 flex items-center justify-center text-zinc-400">
-            <Loader2 className="w-5 h-5 animate-spin mr-2" />
-            Loading discount codes...
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-10 text-center text-zinc-400">No discount codes found.</div>
-        ) : (
-          <div className="overflow-auto rounded-xl border border-zinc-800 bg-zinc-900/40">
-            <table className="w-full min-w-[1200px] text-sm border-collapse">
-              <thead className="bg-zinc-900/80">
-                <tr className="text-left text-zinc-400">
-                  <th className="px-3 py-2 border-b border-zinc-800">Code</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Discount</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Duration</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Scope</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Usage</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Status</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Created</th>
-                  <th className="px-3 py-2 border-b border-zinc-800">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((promo) => (
-                  <tr key={promo.id} className="border-b border-zinc-800/70">
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <code className="text-cyan-200 bg-zinc-800 px-2 py-1 rounded text-xs">{promo.code}</code>
-                        <button onClick={() => copyText(promo.code)} className="text-zinc-400 hover:text-zinc-200">
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      {promo.name && <p className="m-0 mt-1 text-xs text-zinc-500">{promo.name}</p>}
-                    </td>
-                    <td className="px-3 py-2 text-zinc-100 font-semibold">{promo.percent_off}% off</td>
-                    <td className="px-3 py-2 text-zinc-300">{durationLabel(promo)}</td>
-                    <td className="px-3 py-2 text-zinc-400 text-xs">
-                      {[
-                        ...(promo.allowed_tiers || []),
-                        ...(promo.allowed_org_tiers || []),
-                        ...(promo.allowed_credit_packs || []),
-                      ].join(', ') || 'All'}
-                    </td>
-                    <td className="px-3 py-2 text-zinc-300">
-                      {formatNumber(promo.redemption_count)}
-                      {promo.max_redemptions ? ` / ${formatNumber(promo.max_redemptions)}` : ''}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded text-xs font-semibold border ${
-                          promo.is_active
-                            ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                            : 'bg-zinc-700/70 text-zinc-300 border-zinc-600'
-                        }`}
-                      >
-                        {promo.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-zinc-500 text-xs">{formatDate(promo.created_at)}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => {
-                            resetEditor(promo)
-                            setShowEditor(true)
-                          }}
-                          className="px-2 py-1 rounded border border-zinc-700 text-xs text-zinc-200 hover:bg-zinc-800"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => openDetail(promo)}
-                          className="px-2 py-1 rounded border border-zinc-700 text-xs text-zinc-200 hover:bg-zinc-800"
-                        >
-                          <Eye className="inline-block w-3 h-3 mr-1" />
-                          View
-                        </button>
-                        <button
-                          onClick={() => handleToggle(promo)}
-                          disabled={busyId === promo.id}
-                          className={`px-2 py-1 rounded border text-xs disabled:opacity-50 ${
-                            promo.is_active
-                              ? 'border-amber-500/30 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
-                              : 'border-emerald-500/30 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
-                          }`}
-                        >
-                          {promo.is_active ? 'Deactivate' : 'Activate'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
 
-      {showEditor && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowEditor(false)}>
-          <div className="w-full max-w-3xl rounded-xl border border-zinc-700 bg-[#111113] p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="m-0 text-lg font-semibold text-white">{editingPromo ? 'Edit Discount Code' : 'Create Discount Code'}</h2>
-                <p className="m-0 mt-1 text-xs text-zinc-500">Configure duration, tiers, and redemption rules.</p>
+      {showCreateModal ? (
+        <div className="promo-dialog__overlay" onClick={(event) => event.target === event.currentTarget && closeCreateModal()}>
+          <div className="promo-dialog" role="dialog" aria-modal="true">
+            <div className="promo-dialog__accent" />
+
+            <div className="promo-dialog__header">
+              <button className="promo-dialog__close" disabled={saving} title="Close" onClick={closeCreateModal}>
+                <X size={18} />
+              </button>
+              <div className="promo-dialog__icon">
+                <Percent size={24} />
               </div>
-              <button onClick={() => setShowEditor(false)} className="text-zinc-500 hover:text-zinc-200">Close</button>
+              <h2 className="promo-dialog__title">{editingPromo ? 'Edit Discount Code' : 'Create Discount Code'}</h2>
+              <p className="promo-dialog__subtitle">
+                {editingPromo ? 'Modify existing promotional code settings' : 'Generate a new promotional code'}
+              </p>
             </div>
 
-            <div className="grid sm:grid-cols-2 gap-3 mt-4">
-              <label className="text-xs text-zinc-400">
-                Code
-                <div className="flex items-center gap-2 mt-1">
-                  <input
-                    disabled={Boolean(editingPromo)}
-                    value={form.code}
-                    onChange={(e) => setForm((prev) => ({ ...prev, code: e.target.value.toUpperCase() }))}
-                    className="w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200 disabled:opacity-60"
-                  />
-                  {!editingPromo && (
-                    <button
-                      onClick={() => setForm((prev) => ({ ...prev, code: randomCode() }))}
-                      className="h-9 px-2 rounded-md border border-zinc-700 text-xs text-zinc-300 hover:bg-zinc-800"
-                    >
-                      Random
-                    </button>
-                  )}
-                </div>
-              </label>
-
-              <label className="text-xs text-zinc-400">
-                Name
-                <input
-                  value={form.name}
-                  onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
-                  className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                />
-              </label>
-
-              {!editingPromo && (
-                <>
-                  <label className="text-xs text-zinc-400">
-                    Percent Off
+            <div className="promo-dialog__content">
+              <div className="promo-dialog__form">
+                <div className="promo-dialog__field">
+                  <label className="promo-dialog__label">Code *</label>
+                  <div className="promo-dialog__input-row">
                     <input
-                      type="number"
+                      value={formData.code}
+                      type="text"
+                      placeholder="DISCOUNT2025"
+                      disabled={Boolean(editingPromo)}
+                      className={`promo-dialog__input ${errors.code ? 'promo-dialog__input--error' : ''}`}
+                      onChange={(event) => {
+                        setFormData((prev) => ({ ...prev, code: event.target.value }))
+                        setErrors((prev) => ({ ...prev, code: '' }))
+                      }}
+                    />
+                    {!editingPromo ? (
+                      <button type="button" className="promo-dialog__generate-btn" title="Generate random code" onClick={generateRandomCode}>
+                        <RefreshCw size={16} />
+                      </button>
+                    ) : null}
+                  </div>
+                  {errors.code ? <span className="promo-dialog__error">{errors.code}</span> : null}
+                </div>
+
+                <div className="promo-dialog__field">
+                  <label className="promo-dialog__label">
+                    Name
+                    <span className="promo-dialog__label-hint">(optional)</span>
+                  </label>
+                  <input
+                    value={formData.name}
+                    type="text"
+                    placeholder="Summer Sale 2025"
+                    className={`promo-dialog__input ${errors.name ? 'promo-dialog__input--error' : ''}`}
+                    onChange={(event) => {
+                      setFormData((prev) => ({ ...prev, name: event.target.value }))
+                      setErrors((prev) => ({ ...prev, name: '' }))
+                    }}
+                  />
+                  {errors.name ? <span className="promo-dialog__error">{errors.name}</span> : null}
+                </div>
+
+                <div className="promo-dialog__field">
+                  <label className="promo-dialog__label">Discount Percentage *</label>
+                  <div className="promo-dialog__range-row">
+                    <input
+                      value={formData.percent_off}
+                      type="range"
                       min={1}
                       max={100}
-                      value={form.percent_off}
-                      onChange={(e) => setForm((prev) => ({ ...prev, percent_off: Number(e.target.value) }))}
-                      className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
+                      className="promo-dialog__range"
+                      onChange={(event) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          percent_off: Number(event.target.value),
+                        }))
+                      }
                     />
-                  </label>
+                    <div className="promo-dialog__range-value">{formData.percent_off}%</div>
+                  </div>
+                </div>
 
-                  <label className="text-xs text-zinc-400">
-                    Duration
-                    <select
-                      value={form.duration_kind}
-                      onChange={(e) => setForm((prev) => ({ ...prev, duration_kind: e.target.value as PromoFormState['duration_kind'] }))}
-                      className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                    >
-                      <option value="once">Once</option>
-                      <option value="repeating">Repeating</option>
-                      <option value="forever">Forever</option>
-                    </select>
-                  </label>
+                <div className="promo-dialog__field">
+                  <label className="promo-dialog__label">Duration Type *</label>
+                  <div className="promo-dialog__segmented">
+                    {(['once', 'repeating', 'forever'] as const).map((duration) => (
+                      <button
+                        key={duration}
+                        type="button"
+                        className={`promo-dialog__segment ${formData.duration_kind === duration ? 'promo-dialog__segment--active' : ''}`}
+                        onClick={() =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            duration_kind: duration,
+                          }))
+                        }
+                      >
+                        {duration.charAt(0).toUpperCase() + duration.slice(1)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                  {form.duration_kind === 'repeating' && (
-                    <label className="text-xs text-zinc-400">
-                      Duration Months
-                      <input
-                        type="number"
-                        min={1}
-                        value={form.duration_months}
-                        onChange={(e) => setForm((prev) => ({ ...prev, duration_months: Number(e.target.value) }))}
-                        className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                      />
+                {formData.duration_kind === 'repeating' ? (
+                  <div className="promo-dialog__field">
+                    <label className="promo-dialog__label">Duration (Months) *</label>
+                    <input
+                      value={formData.duration_months}
+                      type="number"
+                      min={1}
+                      max={120}
+                      placeholder="3"
+                      className={`promo-dialog__input promo-dialog__input--sm ${errors.duration_months ? 'promo-dialog__input--error' : ''}`}
+                      onChange={(event) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          duration_months: Number(event.target.value),
+                        }))
+                        setErrors((prev) => ({ ...prev, duration_months: '' }))
+                      }}
+                    />
+                    {errors.duration_months ? <span className="promo-dialog__error">{errors.duration_months}</span> : null}
+                  </div>
+                ) : null}
+
+                <div className="promo-dialog__field">
+                  <label className="promo-dialog__label">
+                    User Subscription Tiers
+                    <span className="promo-dialog__label-hint">(personal accounts)</span>
+                  </label>
+                  <div className="promo-dialog__chips">
+                    {userTiers.map((tier) => {
+                      const isActive = formData.allowed_tiers.includes(tier)
+                      return (
+                        <button
+                          key={tier}
+                          type="button"
+                          className={`promo-dialog__chip ${isActive ? 'promo-dialog__chip--active' : ''}`}
+                          onClick={() => toggleTier(tier)}
+                        >
+                          {isActive ? <CheckCircle size={14} /> : null}
+                          {tier.charAt(0).toUpperCase() + tier.slice(1)}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="promo-dialog__field">
+                  <label className="promo-dialog__label">
+                    Organization Subscription Tiers
+                    <span className="promo-dialog__label-hint">(organization plans)</span>
+                  </label>
+                  <div className="promo-dialog__chips">
+                    {orgTiers.map((tier) => {
+                      const isActive = formData.allowed_org_tiers.includes(tier)
+                      return (
+                        <button
+                          key={tier}
+                          type="button"
+                          className={`promo-dialog__chip ${isActive ? 'promo-dialog__chip--active' : ''}`}
+                          onClick={() => toggleOrgTier(tier)}
+                        >
+                          {isActive ? <CheckCircle size={14} /> : null}
+                          {humanizeTier(tier)}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="promo-dialog__field">
+                  <label className="promo-dialog__label">
+                    Credit Packs
+                    <span className="promo-dialog__label-hint">(one-time purchases)</span>
+                  </label>
+                  <div className="promo-dialog__chips">
+                    {creditPacks.map((pack) => {
+                      const isActive = formData.allowed_credit_packs.includes(pack)
+                      return (
+                        <button
+                          key={pack}
+                          type="button"
+                          className={`promo-dialog__chip ${isActive ? 'promo-dialog__chip--active' : ''}`}
+                          onClick={() => toggleCreditPack(pack)}
+                        >
+                          {isActive ? <CheckCircle size={14} /> : null}
+                          {pack.charAt(0).toUpperCase() + pack.slice(1)}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {errors.allowed_tiers ? (
+                  <div className="promo-dialog__alert promo-dialog__alert--error">
+                    <AlertTriangle size={16} />
+                    <p className="promo-dialog__alert-text">{errors.allowed_tiers}</p>
+                  </div>
+                ) : null}
+
+                <div className="promo-dialog__row">
+                  <div className="promo-dialog__field">
+                    <label className="promo-dialog__label">
+                      Max Redemptions
+                      <span className="promo-dialog__label-hint">(optional)</span>
                     </label>
-                  )}
-                </>
-              )}
+                    <input
+                      value={formData.max_redemptions ?? ''}
+                      type="number"
+                      min={1}
+                      placeholder="Unlimited"
+                      className={`promo-dialog__input ${errors.max_redemptions ? 'promo-dialog__input--error' : ''}`}
+                      onChange={(event) => {
+                        setFormData((prev) => ({
+                          ...prev,
+                          max_redemptions: event.target.value ? Number(event.target.value) : null,
+                        }))
+                        setErrors((prev) => ({ ...prev, max_redemptions: '' }))
+                      }}
+                    />
+                  </div>
 
-              <label className="text-xs text-zinc-400">
-                Max Redemptions (0 = unlimited)
-                <input
-                  type="number"
-                  min={0}
-                  value={form.max_redemptions}
-                  onChange={(e) => setForm((prev) => ({ ...prev, max_redemptions: Number(e.target.value) }))}
-                  className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                />
-              </label>
+                  <div className="promo-dialog__field">
+                    <label className="promo-dialog__label">
+                      Expiration Date
+                      <span className="promo-dialog__label-hint">(optional)</span>
+                    </label>
+                    <input
+                      value={formData.redeem_by}
+                      type="datetime-local"
+                      className={`promo-dialog__input ${errors.redeem_by ? 'promo-dialog__input--error' : ''}`}
+                      onChange={(event) => {
+                        setFormData((prev) => ({ ...prev, redeem_by: event.target.value }))
+                        setErrors((prev) => ({ ...prev, redeem_by: '' }))
+                      }}
+                    />
+                  </div>
+                </div>
 
-              <label className="text-xs text-zinc-400">
-                Redeem By
-                <div className="relative mt-1">
-                  <Calendar className="absolute left-2.5 top-2.5 w-4 h-4 text-zinc-500" />
-                  <input
-                    type="date"
-                    value={form.redeem_by}
-                    onChange={(e) => setForm((prev) => ({ ...prev, redeem_by: e.target.value }))}
-                    className="w-full h-9 pl-8 pr-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
+                <div className="promo-dialog__field">
+                  <label className="promo-dialog__label">
+                    Notes
+                    <span className="promo-dialog__label-hint">(optional)</span>
+                  </label>
+                  <textarea
+                    value={formData.notes}
+                    placeholder="Internal notes about this discount code..."
+                    rows={2}
+                    className="promo-dialog__input promo-dialog__textarea"
+                    onChange={(event) => setFormData((prev) => ({ ...prev, notes: event.target.value }))}
                   />
                 </div>
-              </label>
+
+                {error ? (
+                  <div className="promo-dialog__alert promo-dialog__alert--error">
+                    <AlertTriangle size={16} />
+                    <p className="promo-dialog__alert-text">{error}</p>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
-            {!editingPromo && (
-              <div className="mt-4 space-y-3">
-                <div>
-                  <p className="m-0 mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Consumer Tiers</p>
-                  <div className="flex flex-wrap gap-2">
-                    {consumerTiers.map((tier) => (
-                      <button
-                        key={tier}
-                        onClick={() => setForm((prev) => ({ ...prev, allowed_tiers: toggleString(prev.allowed_tiers, tier) }))}
-                        className={`px-2 py-1 rounded text-xs border ${
-                          form.allowed_tiers.includes(tier)
-                            ? 'bg-cyan-500/20 border-cyan-500/30 text-cyan-300'
-                            : 'bg-zinc-800 border-zinc-700 text-zinc-300'
-                        }`}
-                      >
-                        {tier}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="m-0 mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Organization Tiers</p>
-                  <div className="flex flex-wrap gap-2">
-                    {orgTiers.map((tier) => (
-                      <button
-                        key={tier}
-                        onClick={() =>
-                          setForm((prev) => ({ ...prev, allowed_org_tiers: toggleString(prev.allowed_org_tiers, tier) }))
-                        }
-                        className={`px-2 py-1 rounded text-xs border ${
-                          form.allowed_org_tiers.includes(tier)
-                            ? 'bg-violet-500/20 border-violet-500/30 text-violet-300'
-                            : 'bg-zinc-800 border-zinc-700 text-zinc-300'
-                        }`}
-                      >
-                        {tier}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <p className="m-0 mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Credit Packs</p>
-                  <div className="flex flex-wrap gap-2">
-                    {creditPacks.map((pack) => (
-                      <button
-                        key={pack}
-                        onClick={() =>
-                          setForm((prev) => ({ ...prev, allowed_credit_packs: toggleString(prev.allowed_credit_packs, pack) }))
-                        }
-                        className={`px-2 py-1 rounded text-xs border ${
-                          form.allowed_credit_packs.includes(pack)
-                            ? 'bg-amber-500/20 border-amber-500/30 text-amber-300'
-                            : 'bg-zinc-800 border-zinc-700 text-zinc-300'
-                        }`}
-                      >
-                        {pack} credits
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <label className="block mt-4 text-xs text-zinc-400">
-              Notes
-              <textarea
-                value={form.notes}
-                onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
-                rows={3}
-                className="mt-1 w-full px-3 py-2 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-              />
-            </label>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                onClick={() => setShowEditor(false)}
-                className="px-3 py-2 rounded-md border border-zinc-700 text-xs font-semibold text-zinc-300 hover:bg-zinc-800"
-              >
+            <div className="promo-dialog__footer">
+              <button className="promo-dialog__btn promo-dialog__btn--secondary" disabled={saving} onClick={closeCreateModal}>
                 Cancel
               </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="px-3 py-2 rounded-md text-xs font-semibold text-black bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50"
-              >
-                {saving ? <Loader2 className="inline-block w-3.5 h-3.5 animate-spin mr-1" /> : <Save className="inline-block w-3.5 h-3.5 mr-1" />}
-                {editingPromo ? 'Save Changes' : 'Create Code'}
+              <button className="promo-dialog__btn promo-dialog__btn--primary" disabled={saving} onClick={() => void savePromoCode()}>
+                {saving ? <Loader2 size={16} className="promo-dialog__spinner" /> : null}
+                {saving ? 'Saving...' : editingPromo ? 'Save Changes' : 'Create Code'}
               </button>
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
-      {showDetail && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowDetail(false)}>
-          <div className="w-full max-w-3xl rounded-xl border border-zinc-700 bg-[#111113] p-5" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="m-0 text-lg font-semibold text-white">Promo Details</h2>
-                <p className="m-0 mt-1 text-xs text-zinc-500">Detailed code usage and redemptions.</p>
+      {viewingPromo ? (
+        <div className="promo-dialog__overlay" onClick={(event) => event.target === event.currentTarget && setViewingPromo(null)}>
+          <div className="promo-dialog" role="dialog" aria-modal="true">
+            <div className="promo-dialog__accent" />
+
+            <div className="promo-dialog__header">
+              <button className="promo-dialog__close" title="Close" onClick={() => setViewingPromo(null)}>
+                <X size={18} />
+              </button>
+              <div className="promo-dialog__icon">
+                <Eye size={24} />
               </div>
-              <button onClick={() => setShowDetail(false)} className="text-zinc-500 hover:text-zinc-200">Close</button>
+              <h2 className="promo-dialog__title">Discount Code Details</h2>
+              <p className="promo-dialog__subtitle">View promotional code information</p>
             </div>
 
-            {loadingDetail ? (
-              <div className="py-10 text-center text-zinc-400">
-                <Loader2 className="inline-block w-5 h-5 animate-spin mr-2" />
-                Loading details...
+            <div className="promo-dialog__content">
+              <div className="promo-dialog__code-display">
+                <code className="promo-dialog__code-value">{viewingPromo.code}</code>
+                <button className="promo-dialog__code-copy" onClick={() => void copyCode(viewingPromo.code)}>
+                  <Copy size={16} />
+                </button>
               </div>
-            ) : detailPromo ? (
-              <>
-                <div className="mt-4 rounded-lg border border-zinc-800 bg-zinc-900/60 p-4">
-                  <div className="flex items-center gap-2">
-                    <code className="text-cyan-200 bg-zinc-800 px-2 py-1 rounded text-xs">{detailPromo.code}</code>
-                    <ChevronRight className="w-4 h-4 text-zinc-600" />
-                    <span className="text-sm text-zinc-300">{detailPromo.percent_off}% off</span>
-                    <span className="text-xs text-zinc-500">{durationLabel(detailPromo)}</span>
-                  </div>
-                  <p className="m-0 mt-2 text-xs text-zinc-500">Created: {formatDateTime(detailPromo.created_at)}</p>
-                </div>
+              {viewingPromo.name ? <p className="promo-dialog__code-name">{viewingPromo.name}</p> : null}
 
-                <div className="mt-4 rounded-xl border border-zinc-800 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-900/50">
-                    <h3 className="m-0 text-sm font-semibold text-white">Redemptions ({detailRedemptions.length})</h3>
-                  </div>
-                  <div className="max-h-[360px] overflow-auto">
-                    {detailRedemptions.length === 0 ? (
-                      <div className="p-6 text-sm text-zinc-400">No redemptions yet.</div>
-                    ) : (
-                      <table className="w-full min-w-[720px] text-sm">
-                        <thead className="text-left text-zinc-400 text-xs uppercase tracking-wide">
-                          <tr>
-                            <th className="px-3 py-2 border-b border-zinc-800">User</th>
-                            <th className="px-3 py-2 border-b border-zinc-800">Status</th>
-                            <th className="px-3 py-2 border-b border-zinc-800">Redeemed</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {detailRedemptions.map((redemption) => (
-                            <tr key={redemption.id} className="border-b border-zinc-800/60">
-                              <td className="px-3 py-2 text-zinc-300">{redemption.user.email || redemption.user.wallet_address || `User #${redemption.user.id}`}</td>
-                              <td className="px-3 py-2 text-zinc-300">{redemption.status}</td>
-                              <td className="px-3 py-2 text-zinc-500">{formatDateTime(redemption.redeemed_at || redemption.created_at)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
+              <div className="promo-dialog__stats">
+                <div className="promo-dialog__stat">
+                  <span className="promo-dialog__stat-label">Discount</span>
+                  <span className="promo-dialog__stat-value promo-dialog__stat-value--highlight">{viewingPromo.percent_off}%</span>
+                </div>
+                <div className="promo-dialog__stat">
+                  <span className="promo-dialog__stat-label">Duration</span>
+                  <span className="promo-dialog__stat-value">{formatDuration(viewingPromo)}</span>
+                </div>
+                <div className="promo-dialog__stat">
+                  <span className="promo-dialog__stat-label">Status</span>
+                  <span className={`promo-dialog__stat-badge ${viewingPromo.is_active ? 'promo-dialog__stat-badge--active' : 'promo-dialog__stat-badge--inactive'}`}>
+                    {viewingPromo.is_active ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                    {viewingPromo.is_active ? 'Active' : 'Inactive'}
+                  </span>
+                </div>
+                <div className="promo-dialog__stat">
+                  <span className="promo-dialog__stat-label">Usage</span>
+                  <span className="promo-dialog__stat-value">
+                    {viewingPromo.redemption_count}
+                    {viewingPromo.max_redemptions ? `/${viewingPromo.max_redemptions}` : ''}
+                  </span>
+                </div>
+              </div>
+
+              {viewingPromo.allowed_tiers?.length ? (
+                <div className="promo-dialog__section">
+                  <h3 className="promo-dialog__section-title">User Subscription Tiers</h3>
+                  <div className="promo-dialog__tier-list">
+                    {viewingPromo.allowed_tiers.map((tier) => (
+                      <span key={tier} className="promo-dialog__tier promo-dialog__tier--user">
+                        {tier.charAt(0).toUpperCase() + tier.slice(1)}
+                      </span>
+                    ))}
                   </div>
                 </div>
-              </>
-            ) : (
-              <div className="py-10 text-center text-zinc-400">Promo details unavailable.</div>
-            )}
+              ) : null}
+
+              {viewingPromo.allowed_org_tiers?.length ? (
+                <div className="promo-dialog__section">
+                  <h3 className="promo-dialog__section-title">Organization Subscription Tiers</h3>
+                  <div className="promo-dialog__tier-list">
+                    {viewingPromo.allowed_org_tiers.map((tier) => (
+                      <span key={tier} className="promo-dialog__tier promo-dialog__tier--org">
+                        {humanizeTier(tier)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {viewingPromo.allowed_credit_packs?.length ? (
+                <div className="promo-dialog__section">
+                  <h3 className="promo-dialog__section-title">Credit Packs</h3>
+                  <div className="promo-dialog__tier-list">
+                    {viewingPromo.allowed_credit_packs.map((pack) => (
+                      <span key={pack} className="promo-dialog__tier promo-dialog__tier--pack">
+                        {pack.charAt(0).toUpperCase() + pack.slice(1)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {viewingPromo.max_redemptions || viewingPromo.redeem_by || viewingPromo.notes ? (
+                <div className="promo-dialog__section">
+                  <h3 className="promo-dialog__section-title">Additional Info</h3>
+                  <div className="promo-dialog__info-grid">
+                    {viewingPromo.max_redemptions ? (
+                      <div className="promo-dialog__info-item">
+                        <span className="promo-dialog__info-label">Max Redemptions</span>
+                        <span className="promo-dialog__info-value">{viewingPromo.max_redemptions}</span>
+                      </div>
+                    ) : null}
+                    {viewingPromo.redeem_by ? (
+                      <div className="promo-dialog__info-item">
+                        <span className="promo-dialog__info-label">Expires</span>
+                        <span className="promo-dialog__info-value">{formatDate(viewingPromo.redeem_by)}</span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {viewingPromo.notes ? (
+                    <div className="promo-dialog__notes">
+                      <span className="promo-dialog__info-label">Notes</span>
+                      <p className="promo-dialog__notes-text">{viewingPromo.notes}</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {viewingPromo.redemptions && viewingPromo.redemptions.length > 0 ? (
+                <div className="promo-dialog__section">
+                  <h3 className="promo-dialog__section-title">
+                    Redemptions
+                    <span className="promo-dialog__section-count">{viewingPromo.redemptions.length}</span>
+                  </h3>
+
+                  <div className="promo-dialog__redemption-list">
+                    {viewingPromo.redemptions.map((redemption) => (
+                      <div key={redemption.id} className="promo-dialog__redemption-item">
+                        <div className="promo-dialog__redemption-row">
+                          <code className="promo-dialog__redemption-wallet">{redemption.user.wallet_address || 'N/A'}</code>
+                          <span className={`promo-dialog__redemption-badge ${getRedemptionStatusClass(redemption)}`}>
+                            {redemption.status}
+                          </span>
+                        </div>
+                        <p className="promo-dialog__redemption-date">{formatDate(redemption.redeemed_at)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="promo-dialog__footer promo-dialog__footer--single">
+              <button className="promo-dialog__btn promo-dialog__btn--secondary" onClick={() => setViewingPromo(null)}>
+                Close
+              </button>
+            </div>
           </div>
         </div>
-      )}
+      ) : null}
     </PageLayout>
   )
 }

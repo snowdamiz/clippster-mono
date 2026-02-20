@@ -1,97 +1,121 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Activity, AlertTriangle, BarChart3, Loader2, RefreshCw } from 'lucide-react'
+import { Activity, BarChart3, Loader2, RefreshCw } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { getAnalyticsStats, type AnalyticsStats } from '@/services/adminApi'
-import { formatNumber, toTitleCase } from './adminFormat'
+import './AdminAnalyticsPage.css'
+
+type AnalyticsStatsMap = Record<string, { total: number; today: number; this_week: number }>
+
+function formatEventName(eventType: string): string {
+  const names: Record<string, string> = {
+    clip_detection: 'Clip Detection',
+    clip_export: 'Clip Export',
+    vod_download: 'VOD Download',
+    user_created: 'User Created',
+    credits_purchased: 'Credits Purchased',
+    credits_spent: 'Credits Spent',
+  }
+
+  return names[eventType] || eventType
+}
 
 export function AdminAnalyticsPage() {
-  const [stats, setStats] = useState<AnalyticsStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [analyticsStats, setAnalyticsStats] = useState<AnalyticsStatsMap | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const load = useCallback(async () => {
+  const fetchAnalyticsStats = useCallback(async () => {
     setLoading(true)
-    setError(null)
     try {
-      const data = await getAnalyticsStats()
-      setStats(Object.keys(data).length ? data : null)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load analytics')
+      const stats: AnalyticsStats = await getAnalyticsStats()
+      setAnalyticsStats(Object.keys(stats).length > 0 ? stats : null)
+    } catch (error) {
+      console.error('Error fetching analytics stats:', error)
+      setAnalyticsStats(null)
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    load()
-  }, [load])
-
-  const entries = stats ? Object.entries(stats) : []
+    void fetchAnalyticsStats()
+  }, [fetchAnalyticsStats])
 
   return (
     <PageLayout
-      icon={BarChart3}
       title="Analytics"
+      icon={BarChart3}
       actions={
-        <button
-          onClick={load}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-zinc-200 border border-zinc-700 bg-transparent hover:bg-zinc-800 disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          Refresh
+        <button className="admin-analytics__action-btn" disabled={loading} onClick={() => void fetchAnalyticsStats()}>
+          {!loading ? (
+            <RefreshCw className="admin-analytics__action-icon" />
+          ) : (
+            <Loader2 className="admin-analytics__action-icon admin-analytics__action-icon--spin" />
+          )}
+          Refresh Analytics
         </button>
       }
     >
-      <div className="p-6 space-y-4 max-w-[1400px] w-full mx-auto">
-        <div>
-          <h1 className="m-0 text-2xl font-bold text-white">Analytics</h1>
-          <p className="m-0 mt-1 text-sm text-zinc-400">Track key user actions and events.</p>
+      <div className="admin-analytics-page">
+        <div className="admin-analytics">
+          <div className="admin-analytics__heading">
+            <h1 className="admin-analytics__title">Analytics</h1>
+            <p className="admin-analytics__subtitle">Track key user actions and events</p>
+          </div>
+
+          <div className="admin-analytics__stats-header">
+            <div className="admin-analytics__stats-info">
+              <div className="admin-analytics__stats-icon">
+                <BarChart3 className="admin-analytics__stats-icon-svg" />
+              </div>
+              <div>
+                <h2 className="admin-analytics__stats-title">Analytics</h2>
+                <p className="admin-analytics__stats-desc">Track key user actions and events</p>
+              </div>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="admin-analytics__loading">
+              <Loader2 className="admin-analytics__loading-icon" />
+              <p className="admin-analytics__loading-text">Loading analytics...</p>
+            </div>
+          ) : analyticsStats ? (
+            <div className="admin-analytics__grid">
+              {Object.entries(analyticsStats).map(([eventType, stats]) => (
+                <div key={eventType} className="admin-analytics__card">
+                  <div className="admin-analytics__card-header">
+                    <div className="admin-analytics__card-icon">
+                      <Activity className="admin-analytics__card-icon-svg" />
+                    </div>
+                    <h3 className="admin-analytics__card-title">{formatEventName(eventType)}</h3>
+                  </div>
+
+                  <div className="admin-analytics__card-stats">
+                    <div className="admin-analytics__stat">
+                      <p className="admin-analytics__stat-label">Today</p>
+                      <p className="admin-analytics__stat-value">{stats.today}</p>
+                    </div>
+                    <div className="admin-analytics__stat">
+                      <p className="admin-analytics__stat-label">This Week</p>
+                      <p className="admin-analytics__stat-value">{stats.this_week}</p>
+                    </div>
+                    <div className="admin-analytics__stat admin-analytics__stat--highlight">
+                      <p className="admin-analytics__stat-label">Total</p>
+                      <p className="admin-analytics__stat-value admin-analytics__stat-value--highlight">{stats.total}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="admin-analytics__empty">
+              <div className="admin-analytics__empty-icon">
+                <BarChart3 className="admin-analytics__empty-icon-svg" />
+              </div>
+              <p className="admin-analytics__empty-text">No analytics data available</p>
+            </div>
+          )}
         </div>
-
-        {error && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            {error}
-          </div>
-        )}
-
-        {loading && !stats ? (
-          <div className="py-12 flex items-center justify-center text-zinc-400">
-            <Loader2 className="w-5 h-5 animate-spin mr-2" />
-            Loading analytics...
-          </div>
-        ) : entries.length ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {entries.map(([eventType, eventStats]) => (
-              <article key={eventType} className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 rounded-md bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center">
-                    <Activity className="w-4 h-4 text-emerald-300" />
-                  </div>
-                  <h3 className="m-0 text-sm font-semibold text-white">{toTitleCase(eventType)}</h3>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="rounded-md bg-zinc-800/60 p-2 text-center">
-                    <p className="m-0 text-[10px] uppercase tracking-wide text-zinc-400">Today</p>
-                    <p className="m-0 mt-1 text-lg font-bold text-zinc-100">{formatNumber(eventStats.today)}</p>
-                  </div>
-                  <div className="rounded-md bg-zinc-800/60 p-2 text-center">
-                    <p className="m-0 text-[10px] uppercase tracking-wide text-zinc-400">This Week</p>
-                    <p className="m-0 mt-1 text-lg font-bold text-zinc-100">{formatNumber(eventStats.this_week)}</p>
-                  </div>
-                  <div className="rounded-md bg-emerald-500/15 border border-emerald-500/20 p-2 text-center">
-                    <p className="m-0 text-[10px] uppercase tracking-wide text-emerald-300">Total</p>
-                    <p className="m-0 mt-1 text-lg font-bold text-emerald-300">{formatNumber(eventStats.total)}</p>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-10 text-center text-zinc-400">No analytics data available.</div>
-        )}
       </div>
     </PageLayout>
   )

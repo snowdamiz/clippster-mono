@@ -49,8 +49,8 @@ Requirements for milestone v1.1: Admin Dashboard Web Parity.
 
 - [x] **ADMIN-01**: Website exposes admin routes matching app admin path surface (`/admin/*`)
 - [x] **ADMIN-02**: Website enforces admin/moderator-only access for admin routes
-- [x] **ADMIN-03**: Website admin experience renders the exact app admin UI implementation
-- [x] **ADMIN-04**: Embedded admin context receives active auth session via secure cross-context sync
+- [x] **ADMIN-03**: Website admin experience recreates app admin UI and functionality natively in React
+- [x] **ADMIN-04**: Admin deep links are supported for both `/admin/*` and `/dashboard/admin/*` route surfaces
 
 ## v2 Requirements
 

@@ -55,7 +55,7 @@ const emptyForm = (): ApplicationForm => ({
 
 export function DashboardIndex() {
   const navigate = useNavigate()
-  const { user, getOrganizations } = useAuth()
+  const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -68,49 +68,47 @@ export function DashboardIndex() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
 
-  const checkAndRedirect = useCallback(async () => {
-    if (user?.is_admin || user?.is_moderator) {
-      navigate('/admin', { replace: true })
-      return true
-    }
-
-    // If user already has an owned org, redirect immediately
+  const redirectToKnownOrg = useCallback(() => {
+    // Owner org: go directly to owned org dashboard
     if (user?.owned_organization_id) {
       navigate(`/dashboard/org/${user.owned_organization_id}`, { replace: true })
       return true
     }
 
-    // Check if user is a member of any org
-    const result = await getOrganizations()
-    const orgs = result.success ? result.organizations : null
-    if (orgs && orgs.length > 0) {
-      navigate(`/dashboard/org/${orgs[0].id}`, { replace: true })
+    // Org-created member account: go directly to creator organization dashboard
+    if (user?.created_by_organization_id) {
+      navigate(`/dashboard/org/${user.created_by_organization_id}`, { replace: true })
       return true
     }
 
     return false
-  }, [user, getOrganizations, navigate])
+  }, [user, navigate])
 
   useEffect(() => {
     async function init() {
       setLoading(true)
 
-      // Try to redirect to an org first
-      const redirected = await checkAndRedirect()
-      if (redirected) return
+      // Fast path for users with explicit org linkage on their auth payload
+      const redirectedToKnownOrg = redirectToKnownOrg()
+      if (redirectedToKnownOrg) return
 
-      // No org — check for existing application
+      // No known org linkage — check application state
       try {
         const res = await api.get<{ success: boolean; application: OrgApplication | null }>(
           '/organization-applications/my-application'
         )
         if (res.success && res.application) {
           setApplication(res.application)
-          // If approved, the user should have an org now — try redirecting again
-          if (res.application.status === 'approved') {
-            const redirectedAgain = await checkAndRedirect()
-            if (redirectedAgain) return
+          // Pending/rejected applications should remain on this page.
+          if (res.application.status !== 'approved') {
+            setLoading(false)
+            return
           }
+
+          // If approved, try known-org redirect again first.
+          if (redirectToKnownOrg()) return
+
+          // If metadata is stale, the next auth refresh/login will populate org IDs.
         }
       } catch {
         // No existing application, show the form
@@ -119,7 +117,7 @@ export function DashboardIndex() {
       setLoading(false)
     }
     init()
-  }, [user, checkAndRedirect])
+  }, [user, redirectToKnownOrg])
 
   function updateField<K extends keyof ApplicationForm>(key: K, value: ApplicationForm[K]) {
     setForm((f) => ({ ...f, [key]: value }))

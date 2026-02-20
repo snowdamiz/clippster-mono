@@ -13,7 +13,7 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 Phase: 5 of 5 (Web Admin Dashboard Parity)
 Plan: 1 of 1 in current phase
 Status: Complete
-Last activity: 2026-02-20 — Plan 05-01 complete (Website admin parity via embedded app dashboard)
+Last activity: 2026-02-20 — Plan 05-01 complete (Website admin parity via native React admin dashboard)
 
 Progress: [██████████] 100% (All phases complete)
 
@@ -66,7 +66,7 @@ Recent decisions affecting current work:
 - [Phase 04-02]: Two-stage content hashing (caption-only pre-check, caption+media final hash) prevents API quota waste on duplicate uploads
 - [Phase 04-02]: 24-hour duplicate detection window balances catching duplicates vs allowing intentional reposts
 - [Phase 04-02]: Per-account duplicate detection (not global) allows same content on different accounts
-- [Phase 05]: Use app-admin embedding for website parity instead of duplicating admin pages in landing — Guarantees identical UI/behavior and avoids maintaining a second, divergent implementation of 20+ admin pages
+- [Phase 05]: Recreate app admin UX natively in landing React and wire to existing admin APIs — Removes iframe/Tauri runtime dependency in browser while preserving route/functionality parity
 
 ### Pending Todos
 

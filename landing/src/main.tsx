@@ -62,6 +62,31 @@ const AdminCustomerServicePage = lazy(() => import('./pages/admin/AdminCustomerS
 const AdminStaffMessagesPage = lazy(() => import('./pages/admin/AdminStaffMessagesPage').then(m => ({ default: m.AdminStaffMessagesPage })))
 const AdminModLogsPage = lazy(() => import('./pages/admin/AdminModLogsPage').then(m => ({ default: m.AdminModLogsPage })))
 
+function renderAdminChildRoutes() {
+  return (
+    <>
+      <Route index element={<AdminHubPage />} />
+      <Route path="users" element={<AdminUsersPage />} />
+      <Route path="organizations" element={<AdminOrganizationsPage />} />
+      <Route path="bug-reports" element={<AdminBugReportsPage />} />
+      <Route path="ai-usage" element={<AdminAiUsagePage />} />
+      <Route path="analytics" element={<AdminAnalyticsPage />} />
+      <Route path="beta-codes" element={<AdminBetaCodesPage />} />
+      <Route path="discount-codes" element={<AdminDiscountCodesPage />} />
+      <Route path="waitlist" element={<AdminWaitlistPage />} />
+      <Route path="settings" element={<AdminSettingsPage />} />
+      <Route path="org-applications" element={<AdminOrgApplicationsPage />} />
+      <Route path="affiliates" element={<AdminAffiliatesPage />} />
+      <Route path="affiliates/:id" element={<AdminAffiliateDetailPage />} />
+      <Route path="users/:id" element={<AdminUserProfilePage />} />
+      <Route path="organizations/:id" element={<AdminOrgDetailPage />} />
+      <Route path="customer-service" element={<AdminCustomerServicePage />} />
+      <Route path="staff-messages" element={<AdminStaffMessagesPage />} />
+      <Route path="mod-logs" element={<AdminModLogsPage />} />
+    </>
+  )
+}
+
 function LoadingFallback() {
   return (
     <div className="min-h-screen bg-[#0a0a0b] flex items-center justify-center">
@@ -138,27 +163,17 @@ createRoot(document.getElementById('root')!).render(
                     </AdminRoute>
                   }
                 >
-                  <Route index element={<AdminHubPage />} />
-                  <Route path="users" element={<AdminUsersPage />} />
-                  <Route path="organizations" element={<AdminOrganizationsPage />} />
-                  <Route path="bug-reports" element={<AdminBugReportsPage />} />
-                  <Route path="ai-usage" element={<AdminAiUsagePage />} />
-                  <Route path="analytics" element={<AdminAnalyticsPage />} />
-                  <Route path="beta-codes" element={<AdminBetaCodesPage />} />
-                  <Route path="discount-codes" element={<AdminDiscountCodesPage />} />
-                  <Route path="waitlist" element={<AdminWaitlistPage />} />
-                  <Route path="settings" element={<AdminSettingsPage />} />
-                  <Route path="org-applications" element={<AdminOrgApplicationsPage />} />
-                  <Route path="affiliates" element={<AdminAffiliatesPage />} />
-                  <Route path="affiliates/:id" element={<AdminAffiliateDetailPage />} />
-                  <Route path="users/:id" element={<AdminUserProfilePage />} />
-                  <Route path="organizations/:id" element={<AdminOrgDetailPage />} />
-                  <Route path="customer-service" element={<AdminCustomerServicePage />} />
-                  <Route path="staff-messages" element={<AdminStaffMessagesPage />} />
-                  <Route path="mod-logs" element={<AdminModLogsPage />} />
+                  {renderAdminChildRoutes()}
                 </Route>
-                <Route path="/dashboard/admin/*" element={<AdminRoute><AdminLayout /></AdminRoute>}>
-                  <Route index element={<AdminHubPage />} />
+                <Route
+                  path="/dashboard/admin/*"
+                  element={
+                    <AdminRoute>
+                      <AdminLayout />
+                    </AdminRoute>
+                  }
+                >
+                  {renderAdminChildRoutes()}
                 </Route>
               </Routes>
             </Suspense>

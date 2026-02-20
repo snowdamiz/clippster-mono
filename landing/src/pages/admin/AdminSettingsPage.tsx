@@ -1,267 +1,382 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Check, Loader2, Radio, RefreshCw, Settings } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Check, ImageIcon, KeyRound, Loader2, Radio, Settings } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import {
   getAdminSettings,
   getFreeTierBranding,
   saveFreeTierBranding,
   updateAdminSetting,
-  type FeatureFlags,
   type FreeTierBranding,
 } from '@/services/adminApi'
-import { toTitleCase } from './adminFormat'
+import './AdminSettingsPage.css'
 
-function asBoolean(value: unknown): boolean | null {
+function parseFlag(value: unknown, fallback: boolean): boolean {
   if (typeof value === 'boolean') return value
   if (value === 'true') return true
   if (value === 'false') return false
-  return null
+  return fallback
 }
 
-function normalizeBranding(data: FreeTierBranding): FreeTierBranding {
-  return {
-    watermark_url: data.watermark_url || '',
-    intro_url: data.intro_url || '',
-    outro_url: data.outro_url || '',
+function getPlatformDisplayName(platform: string): string {
+  switch (platform) {
+    case 'auto':
+      return 'Auto Detect'
+    case 'windows':
+      return 'Windows'
+    case 'macos':
+      return 'macOS'
+    case 'linux':
+      return 'Linux'
+    default:
+      return platform
   }
 }
 
 export function AdminSettingsPage() {
-  const [loading, setLoading] = useState(true)
-  const [savingFlagKey, setSavingFlagKey] = useState<string | null>(null)
-  const [savingBranding, setSavingBranding] = useState(false)
-  const [settings, setSettings] = useState<Record<string, string>>({})
-  const [featureFlags, setFeatureFlags] = useState<FeatureFlags>({})
-  const [branding, setBranding] = useState<FreeTierBranding>({
+  const [isLiveClipEnabled, setIsLiveClipEnabled] = useState(true)
+  const [isBetaModeEnabled, setIsBetaModeEnabled] = useState(false)
+  const [featureFlagsLoading, setFeatureFlagsLoading] = useState(true)
+
+  const [updatingLiveClipFlag, setUpdatingLiveClipFlag] = useState(false)
+  const [updatingBetaModeFlag, setUpdatingBetaModeFlag] = useState(false)
+  const [titleBarPlatformOverride, setTitleBarPlatformOverrideState] = useState('auto')
+
+  const [freeTierBranding, setFreeTierBranding] = useState<FreeTierBranding>({
     watermark_url: '',
     intro_url: '',
     outro_url: '',
   })
-  const [error, setError] = useState<string | null>(null)
+  const [savingBranding, setSavingBranding] = useState(false)
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  const freeTierBrandingConfigured = useMemo(
+    () => Boolean(freeTierBranding.watermark_url || freeTierBranding.intro_url || freeTierBranding.outro_url),
+    [freeTierBranding.intro_url, freeTierBranding.outro_url, freeTierBranding.watermark_url],
+  )
+
+  async function fetchFeatureFlags() {
+    setFeatureFlagsLoading(true)
     try {
-      const [settingsData, brandingData] = await Promise.all([getAdminSettings(), getFreeTierBranding()])
-      setSettings(settingsData.settings)
-      setFeatureFlags(settingsData.feature_flags)
-      setBranding(normalizeBranding(brandingData))
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load settings')
+      const response = await getAdminSettings()
+      const flags = response.feature_flags || {}
+      setIsLiveClipEnabled(parseFlag(flags.live_clip_enabled, true))
+      setIsBetaModeEnabled(parseFlag(flags.beta_mode_enabled, false))
+    } catch (err) {
+      console.error('[AdminSettings] Failed to load feature flags:', err)
     } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    load()
-  }, [load])
-
-  const flagEntries = useMemo(() => {
-    return Object.entries(featureFlags).filter(([, value]) => asBoolean(value) !== null)
-  }, [featureFlags])
-
-  const otherSettingsEntries = useMemo(() => {
-    return Object.entries(settings).sort((a, b) => a[0].localeCompare(b[0]))
-  }, [settings])
-
-  async function toggleFlag(key: string, current: unknown) {
-    const parsed = asBoolean(current)
-    if (parsed === null) return
-
-    setSavingFlagKey(key)
-    setError(null)
-    try {
-      await updateAdminSetting(key, !parsed)
-      setFeatureFlags((prev) => ({ ...prev, [key]: !parsed }))
-    } catch (err: any) {
-      setError(err?.message || `Failed to update ${key}`)
-    } finally {
-      setSavingFlagKey(null)
+      setFeatureFlagsLoading(false)
     }
   }
 
-  async function saveBranding() {
-    setSavingBranding(true)
-    setError(null)
+  async function toggleLiveClipFeature() {
+    setUpdatingLiveClipFlag(true)
     try {
-      await saveFreeTierBranding(branding)
-    } catch (err: any) {
-      setError(err?.message || 'Failed to save free-tier branding')
+      const newValue = !isLiveClipEnabled
+      await updateAdminSetting('live_clip_enabled', newValue)
+      setIsLiveClipEnabled(newValue)
+    } catch (err) {
+      console.error('Error toggling Live Clip feature:', err)
+    } finally {
+      setUpdatingLiveClipFlag(false)
+    }
+  }
+
+  async function toggleBetaModeFeature() {
+    setUpdatingBetaModeFlag(true)
+    try {
+      const newValue = !isBetaModeEnabled
+      await updateAdminSetting('beta_mode_enabled', newValue)
+      setIsBetaModeEnabled(newValue)
+    } catch (err) {
+      console.error('Error toggling Beta Mode feature:', err)
+    } finally {
+      setUpdatingBetaModeFlag(false)
+    }
+  }
+
+  function setTitleBarOverride(platform: string) {
+    setTitleBarPlatformOverrideState(platform)
+    localStorage.setItem('titlebar-platform-override', platform)
+    window.dispatchEvent(
+      new CustomEvent('titlebar-platform-override', {
+        detail: { platform },
+      }),
+    )
+  }
+
+  function loadPlatformOverride() {
+    const saved = localStorage.getItem('titlebar-platform-override')
+    if (saved) {
+      setTitleBarPlatformOverrideState(saved)
+      window.dispatchEvent(
+        new CustomEvent('titlebar-platform-override', {
+          detail: { platform: saved },
+        }),
+      )
+    }
+  }
+
+  async function loadFreeTierBranding() {
+    try {
+      const branding = await getFreeTierBranding()
+      setFreeTierBranding({
+        watermark_url: branding.watermark_url || '',
+        intro_url: branding.intro_url || '',
+        outro_url: branding.outro_url || '',
+      })
+    } catch (err) {
+      console.warn('[AdminSettings] Failed to load free tier branding:', err)
+    }
+  }
+
+  async function saveCurrentFreeTierBranding() {
+    setSavingBranding(true)
+    try {
+      await saveFreeTierBranding(freeTierBranding)
+    } catch (err) {
+      console.error('[AdminSettings] Failed to save free tier branding:', err)
     } finally {
       setSavingBranding(false)
     }
   }
 
-  const brandingConfigured = Boolean(branding.watermark_url || branding.intro_url || branding.outro_url)
+  useEffect(() => {
+    void fetchFeatureFlags()
+    loadPlatformOverride()
+    void loadFreeTierBranding()
+  }, [])
 
   return (
-    <PageLayout
-      icon={Settings}
-      title="Settings"
-      actions={
-        <button
-          onClick={load}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-zinc-200 border border-zinc-700 bg-transparent hover:bg-zinc-800 disabled:opacity-50"
-        >
-          {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          Refresh
-        </button>
-      }
-    >
-      <div className="p-6 space-y-4 max-w-[1300px] w-full mx-auto">
-        <div>
-          <h1 className="m-0 text-2xl font-bold text-white">Settings</h1>
-          <p className="m-0 mt-1 text-sm text-zinc-400">Feature flags and UI configuration.</p>
-        </div>
-
-        {error && (
-          <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-200 flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4" />
-            {error}
+    <div className="admin-settings-page">
+      <PageLayout title="Settings" icon={Settings}>
+        <div className="admin-settings">
+          <div className="admin-settings__heading">
+            <h1 className="admin-settings__title">Settings</h1>
+            <p className="admin-settings__subtitle">Feature flags and UI configuration</p>
           </div>
-        )}
 
-        {loading ? (
-          <div className="py-12 flex items-center justify-center text-zinc-400">
-            <Loader2 className="w-5 h-5 animate-spin mr-2" />
-            Loading settings...
-          </div>
-        ) : (
-          <>
-            <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
-              <div>
-                <h2 className="m-0 text-sm font-semibold text-white">Feature Flags</h2>
-                <p className="m-0 mt-1 text-xs text-zinc-500">Toggle platform feature visibility.</p>
+          <div className="admin-settings__section">
+            <div className="admin-settings__section-header">
+              <h3 className="admin-settings__section-title">Feature Flags</h3>
+              <p className="admin-settings__section-desc">
+                Enable or disable features across the application. Changes take effect immediately for all users.
+              </p>
+            </div>
+
+            <div className="admin-settings__flags">
+              <div className="admin-settings__flag">
+                <div className="admin-settings__flag-info">
+                  <div className="admin-settings__flag-icon admin-settings__flag-icon--violet">
+                    <Radio className="admin-settings__flag-icon-svg" />
+                  </div>
+                  <div>
+                    <span className="admin-settings__flag-name">Live Clip</span>
+                    <p className="admin-settings__flag-desc">
+                      Enable real-time stream monitoring, recording, and clip detection features.
+                    </p>
+                  </div>
+                </div>
+                <div className="admin-settings__flag-control">
+                  {featureFlagsLoading ? (
+                    <span className="admin-settings__flag-loading">
+                      <Loader2 className="admin-settings__flag-loading-icon" />
+                      Loading...
+                    </span>
+                  ) : null}
+                  <button
+                    className={`admin-settings__toggle ${isLiveClipEnabled ? 'admin-settings__toggle--active' : ''}`}
+                    disabled={featureFlagsLoading || updatingLiveClipFlag}
+                    role="switch"
+                    aria-checked={isLiveClipEnabled}
+                    onClick={() => void toggleLiveClipFeature()}
+                  >
+                    <span
+                      className={`admin-settings__toggle-thumb ${
+                        isLiveClipEnabled ? 'admin-settings__toggle-thumb--active' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
 
-              {flagEntries.length === 0 ? (
-                <p className="m-0 text-sm text-zinc-400">No boolean feature flags found.</p>
-              ) : (
-                <div className="space-y-2">
-                  {flagEntries.map(([key, value]) => {
-                    const enabled = asBoolean(value) === true
-                    return (
-                      <div key={key} className="rounded-lg border border-zinc-800 bg-[#0c0c0f] px-3 py-2 flex items-center justify-between gap-3">
-                        <div>
-                          <p className="m-0 text-sm font-medium text-zinc-200">{toTitleCase(key)}</p>
-                          <p className="m-0 mt-0.5 text-xs text-zinc-500">{key}</p>
-                        </div>
-                        <button
-                          onClick={() => toggleFlag(key, value)}
-                          disabled={savingFlagKey === key}
-                          className={`h-8 px-3 rounded-md text-xs font-semibold border disabled:opacity-50 ${
-                            enabled
-                              ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
-                              : 'bg-zinc-800 border-zinc-700 text-zinc-300'
-                          }`}
-                        >
-                          {savingFlagKey === key ? (
-                            <Loader2 className="inline-block w-3.5 h-3.5 animate-spin mr-1" />
-                          ) : enabled ? (
-                            <Check className="inline-block w-3.5 h-3.5 mr-1" />
-                          ) : (
-                            <Radio className="inline-block w-3.5 h-3.5 mr-1" />
-                          )}
-                          {enabled ? 'Enabled' : 'Disabled'}
-                        </button>
-                      </div>
-                    )
-                  })}
+              {!isLiveClipEnabled ? (
+                <div className="admin-settings__flag-warning">
+                  <p>
+                    <strong>Live Clip is disabled.</strong> The Live Clip page and monitoring controls are hidden from
+                    all users.
+                  </p>
                 </div>
-              )}
-            </section>
+              ) : null}
 
-            <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h2 className="m-0 text-sm font-semibold text-white">Free Tier Branding</h2>
-                  <p className="m-0 mt-1 text-xs text-zinc-500">Global branding enforced for free-tier users.</p>
+              <div className="admin-settings__flag">
+                <div className="admin-settings__flag-info">
+                  <div className="admin-settings__flag-icon admin-settings__flag-icon--amber">
+                    <KeyRound className="admin-settings__flag-icon-svg" />
+                  </div>
+                  <div>
+                    <span className="admin-settings__flag-name">Beta Mode</span>
+                    <p className="admin-settings__flag-desc">
+                      Require new users to enter a beta code before accessing the app.
+                    </p>
+                  </div>
                 </div>
-                <span
-                  className={`px-2 py-0.5 rounded text-xs font-semibold border ${
-                    brandingConfigured
-                      ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
-                      : 'bg-zinc-800 border-zinc-700 text-zinc-400'
+                <div className="admin-settings__flag-control">
+                  {featureFlagsLoading ? (
+                    <span className="admin-settings__flag-loading">
+                      <Loader2 className="admin-settings__flag-loading-icon" />
+                      Loading...
+                    </span>
+                  ) : null}
+                  <button
+                    className={`admin-settings__toggle ${
+                      isBetaModeEnabled ? 'admin-settings__toggle--active admin-settings__toggle--amber' : ''
+                    }`}
+                    disabled={featureFlagsLoading || updatingBetaModeFlag}
+                    role="switch"
+                    aria-checked={isBetaModeEnabled}
+                    onClick={() => void toggleBetaModeFeature()}
+                  >
+                    <span
+                      className={`admin-settings__toggle-thumb ${
+                        isBetaModeEnabled ? 'admin-settings__toggle-thumb--active' : ''
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {isBetaModeEnabled ? (
+                <div className="admin-settings__flag-warning admin-settings__flag-warning--amber">
+                  <p>
+                    <strong>Beta Mode is enabled.</strong> New users must enter a valid beta code to access the app.
+                    Generate codes in the Beta Codes page.
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="admin-settings__section">
+            <div className="admin-settings__section-header">
+              <h3 className="admin-settings__section-title">TitleBar Platform Override</h3>
+              <p className="admin-settings__section-desc">
+                Force the TitleBar component to render as if running on a specific operating system. This allows
+                testing platform-specific styling without switching environments.
+              </p>
+            </div>
+
+            <div className="admin-settings__platforms">
+              {['auto', 'windows', 'macos', 'linux'].map((platform) => (
+                <button
+                  key={platform}
+                  className={`admin-settings__platform-btn ${
+                    titleBarPlatformOverride === platform ? 'admin-settings__platform-btn--active' : ''
+                  }`}
+                  onClick={() => setTitleBarOverride(platform)}
+                >
+                  {titleBarPlatformOverride === platform ? (
+                    <Check className="admin-settings__platform-check" />
+                  ) : null}
+                  {getPlatformDisplayName(platform)}
+                </button>
+              ))}
+            </div>
+
+            {titleBarPlatformOverride !== 'auto' ? (
+              <div className="admin-settings__platform-notice">
+                <p>
+                  <strong>Active Override:</strong> TitleBar is rendering as{' '}
+                  {getPlatformDisplayName(titleBarPlatformOverride)} style.
+                  <button className="admin-settings__platform-reset" onClick={() => setTitleBarOverride('auto')}>
+                    Reset to auto
+                  </button>
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="admin-settings__section">
+            <div className="admin-settings__section-header">
+              <h3 className="admin-settings__section-title">Free Tier Branding</h3>
+              <p className="admin-settings__section-desc">
+                Configure the watermark, intro, and outro that are automatically applied to all free tier user outputs.
+                Free tier users cannot override these settings.
+              </p>
+            </div>
+
+            <div className="admin-settings__branding">
+              <div className="admin-settings__branding-status">
+                <div
+                  className={`admin-settings__branding-indicator ${
+                    freeTierBrandingConfigured ? 'admin-settings__branding-indicator--active' : ''
                   }`}
                 >
-                  {brandingConfigured ? 'Configured' : 'Not Set'}
-                </span>
-              </div>
-
-              <div className="grid sm:grid-cols-3 gap-3">
-                <label className="text-xs text-zinc-400">
-                  Watermark URL
-                  <input
-                    value={branding.watermark_url}
-                    onChange={(e) => setBranding((prev) => ({ ...prev, watermark_url: e.target.value }))}
-                    className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                  />
-                </label>
-                <label className="text-xs text-zinc-400">
-                  Intro URL
-                  <input
-                    value={branding.intro_url}
-                    onChange={(e) => setBranding((prev) => ({ ...prev, intro_url: e.target.value }))}
-                    className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                  />
-                </label>
-                <label className="text-xs text-zinc-400">
-                  Outro URL
-                  <input
-                    value={branding.outro_url}
-                    onChange={(e) => setBranding((prev) => ({ ...prev, outro_url: e.target.value }))}
-                    className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
-                  />
-                </label>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  onClick={saveBranding}
-                  disabled={savingBranding}
-                  className="px-3 py-2 rounded-md text-xs font-semibold text-black bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50"
-                >
-                  {savingBranding ? <Loader2 className="inline-block w-3.5 h-3.5 animate-spin mr-1" /> : null}
-                  Save Branding
-                </button>
-              </div>
-            </section>
-
-            <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 space-y-3">
-              <div>
-                <h2 className="m-0 text-sm font-semibold text-white">Raw Settings</h2>
-                <p className="m-0 mt-1 text-xs text-zinc-500">Read-only key/value snapshot from the app settings store.</p>
-              </div>
-
-              {otherSettingsEntries.length === 0 ? (
-                <p className="m-0 text-sm text-zinc-400">No settings found.</p>
-              ) : (
-                <div className="overflow-auto rounded-lg border border-zinc-800">
-                  <table className="w-full min-w-[700px] text-sm">
-                    <thead className="bg-zinc-900/80">
-                      <tr className="text-left text-zinc-400 text-xs uppercase tracking-wide">
-                        <th className="px-3 py-2 border-b border-zinc-800">Key</th>
-                        <th className="px-3 py-2 border-b border-zinc-800">Value</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {otherSettingsEntries.map(([key, value]) => (
-                        <tr key={key} className="border-b border-zinc-800/60">
-                          <td className="px-3 py-2 text-zinc-300 font-mono text-xs">{key}</td>
-                          <td className="px-3 py-2 text-zinc-200 text-xs break-all">{String(value)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {freeTierBrandingConfigured ? <Check size={14} /> : <ImageIcon size={14} />}
                 </div>
-              )}
-            </section>
-          </>
-        )}
-      </div>
-    </PageLayout>
+                <div>
+                  <span className="admin-settings__branding-label">
+                    {freeTierBrandingConfigured ? 'Branding Configured' : 'No Branding Set'}
+                  </span>
+                  <p className="admin-settings__branding-hint">
+                    {freeTierBrandingConfigured
+                      ? 'Free tier outputs will include admin watermark/intro/outro'
+                      : 'Free tier outputs will not have any branding applied'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="admin-settings__branding-fields">
+                <div className="admin-settings__branding-field">
+                  <label className="admin-settings__branding-field-label">Watermark Image URL</label>
+                  <input
+                    value={freeTierBranding.watermark_url}
+                    onChange={(event) =>
+                      setFreeTierBranding((previous) => ({ ...previous, watermark_url: event.target.value }))
+                    }
+                    type="text"
+                    placeholder="https://... (PNG or SVG recommended)"
+                    className="admin-settings__input"
+                  />
+                </div>
+
+                <div className="admin-settings__branding-field">
+                  <label className="admin-settings__branding-field-label">Intro Video URL</label>
+                  <input
+                    value={freeTierBranding.intro_url}
+                    onChange={(event) =>
+                      setFreeTierBranding((previous) => ({ ...previous, intro_url: event.target.value }))
+                    }
+                    type="text"
+                    placeholder="https://... (MP4 recommended)"
+                    className="admin-settings__input"
+                  />
+                </div>
+
+                <div className="admin-settings__branding-field">
+                  <label className="admin-settings__branding-field-label">Outro Video URL</label>
+                  <input
+                    value={freeTierBranding.outro_url}
+                    onChange={(event) =>
+                      setFreeTierBranding((previous) => ({ ...previous, outro_url: event.target.value }))
+                    }
+                    type="text"
+                    placeholder="https://... (MP4 recommended)"
+                    className="admin-settings__input"
+                  />
+                </div>
+              </div>
+
+              <button
+                className="admin-settings__branding-save"
+                disabled={savingBranding}
+                onClick={() => void saveCurrentFreeTierBranding()}
+              >
+                {savingBranding ? <Loader2 size={14} className="admin-settings__flag-loading-icon" /> : null}
+                <span>{savingBranding ? 'Saving...' : 'Save Branding'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </PageLayout>
+    </div>
   )
 }

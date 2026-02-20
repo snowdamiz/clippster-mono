@@ -122,10 +122,10 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 **Success Criteria** (what must be TRUE):
   1. Website exposes admin routes matching app admin paths (`/admin/*`)
   2. Non-admin users cannot access website admin routes
-  3. Website admin surface renders the exact app admin interface (same components/behavior)
-  4. Auth context syncs into embedded app admin route so admins stay signed in
+  3. Website admin surface recreates app admin UI and behavior natively in React
+  4. Deep links work consistently across `/admin/*` and `/dashboard/admin/*`
 
 **Plans:** 1 plan
 
 Plans:
-- [x] 05-01-PLAN.md — Admin web route parity via app-embedded dashboard and auth sync bridge
+- [x] 05-01-PLAN.md — Native React admin dashboard parity in landing (no iframe/embed)
