@@ -24,7 +24,6 @@
     "dialog:allow-open",
     "dialog:allow-message",
     "fs:default",
-    "fs:allow-app-write-recursive",
     "fs:allow-read-file",
     "shell:allow-execute",
     "shell:allow-open",
