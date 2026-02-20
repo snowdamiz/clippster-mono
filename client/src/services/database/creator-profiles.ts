@@ -1,55 +1,83 @@
 import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { CreatorProfile, CreatorPlatformLink, CreatorProfileWithLinks } from './types';
 
-async function ensureIntroOutroSettingsColumn(db: any) {
-  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
-  const hasIntroOutroSettings = columns.some((c: { name: string }) => c.name === 'intro_outro_settings');
-  if (!hasIntroOutroSettings) {
-    await db.execute('ALTER TABLE creator_profiles ADD COLUMN intro_outro_settings TEXT DEFAULT NULL');
+let creatorProfilesSchemaEnsurePromise: Promise<void> | null = null;
+let projectBrandingSchemaEnsurePromise: Promise<void> | null = null;
+
+function isDuplicateColumnError(error: unknown, column: string): boolean {
+  const message = String(error).toLowerCase();
+  return message.includes('duplicate column name') && message.includes(column.toLowerCase());
+}
+
+async function addColumnIfMissing(
+  db: any,
+  table: string,
+  column: string,
+  definition: string
+): Promise<void> {
+  const columns = (await db.select(`PRAGMA table_info(${table})`)) as { name: string }[];
+  const hasColumn = columns.some((c: { name: string }) => c.name === column);
+  if (hasColumn) {
+    return;
+  }
+
+  try {
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  } catch (error) {
+    // Another call may have added this column between PRAGMA check and ALTER TABLE.
+    if (isDuplicateColumnError(error, column)) {
+      return;
+    }
+    throw error;
   }
 }
 
-async function ensureRatioSettingsColumns(db: any) {
-  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
-  const hasIntroRatio = columns.some((c: { name: string }) => c.name === 'intro_ratio_settings');
-  if (!hasIntroRatio) {
-    await db.execute('ALTER TABLE creator_profiles ADD COLUMN intro_ratio_settings TEXT DEFAULT NULL');
+async function ensureCreatorProfilesSchema(db: any): Promise<void> {
+  if (creatorProfilesSchemaEnsurePromise) {
+    return creatorProfilesSchemaEnsurePromise;
   }
-  const hasOutroRatio = columns.some((c: { name: string }) => c.name === 'outro_ratio_settings');
-  if (!hasOutroRatio) {
-    await db.execute('ALTER TABLE creator_profiles ADD COLUMN outro_ratio_settings TEXT DEFAULT NULL');
+
+  creatorProfilesSchemaEnsurePromise = (async () => {
+    await addColumnIfMissing(db, 'creator_profiles', 'intro_outro_settings', 'TEXT DEFAULT NULL');
+    await addColumnIfMissing(db, 'creator_profiles', 'intro_ratio_settings', 'TEXT DEFAULT NULL');
+    await addColumnIfMissing(db, 'creator_profiles', 'outro_ratio_settings', 'TEXT DEFAULT NULL');
+    await addColumnIfMissing(
+      db,
+      'creator_profiles',
+      'scope',
+      "TEXT NOT NULL DEFAULT 'streamer'"
+    );
+    await addColumnIfMissing(db, 'creator_profiles', 'layout_overlays', 'TEXT DEFAULT NULL');
+    await addColumnIfMissing(db, 'creator_profiles', 'disabled', 'INTEGER NOT NULL DEFAULT 0');
+  })();
+
+  try {
+    await creatorProfilesSchemaEnsurePromise;
+  } catch (error) {
+    creatorProfilesSchemaEnsurePromise = null;
+    throw error;
   }
 }
 
-async function ensureScopeColumn(db: any) {
-  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
-  const hasScope = columns.some((c: { name: string }) => c.name === 'scope');
-  if (!hasScope) {
-    await db.execute("ALTER TABLE creator_profiles ADD COLUMN scope TEXT NOT NULL DEFAULT 'streamer'");
+async function ensureProjectBrandingSchema(db: any): Promise<void> {
+  if (projectBrandingSchemaEnsurePromise) {
+    return projectBrandingSchemaEnsurePromise;
   }
-}
 
-async function ensureLayoutOverlaysColumn(db: any) {
-  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
-  const has = columns.some((c: { name: string }) => c.name === 'layout_overlays');
-  if (!has) {
-    await db.execute('ALTER TABLE creator_profiles ADD COLUMN layout_overlays TEXT DEFAULT NULL');
-  }
-}
+  projectBrandingSchemaEnsurePromise = (async () => {
+    await addColumnIfMissing(
+      db,
+      'projects',
+      'selected_branding_profile_id',
+      'TEXT REFERENCES creator_profiles(id) ON DELETE SET NULL'
+    );
+  })();
 
-async function ensureDisabledColumn(db: any) {
-  const columns = (await db.select('PRAGMA table_info(creator_profiles)')) as { name: string }[];
-  const has = columns.some((c: { name: string }) => c.name === 'disabled');
-  if (!has) {
-    await db.execute('ALTER TABLE creator_profiles ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0');
-  }
-}
-
-async function ensureSelectedBrandingColumn(db: any) {
-  const columns = (await db.select('PRAGMA table_info(projects)')) as { name: string }[];
-  const has = columns.some((c: { name: string }) => c.name === 'selected_branding_profile_id');
-  if (!has) {
-    await db.execute('ALTER TABLE projects ADD COLUMN selected_branding_profile_id TEXT REFERENCES creator_profiles(id) ON DELETE SET NULL');
+  try {
+    await projectBrandingSchemaEnsurePromise;
+  } catch (error) {
+    projectBrandingSchemaEnsurePromise = null;
+    throw error;
   }
 }
 
@@ -57,11 +85,7 @@ async function ensureSelectedBrandingColumn(db: any) {
 
 export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]> {
   const db = await getDatabase();
-  await ensureIntroOutroSettingsColumn(db);
-  await ensureRatioSettingsColumns(db);
-  await ensureScopeColumn(db);
-  await ensureLayoutOverlaysColumn(db);
-  await ensureDisabledColumn(db);
+  await ensureCreatorProfilesSchema(db);
   const userId = getCurrentUserId();
 
   // Get all profiles for current user
@@ -109,10 +133,7 @@ export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]
 
 export async function getCreatorProfile(id: string): Promise<CreatorProfileWithLinks | null> {
   const db = await getDatabase();
-  await ensureIntroOutroSettingsColumn(db);
-  await ensureRatioSettingsColumns(db);
-  await ensureScopeColumn(db);
-  await ensureLayoutOverlaysColumn(db);
+  await ensureCreatorProfilesSchema(db);
 
   const profiles = await db.select<CreatorProfile[]>(
     'SELECT * FROM creator_profiles WHERE id = ?',
@@ -171,10 +192,7 @@ export async function createCreatorProfile(
   layoutOverlays?: string | null
 ): Promise<string> {
   const db = await getDatabase();
-  await ensureIntroOutroSettingsColumn(db);
-  await ensureRatioSettingsColumns(db);
-  await ensureScopeColumn(db);
-  await ensureLayoutOverlaysColumn(db);
+  await ensureCreatorProfilesSchema(db);
   const id = generateId();
   const now = timestamp();
   const userId = getCurrentUserId();
@@ -225,10 +243,7 @@ export async function updateCreatorProfile(
   }>
 ): Promise<void> {
   const db = await getDatabase();
-  await ensureIntroOutroSettingsColumn(db);
-  await ensureRatioSettingsColumns(db);
-  await ensureScopeColumn(db);
-  await ensureLayoutOverlaysColumn(db);
+  await ensureCreatorProfilesSchema(db);
   const fields: string[] = [];
   const values: any[] = [];
 
@@ -316,7 +331,7 @@ export async function deleteCreatorProfile(id: string): Promise<void> {
 
 export async function toggleLocalProfileDisabled(id: string): Promise<boolean> {
   const db = await getDatabase();
-  await ensureDisabledColumn(db);
+  await ensureCreatorProfilesSchema(db);
   const rows = await db.select<{ disabled: number }[]>(
     'SELECT disabled FROM creator_profiles WHERE id = ?',
     [id]
@@ -334,9 +349,7 @@ export async function toggleLocalProfileDisabled(id: string): Promise<boolean> {
 
 export async function getAllGlobalProfiles(): Promise<CreatorProfileWithLinks[]> {
   const db = await getDatabase();
-  await ensureIntroOutroSettingsColumn(db);
-  await ensureRatioSettingsColumns(db);
-  await ensureScopeColumn(db);
+  await ensureCreatorProfilesSchema(db);
   const userId = getCurrentUserId();
 
   let profiles: CreatorProfile[];
@@ -361,9 +374,7 @@ export async function getAllGlobalProfiles(): Promise<CreatorProfileWithLinks[]>
 
 export async function getAllStreamerProfiles(): Promise<CreatorProfileWithLinks[]> {
   const db = await getDatabase();
-  await ensureIntroOutroSettingsColumn(db);
-  await ensureRatioSettingsColumns(db);
-  await ensureScopeColumn(db);
+  await ensureCreatorProfilesSchema(db);
   const userId = getCurrentUserId();
 
   let profiles: CreatorProfile[];
@@ -406,7 +417,7 @@ export async function setProjectBrandingProfile(
   brandingProfileId: string | null
 ): Promise<void> {
   const db = await getDatabase();
-  await ensureSelectedBrandingColumn(db);
+  await ensureProjectBrandingSchema(db);
   const now = timestamp();
   await db.execute(
     'UPDATE projects SET selected_branding_profile_id = ?, updated_at = ? WHERE id = ?',
@@ -418,7 +429,7 @@ export async function getProjectBrandingProfileId(
   projectId: string
 ): Promise<string | null> {
   const db = await getDatabase();
-  await ensureSelectedBrandingColumn(db);
+  await ensureProjectBrandingSchema(db);
   const results = await db.select<{ selected_branding_profile_id: string | null }[]>(
     'SELECT selected_branding_profile_id FROM projects WHERE id = ?',
     [projectId]

@@ -11,6 +11,7 @@ import { DownloadProvider } from './context/DownloadContext'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { AdminRoute } from './components/AdminRoute'
 
 // Auth pages
 const LoginPage = lazy(() => import('./pages/auth/LoginPage').then(m => ({ default: m.LoginPage })))
@@ -41,7 +42,50 @@ const OrgPosts = lazy(() => import('./pages/dashboard/OrgPosts').then(m => ({ de
 const OrgHiring = lazy(() => import('./pages/dashboard/OrgHiring').then(m => ({ default: m.OrgHiring })))
 const OrgMessages = lazy(() => import('./pages/dashboard/OrgMessages').then(m => ({ default: m.OrgMessages })))
 const OrgSubscriptionRequired = lazy(() => import('./pages/dashboard/OrgSubscriptionRequired').then(m => ({ default: m.OrgSubscriptionRequired })))
-const LiteEditorPage = lazy(() => import('./pages/LiteEditorPage').then(m => ({ default: m.LiteEditorPage })))
+const AdminLayout = lazy(() => import('./layouts/AdminLayout').then(m => ({ default: m.AdminLayout })))
+const AdminHubPage = lazy(() => import('./pages/admin/AdminHubPage').then(m => ({ default: m.AdminHubPage })))
+const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })))
+const AdminOrganizationsPage = lazy(() => import('./pages/admin/AdminOrganizationsPage').then(m => ({ default: m.AdminOrganizationsPage })))
+const AdminBugReportsPage = lazy(() => import('./pages/admin/AdminBugReportsPage').then(m => ({ default: m.AdminBugReportsPage })))
+const AdminAiUsagePage = lazy(() => import('./pages/admin/AdminAiUsagePage').then(m => ({ default: m.AdminAiUsagePage })))
+const AdminAnalyticsPage = lazy(() => import('./pages/admin/AdminAnalyticsPage').then(m => ({ default: m.AdminAnalyticsPage })))
+const AdminBetaCodesPage = lazy(() => import('./pages/admin/AdminBetaCodesPage').then(m => ({ default: m.AdminBetaCodesPage })))
+const AdminDiscountCodesPage = lazy(() => import('./pages/admin/AdminDiscountCodesPage').then(m => ({ default: m.AdminDiscountCodesPage })))
+const AdminWaitlistPage = lazy(() => import('./pages/admin/AdminWaitlistPage').then(m => ({ default: m.AdminWaitlistPage })))
+const AdminSettingsPage = lazy(() => import('./pages/admin/AdminSettingsPage').then(m => ({ default: m.AdminSettingsPage })))
+const AdminOrgApplicationsPage = lazy(() => import('./pages/admin/AdminOrgApplicationsPage').then(m => ({ default: m.AdminOrgApplicationsPage })))
+const AdminAffiliatesPage = lazy(() => import('./pages/admin/AdminAffiliatesPage').then(m => ({ default: m.AdminAffiliatesPage })))
+const AdminAffiliateDetailPage = lazy(() => import('./pages/admin/AdminAffiliateDetailPage').then(m => ({ default: m.AdminAffiliateDetailPage })))
+const AdminUserProfilePage = lazy(() => import('./pages/admin/AdminUserProfilePage').then(m => ({ default: m.AdminUserProfilePage })))
+const AdminOrgDetailPage = lazy(() => import('./pages/admin/AdminOrgDetailPage').then(m => ({ default: m.AdminOrgDetailPage })))
+const AdminCustomerServicePage = lazy(() => import('./pages/admin/AdminCustomerServicePage').then(m => ({ default: m.AdminCustomerServicePage })))
+const AdminStaffMessagesPage = lazy(() => import('./pages/admin/AdminStaffMessagesPage').then(m => ({ default: m.AdminStaffMessagesPage })))
+const AdminModLogsPage = lazy(() => import('./pages/admin/AdminModLogsPage').then(m => ({ default: m.AdminModLogsPage })))
+
+function renderAdminChildRoutes() {
+  return (
+    <>
+      <Route index element={<AdminHubPage />} />
+      <Route path="users" element={<AdminUsersPage />} />
+      <Route path="organizations" element={<AdminOrganizationsPage />} />
+      <Route path="bug-reports" element={<AdminBugReportsPage />} />
+      <Route path="ai-usage" element={<AdminAiUsagePage />} />
+      <Route path="analytics" element={<AdminAnalyticsPage />} />
+      <Route path="beta-codes" element={<AdminBetaCodesPage />} />
+      <Route path="discount-codes" element={<AdminDiscountCodesPage />} />
+      <Route path="waitlist" element={<AdminWaitlistPage />} />
+      <Route path="settings" element={<AdminSettingsPage />} />
+      <Route path="org-applications" element={<AdminOrgApplicationsPage />} />
+      <Route path="affiliates" element={<AdminAffiliatesPage />} />
+      <Route path="affiliates/:id" element={<AdminAffiliateDetailPage />} />
+      <Route path="users/:id" element={<AdminUserProfilePage />} />
+      <Route path="organizations/:id" element={<AdminOrgDetailPage />} />
+      <Route path="customer-service" element={<AdminCustomerServicePage />} />
+      <Route path="staff-messages" element={<AdminStaffMessagesPage />} />
+      <Route path="mod-logs" element={<AdminModLogsPage />} />
+    </>
+  )
+}
 
 function LoadingFallback() {
   return (
@@ -111,6 +155,28 @@ createRoot(document.getElementById('root')!).render(
                   <Route path="hiring" element={<OrgHiring />} />
                   <Route path="messages" element={<OrgMessages />} />
                   <Route path="subscribe" element={<OrgSubscriptionRequired />} />
+                </Route>
+
+                {/* Admin routes (native React landing implementation) */}
+                <Route
+                  path="/admin/*"
+                  element={
+                    <AdminRoute>
+                      <AdminLayout />
+                    </AdminRoute>
+                  }
+                >
+                  {renderAdminChildRoutes()}
+                </Route>
+                <Route
+                  path="/dashboard/admin/*"
+                  element={
+                    <AdminRoute>
+                      <AdminLayout />
+                    </AdminRoute>
+                  }
+                >
+                  {renderAdminChildRoutes()}
                 </Route>
               </Routes>
             </Suspense>

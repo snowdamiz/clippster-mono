@@ -8,10 +8,12 @@ export interface AuthUser {
   owned_organization_id?: number | null
   created_by_organization_id?: number | null
   is_admin?: boolean
+  is_moderator?: boolean
 }
 
 export interface AuthState {
   isAuthenticated: boolean
+  authChecked: boolean
   user: AuthUser | null
   token: string | null
   authProvider: 'wallet' | 'google' | 'email' | null

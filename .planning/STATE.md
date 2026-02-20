@@ -6,14 +6,14 @@ See: .planning/PROJECT.md (updated 2026-02-09)
 
 **Core value:** Content creators can generate, edit, and distribute short-form clips from long-form video with minimal manual effort
 
-**Current focus:** Phase 4 - Rate Limiting & Reliability
+**Current focus:** Phase 5 - Web Admin Dashboard Parity
 
 ## Current Position
 
-Phase: 4 of 4 (Rate Limiting & Reliability)
-Plan: 2 of 2 in current phase
+Phase: 5 of 5 (Web Admin Dashboard Parity)
+Plan: 1 of 1 in current phase
 Status: Complete
-Last activity: 2026-02-10 — Plan 04-02 complete (Duplicate Detection & TwitterApiClient Integration)
+Last activity: 2026-02-20 — Plan 05-01 complete (Website admin parity via native React admin dashboard)
 
 Progress: [██████████] 100% (All phases complete)
 
@@ -66,6 +66,7 @@ Recent decisions affecting current work:
 - [Phase 04-02]: Two-stage content hashing (caption-only pre-check, caption+media final hash) prevents API quota waste on duplicate uploads
 - [Phase 04-02]: 24-hour duplicate detection window balances catching duplicates vs allowing intentional reposts
 - [Phase 04-02]: Per-account duplicate detection (not global) allows same content on different accounts
+- [Phase 05]: Recreate app admin UX natively in landing React and wire to existing admin APIs — Removes iframe/Tauri runtime dependency in browser while preserving route/functionality parity
 
 ### Pending Todos
 

@@ -1,6 +1,6 @@
 # macOS Production Livestream Watching Bug
 
-**Status:** FIXES IMPLEMENTED - PENDING VERIFICATION
+**Status:** ROOT CAUSE RECONFIRMED - PIPELINE PATCHED, REBUILD REQUIRED
 **Severity:** Critical - All livestream watching broken on macOS production builds
 **Affected:** PumpFun, Kick, Twitch - ALL platforms, macOS production only
 **Works in:** Dev mode (all platforms), Windows production, Linux production
@@ -74,7 +74,17 @@ The `get_hls_segments` Tauri command returns empty results 34+ times (polled eve
 
 All binaries ARE signed with hardened runtime (`flags=0x10000(runtime)`) by `Developer ID Application: OpenWorth Technologies, LLC (CD2RXM358N)`.
 
-The entitlements `.plist` files exist in `client/src-tauri/entitlements/` but are **never referenced by any build script, CI config, or Tauri config**. They are dead files.
+The entitlements `.plist` files exist and are referenced during CI signing, but final shipped binaries still have empty entitlements.
+
+### Root Cause 1B: CI Post-Signing Re-Signs App With `--deep` (CONFIRMED)
+
+The release workflow re-signs sidecars with entitlements, then re-signs the full app bundle using:
+
+```bash
+codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP_BUNDLE"
+```
+
+`--deep` can re-sign nested binaries and clobber the entitlements applied to `node` and `yt-dlp`.
 
 #### Node.js Crash (kills PumpFun recording)
 
@@ -95,7 +105,7 @@ V8 JIT engine cannot allocate executable memory for its CodeRange without `com.a
 ```
 $ /Applications/Clippster.app/Contents/MacOS/yt-dlp --version
 
-[PYI-9617:ERROR] Failed to load Python shared library
+[PYI-59055:ERROR] Failed to load Python shared library
 '...Python.framework/Versions/3.14/Python' not valid for use in process:
 mapping process and mapped file (non-platform) have different Team IDs
 ```
@@ -156,7 +166,7 @@ $ codesign -d --entitlements - /Applications/Clippster.app/Contents/MacOS/node
 Executable=/Applications/Clippster.app/Contents/MacOS/node
 (NO ENTITLEMENTS OUTPUT - empty)
 ```
-Same for all binaries. Zero entitlements applied.
+Same for `/Applications/Clippster.app/Contents/MacOS/yt-dlp`. Zero entitlements applied in the installed production app.
 
 ### Step 3: Codesign Details
 All binaries signed with:
@@ -168,8 +178,8 @@ All binaries signed with:
 | Binary | Command | Result |
 |---|---|---|
 | `node` | `--version` | `v20.11.0` (no JS executed) |
-| `node` | `-e "console.log(1)"` | `Fatal process OOM in Failed to reserve virtual memory for CodeRange` (exit 133) |
-| `yt-dlp` | `--version` | `[PYI-9617:ERROR] Failed to load Python shared library ... different Team IDs` |
+| `node` | `-e "console.log(1)"` | `Fatal process OOM in Failed to reserve virtual memory for CodeRange` |
+| `yt-dlp` | `--version` | `[PYI-59055:ERROR] Failed to load Python shared library ... different Team IDs` |
 | `ffmpeg` | `-version` | `ffmpeg version 6.0` (works) |
 
 ### Step 5: Bundle Resources
@@ -204,6 +214,14 @@ codesign --force --options runtime --sign "$APPLE_SIGNING_IDENTITY" \
 ```
 
 This must happen AFTER Tauri bundles the app but BEFORE notarization.
+
+After re-signing nested binaries, re-sign the outer `.app` wrapper **without** `--deep`:
+
+```bash
+codesign --force --options runtime --timestamp --sign "$APPLE_SIGNING_IDENTITY" "$APP_BUNDLE"
+```
+
+Using `--deep` at this stage can re-sign nested binaries and remove sidecar entitlements.
 
 **Implementation options:**
 - Add a post-build script that runs after `tauri build`
@@ -264,10 +282,10 @@ Prevents the IPC fallback to `postMessage` and eliminates the CSP warning.
 
 ### Fix 4: Add Sidecar Failure Detection (RECOMMENDED)
 
-Currently, `start_hls_recording` returns `Ok(...)` immediately after spawning. If Node.js crashes (exit 133), the frontend never knows. Consider:
-1. Emit a `recorder-error` event when the sidecar process exits with non-zero code
-2. Frontend should listen for this and show a meaningful error to the user
-3. Optionally: wait for first stdout line before returning success from `start_hls_recording`
+Implemented in `client/src-tauri/src/hls.rs`:
+1. Emits `recorder-log` events for PumpFun sidecar startup, stderr, and process errors
+2. Emits `recorder-exit` with exit code on termination
+3. Frontend already listens for `recorder-log`, so sidecar failures are now visible in production logs
 
 ---
 
@@ -279,6 +297,9 @@ Currently, `start_hls_recording` returns `Ok(...)` immediately after spawning. I
 | v0.1.95 | pending | Fix 1: CI post-build re-sign with entitlements + notarize | Removes auto-notarize from tauri-action, adds manual re-sign/notarize step |
 | v0.1.95 | pending | Fix 2: Bare-name sidecar fallback in kick.rs, twitch.rs, sidecar/mod.rs | Resolves binary naming mismatch in macOS `.app` bundle |
 | v0.1.95 | pending | Fix 3: Added `ipc://localhost` to CSP connect-src | Prevents IPC fallback to postMessage |
+| 2026-02-20 | v0.1.108 | Verified installed production app still has empty entitlements on `node`/`yt-dlp` | Reproduced runtime failures directly from `/Applications/Clippster.app` |
+| 2026-02-20 | v0.1.108 | Fix 1B: Remove `--deep` from post-build app re-sign and add required-entitlement assertions in CI | Prevents nested sidecar entitlements from being clobbered |
+| 2026-02-20 | v0.1.108 | Fix 4 implemented in `hls.rs` (`recorder-log`, `recorder-exit`) | PumpFun sidecar failures now visible in frontend logs |
 
 ---
 
@@ -286,7 +307,7 @@ Currently, `start_hls_recording` returns `Ok(...)` immediately after spawning. I
 
 - [x] Identified symptom: `get_hls_segments` returns empty arrays
 - [x] Traced recording pipeline for all platforms
-- [x] Found entitlements files exist but are not referenced by build system
+- [x] Confirmed entitlements are expected but absent in shipped `node`/`yt-dlp` binaries
 - [x] Found CSP mismatch (`http://ipc.localhost` vs `ipc://localhost`)
 - [x] Verified sidecar binary existence in production .app bundle (present, bare names)
 - [x] Checked actual codesign entitlements on production binaries (ZERO entitlements on all)
@@ -297,4 +318,7 @@ Currently, `start_hls_recording` returns `Ok(...)` immediately after spawning. I
 - [x] Apply Fix 1: Entitlements during build — CI post-build re-sign step added to `.github/workflows/release.yml`
 - [x] Apply Fix 2: Binary path resolution — Bare-name fallback added to `kick.rs`, `twitch.rs`, `sidecar/mod.rs`
 - [x] Apply Fix 3: CSP fix — Added `ipc://localhost` to `connect-src` in `tauri.conf.json`
-- [ ] Rebuild, re-sign, and verify
+- [x] Identified CI regression mechanism: post-build `codesign --deep` can clobber sidecar entitlements
+- [x] Patched CI post-build signing to re-sign app wrapper non-deep and fail if entitlements are missing
+- [x] Added PumpFun recorder telemetry (`recorder-log` + `recorder-exit`) to surface sidecar failures
+- [ ] Rebuild macOS artifacts, verify entitlements in shipped app, and re-test PumpFun/Kick/Twitch live playback
