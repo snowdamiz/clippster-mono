@@ -1649,6 +1649,12 @@ defmodule ClippsterServerWeb.AdminController do
             {:error, :user_not_found} ->
               conn |> put_status(404) |> json(%{success: false, error: "User not found"})
 
+            {:error, :no_stripe_subscription} ->
+              conn |> put_status(422) |> json(%{success: false, error: "User does not have an active Stripe subscription. Use 'Grant Subscription' to give them access instead."})
+
+            {:error, {:stripe_error, reason}} ->
+              conn |> put_status(502) |> json(%{success: false, error: "Stripe error: #{inspect(reason)}"})
+
             {:error, reason} ->
               conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
           end
@@ -1682,6 +1688,12 @@ defmodule ClippsterServerWeb.AdminController do
 
           {:error, :user_not_found} ->
             conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, :no_stripe_subscription} ->
+            conn |> put_status(422) |> json(%{success: false, error: "User does not have an active Stripe subscription. Use 'Grant Subscription' to give them a free month of access instead."})
+
+          {:error, {:stripe_error, reason}} ->
+            conn |> put_status(502) |> json(%{success: false, error: "Stripe error: #{inspect(reason)}"})
 
           {:error, reason} ->
             conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})

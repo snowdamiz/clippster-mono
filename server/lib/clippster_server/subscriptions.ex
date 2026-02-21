@@ -199,12 +199,32 @@ defmodule ClippsterServer.Subscriptions do
       end
       new_end = DateTime.add(new_start, @subscription_days, :day)
 
+      # Decrement admin discount counter and clear when exhausted
+      discount_updates =
+        case user.admin_discount_months_remaining do
+          nil ->
+            %{}
+
+          n when n <= 1 ->
+            # Last discounted month just renewed — clear all discount fields
+            IO.puts("[Subscriptions] Admin discount exhausted for user #{user_id}, clearing discount fields")
+            %{
+              admin_discount_months_remaining: nil,
+              admin_discount_percent: nil,
+              admin_discount_applied_at: nil,
+              admin_discount_stripe_coupon_id: nil
+            }
+
+          n ->
+            %{admin_discount_months_remaining: n - 1}
+        end
+
       # Update user subscription
       {:ok, updated_user} = user
-        |> User.subscription_changeset(%{
+        |> User.subscription_changeset(Map.merge(%{
           subscription_status: "active",
           subscription_end_date: new_end
-        })
+        }, discount_updates))
         |> Repo.update()
 
       # Create subscription history record

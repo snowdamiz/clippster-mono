@@ -147,7 +147,7 @@ export interface KickLiveStatus {
 
 /**
  * Check if a Kick channel is currently live
- * Uses the server API which proxies to RapidAPI (same as VOD fetching)
+ * Uses the Tauri backend which calls api.kick.com directly (fast, no Cloudflare).
  * @param channel - Channel slug or URL
  * @returns Live status information
  */
@@ -156,14 +156,14 @@ export async function checkKickLivestream(channel: string): Promise<KickLiveStat
     // Normalize channel slug (extract from URL if needed)
     const channelSlug = extractChannelSlug(channel) || channel.toLowerCase().trim();
     
-    // Use server API (same RapidAPI as VOD fetching)
-    const response = await api.get<KickLiveStatus>(`/kick/channels/${channelSlug}`);
-    return response.data;
+    // Use Tauri command which calls api.kick.com (no Cloudflare, no RapidAPI needed)
+    const result = await invoke<string>('check_kick_livestream', { channel: channelSlug });
+    return JSON.parse(result);
   } catch (error: any) {
     console.error('[Kick] Failed to check live status:', error);
     return { 
       isLive: false,
-      error: error.response?.data?.error || error.message || 'Failed to check live status'
+      error: error.message || 'Failed to check live status'
     };
   }
 }

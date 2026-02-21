@@ -120,12 +120,9 @@ const FFMPEG_BINARIES = {
 };
 
 function resolveFfmpegBinary() {
-  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
-    console.log(JSON.stringify({ type: 'info', message: `[FFmpeg] Using FFMPEG_PATH env: ${process.env.FFMPEG_PATH}` }));
-    return process.env.FFMPEG_PATH;
-  }
-
   const execDir = path.dirname(process.execPath);
+  const isWindows = process.platform === 'win32';
+  const bareName = isWindows ? 'ffmpeg.exe' : 'ffmpeg';
   const binName = FFMPEG_BINARIES[process.platform];
 
   // Build candidate list - ordered from most likely to least likely
@@ -138,28 +135,41 @@ function resolveFfmpegBinary() {
     candidates.push(path.resolve(__dirname, '../binaries', binName));
     candidates.push(path.resolve(__dirname, '..', binName));
     candidates.push(path.resolve(__dirname, binName));
+    // 3. Bundle layout: Resources/pumpfun-service -> ../../MacOS/<binary> (macOS production)
+    candidates.push(path.resolve(__dirname, '../../MacOS', binName));
+
+    // 4. x86_64 fallback on arm64 macOS (Rosetta / universal builds)
+    if (process.platform === 'darwin' && process.arch === 'arm64') {
+      const x86Name = 'ffmpeg-x86_64-apple-darwin';
+      candidates.push(
+        path.join(execDir, x86Name),
+        path.resolve(__dirname, '../binaries', x86Name),
+        path.resolve(__dirname, '..', x86Name),
+        path.resolve(__dirname, '../../MacOS', x86Name),
+      );
+    }
   }
 
-  // 3. BARE name next to node binary - CRITICAL for macOS production bundle.
+  // 5. BARE name next to node binary - CRITICAL for macOS production bundle.
   //    Tauri strips the target triple suffix when bundling sidecars into .app/Contents/MacOS/.
   //    So 'ffmpeg-aarch64-apple-darwin' becomes just 'ffmpeg' in the bundle.
-  const bareName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
-  candidates.push(path.join(execDir, bareName));
+  candidates.push(
+    path.join(execDir, bareName),
+    path.resolve(__dirname, '../binaries', bareName),
+    path.resolve(__dirname, '..', bareName),
+    path.resolve(__dirname, bareName),
+    path.resolve(__dirname, '../../MacOS', bareName),
+  );
 
-  // 4. Also check one level up from execDir (some bundle layouts)
+  // 6. Also check one level up from execDir (some bundle layouts)
   candidates.push(path.join(execDir, '..', bareName));
-
-  // 5. x86_64 fallback on arm64 macOS (Rosetta / universal builds)
-  if (process.platform === 'darwin' && process.arch === 'arm64') {
-    const x86Name = 'ffmpeg-x86_64-apple-darwin';
-    candidates.push(path.join(execDir, x86Name));
-    candidates.push(path.resolve(__dirname, '../binaries', x86Name));
-    candidates.push(path.resolve(__dirname, '..', x86Name));
-  }
 
   console.log(JSON.stringify({ type: 'info', message: `[FFmpeg] Resolving binary. execDir=${execDir}, platform=${process.platform}, arch=${process.arch}` }));
 
-  for (const candidate of candidates) {
+  // Deduplicate candidates to avoid redundant checks
+  const uniqueCandidates = [...new Set(candidates)];
+
+  for (const candidate of uniqueCandidates) {
     if (candidate && fs.existsSync(candidate)) {
       console.log(JSON.stringify({ type: 'info', message: `[FFmpeg] Found binary at: ${candidate}` }));
       return candidate;
@@ -167,7 +177,7 @@ function resolveFfmpegBinary() {
   }
 
   // Log all tried paths before falling back
-  console.log(JSON.stringify({ type: 'error', message: `[FFmpeg] Binary not found in any candidate path. Tried: ${candidates.join(', ')}. Falling back to system PATH 'ffmpeg'.` }));
+  console.log(JSON.stringify({ type: 'error', message: `[FFmpeg] Binary not found in any candidate path. Tried: ${uniqueCandidates.join(', ')}. Falling back to system PATH 'ffmpeg'.` }));
   return 'ffmpeg';
 }
 
@@ -1710,6 +1720,7 @@ class PumpfunRecorder {
     const gopSize = 30 * this.segmentDurationSeconds;
     
     log('STARTING FFMPEG ENCODER', {
+      ffmpegPath: this.ffmpegPath,
       resolution: `${width}x${height}`,
       note: 'Fixed output resolution - no encoder restarts on source resolution changes',
       segmentDuration: this.segmentDurationSeconds,
@@ -1718,6 +1729,10 @@ class PumpfunRecorder {
       playlistPath: this.playlistPath,
       segmentPattern,
     });
+    console.log(JSON.stringify({
+      type: 'info',
+      message: `Using FFmpeg binary: ${this.ffmpegPath}`,
+    }));
     
     const args = [
       '-loglevel',
@@ -1725,12 +1740,17 @@ class PumpfunRecorder {
       '-y',
       '-probesize', '32K',  // Reduced for faster startup
       '-analyzeduration', '500000',  // 500ms - faster startup
+      // Avoid blocking on ffmpeg demux input queues when upstream bursts.
+      '-thread_queue_size', '1024',
       '-f', 's16le',
+      '-channel_layout', 'stereo',
       '-ac', '2',
       '-ar', '48000',
       '-i', 'pipe:0',
+      '-thread_queue_size', '1024',
       '-f', 'rawvideo',
       '-pix_fmt', 'yuv420p',
+      '-color_range', 'tv',
       '-s', `${width}x${height}`,
       '-framerate', '30',
       '-i', 'pipe:3',
@@ -1749,7 +1769,7 @@ class PumpfunRecorder {
       // Event-style playlist that only grows (no sliding window)
       '-hls_playlist_type', 'event',
       // Write timestamps, keep live (no ENDLIST), independent segments for robustness
-      '-hls_flags', 'program_date_time+omit_endlist+independent_segments',
+      '-hls_flags', 'program_date_time+omit_endlist+independent_segments+temp_file',
       '-hls_segment_type', 'mpegts',
       '-hls_segment_filename', segmentPattern,
       '-start_number', String(startNumber),
@@ -1765,6 +1785,15 @@ class PumpfunRecorder {
     this.ffmpeg.stderr.on('data', (data) => {
       const msg = data.toString();
       if (msg.trim()) console.error(`[ffmpeg] ${msg}`);
+    });
+    this.ffmpeg.on('error', (err) => {
+      log('ERROR: FFmpeg spawn failed', { ffmpegPath: this.ffmpegPath, error: err.message });
+      console.error(JSON.stringify({
+        type: 'error',
+        message: `FFmpeg spawn failed (${this.ffmpegPath}): ${err.message}`,
+      }));
+      // Avoid unhandled 'error' crashes leaving the recorder in limbo.
+      process.exit(1);
     });
 
     this.audioPipe = this.ffmpeg.stdin;

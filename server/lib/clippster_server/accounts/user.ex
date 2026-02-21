@@ -305,7 +305,11 @@ defmodule ClippsterServer.Accounts.User do
       :subscription_renewal_method,
       :stripe_subscription_id,
       :stripe_customer_id,
-      :pending_subscription_tier
+      :pending_subscription_tier,
+      :admin_discount_percent,
+      :admin_discount_months_remaining,
+      :admin_discount_applied_at,
+      :admin_discount_stripe_coupon_id
     ])
     |> validate_inclusion(:subscription_status, ["none", "active", "cancelled", "expired"])
     |> validate_inclusion(:subscription_tier, ["starter", "creator", "pro", nil])

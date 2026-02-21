@@ -627,7 +627,9 @@ export function useLivestreamViewer() {
         // Verify the recording process is still active (it may have exited/crashed)
         const recordingActive = await isKickRecordingActive(channelSlug);
         if (!recordingActive) {
-          console.warn('[LiveViewer] DVR session recording process is no longer active, restarting in same directory...');
+          console.warn(
+            '[LiveViewer] DVR session recording process is no longer active, restarting in same directory...'
+          );
           try {
             await startKickRecording(channelSlug, streamerId, sessionId, 1);
             console.log('[LiveViewer] Restarted recording for existing DVR session');
@@ -651,14 +653,29 @@ export function useLivestreamViewer() {
           }
         }
       } else if (existingPersistentSession && existingPersistentSession.platform === 'Kick') {
-        // Use existing persistent recording from monitoring system
-        console.log('[LiveViewer] Found existing Kick persistent session:', existingPersistentSession.sessionId);
-        sessionId = existingPersistentSession.sessionId;
+        // Persistent auto-detect session exists with 5-minute segments
+        // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
+        // The two sessions will write to different directories and won't conflict
+        console.log('[LiveViewer] Found existing Kick persistent session (5-min segments):', existingPersistentSession.sessionId);
+        console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
+        
+        sessionId = `kick-view-${channelSlug}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
-        state.value.sessionId = existingPersistentSession.sessionId;
-        state.value.projectId = existingPersistentSession.projectId;
-        state.value.isTempRecording = false;
+        state.value.isTempRecording = true;
+        
+        // Start separate viewer recording with 4-second segments
+        try {
+          await startKickRecording(channelSlug, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start Kick viewer recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+        
         outputDir = await invoke<string>('get_kick_session_output_dir', { sessionId });
+        addKickDvrSession(streamerId, channelSlug, sessionId, outputDir);
+        console.log('[LiveViewer] Viewer session started in separate directory:', outputDir);
       } else {
         // No existing session - start a new temp recording
         sessionId = `kick-view-${channelSlug}-${Date.now()}`;
@@ -714,7 +731,9 @@ export function useLivestreamViewer() {
         } else {
           // HLS initialization failed (playlist not available yet)
           // Still proceed - segment polling will trigger re-initialization when segments arrive
-          console.warn('[LiveViewer] HLS init failed (playlist not ready), will retry via segment polling');
+          console.warn(
+            '[LiveViewer] HLS init failed (playlist not ready), will retry via segment polling'
+          );
           state.value.isBuffering = true;
           isHlsReady.value = false;
         }
@@ -776,7 +795,8 @@ export function useLivestreamViewer() {
   ) {
     try {
       // Extract channel name from URL if needed (e.g., "https://twitch.tv/summit1g" -> "summit1g")
-      const channelName = extractTwitchChannelName(channelInput) || channelInput.toLowerCase().trim();
+      const channelName =
+        extractTwitchChannelName(channelInput) || channelInput.toLowerCase().trim();
       console.log('[LiveViewer] Connecting to Twitch channel:', channelName);
 
       // Check if stream is live using Twitch GQL API
@@ -802,20 +822,38 @@ export function useLivestreamViewer() {
 
       if (existingDvrSession) {
         // Use existing DVR session - allows seeking back to beginning of stream
-        console.log('[LiveViewer] Found existing Twitch DVR session:', existingDvrSession.sessionId);
+        console.log(
+          '[LiveViewer] Found existing Twitch DVR session:',
+          existingDvrSession.sessionId
+        );
         outputDir = existingDvrSession.outputDir;
         sessionId = existingDvrSession.sessionId;
         state.value.tempSessionId = sessionId;
         state.value.isTempRecording = false; // Not a temp recording - it's a DVR session
       } else if (existingPersistentSession && existingPersistentSession.platform === 'Twitch') {
-        // Use existing persistent recording from monitoring system
-        console.log('[LiveViewer] Found existing Twitch persistent session:', existingPersistentSession.sessionId);
-        sessionId = existingPersistentSession.sessionId;
+        // Persistent auto-detect session exists with 5-minute segments
+        // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
+        // The two sessions will write to different directories and won't conflict
+        console.log('[LiveViewer] Found existing Twitch persistent session (5-min segments):', existingPersistentSession.sessionId);
+        console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
+        
+        sessionId = `twitch-view-${channelName}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
-        state.value.sessionId = existingPersistentSession.sessionId;
-        state.value.projectId = existingPersistentSession.projectId;
-        state.value.isTempRecording = false;
+        state.value.isTempRecording = true;
+        
+        // Start separate viewer recording with 4-second segments
+        try {
+          await startTwitchRecording(channelName, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start Twitch viewer recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+        
         outputDir = await getTwitchSessionOutputDir(sessionId);
+        addTwitchDvrSession(streamerId, channelName, sessionId, outputDir);
+        console.log('[LiveViewer] Viewer session started in separate directory:', outputDir);
       } else {
         // No existing session - start a new temp recording
         sessionId = `twitch-view-${channelName}-${Date.now()}`;
@@ -904,7 +942,8 @@ export function useLivestreamViewer() {
       // Clean up recording if it was started
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
-          const cleanupName = extractTwitchChannelName(channelInput) || channelInput.toLowerCase().trim();
+          const cleanupName =
+            extractTwitchChannelName(channelInput) || channelInput.toLowerCase().trim();
           await stopTwitchRecording(cleanupName);
         } catch {
           // Ignore cleanup errors
@@ -1279,7 +1318,10 @@ export function useLivestreamViewer() {
         }
       } catch (webrtcError) {
         // WebRTC failed but HLS recording is already started - continue with HLS-only mode
-        console.warn('[LiveViewer] WebRTC connection failed, continuing with HLS-only:', webrtcError);
+        console.warn(
+          '[LiveViewer] WebRTC connection failed, continuing with HLS-only:',
+          webrtcError
+        );
         room = null;
       }
 
@@ -1505,7 +1547,9 @@ export function useLivestreamViewer() {
     // If HLS is active, don't disrupt the UI — just silently try to reconnect WebRTC
     // WebRTC is only for viewer count on PumpFun; HLS is the primary playback method
     if (isHlsActive()) {
-      console.log('[LiveViewer] WebRTC disconnected but HLS is active, silently reconnecting for viewer count');
+      console.log(
+        '[LiveViewer] WebRTC disconnected but HLS is active, silently reconnecting for viewer count'
+      );
       if (
         !isIntentionalDisconnect &&
         state.value.mintId &&
@@ -1616,12 +1660,20 @@ export function useLivestreamViewer() {
         let livekitUrl = joinData.serverUrl || joinData.url || joinData.wsUrl;
         if (livekitUrl && livekitUrl.startsWith('https://')) {
           livekitUrl = livekitUrl.replace('https://', 'wss://');
-        } else if (livekitUrl && !livekitUrl.startsWith('wss://') && !livekitUrl.startsWith('ws://')) {
+        } else if (
+          livekitUrl &&
+          !livekitUrl.startsWith('wss://') &&
+          !livekitUrl.startsWith('ws://')
+        ) {
           livekitUrl = 'wss://' + livekitUrl;
         }
 
         if (room) {
-          try { await room.disconnect(); } catch { /* ignore */ }
+          try {
+            await room.disconnect();
+          } catch {
+            /* ignore */
+          }
         }
 
         room = new Room({ adaptiveStream: true, dynacast: true });
@@ -1648,30 +1700,38 @@ export function useLivestreamViewer() {
   ) {
     // Check if already has a persistent recording session
     const session = activeSessions.value.get(streamerId);
-    if (session) {
-      state.value.sessionId = session.sessionId;
-      state.value.projectId = session.projectId;
-      state.value.isTempRecording = false;
-
-      // Try to get the output directory for HLS playback
-      // Note: Auto-detect for PumpFun now uses DVR recording, so HLS output dir may not exist
+    if (session && session.platform === 'PumpFun') {
+      // Persistent auto-detect session exists with 5-minute segments
+      // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
+      // The two sessions will write to different directories and won't conflict
+      console.log('[LiveViewer] Found existing PumpFun persistent session (5-min segments):', session.sessionId);
+      console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
+      
+      // Start separate HLS recording for viewer with shorter segments
       try {
-        const outputDir = await invoke<string>('get_recording_output_dir', {
-          sessionId: session.sessionId,
+        const result = await invoke<{ sessionId: string; outputDir: string }>('start_hls_recording', {
+          mintId,
+          streamerId,
+          displayName,
+          resumeDir: null, // New temp session
+          segmentDurationMinutes: 1, // 4-second segments for smooth playback
         });
-        hlsOutputDir.value = outputDir;
-        return; // HLS recording exists, we're done
-      } catch (e) {
-        console.warn(
-          '[LiveViewer] Could not get recording output dir, starting HLS recording for playback:',
-          e
-        );
-        // Fall through to start HLS recording for playback
+
+        state.value.tempSessionId = result.sessionId;
+        state.value.isTempRecording = true;
+        state.value.projectId = null;
+        hlsOutputDir.value = result.outputDir;
+        state.value.dvrStartTime = Date.now();
+        console.log('[LiveViewer] Viewer session started in separate directory:', result.outputDir);
+        return;
+      } catch (error) {
+        console.error('[LiveViewer] Failed to start PumpFun viewer recording:', error);
+        state.value.connectionError = 'Failed to start stream capture';
+        throw error;
       }
     }
 
-    // Start HLS recording via Tauri (Node.js recorder) for video playback
-    // This is needed even if auto-detect is using DVR, because the video player needs HLS
+    // No persistent session or different platform - start new recording
     try {
       const result = await invoke<{ sessionId: string; outputDir: string }>('start_hls_recording', {
         mintId,
@@ -1729,7 +1789,7 @@ export function useLivestreamViewer() {
       console.log('[LiveViewer] Waiting for playlist ready...');
       const ready = await hlsPlayback.waitForPlaylistReady(hlsOutputDir.value);
       console.log('[LiveViewer] Playlist ready result:', ready);
-      
+
       if (!ready) {
         console.warn('[LiveViewer] Playlist/segments not ready, skipping HLS init');
         // Don't set error - recording may still be starting
@@ -1744,7 +1804,7 @@ export function useLivestreamViewer() {
         // For PumpFun (and all platforms now), always use HLS playback
         // WebRTC is only used for viewer count tracking, not video playback
         console.log('[LiveViewer] HLS mode, starting playback...');
-        
+
         try {
           await hlsPlayback.play();
           state.value.isPlaying = true;
@@ -1798,17 +1858,16 @@ export function useLivestreamViewer() {
         state.value.availableSegments = segments;
         state.value.totalRecordedDuration = segments[segments.length - 1].endTime;
 
-        // If HLS wasn't initialized yet (failed on first attempt), try again now that segments exist
-        if (!hlsPlayback.state.value.isInitialized && hlsVideoElement.value && hlsOutputDir.value) {
+        // If HLS wasn't initialized yet (failed on first attempt), try again now that segments exist.
+        // Route through initializeHlsPlayback() so duplicate init attempts are serialized.
+        if (
+          !hlsPlayback.state.value.isInitialized &&
+          hlsVideoElement.value &&
+          hlsOutputDir.value &&
+          !isHlsInitializing
+        ) {
           console.log('[LiveViewer] Segments available, attempting HLS initialization...');
-          const success = await hlsPlayback.initialize(hlsVideoElement.value, hlsOutputDir.value);
-          if (success) {
-            console.log('[LiveViewer] HLS initialization succeeded on retry');
-            isHlsReady.value = true;
-            state.value.isBuffering = false;
-            hlsPlayback.play();
-            state.value.isPlaying = true;
-          }
+          await initializeHlsPlayback();
         }
 
         // Track segment progress for stall detection
@@ -1825,7 +1884,7 @@ export function useLivestreamViewer() {
           // Log segment update only when count changes
           if (segments.length !== previousCount) {
             // Check for gaps in segment numbers
-            const segmentNumbers = segments.map(s => s.segmentNumber);
+            const segmentNumbers = segments.map((s) => s.segmentNumber);
             const gaps: number[] = [];
             for (let i = 1; i < segmentNumbers.length; i++) {
               const expected = segmentNumbers[i - 1] + 1;
@@ -1836,11 +1895,13 @@ export function useLivestreamViewer() {
                 }
               }
             }
-            
+
             if (gaps.length > 0) {
-              console.warn(`[LiveViewer] ⚠️ SEGMENT GAPS detected! Missing segment numbers: ${gaps.join(', ')}`);
+              console.warn(
+                `[LiveViewer] ⚠️ SEGMENT GAPS detected! Missing segment numbers: ${gaps.join(', ')}`
+              );
             }
-            
+
             console.log(
               '[LiveViewer] Segments updated:',
               segments.length,
@@ -1908,7 +1969,7 @@ export function useLivestreamViewer() {
       console.log('[LiveViewer] Stream has ended, skipping restart check');
       return;
     }
-    
+
     // Check if we've exceeded max restart attempts
     if (recorderRestartCount >= MAX_RECORDER_RESTARTS) {
       console.error(
@@ -1919,8 +1980,10 @@ export function useLivestreamViewer() {
     }
 
     recorderRestartCount++;
-    console.log(`[LiveViewer] Recorder restart attempt ${recorderRestartCount}/${MAX_RECORDER_RESTARTS}`);
-    
+    console.log(
+      `[LiveViewer] Recorder restart attempt ${recorderRestartCount}/${MAX_RECORDER_RESTARTS}`
+    );
+
     isRestartingRecorder = true;
 
     try {
@@ -1955,7 +2018,7 @@ export function useLivestreamViewer() {
           // yt-dlp based platforms: restart recorder in same directory to preserve DVR content
           const currentOutputDir = hlsOutputDir.value;
           const currentSessionId = state.value.tempSessionId;
-          
+
           try {
             if (platform === 'Kick') {
               await stopKickRecording(mintId);
@@ -1974,26 +2037,36 @@ export function useLivestreamViewer() {
 
           try {
             // Reuse the same session ID to resume in the same directory
+            // CRITICAL: Use correct segment duration based on session type
+            // - Persistent sessions (auto-detect): 5 minutes
+            // - Temp sessions (watch-only): 1 minute (4 seconds)
+            const segmentDuration = state.value.isTempRecording ? 1 : 5;
+            
             if (platform === 'Kick') {
-              await startKickRecording(mintId, streamerId, currentSessionId!, 1);
+              await startKickRecording(mintId, streamerId, currentSessionId!, segmentDuration);
             } else if (platform === 'Twitch') {
-              await startTwitchRecording(mintId, streamerId, currentSessionId!, 1);
+              await startTwitchRecording(mintId, streamerId, currentSessionId!, segmentDuration);
             } else if (platform === 'YouTube' || platform === 'Youtube') {
-              await startYouTubeRecording(mintId, streamerId, currentSessionId!, undefined);
+              await startYouTubeRecording(mintId, streamerId, currentSessionId!, segmentDuration);
             } else if (platform === 'Rumble') {
-              await startRumbleRecording(mintId, streamerId, currentSessionId!, undefined);
+              await startRumbleRecording(mintId, streamerId, currentSessionId!, segmentDuration);
             }
 
-            console.log(`[LiveViewer] ${platform} recorder resumed in existing dir:`, currentOutputDir);
+            console.log(
+              `[LiveViewer] ${platform} recorder resumed in existing dir:`,
+              currentOutputDir
+            );
 
             // Don't reset segment count - we're resuming, not starting fresh
             lastSegmentTime = Date.now();
-            
+
             // CRITICAL: Do NOT reinitialize HLS playback when recorder restarts in same directory
             // HLS.js will automatically pick up new segments from the playlist as they're added
             // Reinitializing causes the player to reload the playlist and jump backwards
-            console.log(`[LiveViewer] ${platform} recorder restarted - HLS playback continues without reinitialization`);
-            
+            console.log(
+              `[LiveViewer] ${platform} recorder restarted - HLS playback continues without reinitialization`
+            );
+
             // Just ensure playback is still active
             if (hlsVideoElement.value && hlsPlayback.state.value.isInitialized) {
               // Refresh the playlist to pick up any new segments immediately
@@ -2012,7 +2085,7 @@ export function useLivestreamViewer() {
           // PumpFun-specific restart logic
           // Save the current output directory so we can resume in the same location
           const currentOutputDir = hlsOutputDir.value;
-          
+
           try {
             await invoke('stop_hls_recording', { mintId });
           } catch (stopError) {
@@ -2033,28 +2106,19 @@ export function useLivestreamViewer() {
               }
             );
 
-            console.log(
-              '[LiveViewer] PumpFun recorder resumed in existing dir:',
-              result.outputDir
-            );
+            console.log('[LiveViewer] PumpFun recorder resumed in existing dir:', result.outputDir);
 
-            state.value.sessionId = result.sessionId;
-            state.value.isTempRecording = true;
             // Don't reset segment count - we're resuming, not starting fresh
             lastSegmentTime = Date.now();
-            hlsOutputDir.value = result.outputDir;
 
-            // CRITICAL FIX: Do NOT reinitialize HLS playback when recorder restarts in same directory
-            // HLS.js will automatically pick up new segments from the playlist as they're added
-            // Reinitializing causes the player to reload the playlist and jump backwards, creating a buffer loop
-            // The HLS player is already watching the playlist file and will detect new segments automatically
-            console.log('[LiveViewer] PumpFun recorder restarted - HLS playback continues without reinitialization');
-            
+            // CRITICAL: Do NOT reinitialize HLS playback when recorder restarts in same directory
+            console.log(
+              '[LiveViewer] PumpFun recorder restarted - HLS playback continues without reinitialization'
+            );
+
             // Just ensure playback is still active
             if (hlsVideoElement.value && hlsPlayback.state.value.isInitialized) {
-              // Refresh the playlist to pick up any new segments immediately
               hlsPlayback.refreshPlaylist();
-              // Resume playback if it was paused
               if (!hlsPlayback.state.value.isPlaying) {
                 hlsPlayback.play();
               }
@@ -2066,434 +2130,16 @@ export function useLivestreamViewer() {
           }
         }
       } else {
-        console.log('[LiveViewer] Stream is no longer live');
+        console.log('[LiveViewer] Stream has ended, stopping viewer');
         streamHasEnded = true;
-        state.value.connectionState = 'disconnected';
-        state.value.connectionError = 'Stream ended';
-        
-        // Stop segment polling since stream has ended
-        if (segmentPollInterval) {
-          clearInterval(segmentPollInterval);
-          segmentPollInterval = null;
-          console.log('[LiveViewer] Stopped segment polling - stream ended');
-        }
-        
-        // Notify HLS playback that stream has ended so it stops seeking back
-        hlsPlayback.setStreamEnded(true);
+        state.value.connectionError = 'Stream has ended';
+        state.value.connectionState = 'failed';
       }
-    } catch (checkError) {
-      console.error('[LiveViewer] Failed to check stream status:', checkError);
+    } catch (error) {
+      console.error('[LiveViewer] Error checking stream status:', error);
     } finally {
       isRestartingRecorder = false;
     }
-  }
-
-  // Live edge update timer
-  function startLiveEdgeUpdates() {
-    if (liveEdgeUpdateInterval) {
-      clearInterval(liveEdgeUpdateInterval);
-    }
-
-    liveEdgeUpdateInterval = window.setInterval(() => {
-      // NOTE: In HLS-only mode, the actual timeline comes from HLS duration
-      // This interval now only serves as a fallback while HLS is loading
-    }, 1000);
-  }
-
-  // Sync playback state from HLS (always HLS-only mode now)
-  function startPlaybackSync() {
-    if (playbackSyncInterval) {
-      clearInterval(playbackSyncInterval);
-    }
-
-    playbackSyncInterval = window.setInterval(() => {
-      // Always sync from HLS playback
-      const ps = hlsPlayback.state.value;
-      state.value.isPlaying = ps.isPlaying;
-      state.value.isBuffering = ps.isBuffering || !isHlsReady.value;
-
-      // Clamp UI playback position to displayed duration to avoid end-jumps when new segments append
-      const safeDuration = Math.max(displayDuration, 0.001);
-
-      // Don't overwrite playback position while actively seeking - let the seek target stick
-      if (!isSeekingActive) {
-        const clampedPosition = Math.min(ps.currentTime, Math.max(0, safeDuration - 0.25));
-        state.value.playbackPosition = clampedPosition;
-      }
-
-      // Clamp buffered ranges to displayed duration to keep the bar stable
-      state.value.bufferedRanges = ps.bufferedRanges.map((r) => ({
-        start: Math.max(0, Math.min(r.start, safeDuration)),
-        end: Math.max(0, Math.min(r.end, safeDuration)),
-      }));
-
-      // Latency is the delay from real-time (HLS segments are ~5s behind WebRTC)
-      state.value.latencyMs = 5000 + ps.latency * 1000;
-
-      // Timeline always reflects actual HLS content duration
-      const actualHlsDuration = ps.duration > 0 ? ps.duration : 0;
-      const nowTs = Date.now();
-      const dtSeconds = Math.max(0, (nowTs - lastDisplayUpdate) / 1000);
-      lastDisplayUpdate = nowTs;
-
-      // Smoothly advance displayed duration to avoid playhead jump when new segments are appended
-      // BUT if we're far behind actual (e.g., reconnecting), snap immediately to avoid slow catch-up
-      const durationGap = actualHlsDuration - displayDuration;
-      if (durationGap > 10) {
-        // We're more than 10 seconds behind - snap to actual (reconnecting scenario)
-        displayDuration = actualHlsDuration;
-      } else if (actualHlsDuration >= displayDuration) {
-        // Normal case - grow smoothly to avoid jumps when new segments append
-        const growth = dtSeconds * DURATION_SMOOTH_RATE;
-        displayDuration = Math.min(actualHlsDuration, displayDuration + growth);
-      } else {
-        // If actual shrinks (shouldn't), snap down
-        displayDuration = actualHlsDuration;
-      }
-
-      // Start playback only after we have a safer initial buffer (>= 12s)
-      const MIN_BUFFER_DURATION = 12;
-
-      if (actualHlsDuration >= MIN_BUFFER_DURATION) {
-        // HLS has enough content for smooth playback
-        state.value.liveEdgeTime = displayDuration;
-        state.value.totalRecordedDuration = displayDuration;
-
-        // Mark HLS as ready once we have enough buffer
-        if (!isHlsReady.value) {
-          isHlsReady.value = true;
-          state.value.isBuffering = false;
-          hlsPlayback.play();
-        }
-
-        // Don't override isAtLiveEdge while actively seeking
-        if (!isSeekingActive) {
-          // Check if at live edge (within 2 seconds of end)
-          const newIsAtLiveEdge = ps.isAtLiveEdge || ps.currentTime >= ps.duration - 2;
-          if (newIsAtLiveEdge !== state.value.isAtLiveEdge) {
-            state.value.isAtLiveEdge = newIsAtLiveEdge;
-            // Update monitoring system when isAtLiveEdge changes
-            if (state.value.streamerId) {
-              updateViewerSession(state.value.streamerId, newIsAtLiveEdge);
-            }
-          } else {
-            state.value.isAtLiveEdge = newIsAtLiveEdge;
-          }
-        }
-      } else if (actualHlsDuration > 0) {
-        // HLS has some content but not enough for smooth playback
-        state.value.liveEdgeTime = displayDuration;
-        state.value.totalRecordedDuration = displayDuration;
-        state.value.isBuffering = true;
-
-        // Keep paused while buffering up the initial window to avoid start-stop
-        if (!isHlsReady.value && state.value.isPlaying) {
-          hlsPlayback.pause();
-          state.value.isPlaying = false;
-        }
-
-        // Check for stuck buffering (if duration doesn't increase for > 10s)
-        const now = Date.now();
-        if (!lastDurationUpdate) {
-          lastDurationUpdate = now;
-          lastDurationValue = actualHlsDuration;
-        } else if (actualHlsDuration > lastDurationValue) {
-          lastDurationUpdate = now;
-          lastDurationValue = actualHlsDuration;
-        } else if (now - lastDurationUpdate > 10000) {
-          hlsPlayback.refreshPlaylist(state.value.playbackPosition);
-          lastDurationUpdate = now;
-        }
-      } else if (state.value.dvrStartTime) {
-        // HLS not ready yet - show buffering state
-        state.value.liveEdgeTime = displayDuration;
-        state.value.totalRecordedDuration = displayDuration;
-        state.value.isAtLiveEdge = true;
-        state.value.isBuffering = true;
-      }
-
-      // Sync error state
-      if (ps.error && !state.value.connectionError) {
-        state.value.connectionError = ps.error;
-      }
-    }, 100);
-  }
-
-  // Segment polling for HLS
-  function startSegmentPolling() {
-    if (segmentPollInterval) {
-      clearInterval(segmentPollInterval);
-    }
-
-    // Poll to update available segments info (for clipping)
-    segmentPollInterval = window.setInterval(async () => {
-      await updateAvailableSegments();
-    }, 2000);
-
-    // Initial poll
-    updateAvailableSegments();
-  }
-
-  async function updateAvailableSegments() {
-    // For HLS recordings, update from the recording directory
-    if (hlsOutputDir.value) {
-      await updateHlsSegments();
-      return;
-    }
-
-    // For persistent recordings, get segments from database
-    const sessionId = state.value.sessionId;
-    if (!sessionId) {
-      // Try to get session from activeSessions
-      if (state.value.streamerId) {
-        const session = activeSessions.value.get(state.value.streamerId);
-        if (session) {
-          state.value.sessionId = session.sessionId;
-          state.value.projectId = session.projectId;
-          state.value.isTempRecording = false;
-        }
-      }
-      return;
-    }
-
-    try {
-      const segments = await getSegmentsBySession(sessionId);
-      const rawVideos = await Promise.all(
-        segments.map((seg) =>
-          seg.raw_video_id ? getRawVideo(seg.raw_video_id) : Promise.resolve(null)
-        )
-      );
-
-      let cumulativeTime = 0;
-      const segmentInfos: SegmentInfo[] = segments.map((seg, index) => {
-        const startTime = cumulativeTime;
-        const duration = seg.duration || state.value.totalRecordedDuration / segments.length;
-        cumulativeTime += duration;
-        const rawVideo = rawVideos[index];
-
-        return {
-          segmentNumber: seg.segment_number,
-          filePath: rawVideo?.file_path || '',
-          startTime,
-          duration,
-          endTime: cumulativeTime,
-        };
-      });
-
-      state.value.availableSegments = segmentInfos;
-      state.value.totalRecordedDuration = cumulativeTime;
-    } catch (error) {
-      console.warn('[LiveViewer] Failed to update segments', error);
-    }
-  }
-
-  async function setupSegmentEventListeners() {
-    // Listen for persistent recording segments (Kick)
-    const unlisten = await listen<SegmentEventPayload>('segment-ready', (event) => {
-      if (event.payload.streamerId === state.value.streamerId && !state.value.isTempRecording) {
-        // Update session ID if not set
-        if (!state.value.sessionId) {
-          state.value.sessionId = event.payload.sessionId;
-        }
-
-        // Add new segment to available segments
-        const newSegment: SegmentInfo = {
-          segmentNumber: event.payload.segment,
-          filePath: event.payload.path,
-          startTime: state.value.totalRecordedDuration,
-          duration: event.payload.duration,
-          endTime: state.value.totalRecordedDuration + event.payload.duration,
-        };
-
-        state.value.availableSegments = [...state.value.availableSegments, newSegment];
-        state.value.totalRecordedDuration += event.payload.duration;
-      }
-    });
-
-    // Listen for HLS segment events (PumpFun) - real-time updates
-    const hlsSegmentUnlisten = await listen<{
-      streamerId: string;
-      sessionId: string;
-      mintId: string;
-      segment: number;
-      path: string;
-      duration: number;
-    }>('hls-segment-ready', (event) => {
-      // For PumpFun streams, match against mintId (not streamerId which is a UUID)
-      if (event.payload.mintId === state.value.mintId) {
-        console.log('[LiveViewer] HLS segment ready (real-time):', event.payload.segment);
-        
-        // Directly add the segment from the event payload instead of scanning filesystem
-        const newSegment: SegmentInfo = {
-          segmentNumber: event.payload.segment,
-          filePath: event.payload.path,
-          startTime: state.value.totalRecordedDuration,
-          duration: event.payload.duration,
-          endTime: state.value.totalRecordedDuration + event.payload.duration,
-        };
-        
-        // Check if segment already exists to avoid duplicates
-        const exists = state.value.availableSegments.some(s => s.segmentNumber === event.payload.segment);
-        if (!exists) {
-          state.value.availableSegments = [...state.value.availableSegments, newSegment];
-          state.value.totalRecordedDuration += event.payload.duration;
-          
-          // CRITICAL: Update lastSegmentTime to prevent false stall detection
-          // Without this, the system thinks segments have stalled even though they're arriving continuously
-          lastSegmentTime = Date.now();
-          
-          // Reset restart counter since segments are flowing
-          if (recorderRestartCount > 0) {
-            console.log('[LiveViewer] Segments flowing again, resetting restart counter');
-            recorderRestartCount = 0;
-          }
-          
-          console.log('[LiveViewer] Segment added (real-time):', event.payload.segment, 'Total:', state.value.availableSegments.length);
-        }
-      }
-    });
-
-    // Listen for recorder exit - attempt to restart if stream is still live (Kick and Twitch)
-    // Note: PumpFun recorder exit is handled via segment stall detection
-    const recorderExitUnlisten = await listen<{
-      streamerId: string;
-      sessionId: string;
-      channelSlug?: string;
-      channelName?: string;
-      code: number | null;
-    }>('recorder-exit', async (event) => {
-      const { streamerId } = event.payload;
-      // Kick uses channelSlug, Twitch uses channelName
-      const channel = event.payload.channelSlug || event.payload.channelName;
-
-      // Only handle if this is our current stream and it's a Kick or Twitch stream
-      if (
-        streamerId !== state.value.streamerId ||
-        isIntentionalDisconnect ||
-        (state.value.platform !== 'Kick' && state.value.platform !== 'Twitch')
-      ) {
-        return;
-      }
-
-      const platform = state.value.platform;
-      console.log(
-        `[LiveViewer] ${platform} recorder exited unexpectedly, checking if stream is still live...`
-      );
-
-      // Check if stream is still live
-      try {
-        let isLive = false;
-        if (platform === 'Kick') {
-          const kickStatus = await checkKickLivestream(channel!);
-          isLive = kickStatus.isLive;
-        } else {
-          const twitchStatus = await checkTwitchLivestream(channel!);
-          isLive = twitchStatus.isLive;
-        }
-
-        if (isLive) {
-          console.log(`[LiveViewer] ${platform} stream is still live, attempting to restart recording...`);
-          state.value.isBuffering = true;
-
-          // Restart the recording with a new session
-          const newSessionId = platform === 'Kick'
-            ? `kick-view-${channel}-${Date.now()}`
-            : `twitch-view-${channel}-${Date.now()}`;
-          state.value.tempSessionId = newSessionId;
-
-          try {
-            if (platform === 'Kick') {
-              await startKickRecording(channel!, streamerId, newSessionId, 1);
-            } else {
-              await startTwitchRecording(channel!, streamerId, newSessionId, 1);
-            }
-
-            // Get the new output directory
-            const newOutputDir = platform === 'Kick'
-              ? await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId })
-              : await getTwitchSessionOutputDir(newSessionId);
-
-            console.log(`[LiveViewer] ${platform} recording restarted, new output dir:`, newOutputDir);
-
-            // Update the HLS output dir - this will trigger the watcher to reinitialize playback
-            hlsOutputDir.value = newOutputDir;
-
-            // Reset segment stall detection
-            lastSegmentCount = 0;
-            lastSegmentTime = Date.now();
-
-            // Reinitialize HLS playback with the new recording
-            if (hlsVideoElement.value) {
-              await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
-              hlsPlayback.play();
-              state.value.isBuffering = false;
-              console.log(`[LiveViewer] Playback reinitialized after ${platform} recorder restart`);
-            }
-          } catch (restartError) {
-            console.error(`[LiveViewer] Failed to restart ${platform} recording:`, restartError);
-            state.value.connectionError = 'Recording stopped and failed to restart';
-          }
-        } else {
-          console.log('[LiveViewer] Stream is no longer live');
-          streamHasEnded = true;
-          state.value.connectionState = 'disconnected';
-          state.value.connectionError = 'Stream ended';
-          hlsPlayback.setStreamEnded(true);
-        }
-      } catch (checkError) {
-        console.error('[LiveViewer] Failed to check stream status:', checkError);
-      }
-    });
-
-    // Listen for recorder log events (errors, warnings, binary paths) visible in WebView console
-    const recorderLogUnlisten = await listen<{
-      mintId?: string;
-      mint_id?: string;
-      message: string;
-      level: string;
-    }>('recorder-log', (event) => {
-      const p = event.payload;
-      const mintId = p.mintId || p.mint_id || '';
-      const msg = `[RecorderLog][${mintId.slice(0, 8)}] ${p.message}`;
-      if (p.level === 'error') {
-        console.error(msg);
-      } else if (p.level === 'debug') {
-        console.debug(msg);
-      } else {
-        console.log(msg);
-      }
-    });
-
-    // Listen for recorder-error events (Node.js process exited with non-zero code)
-    const recorderErrorUnlisten = await listen<{
-      mintId?: string;
-      mint_id?: string;
-      sessionId?: string;
-      exitCode?: number | null;
-      message: string;
-    }>('recorder-error', (event) => {
-      const p = event.payload;
-      const mintId = p.mintId || p.mint_id || '';
-      console.error(`[LiveViewer] RECORDER PROCESS ERROR for mint ${mintId.slice(0, 8)}: exit code=${p.exitCode}, msg=${p.message}`);
-      // Only surface error if this is our current stream
-      if (mintId === state.value.mintId) {
-        console.error('[LiveViewer] Recorder process died - this is why segments are not being produced!');
-      }
-    });
-
-    // For HLS mode, poll for new segments
-    const hlsUpdateInterval = window.setInterval(() => {
-      if (hlsOutputDir.value) {
-        updateHlsSegments();
-      }
-    }, 2000);
-
-    // Store cleanup function
-    const cleanupHlsInterval = () => {
-      clearInterval(hlsUpdateInterval);
-    };
-
-    unlistenFunctions.push(unlisten, hlsSegmentUnlisten, recorderExitUnlisten, recorderLogUnlisten, recorderErrorUnlisten, cleanupHlsInterval as any);
   }
 
   // Disconnect from livestream
@@ -2504,7 +2150,7 @@ export function useLivestreamViewer() {
     // Mark as intentional disconnect to prevent reconnect attempts
     isIntentionalDisconnect = true;
 
-    // Clear timers first
+    // Stop all update intervals
     if (liveEdgeUpdateInterval) {
       clearInterval(liveEdgeUpdateInterval);
       liveEdgeUpdateInterval = null;
@@ -2549,6 +2195,33 @@ export function useLivestreamViewer() {
     // Recordings will continue in background and can be resumed when user reopens stream
     // Only stop recordings when user explicitly stops monitoring or app closes
 
+    // Unregister viewer session from monitoring system BEFORE resetting state
+    // This allows cleanup logic to run if stream has ended
+    const currentStreamerId = state.value.streamerId;
+    const currentMintId = state.value.mintId;
+    const currentPlatform = state.value.platform;
+    
+    if (currentStreamerId) {
+      unregisterViewerSession(currentStreamerId);
+      
+      // If this was a temp viewer session and stream has ended, trigger cleanup
+      // This will stop the temp recording and clean up files
+      if (state.value.isTempRecording && streamHasEnded) {
+        console.log('[LiveViewer] Stream ended and viewer closed, triggering temp session cleanup');
+        try {
+          if (currentPlatform === 'Kick') {
+            await stopKickRecording(currentMintId!);
+            removeKickDvrSession(currentStreamerId);
+          } else if (currentPlatform === 'Twitch') {
+            await stopTwitchRecording(currentMintId!);
+            removeTwitchDvrSession(currentStreamerId);
+          }
+        } catch (error) {
+          console.warn('[LiveViewer] Failed to cleanup temp session:', error);
+        }
+      }
+    }
+
     // Reset HLS output directory
     hlsOutputDir.value = null;
 
@@ -2583,11 +2256,6 @@ export function useLivestreamViewer() {
     state.value.playbackPosition = 0;
     state.value.bufferedRanges = [];
     state.value.isAtLiveEdge = true;
-
-    // Unregister viewer session from monitoring system
-    if (state.value.streamerId) {
-      unregisterViewerSession(state.value.streamerId);
-    }
 
     // Reset HLS ready state and seeking flag
     isHlsReady.value = false;
