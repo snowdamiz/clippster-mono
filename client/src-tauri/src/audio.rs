@@ -552,7 +552,7 @@ pub async fn extract_audio_to_file(
     args.push("-c:a".to_string());
     args.push("libmp3lame".to_string());
     args.push("-q:a".to_string());
-    args.push("2".to_string());  // High quality (~190kbps VBR)
+    args.push("9".to_string());  // Low quality (~45kbps VBR) - sufficient for waveform peaks
     args.push("-vn".to_string()); // No video
     args.push("-y".to_string());  // Overwrite output file
     args.push(output_path.to_str().ok_or("Invalid output path")?.to_string());
@@ -575,17 +575,8 @@ pub async fn extract_audio_to_file(
 
     println!("[Rust] FFmpeg extraction completed successfully");
 
-    // Get audio duration using FFmpeg header probe (no decoding)
-    let duration_output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", output_path.to_str().ok_or("Invalid output path")?,
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to get audio duration: {}", e))?;
-
-    let stderr = String::from_utf8_lossy(&duration_output.stderr);
+    // Parse duration directly from the first FFmpeg invocation's stderr (avoids a second FFmpeg call)
+    let stderr = String::from_utf8_lossy(&output.stderr);
     let duration = parse_duration_from_ffmpeg_output(&stderr).unwrap_or(0.0);
 
     println!("[Rust] Audio duration: {} seconds", duration);

@@ -866,6 +866,7 @@ commands::file_utils::generate_video_thumbnail,
             waveform::save_waveform_to_cache,
             waveform::clear_waveform_cache,
             waveform::extract_audio_peaks_for_range,
+            waveform::probe_video_duration,
 
             // Audio peaks detection commands
             audio_peaks::detect_audio_peaks,
