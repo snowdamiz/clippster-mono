@@ -151,7 +151,7 @@ async fn run_segment_download_with_encoder(
         &temp_output_path,
     ]);
     
-    let (mut rx, mut child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
+    let (mut rx, child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
 
     let total_duration = segment_duration;
     let app_clone = app.clone();
@@ -369,7 +369,7 @@ async fn run_full_download_with_encoder(
         ]);
     }
     
-    let (mut rx, mut child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
+    let (mut rx, child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
 
     let mut total_duration = estimated_duration.unwrap_or(600.0);
     let app_clone = app.clone();
