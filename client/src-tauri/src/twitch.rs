@@ -637,16 +637,22 @@ async fn run_twitch_recorder(
     // Spawn yt-dlp to output stream to stdout
     let mut ytdlp_cmd = tokio::process::Command::new(&ytdlp_path);
     no_window(&mut ytdlp_cmd);
+    // yt-dlp --ffmpeg-location expects a DIRECTORY so it can find both ffmpeg and ffprobe
+    let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| ffmpeg_path.clone());
+
     ytdlp_cmd
         .arg(&twitch_url)
         .arg("-o").arg("-")  // Output to stdout
         .arg("--quiet")      // Suppress progress output
         .arg("--no-part")    // Don't use .part files
-        .arg("--ffmpeg-location").arg(&ffmpeg_path)
+        .arg("--ffmpeg-location").arg(&ffmpeg_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    println!("[TwitchRecorder] Starting yt-dlp: {} {} --ffmpeg-location {}", ytdlp_path, twitch_url, ffmpeg_path);
+    println!("[TwitchRecorder] Starting yt-dlp: {} {} --ffmpeg-location {}", ytdlp_path, twitch_url, ffmpeg_dir);
 
     let mut ytdlp_child = ytdlp_cmd.spawn()
         .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
@@ -997,9 +1003,14 @@ pub async fn download_twitch_vod(
         // Run yt-dlp to download the VOD
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
         no_window(&mut cmd);
+        // yt-dlp --ffmpeg-location expects a DIRECTORY so it can find both ffmpeg and ffprobe
+        let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ffmpeg_path.clone());
         cmd.arg(&video_url)
             .arg("-o").arg(&video_path_str)
-            .arg("--ffmpeg-location").arg(&ffmpeg_path)
+            .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--no-part")  // Don't use .part files
             .arg("--newline")  // Output progress on new lines
             .arg("--progress")  // Show progress
@@ -1394,9 +1405,14 @@ pub async fn download_twitch_vod_segment(
         // Run yt-dlp to download the segment
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
         no_window(&mut cmd);
+        // yt-dlp --ffmpeg-location expects a DIRECTORY so it can find both ffmpeg and ffprobe
+        let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ffmpeg_path.clone());
         cmd.arg(&video_url)
             .arg("-o").arg(&video_path_str)
-            .arg("--ffmpeg-location").arg(&ffmpeg_path)
+            .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--external-downloader").arg("ffmpeg")
             .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
             .arg("--download-sections").arg(&section_arg)

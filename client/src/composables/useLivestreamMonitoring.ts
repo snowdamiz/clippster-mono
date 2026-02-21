@@ -1313,10 +1313,6 @@ export function useLivestreamMonitoring() {
       const config = monitoredStreamers.value.get(streamer.id);
       if (!config) continue;
 
-      // Skip Kick streamers - they should only be checked on manual refresh
-      // to avoid hitting the API too frequently
-      if (streamer.platform === 'Kick') continue;
-
       // Use platform-aware live status check
       const status = await fetchLiveStatus(streamer.mintId, streamer.platform);
       const streamerUpdates: Record<string, any> = {
