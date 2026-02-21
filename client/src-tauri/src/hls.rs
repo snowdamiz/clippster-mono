@@ -82,6 +82,10 @@ struct HlsRecordingEntry {
 static HLS_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, HlsRecordingEntry>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
+const MIN_VALID_SEGMENT_BYTES: u64 = 5 * 1024;
+const MIN_VALID_SEGMENT_DURATION_SECS: f64 = 0.5;
+const DEFAULT_SEGMENT_DURATION_SECS: f64 = 4.0;
+
 fn emit_hls_recorder_log(
     app: &tauri::AppHandle,
     streamer_id: &str,
@@ -360,7 +364,12 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
                 .filter_map(|e| e.ok())
                 .any(|e| {
                     if let Ok(name) = e.file_name().into_string() {
-                        name.starts_with("segment_") && name.ends_with(".ts")
+                        if !(name.starts_with("segment_") && name.ends_with(".ts")) {
+                            return false;
+                        }
+                        e.metadata()
+                            .map(|m| m.len() >= MIN_VALID_SEGMENT_BYTES)
+                            .unwrap_or(false)
                     } else {
                         false
                     }
@@ -407,9 +416,13 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
             if let Some(duration_str) = line.strip_prefix("#EXTINF:") {
                 // Remove trailing comma and any title
                 let duration_str = duration_str.split(',').next().unwrap_or("0");
-                current_duration = duration_str.parse().unwrap_or(4.0);
-                if first_duration == 0.0 {
-                    first_duration = current_duration;
+                let parsed_duration = duration_str.parse().unwrap_or(0.0);
+                // Ignore zero/negative durations from partially-written playlists.
+                if parsed_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
+                    current_duration = parsed_duration;
+                    if first_duration == 0.0 {
+                        first_duration = parsed_duration;
+                    }
                 }
             }
             continue;
@@ -423,10 +436,26 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
         // This is a segment filename
         if line.ends_with(".ts") {
             let segment_path = PathBuf::from(&output_dir).join(line);
+            // Ignore empty or tiny TS files while FFmpeg is still writing startup artifacts.
+            let segment_size = match std::fs::metadata(&segment_path) {
+                Ok(meta) => meta.len(),
+                Err(_) => continue,
+            };
+            if segment_size < MIN_VALID_SEGMENT_BYTES {
+                continue;
+            }
+
+            let duration = if current_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
+                current_duration
+            } else if first_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
+                first_duration
+            } else {
+                DEFAULT_SEGMENT_DURATION_SECS
+            };
             
             // Seed cumulative_time using media_sequence for sliding playlists
             if segment_number == 0 && media_sequence > 0 && cumulative_time == 0.0 {
-                let dur = if first_duration > 0.0 { first_duration } else { current_duration.max(0.001) };
+                let dur = duration.max(0.001);
                 cumulative_time = dur * media_sequence as f64;
             }
 
@@ -434,11 +463,11 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
                 segment_number: media_sequence + segment_number,
                 file_path: segment_path.to_string_lossy().to_string(),
                 start_time: cumulative_time,
-                duration: current_duration,
-                end_time: cumulative_time + current_duration,
+                duration,
+                end_time: cumulative_time + duration,
             });
             
-            cumulative_time += current_duration;
+            cumulative_time += duration;
             segment_number += 1;
         }
         }
@@ -453,7 +482,12 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
             .filter_map(|e| e.ok())
             .filter(|e| {
                 if let Ok(name) = e.file_name().into_string() {
-                    name.starts_with("segment_") && name.ends_with(".ts")
+                    if !(name.starts_with("segment_") && name.ends_with(".ts")) {
+                        return false;
+                    }
+                    e.metadata()
+                        .map(|m| m.len() >= MIN_VALID_SEGMENT_BYTES)
+                        .unwrap_or(false)
                 } else {
                     false
                 }
@@ -463,12 +497,12 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
         entries.sort_by_key(|e| e.file_name());
 
         if entries.len() > 1 {
-            let assumed_duration = if first_duration > 0.0 {
+            let assumed_duration = if first_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
                 first_duration
-            } else if current_duration > 0.0 {
+            } else if current_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
                 current_duration
             } else {
-                4.0
+                DEFAULT_SEGMENT_DURATION_SECS
             };
 
             let mut fallback_segments = Vec::with_capacity(entries.len());
@@ -643,12 +677,20 @@ async fn run_hls_recorder(
                         eprintln!("[HLS Recorder stderr] {}", line_str.trim());
                         let trimmed = line_str.trim();
                         if !trimmed.is_empty() {
+                            let lower = trimmed.to_lowercase();
+                            let level = if lower.contains("guessed channel layout")
+                                || lower.contains("color range not set for yuv420p")
+                            {
+                                "info"
+                            } else {
+                                "error"
+                            };
                             emit_hls_recorder_log(
                                 &app,
                                 &streamer_id,
                                 &mint_id,
                                 format!("PumpFun stderr: {}", trimmed),
-                                "error",
+                                level,
                             );
                         }
                     }

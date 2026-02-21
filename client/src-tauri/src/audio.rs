@@ -247,7 +247,6 @@ pub async fn extract_and_chunk_audio(
             format!("Failed to get storage paths: {}", e)
         })?;
 
-    // Declare variables before they are used
     let chunk_duration_secs = chunk_duration_minutes as f64 * 60.0;
     let overlap_secs = overlap_seconds as f64;
     let shell = app.shell();
@@ -256,20 +255,17 @@ pub async fn extract_and_chunk_audio(
     let video_path_hash = crate::waveform::generate_video_path_hash(&video_path);
     let cached_audio_path_result = crate::waveform::get_audio_cache_file_path(&video_path_hash);
 
-    // First, get video duration using FFmpeg
-    println!("[Rust] Getting video duration...");
+    // Get video duration using FFmpeg header probe (just -i, no decoding)
+    println!("[Rust] Getting video duration (header probe)...");
     let duration_output = shell.sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-i", &video_path,
-            "-f", "null",
-            "-"
         ])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg for duration: {}", e))?;
 
-    // Parse duration from FFmpeg output
     let stderr = String::from_utf8_lossy(&duration_output.stderr);
     let video_duration = parse_duration_from_ffmpeg_output(&stderr)
         .map_err(|e| format!("Failed to parse video duration: {}", e))?;
@@ -281,39 +277,32 @@ pub async fn extract_and_chunk_audio(
     }
 
     // Determine if we should use the cached audio file or the original video
-    // First, validate that the cached audio has the correct duration
-    
     let use_cached_audio = if let Ok(ref cached_path) = cached_audio_path_result {
         if cached_path.exists() {
             println!("[Rust] Found cached audio file, validating duration: {:?}", cached_path);
-            
-            // Validate cached audio duration matches video duration
+
             let cache_duration_output = shell.sidecar("ffmpeg")
                 .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
                 .args([
                     "-i", cached_path.to_str().ok_or("Invalid cached path")?,
-                    "-f", "null",
-                    "-"
                 ])
                 .output()
                 .await
                 .map_err(|e| format!("Failed to check cached audio duration: {}", e))?;
-            
+
             let cache_stderr = String::from_utf8_lossy(&cache_duration_output.stderr);
             let cached_duration = parse_duration_from_ffmpeg_output(&cache_stderr).unwrap_or(0.0);
-            
+
             println!("[Rust] Cached audio duration: {:.2}s, Video duration: {:.2}s", cached_duration, video_duration);
-            
-            // Allow 5% tolerance for duration mismatch due to encoding differences
+
             let duration_diff = (cached_duration - video_duration).abs();
             let tolerance = video_duration * 0.05;
-            
+
             if duration_diff <= tolerance {
                 println!("[Rust] Cached audio duration is valid, using cache");
                 true
             } else {
                 println!("[Rust] WARNING: Cached audio duration mismatch ({:.2}s vs {:.2}s), skipping cache", cached_duration, video_duration);
-                // Delete the corrupted cache file
                 if let Err(e) = std::fs::remove_file(cached_path) {
                     eprintln!("[Rust] Warning: Failed to remove corrupted cache file: {}", e);
                 } else {
@@ -328,122 +317,145 @@ pub async fn extract_and_chunk_audio(
         false
     };
 
-    let source_path = if use_cached_audio {
-        cached_audio_path_result.as_ref().unwrap().to_str().ok_or("Invalid cached path")?
+    let source_path_str: String = if use_cached_audio {
+        cached_audio_path_result.as_ref().unwrap().to_str().ok_or("Invalid cached path")?.to_string()
     } else {
-        &video_path
+        video_path.clone()
     };
 
-    println!("[Rust] Using source for chunking: {}", source_path);
+    println!("[Rust] Using source for chunking: {}", source_path_str);
 
-    // Calculate number of chunks needed
-    let mut chunks = Vec::new();
-    let mut current_start = 0.0;
-    let mut chunk_index = 1;
+    // Build the list of chunk specs (start, end, duration, index) upfront
+    let mut chunk_specs: Vec<(f64, f64, f64, usize)> = Vec::new();
+    let mut current_start = 0.0f64;
+    let mut chunk_index = 1usize;
 
     while current_start < video_duration {
         let current_end = (current_start + chunk_duration_secs).min(video_duration);
         let actual_duration = current_end - current_start;
 
-        // Skip very small final chunks
         if actual_duration < 30.0 {
             println!("[Rust] Skipping small final chunk of {:.2} seconds", actual_duration);
             break;
         }
 
-        println!("[Rust] Processing chunk {}: {:.2}s - {:.2}s (duration: {:.2}s)",
-                chunk_index, current_start, current_end, actual_duration);
-
-        // Create chunk file path
-        let chunk_filename = format!("{}_chunk_{:03}.mp3", project_id, chunk_index);
-        let chunk_path = paths.videos.join(&chunk_filename);
-
-        // Extract chunk using FFmpeg
-        // If using cached MP3, we are just slicing the audio file
-        // If using video, we are extracting and slicing
-        let mut args = vec![
-            "-i".to_string(), source_path.to_string(),
-            "-ss".to_string(), format!("{:.3}", current_start),
-            "-t".to_string(), format!("{:.3}", actual_duration),
-        ];
-
-        if use_cached_audio {
-            // Re-encoding is still safer to ensure correct boundaries and format, 
-            // but since input is already MP3, it should be fast.
-            // We can also try stream copying if codecs match, but slicing with -c copy can be imprecise.
-            // Let's stick to re-encoding to quality 8 MP3 for consistency.
-            // NOTE: Removed -y flag from here since it should be last
-            args.extend_from_slice(&[
-                "-c:a".to_string(), "libmp3lame".to_string(),
-                "-q:a".to_string(), "8".to_string(),
-            ]);
-        } else {
-            // Extracting from video
-            // NOTE: Removed -y flag from here since it should be last
-            args.extend_from_slice(&[
-                "-vn".to_string(),
-                "-c:a".to_string(), "libmp3lame".to_string(),
-                "-q:a".to_string(), "8".to_string(),
-            ]);
-        }
-
-        // Add output path and overwrite flag last
-        args.extend_from_slice(&[
-            "-y".to_string(),
-            chunk_path.to_str().ok_or("Invalid chunk path")?.to_string(),
-        ]);
-
-        let chunk_output = shell.sidecar("ffmpeg")
-            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-            .args(&args)
-            .output()
-            .await
-            .map_err(|e| format!("Failed to run ffmpeg for chunk {}: {}", chunk_index, e))?;
-
-        if !chunk_output.status.success() {
-            let stderr = String::from_utf8_lossy(&chunk_output.stderr);
-            println!("[Rust] FFmpeg chunk {} failed: {}", chunk_index, stderr);
-            return Err(format!("FFmpeg chunk {} extraction failed: {}", chunk_index, stderr));
-        }
-
-        // Read chunk file and encode to base64
-        let chunk_bytes = std::fs::read(&chunk_path)
-            .map_err(|e| format!("Failed to read chunk file {}: {}", chunk_index, e))?;
-
-        let base64_data = {
-            use base64::{Engine as _, engine::general_purpose};
-            general_purpose::STANDARD.encode(&chunk_bytes)
-        };
-
-        // Create audio chunk struct
-        let audio_chunk = AudioChunk {
-            chunk_id: format!("{}_{}", project_id, chunk_index),
-            file_path: chunk_path.to_string_lossy().to_string(),
-            filename: chunk_filename,
-            start_time: current_start,
-            end_time: current_end,
-            duration: actual_duration,
-            base64_data,
-            file_size: chunk_bytes.len() as u64,
-        };
-
-        chunks.push(audio_chunk);
-        println!("[Rust] Chunk {} completed: {} bytes", chunk_index, chunk_bytes.len());
-
-        // Clean up temporary chunk file
-        if let Err(e) = std::fs::remove_file(&chunk_path) {
-            eprintln!("[Rust] Warning: Failed to remove chunk file {}: {}", chunk_path.display(), e);
-        }
-
-        // Move to next chunk (with overlap for long videos)
+        chunk_specs.push((current_start, current_end, actual_duration, chunk_index));
         current_start = current_end - if current_end < video_duration { overlap_secs } else { 0.0 };
         chunk_index += 1;
 
-        // Safety check to prevent infinite loop
         if chunk_index > 100 {
             return Err("Too many chunks - possible infinite loop".to_string());
         }
     }
+
+    // Allow higher concurrency since each chunk extraction is I/O-bound (fast seeking).
+    // With -ss before -i, each FFmpeg process starts near-instantly.
+    let concurrency: usize = 6;
+    println!("[Rust] Extracting {} chunks with concurrency={}", chunk_specs.len(), concurrency);
+
+    let videos_dir = paths.videos.clone();
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrency));
+    let mut handles = Vec::new();
+
+    for (start_time, end_time, actual_duration, idx) in chunk_specs {
+        let app_clone = app.clone();
+        let source = source_path_str.clone();
+        let pid = project_id.clone();
+        let vdir = videos_dir.clone();
+        let use_cached = use_cached_audio;
+        let sem = semaphore.clone();
+
+        let handle = tokio::spawn(async move {
+            use tauri_plugin_shell::ShellExt;
+            use base64::{Engine as _, engine::general_purpose};
+
+            let _permit = sem.acquire().await.map_err(|e| format!("Semaphore error: {}", e))?;
+
+            let chunk_filename = format!("{}_chunk_{:03}.mp3", pid, idx);
+            let chunk_path = vdir.join(&chunk_filename);
+
+            println!("[Rust] Chunk {}: {:.2}s - {:.2}s starting", idx, start_time, end_time);
+
+            // Place -ss BEFORE -i for fast input seeking (keyframe-based)
+            // instead of slow output seeking (decodes from start to seek point)
+            let mut args = vec![
+                "-ss".to_string(), format!("{:.3}", start_time),
+                "-i".to_string(), source.clone(),
+                "-t".to_string(), format!("{:.3}", actual_duration),
+            ];
+
+            if use_cached {
+                args.extend_from_slice(&[
+                    "-c:a".to_string(), "libmp3lame".to_string(),
+                    "-q:a".to_string(), "8".to_string(),
+                ]);
+            } else {
+                args.extend_from_slice(&[
+                    "-vn".to_string(),
+                    "-c:a".to_string(), "libmp3lame".to_string(),
+                    "-q:a".to_string(), "8".to_string(),
+                ]);
+            }
+
+            args.extend_from_slice(&[
+                "-y".to_string(),
+                chunk_path.to_str().ok_or("Invalid chunk path")?.to_string(),
+            ]);
+
+            let shell = app_clone.shell();
+            let chunk_output = shell.sidecar("ffmpeg")
+                .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+                .args(&args)
+                .output()
+                .await
+                .map_err(|e| format!("Failed to run ffmpeg for chunk {}: {}", idx, e))?;
+
+            if !chunk_output.status.success() {
+                let stderr = String::from_utf8_lossy(&chunk_output.stderr);
+                println!("[Rust] FFmpeg chunk {} failed: {}", idx, stderr);
+                return Err(format!("FFmpeg chunk {} extraction failed: {}", idx, stderr));
+            }
+
+            let chunk_bytes = std::fs::read(&chunk_path)
+                .map_err(|e| format!("Failed to read chunk file {}: {}", idx, e))?;
+
+            let base64_data = general_purpose::STANDARD.encode(&chunk_bytes);
+
+            let audio_chunk = AudioChunk {
+                chunk_id: format!("{}_{}", pid, idx),
+                file_path: chunk_path.to_string_lossy().to_string(),
+                filename: chunk_filename,
+                start_time,
+                end_time,
+                duration: actual_duration,
+                base64_data,
+                file_size: chunk_bytes.len() as u64,
+            };
+
+            println!("[Rust] Chunk {} completed: {} bytes", idx, chunk_bytes.len());
+
+            if let Err(e) = std::fs::remove_file(&chunk_path) {
+                eprintln!("[Rust] Warning: Failed to remove chunk file {}: {}", chunk_path.display(), e);
+            }
+
+            Ok::<AudioChunk, String>(audio_chunk)
+        });
+
+        handles.push(handle);
+    }
+
+    // Collect results
+    let mut chunks: Vec<AudioChunk> = Vec::with_capacity(handles.len());
+    for handle in handles {
+        match handle.await {
+            Ok(Ok(chunk)) => chunks.push(chunk),
+            Ok(Err(e)) => return Err(e),
+            Err(e) => return Err(format!("Chunk task panicked: {}", e)),
+        }
+    }
+
+    // Sort by start_time since tasks may complete out of order
+    chunks.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap_or(std::cmp::Ordering::Equal));
 
     println!("[Rust] Audio chunking completed successfully. Created {} chunks.", chunks.len());
     Ok(chunks)
@@ -540,7 +552,7 @@ pub async fn extract_audio_to_file(
     args.push("-c:a".to_string());
     args.push("libmp3lame".to_string());
     args.push("-q:a".to_string());
-    args.push("2".to_string());  // High quality (~190kbps VBR)
+    args.push("9".to_string());  // Low quality (~45kbps VBR) - sufficient for waveform peaks
     args.push("-vn".to_string()); // No video
     args.push("-y".to_string());  // Overwrite output file
     args.push(output_path.to_str().ok_or("Invalid output path")?.to_string());
@@ -563,19 +575,8 @@ pub async fn extract_audio_to_file(
 
     println!("[Rust] FFmpeg extraction completed successfully");
 
-    // Get audio duration using FFmpeg
-    let duration_output = shell.sidecar("ffmpeg")
-        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", output_path.to_str().ok_or("Invalid output path")?,
-            "-f", "null",
-            "-"
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to get audio duration: {}", e))?;
-
-    let stderr = String::from_utf8_lossy(&duration_output.stderr);
+    // Parse duration directly from the first FFmpeg invocation's stderr (avoids a second FFmpeg call)
+    let stderr = String::from_utf8_lossy(&output.stderr);
     let duration = parse_duration_from_ffmpeg_output(&stderr).unwrap_or(0.0);
 
     println!("[Rust] Audio duration: {} seconds", duration);
@@ -603,8 +604,6 @@ pub async fn get_audio_duration(
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-i", &file_path,
-            "-f", "null",
-            "-"
         ])
         .output()
         .await
