@@ -312,7 +312,8 @@ defmodule ClippsterServerWeb.StripeController do
           stripe_subscription_id,
           stripe_customer_id,
           promo_code_id,
-          billing_interval
+          billing_interval,
+          amount_total
         )
 
       # Handle credit pack purchase for organization
@@ -641,7 +642,8 @@ defmodule ClippsterServerWeb.StripeController do
          stripe_subscription_id,
          stripe_customer_id,
          promo_code_id,
-         billing_interval
+         billing_interval,
+         amount_total_cents
        ) do
     user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
 
@@ -677,10 +679,18 @@ defmodule ClippsterServerWeb.StripeController do
           end
         end
 
-        # Record affiliate signup commission
-        amount = get_subscription_amount(tier)
+        # Record affiliate signup commission using the actual amount Stripe charged
+        # (amount_total_cents comes from session.amount_total which reflects any promo discounts)
+        # Fall back to hardcoded tier price only if Stripe didn't report an amount
+        amount =
+          case amount_total_cents do
+            nil -> get_subscription_amount(tier)
+            0 -> get_subscription_amount(tier)
+            cents -> Decimal.div(Decimal.new(cents), Decimal.new(100))
+          end
+
         case Affiliates.record_signup_commission(user_id_int, tier, amount) do
-          {:ok, _} -> IO.puts("[Stripe Webhook] Recorded affiliate signup commission for user #{user_id_int}")
+          {:ok, _} -> IO.puts("[Stripe Webhook] Recorded affiliate signup commission for user #{user_id_int} on amount $#{amount}")
           _ -> :ok
         end
 
