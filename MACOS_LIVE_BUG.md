@@ -396,6 +396,14 @@ Implemented:
 3. Reduced aggressive non-fatal media recovery; `recoverMediaError()` remains for fatal media errors
 4. `client/src-tauri/pumpfun-service/record-livestream.mjs` now sets `-thread_queue_size 1024` for both audio (`pipe:0`) and video (`pipe:3`) FFmpeg inputs to prevent queue blocking under bursty input
 
+### Fix 8: De-Dupe HLS Initialization and Downgrade Benign FFmpeg Noise (RECOMMENDED)
+
+Implemented:
+
+1. `client/src/composables/useLivestreamViewer.ts` now routes segment-triggered retry init through guarded `initializeHlsPlayback()` to prevent concurrent `hlsPlayback.initialize()` calls
+2. `client/src-tauri/src/hls.rs` now downgrades known benign FFmpeg stderr lines (`Guessed Channel Layout`, VideoToolbox color range notice) from `error` to `info`
+3. `client/src-tauri/pumpfun-service/record-livestream.mjs` now sets explicit audio channel layout (`stereo`) and rawvideo color range (`tv`) to reduce warning noise
+
 ---
 
 ## Fix History
@@ -415,6 +423,7 @@ Implemented:
 | 2026-02-20 | v0.1.108 | Fix 6 hardening: stricter startup gate + TS payload validation in loader                            | Prevents early HLS init on malformed first fragments (`liveEdge: 0.0s`)                        |
 | 2026-02-21 | v0.1.108 | Confirmed playback progresses (~2s) then stalls with repeated non-fatal `bufferAppendError`         | Indicates pipeline now past startup frag parsing; append/recovery behavior now primary blocker |
 | 2026-02-21 | v0.1.108 | Fix 7 implemented (`useHlsPlayback.ts`, `record-livestream.mjs`)                                    | Removes aggressive non-fatal media resets and increases FFmpeg input queue capacity            |
+| 2026-02-21 | v0.1.108 | Fix 8 implemented (`useLivestreamViewer.ts`, `hls.rs`, `record-livestream.mjs`)                     | Prevents overlapping HLS init races and reduces benign FFmpeg console noise                    |
 
 ---
 
@@ -444,4 +453,6 @@ Implemented:
 - [x] Confirmed new stage failure: playback starts then stalls with repeated `bufferAppendError` while segments continue
 - [x] Patched append-error handling to avoid non-fatal `recoverMediaError()` thrash and added burst-managed recovery
 - [x] Increased FFmpeg input `thread_queue_size` for PumpFun recorder audio/video pipes
+- [x] Patched segment-driven retry path to avoid concurrent HLS initialization races
+- [x] Downgraded benign FFmpeg stderr lines to info and set explicit channel layout/color range
 - [ ] Rebuild macOS artifacts, verify entitlements in shipped app, and re-test PumpFun/Kick/Twitch live playback

@@ -677,12 +677,20 @@ async fn run_hls_recorder(
                         eprintln!("[HLS Recorder stderr] {}", line_str.trim());
                         let trimmed = line_str.trim();
                         if !trimmed.is_empty() {
+                            let lower = trimmed.to_lowercase();
+                            let level = if lower.contains("guessed channel layout")
+                                || lower.contains("color range not set for yuv420p")
+                            {
+                                "info"
+                            } else {
+                                "error"
+                            };
                             emit_hls_recorder_log(
                                 &app,
                                 &streamer_id,
                                 &mint_id,
                                 format!("PumpFun stderr: {}", trimmed),
-                                "error",
+                                level,
                             );
                         }
                     }
