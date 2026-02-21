@@ -191,7 +191,7 @@ jobs:
           YTDLP_TARGET="$BINARIES_DIR/yt-dlp-${TRIPLE}"
           if [ ! -f "$YTDLP_TARGET" ]; then
             echo "Downloading yt-dlp for darwin..."
-            curl -fSL "https://github.com/yt-dlp/yt-dlp/releases/download/2025.12.08/yt-dlp_macos" -o "$YTDLP_TARGET"
+            curl -fSL "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/2026.02.20.235452/yt-dlp_macos" -o "$YTDLP_TARGET"
             chmod +x "$YTDLP_TARGET"
           fi
 
@@ -269,7 +269,7 @@ jobs:
           $ytdlpTarget = "$binDir/yt-dlp-x86_64-pc-windows-msvc.exe"
           if (-not (Test-Path $ytdlpTarget)) {
             Write-Host "Downloading yt-dlp for windows-x64..."
-            Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/download/2025.12.08/yt-dlp.exe" -OutFile $ytdlpTarget
+            Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/2026.02.20.235452/yt-dlp.exe" -OutFile $ytdlpTarget
           }
 
           # --- Node (windows) ---

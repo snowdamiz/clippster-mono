@@ -76,7 +76,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       "reasoning" => %{
         "effort" => "high"
       },
-      "max_output_tokens" => 4000
+      "max_output_tokens" => 16000
     }
 
     IO.puts("[OpenRouterAPI] Request payload prepared for Responses API")
@@ -275,13 +275,13 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
                   case Jason.decode(json_block) do
                     {:ok, clips_data} -> {:ok, clips_data}
                     {:error, _} ->
-                      IO.puts("[OpenRouterAPI] Failed to parse extracted JSON block: #{inspect(reason)}")
-                      {:error, "Invalid JSON in extracted block"}
+                      IO.puts("[OpenRouterAPI] Failed to parse extracted JSON block, trying truncated recovery...")
+                      recover_truncated_clips_json(message_content)
                   end
                 nil ->
                   IO.puts("[OpenRouterAPI] Failed to parse AI response as JSON: #{inspect(reason)}")
-                  IO.puts("[OpenRouterAPI] AI response content: #{String.slice(message_content, 0, 1000)}...")
-                  {:error, "AI response is not valid JSON"}
+                  IO.puts("[OpenRouterAPI] Attempting truncated JSON recovery...")
+                  recover_truncated_clips_json(message_content)
               end
           end
         else
@@ -296,6 +296,119 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         else
            {:error, "Unexpected response format (missing 'output')"}
         end
+    end
+  end
+
+  # Recover clips from truncated JSON responses
+  # When max_output_tokens is exceeded, the JSON is cut off mid-clip.
+  # This extracts all complete clip objects that were successfully generated.
+  defp recover_truncated_clips_json(content) do
+    # Find the "clips" array start
+    case Regex.run(~r/"clips"\s*:\s*\[/, content) do
+      [match] ->
+        # Find where the clips array starts
+        array_start = case :binary.match(content, match) do
+          {pos, len} -> pos + len
+          :nomatch -> nil
+        end
+
+        if array_start do
+          # Extract the portion after "clips": [
+          rest = String.slice(content, array_start, String.length(content) - array_start)
+
+          # Use bracket counting to extract complete clip objects
+          complete_clips = extract_complete_json_objects(rest)
+
+          if length(complete_clips) > 0 do
+            IO.puts("[OpenRouterAPI] Truncated JSON recovery: salvaged #{length(complete_clips)} complete clips")
+            {:ok, %{"clips" => complete_clips}}
+          else
+            IO.puts("[OpenRouterAPI] Truncated JSON recovery failed: no complete clip objects found")
+            {:error, "AI response is truncated and no complete clips could be recovered"}
+          end
+        else
+          {:error, "AI response is not valid JSON"}
+        end
+
+      _ ->
+        {:error, "AI response is not valid JSON (no clips array found)"}
+    end
+  end
+
+  # Extract complete JSON objects from a string using brace counting
+  # Returns a list of parsed maps for each complete {...} object found
+  defp extract_complete_json_objects(content) do
+    extract_complete_json_objects(content, [])
+  end
+
+  defp extract_complete_json_objects(content, acc) do
+    # Find the next opening brace
+    case :binary.match(content, "{") do
+      {start_pos, _} ->
+        rest_from_brace = String.slice(content, start_pos, String.length(content) - start_pos)
+
+        case extract_single_json_object(rest_from_brace) do
+          {:ok, json_str, chars_consumed} ->
+            # Try to parse the extracted JSON
+            case Jason.decode(json_str) do
+              {:ok, parsed} when is_map(parsed) ->
+                # Successfully parsed a complete object, continue looking for more
+                remaining = String.slice(content, start_pos + chars_consumed, String.length(content))
+                extract_complete_json_objects(remaining, acc ++ [parsed])
+
+              _ ->
+                # Failed to parse, skip past this brace and continue
+                remaining = String.slice(content, start_pos + 1, String.length(content))
+                extract_complete_json_objects(remaining, acc)
+            end
+
+          :incomplete ->
+            # No more complete objects, return what we have
+            acc
+        end
+
+      :nomatch ->
+        acc
+    end
+  end
+
+  # Extract a single complete JSON object using brace counting
+  # Returns {:ok, json_string, chars_consumed} or :incomplete
+  defp extract_single_json_object(content) do
+    graphemes = String.graphemes(content)
+
+    result = Enum.reduce_while(graphemes, {0, false, false, []}, fn char, {depth, in_string, escaped, acc} ->
+      new_acc = acc ++ [char]
+
+      cond do
+        escaped ->
+          {:cont, {depth, in_string, false, new_acc}}
+        char == "\\" and in_string ->
+          {:cont, {depth, in_string, true, new_acc}}
+        char == "\"" ->
+          {:cont, {depth, !in_string, false, new_acc}}
+        in_string ->
+          {:cont, {depth, in_string, false, new_acc}}
+        char == "{" ->
+          {:cont, {depth + 1, in_string, false, new_acc}}
+        char == "}" ->
+          new_depth = depth - 1
+          if new_depth == 0 do
+            {:halt, {:complete, new_acc}}
+          else
+            {:cont, {new_depth, in_string, false, new_acc}}
+          end
+        true ->
+          {:cont, {depth, in_string, false, new_acc}}
+      end
+    end)
+
+    case result do
+      {:complete, chars} ->
+        json_str = Enum.join(chars)
+        {:ok, json_str, String.length(json_str)}
+      _ ->
+        :incomplete
     end
   end
 

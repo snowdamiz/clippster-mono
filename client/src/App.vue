@@ -23,6 +23,7 @@
   import { useAppUpdater } from '@/composables/useAppUpdater';
   import { useToast } from '@/composables/useToast';
   import { useActivityTracker } from '@/composables/useActivityTracker';
+  import { initGlobalLiveStatusPolling, stopGlobalLiveStatusPolling } from '@/composables/useLivestreamMonitoring';
   import { invoke } from '@tauri-apps/api/core';
 
   // Platform detection for OS-specific styling (e.g., rounded corners on macOS)
@@ -279,6 +280,14 @@
       await initClipBuildEventHandler();
     } catch (error) {
       console.error('[App] Failed to initialize clip build event handler:', error);
+    }
+
+    // Initialize global live status polling
+    // This checks all monitored streamers every 60s and shows toast notifications when they go live
+    try {
+      await initGlobalLiveStatusPolling();
+    } catch (error) {
+      console.error('[App] Failed to initialize global live status polling:', error);
     }
 
     // Hide loading screen after initialization

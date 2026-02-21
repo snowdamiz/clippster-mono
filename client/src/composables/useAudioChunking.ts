@@ -70,7 +70,7 @@ export function useAudioChunking() {
     }
 
     const {
-      chunkDurationMinutes = 10, // Default 10-minute chunks
+      chunkDurationMinutes = 25, // Default 25-minute chunks
       overlapSeconds = 30, // Default 30-second overlap
     } = options;
 
