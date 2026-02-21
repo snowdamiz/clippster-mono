@@ -39,6 +39,10 @@
           <span v-for="(f, i) in summary.keyFeatures" :key="i" class="feature-tag">{{ f }}</span>
         </div>
       </div>
+      <div v-if="(summary as any).sceneCount" class="summary-row">
+        <span class="summary-label">Scenes</span>
+        <span class="summary-value">{{ (summary as any).sceneCount }} scenes planned</span>
+      </div>
     </div>
     <button class="summary-card__generate" :disabled="disabled" @click="$emit('generate')">
       <Wand2 :size="16" />

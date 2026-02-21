@@ -3,20 +3,55 @@
     <div v-if="message.role === 'assistant'" class="chat-msg__avatar">
       <Sparkles :size="14" />
     </div>
-    <div class="chat-msg__bubble">
-      <div class="chat-msg__content">{{ message.content }}</div>
-      <div class="chat-msg__time">{{ formatTime(message.inserted_at) }}</div>
+    <div class="chat-msg__wrap">
+      <div class="chat-msg__bubble">
+        <div class="chat-msg__content" v-html="renderedContent"></div>
+        <div class="chat-msg__time">{{ formatTime(message.inserted_at) }}</div>
+      </div>
+      <!-- Quick reply buttons (only on the last assistant message) -->
+      <div v-if="quickReplies && quickReplies.length > 0 && isLastAssistant" class="chat-msg__quick-replies">
+        <button
+          v-for="(reply, i) in quickReplies"
+          :key="i"
+          class="quick-reply-btn"
+          @click="$emit('quickReply', reply)"
+        >
+          {{ reply.label }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { Sparkles } from 'lucide-vue-next';
-import type { AIChatMessage } from '@/types/ai-video';
+import type { AIChatMessage, QuickReply } from '@/types/ai-video';
 
-defineProps<{
+const props = defineProps<{
   message: AIChatMessage;
+  isLastAssistant?: boolean;
 }>();
+
+defineEmits<{
+  quickReply: [reply: QuickReply];
+}>();
+
+const quickReplies = computed<QuickReply[]>(() => {
+  if (props.message.role !== 'assistant' || !props.message.metadata?.quick_replies) return [];
+  return props.message.metadata.quick_replies as QuickReply[];
+});
+
+const renderedContent = computed(() => {
+  let text = props.message.content || '';
+  // Basic markdown: **bold**, *italic*, `code`
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  text = text.replace(/`(.+?)`/g, '<code>$1</code>');
+  // Convert newlines to <br>
+  text = text.replace(/\n/g, '<br>');
+  return text;
+});
 
 function formatTime(iso: string) {
   const d = new Date(iso);
@@ -52,8 +87,18 @@ function formatTime(iso: string) {
   margin-top: 2px;
 }
 
-.chat-msg__bubble {
+.chat-msg__wrap {
   max-width: 85%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-msg--user .chat-msg__wrap {
+  align-items: flex-end;
+}
+
+.chat-msg__bubble {
   padding: 8px 12px;
   border-radius: 12px;
   font-size: 13px;
@@ -82,8 +127,24 @@ function formatTime(iso: string) {
 }
 
 .chat-msg__content {
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.chat-msg__content :deep(strong) {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.chat-msg__content :deep(em) {
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.chat-msg__content :deep(code) {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 12px;
 }
 
 .chat-msg__time {
@@ -94,5 +155,35 @@ function formatTime(iso: string) {
 
 .chat-msg--user .chat-msg__time {
   text-align: right;
+}
+
+/* Quick Reply Buttons */
+.chat-msg__quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quick-reply-btn {
+  padding: 6px 14px;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  border-radius: 18px;
+  background: rgba(14, 165, 233, 0.08);
+  color: #38bdf8;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.quick-reply-btn:hover {
+  background: rgba(14, 165, 233, 0.18);
+  border-color: rgba(14, 165, 233, 0.5);
+  transform: translateY(-1px);
+}
+
+.quick-reply-btn:active {
+  transform: translateY(0);
 }
 </style>

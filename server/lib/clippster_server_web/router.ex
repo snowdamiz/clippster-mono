@@ -214,6 +214,7 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/chat/sessions/:id/reference", AIChatController, :upload_reference)
     post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
     put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
+    post("/ai/chat/sessions/:id/scene-plan", AIChatController, :approve_scene_plan)
 
     # Speaker detection and framing strategy
     post("/clips/:clip_id/analyze-speakers", SpeakerDetectionController, :analyze)

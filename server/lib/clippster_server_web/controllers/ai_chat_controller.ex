@@ -37,8 +37,15 @@ defmodule ClippsterServerWeb.AIChatController do
         # Add initial system greeting as first message
         {:ok, _greeting} = ChatSessions.create_message(
           session.id, "assistant",
-          "Hey! I'm your AI video editor. Upload your media and tell me what kind of video you want to create — or paste a YouTube link as a style reference. I'll help you nail the perfect look.",
-          %{"ready_to_generate" => false, "summary" => nil}
+          greeting_message(media_items),
+          %{
+            "ready_to_generate" => false,
+            "summary" => nil,
+            "step" => "welcome",
+            "quick_replies" => greeting_quick_replies(media_items),
+            "transcript_highlights" => nil,
+            "proposed_scenes" => nil
+          }
         )
 
         session = ChatSessions.get_session_with_messages(session.id)
@@ -361,6 +368,26 @@ defmodule ClippsterServerWeb.AIChatController do
   end
 
   # ---------------------------------------------------------------------------
+  # Approve scene plan
+  # ---------------------------------------------------------------------------
+
+  def approve_scene_plan(conn, %{"id" => id, "scene_plan" => scene_plan}) do
+    user = conn.assigns.current_user
+
+    with session when not is_nil(session) <- ChatSessions.get_user_session(id, user.id),
+         {:ok, session} <- ChatSessions.save_scene_plan(session, scene_plan) do
+
+      session = ChatSessions.get_session_with_messages(session.id)
+      json(conn, serialize_session(session))
+    else
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+      {:error, reason} ->
+        conn |> put_status(:internal_server_error) |> json(%{error: inspect(reason)})
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------
 
@@ -400,6 +427,46 @@ defmodule ClippsterServerWeb.AIChatController do
     System.get_env("OPENROUTER_API_KEY") || raise "OPENROUTER_API_KEY not set"
   end
 
+  defp greeting_message(media_items) when is_list(media_items) and length(media_items) > 0 do
+    first = List.first(media_items)
+    name = Map.get(first, "name", "your video")
+    duration = Map.get(first, "duration")
+    has_transcript = Map.get(first, "transcript") != nil and Map.get(first, "transcript") != ""
+    dur_str = if duration, do: " (#{round(duration)}s)", else: ""
+
+    base = "Hey! I see you've uploaded #{name}#{dur_str}."
+
+    if has_transcript do
+      base <> " I found a transcript for your video — would you like to use it as-is, or review it first to fix any errors?"
+    else
+      base <> " I don't see a transcript yet. For the best results, I'd recommend generating one so I can work with the spoken content. You can also skip this if you prefer."
+    end
+  end
+  defp greeting_message(_) do
+    "Hey! Welcome to the AI Video Creator. Upload a video or clip to get started, and I'll walk you through creating something awesome — step by step."
+  end
+
+  defp greeting_quick_replies(media_items) when is_list(media_items) and length(media_items) > 0 do
+    first = List.first(media_items)
+    has_transcript = Map.get(first, "transcript") != nil and Map.get(first, "transcript") != ""
+
+    if has_transcript do
+      [
+        %{"label" => "Use Transcript", "value" => "use_transcript"},
+        %{"label" => "Review & Edit", "value" => "review_transcript"},
+        %{"label" => "Generate New", "value" => "generate_new_transcript"}
+      ]
+    else
+      [
+        %{"label" => "Generate Transcript", "value" => "generate_transcript"},
+        %{"label" => "Skip — No Transcript", "value" => "skip_transcript"}
+      ]
+    end
+  end
+  defp greeting_quick_replies(_) do
+    [%{"label" => "Upload Media", "value" => "upload_media"}]
+  end
+
   defp serialize_session(session) do
     messages = if Ecto.assoc_loaded?(session.messages) do
       Enum.map(session.messages, fn msg ->
@@ -428,6 +495,8 @@ defmodule ClippsterServerWeb.AIChatController do
       reference_analysis: session.reference_analysis,
       media_analysis: session.media_analysis,
       reference_url: session.reference_url,
+      scene_plan: session.scene_plan,
+      conversation_step: session.conversation_step,
       messages: messages,
       inserted_at: session.inserted_at,
       updated_at: session.updated_at

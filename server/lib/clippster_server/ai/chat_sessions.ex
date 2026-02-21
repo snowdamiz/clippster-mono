@@ -121,4 +121,20 @@ defmodule ClippsterServer.AI.ChatSessions do
       %{"role" => msg.role, "content" => msg.content}
     end)
   end
+
+  # ---------------------------------------------------------------------------
+  # Guided chat helpers
+  # ---------------------------------------------------------------------------
+
+  def save_scene_plan(session, scene_plan) do
+    session
+    |> ChatSession.changeset(%{scene_plan: scene_plan})
+    |> Repo.update()
+  end
+
+  def update_conversation_step(session, step) do
+    session
+    |> ChatSession.changeset(%{conversation_step: step})
+    |> Repo.update()
+  end
 end

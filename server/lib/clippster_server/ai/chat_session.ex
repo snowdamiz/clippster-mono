@@ -16,6 +16,8 @@ defmodule ClippsterServer.AI.ChatSession do
     field :reference_analysis, :map
     field :media_analysis, {:array, :map}
     field :reference_url, :string
+    field :scene_plan, :map
+    field :conversation_step, :string, default: "welcome"
 
     belongs_to :user, ClippsterServer.Accounts.User
     has_many :messages, ClippsterServer.AI.ChatMessage, foreign_key: :session_id
@@ -28,7 +30,8 @@ defmodule ClippsterServer.AI.ChatSession do
     |> cast(attrs, [
       :status, :media_items, :composition, :refinement_round,
       :refinement_messages_used, :max_refinement_rounds, :max_messages_per_round,
-      :style_context, :reference_analysis, :media_analysis, :reference_url, :user_id
+      :style_context, :reference_analysis, :media_analysis, :reference_url,
+      :scene_plan, :conversation_step, :user_id
     ])
     |> validate_required([:user_id, :status])
     |> validate_inclusion(:status, @valid_statuses)

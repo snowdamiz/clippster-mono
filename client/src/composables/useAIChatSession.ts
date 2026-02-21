@@ -7,6 +7,10 @@ import type {
   ChatResponse,
   ReferenceStyleProfile,
   MediaAnalysis,
+  ConversationStep,
+  QuickReply,
+  TranscriptHighlight,
+  ProposedScene,
 } from '@/types/ai-video';
 import * as chatApi from '@/services/aiChatApi';
 import type { StreamCallbacks } from '@/services/aiVideoApi';
@@ -29,6 +33,12 @@ export function useAIChatSession() {
   const scenes = ref<Array<{ index: number; description: string; startTime: number; endTime: number; status: string }>>([]);
   const currentSceneIndex = ref(-1);
   const completedScenes = ref(0);
+
+  // Guided chat state
+  const conversationStep = ref<ConversationStep>('welcome');
+  const lastQuickReplies = ref<QuickReply[] | null>(null);
+  const lastHighlights = ref<TranscriptHighlight[] | null>(null);
+  const lastProposedScenes = ref<ProposedScene[] | null>(null);
 
   // ---------------------------------------------------------------------------
   // Computed
@@ -64,6 +74,8 @@ export function useAIChatSession() {
     );
     return lastWithSummary?.metadata?.summary ?? null;
   });
+
+  const scenePlan = computed(() => session.value?.scene_plan ?? null);
 
   // ---------------------------------------------------------------------------
   // Actions
@@ -120,6 +132,7 @@ export function useAIChatSession() {
       const result = await chatApi.sendChatMessage(session.value.id, message);
       session.value = result.session;
       messages.value = result.session.messages || [];
+      updateGuidedState(result.response);
       return result.response;
     } catch (e: any) {
       // Remove optimistic message on error
@@ -279,6 +292,45 @@ export function useAIChatSession() {
     error.value = null;
   }
 
+  function updateGuidedState(response: ChatResponse) {
+    if (response.step) {
+      conversationStep.value = response.step;
+    }
+    lastQuickReplies.value = response.quick_replies ?? null;
+    lastHighlights.value = response.transcript_highlights ?? null;
+    lastProposedScenes.value = response.proposed_scenes ?? null;
+  }
+
+  function initGuidedStateFromMessages() {
+    if (!messages.value.length) return;
+    const lastAssistant = [...messages.value].reverse().find(m => m.role === 'assistant');
+    if (lastAssistant?.metadata) {
+      const meta = lastAssistant.metadata;
+      if (meta.step) conversationStep.value = meta.step as ConversationStep;
+      lastQuickReplies.value = meta.quick_replies ?? null;
+      lastHighlights.value = meta.transcript_highlights ?? null;
+      lastProposedScenes.value = meta.proposed_scenes ?? null;
+    }
+  }
+
+  async function sendQuickReply(reply: QuickReply) {
+    lastQuickReplies.value = null;
+    return sendMessage(reply.value);
+  }
+
+  async function submitScenePlan(approvedScenes: ProposedScene[]) {
+    if (!session.value) throw new Error('No active session');
+    error.value = null;
+    try {
+      const updated = await chatApi.approveScenePlan(session.value.id, { scenes: approvedScenes });
+      session.value = updated;
+      messages.value = updated.messages || [];
+    } catch (e: any) {
+      error.value = e.message || 'Failed to save scene plan';
+      throw e;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Return
   // ---------------------------------------------------------------------------
@@ -316,11 +368,20 @@ export function useAIChatSession() {
     refinementMessagesRemaining,
     readyToGenerate,
     generationSummary,
+    scenePlan,
+
+    // Guided chat state
+    conversationStep,
+    lastQuickReplies,
+    lastHighlights,
+    lastProposedScenes,
 
     // Actions
     createSession,
     loadSession,
     sendMessage,
+    sendQuickReply,
+    submitScenePlan,
     generate,
     refine,
     uploadReference,
@@ -328,5 +389,6 @@ export function useAIChatSession() {
     syncMedia,
     resetGenerationState,
     clearError,
+    initGuidedStateFromMessages,
   };
 }

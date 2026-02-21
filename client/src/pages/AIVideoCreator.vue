@@ -135,11 +135,19 @@
                       :reference-analysis="chatSession.referenceAnalysis.value"
                       :is-analyzing-reference="isAnalyzingReference"
                       :reference-error="referenceError"
+                      :conversation-step="chatSession.conversationStep.value"
+                      :transcript="currentTranscript"
                       @send="handleChatSend"
                       @generate="handleChatGenerate"
                       @clear-error="chatSession.clearError"
                       @analyze-reference="handleAnalyzeReference"
                       @remove-reference="handleRemoveReference"
+                      @quick-reply="handleQuickReply"
+                      @transcript-confirm="handleTranscriptConfirm"
+                      @transcript-edit="handleTranscriptEdit"
+                      @highlights-confirm="handleHighlightsConfirm"
+                      @highlights-skip="handleHighlightsSkip"
+                      @scene-plan-confirm="handleScenePlanConfirm"
                     />
                   </template>
 
@@ -479,6 +487,59 @@ function handleRemoveReference() {
     chatSession.session.value.reference_url = null;
   }
   referenceError.value = null;
+}
+
+// Guided chat: current transcript for inline review
+const currentTranscript = computed(() => {
+  const videoItem = mediaItems.value.find(m => m.type === 'video' && m.transcript);
+  return videoItem?.transcript ?? null;
+});
+
+// Guided chat event handlers
+async function handleQuickReply(reply: { label: string; value: string }) {
+  if (chatSession.isGenerated.value) {
+    showRefineConfirmation(reply.value);
+  } else if (reply.value === 'generate_transcript') {
+    // Trigger transcript generation for first video media
+    const videoItem = mediaItems.value.find(m => m.type === 'video');
+    if (videoItem && videoItem.source.path) {
+      await generateTranscriptForUploadedFile(videoItem, videoItem.source.path);
+      await chatSession.syncMedia(mediaItems.value);
+      await chatSession.sendMessage('Transcript generated');
+    }
+  } else if (reply.value === 'upload_media') {
+    activePanel.value = 'media';
+  } else {
+    await chatSession.sendQuickReply(reply);
+  }
+}
+
+async function handleTranscriptConfirm() {
+  await chatSession.sendMessage('Transcript confirmed — looks good');
+}
+
+async function handleTranscriptEdit(text: string) {
+  // Update the transcript on the media item
+  const videoItem = mediaItems.value.find(m => m.type === 'video');
+  if (videoItem) {
+    videoItem.transcript = text;
+    await chatSession.syncMedia(mediaItems.value);
+  }
+  await chatSession.sendMessage('I edited the transcript — use the updated version');
+}
+
+async function handleHighlightsConfirm(selected: Array<{ text: string; startTime: number; endTime: number; selected: boolean }>) {
+  const descriptions = selected.map(h => `"${h.text}" at ${h.startTime}s`).join(', ');
+  await chatSession.sendMessage(`I want to highlight these moments: ${descriptions}`);
+}
+
+async function handleHighlightsSkip() {
+  await chatSession.sendMessage('Use everything — no specific highlights needed');
+}
+
+async function handleScenePlanConfirm(scenes: Array<{ index: number; startTime: number; endTime: number; description: string; transcriptSegment: string; effects: string[]; mood: string }>) {
+  await chatSession.submitScenePlan(scenes);
+  await chatSession.sendMessage('Scene plan approved — ready to generate');
 }
 
 // Chat handlers

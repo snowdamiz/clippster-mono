@@ -8,6 +8,7 @@ import type {
   RefinementResponse,
   ReferenceStyleProfile,
   MediaAnalysis,
+  ProposedScene,
 } from '@/types/ai-video';
 import type { StreamCallbacks } from './aiVideoApi';
 
@@ -216,4 +217,18 @@ export async function updateSessionMedia(
   mediaItems: AIVideoMediaItem[]
 ): Promise<void> {
   await api.put(`/ai/chat/sessions/${sessionId}/media`, { media_items: mediaItems });
+}
+
+// ---------------------------------------------------------------------------
+// Scene plan approval
+// ---------------------------------------------------------------------------
+
+export async function approveScenePlan(
+  sessionId: number,
+  scenePlan: { scenes: ProposedScene[] }
+): Promise<AIChatSession> {
+  const response = await api.post(`/ai/chat/sessions/${sessionId}/scene-plan`, {
+    scene_plan: scenePlan,
+  });
+  return response.data;
 }

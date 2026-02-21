@@ -1,10 +1,44 @@
 <template>
   <div class="chat-panel">
+    <!-- Phase stepper -->
+    <ChatPhaseIndicator
+      v-if="conversationStep && !isRefinementMode"
+      :current-step="conversationStep"
+    />
+
     <!-- Messages area -->
     <div ref="messagesContainer" class="chat-panel__messages custom-scrollbar">
-      <template v-for="msg in messages" :key="msg.id">
+      <template v-for="(msg, idx) in messages" :key="msg.id">
+        <ChatMessage
+          :message="msg"
+          :is-last-assistant="msg.role === 'assistant' && idx === lastAssistantIndex"
+          @quick-reply="handleQuickReply"
+        />
+
+        <!-- Inline transcript review (after assistant message with transcript_review step) -->
+        <ChatTranscriptReview
+          v-if="msg.role === 'assistant' && msg.metadata?.step === 'transcript_review' && idx === lastAssistantIndex && transcript"
+          :transcript="transcript"
+          @confirm="handleTranscriptConfirm"
+          @edit="handleTranscriptEdit"
+        />
+
+        <!-- Inline highlights picker (after assistant message with highlights step) -->
+        <ChatHighlightsPicker
+          v-if="msg.role === 'assistant' && msg.metadata?.transcript_highlights && idx === lastAssistantIndex"
+          :highlights="msg.metadata.transcript_highlights"
+          @confirm="handleHighlightsConfirm"
+          @skip="handleHighlightsSkip"
+        />
+
+        <!-- Inline scene plan (after assistant message with scene_plan step) -->
+        <ChatScenePlan
+          v-if="msg.role === 'assistant' && msg.metadata?.proposed_scenes && idx === lastAssistantIndex"
+          :scenes="msg.metadata.proposed_scenes"
+          @confirm="handleScenePlanConfirm"
+        />
+
         <!-- Render summary card inline after assistant message that has summary -->
-        <ChatMessage :message="msg" />
         <ChatSummaryCard
           v-if="msg.role === 'assistant' && msg.metadata?.summary && msg.metadata?.ready_to_generate"
           :summary="msg.metadata.summary"
@@ -123,7 +157,7 @@
       </div>
     </div>
 
-    <!-- Fallback generate button (when AI doesn't set ready_to_generate) -->
+    <!-- Fallback generate button (when AI doesn't set ready_to_generate but we have enough context) -->
     <div v-if="!isRefinementMode && !isGenerating && showFallbackGenerate" class="chat-panel__fallback-generate">
       <button 
         class="fallback-generate-btn"
@@ -145,7 +179,11 @@ import ChatMessage from './ChatMessage.vue';
 import ChatSummaryCard from './ChatSummaryCard.vue';
 import RefinementBadge from './RefinementBadge.vue';
 import ReferenceAnalysisCard from './ReferenceAnalysisCard.vue';
-import type { AIChatMessage, ReferenceStyleProfile } from '@/types/ai-video';
+import ChatPhaseIndicator from './ChatPhaseIndicator.vue';
+import ChatTranscriptReview from './ChatTranscriptReview.vue';
+import ChatHighlightsPicker from './ChatHighlightsPicker.vue';
+import ChatScenePlan from './ChatScenePlan.vue';
+import type { AIChatMessage, ReferenceStyleProfile, QuickReply, TranscriptHighlight, ProposedScene, ConversationStep } from '@/types/ai-video';
 
 const props = defineProps<{
   messages: AIChatMessage[];
@@ -162,6 +200,8 @@ const props = defineProps<{
   referenceAnalysis: ReferenceStyleProfile | null;
   isAnalyzingReference: boolean;
   referenceError: string | null;
+  conversationStep: ConversationStep;
+  transcript: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -170,6 +210,12 @@ const emit = defineEmits<{
   'clear-error': [];
   'analyze-reference': [url: string];
   'remove-reference': [];
+  'quick-reply': [reply: QuickReply];
+  'transcript-confirm': [];
+  'transcript-edit': [text: string];
+  'highlights-confirm': [selected: TranscriptHighlight[]];
+  'highlights-skip': [];
+  'scene-plan-confirm': [scenes: ProposedScene[]];
 }>();
 
 const inputText = ref('');
@@ -177,6 +223,13 @@ const inputEl = ref<HTMLTextAreaElement | null>(null);
 const messagesContainer = ref<HTMLDivElement | null>(null);
 const showRefInput = ref(false);
 const refUrl = ref('');
+
+const lastAssistantIndex = computed(() => {
+  for (let i = props.messages.length - 1; i >= 0; i--) {
+    if (props.messages[i].role === 'assistant') return i;
+  }
+  return -1;
+});
 
 const generationProgress = computed(() => {
   if (props.scenes.length === 0) return 0;
@@ -186,7 +239,7 @@ const generationProgress = computed(() => {
 const inputPlaceholder = computed(() => {
   if (props.isGenerating) return 'Generating...';
   if (props.isRefinementMode) return 'Describe what to change...';
-  return 'Describe your video or ask a question...';
+  return 'Type a message or tap a button above...';
 });
 
 // Show fallback generate button when AI hasn't set ready_to_generate but we have enough context
@@ -194,17 +247,13 @@ const showFallbackGenerate = computed(() => {
   if (props.isRefinementMode || props.isGenerating) return false;
   if (!props.messages.length) return false;
   
-  // Check if we have at least some conversation and no ready_to_generate flag
   const hasUserMessages = props.messages.some(m => m.role === 'user');
-  const hasAssistantMessages = props.messages.some(m => m.role === 'assistant');
   const hasReadyToGenerate = props.messages.some(m => 
     m.role === 'assistant' && m.metadata?.ready_to_generate === true
   );
   
-  // Show fallback if we have conversation but AI didn't set the flag
-  // Also show after 2 assistant messages regardless
   const assistantMessageCount = props.messages.filter(m => m.role === 'assistant').length;
-  const enoughConversation = hasUserMessages && assistantMessageCount >= 1;
+  const enoughConversation = hasUserMessages && assistantMessageCount >= 3;
   
   return enoughConversation && !hasReadyToGenerate;
 });
@@ -215,6 +264,30 @@ function handleSend() {
   emit('send', text);
   inputText.value = '';
   nextTick(() => autoResize());
+}
+
+function handleQuickReply(reply: QuickReply) {
+  emit('quick-reply', reply);
+}
+
+function handleTranscriptConfirm() {
+  emit('transcript-confirm');
+}
+
+function handleTranscriptEdit(text: string) {
+  emit('transcript-edit', text);
+}
+
+function handleHighlightsConfirm(selected: TranscriptHighlight[]) {
+  emit('highlights-confirm', selected);
+}
+
+function handleHighlightsSkip() {
+  emit('highlights-skip');
+}
+
+function handleScenePlanConfirm(scenes: ProposedScene[]) {
+  emit('scene-plan-confirm', scenes);
 }
 
 function autoResize() {

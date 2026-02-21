@@ -222,6 +222,30 @@ export interface ExportProgress {
 // AI Chat Session types
 export type ChatSessionStatus = 'discovery' | 'generating' | 'generated' | 'refining' | 'completed';
 
+export type ConversationStep = 'welcome' | 'transcript_review' | 'purpose' | 'audience' | 'vibe' | 'highlights' | 'scene_plan' | 'confirmation';
+
+export interface QuickReply {
+  label: string;
+  value: string;
+}
+
+export interface TranscriptHighlight {
+  text: string;
+  startTime: number;
+  endTime: number;
+  selected: boolean;
+}
+
+export interface ProposedScene {
+  index: number;
+  startTime: number;
+  endTime: number;
+  description: string;
+  transcriptSegment: string;
+  effects: string[];
+  mood: string;
+}
+
 export interface AIChatSession {
   id: number;
   status: ChatSessionStatus;
@@ -235,6 +259,8 @@ export interface AIChatSession {
   reference_analysis: ReferenceStyleProfile | null;
   media_analysis: MediaAnalysis[] | null;
   reference_url: string | null;
+  scene_plan: { scenes: ProposedScene[] } | null;
+  conversation_step: ConversationStep | null;
   messages: AIChatMessage[];
   inserted_at: string;
   updated_at: string;
@@ -250,6 +276,10 @@ export interface AIChatMessage {
 
 export interface ChatResponse {
   message: string;
+  step: ConversationStep | null;
+  quick_replies: QuickReply[] | null;
+  transcript_highlights: TranscriptHighlight[] | null;
+  proposed_scenes: ProposedScene[] | null;
   ready_to_generate: boolean;
   summary: GenerationSummary | null;
 }
