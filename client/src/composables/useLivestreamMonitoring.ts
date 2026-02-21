@@ -1357,8 +1357,8 @@ export function useLivestreamMonitoring() {
 
   async function handleStreamStart(streamer: MonitoredStreamer, status: LiveStatus, options: StartOptions) {
     try {
-      // Show toast notification that streamer went live
-      showSuccess(`${streamer.displayName} is now live!`, undefined, 7000);
+      // Note: "Streamer went live" toast is handled by global polling system
+      // This function is called for both automatic detection and manual user actions
       
       const sessionInfo = await createLivestreamSession(
         streamer.id,
