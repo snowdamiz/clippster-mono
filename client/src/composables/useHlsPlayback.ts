@@ -25,6 +25,8 @@ const NETWORK_ERROR_RETRY_DELAY = 2000; // 2 seconds between network error retri
 const PLAYBACK_HEALTH_CHECK_INTERVAL = 5000; // Check every 5 seconds
 const PLAYBACK_STALL_THRESHOLD = 15000; // 15 seconds without progress = stalled
 const MAX_REINIT_ATTEMPTS = 3; // Max full reinitialization attempts
+const APPEND_ERROR_WINDOW_MS = 10000; // Sliding window for append error bursts
+const APPEND_ERROR_RECOVERY_THRESHOLD = 3; // Escalate after N append errors in window
 
 // HLS Playback state
 export interface HlsPlaybackState {
@@ -109,6 +111,8 @@ export function useHlsPlayback() {
 
   // Stream end state
   let streamHasEnded = false;
+  let appendErrorCount = 0;
+  let appendErrorWindowStart = 0;
 
   // Computed
   const isAtLiveEdge = computed(() => {
@@ -529,6 +533,9 @@ export function useHlsPlayback() {
     hlsInstance.on(Hls.Events.FRAG_BUFFERED, () => {
       updateBufferedRanges();
       state.value.isBuffering = false;
+      // Fragment append succeeded - clear burst counters.
+      appendErrorCount = 0;
+      appendErrorWindowStart = 0;
     });
 
     hlsInstance.on(Hls.Events.ERROR, (event, data) => {
@@ -587,6 +594,52 @@ export function useHlsPlayback() {
         return;
       }
 
+      // Append errors are often transient MSE state issues. Calling recoverMediaError()
+      // on every non-fatal append error can thrash playback and freeze currentTime.
+      if (
+        data.details === 'bufferAppendError' ||
+        data.details === 'bufferAppendingError' ||
+        data.details === 'bufferFullError'
+      ) {
+        const now = Date.now();
+        if (!appendErrorWindowStart || now - appendErrorWindowStart > APPEND_ERROR_WINDOW_MS) {
+          appendErrorWindowStart = now;
+          appendErrorCount = 1;
+        } else {
+          appendErrorCount += 1;
+        }
+
+        const errorMsg =
+          data.error instanceof Error
+            ? `${data.error.name}: ${data.error.message}`
+            : data.reason || '';
+        console.warn(
+          `[HlsPlayback] Append error burst ${appendErrorCount}/${APPEND_ERROR_RECOVERY_THRESHOLD}`,
+          data.details,
+          errorMsg
+        );
+
+        if (
+          appendErrorCount >= APPEND_ERROR_RECOVERY_THRESHOLD &&
+          videoElement &&
+          !Number.isNaN(videoElement.currentTime)
+        ) {
+          const currentTime = videoElement.currentTime;
+          const target = state.value.liveEdgeTime
+            ? Math.max(currentTime + 1, state.value.liveEdgeTime - 8)
+            : currentTime + 1;
+          console.warn(
+            `[HlsPlayback] Escalating append-error recovery: reload from ${target.toFixed(1)}s`
+          );
+          hlsInstance.stopLoad();
+          hlsInstance.startLoad(target);
+          videoElement.currentTime = target;
+          appendErrorCount = 0;
+          appendErrorWindowStart = 0;
+        }
+        return;
+      }
+
       if (data.fatal) {
         switch (data.type) {
           case Hls.ErrorTypes.NETWORK_ERROR:
@@ -603,7 +656,11 @@ export function useHlsPlayback() {
             break;
         }
       } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-        hlsInstance.recoverMediaError();
+        // Avoid aggressive decoder resets for non-fatal media noise.
+        // Let hls.js continue unless we detect specific recoverable cases.
+        if (data.details === 'fragParsingError' || data.details === 'fragGap') {
+          hlsInstance.startLoad();
+        }
       } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
         // Non-fatal network error - still try to recover
         handleNetworkError(hlsInstance);
@@ -1130,6 +1187,8 @@ export function useHlsPlayback() {
     // Reset state
     hlsUrl = null;
     availableStartTime = 0;
+    appendErrorCount = 0;
+    appendErrorWindowStart = 0;
 
     state.value = {
       isPlaying: false,

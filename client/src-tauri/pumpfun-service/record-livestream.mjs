@@ -1729,10 +1729,13 @@ class PumpfunRecorder {
       '-y',
       '-probesize', '32K',  // Reduced for faster startup
       '-analyzeduration', '500000',  // 500ms - faster startup
+      // Avoid blocking on ffmpeg demux input queues when upstream bursts.
+      '-thread_queue_size', '1024',
       '-f', 's16le',
       '-ac', '2',
       '-ar', '48000',
       '-i', 'pipe:0',
+      '-thread_queue_size', '1024',
       '-f', 'rawvideo',
       '-pix_fmt', 'yuv420p',
       '-s', `${width}x${height}`,
