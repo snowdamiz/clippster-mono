@@ -33,8 +33,12 @@ fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command 
 struct KickRecordingEntry {
     stop_tx: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<()>,
+    channel_slug: String, // Store channel_slug to allow lookup by channel
 }
 
+// Track recordings by session_id instead of channel_slug to allow multiple sessions per channel
+// This enables both temp viewer sessions (4-sec segments) and persistent auto-detect sessions (5-min segments)
+// to record the same channel simultaneously in different directories
 static KICK_ACTIVE_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, KickRecordingEntry>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
@@ -407,11 +411,11 @@ pub async fn start_kick_recording(
 ) -> Result<(), String> {
     let channel_slug = normalize_channel_slug(&channel_slug);
     
-    // Check if already recording this channel
-    // If so, allow sharing the existing recording instead of blocking
-    if KICK_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&channel_slug) {
-        println!("[Kick] Recording already active for {}, sharing existing session", channel_slug);
-        return Ok(()); // Allow sharing - caller can use get_kick_session_output_dir
+    // Check if this specific session is already recording
+    // Allow multiple sessions per channel (e.g., temp viewer + persistent auto-detect)
+    if KICK_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&session_id) {
+        println!("[Kick] Session {} already recording, skipping duplicate start", session_id);
+        return Ok(());
     }
 
     // Get output directory
@@ -442,10 +446,10 @@ pub async fn start_kick_recording(
         level: "info".to_string(),
     });
 
-    let channel_for_cleanup = channel_slug.clone();
     let streamer_for_err = streamer_id.clone();
     let channel_for_err = channel_slug.clone();
     let app_for_err = app.clone();
+    let session_for_cleanup = session_id.clone();
     let task = tokio::spawn(async move {
         if let Err(err) = run_kick_recorder(
             app_handle,
@@ -468,16 +472,18 @@ pub async fn start_kick_recording(
             });
         }
         // Clean up the recording entry when the task exits (success or error)
-        // Without this, stale entries prevent new recordings from starting
-        KICK_ACTIVE_RECORDINGS.lock().unwrap().remove(&channel_for_cleanup);
-        println!("[KickRecorder] Cleaned up recording entry for {}", channel_for_cleanup);
+        // Remove by session_id (not channel_slug) since we track by session now
+        KICK_ACTIVE_RECORDINGS.lock().unwrap().remove(&session_for_cleanup);
+        println!("[KickRecorder] Cleaned up recording entry for session {}", session_for_cleanup);
     });
 
+    // Insert by session_id (not channel_slug) to allow multiple sessions per channel
     KICK_ACTIVE_RECORDINGS.lock().unwrap().insert(
-        channel_slug,
+        session_id.clone(),
         KickRecordingEntry {
             stop_tx: Some(stop_tx),
             task,
+            channel_slug: channel_slug.clone(),
         },
     );
 
@@ -485,19 +491,39 @@ pub async fn start_kick_recording(
 }
 
 /// Stop recording a Kick livestream
+/// Stops ALL sessions recording this channel (both temp viewer and persistent auto-detect)
 #[tauri::command]
 pub async fn stop_kick_recording(channel_slug: String) -> Result<(), String> {
     let channel_slug = normalize_channel_slug(&channel_slug);
-    let entry = KICK_ACTIVE_RECORDINGS.lock().unwrap().remove(&channel_slug);
     
-    if let Some(entry) = entry {
+    // Find all sessions recording this channel and collect their entries
+    // We need to collect entries (not just IDs) to avoid holding the lock across await
+    let entries: Vec<(String, KickRecordingEntry)> = {
+        let mut recordings = KICK_ACTIVE_RECORDINGS.lock().unwrap();
+        let session_ids: Vec<String> = recordings
+            .iter()
+            .filter(|(_, entry)| entry.channel_slug == channel_slug)
+            .map(|(session_id, _)| session_id.clone())
+            .collect();
+        
+        session_ids
+            .into_iter()
+            .filter_map(|session_id| {
+                recordings.remove(&session_id).map(|entry| (session_id, entry))
+            })
+            .collect()
+    }; // Lock is dropped here
+    
+    // Stop each session (no lock held during await)
+    for (session_id, entry) in entries {
         if let Some(tx) = entry.stop_tx {
             let _ = tx.send(());
         }
         if let Err(err) = entry.task.await {
-            eprintln!("[KickRecorder] Join error: {}", err);
+            eprintln!("[KickRecorder] Join error for session {}: {}", session_id, err);
         }
     }
+    
     Ok(())
 }
 
@@ -529,7 +555,12 @@ pub fn get_active_kick_recordings() -> Vec<String> {
 #[tauri::command]
 pub fn is_kick_recording_active(channel_slug: String) -> bool {
     let channel_slug = normalize_channel_slug(&channel_slug);
-    KICK_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&channel_slug)
+    // Check if any session is recording this channel
+    KICK_ACTIVE_RECORDINGS
+        .lock()
+        .unwrap()
+        .values()
+        .any(|entry| entry.channel_slug == channel_slug)
 }
 
 /// Get the output directory for a Kick session (for HLS playback)
