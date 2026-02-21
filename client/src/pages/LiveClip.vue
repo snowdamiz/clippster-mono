@@ -636,10 +636,9 @@
             last_check_timestamp: Date.now(),
           });
           
-          // Show toast notification if streamer just went live (offline → live transition)
+          // Dispatch event if streamer just went live (offline → live transition)
+          // Note: Toast notification is handled by global polling system to avoid duplicates
           if (!wasLive && status.isLive) {
-            success(`${streamer.displayName} is now live!`, undefined, 7000);
-            
             window.dispatchEvent(
               new CustomEvent('streamer-went-live', {
                 detail: {

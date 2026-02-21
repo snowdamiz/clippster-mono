@@ -1153,16 +1153,7 @@
           isChecking: false,
         });
         
-        // Show toast if streamer just went live (offline → live transition)
-        if (!wasLive && status.isLive) {
-          // Find creator name for this platform link
-          const creator = creators.value.find(c => 
-            c.platform_links.some(l => l.platform_id === platformId)
-          );
-          if (creator) {
-            success(`${creator.name} is now live!`, undefined, 7000);
-          }
-        }
+        // Note: Toast notifications are handled by global polling system to avoid duplicates
       } catch (error) {
         console.error('[CreatorProfiles] Failed to check PumpFun live status for', mintId, error);
         liveStatusMap.value.set(platformId, {
@@ -1193,16 +1184,7 @@
             isChecking: false,
           });
           
-          // Show toast if streamer just went live (offline → live transition)
-          if (!wasLive && status.isLive) {
-            // Find creator name for this platform link
-            const creator = creators.value.find(c => 
-              c.platform_links.some(l => l.platform_id === platformId)
-            );
-            if (creator) {
-              success(`${creator.name} is now live!`, undefined, 7000);
-            }
-          }
+          // Note: Toast notifications are handled by global polling system to avoid duplicates
 
           // Persist profile image if we got one and don't have one stored
           if (status.profileImageUrl && !hasProfileImage) {
@@ -1260,16 +1242,7 @@
             isChecking: false,
           });
           
-          // Show toast if streamer just went live (offline → live transition)
-          if (!wasLive && status.isLive) {
-            // Find creator name for this platform link
-            const creator = creators.value.find(c => 
-              c.platform_links.some(l => l.platform_id === platformId)
-            );
-            if (creator) {
-              success(`${creator.name} is now live!`, undefined, 7000);
-            }
-          }
+          // Note: Toast notifications are handled by global polling system to avoid duplicates
 
           // Persist profile image if we got one and don't have one stored
           if (status.profileImageUrl && !hasProfileImage) {
