@@ -102,6 +102,7 @@ async fn run_segment_download_with_encoder(
     start_time: f64,
     segment_duration: f64,
     encoder: &str,
+    cancel_rx: &mut oneshot::Receiver<()>,
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     
@@ -150,13 +151,7 @@ async fn run_segment_download_with_encoder(
         &temp_output_path,
     ]);
     
-    let (mut rx, child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
-
-    // Store process handle for cancellation
-    {
-        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-        processes.insert(download_id.to_string(), child);
-    }
+    let (mut rx, mut child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
 
     let total_duration = segment_duration;
     let app_clone = app.clone();
@@ -168,7 +163,11 @@ async fn run_segment_download_with_encoder(
     let mut success = false;
     let mut last_error: Option<String> = None;
 
-    while let Some(event) = rx.recv().await {
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                match event {
+                    Some(event) => {
         match event {
             tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
                 let chunk = String::from_utf8_lossy(&data);
@@ -252,15 +251,22 @@ async fn run_segment_download_with_encoder(
                         last_error = Some("FFmpeg terminated unexpectedly".to_string());
                     }
                 }
+                break;
             }
             _ => {}
         }
-    }
-
-    // Remove from active processes
-    {
-        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-        processes.remove(download_id);
+                    }
+                    None => break,
+                }
+            }
+            _ = &mut *cancel_rx => {
+                println!("[Rust] Download cancelled, terminating FFmpeg...");
+                let _ = child.kill();
+                // Clean up temp file
+                let _ = std::fs::remove_file(&temp_output_path);
+                return Err("Download cancelled".to_string());
+            }
+        }
     }
 
     if success {
@@ -302,6 +308,7 @@ async fn run_full_download_with_encoder(
     estimated_duration: Option<f64>,
     encoder: &str,
     use_copy_codec: bool,
+    cancel_rx: &mut oneshot::Receiver<()>,
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     
@@ -362,13 +369,7 @@ async fn run_full_download_with_encoder(
         ]);
     }
     
-    let (mut rx, child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
-
-    // Store process handle for cancellation
-    {
-        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-        processes.insert(download_id.to_string(), child);
-    }
+    let (mut rx, mut child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
 
     let mut total_duration = estimated_duration.unwrap_or(600.0);
     let app_clone = app.clone();
@@ -380,7 +381,11 @@ async fn run_full_download_with_encoder(
     let mut success = false;
     let mut last_error: Option<String> = None;
 
-    while let Some(event) = rx.recv().await {
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                match event {
+                    Some(event) => {
         match event {
             tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
                 let chunk = String::from_utf8_lossy(&data);
@@ -467,15 +472,22 @@ async fn run_full_download_with_encoder(
                         last_error = Some("FFmpeg terminated unexpectedly".to_string());
                     }
                 }
+                break;
             }
             _ => {}
         }
-    }
-
-    // Remove from active processes
-    {
-        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-        processes.remove(download_id);
+                    }
+                    None => break,
+                }
+            }
+            _ = &mut *cancel_rx => {
+                println!("[Rust] Download cancelled, terminating FFmpeg...");
+                let _ = child.kill();
+                // Clean up temp file
+                let _ = std::fs::remove_file(&temp_output_path);
+                return Err("Download cancelled".to_string());
+            }
+        }
     }
 
     if success {
@@ -650,6 +662,7 @@ pub async fn download_pumpfun_vod_segment(
             start_time,
             segment_duration,
             &encoder,
+            &mut cancel_rx,
         ).await;
 
         // If hardware encoder failed and we weren't already using software, retry with software
@@ -664,6 +677,7 @@ pub async fn download_pumpfun_vod_segment(
                     start_time,
                     segment_duration,
                     "libx264",
+                    &mut cancel_rx,
                 ).await
             }
             other => other,
@@ -1032,7 +1046,8 @@ pub async fn download_pumpfun_vod(
             &video_path_str,
             duration,
             &encoder,
-            false, // Don't use copy codec, encode for PumpFun
+            false,
+            &mut cancel_rx,
         ).await;
 
         // If hardware encoder failed and we weren't already using software, retry with software
@@ -1047,6 +1062,7 @@ pub async fn download_pumpfun_vod(
                     duration,
                     "libx264",
                     false,
+                    &mut cancel_rx,
                 ).await
             }
             other => other,
@@ -1403,6 +1419,7 @@ pub async fn download_kick_vod_segment(
             start_time,
             segment_duration,
             &encoder,
+            &mut cancel_rx,
         ).await;
 
         // If hardware encoder failed and we weren't already using software, retry with software
@@ -1417,6 +1434,7 @@ pub async fn download_kick_vod_segment(
                     start_time,
                     segment_duration,
                     "libx264",
+                    &mut cancel_rx,
                 ).await
             }
             other => other,
@@ -1779,6 +1797,7 @@ pub async fn download_kick_vod(
             duration,
             "copy", // Try copy first for Kick
             true,   // use_copy_codec = true
+            &mut cancel_rx,
         ).await;
 
         // If copy failed, try with software encoding
@@ -1793,6 +1812,7 @@ pub async fn download_kick_vod(
                     duration,
                     "libx264",
                     false,
+                    &mut cancel_rx,
                 ).await
             }
             other => other,
