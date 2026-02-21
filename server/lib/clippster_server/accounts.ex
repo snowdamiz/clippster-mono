@@ -912,27 +912,31 @@ defmodule ClippsterServer.Accounts do
   def apply_admin_discount(user_id, percent_off, months) do
     user = get_user(user_id)
 
-    if is_nil(user) do
-      {:error, :user_not_found}
-    else
-      # If user has active Stripe subscription, create and apply coupon
-      coupon_id = if user.stripe_subscription_id do
-        case create_and_apply_stripe_discount(user, percent_off, months) do
-          {:ok, coupon_id} -> coupon_id
-          {:error, _reason} -> nil
-        end
-      else
-        nil
-      end
+    cond do
+      is_nil(user) ->
+        {:error, :user_not_found}
 
-      user
-      |> User.discount_changeset(%{
-        admin_discount_percent: percent_off,
-        admin_discount_months_remaining: months,
-        admin_discount_applied_at: DateTime.utc_now() |> DateTime.truncate(:second),
-        admin_discount_stripe_coupon_id: coupon_id
-      })
-      |> Repo.update()
+      is_nil(user.stripe_subscription_id) ->
+        # Cannot apply a timed discount without an active Stripe subscription —
+        # there is no Stripe billing cycle to attach the coupon to, so the
+        # discount would never actually be charged correctly.
+        {:error, :no_stripe_subscription}
+
+      true ->
+        case create_and_apply_stripe_discount(user, percent_off, months) do
+          {:ok, coupon_id} ->
+            user
+            |> User.discount_changeset(%{
+              admin_discount_percent: percent_off,
+              admin_discount_months_remaining: months,
+              admin_discount_applied_at: DateTime.utc_now() |> DateTime.truncate(:second),
+              admin_discount_stripe_coupon_id: coupon_id
+            })
+            |> Repo.update()
+
+          {:error, reason} ->
+            {:error, {:stripe_error, reason}}
+        end
     end
   end
 
