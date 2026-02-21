@@ -1712,3 +1712,102 @@ export function useLivestreamMonitoring() {
     cleanupStreamerDvr,
   };
 }
+
+// Global live status polling state (outside composable scope)
+let globalLiveStatusInterval: number | null = null;
+let globalLiveStatusInitialized = false;
+let isInitialPoll = true; // Track if this is the first poll after app startup
+
+/**
+ * Initialize global live status polling for all monitored streamers.
+ * This runs on app startup and checks live status every 60 seconds,
+ * showing toast notifications when streamers go live.
+ * 
+ * This is separate from the monitoring system (Auto-Detect/Record) and
+ * ensures users get notifications for ALL streamers in their list.
+ */
+export async function initGlobalLiveStatusPolling(): Promise<void> {
+  if (globalLiveStatusInitialized) {
+    console.log('[GlobalLiveStatus] Already initialized, skipping');
+    return;
+  }
+
+  console.log('[GlobalLiveStatus] Initializing global live status polling...');
+  
+  // Import database function
+  const { getAllMonitoredStreamers } = await import('@/services/database');
+  
+  async function checkAllStreamersLiveStatus() {
+    try {
+      const streamers = await getAllMonitoredStreamers();
+      
+      if (streamers.length === 0) return;
+      
+      console.log(`[GlobalLiveStatus] Checking ${streamers.length} streamers (initial: ${isInitialPoll})`);
+      
+      for (const record of streamers) {
+        const wasLive = Boolean(record.is_currently_live);
+        
+        // Check live status
+        const status = await fetchLiveStatus(
+          record.mint_id,
+          (record.platform as SupportedLivestreamPlatform) || 'PumpFun'
+        );
+        
+        // Update database
+        const { updateMonitoredStreamer } = await import('@/services/database');
+        await updateMonitoredStreamer(record.id, {
+          is_currently_live: status.isLive ? 1 : 0,
+          last_check_timestamp: Math.floor(Date.now() / 1000),
+        });
+        
+        // Show toast if went live (offline → online transition)
+        // BUT skip toasts on initial poll to avoid spam when app first opens
+        if (!wasLive && status.isLive && !isInitialPoll) {
+          showSuccess(`${record.display_name} is now live!`, undefined, 7000);
+          
+          // Dispatch global event
+          window.dispatchEvent(
+            new CustomEvent('streamer-went-live', {
+              detail: {
+                streamerId: record.id,
+                displayName: record.display_name,
+                platform: record.platform,
+                mintId: record.mint_id,
+              },
+            })
+          );
+        }
+      }
+      
+      // After first poll completes, mark as no longer initial
+      if (isInitialPoll) {
+        isInitialPoll = false;
+        console.log('[GlobalLiveStatus] Initial poll complete, future polls will show toasts');
+      }
+    } catch (error) {
+      console.error('[GlobalLiveStatus] Polling error:', error);
+    }
+  }
+  
+  // Initial check (won't show toasts)
+  await checkAllStreamersLiveStatus();
+  
+  // Start periodic polling (every 60 seconds, will show toasts)
+  globalLiveStatusInterval = window.setInterval(checkAllStreamersLiveStatus, 60_000);
+  
+  globalLiveStatusInitialized = true;
+  console.log('[GlobalLiveStatus] Global live status polling initialized');
+}
+
+/**
+ * Stop global live status polling (cleanup on app unmount if needed)
+ */
+export function stopGlobalLiveStatusPolling(): void {
+  if (globalLiveStatusInterval !== null) {
+    clearInterval(globalLiveStatusInterval);
+    globalLiveStatusInterval = null;
+  }
+  globalLiveStatusInitialized = false;
+  console.log('[GlobalLiveStatus] Stopped global live status polling');
+}
