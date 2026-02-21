@@ -85,7 +85,9 @@
                 </div>
               </div>
 
-              <!-- Enhanced Multimodal Detection Toggle -->
+              <!-- Enhanced Multimodal Detection Toggle - TEMPORARILY HIDDEN -->
+              <!-- TODO: Re-enable multimodal detection option in future release -->
+              <!--
               <div class="detect-clips-dialog__field detect-clips-dialog__toggle-box">
                 <div class="flex items-center justify-between">
                   <div class="flex-1 min-w-0 pr-3">
@@ -111,6 +113,7 @@
                   </button>
                 </div>
               </div>
+              -->
 
               <!-- Credit Source Selector (shown when user has org credits) -->
               <div v-if="showCreditSourceSelector" class="detect-clips-dialog__field">
