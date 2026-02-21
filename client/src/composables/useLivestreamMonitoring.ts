@@ -400,11 +400,12 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
 
 // Handle DVR cleanup when stream ends (for watch-only DVR sessions)
 async function handleDvrStreamEnd(streamerId: string, mintId: string) {
-  // Check if user is actively watching and not at live edge
+  // Check if user is actively watching (at any position - live edge or behind)
+  // Preserve DVR so they can continue watching after stream ends
   const viewerSession = activeViewerSessions.value.get(streamerId);
-  if (viewerSession && viewerSession.isWatching && !viewerSession.isAtLiveEdge) {
-    console.log('[LiveMonitor] User is watching behind live edge, preserving DVR for:', mintId);
-    return; // Don't cleanup - user is watching old content
+  if (viewerSession && viewerSession.isWatching) {
+    console.log('[LiveMonitor] User is watching, preserving DVR for:', mintId);
+    return; // Don't cleanup - user is watching (they may be 20 minutes behind)
   }
 
   // Check for Kick DVR session first
@@ -1359,6 +1360,11 @@ export function useLivestreamMonitoring() {
     try {
       // Note: "Streamer went live" toast is handled by global polling system
       // This function is called for both automatic detection and manual user actions
+      
+      // Allow temp viewer sessions (4-sec segments) and persistent auto-detect sessions (5-min segments)
+      // to coexist. They write to different directories and serve different purposes:
+      // - Viewer sessions: smooth scrubbing for watching
+      // - Auto-detect sessions: efficient clip detection
       
       const sessionInfo = await createLivestreamSession(
         streamer.id,

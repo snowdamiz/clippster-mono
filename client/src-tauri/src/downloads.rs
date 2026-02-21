@@ -557,6 +557,13 @@ pub async fn download_pumpfun_vod_segment(
         }
     };
 
+    // Create cancellation channel
+    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
     // Get storage paths
     println!("[Rust] Getting storage paths...");
     let paths = storage::init_storage_dirs()
@@ -665,6 +672,13 @@ pub async fn download_pumpfun_vod_segment(
         // Check result
         download_result?;
 
+        // Check for cancellation before post-processing
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before post-processing");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
+
         println!("[Rust] Segment download completed successfully");
 
         // Get file metadata
@@ -679,6 +693,13 @@ pub async fn download_pumpfun_vod_segment(
             }
         };
         let file_size = metadata.len();
+
+        // Check for cancellation before thumbnail generation
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before thumbnail generation");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         // Generate thumbnail for segment
         println!("[Rust] Generating thumbnail for segment...");
@@ -722,6 +743,16 @@ pub async fn download_pumpfun_vod_segment(
             println!("[Rust] No segment thumbnail result");
             None
         };
+
+        // Check for cancellation before video info extraction
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before video info extraction");
+            let _ = std::fs::remove_file(&video_path);
+            if let Some(ref thumb_path) = thumbnail_path_str {
+                let _ = std::fs::remove_file(thumb_path);
+            }
+            return Err("Download cancelled".to_string());
+        }
 
         // Get video dimensions, codec info, and actual duration from file
         println!("[Rust] Getting detailed segment video info...");
@@ -884,6 +915,13 @@ pub async fn download_pumpfun_vod(
         }
     };
 
+    // Create cancellation channel
+    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
     // Get storage paths
     println!("[Rust] Getting storage paths...");
     let paths = storage::init_storage_dirs()
@@ -1017,6 +1055,13 @@ pub async fn download_pumpfun_vod(
         // Check result
         download_result?;
 
+        // Check for cancellation before post-processing
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before post-processing");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
+
         println!("[Rust] Download completed successfully");
 
         // Get file metadata
@@ -1031,6 +1076,13 @@ pub async fn download_pumpfun_vod(
             }
         };
         let file_size = metadata.len();
+
+        // Check for cancellation before thumbnail generation
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before thumbnail generation");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         // Generate thumbnail
         println!("[Rust] Generating thumbnail...");
@@ -1073,6 +1125,16 @@ pub async fn download_pumpfun_vod(
             println!("[Rust] No thumbnail result");
             None
         };
+
+        // Check for cancellation before video info extraction
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before video info extraction");
+            let _ = std::fs::remove_file(&video_path);
+            if let Some(ref thumb_path) = thumbnail_path_str {
+                let _ = std::fs::remove_file(thumb_path);
+            }
+            return Err("Download cancelled".to_string());
+        }
 
         // Get video dimensions, codec info, and actual duration from downloaded file
         println!("[Rust] Getting detailed video info...");
@@ -1248,6 +1310,13 @@ pub async fn download_kick_vod_segment(
         }
     };
 
+    // Create cancellation channel
+    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
     // Get storage paths
     println!("[Rust] Getting storage paths...");
     let paths = storage::init_storage_dirs()
@@ -1269,12 +1338,14 @@ pub async fn download_kick_vod_segment(
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
         .as_secs();
 
+    let channel_prefix = if channel_slug.len() >= 8 { &channel_slug[..8] } else { &channel_slug };
+
     // Format times for filename (start-end)
     let start_formatted = format_time_for_filename(start_time);
     let end_formatted = format_time_for_filename(end_time);
 
     let filename = format!("kick_{}_{}_{}_{}_{}.mp4",
-        channel_slug, safe_title, start_formatted, end_formatted, timestamp);
+        channel_prefix, safe_title, start_formatted, end_formatted, timestamp);
     let video_path = paths.videos.join(&filename);
 
     println!("[Rust] Generated filename: {}", filename);
@@ -1354,6 +1425,13 @@ pub async fn download_kick_vod_segment(
         // Check result
         download_result?;
 
+        // Check for cancellation before post-processing
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before post-processing");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
+
         println!("[Rust] Segment download completed successfully");
 
         // Get file metadata
@@ -1368,6 +1446,13 @@ pub async fn download_kick_vod_segment(
             }
         };
         let file_size = metadata.len();
+
+        // Check for cancellation before thumbnail generation
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before thumbnail generation");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         // Generate thumbnail for segment
         println!("[Rust] Generating thumbnail for segment...");
@@ -1411,6 +1496,16 @@ pub async fn download_kick_vod_segment(
             println!("[Rust] No segment thumbnail result");
             None
         };
+
+        // Check for cancellation before video info extraction
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before video info extraction");
+            let _ = std::fs::remove_file(&video_path);
+            if let Some(ref thumb_path) = thumbnail_path_str {
+                let _ = std::fs::remove_file(thumb_path);
+            }
+            return Err("Download cancelled".to_string());
+        }
 
         // Get video dimensions, codec info, and actual duration from file
         println!("[Rust] Getting detailed segment video info...");
@@ -1573,6 +1668,13 @@ pub async fn download_kick_vod(
         }
     };
 
+    // Create cancellation channel
+    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
     // Get storage paths
     println!("[Rust] Getting storage paths...");
     let paths = storage::init_storage_dirs()
@@ -1594,7 +1696,8 @@ pub async fn download_kick_vod(
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
         .as_secs();
 
-    let filename = format!("kick_{}_{}_{}.mp4", channel_slug, safe_title, timestamp);
+    let channel_prefix = if channel_slug.len() >= 8 { &channel_slug[..8] } else { &channel_slug };
+    let filename = format!("kick_{}_{}_{}.mp4", channel_prefix, safe_title, timestamp);
     let video_path = paths.videos.join(&filename);
 
     println!("[Rust] Generated filename: {}", filename);
@@ -1698,6 +1801,13 @@ pub async fn download_kick_vod(
         // Check result
         download_result?;
 
+        // Check for cancellation before post-processing
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before post-processing");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
+
         println!("[Rust] Download completed successfully");
 
         // Get file metadata
@@ -1706,6 +1816,13 @@ pub async fn download_kick_vod(
             Err(e) => return Err(format!("Failed to get file metadata: {}", e))
         };
         let file_size = metadata.len();
+
+        // Check for cancellation before thumbnail generation
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before thumbnail generation");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         // Generate thumbnail
         println!("[Rust] Generating thumbnail...");
@@ -1733,6 +1850,16 @@ pub async fn download_kick_vod(
         } else {
             None
         };
+
+        // Check for cancellation before video info extraction
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before video info extraction");
+            let _ = std::fs::remove_file(&video_path);
+            if let Some(ref thumb_path) = thumbnail_path_str {
+                let _ = std::fs::remove_file(thumb_path);
+            }
+            return Err("Download cancelled".to_string());
+        }
 
         // Get video dimensions, codec info, and actual duration from downloaded file
         println!("[Rust] Getting detailed video info...");
