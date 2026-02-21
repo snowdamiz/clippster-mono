@@ -817,9 +817,13 @@ export function useLivestreamViewer() {
         state.value.tempSessionId = sessionId;
         state.value.isTempRecording = false; // Not a temp recording - it's a DVR session
       } else if (existingPersistentSession && existingPersistentSession.platform === 'Twitch') {
-        // Use existing persistent recording from monitoring system
-        console.log('[LiveViewer] Found existing Twitch persistent session:', existingPersistentSession.sessionId);
-        sessionId = existingPersistentSession.sessionId;
+        // Persistent auto-detect session exists with 5-minute segments
+        // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
+        // The two sessions will write to different directories and won't conflict
+        console.log('[LiveViewer] Found existing Twitch persistent session (5-min segments):', existingPersistentSession.sessionId);
+        console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
+        
+        sessionId = `twitch-view-${channelName}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
         state.value.isTempRecording = true;
         
