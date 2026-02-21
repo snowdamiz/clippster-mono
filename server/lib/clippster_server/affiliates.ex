@@ -228,13 +228,14 @@ defmodule ClippsterServer.Affiliates do
   end
 
   @doc """
-  Cancels all pending commissions for a referred user.
+  Cancels all unpaid commissions for a referred user.
   Called on subscription cancellation or payment failure.
+  Only cancels 'confirmed' commissions (not yet paid out) — 'paid' commissions are already disbursed.
   """
   def cancel_pending_commissions(referred_user_id) do
     {count, _} =
       AffiliateReferral
-      |> where([r], r.referred_user_id == ^referred_user_id and r.status == "pending")
+      |> where([r], r.referred_user_id == ^referred_user_id and r.status == "confirmed")
       |> Repo.update_all(set: [status: "cancelled", updated_at: DateTime.utc_now() |> DateTime.truncate(:second)])
 
     {:ok, count}
