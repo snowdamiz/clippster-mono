@@ -13,7 +13,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
   require Logger
 
-  @max_parallel_chunks 4
+  @max_parallel_chunks 10
   @chunk_timeout_normal 180_000      # 3 minutes per chunk for normal mode
   @chunk_timeout_multimodal 300_000  # 5 minutes per chunk for multimodal mode
 
@@ -54,15 +54,63 @@ defmodule ClippsterServerWeb.ClipsController do
             multimodal = multimodal_raw == "true"
             IO.puts("[ClipsController] Multimodal mode enabled: #{multimodal}")
 
+            # Extract optional time range parameters
+            start_time = case Map.get(params, "start_time") do
+              nil -> 0.0
+              "" -> 0.0
+              val -> String.to_float(val)
+            end
+
+            end_time = case Map.get(params, "end_time") do
+              nil -> nil
+              "" -> nil
+              val -> String.to_float(val)
+            end
+
             IO.puts("[ClipsController] Starting chunked clip detection for project #{project_id}")
             IO.puts("[ClipsController] Processing #{length(chunks_metadata)} chunks")
             IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
+            if start_time > 0 or end_time != nil do
+              IO.puts("[ClipsController] Time range filter: #{start_time}s - #{inspect(end_time)}s")
+            end
 
             # Check if chunks array is empty
             if length(chunks_metadata) == 0 do
               IO.puts("[ClipsController] No chunks provided - this indicates incomplete chunked transcript data")
               throw {:error, "No chunks available for processing. The chunked transcript may be incomplete or not yet generated."}
             end
+
+            # Filter chunks by time range if specified
+            filtered_chunks = if start_time > 0 or end_time != nil do
+              chunks_metadata
+              |> Enum.filter(fn chunk ->
+                chunk_start = Map.get(chunk, "start_time", 0)
+                chunk_end = Map.get(chunk, "end_time", 0)
+                
+                # Include chunk if it overlaps with the requested time range
+                chunk_overlaps = chunk_end > start_time and (end_time == nil or chunk_start < end_time)
+                
+                if not chunk_overlaps do
+                  IO.puts("[ClipsController] Filtering out chunk #{chunk_start}s-#{chunk_end}s (outside range)")
+                end
+                
+                chunk_overlaps
+              end)
+            else
+              chunks_metadata
+            end
+
+            if length(filtered_chunks) == 0 do
+              IO.puts("[ClipsController] No chunks in specified time range")
+              throw {:error, "No chunks available in the specified time range (#{start_time}s - #{inspect(end_time)}s)"}
+            end
+
+            if length(filtered_chunks) < length(chunks_metadata) do
+              IO.puts("[ClipsController] Filtered to #{length(filtered_chunks)} chunks in time range")
+            end
+
+            # Use filtered chunks for processing
+            chunks_metadata = filtered_chunks
 
             # Determine processing mode based on chunk content
             processing_mode = determine_chunk_processing_mode(chunks_metadata)
@@ -72,9 +120,9 @@ defmodule ClippsterServerWeb.ClipsController do
             is_first_run = processing_mode == :raw_audio
             IO.puts("[ClipsController] First run: #{is_first_run}")
 
-            # Calculate audio duration from chunks
-            duration_hours = calculate_duration_from_chunks(chunks_json)
-            IO.puts("[ClipsController] Audio duration: #{Float.round(duration_hours, 3)} hours")
+            # Calculate audio duration from FILTERED chunks (not total)
+            duration_hours = calculate_duration_from_filtered_chunks(chunks_metadata)
+            IO.puts("[ClipsController] Audio duration (filtered): #{Float.round(duration_hours, 3)} hours")
 
             # Extract optional organization_id for org credit deduction
             organization_id = Map.get(params, "organization_id") |> parse_org_id()
@@ -2061,6 +2109,24 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   defp calculate_duration_from_chunks(_), do: 0.0
+
+  # Calculate duration from filtered chunks (already parsed list)
+  defp calculate_duration_from_filtered_chunks(chunks) when is_list(chunks) do
+    # Sum the duration of all chunks in the filtered list
+    total_seconds = chunks
+    |> Enum.reduce(0.0, fn chunk, acc ->
+      chunk_start = Map.get(chunk, "start_time", 0.0)
+      chunk_end = Map.get(chunk, "end_time", 0.0)
+      chunk_duration = chunk_end - chunk_start
+      acc + chunk_duration
+    end)
+
+    duration_minutes = total_seconds / 60.0
+    IO.puts("[ClipsController] Duration from filtered chunks: #{Float.round(duration_minutes, 3)} minutes (#{Float.round(total_seconds, 1)}s)")
+    duration_minutes
+  end
+
+  defp calculate_duration_from_filtered_chunks(_), do: 0.0
 
   # Get file size in MB (simplified version)
   defp get_file_size_mb(file_path) do

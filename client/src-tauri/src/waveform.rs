@@ -17,8 +17,10 @@ pub struct WaveformData {
 
 // Target peak count - high resolution, frontend will downsample as needed
 const TARGET_PEAKS: u32 = 16000;
-// Sample rate for audio extraction - 16kHz is sufficient for waveform visualization
+// Sample rate for full waveform extraction (used by extract_audio_waveform)
 const WAVEFORM_SAMPLE_RATE: u32 = 16000;
+// Sample rate for on-demand range extraction - 4kHz is plenty for peak amplitude visualization
+const RANGE_SAMPLE_RATE: u32 = 4000;
 
 // Generate a hash for the video path for consistent lookup
 // Includes file size and modification time to invalidate cache when file changes
@@ -636,7 +638,7 @@ pub async fn extract_audio_peaks_for_range(
 
     println!("[Rust] Extracting audio segment to: {}", temp_wav_path.display());
 
-    // Extract only the requested time range to WAV (16kHz mono)
+    // Extract only the requested time range to WAV (4kHz mono - sufficient for amplitude peaks)
     let extract_output = shell
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
@@ -647,7 +649,7 @@ pub async fn extract_audio_peaks_for_range(
             "-i", &local_video_path,
             "-vn",
             "-acodec", "pcm_s16le",
-            "-ar", &WAVEFORM_SAMPLE_RATE.to_string(),
+            "-ar", &RANGE_SAMPLE_RATE.to_string(),
             "-ac", "1",
             "-y",
             temp_wav_path.to_str().ok_or("Invalid temporary WAV path")?,
@@ -773,4 +775,33 @@ fn process_wav_file_to_peaks(
     }
 
     Ok(peaks)
+}
+
+/// Fast video duration probe using FFmpeg header read only (no decoding).
+/// Returns duration in seconds. Much faster than full audio extraction.
+#[tauri::command]
+pub async fn probe_video_duration(
+    app: tauri::AppHandle,
+    video_path: String,
+) -> Result<f64, String> {
+    use tauri_plugin_shell::ShellExt;
+
+    let local_path = extract_local_path_from_url(&video_path)
+        .unwrap_or_else(|_| video_path.clone());
+
+    let shell = app.shell();
+    let output = shell
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(["-nostdin", "-i", &local_path])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to probe video: {}", e))?;
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let duration = super::ffmpeg_utils::parse_duration_from_ffmpeg_output(&stderr)
+        .map_err(|e| format!("Failed to parse duration: {}", e))?;
+
+    println!("[Rust] probe_video_duration: {:.2}s for {}", duration, local_path);
+    Ok(duration)
 }

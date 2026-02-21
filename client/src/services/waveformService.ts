@@ -524,8 +524,9 @@ export function calculatePeaks(
 // Waveform Service Class
 // ============================================================================
 
-// Threshold for switching to streaming mode (1 hour)
-const LONG_VIDEO_THRESHOLD = 3600; // seconds
+// Threshold for switching to streaming mode (5 minutes)
+// Videos longer than this use on-demand per-range extraction instead of loading all audio into memory
+const LONG_VIDEO_THRESHOLD = 300; // seconds
 
 type WaveformMode = 'cached' | 'streaming';
 
@@ -601,11 +602,35 @@ class WaveformServiceImpl {
       }
     }
 
-    // HYBRID STRATEGY: Extract audio via Rust first to get duration
+    // FAST DURATION CHECK: Use FFmpeg header probe (no decoding, completes in <1s)
+    // This lets us decide cached vs streaming mode before doing any expensive work.
     const localPath = resolveLocalPath(normalizedPath);
+
+    let probedDuration: number | null = null;
+    if (localPath) {
+      try {
+        probedDuration = await invoke<number>('probe_video_duration', { videoPath: normalizedPath });
+        console.log(`[WaveformService] Probed duration: ${(probedDuration / 60).toFixed(1)} min`);
+      } catch (e) {
+        console.warn('[WaveformService] Duration probe failed, will determine from extraction:', e);
+      }
+    }
+
+    // DECISION POINT: if we know the duration and it's long, go straight to streaming mode
+    if (probedDuration !== null && probedDuration > LONG_VIDEO_THRESHOLD) {
+      console.log(`[WaveformService] Long video (${(probedDuration / 60).toFixed(1)} min > ${LONG_VIDEO_THRESHOLD / 60} min threshold), using streaming mode`);
+      this.peakMode.set(normalizedPath, 'streaming');
+      this.setVideoDuration(normalizedPath, probedDuration);
+      return {
+        channelData: new Float32Array(0),
+        sampleRate: 0,
+        duration: probedDuration,
+      };
+    }
+
     if (!localPath) {
       // Non-local file, extract normally
-      console.log('[WaveformService] Extracting audio:', normalizedPath);
+      console.log('[WaveformService] Extracting audio (non-local):', normalizedPath);
       const { data, fileSize } = await extractAudioFromFile(normalizedPath);
       await setCachedAudio(normalizedPath, data, fileSize);
       this.peakMode.set(normalizedPath, 'cached');
@@ -613,10 +638,12 @@ class WaveformServiceImpl {
       return data;
     }
 
-    // For local files: extract audio via Rust to get duration
+    // Short video (≤5 min): extract audio and load into memory for instant peak calculation
+    console.log(`[WaveformService] Short video (${probedDuration !== null ? (probedDuration / 60).toFixed(1) + ' min' : 'unknown duration'}), loading audio into memory`);
+    this.peakMode.set(normalizedPath, 'cached');
+
     const extractedAudioPath = await extractAudioViaRust(localPath);
     if (!extractedAudioPath) {
-      // Extraction failed, fall back to direct load
       console.warn('[WaveformService] FFmpeg extraction failed, attempting direct load');
       const { data, fileSize } = await extractAudioFromFile(normalizedPath);
       await setCachedAudio(normalizedPath, data, fileSize);
@@ -625,39 +652,15 @@ class WaveformServiceImpl {
       return data;
     }
 
-    // Get file size of extracted audio to estimate duration
     const audioBuffer = await fetchAudioFile(extractedAudioPath);
     if (!audioBuffer) {
-      console.warn('[WaveformService] Could not fetch extracted audio');
+      console.warn('[WaveformService] Could not fetch extracted audio, falling back to direct load');
       const { data, fileSize } = await extractAudioFromFile(normalizedPath);
       await setCachedAudio(normalizedPath, data, fileSize);
       this.peakMode.set(normalizedPath, 'cached');
       this.setVideoDuration(normalizedPath, data.duration);
       return data;
     }
-
-    const audioSizeMB = audioBuffer.byteLength / (1024 * 1024);
-    // Rough estimate: 1 minute of MP3 at 128kbps ≈ 1MB
-    const estimatedDuration = (audioSizeMB / 1.0) * 60;
-
-    console.log(`[WaveformService] Extracted audio size: ${audioSizeMB.toFixed(1)}MB, estimated duration: ${(estimatedDuration / 60).toFixed(1)} min`);
-
-    // DECISION POINT: Check if video is too long
-    if (audioSizeMB > 200 || estimatedDuration > LONG_VIDEO_THRESHOLD) {
-      console.log(`[WaveformService] Long video detected (${(estimatedDuration / 60).toFixed(1)} min), using streaming mode`);
-      this.peakMode.set(normalizedPath, 'streaming');
-      this.setVideoDuration(normalizedPath, estimatedDuration);
-      // Don't load audio into memory
-      return {
-        channelData: new Float32Array(0),
-        sampleRate: 0,
-        duration: estimatedDuration,
-      };
-    }
-
-    // Short video: proceed with loading
-    console.log(`[WaveformService] Short video (${(estimatedDuration / 60).toFixed(1)} min), loading audio into memory`);
-    this.peakMode.set(normalizedPath, 'cached');
 
     // Decode the extracted audio
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();

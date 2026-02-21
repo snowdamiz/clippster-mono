@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 const NODE_VERSION: &str = "v20.11.0";
 const FFMPEG_STATIC_VERSION: &str = "b6.0";
-const YTDLP_VERSION: &str = "2025.12.08";
+const YTDLP_VERSION: &str = "2026.02.20.235452";
+const YTDLP_NIGHTLY_REPO: &str = "yt-dlp/yt-dlp-nightly-builds";
 
 fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
@@ -569,51 +570,52 @@ fn extract_node_from_tar_gz(
 }
 
 fn download_ytdlp(binaries_dir: &Path, target_os: &str, target_arch: &str) {
-    // yt-dlp provides standalone binaries for all platforms (no Python required)
-    // https://github.com/yt-dlp/yt-dlp/releases
+    // yt-dlp nightly builds fix Kick's Cloudflare 403 (stable builds are blocked)
+    // https://github.com/yt-dlp/yt-dlp-nightly-builds/releases
     
     // Tauri externalBin requires target triple suffix (e.g., yt-dlp-x86_64-pc-windows-msvc.exe)
     let (ytdlp_name, download_url) = match (target_os, target_arch) {
         ("windows", "x86_64") => (
             "yt-dlp-x86_64-pc-windows-msvc.exe",
             format!(
-                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp.exe",
-                YTDLP_VERSION
+                "https://github.com/{}/releases/download/{}/yt-dlp.exe",
+                YTDLP_NIGHTLY_REPO, YTDLP_VERSION
             ),
         ),
         ("windows", "aarch64") => (
             "yt-dlp-aarch64-pc-windows-msvc.exe",
             format!(
-                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_arm64.exe",
-                YTDLP_VERSION
+                "https://github.com/{}/releases/download/{}/yt-dlp_arm64.exe",
+                YTDLP_NIGHTLY_REPO, YTDLP_VERSION
             ),
         ),
         ("linux", "x86_64") => (
             "yt-dlp-x86_64-unknown-linux-gnu",
             format!(
-                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_linux",
-                YTDLP_VERSION
+                "https://github.com/{}/releases/download/{}/yt-dlp_linux",
+                YTDLP_NIGHTLY_REPO, YTDLP_VERSION
             ),
         ),
         ("linux", "aarch64") => (
             "yt-dlp-aarch64-unknown-linux-gnu",
             format!(
-                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_linux_aarch64",
-                YTDLP_VERSION
+                "https://github.com/{}/releases/download/{}/yt-dlp_linux_aarch64",
+                YTDLP_NIGHTLY_REPO, YTDLP_VERSION
             ),
         ),
         ("macos", "x86_64") => (
             "yt-dlp-x86_64-apple-darwin",
             format!(
-                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_macos",
-                YTDLP_VERSION
+                "https://github.com/{}/releases/download/{}/yt-dlp_macos",
+                YTDLP_NIGHTLY_REPO, YTDLP_VERSION
             ),
         ),
         ("macos", "aarch64") => (
             "yt-dlp-aarch64-apple-darwin",
+            // Nightly builds publish yt-dlp_macos as a universal macOS binary
             format!(
-                "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp_macos",
-                YTDLP_VERSION
+                "https://github.com/{}/releases/download/{}/yt-dlp_macos",
+                YTDLP_NIGHTLY_REPO, YTDLP_VERSION
             ),
         ),
         _ => {

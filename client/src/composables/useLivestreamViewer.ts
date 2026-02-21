@@ -639,17 +639,29 @@ export function useLivestreamViewer() {
           }
         }
       } else if (existingPersistentSession && existingPersistentSession.platform === 'Kick') {
-        // Use existing persistent recording from monitoring system
-        console.log(
-          '[LiveViewer] Found existing Kick persistent session:',
-          existingPersistentSession.sessionId
-        );
-        sessionId = existingPersistentSession.sessionId;
+        // Persistent auto-detect session exists with 5-minute segments
+        // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
+        // The two sessions will write to different directories and won't conflict
+        console.log('[LiveViewer] Found existing Kick persistent session (5-min segments):', existingPersistentSession.sessionId);
+        console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
+        
+        sessionId = `kick-view-${channelSlug}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
-        state.value.sessionId = existingPersistentSession.sessionId;
-        state.value.projectId = existingPersistentSession.projectId;
-        state.value.isTempRecording = false;
+        state.value.isTempRecording = true;
+        
+        // Start separate viewer recording with 4-second segments
+        try {
+          await startKickRecording(channelSlug, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start Kick viewer recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+        
         outputDir = await invoke<string>('get_kick_session_output_dir', { sessionId });
+        addKickDvrSession(streamerId, channelSlug, sessionId, outputDir);
+        console.log('[LiveViewer] Viewer session started in separate directory:', outputDir);
       } else {
         // No existing session - start a new temp recording
         sessionId = `kick-view-${channelSlug}-${Date.now()}`;
@@ -805,17 +817,29 @@ export function useLivestreamViewer() {
         state.value.tempSessionId = sessionId;
         state.value.isTempRecording = false; // Not a temp recording - it's a DVR session
       } else if (existingPersistentSession && existingPersistentSession.platform === 'Twitch') {
-        // Use existing persistent recording from monitoring system
-        console.log(
-          '[LiveViewer] Found existing Twitch persistent session:',
-          existingPersistentSession.sessionId
-        );
-        sessionId = existingPersistentSession.sessionId;
+        // Persistent auto-detect session exists with 5-minute segments
+        // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
+        // The two sessions will write to different directories and won't conflict
+        console.log('[LiveViewer] Found existing Twitch persistent session (5-min segments):', existingPersistentSession.sessionId);
+        console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
+        
+        sessionId = `twitch-view-${channelName}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
-        state.value.sessionId = existingPersistentSession.sessionId;
-        state.value.projectId = existingPersistentSession.projectId;
-        state.value.isTempRecording = false;
+        state.value.isTempRecording = true;
+        
+        // Start separate viewer recording with 4-second segments
+        try {
+          await startTwitchRecording(channelName, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start Twitch viewer recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+        
         outputDir = await getTwitchSessionOutputDir(sessionId);
+        addTwitchDvrSession(streamerId, channelName, sessionId, outputDir);
+        console.log('[LiveViewer] Viewer session started in separate directory:', outputDir);
       } else {
         // No existing session - start a new temp recording
         sessionId = `twitch-view-${channelName}-${Date.now()}`;
@@ -1426,30 +1450,38 @@ export function useLivestreamViewer() {
   ) {
     // Check if already has a persistent recording session
     const session = activeSessions.value.get(streamerId);
-    if (session) {
-      state.value.sessionId = session.sessionId;
-      state.value.projectId = session.projectId;
-      state.value.isTempRecording = false;
-
-      // Try to get the output directory for HLS playback
-      // Note: Auto-detect for PumpFun now uses DVR recording, so HLS output dir may not exist
+    if (session && session.platform === 'PumpFun') {
+      // Persistent auto-detect session exists with 5-minute segments
+      // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
+      // The two sessions will write to different directories and won't conflict
+      console.log('[LiveViewer] Found existing PumpFun persistent session (5-min segments):', session.sessionId);
+      console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
+      
+      // Start separate HLS recording for viewer with shorter segments
       try {
-        const outputDir = await invoke<string>('get_recording_output_dir', {
-          sessionId: session.sessionId,
+        const result = await invoke<{ sessionId: string; outputDir: string }>('start_hls_recording', {
+          mintId,
+          streamerId,
+          displayName,
+          resumeDir: null, // New temp session
+          segmentDurationMinutes: 1, // 4-second segments for smooth playback
         });
-        hlsOutputDir.value = outputDir;
-        return; // HLS recording exists, we're done
-      } catch (e) {
-        console.warn(
-          '[LiveViewer] Could not get recording output dir, starting HLS recording for playback:',
-          e
-        );
-        // Fall through to start HLS recording for playback
+
+        state.value.tempSessionId = result.sessionId;
+        state.value.isTempRecording = true;
+        state.value.projectId = null;
+        hlsOutputDir.value = result.outputDir;
+        state.value.dvrStartTime = Date.now();
+        console.log('[LiveViewer] Viewer session started in separate directory:', result.outputDir);
+        return;
+      } catch (error) {
+        console.error('[LiveViewer] Failed to start PumpFun viewer recording:', error);
+        state.value.connectionError = 'Failed to start stream capture';
+        throw error;
       }
     }
 
-    // Start HLS recording via Tauri (Node.js recorder) for video playback
-    // This is needed even if auto-detect is using DVR, because the video player needs HLS
+    // No persistent session or different platform - start new recording
     try {
       const result = await invoke<{ sessionId: string; outputDir: string }>('start_hls_recording', {
         mintId,
@@ -1746,10 +1778,15 @@ export function useLivestreamViewer() {
 
           try {
             // Reuse the same session ID to resume in the same directory
+            // CRITICAL: Use correct segment duration based on session type
+            // - Persistent sessions (auto-detect): 5 minutes
+            // - Temp sessions (watch-only): 1 minute (4 seconds)
+            const segmentDuration = state.value.isTempRecording ? 1 : 5;
+            
             if (platform === 'Kick') {
-              await startKickRecording(mintId, streamerId, currentSessionId!, 1);
+              await startKickRecording(mintId, streamerId, currentSessionId!, segmentDuration);
             } else {
-              await startTwitchRecording(mintId, streamerId, currentSessionId!, 1);
+              await startTwitchRecording(mintId, streamerId, currentSessionId!, segmentDuration);
             }
 
             console.log(
@@ -2176,44 +2213,35 @@ export function useLivestreamViewer() {
           );
           state.value.isBuffering = true;
 
-          // Restart the recording with a new session
-          const newSessionId =
-            platform === 'Kick'
-              ? `kick-view-${channel}-${Date.now()}`
-              : `twitch-view-${channel}-${Date.now()}`;
-          state.value.tempSessionId = newSessionId;
+          // CRITICAL: Resume in the SAME session to preserve existing segments
+          // Don't create a new session - that would create a new directory and lose DVR content
+          const currentSessionId = state.value.tempSessionId || state.value.sessionId;
+          const currentOutputDir = hlsOutputDir.value;
+          
+          // Use correct segment duration based on session type
+          const segmentDuration = state.value.isTempRecording ? 1 : 5;
 
           try {
             if (platform === 'Kick') {
-              await startKickRecording(channel!, streamerId, newSessionId, 1);
+              await startKickRecording(channel!, streamerId, currentSessionId!, segmentDuration);
             } else {
-              await startTwitchRecording(channel!, streamerId, newSessionId, 1);
+              await startTwitchRecording(channel!, streamerId, currentSessionId!, segmentDuration);
             }
 
-            // Get the new output directory
-            const newOutputDir =
-              platform === 'Kick'
-                ? await invoke<string>('get_kick_session_output_dir', { sessionId: newSessionId })
-                : await getTwitchSessionOutputDir(newSessionId);
-
-            console.log(
-              `[LiveViewer] ${platform} recording restarted, new output dir:`,
-              newOutputDir
-            );
-
-            // Update the HLS output dir - this will trigger the watcher to reinitialize playback
-            hlsOutputDir.value = newOutputDir;
+            console.log(`[LiveViewer] ${platform} recording restarted in existing dir:`, currentOutputDir);
 
             // Reset segment stall detection
             lastSegmentCount = 0;
             lastSegmentTime = Date.now();
 
-            // Reinitialize HLS playback with the new recording
-            if (hlsVideoElement.value) {
-              await hlsPlayback.initialize(hlsVideoElement.value, newOutputDir);
-              hlsPlayback.play();
+            // Don't reinitialize HLS - just refresh the playlist to pick up new segments
+            if (hlsVideoElement.value && hlsPlayback.state.value.isInitialized) {
+              hlsPlayback.refreshPlaylist();
+              if (!hlsPlayback.state.value.isPlaying) {
+                hlsPlayback.play();
+              }
               state.value.isBuffering = false;
-              console.log(`[LiveViewer] Playback reinitialized after ${platform} recorder restart`);
+              console.log(`[LiveViewer] Playback continues after ${platform} recorder restart`);
             }
           } catch (restartError) {
             console.error(`[LiveViewer] Failed to restart ${platform} recording:`, restartError);
@@ -2321,6 +2349,33 @@ export function useLivestreamViewer() {
     // Recordings will continue in background and can be resumed when user reopens stream
     // Only stop recordings when user explicitly stops monitoring or app closes
 
+    // Unregister viewer session from monitoring system BEFORE resetting state
+    // This allows cleanup logic to run if stream has ended
+    const currentStreamerId = state.value.streamerId;
+    const currentMintId = state.value.mintId;
+    const currentPlatform = state.value.platform;
+    
+    if (currentStreamerId) {
+      unregisterViewerSession(currentStreamerId);
+      
+      // If this was a temp viewer session and stream has ended, trigger cleanup
+      // This will stop the temp recording and clean up files
+      if (state.value.isTempRecording && streamHasEnded) {
+        console.log('[LiveViewer] Stream ended and viewer closed, triggering temp session cleanup');
+        try {
+          if (currentPlatform === 'Kick') {
+            await stopKickRecording(currentMintId!);
+            removeKickDvrSession(currentStreamerId);
+          } else if (currentPlatform === 'Twitch') {
+            await stopTwitchRecording(currentMintId!);
+            removeTwitchDvrSession(currentStreamerId);
+          }
+        } catch (error) {
+          console.warn('[LiveViewer] Failed to cleanup temp session:', error);
+        }
+      }
+    }
+
     // Reset HLS output directory
     hlsOutputDir.value = null;
 
@@ -2355,11 +2410,6 @@ export function useLivestreamViewer() {
     state.value.playbackPosition = 0;
     state.value.bufferedRanges = [];
     state.value.isAtLiveEdge = true;
-
-    // Unregister viewer session from monitoring system
-    if (state.value.streamerId) {
-      unregisterViewerSession(state.value.streamerId);
-    }
 
     // Reset HLS ready state and seeking flag
     isHlsReady.value = false;

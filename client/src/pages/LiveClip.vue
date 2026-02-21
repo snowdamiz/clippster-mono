@@ -594,24 +594,21 @@
     await loadStreamers();
     refreshStreamerMetadata();
     syncDetectionState();
-    checkAllLiveStatuses(false); // Skip Kick - only check on manual refresh
+    checkAllLiveStatuses();
 
     // Initialize Auto DVR polling for streamers with auto_dvr enabled
     initAutoDvrPolling();
 
     liveStatusInterval.value = window.setInterval(() => {
-      checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
+      checkAllLiveStatuses();
     }, 60_000);
 
     window.addEventListener('livestream-clip-created', handleGlobalClipCreated as EventListener);
   });
 
-  async function checkAllLiveStatuses(includeKick: boolean = true) {
+  async function checkAllLiveStatuses() {
     const promises = streamers.value.map(async (streamer) => {
       if (streamer.isDetecting) return;
-      // Skip Kick streamers on interval polling to save API requests
-      // Kick status is only checked on app open and manual refresh
-      if (!includeKick && streamer.platform === 'Kick') return;
 
       const index = streamers.value.findIndex((s) => s.id === streamer.id);
       if (index !== -1) {
@@ -639,7 +636,8 @@
             last_check_timestamp: Date.now(),
           });
           
-          // Dispatch global event if streamer just went live (offline → live transition)
+          // Dispatch event if streamer just went live (offline → live transition)
+          // Note: Toast notification is handled by global polling system to avoid duplicates
           if (!wasLive && status.isLive) {
             window.dispatchEvent(
               new CustomEvent('streamer-went-live', {
