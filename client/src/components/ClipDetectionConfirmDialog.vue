@@ -47,45 +47,10 @@
               <!-- Time Range Selection (only for single video, not multi-segment) -->
               <div v-if="!segmentCount && videoDuration > 0" class="detect-clips-dialog__field">
                 <label class="detect-clips-dialog__label">Detection Time Range</label>
-                <div class="space-y-3">
-                  <!-- Start Time Slider -->
-                  <div>
-                    <div class="flex items-center justify-between mb-1.5">
-                      <span class="text-xs opacity-70">Start Time</span>
-                      <span class="text-xs font-medium">{{ formatDuration(startTime) }}</span>
-                    </div>
-                    <input
-                      type="range"
-                      v-model.number="startTime"
-                      :min="0"
-                      :max="Math.max(0, endTime - 60)"
-                      :step="1"
-                      class="detect-clips-dialog__slider"
-                    />
-                  </div>
-                  
-                  <!-- End Time Slider -->
-                  <div>
-                    <div class="flex items-center justify-between mb-1.5">
-                      <span class="text-xs opacity-70">End Time</span>
-                      <span class="text-xs font-medium">{{ formatDuration(endTime) }}</span>
-                    </div>
-                    <input
-                      type="range"
-                      v-model.number="endTime"
-                      :min="Math.min(videoDuration, startTime + 60)"
-                      :max="videoDuration"
-                      :step="1"
-                      class="detect-clips-dialog__slider"
-                    />
-                  </div>
-                  
-                  <!-- Selected Duration Display -->
-                  <div class="flex items-center justify-between pt-1 border-t border-white/5">
-                    <span class="text-xs opacity-70">Selected Duration</span>
-                    <span class="text-xs font-medium text-cyan-400">{{ formatDuration(selectedDuration) }}</span>
-                  </div>
-                </div>
+                <TimeRangePicker
+                  v-model="timeRange"
+                  :total-duration="videoDuration"
+                />
               </div>
 
               <!-- Prompt Selection -->
@@ -120,7 +85,9 @@
                 </div>
               </div>
 
-              <!-- Enhanced Multimodal Detection Toggle -->
+              <!-- Enhanced Multimodal Detection Toggle - TEMPORARILY HIDDEN -->
+              <!-- TODO: Re-enable multimodal detection option in future release -->
+              <!--
               <div class="detect-clips-dialog__field detect-clips-dialog__toggle-box">
                 <div class="flex items-center justify-between">
                   <div class="flex-1 min-w-0 pr-3">
@@ -146,6 +113,7 @@
                   </button>
                 </div>
               </div>
+              -->
 
               <!-- Credit Source Selector (shown when user has org credits) -->
               <div v-if="showCreditSourceSelector" class="detect-clips-dialog__field">
@@ -245,6 +213,7 @@
   import { useCreditSource } from '@/composables/useCreditSource';
   import { useAuthStore } from '@/stores/auth';
   import { getAllPrompts } from '@/services/database';
+  import TimeRangePicker from '@/components/TimeRangePicker.vue';
 
   interface Prompt {
     id: string;
@@ -288,12 +257,11 @@
   const multimodalEnabled = ref(false);
 
   // Time range selection (for single video detection)
-  const startTime = ref(0);
-  const endTime = ref(0);
+  const timeRange = ref({ startTime: 0, endTime: 0 });
 
   // Calculate selected duration
   const selectedDuration = computed(() => {
-    return Math.max(0, endTime.value - startTime.value);
+    return Math.max(0, timeRange.value.endTime - timeRange.value.startTime);
   });
 
   const authStore = useAuthStore();
@@ -425,15 +393,15 @@
 
     try {
       // Include organizationId, multimodal flag, and time range
-      console.log('[ClipDetectionConfirmDialog] Emitting confirm with multimodal:', multimodalEnabled.value, 'time range:', startTime.value, '-', endTime.value);
+      console.log('[ClipDetectionConfirmDialog] Emitting confirm with multimodal:', multimodalEnabled.value, 'time range:', timeRange.value.startTime, '-', timeRange.value.endTime);
       emit(
         'confirm',
         selectedPromptId.value,
         selectedPromptContent.value,
         organizationIdForApi.value,
         multimodalEnabled.value,
-        startTime.value,
-        endTime.value
+        timeRange.value.startTime,
+        timeRange.value.endTime
       );
       emit('update:modelValue', false);
     } catch (err) {
@@ -485,8 +453,7 @@
         multimodalEnabled.value = false;
 
         // Reset time range to full video duration
-        startTime.value = 0;
-        endTime.value = props.videoDuration;
+        timeRange.value = { startTime: 0, endTime: props.videoDuration };
 
         // Reset credit source selection
         resetCreditSource();
@@ -843,75 +810,6 @@
     background-color: rgba(6, 182, 212, 0.08);
     border: 1px solid rgba(6, 182, 212, 0.15);
     color: var(--sidebar-accent);
-  }
-
-  /* ===== Slider ===== */
-  .detect-clips-dialog__slider {
-    width: 100%;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--sidebar-hover);
-    outline: none;
-    -webkit-appearance: none;
-    appearance: none;
-    cursor: pointer;
-  }
-
-  .detect-clips-dialog__slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--sidebar-accent);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .detect-clips-dialog__slider::-webkit-slider-thumb:hover {
-    transform: scale(1.1);
-    box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.2);
-  }
-
-  .detect-clips-dialog__slider::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--sidebar-accent);
-    cursor: pointer;
-    border: none;
-    transition: all 150ms ease;
-  }
-
-  .detect-clips-dialog__slider::-moz-range-thumb:hover {
-    transform: scale(1.1);
-    box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.2);
-  }
-
-  .detect-clips-dialog__slider::-webkit-slider-runnable-track {
-    width: 100%;
-    height: 6px;
-    border-radius: 3px;
-    background: linear-gradient(
-      to right,
-      var(--sidebar-accent) 0%,
-      var(--sidebar-accent) var(--slider-progress, 0%),
-      var(--sidebar-hover) var(--slider-progress, 0%),
-      var(--sidebar-hover) 100%
-    );
-  }
-
-  .detect-clips-dialog__slider::-moz-range-track {
-    width: 100%;
-    height: 6px;
-    border-radius: 3px;
-    background: var(--sidebar-hover);
-  }
-
-  .detect-clips-dialog__slider::-moz-range-progress {
-    height: 6px;
-    border-radius: 3px;
-    background: var(--sidebar-accent);
   }
 
   .detect-clips-dialog__alert--error {

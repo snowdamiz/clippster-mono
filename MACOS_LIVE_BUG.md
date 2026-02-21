@@ -20,11 +20,14 @@ When watching any livestream on macOS production build, the video never loads. T
 [Debug] [LiveViewer] No segments returned from get_hls_segments (x34+)
 [Log] [RecorderLog] PumpFun recorder: Using FFmpeg binary: /Applications/Clippster.app/Contents/MacOS/ffmpeg
 [Log] [HlsPlayback] Error: mediaError fragParsingError fatal: false | Buffer ahead: 0.0s, currentTime: 0.5s, liveEdge: 0.0s
+[Log] [HlsPlayback] Error: mediaError bufferAppendError fatal: false | Buffer ahead: 16.6s, currentTime: 3.4s, liveEdge: 20.0s
 ```
 
 The `get_hls_segments` Tauri command returns empty results 34+ times (polled every 2s = ~68 seconds of no segments). This means the output directory either doesn't exist or contains no `.ts` segments and no `.m3u8` playlist.
 
 Latest runs show FFmpeg path resolution now succeeds in production, but playback can still enter a startup failure mode where the first segment is invalid (empty/partial), producing repeated `fragParsingError` and no usable buffer.
+
+Most recent run confirms additional progress: playback now starts and renders ~2 seconds before stalling, with segments still being produced. New dominant error is repeated non-fatal `bufferAppendError` while buffer ahead grows.
 
 ---
 
@@ -196,6 +199,19 @@ New logs show this sequence in production:
 4. hls.js enters repeated non-fatal `fragParsingError` with `liveEdge: 0.0s`
 
 The startup gate must require multiple valid media segments (duration + TS structure), not just playlist existence plus a single referenced file.
+
+### Root Cause 7: Non-Fatal `bufferAppendError` Triggered Aggressive `recoverMediaError()` Loop (CONFIRMED)
+
+In `useHlsPlayback.ts`, non-fatal media errors were handled with unconditional `recoverMediaError()`. During repeated `bufferAppendError`, this can thrash the decoder/media pipeline and pin playback time while segments continue arriving (observed stall around `3.4s` with increasing buffer ahead).
+
+Related recorder warning in the same run:
+
+```
+[ffmpeg] [s16le @ ...] Thread message queue blocking; consider raising the thread_queue_size option (current value: 8)
+[ffmpeg] [rawvideo @ ...] Thread message queue blocking; consider raising the thread_queue_size option (current value: 8)
+```
+
+This indicates transient producer/consumer pressure at FFmpeg inputs; increasing input queue size reduces burst-related backpressure during live capture.
 
 ---
 
@@ -371,23 +387,43 @@ Implemented:
 4. `client/src-tauri/pumpfun-service/record-livestream.mjs` now uses `-hls_flags ...+temp_file` to avoid exposing partially-written segments
 5. `client/src/composables/useTauriHlsLoader.ts` now rejects invalid local TS payloads before handing bytes to hls.js (prevents parsing malformed startup files)
 
+### Fix 7: Stabilize Append-Error Recovery and Increase FFmpeg Input Queues (CRITICAL)
+
+Implemented:
+
+1. `client/src/composables/useHlsPlayback.ts` now treats `bufferAppendError`/`bufferAppendingError`/`bufferFullError` as burst-managed append errors instead of calling `recoverMediaError()` on every non-fatal occurrence
+2. Added append-error burst window + threshold escalation to controlled `stopLoad/startLoad` seek-forward recovery
+3. Reduced aggressive non-fatal media recovery; `recoverMediaError()` remains for fatal media errors
+4. `client/src-tauri/pumpfun-service/record-livestream.mjs` now sets `-thread_queue_size 1024` for both audio (`pipe:0`) and video (`pipe:3`) FFmpeg inputs to prevent queue blocking under bursty input
+
+### Fix 8: De-Dupe HLS Initialization and Downgrade Benign FFmpeg Noise (RECOMMENDED)
+
+Implemented:
+
+1. `client/src/composables/useLivestreamViewer.ts` now routes segment-triggered retry init through guarded `initializeHlsPlayback()` to prevent concurrent `hlsPlayback.initialize()` calls
+2. `client/src-tauri/src/hls.rs` now downgrades known benign FFmpeg stderr lines (`Guessed Channel Layout`, VideoToolbox color range notice) from `error` to `info`
+3. `client/src-tauri/pumpfun-service/record-livestream.mjs` now sets explicit audio channel layout (`stereo`) and rawvideo color range (`tv`) to reduce warning noise
+
 ---
 
 ## Fix History
 
-| Date       | Version  | Change                                                                                              | Result                                                                        |
-| ---------- | -------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| v0.1.95    | d75abf02 | Added entitlements `.plist` files to repo                                                           | Files created but never applied during build. Node.js and yt-dlp still crash. |
-| v0.1.95    | pending  | Fix 1: CI post-build re-sign with entitlements + notarize                                           | Removes auto-notarize from tauri-action, adds manual re-sign/notarize step    |
-| v0.1.95    | pending  | Fix 2: Bare-name sidecar fallback in kick.rs, twitch.rs, sidecar/mod.rs                             | Resolves binary naming mismatch in macOS `.app` bundle                        |
-| v0.1.95    | pending  | Fix 3: Added `ipc://localhost` to CSP connect-src                                                   | Prevents IPC fallback to postMessage                                          |
-| 2026-02-20 | v0.1.108 | Verified installed production app still has empty entitlements on `node`/`yt-dlp`                   | Reproduced runtime failures directly from `/Applications/Clippster.app`       |
-| 2026-02-20 | v0.1.108 | Fix 1B: Remove `--deep` from post-build app re-sign and add required-entitlement assertions in CI   | Prevents nested sidecar entitlements from being clobbered                     |
-| 2026-02-20 | v0.1.108 | Fix 4 implemented in `hls.rs` (`recorder-log`, `recorder-exit`)                                     | PumpFun sidecar failures now visible in frontend logs                         |
-| 2026-02-20 | v0.1.108 | Fix 5 implemented in `record-livestream.mjs` for bundled `ffmpeg` resolution                        | Prevents PumpFun `spawn ffmpeg ENOENT` in macOS production bundle             |
-| 2026-02-20 | v0.1.108 | Confirmed startup invalid fragment behavior (`segment_00000.ts` = `0B`, playlist `EXTINF:0.000000`) | Explains persistent `fragParsingError` loop after FFmpeg path fix             |
-| 2026-02-20 | v0.1.108 | Fix 6 implemented across `hls.rs`, `useHlsPlayback.ts`, and `record-livestream.mjs`                 | Blocks HLS init on invalid startup segments and reduces partial-file exposure |
-| 2026-02-20 | v0.1.108 | Fix 6 hardening: stricter startup gate + TS payload validation in loader                            | Prevents early HLS init on malformed first fragments (`liveEdge: 0.0s`)       |
+| Date       | Version  | Change                                                                                              | Result                                                                                         |
+| ---------- | -------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| v0.1.95    | d75abf02 | Added entitlements `.plist` files to repo                                                           | Files created but never applied during build. Node.js and yt-dlp still crash.                  |
+| v0.1.95    | pending  | Fix 1: CI post-build re-sign with entitlements + notarize                                           | Removes auto-notarize from tauri-action, adds manual re-sign/notarize step                     |
+| v0.1.95    | pending  | Fix 2: Bare-name sidecar fallback in kick.rs, twitch.rs, sidecar/mod.rs                             | Resolves binary naming mismatch in macOS `.app` bundle                                         |
+| v0.1.95    | pending  | Fix 3: Added `ipc://localhost` to CSP connect-src                                                   | Prevents IPC fallback to postMessage                                                           |
+| 2026-02-20 | v0.1.108 | Verified installed production app still has empty entitlements on `node`/`yt-dlp`                   | Reproduced runtime failures directly from `/Applications/Clippster.app`                        |
+| 2026-02-20 | v0.1.108 | Fix 1B: Remove `--deep` from post-build app re-sign and add required-entitlement assertions in CI   | Prevents nested sidecar entitlements from being clobbered                                      |
+| 2026-02-20 | v0.1.108 | Fix 4 implemented in `hls.rs` (`recorder-log`, `recorder-exit`)                                     | PumpFun sidecar failures now visible in frontend logs                                          |
+| 2026-02-20 | v0.1.108 | Fix 5 implemented in `record-livestream.mjs` for bundled `ffmpeg` resolution                        | Prevents PumpFun `spawn ffmpeg ENOENT` in macOS production bundle                              |
+| 2026-02-20 | v0.1.108 | Confirmed startup invalid fragment behavior (`segment_00000.ts` = `0B`, playlist `EXTINF:0.000000`) | Explains persistent `fragParsingError` loop after FFmpeg path fix                              |
+| 2026-02-20 | v0.1.108 | Fix 6 implemented across `hls.rs`, `useHlsPlayback.ts`, and `record-livestream.mjs`                 | Blocks HLS init on invalid startup segments and reduces partial-file exposure                  |
+| 2026-02-20 | v0.1.108 | Fix 6 hardening: stricter startup gate + TS payload validation in loader                            | Prevents early HLS init on malformed first fragments (`liveEdge: 0.0s`)                        |
+| 2026-02-21 | v0.1.108 | Confirmed playback progresses (~2s) then stalls with repeated non-fatal `bufferAppendError`         | Indicates pipeline now past startup frag parsing; append/recovery behavior now primary blocker |
+| 2026-02-21 | v0.1.108 | Fix 7 implemented (`useHlsPlayback.ts`, `record-livestream.mjs`)                                    | Removes aggressive non-fatal media resets and increases FFmpeg input queue capacity            |
+| 2026-02-21 | v0.1.108 | Fix 8 implemented (`useLivestreamViewer.ts`, `hls.rs`, `record-livestream.mjs`)                     | Prevents overlapping HLS init races and reduces benign FFmpeg console noise                    |
 
 ---
 
@@ -414,4 +450,9 @@ Implemented:
 - [x] Confirmed invalid startup media on disk (`playlist EXTINF:0.000000`, `segment_00000.ts` size `0B`)
 - [x] Patched HLS readiness/parsing flow to require valid segment bytes and ignore zero-duration startup entries
 - [x] Hardened startup validation to require multiple valid segments and reject malformed TS payloads in Tauri loader
+- [x] Confirmed new stage failure: playback starts then stalls with repeated `bufferAppendError` while segments continue
+- [x] Patched append-error handling to avoid non-fatal `recoverMediaError()` thrash and added burst-managed recovery
+- [x] Increased FFmpeg input `thread_queue_size` for PumpFun recorder audio/video pipes
+- [x] Patched segment-driven retry path to avoid concurrent HLS initialization races
+- [x] Downgraded benign FFmpeg stderr lines to info and set explicit channel layout/color range
 - [ ] Rebuild macOS artifacts, verify entitlements in shipped app, and re-test PumpFun/Kick/Twitch live playback

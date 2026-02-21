@@ -102,6 +102,7 @@ async fn run_segment_download_with_encoder(
     start_time: f64,
     segment_duration: f64,
     encoder: &str,
+    cancel_rx: &mut oneshot::Receiver<()>,
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     
@@ -152,12 +153,6 @@ async fn run_segment_download_with_encoder(
     
     let (mut rx, child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
 
-    // Store process handle for cancellation
-    {
-        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-        processes.insert(download_id.to_string(), child);
-    }
-
     let total_duration = segment_duration;
     let app_clone = app.clone();
     let download_id_owned = download_id.to_string();
@@ -168,7 +163,11 @@ async fn run_segment_download_with_encoder(
     let mut success = false;
     let mut last_error: Option<String> = None;
 
-    while let Some(event) = rx.recv().await {
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                match event {
+                    Some(event) => {
         match event {
             tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
                 let chunk = String::from_utf8_lossy(&data);
@@ -252,15 +251,22 @@ async fn run_segment_download_with_encoder(
                         last_error = Some("FFmpeg terminated unexpectedly".to_string());
                     }
                 }
+                break;
             }
             _ => {}
         }
-    }
-
-    // Remove from active processes
-    {
-        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-        processes.remove(download_id);
+                    }
+                    None => break,
+                }
+            }
+            _ = &mut *cancel_rx => {
+                println!("[Rust] Download cancelled, terminating FFmpeg...");
+                let _ = child.kill();
+                // Clean up temp file
+                let _ = std::fs::remove_file(&temp_output_path);
+                return Err("Download cancelled".to_string());
+            }
+        }
     }
 
     if success {
@@ -302,6 +308,7 @@ async fn run_full_download_with_encoder(
     estimated_duration: Option<f64>,
     encoder: &str,
     use_copy_codec: bool,
+    cancel_rx: &mut oneshot::Receiver<()>,
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
     
@@ -364,12 +371,6 @@ async fn run_full_download_with_encoder(
     
     let (mut rx, child) = cmd.args(args).spawn().map_err(|e| format!("Failed to spawn ffmpeg sidecar: {}", e))?;
 
-    // Store process handle for cancellation
-    {
-        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-        processes.insert(download_id.to_string(), child);
-    }
-
     let mut total_duration = estimated_duration.unwrap_or(600.0);
     let app_clone = app.clone();
     let download_id_owned = download_id.to_string();
@@ -380,7 +381,11 @@ async fn run_full_download_with_encoder(
     let mut success = false;
     let mut last_error: Option<String> = None;
 
-    while let Some(event) = rx.recv().await {
+    loop {
+        tokio::select! {
+            event = rx.recv() => {
+                match event {
+                    Some(event) => {
         match event {
             tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
                 let chunk = String::from_utf8_lossy(&data);
@@ -467,15 +472,22 @@ async fn run_full_download_with_encoder(
                         last_error = Some("FFmpeg terminated unexpectedly".to_string());
                     }
                 }
+                break;
             }
             _ => {}
         }
-    }
-
-    // Remove from active processes
-    {
-        let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
-        processes.remove(download_id);
+                    }
+                    None => break,
+                }
+            }
+            _ = &mut *cancel_rx => {
+                println!("[Rust] Download cancelled, terminating FFmpeg...");
+                let _ = child.kill();
+                // Clean up temp file
+                let _ = std::fs::remove_file(&temp_output_path);
+                return Err("Download cancelled".to_string());
+            }
+        }
     }
 
     if success {
@@ -556,6 +568,13 @@ pub async fn download_pumpfun_vod_segment(
             downloads.remove(&download_id);
         }
     };
+
+    // Create cancellation channel
+    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
 
     // Get storage paths
     println!("[Rust] Getting storage paths...");
@@ -643,6 +662,7 @@ pub async fn download_pumpfun_vod_segment(
             start_time,
             segment_duration,
             &encoder,
+            &mut cancel_rx,
         ).await;
 
         // If hardware encoder failed and we weren't already using software, retry with software
@@ -657,6 +677,7 @@ pub async fn download_pumpfun_vod_segment(
                     start_time,
                     segment_duration,
                     "libx264",
+                    &mut cancel_rx,
                 ).await
             }
             other => other,
@@ -664,6 +685,13 @@ pub async fn download_pumpfun_vod_segment(
 
         // Check result
         download_result?;
+
+        // Check for cancellation before post-processing
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before post-processing");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         println!("[Rust] Segment download completed successfully");
 
@@ -679,6 +707,13 @@ pub async fn download_pumpfun_vod_segment(
             }
         };
         let file_size = metadata.len();
+
+        // Check for cancellation before thumbnail generation
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before thumbnail generation");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         // Generate thumbnail for segment
         println!("[Rust] Generating thumbnail for segment...");
@@ -722,6 +757,16 @@ pub async fn download_pumpfun_vod_segment(
             println!("[Rust] No segment thumbnail result");
             None
         };
+
+        // Check for cancellation before video info extraction
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before video info extraction");
+            let _ = std::fs::remove_file(&video_path);
+            if let Some(ref thumb_path) = thumbnail_path_str {
+                let _ = std::fs::remove_file(thumb_path);
+            }
+            return Err("Download cancelled".to_string());
+        }
 
         // Get video dimensions, codec info, and actual duration from file
         println!("[Rust] Getting detailed segment video info...");
@@ -884,6 +929,13 @@ pub async fn download_pumpfun_vod(
         }
     };
 
+    // Create cancellation channel
+    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
     // Get storage paths
     println!("[Rust] Getting storage paths...");
     let paths = storage::init_storage_dirs()
@@ -994,7 +1046,8 @@ pub async fn download_pumpfun_vod(
             &video_path_str,
             duration,
             &encoder,
-            false, // Don't use copy codec, encode for PumpFun
+            false,
+            &mut cancel_rx,
         ).await;
 
         // If hardware encoder failed and we weren't already using software, retry with software
@@ -1009,6 +1062,7 @@ pub async fn download_pumpfun_vod(
                     duration,
                     "libx264",
                     false,
+                    &mut cancel_rx,
                 ).await
             }
             other => other,
@@ -1016,6 +1070,13 @@ pub async fn download_pumpfun_vod(
 
         // Check result
         download_result?;
+
+        // Check for cancellation before post-processing
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before post-processing");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         println!("[Rust] Download completed successfully");
 
@@ -1031,6 +1092,13 @@ pub async fn download_pumpfun_vod(
             }
         };
         let file_size = metadata.len();
+
+        // Check for cancellation before thumbnail generation
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before thumbnail generation");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         // Generate thumbnail
         println!("[Rust] Generating thumbnail...");
@@ -1073,6 +1141,16 @@ pub async fn download_pumpfun_vod(
             println!("[Rust] No thumbnail result");
             None
         };
+
+        // Check for cancellation before video info extraction
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before video info extraction");
+            let _ = std::fs::remove_file(&video_path);
+            if let Some(ref thumb_path) = thumbnail_path_str {
+                let _ = std::fs::remove_file(thumb_path);
+            }
+            return Err("Download cancelled".to_string());
+        }
 
         // Get video dimensions, codec info, and actual duration from downloaded file
         println!("[Rust] Getting detailed video info...");
@@ -1248,6 +1326,13 @@ pub async fn download_kick_vod_segment(
         }
     };
 
+    // Create cancellation channel
+    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
     // Get storage paths
     println!("[Rust] Getting storage paths...");
     let paths = storage::init_storage_dirs()
@@ -1269,12 +1354,14 @@ pub async fn download_kick_vod_segment(
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
         .as_secs();
 
+    let channel_prefix = if channel_slug.len() >= 8 { &channel_slug[..8] } else { &channel_slug };
+
     // Format times for filename (start-end)
     let start_formatted = format_time_for_filename(start_time);
     let end_formatted = format_time_for_filename(end_time);
 
     let filename = format!("kick_{}_{}_{}_{}_{}.mp4",
-        channel_slug, safe_title, start_formatted, end_formatted, timestamp);
+        channel_prefix, safe_title, start_formatted, end_formatted, timestamp);
     let video_path = paths.videos.join(&filename);
 
     println!("[Rust] Generated filename: {}", filename);
@@ -1332,6 +1419,7 @@ pub async fn download_kick_vod_segment(
             start_time,
             segment_duration,
             &encoder,
+            &mut cancel_rx,
         ).await;
 
         // If hardware encoder failed and we weren't already using software, retry with software
@@ -1346,6 +1434,7 @@ pub async fn download_kick_vod_segment(
                     start_time,
                     segment_duration,
                     "libx264",
+                    &mut cancel_rx,
                 ).await
             }
             other => other,
@@ -1353,6 +1442,13 @@ pub async fn download_kick_vod_segment(
 
         // Check result
         download_result?;
+
+        // Check for cancellation before post-processing
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before post-processing");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         println!("[Rust] Segment download completed successfully");
 
@@ -1368,6 +1464,13 @@ pub async fn download_kick_vod_segment(
             }
         };
         let file_size = metadata.len();
+
+        // Check for cancellation before thumbnail generation
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before thumbnail generation");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         // Generate thumbnail for segment
         println!("[Rust] Generating thumbnail for segment...");
@@ -1411,6 +1514,16 @@ pub async fn download_kick_vod_segment(
             println!("[Rust] No segment thumbnail result");
             None
         };
+
+        // Check for cancellation before video info extraction
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Segment download cancelled before video info extraction");
+            let _ = std::fs::remove_file(&video_path);
+            if let Some(ref thumb_path) = thumbnail_path_str {
+                let _ = std::fs::remove_file(thumb_path);
+            }
+            return Err("Download cancelled".to_string());
+        }
 
         // Get video dimensions, codec info, and actual duration from file
         println!("[Rust] Getting detailed segment video info...");
@@ -1573,6 +1686,13 @@ pub async fn download_kick_vod(
         }
     };
 
+    // Create cancellation channel
+    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
     // Get storage paths
     println!("[Rust] Getting storage paths...");
     let paths = storage::init_storage_dirs()
@@ -1594,7 +1714,8 @@ pub async fn download_kick_vod(
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
         .as_secs();
 
-    let filename = format!("kick_{}_{}_{}.mp4", channel_slug, safe_title, timestamp);
+    let channel_prefix = if channel_slug.len() >= 8 { &channel_slug[..8] } else { &channel_slug };
+    let filename = format!("kick_{}_{}_{}.mp4", channel_prefix, safe_title, timestamp);
     let video_path = paths.videos.join(&filename);
 
     println!("[Rust] Generated filename: {}", filename);
@@ -1676,6 +1797,7 @@ pub async fn download_kick_vod(
             duration,
             "copy", // Try copy first for Kick
             true,   // use_copy_codec = true
+            &mut cancel_rx,
         ).await;
 
         // If copy failed, try with software encoding
@@ -1690,6 +1812,7 @@ pub async fn download_kick_vod(
                     duration,
                     "libx264",
                     false,
+                    &mut cancel_rx,
                 ).await
             }
             other => other,
@@ -1697,6 +1820,13 @@ pub async fn download_kick_vod(
 
         // Check result
         download_result?;
+
+        // Check for cancellation before post-processing
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before post-processing");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         println!("[Rust] Download completed successfully");
 
@@ -1706,6 +1836,13 @@ pub async fn download_kick_vod(
             Err(e) => return Err(format!("Failed to get file metadata: {}", e))
         };
         let file_size = metadata.len();
+
+        // Check for cancellation before thumbnail generation
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before thumbnail generation");
+            let _ = std::fs::remove_file(&video_path);
+            return Err("Download cancelled".to_string());
+        }
 
         // Generate thumbnail
         println!("[Rust] Generating thumbnail...");
@@ -1733,6 +1870,16 @@ pub async fn download_kick_vod(
         } else {
             None
         };
+
+        // Check for cancellation before video info extraction
+        if cancel_rx.try_recv().is_ok() {
+            println!("[Rust] Download cancelled before video info extraction");
+            let _ = std::fs::remove_file(&video_path);
+            if let Some(ref thumb_path) = thumbnail_path_str {
+                let _ = std::fs::remove_file(thumb_path);
+            }
+            return Err("Download cancelled".to_string());
+        }
 
         // Get video dimensions, codec info, and actual duration from downloaded file
         println!("[Rust] Getting detailed video info...");

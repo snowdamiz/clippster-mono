@@ -82,34 +82,42 @@ pub fn parse_ffmpeg_time(time_str: &str) -> Option<f64> {
 
 /// Parse video information from FFmpeg output
 pub fn parse_video_info_from_ffmpeg_output(output: &str) -> Result<VideoInfo, String> {
-    // Parse video stream info from FFmpeg output
+    use regex::Regex;
+
     let mut width = None;
     let mut height = None;
     let mut codec = None;
 
+    // Resolution appears directly in the stream line as e.g. "1920x1080"
+    // NOT inside parentheses (those contain codec profile like "(High)")
+    let res_re = Regex::new(r"\b(\d{3,5})x(\d{3,5})\b")
+        .map_err(|e| format!("Regex error: {}", e))?;
+
     for line in output.lines() {
         if line.contains("Video:") {
-            // Extract resolution
-            if let Some(res_start) = line.find('(') {
-                if let Some(res_end) = line[res_start..].find(')') {
-                    let res_end_absolute = res_start + res_end;
-                    let resolution = &line[res_start + 1..res_end_absolute];
-                    if let Some(space_pos) = resolution.find(' ') {
-                        let res_parts: Vec<&str> = resolution[..space_pos].split('x').collect();
-                        if res_parts.len() == 2 {
-                            width = res_parts[0].parse().ok();
-                            height = res_parts[1].parse().ok();
-                        }
+            // Extract codec (first token after "Video: ", strip trailing comma/paren)
+            if let Some(codec_start) = line.find("Video: ") {
+                let codec_part = &line[codec_start + 7..];
+                if let Some(end) = codec_part.find(|c: char| c.is_whitespace() || c == ',' || c == '(') {
+                    let candidate = codec_part[..end].trim().to_string();
+                    if !candidate.is_empty() {
+                        codec = Some(candidate);
                     }
                 }
             }
 
-            // Extract codec
-            if let Some(codec_start) = line.find("Video: ") {
-                let codec_part = &line[codec_start + 7..];
-                if let Some(space_pos) = codec_part.find(' ') {
-                    codec = Some(codec_part[..space_pos].to_string());
+            // Extract resolution using direct WxH pattern
+            if let Some(caps) = res_re.captures(line) {
+                let w: u32 = caps[1].parse().unwrap_or(0);
+                let h: u32 = caps[2].parse().unwrap_or(0);
+                if w > 0 && h > 0 {
+                    width = Some(w);
+                    height = Some(h);
                 }
+            }
+
+            if width.is_some() && height.is_some() && codec.is_some() {
+                break;
             }
         }
     }

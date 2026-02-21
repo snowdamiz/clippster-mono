@@ -449,8 +449,8 @@
     <!-- Project-Level Clip Detection Dialog -->
     <ClipDetectionConfirmDialog
       :model-value="showProjectDetectDialog"
-      :video-duration="0"
-      :segment-count="segmentsToDetect.length"
+      :video-duration="segmentsToDetect.length === 1 ? totalDetectionDuration : 0"
+      :segment-count="segmentsToDetect.length > 1 ? segmentsToDetect.length : 0"
       :total-duration="totalDetectionDuration"
       @update:model-value="showProjectDetectDialog = $event"
       @confirm="onProjectDetectClipsConfirmed"

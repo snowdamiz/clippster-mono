@@ -65,6 +65,7 @@ struct RecorderExitPayload {
 struct RecordingEntry {
     stop_tx: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<()>,
+    mint_id: String, // Store mint_id to allow lookup by mint
 }
 
 static ACTIVE_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, RecordingEntry>>>> =
@@ -216,11 +217,11 @@ pub async fn start_livestream_recording(
     session_id: String,
     segment_duration_minutes: Option<u32>,
 ) -> Result<(), String> {
-    {
-        let recordings = ACTIVE_RECORDINGS.lock().unwrap();
-        if recordings.contains_key(&mint_id) {
-            return Err("Recording already active for this mint".to_string());
-        }
+    // Check if this specific session is already recording
+    // Allow multiple sessions per mint (e.g., temp viewer + persistent auto-detect)
+    if ACTIVE_RECORDINGS.lock().unwrap().contains_key(&session_id) {
+        println!("[PumpFun] Session {} already recording, skipping duplicate start", session_id);
+        return Ok(());
     }
 
     let storage_paths = storage::init_storage_dirs()
@@ -265,11 +266,13 @@ pub async fn start_livestream_recording(
         }
     });
 
+    // Insert by session_id (not mint_id) to allow multiple sessions per mint
     ACTIVE_RECORDINGS.lock().unwrap().insert(
-        mint_id,
+        session_id.clone(),
         RecordingEntry {
             stop_tx: Some(stop_tx),
             task,
+            mint_id: mint_id.clone(),
         },
     );
 
@@ -297,17 +300,38 @@ pub async fn stop_all_livestream_recordings() -> Result<(), String> {
     Ok(())
 }
 
+/// Stop recording a PumpFun livestream
+/// Stops ALL sessions recording this mint (both temp viewer and persistent auto-detect)
 #[tauri::command]
 pub async fn stop_livestream_recording(mint_id: String) -> Result<(), String> {
-    let entry = ACTIVE_RECORDINGS.lock().unwrap().remove(&mint_id);
-    if let Some(entry) = entry {
+    // Find all sessions recording this mint and collect their entries
+    // We need to collect entries (not just IDs) to avoid holding the lock across await
+    let entries: Vec<(String, RecordingEntry)> = {
+        let mut recordings = ACTIVE_RECORDINGS.lock().unwrap();
+        let session_ids: Vec<String> = recordings
+            .iter()
+            .filter(|(_, entry)| entry.mint_id == mint_id)
+            .map(|(session_id, _)| session_id.clone())
+            .collect();
+        
+        session_ids
+            .into_iter()
+            .filter_map(|session_id| {
+                recordings.remove(&session_id).map(|entry| (session_id, entry))
+            })
+            .collect()
+    }; // Lock is dropped here
+    
+    // Stop each session (no lock held during await)
+    for (session_id, entry) in entries {
         if let Some(tx) = entry.stop_tx {
             let _ = tx.send(());
         }
         if let Err(err) = entry.task.await {
-            eprintln!("[Recorder] Join error: {}", err);
+            eprintln!("[Recorder] Join error for session {}: {}", session_id, err);
         }
     }
+    
     Ok(())
 }
 
