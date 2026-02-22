@@ -229,7 +229,10 @@ if config_env() == :prod do
       # Tauri custom protocol
       "tauri://localhost",
       "https://tauri.localhost",
-      "http://tauri.localhost"
+      "http://tauri.localhost",
+      # Tauri localhost plugin (production desktop origin uses random loopback port)
+      "//localhost",
+      "//127.0.0.1"
     ]
 
   # ## SSL Support
