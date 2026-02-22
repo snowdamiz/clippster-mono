@@ -744,7 +744,9 @@ pub fn run() {
                 .title("Clippster")
                 .inner_size(1280.0, 720.0)
                 .min_inner_size(800.0, 600.0)
-                .visible(true)
+                .decorations(false)
+                .transparent(true)
+                .visible(false)
                 .build()
                 .expect("failed to create main window");
 
