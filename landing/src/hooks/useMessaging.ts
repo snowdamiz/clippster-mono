@@ -37,7 +37,7 @@ export function useMessaging(orgId: string | number | undefined) {
 
   const activeConvIdRef = useRef<number | null>(null)
   const messagesRef = useRef<Map<number, Message[]>>(new Map())
-  const initializedForOrgRef = useRef<number | null>(null)
+  const initializedForSessionRef = useRef<string | null>(null)
 
   // Derived
   const conversationList = Array.from(conversations.values()).sort((a, b) => {
@@ -392,15 +392,53 @@ export function useMessaging(orgId: string | number | undefined) {
   // ============================================================================
 
   useEffect(() => {
-    if (!numericOrgId || !auth.user?.id || !auth.token) return
-    // Skip if already initialized for this org
-    if (initializedForOrgRef.current === numericOrgId) return
+    if (!numericOrgId || !auth.user?.id || !auth.token) {
+      if (initializedForSessionRef.current !== null) {
+        messagingSocket.setOnConnectionStateChange(null)
+        messagingSocket.disconnect()
+        initializedForSessionRef.current = null
+        activeConvIdRef.current = null
+        setActiveConversationIdState(null)
+        setIsSocketConnected(false)
+        setConversations(new Map())
+        setMessages(new Map())
+        setUnreadCounts(new Map())
+        setTypingUsers(new Map())
+        setTotalUnread(0)
+      }
+      return
+    }
+
+    const sessionKey = `${numericOrgId}:${auth.user.id}`
+
+    // Skip only if already initialized for this session and socket is currently healthy.
+    if (initializedForSessionRef.current === sessionKey && messagingSocket.isConnected()) return
+
+    // If switching org/user session, fully reset stale messaging state.
+    if (initializedForSessionRef.current && initializedForSessionRef.current !== sessionKey) {
+      messagingSocket.setOnConnectionStateChange(null)
+      messagingSocket.disconnect()
+      activeConvIdRef.current = null
+      setActiveConversationIdState(null)
+      setIsSocketConnected(false)
+      setConversations(new Map())
+      setMessages(new Map())
+      setUnreadCounts(new Map())
+      setTypingUsers(new Map())
+      setTotalUnread(0)
+    }
 
     let cancelled = false
 
     async function init() {
       setIsLoading(true)
       try {
+        messagingSocket.setOnConnectionStateChange((connected) => {
+          if (!cancelled) {
+            setIsSocketConnected(connected)
+          }
+        })
+
         // Connect socket (singleton — only connects if not already connected)
         if (!messagingSocket.isConnected()) {
           await messagingSocket.connect(auth.token!, auth.user!.id)
@@ -473,7 +511,7 @@ export function useMessaging(orgId: string | number | undefined) {
         }
 
         if (!cancelled) {
-          initializedForOrgRef.current = numericOrgId
+          initializedForSessionRef.current = sessionKey
         }
       } catch (error) {
         if (!cancelled) {
