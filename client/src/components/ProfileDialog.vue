@@ -500,7 +500,7 @@
                       />
                       <button
                         type="button"
-                        @click="watermarkFileInput?.click()"
+                        @click="props.mode === 'local' ? handleWatermarkUploadLocal() : watermarkFileInput?.click()"
                         :disabled="uploadingWatermark"
                         class="org-dialog__asset-upload"
                         title="Upload new watermark"
@@ -1743,6 +1743,22 @@
     }
   }
 
+  async function handleWatermarkUploadLocal() {
+    uploadingWatermark.value = true;
+    try {
+      const result = await uploadWatermark();
+      if (result.success && result.watermarkId) {
+        await loadLocalAssets();
+        formData.value.watermark_id = result.watermarkId;
+      }
+    } catch (err: any) {
+      console.error('Watermark upload error:', err);
+      showError('Upload Failed', err.message || 'Failed to upload watermark');
+    } finally {
+      uploadingWatermark.value = false;
+    }
+  }
+
   async function handleWatermarkUpload(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -1764,13 +1780,6 @@
           showSuccess('Watermark Uploaded', `"${response.asset.name}" has been uploaded`);
         } else {
           showError('Upload Failed', response.error || 'Failed to upload watermark');
-        }
-      } else {
-        // Local mode
-        const result = await uploadWatermark();
-        if (result.success && result.watermarkId) {
-          await loadLocalAssets();
-          formData.value.watermark_id = result.watermarkId;
         }
       }
     } catch (err: any) {

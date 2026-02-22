@@ -701,7 +701,6 @@ pub fn run() {
                         },
                     ],
                 )
-                .build(),
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -710,6 +709,8 @@ pub fn run() {
         // OTA Updates - required for automatic app updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // Localhost plugin - serves frontend from http://localhost in production to bypass LNA
+        .plugin(tauri_plugin_localhost::Builder::new(portpicker::pick_unused_port().expect("failed to find unused port")).build())
         .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
         .setup(|app| {
             println!("[Rust] Application setup complete");
@@ -721,8 +722,26 @@ pub fn run() {
                 video_server::start_video_server_impl().await;
             });
 
-            // Get the main window (defined in tauri.conf.json)
-            let window = app.get_webview_window("main").unwrap();
+            // Create main window programmatically (required for localhost plugin)
+            // In dev mode, use the default devUrl from tauri.conf.json
+            // In production, serve from localhost to bypass LNA restrictions
+            #[cfg(dev)]
+            let url = WebviewUrl::App("/".into());
+            
+            #[cfg(not(dev))]
+            let url = {
+                let port = 1420; // Match dev mode port for consistency
+                let url_str = format!("http://localhost:{}", port);
+                WebviewUrl::External(url_str.parse().unwrap())
+            };
+
+            let window = WebviewWindowBuilder::new(app, "main", url)
+                .title("Clippster")
+                .inner_size(1280.0, 720.0)
+                .min_inner_size(800.0, 600.0)
+                .visible(true)
+                .build()
+                .expect("failed to create main window");
 
             // Enable devtools in production for debugging
             #[cfg(feature = "devtools")]
@@ -858,6 +877,7 @@ commands::file_utils::generate_video_thumbnail,
             audio::extract_audio_from_video,
             audio::extract_and_chunk_audio,
             audio::extract_audio_to_file,
+            audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
 
             // Waveform commands
@@ -866,6 +886,7 @@ commands::file_utils::generate_video_thumbnail,
             waveform::save_waveform_to_cache,
             waveform::clear_waveform_cache,
             waveform::extract_audio_peaks_for_range,
+            waveform::probe_video_duration,
 
             // Audio peaks detection commands
             audio_peaks::detect_audio_peaks,

@@ -191,7 +191,7 @@ jobs:
           YTDLP_TARGET="$BINARIES_DIR/yt-dlp-${TRIPLE}"
           if [ ! -f "$YTDLP_TARGET" ]; then
             echo "Downloading yt-dlp for darwin..."
-            curl -fSL "https://github.com/yt-dlp/yt-dlp/releases/download/2025.12.08/yt-dlp_macos" -o "$YTDLP_TARGET"
+            curl -fSL "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/2026.02.20.235452/yt-dlp_macos" -o "$YTDLP_TARGET"
             chmod +x "$YTDLP_TARGET"
           fi
 
@@ -269,7 +269,7 @@ jobs:
           $ytdlpTarget = "$binDir/yt-dlp-x86_64-pc-windows-msvc.exe"
           if (-not (Test-Path $ytdlpTarget)) {
             Write-Host "Downloading yt-dlp for windows-x64..."
-            Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp/releases/download/2025.12.08/yt-dlp.exe" -OutFile $ytdlpTarget
+            Invoke-WebRequest -Uri "https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download/2026.02.20.235452/yt-dlp.exe" -OutFile $ytdlpTarget
           }
 
           # --- Node (windows) ---
@@ -604,17 +604,43 @@ jobs:
             codesign --force --options runtime --timestamp --entitlements "$YTDLP_ENTITLEMENTS" --sign "$IDENTITY" "$MACOS_DIR/yt-dlp"
           fi
 
-          # Re-sign the outer .app to update the seal after modifying inner binaries
-          echo "Re-signing .app bundle"
-          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" "$APP_BUNDLE"
+          # Re-sign the outer .app wrapper to update the seal after modifying inner binaries.
+          # IMPORTANT: Do NOT use --deep here; deep-signing re-signs nested binaries and can
+          # strip the sidecar entitlements we just applied.
+          echo "Re-signing .app bundle wrapper (non-deep)"
+          codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP_BUNDLE"
 
-          # Verify entitlements were applied
-          echo "=== Verifying entitlements ==="
+          # Verify signatures and required entitlements were applied.
+          echo "=== Verifying signatures and entitlements ==="
+          codesign --verify --strict --deep "$APP_BUNDLE"
+
+          verify_entitlement() {
+            local binary="$1"
+            local entitlement_key="$2"
+            local dump
+            dump=$(codesign -d --entitlements - "$binary" 2>&1 || true)
+            echo "$dump"
+            if ! echo "$dump" | grep -q "$entitlement_key"; then
+              echo "ERROR: Missing entitlement '$entitlement_key' on $binary"
+              exit 1
+            fi
+          }
+
           if [ -f "$MACOS_DIR/node" ]; then
-            codesign -d --entitlements - "$MACOS_DIR/node" 2>&1 || true
+            verify_entitlement "$MACOS_DIR/node" "com.apple.security.cs.allow-jit"
+            verify_entitlement "$MACOS_DIR/node" "com.apple.security.cs.disable-library-validation"
+            verify_entitlement "$MACOS_DIR/node" "com.apple.security.cs.allow-unsigned-executable-memory"
+          else
+            echo "ERROR: node sidecar missing at $MACOS_DIR/node"
+            exit 1
           fi
+
           if [ -f "$MACOS_DIR/yt-dlp" ]; then
-            codesign -d --entitlements - "$MACOS_DIR/yt-dlp" 2>&1 || true
+            verify_entitlement "$MACOS_DIR/yt-dlp" "com.apple.security.cs.disable-library-validation"
+            verify_entitlement "$MACOS_DIR/yt-dlp" "com.apple.security.cs.allow-unsigned-executable-memory"
+          else
+            echo "ERROR: yt-dlp sidecar missing at $MACOS_DIR/yt-dlp"
+            exit 1
           fi
 
           # Notarize the .app bundle
@@ -652,17 +678,35 @@ jobs:
             echo "Re-signed updater bundle: ${APP_TAR}.sig"
           fi
 
-          # Re-create the DMG
-          echo "=== Re-creating DMG ==="
+          # Re-create the DMG with styled drag-to-install layout using appdmg
+          # appdmg generates .DS_Store programmatically (no AppleScript/Finder needed in CI)
+          echo "=== Re-creating styled DMG ==="
           DMG_FILE=$(find client/src-tauri/target -name "*.dmg" -type f | head -1)
           if [ -n "$DMG_FILE" ]; then
-            APP_DIR=$(dirname "$APP_BUNDLE")
             APP_NAME=$(basename "$APP_BUNDLE" .app)
+            ABS_APP_BUNDLE="$(cd "$(dirname "$APP_BUNDLE")" && pwd)/$(basename "$APP_BUNDLE")"
+            APPDMG_CONFIG="$RUNNER_TEMP/appdmg.json"
+            cat > "$APPDMG_CONFIG" <<APPDMG_EOF
+          {
+            "title": "$APP_NAME",
+            "icon-size": 80,
+            "background-color": "#171726",
+            "window": {
+              "size": { "width": 540, "height": 380 }
+            },
+            "contents": [
+              { "x": 140, "y": 170, "type": "file", "path": "$ABS_APP_BUNDLE" },
+              { "x": 400, "y": 170, "type": "link", "path": "/Applications" }
+            ],
+            "format": "UDZO"
+          }
+          APPDMG_EOF
+            npm install -g appdmg
             rm -f "$DMG_FILE"
-            hdiutil create -volname "$APP_NAME" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG_FILE"
+            appdmg "$APPDMG_CONFIG" "$DMG_FILE"
             # Sign the DMG
             codesign --force --timestamp --sign "$IDENTITY" "$DMG_FILE"
-            echo "Re-created DMG: $DMG_FILE"
+            echo "Re-created styled DMG: $DMG_FILE"
           fi
 
           echo "=== Post-build signing and notarization complete ==="

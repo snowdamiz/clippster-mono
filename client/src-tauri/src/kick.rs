@@ -33,8 +33,12 @@ fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command 
 struct KickRecordingEntry {
     stop_tx: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<()>,
+    channel_slug: String, // Store channel_slug to allow lookup by channel
 }
 
+// Track recordings by session_id instead of channel_slug to allow multiple sessions per channel
+// This enables both temp viewer sessions (4-sec segments) and persistent auto-detect sessions (5-min segments)
+// to record the same channel simultaneously in different directories
 static KICK_ACTIVE_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, KickRecordingEntry>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
@@ -77,48 +81,15 @@ struct KickRecorderExitPayload {
     code: Option<i32>,
 }
 
-static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+/// HTTP client for Kick's public API (api.kick.com).
+/// This endpoint is NOT behind Cloudflare JS challenges, unlike kick.com/api/v2.
+static KICK_API_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
     reqwest::Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(10))
         .build()
         .expect("Failed to build reqwest client")
 });
-
-/// Response from Kick channel API
-#[derive(Debug, Deserialize, Serialize)]
-pub struct KickChannelResponse {
-    pub id: Option<i64>,
-    pub slug: Option<String>,
-    pub user: Option<KickUser>,
-    pub livestream: Option<KickLivestream>,
-    pub playback_url: Option<String>,
-    #[serde(default)]
-    pub verified: bool,
-    pub followers_count: Option<i64>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct KickUser {
-    pub id: Option<i64>,
-    pub username: Option<String>,
-    pub profile_pic: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct KickLivestream {
-    pub id: Option<i64>,
-    pub slug: Option<String>,
-    pub session_title: Option<String>,
-    pub created_at: Option<String>,
-    pub viewer_count: Option<i64>,
-    pub thumbnail: Option<KickThumbnail>,
-    pub is_live: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct KickThumbnail {
-    pub url: Option<String>,
-}
 
 /// Simplified live status response for frontend
 #[derive(Debug, Serialize, Deserialize)]
@@ -136,140 +107,153 @@ pub struct KickLiveStatus {
     pub started_at: Option<String>,
 }
 
-/// Check if a Kick channel is live
+/// Check if a Kick channel is live using api.kick.com (fast, no Cloudflare).
+/// This endpoint returns livestream metadata instantly without spawning yt-dlp.
+/// The playback_url is not available from this endpoint — use get_kick_stream_url
+/// or fetch_kick_playback_url (via yt-dlp) when the actual HLS URL is needed.
 /// 
 /// # Arguments
 /// * `channel` - The Kick channel slug/username (e.g., "xqc", "ninja")
 #[tauri::command]
 pub async fn check_kick_livestream(channel: String) -> Result<String, String> {
     let channel_slug = normalize_channel_slug(&channel);
-    
-    // Kick's public API endpoint for channel info
-    let url = format!("https://kick.com/api/v2/channels/{}", channel_slug);
-    
-    let response = HTTP_CLIENT
-        .get(&url)
+
+    // First try the fast api.kick.com endpoint (no Cloudflare)
+    let api_url = format!("https://api.kick.com/private/v1/channels/{}/livestream", channel_slug);
+
+    println!("[Kick] Checking livestream status for {} via api.kick.com", channel_slug);
+
+    let response = KICK_API_CLIENT
+        .get(&api_url)
         .header("Accept", "application/json")
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .header("Referer", "https://kick.com/")
-        .header("Origin", "https://kick.com")
-        .header("Sec-Fetch-Dest", "empty")
-        .header("Sec-Fetch-Mode", "cors")
-        .header("Sec-Fetch-Site", "same-origin")
-        .header("Sec-Ch-Ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
-        .header("Sec-Ch-Ua-Mobile", "?0")
-        .header("Sec-Ch-Ua-Platform", "\"Windows\"")
         .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .await;
 
-    if response.status() == 404 {
-        // Channel not found
-        let status = KickLiveStatus {
-            is_live: false,
-            channel_id: None,
-            channel_slug: Some(channel_slug),
-            username: None,
-            profile_image_url: None,
-            stream_title: None,
-            viewer_count: None,
-            thumbnail_url: None,
-            playback_url: None,
-            started_at: None,
-        };
-        return Ok(serde_json::to_string(&status).unwrap());
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let body = resp.text().await
+                .map_err(|e| format!("Failed to read api.kick.com response: {}", e))?;
+
+            let json: serde_json::Value = serde_json::from_str(&body)
+                .map_err(|e| format!("Failed to parse api.kick.com response: {}", e))?;
+
+            // Check if livestream data exists in the response
+            let livestream = json.pointer("/data/livestream");
+
+            if let Some(ls) = livestream {
+                // Channel has livestream data — it's live
+                let title = ls.pointer("/metadata/title")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let viewers = ls.get("viewers_count").and_then(|v| v.as_i64());
+                let thumbnail = ls.get("thumbnail_url")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                let started_at = ls.get("started_at")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                println!("[Kick] Channel {} is live: {}", channel_slug, title.as_deref().unwrap_or("?"));
+
+                let status = KickLiveStatus {
+                    is_live: true,
+                    channel_id: None,
+                    channel_slug: Some(channel_slug),
+                    username: None, // Not available from this endpoint
+                    profile_image_url: None,
+                    stream_title: title,
+                    viewer_count: viewers,
+                    thumbnail_url: thumbnail,
+                    playback_url: None, // Not available from this endpoint
+                    started_at,
+                };
+                return Ok(serde_json::to_string(&status).unwrap());
+            } else {
+                // No livestream data — channel is not live
+                println!("[Kick] Channel {} is not live", channel_slug);
+                let status = KickLiveStatus {
+                    is_live: false,
+                    channel_id: None,
+                    channel_slug: Some(channel_slug),
+                    username: None,
+                    profile_image_url: None,
+                    stream_title: None,
+                    viewer_count: None,
+                    thumbnail_url: None,
+                    playback_url: None,
+                    started_at: None,
+                };
+                return Ok(serde_json::to_string(&status).unwrap());
+            }
+        }
+        Ok(resp) => {
+            println!("[Kick] api.kick.com returned {} for {}, channel likely doesn't exist", resp.status(), channel_slug);
+            let status = KickLiveStatus {
+                is_live: false,
+                channel_id: None,
+                channel_slug: Some(channel_slug),
+                username: None,
+                profile_image_url: None,
+                stream_title: None,
+                viewer_count: None,
+                thumbnail_url: None,
+                playback_url: None,
+                started_at: None,
+            };
+            return Ok(serde_json::to_string(&status).unwrap());
+        }
+        Err(e) => {
+            println!("[Kick] api.kick.com request failed for {}: {}", channel_slug, e);
+            // Return not-live on network errors rather than failing the whole command
+            let status = KickLiveStatus {
+                is_live: false,
+                channel_id: None,
+                channel_slug: Some(channel_slug),
+                username: None,
+                profile_image_url: None,
+                stream_title: None,
+                viewer_count: None,
+                thumbnail_url: None,
+                playback_url: None,
+                started_at: None,
+            };
+            return Ok(serde_json::to_string(&status).unwrap());
+        }
     }
-
-    if !response.status().is_success() {
-        return Err(format!("Kick API error: {}", response.status()));
-    }
-
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
-
-    // Parse the response
-    let channel_data: KickChannelResponse = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse Kick response: {} - Body: {}", e, &body[..body.len().min(500)]))?;
-
-    // Build the live status response
-    let is_live = channel_data.livestream.as_ref()
-        .map(|ls| ls.is_live.unwrap_or(false))
-        .unwrap_or(false);
-
-    let status = KickLiveStatus {
-        is_live,
-        channel_id: channel_data.id,
-        channel_slug: channel_data.slug.clone(),
-        username: channel_data.user.as_ref().and_then(|u| u.username.clone()),
-        profile_image_url: channel_data.user.as_ref().and_then(|u| u.profile_pic.clone()),
-        stream_title: channel_data.livestream.as_ref().and_then(|ls| ls.session_title.clone()),
-        viewer_count: channel_data.livestream.as_ref().and_then(|ls| ls.viewer_count),
-        thumbnail_url: channel_data.livestream.as_ref()
-            .and_then(|ls| ls.thumbnail.as_ref())
-            .and_then(|t| t.url.clone()),
-        playback_url: channel_data.playback_url,
-        started_at: channel_data.livestream.as_ref().and_then(|ls| ls.created_at.clone()),
-    };
-
-    Ok(serde_json::to_string(&status).unwrap())
 }
 
-/// Get the HLS stream URL for a Kick channel
-/// This extracts the m3u8 URL needed for playback and recording
+/// Get the HLS stream URL for a Kick channel using yt-dlp.
+/// yt-dlp handles Kick's Cloudflare challenges internally.
 #[tauri::command]
 pub async fn get_kick_stream_url(channel: String) -> Result<String, String> {
     let channel_slug = normalize_channel_slug(&channel);
-    
-    // First check if channel is live and get playback URL
-    let url = format!("https://kick.com/api/v2/channels/{}", channel_slug);
-    
-    let response = HTTP_CLIENT
-        .get(&url)
-        .header("Accept", "application/json")
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .header("Referer", "https://kick.com/")
-        .header("Origin", "https://kick.com")
-        .header("Sec-Fetch-Dest", "empty")
-        .header("Sec-Fetch-Mode", "cors")
-        .header("Sec-Fetch-Site", "same-origin")
-        .header("Sec-Ch-Ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
-        .header("Sec-Ch-Ua-Mobile", "?0")
-        .header("Sec-Ch-Ua-Platform", "\"Windows\"")
-        .send()
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    let kick_url = format!("https://kick.com/{}", channel_slug);
+
+    println!("[Kick] Getting stream URL for {} via yt-dlp", channel_slug);
+
+    let output = no_window(tokio::process::Command::new(&ytdlp_path)
+        .arg("--get-url")
+        .arg("--no-download")
+        .arg("--no-warnings")
+        .arg(&kick_url))
+        .output()
         .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
 
-    if !response.status().is_success() {
-        return Err(format!("Channel not found or API error: {}", response.status()));
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Channel not live or not found: {}", stderr.chars().take(300).collect::<String>()));
     }
 
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
-
-    let channel_data: KickChannelResponse = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
-
-    // Check if live
-    let is_live = channel_data.livestream.as_ref()
-        .map(|ls| ls.is_live.unwrap_or(false))
-        .unwrap_or(false);
-
-    if !is_live {
-        return Err("Channel is not currently live".to_string());
+    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if url.is_empty() {
+        return Err("yt-dlp returned empty URL".to_string());
     }
 
-    // The playback_url from the API is the HLS m3u8 URL
-    if let Some(playback_url) = channel_data.playback_url {
-        Ok(playback_url)
-    } else {
-        // Fallback: construct the URL based on known Kick CDN patterns
-        // Kick uses Amazon IVS for streaming
-        Err("Could not determine stream URL - playback_url not available".to_string())
-    }
+    println!("[Kick] Got stream URL for {}", channel_slug);
+    Ok(url)
 }
 
 /// Get the target triple for the current platform (matches Tauri's sidecar naming)
@@ -427,11 +411,11 @@ pub async fn start_kick_recording(
 ) -> Result<(), String> {
     let channel_slug = normalize_channel_slug(&channel_slug);
     
-    // Check if already recording this channel
-    // If so, allow sharing the existing recording instead of blocking
-    if KICK_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&channel_slug) {
-        println!("[Kick] Recording already active for {}, sharing existing session", channel_slug);
-        return Ok(()); // Allow sharing - caller can use get_kick_session_output_dir
+    // Check if this specific session is already recording
+    // Allow multiple sessions per channel (e.g., temp viewer + persistent auto-detect)
+    if KICK_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&session_id) {
+        println!("[Kick] Session {} already recording, skipping duplicate start", session_id);
+        return Ok(());
     }
 
     // Get output directory
@@ -462,10 +446,10 @@ pub async fn start_kick_recording(
         level: "info".to_string(),
     });
 
-    let channel_for_cleanup = channel_slug.clone();
     let streamer_for_err = streamer_id.clone();
     let channel_for_err = channel_slug.clone();
     let app_for_err = app.clone();
+    let session_for_cleanup = session_id.clone();
     let task = tokio::spawn(async move {
         if let Err(err) = run_kick_recorder(
             app_handle,
@@ -488,16 +472,18 @@ pub async fn start_kick_recording(
             });
         }
         // Clean up the recording entry when the task exits (success or error)
-        // Without this, stale entries prevent new recordings from starting
-        KICK_ACTIVE_RECORDINGS.lock().unwrap().remove(&channel_for_cleanup);
-        println!("[KickRecorder] Cleaned up recording entry for {}", channel_for_cleanup);
+        // Remove by session_id (not channel_slug) since we track by session now
+        KICK_ACTIVE_RECORDINGS.lock().unwrap().remove(&session_for_cleanup);
+        println!("[KickRecorder] Cleaned up recording entry for session {}", session_for_cleanup);
     });
 
+    // Insert by session_id (not channel_slug) to allow multiple sessions per channel
     KICK_ACTIVE_RECORDINGS.lock().unwrap().insert(
-        channel_slug,
+        session_id.clone(),
         KickRecordingEntry {
             stop_tx: Some(stop_tx),
             task,
+            channel_slug: channel_slug.clone(),
         },
     );
 
@@ -505,19 +491,39 @@ pub async fn start_kick_recording(
 }
 
 /// Stop recording a Kick livestream
+/// Stops ALL sessions recording this channel (both temp viewer and persistent auto-detect)
 #[tauri::command]
 pub async fn stop_kick_recording(channel_slug: String) -> Result<(), String> {
     let channel_slug = normalize_channel_slug(&channel_slug);
-    let entry = KICK_ACTIVE_RECORDINGS.lock().unwrap().remove(&channel_slug);
     
-    if let Some(entry) = entry {
+    // Find all sessions recording this channel and collect their entries
+    // We need to collect entries (not just IDs) to avoid holding the lock across await
+    let entries: Vec<(String, KickRecordingEntry)> = {
+        let mut recordings = KICK_ACTIVE_RECORDINGS.lock().unwrap();
+        let session_ids: Vec<String> = recordings
+            .iter()
+            .filter(|(_, entry)| entry.channel_slug == channel_slug)
+            .map(|(session_id, _)| session_id.clone())
+            .collect();
+        
+        session_ids
+            .into_iter()
+            .filter_map(|session_id| {
+                recordings.remove(&session_id).map(|entry| (session_id, entry))
+            })
+            .collect()
+    }; // Lock is dropped here
+    
+    // Stop each session (no lock held during await)
+    for (session_id, entry) in entries {
         if let Some(tx) = entry.stop_tx {
             let _ = tx.send(());
         }
         if let Err(err) = entry.task.await {
-            eprintln!("[KickRecorder] Join error: {}", err);
+            eprintln!("[KickRecorder] Join error for session {}: {}", session_id, err);
         }
     }
+    
     Ok(())
 }
 
@@ -549,7 +555,12 @@ pub fn get_active_kick_recordings() -> Vec<String> {
 #[tauri::command]
 pub fn is_kick_recording_active(channel_slug: String) -> bool {
     let channel_slug = normalize_channel_slug(&channel_slug);
-    KICK_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&channel_slug)
+    // Check if any session is recording this channel
+    KICK_ACTIVE_RECORDINGS
+        .lock()
+        .unwrap()
+        .values()
+        .any(|entry| entry.channel_slug == channel_slug)
 }
 
 /// Get the output directory for a Kick session (for HLS playback)
@@ -567,8 +578,39 @@ fn resolve_ffmpeg_binary() -> Result<String, String> {
     resolve_sidecar_binary("ffmpeg")
 }
 
-/// Run the yt-dlp recorder process with HLS output via FFmpeg
-/// Pipes yt-dlp output directly to FFmpeg to avoid URL expiration issues
+/// Fetch the HLS playback URL for a Kick channel using yt-dlp.
+/// yt-dlp handles Kick's Cloudflare challenges internally.
+async fn fetch_kick_playback_url(channel_slug: &str) -> Result<String, String> {
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    let kick_url = format!("https://kick.com/{}", channel_slug);
+
+    println!("[Kick] Fetching playback URL for {} via yt-dlp", channel_slug);
+
+    let output = no_window(tokio::process::Command::new(&ytdlp_path)
+        .arg("--get-url")
+        .arg("--no-download")
+        .arg("--no-warnings")
+        .arg(&kick_url))
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Kick channel {} is not live or not found: {}", channel_slug, stderr.chars().take(300).collect::<String>()));
+    }
+
+    let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if url.is_empty() {
+        return Err(format!("yt-dlp returned empty URL for {}", channel_slug));
+    }
+
+    println!("[Kick] Got playback URL for {}", channel_slug);
+    Ok(url)
+}
+
+/// Run the recorder: fetch HLS playback URL via yt-dlp, then pass directly to FFmpeg.
+/// yt-dlp handles Kick's Cloudflare challenges internally.
 async fn run_kick_recorder(
     app: tauri::AppHandle,
     channel_slug: String,
@@ -578,29 +620,38 @@ async fn run_kick_recorder(
     segment_duration_minutes: u32,
     mut stop_rx: oneshot::Receiver<()>,
 ) -> Result<(), String> {
-    let ytdlp_path = resolve_ytdlp_binary()?;
     let ffmpeg_path = resolve_ffmpeg_binary()?;
-    let kick_url = format!("https://kick.com/{}", channel_slug);
 
-    // Verify binaries exist on disk before attempting to spawn
-    let ytdlp_exists = std::path::Path::new(&ytdlp_path).exists();
     let ffmpeg_exists = std::path::Path::new(&ffmpeg_path).exists();
-
-    // Log resolved binary paths and output dir for debugging macOS production issues
     let _ = app.emit("recorder-log", KickRecorderLogPayload {
         streamer_id: streamer_id.clone(),
         channel_slug: channel_slug.clone(),
-        message: format!("Resolved binaries - yt-dlp: {} (exists: {}), ffmpeg: {} (exists: {}), output: {}", 
-            ytdlp_path, ytdlp_exists, ffmpeg_path, ffmpeg_exists, output_dir),
+        message: format!("Resolved ffmpeg: {} (exists: {}), output: {}", ffmpeg_path, ffmpeg_exists, output_dir),
         level: "info".to_string(),
     });
 
-    if !ytdlp_exists {
-        return Err(format!("yt-dlp binary not found at: {}", ytdlp_path));
-    }
     if !ffmpeg_exists {
         return Err(format!("ffmpeg binary not found at: {}", ffmpeg_path));
     }
+
+    // Fetch the HLS playback URL directly from Kick's API
+    let _ = app.emit("recorder-log", KickRecorderLogPayload {
+        streamer_id: streamer_id.clone(),
+        channel_slug: channel_slug.clone(),
+        message: format!("Fetching stream URL from Kick API for {}", channel_slug),
+        level: "info".to_string(),
+    });
+
+    let playback_url = fetch_kick_playback_url(&channel_slug).await?;
+
+    let _ = app.emit("recorder-log", KickRecorderLogPayload {
+        streamer_id: streamer_id.clone(),
+        channel_slug: channel_slug.clone(),
+        message: format!("Got playback URL, starting FFmpeg HLS capture for {}", channel_slug),
+        level: "info".to_string(),
+    });
+
+    println!("[KickRecorder] Playback URL: {}", playback_url);
 
     // HLS segment duration in seconds
     // For Auto-Detect/Record: use user-configured segment duration (e.g., 5 minutes = 300 seconds)
@@ -610,102 +661,35 @@ async fn run_kick_recorder(
     } else {
         segment_duration_minutes * 60 // Convert minutes to seconds for recording
     };
-    
+
     let playlist_path = PathBuf::from(&output_dir).join("playlist.m3u8");
     let segment_pattern = PathBuf::from(&output_dir).join("segment_%04d.ts");
 
-    // Emit log for recording start
-    let _ = app.emit("recorder-log", KickRecorderLogPayload {
-        streamer_id: streamer_id.clone(),
-        channel_slug: channel_slug.clone(),
-        message: format!("Starting stream capture for {}", channel_slug),
-        level: "info".to_string(),
-    });
-
-    // Spawn yt-dlp to output stream to stdout
-    // yt-dlp <url> -o - outputs raw video to stdout
-    // Pass full path to ffmpeg binary (yt-dlp accepts either directory or full binary path)
-    let mut ytdlp_cmd = tokio::process::Command::new(&ytdlp_path);
-    no_window(&mut ytdlp_cmd);
-    ytdlp_cmd
-        .arg(&kick_url)
-        .arg("-o").arg("-")  // Output to stdout
-        .arg("--quiet")      // Suppress progress output
-        .arg("--no-part")    // Don't use .part files
-        .arg("--ffmpeg-location").arg(&ffmpeg_path)  // Full path to ffmpeg binary
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
-    println!("[KickRecorder] Starting yt-dlp: {} {} --ffmpeg-location {}", ytdlp_path, kick_url, ffmpeg_path);
-
-    let mut ytdlp_child = ytdlp_cmd.spawn()
-        .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
-
-    let ytdlp_stdout = ytdlp_child.stdout.take()
-        .ok_or("Failed to get yt-dlp stdout")?;
-
-    // CRITICAL: Drain yt-dlp stderr in a background task to prevent pipe buffer deadlock.
-    // On macOS, if the stderr pipe buffer fills (~64KB), the child process blocks forever.
-    if let Some(ytdlp_stderr) = ytdlp_child.stderr.take() {
-        let app_for_ytdlp_stderr = app.clone();
-        let streamer_id_for_ytdlp = streamer_id.clone();
-        let channel_slug_for_ytdlp = channel_slug.clone();
-        tokio::spawn(async move {
-            let reader = tokio::io::BufReader::new(ytdlp_stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                println!("[KickRecorder] yt-dlp stderr: {}", line);
-                // Emit ALL stderr lines to frontend - not just "error" lines.
-                // PyInstaller crashes (hardened runtime) output "MemoryError",
-                // "Failed to execute script", "Killed", "Traceback" etc.
-                let line_lower = line.to_lowercase();
-                let is_error = line_lower.contains("error") || line_lower.contains("fail")
-                    || line_lower.contains("killed") || line_lower.contains("traceback")
-                    || line_lower.contains("crash") || line_lower.contains("abort");
-                let _ = app_for_ytdlp_stderr.emit("recorder-log", KickRecorderLogPayload {
-                    streamer_id: streamer_id_for_ytdlp.clone(),
-                    channel_slug: channel_slug_for_ytdlp.clone(),
-                    message: format!("yt-dlp stderr: {}", line),
-                    level: if is_error { "error".to_string() } else { "info".to_string() },
-                });
-            }
-        });
-    }
-
-    // Convert tokio ChildStdout to std Stdio for piping to FFmpeg
-    let ytdlp_stdout_std: std::process::Stdio = ytdlp_stdout.try_into()
-        .map_err(|_| "Failed to convert yt-dlp stdout")?;
-
-    let _ = app.emit("recorder-log", KickRecorderLogPayload {
-        streamer_id: streamer_id.clone(),
-        channel_slug: channel_slug.clone(),
-        message: format!("Starting HLS recording for {}", channel_slug),
-        level: "info".to_string(),
-    });
-
-    // Spawn FFmpeg to read from yt-dlp's stdout and output HLS
+    // Spawn FFmpeg to read the Kick HLS stream directly and re-segment it
     let mut ffmpeg_cmd = tokio::process::Command::new(&ffmpeg_path);
     no_window(&mut ffmpeg_cmd);
     ffmpeg_cmd
-        .arg("-i").arg("pipe:0")       // Read from stdin (piped from yt-dlp)
+        // Pass browser-like headers so Kick's CDN accepts the request
+        .arg("-headers").arg("Referer: https://kick.com/\r\nOrigin: https://kick.com\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n")
+        .arg("-i").arg(&playback_url)  // Direct HLS m3u8 URL from Kick API
         // Re-encode to H.264 Baseline + AAC for guaranteed MSE/WebView2 compatibility.
         // -c copy can pass through codecs (HEVC, VP9) that MSE rejects in production.
         .arg("-c:v").arg("libx264")
-        .arg("-preset").arg("ultrafast")  // Minimize CPU usage for live streaming
-        .arg("-tune").arg("zerolatency")  // Low-latency encoding
+        .arg("-preset").arg("ultrafast")   // Minimize CPU usage for live streaming
+        .arg("-tune").arg("zerolatency")   // Low-latency encoding
         .arg("-profile:v").arg("baseline") // Baseline profile = widest MSE compatibility
         .arg("-level").arg("4.0")
-        .arg("-crf").arg("23")            // Reasonable quality
+        .arg("-crf").arg("23")             // Reasonable quality
         .arg("-c:a").arg("aac")
         .arg("-b:a").arg("128k")
-        .arg("-f").arg("hls")          // HLS output format
+        .arg("-f").arg("hls")              // HLS output format
         .arg("-hls_time").arg(hls_segment_seconds.to_string())
-        .arg("-hls_list_size").arg("0")  // Keep all segments in playlist
-        .arg("-hls_flags").arg("append_list+omit_endlist+temp_file")  // Live streaming flags + atomic writes
+        .arg("-hls_list_size").arg("0")    // Keep all segments in playlist
+        .arg("-hls_flags").arg("append_list+omit_endlist+temp_file") // Live streaming flags + atomic writes
         .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
-        .stdin(ytdlp_stdout_std)       // Pipe yt-dlp output to FFmpeg
-        .stdout(std::process::Stdio::null())  // FFmpeg writes HLS to files, not stdout. MUST be null to prevent pipe buffer deadlock on macOS.
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null()) // FFmpeg writes HLS to files, not stdout
         .stderr(std::process::Stdio::piped());
 
     println!("[KickRecorder] Starting ffmpeg HLS output to: {}", playlist_path.display());
@@ -763,9 +747,6 @@ async fn run_kick_recorder(
                             level: if exit_status.success() { "info".to_string() } else { "error".to_string() },
                         });
 
-                        // Kill yt-dlp too
-                        let _ = ytdlp_child.kill().await;
-                        
                         if !exit_status.success() {
                             // Stream might have ended - emit event
                             let _ = app.emit("stream-ended", KickStreamEndedPayload {
@@ -786,7 +767,6 @@ async fn run_kick_recorder(
             _ = &mut stop_rx => {
                 println!("[KickRecorder] Stop signal received, killing processes...");
                 let _ = ffmpeg_child.kill().await;
-                let _ = ytdlp_child.kill().await;
                 break;
             }
             

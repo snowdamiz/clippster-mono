@@ -192,6 +192,18 @@ function resolveLocalPath(url: string): string | null {
     }
   }
 
+  // Check for HLS streaming server URL: http://localhost:PORT/ts-hls/BASE64/playlist.m3u8
+  const hlsMatch = url.match(/^http:\/\/localhost:\d+\/ts-hls\/([A-Za-z0-9+/=]+)\/playlist\.m3u8$/);
+  if (hlsMatch) {
+    try {
+      const decoded = decodeURIComponent(escape(atob(hlsMatch[1])));
+      console.log('[WaveformService] Resolved HLS URL to local path:', decoded);
+      return decoded;
+    } catch {
+      // Invalid base64, continue to other checks
+    }
+  }
+
   const markers = ['asset://localhost/', 'http://asset.localhost/', 'https://asset.localhost/'];
   for (const marker of markers) {
     const idx = url.indexOf(marker);
@@ -273,6 +285,7 @@ async function fetchViaStreamingServer(path: string): Promise<ArrayBuffer | null
  */
 async function extractAudioViaRust(localPath: string): Promise<string | null> {
   try {
+    console.log('[WaveformService] ========================================');
     console.log('[WaveformService] Extracting audio via Rust/FFmpeg for:', localPath);
 
     // Use the extract_audio_to_file command which saves to a temp file
@@ -281,6 +294,8 @@ async function extractAudioViaRust(localPath: string): Promise<string | null> {
       a = ((a << 5) - a) + b.charCodeAt(0);
       return a & a;
     }, 0).toString(16);
+
+    console.log('[WaveformService] Calling extract_audio_to_file with sourceId:', `waveform_${pathHash}`);
 
     const result = await invoke<{ file_path: string; filename: string; duration: number }>(
       'extract_audio_to_file',
@@ -292,13 +307,22 @@ async function extractAudioViaRust(localPath: string): Promise<string | null> {
       }
     );
 
+    console.log('[WaveformService] extract_audio_to_file result:', result);
+
     if (result && result.file_path) {
-      console.log('[WaveformService] Audio extracted to:', result.file_path, 'duration:', result.duration);
+      console.log('[WaveformService] ✓ Audio extracted successfully');
+      console.log('[WaveformService]   File path:', result.file_path);
+      console.log('[WaveformService]   Duration:', result.duration);
+      console.log('[WaveformService]   Filename:', result.filename);
+      console.log('[WaveformService] ========================================');
       return result.file_path;
     }
+    console.warn('[WaveformService] ✗ No file path in result');
+    console.log('[WaveformService] ========================================');
     return null;
   } catch (error) {
-    console.warn('[WaveformService] Rust audio extraction failed:', error);
+    console.error('[WaveformService] ✗ Rust audio extraction failed with error:', error);
+    console.log('[WaveformService] ========================================');
     return null;
   }
 }
@@ -316,16 +340,21 @@ async function fetchAudioFile(audioPath: string): Promise<ArrayBuffer | null> {
     const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: audioPath });
 
     if (!dataUrl) {
-      console.warn('[WaveformService] No data returned for audio file');
+      console.warn('[WaveformService] ✗ No data returned for audio file');
       return null;
     }
+
+    console.log('[WaveformService] Data URL received, length:', dataUrl.length);
 
     // Parse data URL: "data:mime;base64,payload"
     const commaIndex = dataUrl.indexOf(',');
     if (commaIndex === -1) {
-      console.warn('[WaveformService] Invalid data URL format');
+      console.warn('[WaveformService] ✗ Invalid data URL format');
       return null;
     }
+
+    const mimeType = dataUrl.substring(0, commaIndex);
+    console.log('[WaveformService] MIME type:', mimeType);
 
     const base64 = dataUrl.substring(commaIndex + 1);
 
@@ -333,7 +362,7 @@ async function fetchAudioFile(audioPath: string): Promise<ArrayBuffer | null> {
     const binaryString = atob(base64);
     const len = binaryString.length;
 
-    console.log('[WaveformService] Audio file read success, size:', len);
+    console.log('[WaveformService] ✓ Audio file read success, size:', len, 'bytes');
 
     // Convert to Uint8Array/ArrayBuffer
     const bytes = new Uint8Array(len);
@@ -343,7 +372,7 @@ async function fetchAudioFile(audioPath: string): Promise<ArrayBuffer | null> {
 
     return bytes.buffer;
   } catch (error) {
-    console.error('[WaveformService] Audio file read failed:', error);
+    console.error('[WaveformService] ✗ Audio file read failed:', error);
     return null;
   }
 }
@@ -405,10 +434,20 @@ async function extractAudioFromFile(filePath: string): Promise<{ data: AudioData
   }
 
   // Decode audio using Web Audio API
+  console.log('[WaveformService] ========================================');
+  console.log('[WaveformService] Starting Web Audio API decode');
+  console.log('[WaveformService] ArrayBuffer size:', arrayBuffer.byteLength, 'bytes');
+  
   const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 
   try {
+    console.log('[WaveformService] Calling audioContext.decodeAudioData...');
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    console.log('[WaveformService] ✓ Decode successful!');
+    console.log('[WaveformService]   Channels:', audioBuffer.numberOfChannels);
+    console.log('[WaveformService]   Sample rate:', audioBuffer.sampleRate);
+    console.log('[WaveformService]   Duration:', audioBuffer.duration);
+    console.log('[WaveformService]   Length:', audioBuffer.length);
 
     // Get channel data (mono or mixed stereo)
     let channelData: Float32Array;
@@ -425,6 +464,9 @@ async function extractAudioFromFile(filePath: string): Promise<{ data: AudioData
       }
     }
 
+    console.log('[WaveformService] ✓ Channel data extracted, samples:', channelData.length);
+    console.log('[WaveformService] ========================================');
+
     return {
       data: {
         channelData,
@@ -433,6 +475,16 @@ async function extractAudioFromFile(filePath: string): Promise<{ data: AudioData
       },
       fileSize,
     };
+  } catch (error) {
+    console.error('[WaveformService] ========================================');
+    console.error('[WaveformService] ✗ DECODE FAILED');
+    console.error('[WaveformService] Error:', error);
+    console.error('[WaveformService] Error name:', (error as any)?.name);
+    console.error('[WaveformService] Error message:', (error as any)?.message);
+    console.error('[WaveformService] ArrayBuffer size:', arrayBuffer.byteLength);
+    console.error('[WaveformService] First 16 bytes:', new Uint8Array(arrayBuffer.slice(0, 16)));
+    console.error('[WaveformService] ========================================');
+    throw error;
   } finally {
     await audioContext.close();
   }
@@ -524,8 +576,9 @@ export function calculatePeaks(
 // Waveform Service Class
 // ============================================================================
 
-// Threshold for switching to streaming mode (1 hour)
-const LONG_VIDEO_THRESHOLD = 3600; // seconds
+// Threshold for switching to streaming mode (5 minutes)
+// Videos longer than this use on-demand per-range extraction instead of loading all audio into memory
+const LONG_VIDEO_THRESHOLD = 300; // seconds
 
 type WaveformMode = 'cached' | 'streaming';
 
@@ -601,11 +654,35 @@ class WaveformServiceImpl {
       }
     }
 
-    // HYBRID STRATEGY: Extract audio via Rust first to get duration
+    // FAST DURATION CHECK: Use FFmpeg header probe (no decoding, completes in <1s)
+    // This lets us decide cached vs streaming mode before doing any expensive work.
     const localPath = resolveLocalPath(normalizedPath);
+
+    let probedDuration: number | null = null;
+    if (localPath) {
+      try {
+        probedDuration = await invoke<number>('probe_video_duration', { videoPath: normalizedPath });
+        console.log(`[WaveformService] Probed duration: ${(probedDuration / 60).toFixed(1)} min`);
+      } catch (e) {
+        console.warn('[WaveformService] Duration probe failed, will determine from extraction:', e);
+      }
+    }
+
+    // DECISION POINT: if we know the duration and it's long, go straight to streaming mode
+    if (probedDuration !== null && probedDuration > LONG_VIDEO_THRESHOLD) {
+      console.log(`[WaveformService] Long video (${(probedDuration / 60).toFixed(1)} min > ${LONG_VIDEO_THRESHOLD / 60} min threshold), using streaming mode`);
+      this.peakMode.set(normalizedPath, 'streaming');
+      this.setVideoDuration(normalizedPath, probedDuration);
+      return {
+        channelData: new Float32Array(0),
+        sampleRate: 0,
+        duration: probedDuration,
+      };
+    }
+
     if (!localPath) {
       // Non-local file, extract normally
-      console.log('[WaveformService] Extracting audio:', normalizedPath);
+      console.log('[WaveformService] Extracting audio (non-local):', normalizedPath);
       const { data, fileSize } = await extractAudioFromFile(normalizedPath);
       await setCachedAudio(normalizedPath, data, fileSize);
       this.peakMode.set(normalizedPath, 'cached');
@@ -613,10 +690,12 @@ class WaveformServiceImpl {
       return data;
     }
 
-    // For local files: extract audio via Rust to get duration
+    // Short video (≤5 min): extract audio and load into memory for instant peak calculation
+    console.log(`[WaveformService] Short video (${probedDuration !== null ? (probedDuration / 60).toFixed(1) + ' min' : 'unknown duration'}), loading audio into memory`);
+    this.peakMode.set(normalizedPath, 'cached');
+
     const extractedAudioPath = await extractAudioViaRust(localPath);
     if (!extractedAudioPath) {
-      // Extraction failed, fall back to direct load
       console.warn('[WaveformService] FFmpeg extraction failed, attempting direct load');
       const { data, fileSize } = await extractAudioFromFile(normalizedPath);
       await setCachedAudio(normalizedPath, data, fileSize);
@@ -625,39 +704,15 @@ class WaveformServiceImpl {
       return data;
     }
 
-    // Get file size of extracted audio to estimate duration
     const audioBuffer = await fetchAudioFile(extractedAudioPath);
     if (!audioBuffer) {
-      console.warn('[WaveformService] Could not fetch extracted audio');
+      console.warn('[WaveformService] Could not fetch extracted audio, falling back to direct load');
       const { data, fileSize } = await extractAudioFromFile(normalizedPath);
       await setCachedAudio(normalizedPath, data, fileSize);
       this.peakMode.set(normalizedPath, 'cached');
       this.setVideoDuration(normalizedPath, data.duration);
       return data;
     }
-
-    const audioSizeMB = audioBuffer.byteLength / (1024 * 1024);
-    // Rough estimate: 1 minute of MP3 at 128kbps ≈ 1MB
-    const estimatedDuration = (audioSizeMB / 1.0) * 60;
-
-    console.log(`[WaveformService] Extracted audio size: ${audioSizeMB.toFixed(1)}MB, estimated duration: ${(estimatedDuration / 60).toFixed(1)} min`);
-
-    // DECISION POINT: Check if video is too long
-    if (audioSizeMB > 200 || estimatedDuration > LONG_VIDEO_THRESHOLD) {
-      console.log(`[WaveformService] Long video detected (${(estimatedDuration / 60).toFixed(1)} min), using streaming mode`);
-      this.peakMode.set(normalizedPath, 'streaming');
-      this.setVideoDuration(normalizedPath, estimatedDuration);
-      // Don't load audio into memory
-      return {
-        channelData: new Float32Array(0),
-        sampleRate: 0,
-        duration: estimatedDuration,
-      };
-    }
-
-    // Short video: proceed with loading
-    console.log(`[WaveformService] Short video (${(estimatedDuration / 60).toFixed(1)} min), loading audio into memory`);
-    this.peakMode.set(normalizedPath, 'cached');
 
     // Decode the extracted audio
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();

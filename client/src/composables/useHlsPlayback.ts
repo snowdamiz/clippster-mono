@@ -8,6 +8,10 @@ const PLAYLIST_POLL_INTERVAL = 1000; // 1 second between checks
 const PLAYLIST_POLL_MAX_ATTEMPTS = 60; // Max 60 seconds waiting for playlist
 const PLAYLIST_SEGMENT_POLL_INTERVAL = 1000; // Wait for first segment after playlist exists
 const PLAYLIST_SEGMENT_POLL_MAX_ATTEMPTS = 20; // Up to ~20s after playlist appears
+const MIN_VALID_SEGMENT_BYTES = 5 * 1024; // Ignore tiny/empty startup segments
+const MIN_VALID_SEGMENT_DURATION_SEC = 0.5; // Ignore near-zero startup fragments
+const MIN_READY_SEGMENT_COUNT = 2; // Require at least 2 good segments before playback init
+const TS_PACKET_SIZE = 188;
 
 // Buffer recovery constants - optimized for 4-second segments
 const BUFFER_STALL_RECOVERY_TIMEOUT = 4500; // 4.5 seconds before attempting recovery (> 1 segment)
@@ -21,6 +25,8 @@ const NETWORK_ERROR_RETRY_DELAY = 2000; // 2 seconds between network error retri
 const PLAYBACK_HEALTH_CHECK_INTERVAL = 5000; // Check every 5 seconds
 const PLAYBACK_STALL_THRESHOLD = 15000; // 15 seconds without progress = stalled
 const MAX_REINIT_ATTEMPTS = 3; // Max full reinitialization attempts
+const APPEND_ERROR_WINDOW_MS = 10000; // Sliding window for append error bursts
+const APPEND_ERROR_RECOVERY_THRESHOLD = 3; // Escalate after N append errors in window
 
 // HLS Playback state
 export interface HlsPlaybackState {
@@ -102,15 +108,67 @@ export function useHlsPlayback() {
   let lastProgressPosition: number = 0;
   let reinitAttempts = 0;
   let cachedOutputDirOrUrl: string | null = null;
-  
+
   // Stream end state
   let streamHasEnded = false;
+  let appendErrorCount = 0;
+  let appendErrorWindowStart = 0;
 
   // Computed
   const isAtLiveEdge = computed(() => {
     if (!state.value.isInitialized) return true;
     return state.value.liveEdgeTime - state.value.currentTime <= LIVE_EDGE_THRESHOLD;
   });
+
+  function isLikelyValidTsSegment(bytes: number[]): boolean {
+    if (!Array.isArray(bytes) || bytes.length < TS_PACKET_SIZE * 2) return false;
+    if (bytes.length < MIN_VALID_SEGMENT_BYTES) return false;
+    if (bytes.length % TS_PACKET_SIZE !== 0) return false;
+
+    const packetChecks = Math.min(10, Math.floor(bytes.length / TS_PACKET_SIZE));
+    for (let i = 0; i < packetChecks; i++) {
+      if (bytes[i * TS_PACKET_SIZE] !== 0x47) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function parsePlaylistSegmentCandidates(
+    content: string
+  ): Array<{ filename: string; duration: number }> {
+    const lines = content
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    const candidates: Array<{ filename: string; duration: number }> = [];
+    let pendingDuration: number | null = null;
+
+    for (const line of lines) {
+      if (line.startsWith('#EXTINF:')) {
+        const raw = line.slice('#EXTINF:'.length).split(',')[0]?.trim() ?? '0';
+        const duration = Number.parseFloat(raw);
+        pendingDuration = Number.isFinite(duration) ? duration : 0;
+        continue;
+      }
+
+      if (line.startsWith('#')) {
+        continue;
+      }
+
+      if (pendingDuration !== null) {
+        candidates.push({
+          filename: line,
+          duration: pendingDuration ?? 0,
+        });
+        pendingDuration = null;
+      }
+    }
+
+    return candidates;
+  }
 
   /**
    * Generate HLS URL using Tauri protocol (no HTTP server needed)
@@ -130,11 +188,11 @@ export function useHlsPlayback() {
       if (urlObj.protocol !== 'asset:' && urlObj.protocol !== 'tauri:') {
         return null;
       }
-      
+
       // asset://hls/{encodedDir}/{filename} → hostname='hls', pathname='/{encodedDir}/{filename}'
       const pathParts = urlObj.pathname.split('/').filter(Boolean);
       if (pathParts.length < 1) return null;
-      
+
       const encodedDir = pathParts[0];
       // Decode base64 to get original directory path
       return atob(encodedDir);
@@ -147,7 +205,11 @@ export function useHlsPlayback() {
    * Wait for the HLS playlist to become available.
    * If expectedUrl is provided, abort when the active target changes.
    */
-  async function waitForPlaylist(url: string, expectedUrl?: string, outputDir?: string): Promise<boolean> {
+  async function waitForPlaylist(
+    url: string,
+    expectedUrl?: string,
+    outputDir?: string
+  ): Promise<boolean> {
     for (let attempt = 0; attempt < PLAYLIST_POLL_MAX_ATTEMPTS; attempt++) {
       if (isCleaningUp) return false;
       // Skip URL mismatch check if outputDir is provided (standalone check for new directory)
@@ -182,7 +244,11 @@ export function useHlsPlayback() {
    * Wait for the first segment to appear in the playlist.
    * If expectedUrl is provided, abort when the active target changes.
    */
-  async function waitForFirstSegment(url: string, expectedUrl?: string, outputDir?: string): Promise<boolean> {
+  async function waitForFirstSegment(
+    url: string,
+    expectedUrl?: string,
+    outputDir?: string
+  ): Promise<boolean> {
     for (let attempt = 0; attempt < PLAYLIST_SEGMENT_POLL_MAX_ATTEMPTS; attempt++) {
       if (isCleaningUp) return false;
       // Skip URL mismatch check if outputDir is provided (standalone check for new directory)
@@ -199,15 +265,40 @@ export function useHlsPlayback() {
               encodedDir,
               filename: 'playlist.m3u8',
             });
-            const segmentCount = (content.match(/#EXTINF:/g) || []).length;
-            if (segmentCount > 0) return true;
+            const segmentCandidates = parsePlaylistSegmentCandidates(content);
+            let validSegmentCount = 0;
+
+            // Require multiple valid segments before init to avoid startup races on partial fragments.
+            // Startup playlists can briefly contain near-zero-duration entries with invalid files.
+            for (const { filename, duration } of segmentCandidates.slice(-6).reverse()) {
+              if (duration < MIN_VALID_SEGMENT_DURATION_SEC) {
+                continue;
+              }
+
+              try {
+                const bytes = await invoke<number[]>('read_hls_segment', {
+                  encodedDir,
+                  filename,
+                });
+                if (isLikelyValidTsSegment(bytes)) {
+                  validSegmentCount += 1;
+                }
+                if (validSegmentCount >= MIN_READY_SEGMENT_COUNT) {
+                  return true;
+                }
+              } catch {
+                // Segment may not exist yet; keep polling.
+              }
+            }
           }
         } else {
           const response = await fetch(url, { method: 'GET', cache: 'no-store', mode: 'cors' });
           if (response.ok) {
             const text = await response.text();
-            const segmentCount = (text.match(/#EXTINF:/g) || []).length;
-            if (segmentCount > 0) return true;
+            const validDurationCount = parsePlaylistSegmentCandidates(text).filter(
+              ({ duration }) => duration >= MIN_VALID_SEGMENT_DURATION_SEC
+            ).length;
+            if (validDurationCount >= MIN_READY_SEGMENT_COUNT) return true;
           }
         }
       } catch {
@@ -230,7 +321,8 @@ export function useHlsPlayback() {
     isCleaningUp = false;
 
     // Detect if this is a direct URL or a local directory path
-    const isDirectUrl = outputDirOrUrl.startsWith('http://') || outputDirOrUrl.startsWith('https://');
+    const isDirectUrl =
+      outputDirOrUrl.startsWith('http://') || outputDirOrUrl.startsWith('https://');
     const newUrl = isDirectUrl ? outputDirOrUrl : getHlsUrl(outputDirOrUrl);
     const expectedUrl = newUrl;
 
@@ -269,8 +361,12 @@ export function useHlsPlayback() {
         return false;
       }
 
-      // Ensure at least one segment exists
-      const segmentReady = await waitForFirstSegment(hlsUrl, expectedUrl, isDirectUrl ? undefined : outputDirOrUrl);
+      // Ensure enough valid startup segments exist
+      const segmentReady = await waitForFirstSegment(
+        hlsUrl,
+        expectedUrl,
+        isDirectUrl ? undefined : outputDirOrUrl
+      );
       if (!segmentReady) {
         if (!isCleaningUp) {
           state.value.error = 'No segments produced for recording';
@@ -402,11 +498,15 @@ export function useHlsPlayback() {
 
         const offset = timelineOffset ?? 0;
         state.value.duration = Math.max(0, levelDetails.totalduration - offset);
-        
+
         // Calculate TRUE live edge from the last fragment's end time
         // This is the actual end of available content, not the target playback position
         const lastFragment = levelDetails.fragments?.[levelDetails.fragments.length - 1];
-        if (lastFragment && typeof lastFragment.start === 'number' && typeof lastFragment.duration === 'number') {
+        if (
+          lastFragment &&
+          typeof lastFragment.start === 'number' &&
+          typeof lastFragment.duration === 'number'
+        ) {
           const trueLiveEdge = lastFragment.start + lastFragment.duration;
           state.value.liveEdgeTime = Math.max(0, trueLiveEdge - offset);
         } else {
@@ -419,7 +519,11 @@ export function useHlsPlayback() {
       updateBufferedRanges();
       // Update live edge from the loaded fragment
       // Use the fragment's end time as the live edge, not liveSyncPosition
-      if (data.frag && typeof data.frag.start === 'number' && typeof data.frag.duration === 'number') {
+      if (
+        data.frag &&
+        typeof data.frag.start === 'number' &&
+        typeof data.frag.duration === 'number'
+      ) {
         const offset = timelineOffset ?? 0;
         const fragEnd = data.frag.start + data.frag.duration;
         state.value.liveEdgeTime = Math.max(state.value.liveEdgeTime, fragEnd - offset);
@@ -429,6 +533,9 @@ export function useHlsPlayback() {
     hlsInstance.on(Hls.Events.FRAG_BUFFERED, () => {
       updateBufferedRanges();
       state.value.isBuffering = false;
+      // Fragment append succeeded - clear burst counters.
+      appendErrorCount = 0;
+      appendErrorWindowStart = 0;
     });
 
     hlsInstance.on(Hls.Events.ERROR, (event, data) => {
@@ -439,14 +546,25 @@ export function useHlsPlayback() {
       if (videoElement && videoElement.buffered.length > 0) {
         const currentTime = videoElement.currentTime;
         for (let i = 0; i < videoElement.buffered.length; i++) {
-          if (currentTime >= videoElement.buffered.start(i) && currentTime <= videoElement.buffered.end(i)) {
+          if (
+            currentTime >= videoElement.buffered.start(i) &&
+            currentTime <= videoElement.buffered.end(i)
+          ) {
             bufferAhead = videoElement.buffered.end(i) - currentTime;
             break;
           }
         }
       }
-      console.log('[HlsPlayback] Error:', data.type, data.details, 'fatal:', data.fatal, 
-        videoElement ? `| Buffer ahead: ${bufferAhead.toFixed(1)}s, currentTime: ${videoElement.currentTime.toFixed(1)}s, liveEdge: ${state.value.liveEdgeTime.toFixed(1)}s` : '');
+      console.log(
+        '[HlsPlayback] Error:',
+        data.type,
+        data.details,
+        'fatal:',
+        data.fatal,
+        videoElement
+          ? `| Buffer ahead: ${bufferAhead.toFixed(1)}s, currentTime: ${videoElement.currentTime.toFixed(1)}s, liveEdge: ${state.value.liveEdgeTime.toFixed(1)}s`
+          : ''
+      );
 
       // Handle specific error types
       if (data.details === 'bufferStalledError') {
@@ -457,7 +575,9 @@ export function useHlsPlayback() {
           for (let i = 0; i < buffered.length; i++) {
             ranges.push(`[${buffered.start(i).toFixed(1)}-${buffered.end(i).toFixed(1)}]`);
           }
-          console.warn(`[HlsPlayback] ⚠️ BUFFER STALL at ${videoElement.currentTime.toFixed(1)}s | Buffered ranges: ${ranges.join(', ') || 'none'} | Live edge: ${state.value.liveEdgeTime.toFixed(1)}s`);
+          console.warn(
+            `[HlsPlayback] ⚠️ BUFFER STALL at ${videoElement.currentTime.toFixed(1)}s | Buffered ranges: ${ranges.join(', ') || 'none'} | Live edge: ${state.value.liveEdgeTime.toFixed(1)}s`
+          );
         }
         handleBufferStall();
         return;
@@ -466,9 +586,57 @@ export function useHlsPlayback() {
       if (data.details === 'bufferSeekOverHole') {
         // Log the hole that was skipped
         if (data.frag) {
-          console.warn(`[HlsPlayback] ⚠️ BUFFER HOLE detected, skipped from ${(data as any).previousTime?.toFixed(1) || '?'}s to frag at ${data.frag.start?.toFixed(1) || '?'}s`);
+          console.warn(
+            `[HlsPlayback] ⚠️ BUFFER HOLE detected, skipped from ${(data as any).previousTime?.toFixed(1) || '?'}s to frag at ${data.frag.start?.toFixed(1) || '?'}s`
+          );
         }
         clearBufferStallRecovery();
+        return;
+      }
+
+      // Append errors are often transient MSE state issues. Calling recoverMediaError()
+      // on every non-fatal append error can thrash playback and freeze currentTime.
+      if (
+        data.details === 'bufferAppendError' ||
+        data.details === 'bufferAppendingError' ||
+        data.details === 'bufferFullError'
+      ) {
+        const now = Date.now();
+        if (!appendErrorWindowStart || now - appendErrorWindowStart > APPEND_ERROR_WINDOW_MS) {
+          appendErrorWindowStart = now;
+          appendErrorCount = 1;
+        } else {
+          appendErrorCount += 1;
+        }
+
+        const errorMsg =
+          data.error instanceof Error
+            ? `${data.error.name}: ${data.error.message}`
+            : data.reason || '';
+        console.warn(
+          `[HlsPlayback] Append error burst ${appendErrorCount}/${APPEND_ERROR_RECOVERY_THRESHOLD}`,
+          data.details,
+          errorMsg
+        );
+
+        if (
+          appendErrorCount >= APPEND_ERROR_RECOVERY_THRESHOLD &&
+          videoElement &&
+          !Number.isNaN(videoElement.currentTime)
+        ) {
+          const currentTime = videoElement.currentTime;
+          const target = state.value.liveEdgeTime
+            ? Math.max(currentTime + 1, state.value.liveEdgeTime - 8)
+            : currentTime + 1;
+          console.warn(
+            `[HlsPlayback] Escalating append-error recovery: reload from ${target.toFixed(1)}s`
+          );
+          hlsInstance.stopLoad();
+          hlsInstance.startLoad(target);
+          videoElement.currentTime = target;
+          appendErrorCount = 0;
+          appendErrorWindowStart = 0;
+        }
         return;
       }
 
@@ -488,7 +656,11 @@ export function useHlsPlayback() {
             break;
         }
       } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-        hlsInstance.recoverMediaError();
+        // Avoid aggressive decoder resets for non-fatal media noise.
+        // Let hls.js continue unless we detect specific recoverable cases.
+        if (data.details === 'fragParsingError' || data.details === 'fragGap') {
+          hlsInstance.startLoad();
+        }
       } else if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
         // Non-fatal network error - still try to recover
         handleNetworkError(hlsInstance);
@@ -503,7 +675,9 @@ export function useHlsPlayback() {
     if (isCleaningUp) return;
 
     networkErrorRetries++;
-    console.log(`[HlsPlayback] Network error, retry ${networkErrorRetries}/${MAX_NETWORK_ERROR_RETRIES}`);
+    console.log(
+      `[HlsPlayback] Network error, retry ${networkErrorRetries}/${MAX_NETWORK_ERROR_RETRIES}`
+    );
 
     if (networkErrorRetries >= MAX_NETWORK_ERROR_RETRIES) {
       console.log('[HlsPlayback] Max network retries reached, attempting full reinitialize');
@@ -518,7 +692,10 @@ export function useHlsPlayback() {
     }
 
     // Retry with exponential backoff
-    const delay = Math.min(NETWORK_ERROR_RETRY_DELAY * Math.pow(1.5, networkErrorRetries - 1), 10000);
+    const delay = Math.min(
+      NETWORK_ERROR_RETRY_DELAY * Math.pow(1.5, networkErrorRetries - 1),
+      10000
+    );
     networkErrorRetryTimeout = window.setTimeout(() => {
       if (!isCleaningUp && hls) {
         console.log('[HlsPlayback] Retrying load after network error');
@@ -551,7 +728,7 @@ export function useHlsPlayback() {
     await cleanupInternal(false);
 
     // Wait a moment before reinitializing
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     if (isCleaningUp) return;
 
@@ -600,18 +777,18 @@ export function useHlsPlayback() {
         // If position hasn't changed significantly in PLAYBACK_STALL_THRESHOLD ms
         if (positionDelta < 0.5 && timeDelta > PLAYBACK_STALL_THRESHOLD) {
           console.warn(`[HlsPlayback] Playback stalled for ${timeDelta}ms, attempting recovery`);
-          
+
           // Try progressive recovery steps
           if (hls) {
             // First try: just restart loading
             hls.startLoad();
-            
+
             // If still stalled after a few checks, try more aggressive recovery
             if (timeDelta > PLAYBACK_STALL_THRESHOLD * 2) {
               console.log('[HlsPlayback] Extended stall, attempting media error recovery');
               hls.recoverMediaError();
             }
-            
+
             if (timeDelta > PLAYBACK_STALL_THRESHOLD * 3) {
               console.log('[HlsPlayback] Severe stall, attempting full reinitialize');
               attemptReinitialize();
@@ -665,17 +842,21 @@ export function useHlsPlayback() {
     if (isCleaningUp || !hls || !videoElement) return;
 
     bufferStallRetries++;
-    console.log(`[HlsPlayback] Buffer stall recovery attempt ${bufferStallRetries}/${MAX_BUFFER_STALL_RETRIES}`);
+    console.log(
+      `[HlsPlayback] Buffer stall recovery attempt ${bufferStallRetries}/${MAX_BUFFER_STALL_RETRIES}`
+    );
 
     // Check if we're near the live edge - if so, seek back to give more buffer room
     const currentTime = videoElement.currentTime;
     const liveEdge = state.value.liveEdgeTime;
-    const isNearLiveEdge = liveEdge > 0 && (liveEdge - currentTime) < 8; // Within 8 seconds of live edge
+    const isNearLiveEdge = liveEdge > 0 && liveEdge - currentTime < 8; // Within 8 seconds of live edge
 
     if (isNearLiveEdge && bufferStallRetries === 1) {
       // First attempt near live edge: seek back 8 seconds to give buffer room
       const seekBackTarget = Math.max(0, currentTime - 8);
-      console.log(`[HlsPlayback] Near live edge stall, seeking back from ${currentTime.toFixed(1)}s to ${seekBackTarget.toFixed(1)}s`);
+      console.log(
+        `[HlsPlayback] Near live edge stall, seeking back from ${currentTime.toFixed(1)}s to ${seekBackTarget.toFixed(1)}s`
+      );
       videoElement.currentTime = seekBackTarget;
       hls.startLoad();
       clearBufferStallRecovery();
@@ -896,8 +1077,9 @@ export function useHlsPlayback() {
    */
   function refreshPlaylist(seekPosition?: number) {
     if (!hls || !state.value.isInitialized) return;
-    
-    const target = typeof seekPosition === 'number' ? seekPosition : videoElement?.currentTime ?? 0;
+
+    const target =
+      typeof seekPosition === 'number' ? seekPosition : (videoElement?.currentTime ?? 0);
     hls.stopLoad();
     hls.startLoad(Math.max(target, 0));
   }
@@ -1005,6 +1187,8 @@ export function useHlsPlayback() {
     // Reset state
     hlsUrl = null;
     availableStartTime = 0;
+    appendErrorCount = 0;
+    appendErrorWindowStart = 0;
 
     state.value = {
       isPlaying: false,
@@ -1046,11 +1230,16 @@ export function useHlsPlayback() {
    * Useful for gating before initializing playback.
    */
   async function waitForPlaylistReady(outputDirOrUrl: string): Promise<boolean> {
-    const isDirectUrl = outputDirOrUrl.startsWith('http://') || outputDirOrUrl.startsWith('https://');
+    const isDirectUrl =
+      outputDirOrUrl.startsWith('http://') || outputDirOrUrl.startsWith('https://');
     const targetUrl = isDirectUrl ? outputDirOrUrl : getHlsUrl(outputDirOrUrl);
 
     // Pass outputDir to bypass hlsUrl mismatch check - this is called standalone, not during active playback
-    const playlistReady = await waitForPlaylist(targetUrl, targetUrl, isDirectUrl ? undefined : outputDirOrUrl);
+    const playlistReady = await waitForPlaylist(
+      targetUrl,
+      targetUrl,
+      isDirectUrl ? undefined : outputDirOrUrl
+    );
     if (!playlistReady) return false;
     return waitForFirstSegment(targetUrl, targetUrl, isDirectUrl ? undefined : outputDirOrUrl);
   }

@@ -21,6 +21,14 @@ defmodule ClippsterServerWeb.EnsureOrgSubscription do
   @exempt_segments ["subscription", "tiers", "checkout", "promo", "payments"]
 
   def call(conn, _opts) do
+    if skip_enforcement?() do
+      conn
+    else
+      do_call(conn)
+    end
+  end
+
+  defp do_call(conn) do
     case extract_org_id(conn) do
       nil ->
         # Not an org-scoped route, skip
@@ -34,6 +42,10 @@ defmodule ClippsterServerWeb.EnsureOrgSubscription do
           check_subscription(conn, org_id)
         end
     end
+  end
+
+  defp skip_enforcement? do
+    Application.get_env(:clippster_server, :enforce_org_subscription, true) == false
   end
 
   # Only extract org ID from paths that are actually org-scoped.
@@ -66,6 +78,10 @@ defmodule ClippsterServerWeb.EnsureOrgSubscription do
 
       org ->
         cond do
+          # Organization admins/owners can always access org routes
+          org_admin?(conn, org_id_int) ->
+            conn
+
           # Active or cancelled (still within period) - allow
           org.subscription_status in ["active", "cancelled"] ->
             conn
@@ -73,7 +89,7 @@ defmodule ClippsterServerWeb.EnsureOrgSubscription do
           # Legacy org - grandfathered
           org.subscription_status == "none" &&
             org.inserted_at &&
-            DateTime.compare(org.inserted_at, @legacy_cutoff_date) == :lt ->
+              DateTime.compare(org.inserted_at, @legacy_cutoff_date) == :lt ->
             conn
 
           # No subscription or expired - block
@@ -83,10 +99,24 @@ defmodule ClippsterServerWeb.EnsureOrgSubscription do
             |> Phoenix.Controller.json(%{
               success: false,
               error: "subscription_required",
-              message: "An active subscription is required to access this organization"
+              message:
+                "An active subscription is required. Ask an organization admin to purchase in the Clippster desktop app."
             })
             |> halt()
         end
+    end
+  end
+
+  defp org_admin?(conn, org_id) do
+    case conn.assigns[:current_user] do
+      %{is_admin: true} ->
+        true
+
+      %{id: user_id} when is_integer(user_id) ->
+        Organizations.is_admin?(org_id, user_id)
+
+      _ ->
+        false
     end
   end
 end

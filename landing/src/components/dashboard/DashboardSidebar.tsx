@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useLocation, useNavigate } from 'react-router-dom'
 import {
+  BarChart3,
+  Building2,
   LayoutGrid,
   Users,
   UserCircle,
@@ -12,17 +14,25 @@ import {
   FolderOpen,
   CreditCard,
   Settings,
+  Handshake,
+  KeyRound,
+  ListChecks,
   LogOut,
-  MessageSquare
+  MessageSquare,
+  Percent,
+  Shield
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { getTotalUnread } from '@/services/messagingApi'
 
+type DashboardSidebarVariant = 'organization' | 'admin'
+
 interface NavItem {
   label: string
   icon: LucideIcon
   path: string
+  adminOnly?: boolean
 }
 
 interface NavGroup {
@@ -30,7 +40,7 @@ interface NavGroup {
   items: NavItem[]
 }
 
-const navGroups: NavGroup[] = [
+const orgNavGroups: NavGroup[] = [
   {
     header: 'Team',
     items: [
@@ -60,6 +70,39 @@ const navGroups: NavGroup[] = [
   }
 ]
 
+const adminNavGroups: NavGroup[] = [
+  {
+    header: 'Core',
+    items: [
+      { label: 'Hub', icon: LayoutGrid, path: 'hub' },
+      { label: 'Users', icon: Users, path: 'users', adminOnly: true },
+      { label: 'Organizations', icon: Building2, path: 'organizations', adminOnly: true },
+      { label: 'Org Applications', icon: FileText, path: 'org-applications' },
+    ]
+  },
+  {
+    header: 'Operations',
+    items: [
+      { label: 'Bug Reports', icon: ListChecks, path: 'bug-reports' },
+      { label: 'AI Usage', icon: BarChart3, path: 'ai-usage' },
+      { label: 'Analytics', icon: BarChart3, path: 'analytics' },
+      { label: 'Beta Codes', icon: KeyRound, path: 'beta-codes', adminOnly: true },
+      { label: 'Discount Codes', icon: Percent, path: 'discount-codes', adminOnly: true },
+      { label: 'Waitlist', icon: Users, path: 'waitlist', adminOnly: true },
+      { label: 'Affiliates', icon: Handshake, path: 'affiliates', adminOnly: true },
+    ]
+  },
+  {
+    header: 'Support',
+    items: [
+      { label: 'Customer Service', icon: MessageSquare, path: 'customer-service' },
+      { label: 'Staff Messages', icon: MessageSquare, path: 'staff-messages' },
+      { label: 'Mod Logs', icon: Shield, path: 'mod-logs', adminOnly: true },
+      { label: 'Settings', icon: Settings, path: 'settings', adminOnly: true },
+    ]
+  }
+]
+
 function getInitials(user: { name?: string; email: string }): string {
   if (user.name) {
     return user.name
@@ -72,15 +115,39 @@ function getInitials(user: { name?: string; email: string }): string {
   return user.email.slice(0, 2).toUpperCase()
 }
 
-export function DashboardSidebar() {
+function getAdminBasePath(pathname: string): '/admin' | '/dashboard/admin' {
+  return pathname.startsWith('/dashboard/admin') ? '/dashboard/admin' : '/admin'
+}
+
+interface DashboardSidebarProps {
+  variant?: DashboardSidebarVariant
+}
+
+export function DashboardSidebar({ variant = 'organization' }: DashboardSidebarProps) {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   const [unreadMessages, setUnreadMessages] = useState(0)
+  const isOrganizationSidebar = variant === 'organization'
+  const adminBasePath = getAdminBasePath(location.pathname)
+  const isAdmin = Boolean(user?.is_admin)
+
+  const navGroups = useMemo(() => {
+    if (isOrganizationSidebar) {
+      return orgNavGroups
+    }
+
+    return adminNavGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => !item.adminOnly || isAdmin)
+      }))
+      .filter((group) => group.items.length > 0)
+  }, [isOrganizationSidebar, isAdmin])
 
   useEffect(() => {
-    if (!user) return
+    if (!isOrganizationSidebar || !user) return
     getTotalUnread()
       .then(setUnreadMessages)
       .catch(() => {})
@@ -90,14 +157,30 @@ export function DashboardSidebar() {
         .catch(() => {})
     }, 5000)
     return () => clearInterval(interval)
-  }, [user])
+  }, [isOrganizationSidebar, user])
+
+  function resolvePath(path: string): string {
+    if (isOrganizationSidebar) {
+      if (!id) return '/dashboard'
+      return `/dashboard/org/${id}/${path}`
+    }
+    return path === 'hub' ? adminBasePath : `${adminBasePath}/${path}`
+  }
 
   function isActive(path: string): boolean {
-    const fullPath = `/dashboard/org/${id}/${path}`
-    // Hub is also active for the index route
+    const fullPath = resolvePath(path)
     if (path === 'hub') {
+      if (isOrganizationSidebar) {
+        if (!id) return false
+        return (
+          location.pathname === `/dashboard/org/${id}` ||
+          location.pathname === fullPath ||
+          location.pathname.startsWith(fullPath + '/')
+        )
+      }
       return (
-        location.pathname === `/dashboard/org/${id}` ||
+        location.pathname === adminBasePath ||
+        location.pathname === `${adminBasePath}/` ||
         location.pathname === fullPath ||
         location.pathname.startsWith(fullPath + '/')
       )
@@ -138,10 +221,11 @@ export function DashboardSidebar() {
                 {group.items.map((item) => {
                   const active = isActive(item.path)
                   const Icon = item.icon
+                  const linkPath = resolvePath(item.path)
                   return (
                     <li key={item.path}>
                       <Link
-                        to={`/dashboard/org/${id}/${item.path}`}
+                        to={linkPath}
                         className={`flex items-center gap-3 w-full py-2 px-3 rounded-md text-sm no-underline transition-all duration-150 cursor-pointer ${
                           active
                             ? 'bg-cyan-500/[0.08] text-cyan-400'
@@ -150,7 +234,7 @@ export function DashboardSidebar() {
                       >
                         <Icon className="w-[18px] h-[18px] shrink-0" />
                         <span className="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">{item.label}</span>
-                        {item.label === 'Messages' && unreadMessages > 0 && (
+                        {isOrganizationSidebar && item.label === 'Messages' && unreadMessages > 0 && (
                           <span className="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-[11px] font-semibold bg-red-500 text-white rounded-md">
                             {unreadMessages > 99 ? '99+' : unreadMessages}
                           </span>

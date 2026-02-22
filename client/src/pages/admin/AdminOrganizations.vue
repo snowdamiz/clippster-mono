@@ -118,6 +118,12 @@
                       <button v-if="org.subscription_status === 'active'" class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--cancel" @click.stop="cancelOrgSub(org)">
                         <XCircle class="admin-orgs__btn-icon" />
                       </button>
+                      <button class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--pw" @click.stop="openResetPwDialog(org)" title="Reset owner password">
+                        <KeyRound class="admin-orgs__btn-icon" />
+                      </button>
+                      <button v-if="org.subscription_status !== 'active'" class="admin-orgs__set-credits-btn admin-orgs__set-credits-btn--delete" @click.stop="openDeleteOrgDialog(org)" title="Delete organization">
+                        <Trash2 class="admin-orgs__btn-icon" />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -313,6 +319,127 @@
       </Transition>
     </Teleport>
 
+    <!-- Reset Owner Password Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showResetPwDialog" class="admin-orgs__modal-backdrop" @click.self="closeResetPwDialog">
+          <Transition name="dialog" appear>
+            <div v-if="showResetPwDialog" class="admin-orgs__modal" role="dialog" aria-modal="true">
+              <div class="admin-orgs__modal-accent"></div>
+              <div class="admin-orgs__modal-header">
+                <button class="admin-orgs__modal-close" @click="closeResetPwDialog"><X :size="18" /></button>
+                <div class="admin-orgs__modal-icon"><KeyRound :size="24" /></div>
+                <h2 class="admin-orgs__modal-title">Reset Owner Password</h2>
+                <p class="admin-orgs__modal-subtitle">{{ resetPwOrg?.name }}</p>
+              </div>
+              <div class="admin-orgs__modal-content">
+                <form class="admin-orgs__modal-form" @submit.prevent="submitResetPw">
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">New Password *</label>
+                    <input v-model="resetPwForm.new_password" type="text" required class="admin-orgs__modal-input" placeholder="Enter new password" />
+                  </div>
+                  <div v-if="resetPwError" class="admin-orgs__modal-error">
+                    <AlertCircle :size="16" />
+                    <p class="admin-orgs__modal-error-text">{{ resetPwError }}</p>
+                  </div>
+                  <div v-if="resetPwSuccess" class="admin-orgs__modal-success">
+                    <p class="admin-orgs__modal-success-text">{{ resetPwSuccess }}</p>
+                  </div>
+                </form>
+              </div>
+              <div class="admin-orgs__modal-footer">
+                <button type="button" class="admin-orgs__modal-btn admin-orgs__modal-btn--secondary" @click="closeResetPwDialog">Cancel</button>
+                <button type="submit" class="admin-orgs__modal-btn admin-orgs__modal-btn--primary" :disabled="resettingPw" @click="submitResetPw">
+                  <Loader2 v-if="resettingPw" :size="16" class="admin-orgs__modal-spinner" />
+                  {{ resettingPw ? 'Resetting...' : 'Reset Password' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Delete Organization Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showDeleteOrgDialog" class="admin-orgs__modal-backdrop" @click.self="closeDeleteOrgDialog">
+          <Transition name="dialog" appear>
+            <div v-if="showDeleteOrgDialog" class="admin-orgs__modal" role="dialog" aria-modal="true">
+              <div class="admin-orgs__modal-accent admin-orgs__modal-accent--danger"></div>
+              <div class="admin-orgs__modal-header">
+                <button class="admin-orgs__modal-close" @click="closeDeleteOrgDialog"><X :size="18" /></button>
+                <div class="admin-orgs__modal-icon admin-orgs__modal-icon--danger"><Trash2 :size="24" /></div>
+                <h2 class="admin-orgs__modal-title">Delete Organization</h2>
+                <p class="admin-orgs__modal-subtitle">{{ deleteOrgTarget?.name }}</p>
+              </div>
+              <div class="admin-orgs__modal-content">
+                <div class="admin-orgs__modal-form">
+                  <div class="admin-orgs__modal-warning">
+                    <AlertCircle :size="16" class="admin-orgs__modal-warning-icon" />
+                    <p class="admin-orgs__modal-warning-text">This action cannot be undone. All organization data will be permanently deleted.</p>
+                  </div>
+                  <div class="admin-orgs__modal-field">
+                    <label class="admin-orgs__modal-label">Type <strong class="admin-orgs__modal-org-name">{{ deleteOrgTarget?.name }}</strong> to confirm</label>
+                    <input v-model="deleteOrgConfirmName" type="text" class="admin-orgs__modal-input" placeholder="Organization name" />
+                  </div>
+                  <div v-if="deleteOrgError" class="admin-orgs__modal-error">
+                    <AlertCircle :size="16" />
+                    <p class="admin-orgs__modal-error-text">{{ deleteOrgError }}</p>
+                  </div>
+                </div>
+              </div>
+              <div class="admin-orgs__modal-footer">
+                <button type="button" class="admin-orgs__modal-btn admin-orgs__modal-btn--secondary" @click="closeDeleteOrgDialog">Cancel</button>
+                <button type="button" class="admin-orgs__modal-btn admin-orgs__modal-btn--danger" :disabled="deletingOrg || deleteOrgConfirmName !== deleteOrgTarget?.name" @click="submitDeleteOrg">
+                  <Loader2 v-if="deletingOrg" :size="16" class="admin-orgs__modal-spinner" />
+                  {{ deletingOrg ? 'Deleting...' : 'Delete Organization' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Cancel Subscription Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showCancelSubDialog" class="admin-orgs__modal-backdrop" @click.self="closeCancelSubDialog">
+          <Transition name="dialog" appear>
+            <div v-if="showCancelSubDialog" class="admin-orgs__modal" role="dialog" aria-modal="true">
+              <div class="admin-orgs__modal-accent admin-orgs__modal-accent--danger"></div>
+              <div class="admin-orgs__modal-header">
+                <button class="admin-orgs__modal-close" @click="closeCancelSubDialog"><X :size="18" /></button>
+                <div class="admin-orgs__modal-icon admin-orgs__modal-icon--danger"><XCircle :size="24" /></div>
+                <h2 class="admin-orgs__modal-title">Cancel Subscription</h2>
+                <p class="admin-orgs__modal-subtitle">{{ cancelSubOrg?.name }}</p>
+              </div>
+              <div class="admin-orgs__modal-content">
+                <div class="admin-orgs__modal-form">
+                  <div class="admin-orgs__modal-warning">
+                    <AlertCircle :size="16" class="admin-orgs__modal-warning-icon" />
+                    <p class="admin-orgs__modal-warning-text">This will immediately cancel the organization's subscription. This action cannot be undone.</p>
+                  </div>
+                  <div v-if="cancelSubError" class="admin-orgs__modal-error">
+                    <AlertCircle :size="16" />
+                    <p class="admin-orgs__modal-error-text">{{ cancelSubError }}</p>
+                  </div>
+                </div>
+              </div>
+              <div class="admin-orgs__modal-footer">
+                <button type="button" class="admin-orgs__modal-btn admin-orgs__modal-btn--secondary" :disabled="cancellingSubId !== null" @click="closeCancelSubDialog">Keep Subscription</button>
+                <button type="button" class="admin-orgs__modal-btn admin-orgs__modal-btn--danger" :disabled="cancellingSubId !== null" @click="confirmCancelOrgSub">
+                  <Loader2 v-if="cancellingSubId !== null" :size="16" class="admin-orgs__modal-spinner" />
+                  {{ cancellingSubId !== null ? 'Cancelling...' : 'Cancel Subscription' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Organization Credit Dialog -->
     <Teleport to="body">
       <Transition name="modal">
@@ -426,7 +553,7 @@
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
   import { useRouter } from 'vue-router';
-  import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle, Plus, Crown, Settings, XCircle, ChevronDown } from 'lucide-vue-next';
+  import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle, Plus, Crown, Settings, XCircle, ChevronDown, KeyRound, Trash2 } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import api from '@/services/api';
@@ -449,6 +576,7 @@
     created_by_admin: boolean;
     setup_completed: boolean;
     created_at: string;
+    owner_id: number | null;
   }
 
   const organizations = ref<Organization[]>([]);
@@ -482,7 +610,97 @@
     price_dollars: 0,
   });
 
-  // Grant Subscription
+  // Reset Owner Password
+  const showResetPwDialog = ref(false);
+  const resetPwOrg = ref<Organization | null>(null);
+  const resettingPw = ref(false);
+  const resetPwError = ref<string | null>(null);
+  const resetPwSuccess = ref<string | null>(null);
+  const resetPwForm = ref({ new_password: '' });
+
+  const openResetPwDialog = (org: Organization) => {
+    resetPwOrg.value = org;
+    resetPwForm.value = { new_password: '' };
+    resetPwError.value = null;
+    resetPwSuccess.value = null;
+    showResetPwDialog.value = true;
+  };
+
+  const closeResetPwDialog = () => {
+    showResetPwDialog.value = false;
+    resetPwOrg.value = null;
+    resetPwForm.value = { new_password: '' };
+    resetPwError.value = null;
+    resetPwSuccess.value = null;
+  };
+
+  const submitResetPw = async () => {
+    if (!resetPwOrg.value) return;
+    if (!resetPwOrg.value.owner_id) {
+      resetPwError.value = 'This organization has no owner on record.';
+      return;
+    }
+    resettingPw.value = true;
+    resetPwError.value = null;
+    resetPwSuccess.value = null;
+    try {
+      const response = await api.post(`/admin/users/${resetPwOrg.value.owner_id}/reset-password`, {
+        new_password: resetPwForm.value.new_password,
+      });
+      if (response.data.success) {
+        resetPwSuccess.value = 'Password reset successfully.';
+        resetPwForm.value = { new_password: '' };
+      } else {
+        throw new Error(response.data.error || 'Failed to reset password');
+      }
+    } catch (err) {
+      resetPwError.value = err instanceof Error ? err.message : 'Failed to reset password';
+    } finally {
+      resettingPw.value = false;
+    }
+  };
+
+  // Delete Organization
+  const showDeleteOrgDialog = ref(false);
+  const deleteOrgTarget = ref<Organization | null>(null);
+  const deletingOrg = ref(false);
+  const deleteOrgError = ref<string | null>(null);
+  const deleteOrgConfirmName = ref('');
+
+  const openDeleteOrgDialog = (org: Organization) => {
+    deleteOrgTarget.value = org;
+    deleteOrgConfirmName.value = '';
+    deleteOrgError.value = null;
+    showDeleteOrgDialog.value = true;
+  };
+
+  const closeDeleteOrgDialog = () => {
+    showDeleteOrgDialog.value = false;
+    deleteOrgTarget.value = null;
+    deleteOrgConfirmName.value = '';
+    deleteOrgError.value = null;
+  };
+
+  const submitDeleteOrg = async () => {
+    if (!deleteOrgTarget.value) return;
+    if (deleteOrgConfirmName.value !== deleteOrgTarget.value.name) return;
+    deletingOrg.value = true;
+    deleteOrgError.value = null;
+    try {
+      const response = await api.delete(`/admin/organizations/${deleteOrgTarget.value.id}`);
+      if (response.data.success) {
+        organizations.value = organizations.value.filter((o) => o.id !== deleteOrgTarget.value!.id);
+        closeDeleteOrgDialog();
+      } else {
+        throw new Error(response.data.error || 'Failed to delete organization');
+      }
+    } catch (err) {
+      deleteOrgError.value = err instanceof Error ? err.message : 'Failed to delete organization';
+    } finally {
+      deletingOrg.value = false;
+    }
+  };
+
   const showGrantSubDialog = ref(false);
   const grantSubOrg = ref<Organization | null>(null);
   const grantingSubId = ref<number | null>(null);
@@ -697,15 +915,39 @@
   };
 
   // Cancel Subscription
-  const cancelOrgSub = async (org: Organization) => {
-    if (!confirm(`Cancel subscription for ${org.name}?`)) return;
+  const showCancelSubDialog = ref(false);
+  const cancelSubOrg = ref<Organization | null>(null);
+  const cancellingSubId = ref<number | null>(null);
+  const cancelSubError = ref<string | null>(null);
+
+  const cancelOrgSub = (org: Organization) => {
+    cancelSubOrg.value = org;
+    cancelSubError.value = null;
+    showCancelSubDialog.value = true;
+  };
+
+  const closeCancelSubDialog = () => {
+    showCancelSubDialog.value = false;
+    cancelSubOrg.value = null;
+    cancelSubError.value = null;
+  };
+
+  const confirmCancelOrgSub = async () => {
+    if (!cancelSubOrg.value) return;
+    cancellingSubId.value = cancelSubOrg.value.id;
+    cancelSubError.value = null;
     try {
-      const response = await api.post(`/admin/organizations/${org.id}/subscription/cancel`);
+      const response = await api.post(`/admin/organizations/${cancelSubOrg.value.id}/subscription/cancel`);
       if (response.data.success) {
+        closeCancelSubDialog();
         fetchOrganizations();
+      } else {
+        throw new Error(response.data.error || 'Failed to cancel subscription');
       }
     } catch (err) {
-      console.error('Failed to cancel subscription:', err);
+      cancelSubError.value = err instanceof Error ? err.message : 'Failed to cancel subscription';
+    } finally {
+      cancellingSubId.value = null;
     }
   };
 
@@ -1604,5 +1846,93 @@
   .dialog-leave-to {
     opacity: 0;
     transform: scale(0.98);
+  }
+
+  /* ===== New action button variants ===== */
+  .admin-orgs__set-credits-btn--pw {
+    background-color: rgba(6, 182, 212, 0.12);
+    color: #22d3ee;
+    border: 1px solid rgba(6, 182, 212, 0.25);
+  }
+
+  .admin-orgs__set-credits-btn--pw:hover {
+    background-color: rgba(6, 182, 212, 0.22);
+  }
+
+  .admin-orgs__set-credits-btn--delete {
+    background-color: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+  }
+
+  .admin-orgs__set-credits-btn--delete:hover {
+    background-color: rgba(239, 68, 68, 0.22);
+  }
+
+  /* ===== Danger accent / icon variants ===== */
+  .admin-orgs__modal-accent--danger {
+    background: linear-gradient(90deg, rgba(239, 68, 68, 0.8), rgba(239, 68, 68, 0.3));
+  }
+
+  .admin-orgs__modal-icon--danger {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  /* ===== Danger primary button ===== */
+  .admin-orgs__modal-btn--danger {
+    background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%);
+    color: white;
+  }
+
+  .admin-orgs__modal-btn--danger:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  /* ===== Warning box (delete dialog) ===== */
+  .admin-orgs__modal-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    border-radius: 8px;
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    color: #f87171;
+  }
+
+  .admin-orgs__modal-warning-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .admin-orgs__modal-warning-text {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  /* ===== Org name emphasis in delete label ===== */
+  .admin-orgs__modal-org-name {
+    color: var(--sidebar-text);
+    font-weight: 700;
+  }
+
+  /* ===== Success box (reset pw dialog) ===== */
+  .admin-orgs__modal-success {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.875rem;
+    border-radius: 8px;
+    background-color: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+  }
+
+  .admin-orgs__modal-success-text {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    margin: 0;
   }
 </style>

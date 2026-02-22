@@ -93,7 +93,7 @@ export function useTranscriptionOnly() {
         message: 'Initializing transcription...',
       };
 
-      const { chunkDurationMinutes = 10, overlapSeconds = 30 } = options;
+      const { chunkDurationMinutes = 25, overlapSeconds = 30 } = options;
 
       // Get project video
       const rawVideos = await getRawVideosByProjectId(projectId);
@@ -209,21 +209,16 @@ export function useTranscriptionOnly() {
     const { storeChunkTranscription } = transcriptCache;
     const totalChunks = chunks.length;
 
-    for (let i = 0; i < totalChunks; i++) {
-      checkCancelled();
+    let completedChunks = 0;
 
-      const chunk = chunks[i];
+    const transcribeChunk = async (chunk: AudioChunk, i: number): Promise<void> => {
+      checkCancelled();
 
       if (transcribedChunkIds.has(chunk.chunk_id)) {
         console.log(`[TranscriptionOnly] Chunk ${chunk.chunk_id} already transcribed, skipping.`);
-        continue;
+        completedChunks++;
+        return;
       }
-
-      progress.value = {
-        stage: 'transcribing_chunks',
-        progress: 30 + (i / totalChunks) * 50, // 30% to 80%
-        message: `Transcribing chunk ${i + 1}/${totalChunks}...`,
-      };
 
       // Convert base64 to File
       const binaryString = atob(chunk.base64_data);
@@ -243,7 +238,6 @@ export function useTranscriptionOnly() {
         formData.append('organization_id', currentOrganizationId.toString());
       }
 
-      // Retry logic
       const maxRetries = 3;
       let lastError: Error | null = null;
       let transcript: any = null;
@@ -276,11 +270,6 @@ export function useTranscriptionOnly() {
             console.log(
               `[TranscriptionOnly] Chunk ${i + 1} failed (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`
             );
-            progress.value = {
-              stage: 'transcribing_chunks',
-              progress: 30 + (i / totalChunks) * 50,
-              message: `Chunk ${i + 1} failed, retrying (${attempt + 2}/${maxRetries})...`,
-            };
             await new Promise((resolve) => setTimeout(resolve, delay));
           } else {
             throw lastError;
@@ -295,7 +284,6 @@ export function useTranscriptionOnly() {
         );
       }
 
-      // Store chunk result
       const storeResult = await storeChunkTranscription(
         sessionId,
         i,
@@ -308,6 +296,22 @@ export function useTranscriptionOnly() {
       if (!storeResult.success) {
         throw new Error(storeResult.error || `Failed to store chunk ${i + 1} transcription`);
       }
+
+      completedChunks++;
+      progress.value = {
+        stage: 'transcribing_chunks',
+        progress: 30 + (completedChunks / totalChunks) * 50, // 30% to 80%
+        message: `Transcribed ${completedChunks}/${totalChunks} chunks...`,
+      };
+    };
+
+    // Run transcription in parallel with a concurrency limit of 3
+    const CONCURRENCY = 3;
+    const chunksToProcess = chunks.map((chunk, i) => ({ chunk, i }));
+    for (let start = 0; start < chunksToProcess.length; start += CONCURRENCY) {
+      checkCancelled();
+      const batch = chunksToProcess.slice(start, start + CONCURRENCY);
+      await Promise.all(batch.map(({ chunk, i }) => transcribeChunk(chunk, i)));
     }
   }
 

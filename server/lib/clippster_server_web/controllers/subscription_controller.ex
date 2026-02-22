@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.SubscriptionController do
   alias ClippsterServer.Subscriptions
   alias ClippsterServer.Accounts
   alias ClippsterServer.PromoCodes
+  alias ClippsterServer.Affiliates
 
   @doc """
   Get subscription status for the authenticated user.
@@ -264,6 +265,7 @@ defmodule ClippsterServerWeb.SubscriptionController do
       }
 
       # Add promo code to Stripe session if valid
+      # Promo codes take priority over affiliate referral discounts
       base_session_params =
         case promo_code_info do
           {:ok, promo} ->
@@ -273,7 +275,8 @@ defmodule ClippsterServerWeb.SubscriptionController do
             |> update_in([:metadata], &Map.put(&1, :promo_code, promo.code))
 
           _ ->
-            base_session_params
+            # No promo code — check if user was referred by an affiliate with a discount
+            apply_affiliate_referral_discount(base_session_params, user)
         end
 
       # Add customer info - either existing customer ID or email for new customer
@@ -351,6 +354,66 @@ defmodule ClippsterServerWeb.SubscriptionController do
         conn
         |> put_status(400)
         |> json(%{success: false, error: "Invalid subscription tier"})
+    end
+  end
+
+  # Applies an affiliate referral discount to the Stripe checkout session if the
+  # user was referred by an affiliate with discount_enabled: true.
+  # Only called when no promo code is present (promo codes take priority).
+  defp apply_affiliate_referral_discount(session_params, user) do
+    require Logger
+
+    with affiliate_id when not is_nil(affiliate_id) <- user.referred_by_affiliate_id,
+         %{status: "active", discount_enabled: true} = affiliate <- Affiliates.get_affiliate(affiliate_id),
+         pct when not is_nil(pct) <- affiliate.first_month_discount_pct,
+         true <- Decimal.gt?(pct, Decimal.new("0")) do
+
+      # Determine Stripe coupon duration based on affiliate discount_type
+      {duration, duration_in_months} =
+        case affiliate.discount_type do
+          "recurring" ->
+            recurring_pct = affiliate.recurring_discount_pct || Decimal.new("0")
+            if Decimal.gt?(recurring_pct, Decimal.new("0")) do
+              # Use recurring_discount_pct for ongoing discount
+              {"forever", nil}
+            else
+              {"once", nil}
+            end
+
+          "tiered" ->
+            # First month at first_month_discount_pct, then recurring_discount_pct
+            # We apply first_month here; Stripe doesn't support tiered natively,
+            # so we use "once" for the first month only
+            {"once", nil}
+
+          _ ->
+            # "one_time" or nil — discount applies to first payment only
+            {"once", nil}
+        end
+
+      pct_int = pct |> Decimal.round(0) |> Decimal.to_integer()
+
+      coupon_params =
+        %{
+          percent_off: pct_int,
+          duration: duration,
+          name: "Affiliate Referral Discount (#{pct_int}%)"
+        }
+        |> then(fn p ->
+          if duration_in_months, do: Map.put(p, :duration_in_months, duration_in_months), else: p
+        end)
+
+      case Stripe.Coupon.create(coupon_params) do
+        {:ok, coupon} ->
+          Logger.info("[Affiliates] Applied #{pct_int}% referral discount coupon #{coupon.id} for user #{user.id} (affiliate #{affiliate_id})")
+          Map.put(session_params, :discounts, [%{coupon: coupon.id}])
+
+        {:error, reason} ->
+          Logger.error("[Affiliates] Failed to create referral discount coupon: #{inspect(reason)}")
+          session_params
+      end
+    else
+      _ -> session_params
     end
   end
 

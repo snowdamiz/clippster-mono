@@ -119,7 +119,7 @@ export function useOrganization() {
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 
   // Computed
-  const isAdmin = state.role === 'owner' || state.role === 'admin'
+  const isAdmin = state.role === 'owner' || state.role === 'admin' || auth.user?.is_admin === true
   const isOwner = state.role === 'owner'
   const poolBalance = useMemo(() => {
     const val = parseFloat(state.credits.hoursRemaining)

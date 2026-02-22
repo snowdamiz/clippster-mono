@@ -9,7 +9,8 @@ import Config
 
 config :clippster_server,
   ecto_repos: [ClippsterServer.Repo],
-  generators: [timestamp_type: :utc_datetime]
+  generators: [timestamp_type: :utc_datetime],
+  enforce_org_subscription: true
 
 # Configures the endpoint
 config :clippster_server, ClippsterServerWeb.Endpoint,

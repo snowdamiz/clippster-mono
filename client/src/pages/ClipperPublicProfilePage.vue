@@ -167,15 +167,14 @@
                     <div v-else class="portfolio-item__thumbnail-placeholder">
                       <Video class="portfolio-item__thumbnail-icon" />
                     </div>
-                    <a
-                      :href="clip.video_url"
-                      target="_blank"
+                    <button
+                      @click="openVideoPlayer(clip)"
                       class="portfolio-item__overlay"
                     >
                       <div class="portfolio-item__play">
                         <Play class="portfolio-item__play-icon" />
                       </div>
-                    </a>
+                    </button>
                   </div>
                   <div class="portfolio-item__info">
                     <div class="portfolio-item__title">{{ clip.title || 'Untitled' }}</div>
@@ -299,6 +298,35 @@
         </div>
       </div>
     </PageLayout>
+
+    <!-- Video Player Modal -->
+    <Teleport to="body">
+      <Transition name="video-modal">
+        <div v-if="showVideoPlayer && selectedClip" class="video-modal__overlay" @click.self="closeVideoPlayer">
+          <div class="video-modal">
+            <div class="video-modal__header">
+              <span class="video-modal__title">{{ selectedClip.title || 'Untitled' }}</span>
+              <button class="video-modal__close" @click="closeVideoPlayer">
+                <X :size="18" />
+              </button>
+            </div>
+            <div class="video-modal__body">
+              <div v-if="loadingVideo" class="video-modal__loading">
+                <div class="video-modal__spinner"></div>
+              </div>
+              <video
+                v-else-if="videoPlaybackUrl"
+                :src="videoPlaybackUrl"
+                controls
+                autoplay
+                class="video-modal__video"
+                @click.stop
+              />
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Endorsement Dialog -->
     <Teleport to="body">
@@ -433,6 +461,7 @@
     getClipperBySlug,
     createEndorsement,
     type ClipperProfile,
+    type PortfolioClip,
     getExperienceLevelLabel,
     getSpecialtyTagLabel,
     getContentStyleTagLabel,
@@ -440,6 +469,7 @@
     getLanguageName,
     getBadgeLabel,
     getBadgeColor,
+    getPublicPortfolioClipPresignedUrl,
   } from '@/services/clipperProfilesApi';
   import { useToast } from '@/composables/useToast';
   import { formatLastActive, isOnline } from '@/utils/timeUtils';
@@ -473,6 +503,38 @@
     crumbs.push({ label: profile.value?.display_name || 'Profile' });
     return crumbs;
   });
+
+  // Video player state
+  const showVideoPlayer = ref(false);
+  const selectedClip = ref<PortfolioClip | null>(null);
+  const videoPlaybackUrl = ref<string | null>(null);
+  const loadingVideo = ref(false);
+
+  const openVideoPlayer = async (clip: PortfolioClip) => {
+    selectedClip.value = clip;
+    showVideoPlayer.value = true;
+    videoPlaybackUrl.value = null;
+    loadingVideo.value = true;
+    try {
+      const slug = profile.value?.slug;
+      if (slug) {
+        const url = await getPublicPortfolioClipPresignedUrl(slug, clip.id);
+        videoPlaybackUrl.value = url ?? clip.video_url;
+      } else {
+        videoPlaybackUrl.value = clip.video_url;
+      }
+    } catch {
+      videoPlaybackUrl.value = clip.video_url;
+    } finally {
+      loadingVideo.value = false;
+    }
+  };
+
+  const closeVideoPlayer = () => {
+    showVideoPlayer.value = false;
+    selectedClip.value = null;
+    videoPlaybackUrl.value = null;
+  };
 
   // Endorsement dialog state
   const showEndorsementDialog = ref(false);
@@ -1123,6 +1185,9 @@
     justify-content: center;
     opacity: 0;
     transition: opacity 180ms ease;
+    border: none;
+    cursor: pointer;
+    width: 100%;
   }
 
   .portfolio-item:hover .portfolio-item__overlay {
@@ -1164,6 +1229,109 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* Video Player Modal */
+  .video-modal__overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1.5rem;
+  }
+
+  .video-modal {
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 900px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  }
+
+  .video-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .video-modal__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .video-modal__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 150ms ease;
+  }
+
+  .video-modal__close:hover {
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .video-modal__body {
+    background: #000;
+    aspect-ratio: 16 / 9;
+  }
+
+  .video-modal__video {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .video-modal__loading {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+
+  .video-modal__spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid rgba(255, 255, 255, 0.15);
+    border-top-color: var(--sidebar-accent);
+    border-radius: 50%;
+    animation: video-spin 0.7s linear infinite;
+  }
+
+  @keyframes video-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .video-modal-enter-active,
+  .video-modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .video-modal-enter-from,
+  .video-modal-leave-to {
+    opacity: 0;
   }
 
   /* Endorsements Section */

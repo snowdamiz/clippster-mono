@@ -345,19 +345,19 @@ interface UploadPortfolioClipResponse {
 
 /**
  * Upload a portfolio clip video file to R2 storage.
- * Max file size: 100MB
+ * Max file size: 200MB
  */
 export async function uploadPortfolioClip(
   file: File,
   title?: string,
   thumbnail?: File
 ): Promise<UploadPortfolioClipResponse> {
-  // Validate file size (100MB max)
-  const MAX_SIZE = 100 * 1024 * 1024; // 100MB in bytes
+  // Validate file size (200MB max)
+  const MAX_SIZE = 200 * 1024 * 1024; // 200MB in bytes
   if (file.size > MAX_SIZE) {
     return {
       success: false,
-      error: `File size exceeds 100MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`,
+      error: `File size exceeds 200MB limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB`,
     };
   }
 
@@ -382,6 +382,32 @@ export async function uploadPortfolioClip(
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to upload portfolio clip',
     };
+  }
+}
+
+// ============================================================================
+// Presigned URL API (for video playback - bypasses R2 native URL auth)
+// ============================================================================
+
+export async function getPortfolioClipPresignedUrl(clipId: number): Promise<string | null> {
+  try {
+    const response = await api.get<{ success: boolean; url: string }>(
+      `/user/clipper-profile/portfolio-clips/${clipId}/presigned-url`
+    );
+    return response.data.success ? response.data.url : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getPublicPortfolioClipPresignedUrl(slug: string, clipId: number): Promise<string | null> {
+  try {
+    const response = await api.get<{ success: boolean; url: string }>(
+      `/clippers/${slug}/portfolio-clips/${clipId}/presigned-url`
+    );
+    return response.data.success ? response.data.url : null;
+  } catch {
+    return null;
   }
 }
 

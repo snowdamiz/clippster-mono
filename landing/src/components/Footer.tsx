@@ -110,7 +110,7 @@ export function Footer() {
           <div className="flex items-center gap-6 text-xs text-zinc-600">
             <Link to="/privacy" className="hover:text-cyan-400 transition-colors">Privacy Policy</Link>
             <Link to="/terms" className="hover:text-cyan-400 transition-colors">Terms of Service</Link>
-            <Link to="/login" className="flex items-center gap-1.5 hover:text-zinc-400 transition-colors">
+            <Link to="/dashboard" className="flex items-center gap-1.5 hover:text-zinc-400 transition-colors">
               <Building2 className="w-3 h-3" />
               Organization Portal
             </Link>
