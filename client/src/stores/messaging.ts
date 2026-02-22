@@ -93,6 +93,10 @@ export const useMessagingStore = defineStore('messaging', () => {
     isLoading.value = true;
 
     try {
+      messagingSocket.setOnConnectionStateChange((connected) => {
+        isSocketConnected.value = connected;
+      });
+
       // Connect to WebSocket
       await messagingSocket.connect(authStore.token, authStore.user.id);
       isSocketConnected.value = true;
@@ -341,8 +345,12 @@ export const useMessagingStore = defineStore('messaging', () => {
       throw new Error('Not authenticated');
     }
 
+    messagingSocket.setOnConnectionStateChange((connected) => {
+      isSocketConnected.value = connected;
+    });
+
     // Initialize WebSocket connection if not connected
-    if (!isSocketConnected.value) {
+    if (!messagingSocket.isConnected()) {
       await messagingSocket.connect(authStore.token, authStore.user.id);
       isSocketConnected.value = true;
 
@@ -370,8 +378,12 @@ export const useMessagingStore = defineStore('messaging', () => {
       throw new Error('Not authenticated');
     }
 
+    messagingSocket.setOnConnectionStateChange((connected) => {
+      isSocketConnected.value = connected;
+    });
+
     // Initialize WebSocket connection if not connected
-    if (!isSocketConnected.value) {
+    if (!messagingSocket.isConnected()) {
       await messagingSocket.connect(authStore.token, authStore.user.id);
       isSocketConnected.value = true;
 
@@ -491,6 +503,7 @@ export const useMessagingStore = defineStore('messaging', () => {
    * Cleanup and disconnect.
    */
   function cleanup() {
+    messagingSocket.setOnConnectionStateChange(null);
     messagingSocket.disconnect();
     isSocketConnected.value = false;
     conversations.value.clear();
