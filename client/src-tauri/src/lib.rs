@@ -721,8 +721,33 @@ pub fn run() {
                 video_server::start_video_server_impl().await;
             });
 
-            // Get the main window (defined in tauri.conf.json)
-            let window = app.get_webview_window("main").unwrap();
+            // Create main window programmatically (required for localhost plugin)
+            // In dev mode, use the default devUrl from tauri.conf.json
+            // In production, serve from localhost to bypass LNA restrictions
+            #[cfg(dev)]
+            let url = WebviewUrl::App("/".into());
+            
+            #[cfg(not(dev))]
+            let url = {
+                // Pick random unused port and initialize localhost plugin
+                let port = portpicker::pick_unused_port().expect("failed to find unused port");
+                app.handle().plugin(tauri_plugin_localhost::Builder::new(port).build())
+                    .expect("failed to initialize localhost plugin");
+                
+                let url_str = format!("http://localhost:{}", port);
+                println!("[Rust] Production mode: serving frontend from {}", url_str);
+                WebviewUrl::External(url_str.parse().unwrap())
+            };
+
+            let window = WebviewWindowBuilder::new(app, "main", url)
+                .title("Clippster")
+                .inner_size(1280.0, 720.0)
+                .min_inner_size(800.0, 600.0)
+                .decorations(false)
+                .transparent(true)
+                .visible(false)
+                .build()
+                .expect("failed to create main window");
 
             // Enable devtools in production for debugging
             #[cfg(feature = "devtools")]
