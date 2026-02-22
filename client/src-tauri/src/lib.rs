@@ -858,6 +858,7 @@ commands::file_utils::generate_video_thumbnail,
             audio::extract_audio_from_video,
             audio::extract_and_chunk_audio,
             audio::extract_audio_to_file,
+            audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
 
             // Waveform commands

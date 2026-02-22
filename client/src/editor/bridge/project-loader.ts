@@ -198,35 +198,37 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 }
 
 /**
- * Probe video/image dimensions from a URL.
+ * Probe video/image dimensions from a file path.
  * Returns { width, height } or null if probing fails.
+ * Uses FFmpeg probe via Tauri command to avoid browser network restrictions.
  */
-async function probeMediaDimensions(url: string, mediaType: "video" | "audio" | "image"): Promise<{ width: number; height: number } | null> {
+async function probeMediaDimensions(filePath: string, mediaType: "video" | "audio" | "image"): Promise<{ width: number; height: number } | null> {
 	if (mediaType === "audio") return null;
-	return new Promise((resolve) => {
-		const timeout = setTimeout(() => resolve(null), 5000);
-		if (mediaType === "video") {
-			const video = document.createElement("video");
-			video.preload = "metadata";
-			video.onloadedmetadata = () => {
-				clearTimeout(timeout);
-				const w = video.videoWidth;
-				const h = video.videoHeight;
-				video.src = "";
-				resolve(w > 0 && h > 0 ? { width: w, height: h } : null);
-			};
-			video.onerror = () => { clearTimeout(timeout); resolve(null); };
-			video.src = url;
-		} else {
+	
+	if (mediaType === "video") {
+		try {
+			const result = await invoke<{ is_valid: boolean; width?: number; height?: number }>("validate_video_file", { filePath });
+			if (result.is_valid && result.width && result.height) {
+				return { width: result.width, height: result.height };
+			}
+		} catch (err) {
+			console.warn(`[project-loader] Failed to probe video dimensions for ${filePath}:`, err);
+		}
+		return null;
+	} else {
+		// For images, use browser Image element (images don't trigger LNA since they're loaded via asset protocol elsewhere)
+		return new Promise((resolve) => {
+			const timeout = setTimeout(() => resolve(null), 5000);
 			const img = new Image();
 			img.onload = () => {
 				clearTimeout(timeout);
 				resolve(img.naturalWidth > 0 ? { width: img.naturalWidth, height: img.naturalHeight } : null);
 			};
 			img.onerror = () => { clearTimeout(timeout); resolve(null); };
-			img.src = url;
-		}
-	});
+			// Convert file path to asset URL for image loading
+			img.src = `https://asset.localhost/${encodeURIComponent(filePath)}`;
+		});
+	}
 }
 
 /**
@@ -255,7 +257,7 @@ async function buildMediaAssetsFromSources(
 			type: mediaType === "video" ? "video/mp4" : mediaType === "audio" ? "audio/mpeg" : "image/jpeg",
 		});
 
-		const dims = await probeMediaDimensions(url, mediaType);
+		const dims = await probeMediaDimensions(source.source_path, mediaType);
 
 		assets.push({
 			id: source.id,
