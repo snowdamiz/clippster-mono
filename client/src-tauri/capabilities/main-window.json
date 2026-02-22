@@ -3,6 +3,12 @@
   "identifier": "main-window-permissions",
   "description": "Permissions for the main application window",
   "windows": ["main"],
+  "remote": {
+    "urls": [
+      "http://localhost:*",
+      "http://127.0.0.1:*"
+    ]
+  },
   "permissions": [
     "core:window:default",
     "core:window:allow-unminimize",
