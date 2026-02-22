@@ -254,6 +254,16 @@ export class RendererManager {
 			// Call Tauri FFmpeg export command
 			await invoke("export_video_editor_project", { config });
 
+			onProgress?.({ progress: 0.95 });
+
+			// Create clip in database for Built clips section
+			await this.createClipFromExport({
+				outputPath,
+				duration,
+				projectName: activeProject.metadata.name,
+				sourceProjectId: activeProject.settings?.sourceProjectId ?? activeProject.metadata.id,
+			});
+
 			onProgress?.({ progress: 1.0 });
 
 			return {
@@ -788,6 +798,55 @@ export class RendererManager {
 		}
 
 		return result;
+	}
+
+	/**
+	 * Create a clip record in the database after successful export.
+	 * This makes the exported video appear in the Built clips section.
+	 */
+	private async createClipFromExport({
+		outputPath,
+		duration,
+		projectName,
+		sourceProjectId,
+	}: {
+		outputPath: string;
+		duration: number;
+		projectName: string;
+		sourceProjectId: string;
+	}): Promise<void> {
+		try {
+			const { createClip } = await import("@/services/database/clips");
+			const { invoke } = await import("@tauri-apps/api/core");
+
+			// Generate thumbnail from the exported video at 1 second
+			const thumbnailTimestamp = Math.min(1.0, duration / 2);
+			let thumbnailPath: string | null = null;
+
+			try {
+				thumbnailPath = await invoke<string>("generate_thumbnail", {
+					videoPath: outputPath,
+					timestamp: thumbnailTimestamp,
+				});
+			} catch (err) {
+				console.warn("[RendererManager] Failed to generate thumbnail:", err);
+				// Non-fatal - clip will be created without thumbnail
+			}
+
+			// Create clip in database
+			await createClip(sourceProjectId, outputPath, {
+				name: projectName,
+				duration,
+				thumbnailPath: thumbnailPath ?? undefined,
+				startTime: 0,
+				endTime: duration,
+			});
+
+			console.log("[RendererManager] Created clip in database:", outputPath);
+		} catch (err) {
+			console.error("[RendererManager] Failed to create clip in database:", err);
+			// Non-fatal - export succeeded, just clip creation failed
+		}
 	}
 
 	subscribe(listener: () => void): () => void {
