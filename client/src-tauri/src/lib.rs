@@ -711,7 +711,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         // Localhost plugin - serves frontend from http://localhost in production to bypass LNA
-        .plugin(tauri_plugin_localhost::Builder::new(portpicker::pick_unused_port().expect("failed to find unused port")).build())
         .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
         .setup(|app| {
             println!("[Rust] Application setup complete");
@@ -731,8 +730,13 @@ pub fn run() {
             
             #[cfg(not(dev))]
             let url = {
-                let port = 1420; // Match dev mode port for consistency
+                // Pick random unused port and initialize localhost plugin
+                let port = portpicker::pick_unused_port().expect("failed to find unused port");
+                app.handle().plugin(tauri_plugin_localhost::Builder::new(port).build())
+                    .expect("failed to initialize localhost plugin");
+                
                 let url_str = format!("http://localhost:{}", port);
+                println!("[Rust] Production mode: serving frontend from {}", url_str);
                 WebviewUrl::External(url_str.parse().unwrap())
             };
 
