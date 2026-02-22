@@ -101,6 +101,12 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 			}
 		}
 
+		// Load transcript data from source project if available
+		const finalProject = editor.project.getActive();
+		if (finalProject?.settings?.sourceProjectId) {
+			await loadTranscriptData(finalProject.settings.sourceProjectId);
+		}
+
 		// Backfill missing media asset dimensions (for projects saved before dimension probing was added)
 		try {
 			const assets = editor.media.getAssets();
@@ -193,6 +199,11 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 
 	// Resolve creator profile for branding config
 	await resolveAndInitBranding(sources);
+
+	// Load transcript data from source project if available
+	if (sourceProjectId) {
+		await loadTranscriptData(sourceProjectId);
+	}
 
 	return editor;
 }
@@ -444,5 +455,38 @@ async function resolveAndInitBranding(sources: VideoEditorSource[]): Promise<voi
 		branding.initFromCreatorProfile(profile);
 	} catch (error) {
 		console.warn("[bridge] Failed to resolve creator profile for branding:", error);
+	}
+}
+
+/**
+ * Load transcript data from the source project and set it in the transcript manager.
+ * This enables text-based editing in the transcript panel.
+ */
+async function loadTranscriptData(sourceProjectId: string): Promise<void> {
+	try {
+		const { getTranscriptWithSegmentsByProjectId } = await import("@/services/database/transcripts");
+		const { parseTranscriptToWords } = await import("@/utils/timelineUtils");
+		
+		const { transcript } = await getTranscriptWithSegmentsByProjectId(sourceProjectId);
+		
+		if (transcript && transcript.raw_json) {
+			const words = parseTranscriptToWords(transcript.raw_json);
+			
+			if (words.length > 0) {
+				const editor = EditorCore.getInstance();
+				const transcriptWords = words.map((w: any) => ({
+					word: w.word || w.text || String(w),
+					start: w.start || w.begin || 0,
+					end: w.end || w.finish || 0,
+					confidence: w.confidence,
+				}));
+				
+				editor.transcript.setWords(transcriptWords);
+				console.log("[bridge] Loaded transcript with", transcriptWords.length, "words from source project");
+			}
+		}
+	} catch (error) {
+		console.warn("[bridge] Failed to load transcript data:", error);
+		// Non-fatal — user can generate transcript manually
 	}
 }

@@ -33,7 +33,7 @@ const props = defineProps<{
 }>();
 
 const { editor, version } = useEditor();
-const { allFonts, ensureFontLoaded } = useFontManager();
+const { allFonts, ensureFontLoaded, uploadCustomFont } = useFontManager();
 
 // ── Top-level tabs (CapCut style) ──
 type TopTab = "captions" | "text" | "animation";
@@ -445,6 +445,15 @@ const captionText = computed(() => {
 const wordCount = computed(() => {
 	return props.element.lines.reduce((sum, l) => sum + l.words.length, 0);
 });
+
+// ── Upload custom font ──
+async function handleUploadFont() {
+	const font = await uploadCustomFont();
+	if (font) {
+		// Apply the newly uploaded font to the caption
+		update({ fontFamily: font.family, fontFilePath: font.filePath });
+	}
+}
 </script>
 
 <template>
@@ -619,7 +628,17 @@ const wordCount = computed(() => {
 
 				<!-- ── Font section ── -->
 				<div class="space-y-2 border-t border-white/5 pt-3">
-					<span class="text-zinc-400 font-medium">Font</span>
+					<div class="flex items-center justify-between">
+						<span class="text-zinc-400 font-medium">Font</span>
+						<button
+							@click="handleUploadFont"
+							class="flex items-center gap-1 px-2 py-1 text-[10px] text-sky-400 hover:text-sky-300 bg-sky-500/10 rounded transition-colors border border-sky-500/20"
+							title="Upload custom font"
+						>
+							<Plus class="size-3" />
+							Upload Font
+						</button>
+					</div>
 
 					<!-- Font family -->
 					<Select :model-value="element.fontFamily" @update:model-value="(v) => selectFont(String(v))">

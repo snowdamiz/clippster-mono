@@ -155,24 +155,24 @@ function generateCaptionElements(words: CaptionWord[]) {
 
 	const preset = selectedPreset.value;
 	const maxPerLine = preset.maxWordsPerLine;
-	const linesPerElement = 2;
 
 	// 1. Split words into speech segments separated by silence gaps
 	const speechSegments = splitWordsBySilence(words);
 
 	// 2. For each speech segment, group words → lines → elements
+	// IMPORTANT: Each element contains ONE line only, so captions only show when speech is active
 	const allElements: { lines: CaptionLine[]; start: number; end: number }[] = [];
 
 	for (const segWords of speechSegments) {
 		const lines = groupWordsIntoLines(segWords, maxPerLine);
 		if (lines.length === 0) continue;
 
-		for (let i = 0; i < lines.length; i += linesPerElement) {
-			const group = lines.slice(i, i + linesPerElement);
+		// Create one element per line (not multiple lines per element)
+		for (const line of lines) {
 			allElements.push({
-				lines: group,
-				start: group[0].startTime,
-				end: group[group.length - 1].endTime,
+				lines: [line],
+				start: line.startTime,
+				end: line.endTime,
 			});
 		}
 	}
