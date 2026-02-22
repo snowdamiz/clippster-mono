@@ -97,9 +97,9 @@
                       >
                         {{ liveCount > 99 ? '99+' : liveCount }}
                       </span>
-                      <!-- Live badge for Creators (icon badge when collapsed) -->
+                      <!-- Live badge for My Creators (icon badge when collapsed) -->
                       <span
-                        v-if="item.name === 'Creators' && liveCreatorsCount > 0 && isCollapsed"
+                        v-if="item.name === 'My Creators' && liveCreatorsCount > 0 && isCollapsed"
                         class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-lg"
                       >
                         {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
@@ -120,9 +120,9 @@
                     >
                       {{ liveCount > 99 ? '99+' : liveCount }}
                     </span>
-                    <!-- Live badge for Creators (right side when expanded) -->
+                    <!-- Live badge for My Creators (right side when expanded) -->
                     <span
-                      v-if="item.name === 'Creators' && liveCreatorsCount > 0 && !isCollapsed"
+                      v-if="item.name === 'My Creators' && liveCreatorsCount > 0 && !isCollapsed"
                       class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-md"
                     >
                       {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
