@@ -2,7 +2,8 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import type { VideoElement } from "../../../types/timeline";
-import { DeleteTranscriptWordsCommand, UpdateTranscriptWordCommand, ReorderTranscriptWordsCommand } from "../../../lib/commands/transcript";
+import { DeleteTranscriptWordsCommand, UpdateTranscriptWordCommand, ReorderTranscriptWordsCommand, SyncTimelineToTranscriptCommand } from "../../../lib/commands/transcript";
+import ConfirmDialog from "../../dialogs/ConfirmDialog.vue";
 import {
 	FileText,
 	Loader2,
@@ -17,6 +18,7 @@ import {
 	GripVertical,
 	Check,
 	Undo2,
+	RefreshCw,
 } from "lucide-vue-next";
 
 // ── Types ──
@@ -41,6 +43,8 @@ const { editor, version } = useEditor();
 const words = ref<TranscriptWord[]>([]);
 const loading = ref(false);
 const error = ref<string | null>(null);
+const isGenerating = ref(false);
+const generatingStep = ref("");
 
 // Subscribe to transcript manager changes
 let unsubscribe: (() => void) | null = null;
@@ -82,6 +86,13 @@ let searchDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
 // Drag reorder state
 const draggingParagraphId = ref<string | null>(null);
 const dragOverParagraphId = ref<string | null>(null);
+
+// Confirmation dialog state
+const showDeleteConfirm = ref(false);
+const pendingDeleteAction = ref<(() => void) | null>(null);
+
+// Timeline highlight state
+const hoveredParagraphId = ref<string | null>(null);
 
 // ── Computed ──
 
@@ -285,12 +296,211 @@ async function loadTranscript() {
 			return;
 		}
 
-		error.value = "No transcript available. Generate subtitles in the Captions tab first, or transcribe the project in the workspace.";
+		error.value = "No transcript available. Click 'Generate Transcript' to create one.";
 	} catch (err) {
 		console.error("[TranscriptView] Failed to load transcript:", err);
 		error.value = "Failed to load transcript data.";
 	} finally {
 		loading.value = false;
+	}
+}
+
+// Save transcript to database for persistence
+async function saveTranscriptToDatabase(transcriptWords: TranscriptWord[]) {
+	try {
+		const activeProject = editor.project.getActive();
+		if (!activeProject) return;
+
+		const sourceProjectId = activeProject.settings?.sourceProjectId ?? activeProject.metadata.id;
+
+		// Import database functions
+		const { getRawVideosByProjectId } = await import("@/services/database/raw-videos");
+		const { createTranscript, getTranscriptByRawVideoId } = await import("@/services/database/transcripts");
+
+		// Get the raw video for this project
+		const rawVideos = await getRawVideosByProjectId(sourceProjectId);
+		if (rawVideos.length === 0) {
+			console.warn("[TranscriptView] No raw video found for project, cannot save transcript");
+			return;
+		}
+
+		const rawVideo = rawVideos[0];
+
+		// Check if transcript already exists
+		const existingTranscript = await getTranscriptByRawVideoId(rawVideo.id);
+		if (existingTranscript) {
+			console.log("[TranscriptView] Transcript already exists, skipping save");
+			return;
+		}
+
+		// Build Whisper-compatible JSON format
+		const whisperJson = {
+			segments: [{
+				id: 0,
+				start: transcriptWords[0]?.start ?? 0,
+				end: transcriptWords[transcriptWords.length - 1]?.end ?? 0,
+				text: transcriptWords.map(w => w.word).join(" "),
+				words: transcriptWords.map((w, idx) => ({
+					word: w.word,
+					start: w.start,
+					end: w.end,
+					confidence: w.confidence ?? 1.0,
+				})),
+			}],
+		};
+
+		const rawJson = JSON.stringify(whisperJson);
+		const text = transcriptWords.map(w => w.word).join(" ");
+		const duration = transcriptWords[transcriptWords.length - 1]?.end ?? 0;
+
+		// Save to database
+		await createTranscript(rawVideo.id, rawJson, text, "en", duration);
+		console.log("[TranscriptView] Transcript saved to database");
+	} catch (err) {
+		console.error("[TranscriptView] Failed to save transcript to database:", err);
+		// Non-fatal - transcript is still in memory
+	}
+}
+
+// Generate transcript from video audio (same as CaptionsView but stores words only)
+async function handleGenerateTranscript() {
+	try {
+		isGenerating.value = true;
+		error.value = null;
+		generatingStep.value = "Collecting audio from timeline...";
+
+		const activeProject = editor.project.getActive();
+		if (!activeProject) {
+			error.value = "No active project.";
+			return;
+		}
+		const projectId = activeProject.metadata.id;
+
+		const tracks = editor.timeline.getTracks();
+		const mediaAssets = editor.media.getAssets();
+
+		// Collect video elements that contain speech
+		const speechElements: Array<{
+			filePath: string;
+			timelineStart: number;
+			trimStart: number;
+			duration: number;
+		}> = [];
+
+		for (const track of tracks) {
+			if (track.type === "video") {
+				for (const el of track.elements) {
+					const videoEl = el as any;
+					const asset = mediaAssets.find((a) => a.id === videoEl.mediaId);
+					if (asset?.filePath) {
+						speechElements.push({
+							filePath: asset.filePath,
+							timelineStart: videoEl.startTime,
+							trimStart: videoEl.trimStart,
+							duration: videoEl.duration,
+						});
+					} else if (asset?.url) {
+						speechElements.push({
+							filePath: asset.url,
+							timelineStart: videoEl.startTime,
+							trimStart: videoEl.trimStart,
+							duration: videoEl.duration,
+						});
+					}
+				}
+			}
+		}
+
+		if (speechElements.length === 0) {
+			error.value = "No video tracks found on the timeline.";
+			return;
+		}
+
+		const { parseTranscriptToWords } = await import("@/utils/timelineUtils");
+		const api = (await import("@/services/api")).default;
+
+		let allWords: TranscriptWord[] = [];
+
+		for (let i = 0; i < speechElements.length; i++) {
+			const elem = speechElements[i];
+			generatingStep.value = `Transcribing ${i + 1}/${speechElements.length}...`;
+
+			try {
+				let file: File;
+				if (elem.filePath.startsWith("blob:") || elem.filePath.startsWith("http")) {
+					const resp = await fetch(elem.filePath);
+					const blob = await resp.blob();
+					file = new File([blob], "audio.mp4", { type: blob.type || "video/mp4" });
+				} else {
+					const { invoke } = await import("@tauri-apps/api/core");
+					let port: number;
+					try { port = await invoke<number>("get_video_server_port"); } catch { port = 8642; }
+					const serverUrl = `http://localhost:${port}/video/${btoa(elem.filePath)}`;
+					const resp = await fetch(serverUrl);
+					if (!resp.ok) throw new Error(`Video server returned ${resp.status}`);
+					const blob = await resp.blob();
+					file = new File([blob], "audio.mp4", { type: blob.type || "video/mp4" });
+				}
+
+				const formData = new FormData();
+				formData.append("audio", file);
+				formData.append("project_id", projectId);
+				formData.append("duration", (elem.trimStart + elem.duration).toString());
+
+				const response = await api.post("/clips/transcribe", formData, {
+					headers: { "Content-Type": undefined },
+					timeout: 120000,
+				});
+
+				if (response.data.success && response.data.transcript) {
+					const rawJson = JSON.stringify(response.data.transcript);
+					const words = parseTranscriptToWords(rawJson);
+
+					const trimEnd = elem.trimStart + elem.duration;
+					for (const w of words) {
+						if (w.start >= elem.trimStart && w.start < trimEnd) {
+							allWords.push({
+								word: w.word,
+								start: w.start - elem.trimStart + elem.timelineStart,
+								end: w.end - elem.trimStart + elem.timelineStart,
+								confidence: w.confidence,
+							});
+						}
+					}
+				}
+			} catch (err: any) {
+				console.warn("[TranscriptView] Failed to transcribe element:", err?.message || err);
+			}
+		}
+
+		if (allWords.length === 0) {
+			error.value = "Transcription returned no words. Check that the video has speech audio.";
+			return;
+		}
+
+		// Sort by timeline time and deduplicate
+		allWords.sort((a, b) => a.start - b.start);
+		allWords = allWords.filter((w, i, arr) => {
+			if (i === 0) return true;
+			return !(Math.abs(w.start - arr[i - 1].start) < 0.01 && w.word === arr[i - 1].word);
+		});
+
+		// Set words in transcript manager
+		editor.transcript.setWords(allWords);
+		words.value = allWords;
+
+		// Save transcript to database for persistence
+		generatingStep.value = "Saving transcript...";
+		await saveTranscriptToDatabase(allWords);
+
+		generatingStep.value = "";
+		error.value = null;
+	} catch (err) {
+		console.error("[TranscriptView] Failed to generate transcript:", err);
+		error.value = err instanceof Error ? err.message : "An unexpected error occurred";
+	} finally {
+		isGenerating.value = false;
+		generatingStep.value = "";
 	}
 }
 
@@ -349,7 +559,7 @@ function scrollToCurrentWord(force = false) {
 	});
 }
 
-// Word click → seek playhead
+// Word click → select word (shows delete/split actions)
 function onWordClick(word: TranscriptWord, index: number) {
 	if (editingWordIndex.value !== -1) return;
 
@@ -365,6 +575,12 @@ function onWordClick(word: TranscriptWord, index: number) {
 		return;
 	}
 
+	// Single click selects the word
+	selectionStartIndex.value = index;
+	selectionEndIndex.value = index;
+	selectionAnchorIndex.value = index;
+
+	// Also seek playhead to word
 	preventAutoscroll.value = true;
 	if (autoscrollTimeout) clearTimeout(autoscrollTimeout);
 	autoscrollTimeout = setTimeout(() => {
@@ -488,46 +704,66 @@ function deleteSelectedWords() {
 	const endWord = words.value[selectionEndIndex.value];
 	if (!startWord || !endWord) return;
 
-	// Delete using command for undo/redo
-	const command = new DeleteTranscriptWordsCommand(selectionStartIndex.value, selectionEndIndex.value);
-	editor.command.execute({ command });
-	clearSelection();
+	// Show confirmation dialog
+	pendingDeleteAction.value = () => {
+		const command = new DeleteTranscriptWordsCommand(selectionStartIndex.value, selectionEndIndex.value);
+		editor.command.execute({ command });
+		clearSelection();
+	};
+	showDeleteConfirm.value = true;
 }
 
 function commitStrikethrough() {
 	if (strikethroughIndices.value.size === 0) return;
 
-	// Collect contiguous ranges of strikethrough words
-	const sorted = Array.from(strikethroughIndices.value).sort((a, b) => a - b);
-	const ranges: { start: number; end: number }[] = [];
-	let rangeStart = sorted[0];
-	let rangeEnd = sorted[0];
+	// Show confirmation dialog
+	pendingDeleteAction.value = () => {
+		// Collect contiguous ranges of strikethrough words
+		const sorted = Array.from(strikethroughIndices.value).sort((a, b) => a - b);
+		const ranges: { start: number; end: number }[] = [];
+		let rangeStart = sorted[0];
+		let rangeEnd = sorted[0];
 
-	for (let i = 1; i < sorted.length; i++) {
-		if (sorted[i] === rangeEnd + 1) {
-			rangeEnd = sorted[i];
-		} else {
-			ranges.push({ start: rangeStart, end: rangeEnd });
-			rangeStart = sorted[i];
-			rangeEnd = sorted[i];
+		for (let i = 1; i < sorted.length; i++) {
+			if (sorted[i] === rangeEnd + 1) {
+				rangeEnd = sorted[i];
+			} else {
+				ranges.push({ start: rangeStart, end: rangeEnd });
+				rangeStart = sorted[i];
+				rangeEnd = sorted[i];
+			}
 		}
+		ranges.push({ start: rangeStart, end: rangeEnd });
+
+		// Process ranges in reverse order to maintain word indices
+		for (let i = ranges.length - 1; i >= 0; i--) {
+			const range = ranges[i];
+			const startWord = words.value[range.start];
+			const endWord = words.value[range.end];
+			if (!startWord || !endWord) continue;
+
+			// Delete using command for undo/redo
+			const command = new DeleteTranscriptWordsCommand(range.start, range.end);
+			editor.command.execute({ command });
+		}
+
+		strikethroughIndices.value = new Set();
+		strikethroughMode.value = false;
+	};
+	showDeleteConfirm.value = true;
+}
+
+function handleDeleteConfirm() {
+	if (pendingDeleteAction.value) {
+		pendingDeleteAction.value();
+		pendingDeleteAction.value = null;
 	}
-	ranges.push({ start: rangeStart, end: rangeEnd });
+	showDeleteConfirm.value = false;
+}
 
-	// Process ranges in reverse order to maintain word indices
-	for (let i = ranges.length - 1; i >= 0; i--) {
-		const range = ranges[i];
-		const startWord = words.value[range.start];
-		const endWord = words.value[range.end];
-		if (!startWord || !endWord) continue;
-
-		// Delete using command for undo/redo
-		const command = new DeleteTranscriptWordsCommand(range.start, range.end);
-		editor.command.execute({ command });
-	}
-
-	strikethroughIndices.value = new Set();
-	strikethroughMode.value = false;
+function handleDeleteCancel() {
+	pendingDeleteAction.value = null;
+	showDeleteConfirm.value = false;
 }
 
 function clearStrikethrough() {
@@ -588,6 +824,21 @@ function onParagraphDrop(event: DragEvent, targetParagraphId: string) {
 function onParagraphDragEnd() {
 	draggingParagraphId.value = null;
 	dragOverParagraphId.value = null;
+}
+
+// ── Timeline highlighting ──
+function onParagraphMouseEnter(paragraphId: string) {
+	hoveredParagraphId.value = paragraphId;
+}
+
+function onParagraphMouseLeave() {
+	hoveredParagraphId.value = null;
+}
+
+// ── Sync timeline to transcript ──
+function syncTimelineToTranscript() {
+	const command = new SyncTimelineToTranscriptCommand();
+	editor.command.execute({ command });
 }
 
 function recalculateTimestamps() {
@@ -779,6 +1030,16 @@ watch(
 			<!-- Divider -->
 			<div class="w-px h-4 bg-white/10 mx-1" />
 
+			<!-- Sync Timeline button -->
+			<button
+				v-if="words.length > 0"
+				@click="syncTimelineToTranscript"
+				class="p-1 rounded transition-colors text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+				title="Sync timeline to match transcript order"
+			>
+				<RefreshCw class="size-3.5" />
+			</button>
+
 			<!-- Strikethrough toggle -->
 			<button
 				@click="strikethroughMode = !strikethroughMode"
@@ -821,7 +1082,7 @@ watch(
 
 		<!-- Selection action bar -->
 		<div
-			v-if="selectionStartIndex !== -1 && selectionEndIndex !== -1 && selectionStartIndex !== selectionEndIndex"
+			v-if="selectionStartIndex !== -1 && selectionEndIndex !== -1"
 			class="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border-b border-blue-500/20"
 		>
 			<span class="text-[10px] text-blue-400 font-mono tabular-nums">
@@ -862,15 +1123,26 @@ watch(
 
 		<!-- Error -->
 		<div v-else-if="error" class="flex-1 flex items-center justify-center px-4">
-			<div class="text-center max-w-[200px]">
+			<div class="text-center max-w-[240px]">
 				<FileText class="size-8 text-zinc-600 mx-auto mb-3" />
-				<p class="text-xs text-zinc-400 leading-relaxed">{{ error }}</p>
-				<button
-					@click="loadTranscript"
-					class="mt-3 px-3 py-1.5 text-[10px] font-medium text-blue-400 bg-blue-500/10 rounded-md border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
-				>
-					Retry
-				</button>
+				<p class="text-xs text-zinc-400 leading-relaxed mb-3">{{ error }}</p>
+				<div class="flex items-center justify-center gap-2">
+					<button
+						@click="loadTranscript"
+						class="px-3 py-1.5 text-[10px] font-medium text-zinc-300 bg-white/5 rounded-md border border-white/10 hover:bg-white/10 transition-colors"
+					>
+						Retry
+					</button>
+					<button
+						@click="handleGenerateTranscript"
+						:disabled="isGenerating"
+						class="px-3 py-1.5 text-[10px] font-medium text-blue-400 bg-blue-500/10 rounded-md border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+					>
+						<Loader2 v-if="isGenerating" class="inline-block animate-spin size-3 mr-1" />
+						{{ isGenerating ? 'Generating...' : 'Generate Transcript' }}
+					</button>
+				</div>
+				<p v-if="generatingStep" class="text-[10px] text-zinc-500 mt-2">{{ generatingStep }}</p>
 			</div>
 		</div>
 
@@ -879,9 +1151,17 @@ watch(
 			<div class="text-center max-w-[200px]">
 				<FileText class="size-8 text-zinc-600 mx-auto mb-3" />
 				<h4 class="text-xs font-medium text-zinc-300 mb-1">No Transcript</h4>
-				<p class="text-[10px] text-zinc-500 leading-relaxed">
-					Generate subtitles in the Captions tab or transcribe the project first.
+				<p class="text-[10px] text-zinc-500 leading-relaxed mb-3">
+					Generate a transcript from the video audio to enable text-based editing.
 				</p>
+				<button
+					@click="handleGenerateTranscript"
+					:disabled="isGenerating"
+					class="px-3 py-1.5 text-[10px] font-medium text-blue-400 bg-blue-500/10 rounded-md border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					<Loader2 v-if="isGenerating" class="inline-block animate-spin size-3 mr-1" />
+					{{ isGenerating ? 'Generating...' : 'Generate Transcript' }}
+				</button>
 			</div>
 		</div>
 
@@ -899,6 +1179,7 @@ watch(
 				:class="{
 					'bg-blue-500/5 border border-blue-500/20': dragOverParagraphId === paragraph.id,
 					'opacity-50': draggingParagraphId === paragraph.id,
+					'bg-blue-500/10 border border-blue-500/30': hoveredParagraphId === paragraph.id,
 				}"
 				draggable="true"
 				@dragstart="onParagraphDragStart($event, paragraph.id)"
@@ -906,6 +1187,8 @@ watch(
 				@dragleave="onParagraphDragLeave"
 				@drop="onParagraphDrop($event, paragraph.id)"
 				@dragend="onParagraphDragEnd"
+				@mouseenter="onParagraphMouseEnter(paragraph.id)"
+				@mouseleave="onParagraphMouseLeave"
 			>
 				<!-- Paragraph header -->
 				<div class="flex items-center gap-1 mb-1">
@@ -954,5 +1237,18 @@ watch(
 				</div>
 			</div>
 		</div>
+
+		<!-- Confirmation Dialog -->
+		<ConfirmDialog
+			:open="showDeleteConfirm"
+			title="Delete Transcript Words"
+			message="This will delete the selected words from the transcript and remove the corresponding video segments from the timeline. This action can be undone."
+			confirm-text="Delete"
+			cancel-text="Cancel"
+			variant="danger"
+			@confirm="handleDeleteConfirm"
+			@cancel="handleDeleteCancel"
+			@update:open="(val) => showDeleteConfirm = val"
+		/>
 	</div>
 </template>

@@ -48,7 +48,7 @@ export const navigationGroups: Record<NavigationGroup, { label: string; order: n
 export const navigationItems: NavigationItem[] = [
   // Browse group - discovery focused
   {
-    name: 'Creators',
+    name: 'My Creators',
     path: '/creators',
     icon: Users,
     group: 'browse',
@@ -74,6 +74,12 @@ export const navigationItems: NavigationItem[] = [
     restrictedHidden: true,
     disabled: true,
     badge: 'Coming Soon',
+  },
+  {
+    name: 'Messages',
+    path: '/messages',
+    icon: MessageCircle,
+    group: 'browse',
   },
 
   // Create group - content creation tools
@@ -124,12 +130,6 @@ export const navigationItems: NavigationItem[] = [
     icon: MessageSquare,
     group: 'manage',
     restrictedHidden: true, // Hidden if restricted and no custom prompts permission
-  },
-  {
-    name: 'Messages',
-    path: '/messages',
-    icon: MessageCircle,
-    group: 'manage',
   },
   {
     name: 'Calendar',
