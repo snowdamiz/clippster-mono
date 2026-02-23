@@ -717,9 +717,9 @@
 
   const createTierOptions = [
     { value: 'solo', label: 'Solo ($149.99)' },
-    { value: 'enterprise_base', label: 'Enterprise Base ($300)' },
-    { value: 'enterprise_ai', label: 'Enterprise AI ($500)' },
-    { value: 'enterprise_unlimited', label: 'Enterprise Unlimited ($1800)' },
+    { value: 'enterprise_base', label: 'Enterprise Base ($299.99)' },
+    { value: 'enterprise_ai', label: 'Enterprise AI ($499.99)' },
+    { value: 'enterprise_unlimited', label: 'Enterprise Unlimited ($1899.99)' },
   ];
 
   const getTierDisplayName = (tierValue: string) => {
