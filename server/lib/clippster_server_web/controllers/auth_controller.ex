@@ -655,6 +655,21 @@ defmodule ClippsterServerWeb.AuthController do
         credits: %{
           hours_remaining: credits_balance.hours_remaining,
           minutes_remaining: Decimal.mult(credits_balance.hours_remaining, Decimal.new("60"))
+        },
+        preferences: %{
+          time_format_preference: user.time_format_preference || "12hr",
+          toast_enabled: user.toast_enabled,
+          toast_duration: user.toast_duration || 5000,
+          toast_position: user.toast_position || "bottom-right",
+          toast_sound_enabled: user.toast_sound_enabled,
+          toast_background_enabled: user.toast_background_enabled,
+          notify_livestream: user.notify_livestream,
+          notify_clips: user.notify_clips,
+          notify_downloads: user.notify_downloads,
+          notify_projects: user.notify_projects,
+          notify_social: user.notify_social,
+          notify_organization: user.notify_organization,
+          notify_system: user.notify_system
         }
       }
     })

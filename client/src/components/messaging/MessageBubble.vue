@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { Message } from '@/services/messagingApi';
+import { formatTime as fmtTime, formatMessageTime, formatDate as fmtDate } from '@/utils/dateTimeUtils';
 
 const props = defineProps<{
   message: Message;
@@ -22,23 +23,11 @@ const isEdited = computed(() => !!props.message.editedAt && !isDeleted.value);
 const isSystemMessage = computed(() => props.message.messageType === 'system');
 
 function formatTime(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return fmtTime(dateString);
 }
 
 function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  
-  if (diffDays === 0) {
-    return 'Today';
-  } else if (diffDays === 1) {
-    return 'Yesterday';
-  } else {
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-  }
+  return formatMessageTime(dateString);
 }
 </script>
 

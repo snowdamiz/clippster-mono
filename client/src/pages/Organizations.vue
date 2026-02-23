@@ -332,6 +332,7 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
+  import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     Building2,
     Plus,
@@ -462,12 +463,7 @@
   }
 
   function formatDate(dateString: string): string {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+    return fmtDate(dateString);
   }
 
   function handleApplyClick() {

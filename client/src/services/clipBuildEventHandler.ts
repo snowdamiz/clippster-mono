@@ -11,6 +11,7 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { updateClipBuildStatus, updateClipBuild, getClipBuilds } from './database/clip-build';
 import { getClip } from './database/clips';
+import { useToast } from '@/composables/useToast';
 import { getTranscriptByProjectId } from './database/transcripts';
 import { getDatabase, generateId, timestamp } from './database/core';
 import { invoke } from '@tauri-apps/api/core';
@@ -338,6 +339,10 @@ async function handleClipBuildComplete(event: { payload: ClipBuildCompletePayloa
       }
 
       console.log(`[GlobalClipBuildHandler] Database updated successfully for clip: ${clip_id}`);
+
+      // Show success toast
+      const { success: showSuccess } = useToast();
+      showSuccess('Clip Build Complete', 'Your clip has been built successfully', undefined, 'clips');
       
       // Copy transcript from project to clip segments for self-contained clips
       try {
@@ -375,6 +380,10 @@ async function handleClipBuildComplete(event: { payload: ClipBuildCompletePayloa
       await updateClipBuildStatus(clip_id, 'failed', {
         error: error || 'Unknown build error',
       });
+
+      // Show error toast for failed builds
+      const { error: showError } = useToast();
+      showError('Clip Build Failed', error || 'Unknown build error', undefined, 'clips');
 
       // Update clip_builds table for failed build
       try {

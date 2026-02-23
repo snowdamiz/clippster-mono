@@ -1262,6 +1262,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch, nextTick, Transition } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
+  import { formatDateTime, formatDate } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import Hls from 'hls.js';
   import {
@@ -3902,13 +3903,7 @@
   // Format build date
   function formatBuildDate(timestamp: number | null): string {
     if (!timestamp) return '';
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatDateTime(new Date(timestamp * 1000));
   }
 
   // Format file size
@@ -4168,7 +4163,7 @@
     if (projectDate.getTime() === today.getTime()) return 'Today';
     if (projectDate.getTime() === yesterday.getTime()) return 'Yesterday';
 
-    return d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    return formatDate(d);
   }
 
   // Pagination functions

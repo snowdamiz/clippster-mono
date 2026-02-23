@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
+import { formatTime } from '@/utils/dateTimeUtils';
 import {
   CalendarDays,
   ChevronLeft,
@@ -298,7 +299,15 @@ function getPostContextLabel(post: ScheduledPost): string {
 }
 
 function formatEventTime(date: Date): string {
-  return date.toLocaleTimeString('default', { hour: 'numeric', minute: '2-digit' });
+  return formatTime(date);
+}
+
+function formatWeekdayShort(date: Date): string {
+  return date.toLocaleDateString('default', { weekday: 'short' });
+}
+
+function formatDayHeader(date: Date): string {
+  return date.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 // ── Navigation ──
@@ -657,7 +666,7 @@ onMounted(() => {
                 class="text-[10px] font-semibold uppercase"
                 :class="isSameDay(day, new Date()) ? 'text-blue-400' : 'text-zinc-500'"
               >
-                {{ day.toLocaleDateString('default', { weekday: 'short' }) }}
+                {{ formatWeekdayShort(day) }}
               </div>
               <div
                 class="text-lg font-bold"
@@ -705,7 +714,7 @@ onMounted(() => {
       >
         <div class="px-4 py-3 border-b border-white/10">
           <h3 class="text-sm font-semibold text-zinc-200">
-            {{ selectedDay.toLocaleDateString('default', { weekday: 'long', month: 'long', day: 'numeric' }) }}
+            {{ formatDayHeader(selectedDay) }}
           </h3>
           <p class="text-[10px] text-zinc-500 mt-0.5">
             {{ selectedDayEvents.length }} event{{ selectedDayEvents.length !== 1 ? 's' : '' }}

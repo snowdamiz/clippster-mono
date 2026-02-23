@@ -427,6 +427,7 @@
 <script setup lang="ts">
   import { ref, reactive, onMounted, computed } from 'vue';
   import { useRoute } from 'vue-router';
+  import { formatDate as fmtDate, formatDateTime } from '@/utils/dateTimeUtils';
   import {
     Handshake,
     Loader2,
@@ -609,17 +610,11 @@
   }
 
   function formatDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return fmtDate(dateStr);
   }
 
   function formatFullDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'long',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatDateTime(dateStr);
   }
 
   function formatEventType(type: string) {

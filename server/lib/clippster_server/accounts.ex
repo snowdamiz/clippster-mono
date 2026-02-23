@@ -259,6 +259,48 @@ defmodule ClippsterServer.Accounts do
   end
 
   @doc """
+  Updates a user's preferences (time format, toast notifications, etc.).
+  """
+  def update_user_preferences(user_id, attrs) do
+    case get_user(user_id) do
+      nil ->
+        {:error, :not_found}
+
+      user ->
+        user
+        |> User.preferences_changeset(attrs)
+        |> Repo.update()
+    end
+  end
+
+  @doc """
+  Gets a user's preferences as a map.
+  """
+  def get_user_preferences(user_id) do
+    case get_user(user_id) do
+      nil ->
+        {:error, :not_found}
+
+      user ->
+        {:ok, %{
+          time_format_preference: user.time_format_preference || "12hr",
+          toast_enabled: user.toast_enabled,
+          toast_duration: user.toast_duration || 5000,
+          toast_position: user.toast_position || "bottom-right",
+          toast_sound_enabled: user.toast_sound_enabled,
+          toast_background_enabled: user.toast_background_enabled,
+          notify_livestream: user.notify_livestream,
+          notify_clips: user.notify_clips,
+          notify_downloads: user.notify_downloads,
+          notify_projects: user.notify_projects,
+          notify_social: user.notify_social,
+          notify_organization: user.notify_organization,
+          notify_system: user.notify_system
+        }}
+    end
+  end
+
+  @doc """
   Promotes a user to admin.
   """
   def promote_user_to_admin(user_id) do

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
 import { useAuthStore } from '@/stores/auth';
 import api from '@/services/api';
 import PageLayout from '@/components/PageLayout.vue';
@@ -178,7 +179,7 @@ function formatTime(timestamp: string | null): string {
   if (diff < 60000) return 'Just now';
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return date.toLocaleDateString();
+  return fmtDate(date);
 }
 
 function scrollToBottom() {

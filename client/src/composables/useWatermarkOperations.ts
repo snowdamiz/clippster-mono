@@ -25,7 +25,7 @@ export function useWatermarkOperations() {
       watermarks.value = await getAllWatermarkImages();
     } catch (err) {
       console.error('Failed to load watermarks:', err);
-      error('Failed to load watermarks', String(err));
+      error('Failed to load watermarks', String(err), undefined, 'projects');
     } finally {
       loading.value = false;
     }
@@ -76,7 +76,7 @@ export function useWatermarkOperations() {
       console.log('Watermark uploaded:', watermarkId);
 
       // Show success toast
-      success('Watermark uploaded', `"${result.original_filename}" has been uploaded successfully`);
+      success('Watermark uploaded', `"${result.original_filename}" has been uploaded successfully`, undefined, 'projects');
 
       // Reload watermarks
       await loadWatermarks();
@@ -93,7 +93,7 @@ export function useWatermarkOperations() {
       return { success: true, watermarkId };
     } catch (err) {
       console.error('Watermark upload error:', err);
-      error('Upload failed', `Failed to upload watermark: ${err}`);
+      error('Upload failed', `Failed to upload watermark: ${err}`, undefined, 'projects');
       return { success: false, error: err };
     } finally {
       uploading.value = false;
@@ -113,14 +113,14 @@ export function useWatermarkOperations() {
       await deleteWatermarkImage(watermark.id);
 
       // Show success toast
-      success('Watermark deleted', `"${deletedName}" has been deleted successfully`);
+      success('Watermark deleted', `"${deletedName}" has been deleted successfully`, undefined, 'projects');
 
       // Reload watermarks
       await loadWatermarks();
 
       return { success: true };
     } catch (err) {
-      error('Delete failed', `Failed to delete watermark: ${err}`);
+      error('Delete failed', `Failed to delete watermark: ${err}`, undefined, 'projects');
       return { success: false, error: err };
     }
   }

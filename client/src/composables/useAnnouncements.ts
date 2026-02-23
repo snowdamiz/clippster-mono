@@ -68,7 +68,7 @@ export function useAnnouncements() {
    */
   async function fetchAndEnqueue() {
     try {
-      const response = await api.get('/announcements/active');
+      const response = await api.get('/announcements/active', { timeout: 10_000 });
       const announcements: Announcement[] = response.data.announcements ?? [];
       for (const a of announcements) {
         enqueue(a);
@@ -80,11 +80,30 @@ export function useAnnouncements() {
 
   /**
    * Subscribe to the announcements Phoenix channel for real-time pushes.
-   * The socket must already be connected (call after messagingSocket.connect).
+   * Waits for socket connection before joining.
    */
-  function subscribeToChannel(accountType: string) {
+  async function subscribeToChannel(accountType: string) {
     if (channelSubscribed) return;
     channelSubscribed = true;
+
+    // Proactively connect the messaging socket if not already connected
+    if (!messagingSocket.isConnected()) {
+      try {
+        const { useAuthStore } = await import('@/stores/auth');
+        const authStore = useAuthStore();
+        if (authStore.token && authStore.user?.id) {
+          await messagingSocket.connect(authStore.token, authStore.user.id);
+        }
+      } catch (e) {
+        console.warn('[useAnnouncements] Failed to connect messaging socket:', e);
+      }
+    }
+
+    if (!messagingSocket.isConnected()) {
+      console.warn('[useAnnouncements] Socket not connected, skipping channel subscription');
+      channelSubscribed = false;
+      return;
+    }
 
     messagingSocket.joinAnnouncementsChannel((payload: Announcement) => {
       const matchesAudience =

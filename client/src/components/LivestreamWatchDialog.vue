@@ -357,6 +357,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted, nextTick, type CSSProperties } from 'vue';
+  import { formatTime as fmtTime } from '@/utils/dateTimeUtils';
   import {
     X,
     Users,
@@ -748,14 +749,7 @@
       }
 
       // Generate clip name
-      const timestamp = new Date()
-        .toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false,
-        })
-        .replace(/:/g, '-');
+      const timestamp = fmtTime(new Date()).replace(/:/g, '-').replace(/\s*(AM|PM)/i, '');
       const clipName = `Quick Clip - ${timestamp}`;
       const clipEndTime = viewer.state.value.playbackPosition;
       const clipStartTime = clipEndTime - QUICK_CLIP_DURATION;

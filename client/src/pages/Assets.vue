@@ -603,6 +603,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch, Teleport, Transition, TransitionGroup } from 'vue';
+  import { formatDate } from '@/utils/dateTimeUtils';
   import {
     getAllIntroOutros,
     getAllAudioAssets,
@@ -822,7 +823,7 @@
       day: 'numeric',
       year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined,
     };
-    return `Added ${date.toLocaleDateString('en-US', options)}`;
+    return `Added ${formatDate(date)}`;
   }
 
   // Format video duration

@@ -38,7 +38,7 @@ export function useFeatureFlags() {
     error.value = null;
 
     try {
-      const response = await api.get('/settings/feature-flags');
+      const response = await api.get('/settings/feature-flags', { timeout: 10_000 });
 
       if (response.data.success) {
         const flags = response.data.feature_flags;

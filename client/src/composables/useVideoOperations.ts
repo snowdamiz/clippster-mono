@@ -65,7 +65,7 @@ export function useVideoOperations() {
       });
 
       // Show success toast
-      success('Video uploaded', `"${result.original_filename}" has been uploaded successfully`);
+      success('Video uploaded', `"${result.original_filename}" has been uploaded successfully`, undefined, 'projects');
 
       return {
         success: true,
@@ -150,7 +150,7 @@ export function useVideoOperations() {
       await deleteRawVideo(video.id);
 
       // Show success toast
-      success('Video deleted', `"${deletedVideoName}" has been deleted successfully`);
+      success('Video deleted', `"${deletedVideoName}" has been deleted successfully`, undefined, 'projects');
 
       return { success: true };
     } catch (err) {
