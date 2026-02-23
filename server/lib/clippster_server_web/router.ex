@@ -812,6 +812,7 @@ defmodule ClippsterServerWeb.Router do
     get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
     get("/clippers/:slug", ClipperProfilesController, :show)
     get("/clippers/:slug/portfolio-clips/:clip_id/presigned-url", ClipperProfilesController, :public_portfolio_clip_presigned_url)
+    get("/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url", ClipperProfilesController, :public_portfolio_clip_thumbnail_presigned_url)
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 
     # ============================================================================
