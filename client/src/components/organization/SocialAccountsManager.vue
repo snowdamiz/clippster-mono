@@ -274,11 +274,11 @@
 
   async function handleAuthResult(result: { success: boolean; account?: any; error?: string }) {
     if (result.success && result.account) {
-      showToast(`Instagram account @${result.account.username} connected successfully`, 'success');
+      showToast(`Instagram account @${result.account.username} connected successfully`, 'success', 'organization');
       await loadAccounts();
       emit('accountsChanged');
     } else if (result.error) {
-      showToast(result.error, 'error');
+      showToast(result.error, 'error', 'organization');
     }
     connecting.value = false;
   }
@@ -290,11 +290,11 @@
       if (response.success) {
         accounts.value = response.accounts;
       } else {
-        showToast('Failed to load accounts', 'error');
+        showToast('Failed to load accounts', 'error', 'organization');
       }
     } catch (error) {
       console.error('Failed to load accounts:', error);
-      showToast('Failed to load accounts', 'error');
+      showToast('Failed to load accounts', 'error', 'organization');
     } finally {
       loading.value = false;
     }
@@ -308,7 +308,7 @@
       cleanupAuthListener = await startInstagramOAuthPopup(props.organizationId, handleAuthResult);
     } catch (error) {
       console.error('Failed to connect Instagram:', error);
-      showToast(error instanceof Error ? error.message : 'Failed to connect Instagram.', 'error');
+      showToast(error instanceof Error ? error.message : 'Failed to connect Instagram.', 'error', 'organization');
       connecting.value = false;
     }
   }
@@ -319,7 +319,7 @@
       cleanupAuthListener = await startTwitterOAuthPopup(props.organizationId, handleAuthResult);
     } catch (error) {
       console.error('Failed to connect X:', error);
-      showToast(error instanceof Error ? error.message : 'Failed to connect X.', 'error');
+      showToast(error instanceof Error ? error.message : 'Failed to connect X.', 'error', 'organization');
       connecting.value = false;
     }
   }
@@ -336,14 +336,14 @@
       });
 
       if (response.success) {
-        showToast(`Account ${active ? 'activated' : 'deactivated'}`, 'success');
+        showToast(`Account ${active ? 'activated' : 'deactivated'}`, 'success', 'organization');
         await loadAccounts();
       } else {
-        showToast(response.error || 'Failed to update account', 'error');
+        showToast(response.error || 'Failed to update account', 'error', 'organization');
       }
     } catch (error) {
       console.error('Failed to toggle account:', error);
-      showToast('Failed to update account', 'error');
+      showToast('Failed to update account', 'error', 'organization');
     }
   }
 
@@ -351,13 +351,13 @@
     try {
       const response = await refreshAccountToken(props.organizationId, account.id);
       if (response.success) {
-        showToast('Token refresh initiated', 'success');
+        showToast('Token refresh initiated', 'success', 'organization');
       } else {
-        showToast(response.error || 'Failed to refresh token', 'error');
+        showToast(response.error || 'Failed to refresh token', 'error', 'organization');
       }
     } catch (error) {
       console.error('Failed to refresh token:', error);
-      showToast('Failed to refresh token', 'error');
+      showToast('Failed to refresh token', 'error', 'organization');
     }
   }
 
@@ -372,15 +372,15 @@
     try {
       const response = await deleteSocialAccount(props.organizationId, accountToDelete.value.id);
       if (response.success) {
-        showToast('Account disconnected', 'success');
+        showToast('Account disconnected', 'success', 'organization');
         await loadAccounts();
         emit('accountsChanged');
       } else {
-        showToast(response.error || 'Failed to disconnect account', 'error');
+        showToast(response.error || 'Failed to disconnect account', 'error', 'organization');
       }
     } catch (error) {
       console.error('Failed to delete account:', error);
-      showToast('Failed to disconnect account', 'error');
+      showToast('Failed to disconnect account', 'error', 'organization');
     } finally {
       showDeleteDialog.value = false;
       accountToDelete.value = null;

@@ -86,15 +86,21 @@ export function useAnnouncements() {
     if (channelSubscribed) return;
     channelSubscribed = true;
 
-    // Wait for socket to be connected (with timeout)
-    const maxWaitTime = 5000; // 5 seconds
-    const startTime = Date.now();
-    while (!messagingSocket.isConnected() && Date.now() - startTime < maxWaitTime) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+    // Proactively connect the messaging socket if not already connected
+    if (!messagingSocket.isConnected()) {
+      try {
+        const { useAuthStore } = await import('@/stores/auth');
+        const authStore = useAuthStore();
+        if (authStore.token && authStore.user?.id) {
+          await messagingSocket.connect(authStore.token, authStore.user.id);
+        }
+      } catch (e) {
+        console.warn('[useAnnouncements] Failed to connect messaging socket:', e);
+      }
     }
 
     if (!messagingSocket.isConnected()) {
-      console.warn('[useAnnouncements] Socket not connected after timeout, skipping channel subscription');
+      console.warn('[useAnnouncements] Socket not connected, skipping channel subscription');
       channelSubscribed = false;
       return;
     }

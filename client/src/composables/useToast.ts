@@ -84,14 +84,28 @@ function generateId(): string {
 function addToast(options: ToastOptions): string {
   const prefs = getPreferencesStore();
 
-  // Check if toasts are globally disabled
-  if (prefs && !prefs.toastEnabled && options.type !== 'loading') {
-    return '';
-  }
+  // If preferences aren't loaded yet, show the toast anyway (fail-open for better UX)
+  if (!prefs) {
+    console.log('[Toast] Preferences not loaded yet, showing toast anyway:', options.title);
+  } else {
+    // Check if toasts are globally disabled
+    if (!prefs.toastEnabled && options.type !== 'loading') {
+      console.log('[Toast] Toasts globally disabled, skipping:', options.title);
+      return '';
+    }
 
-  // Check if this category is enabled
-  if (prefs && options.category && !prefs.isCategoryEnabled(options.category)) {
-    return '';
+    // Check if this category is enabled
+    if (options.category && !prefs.isCategoryEnabled(options.category)) {
+      console.log('[Toast] Category disabled, skipping:', options.category, options.title);
+      return '';
+    }
+
+    console.log('[Toast] Showing toast:', {
+      title: options.title,
+      category: options.category,
+      type: options.type,
+      categoryEnabled: options.category ? prefs.isCategoryEnabled(options.category) : 'N/A',
+    });
   }
 
   // Use user's preferred duration if not explicitly set
@@ -118,7 +132,16 @@ function addToast(options: ToastOptions): string {
   }
 
   // Show background notification if app is not focused and setting is enabled
-  if (prefs?.toastBackgroundEnabled && options.type !== 'loading' && typeof document !== 'undefined' && !document.hasFocus()) {
+  const shouldShowBackground = prefs?.toastBackgroundEnabled && options.type !== 'loading' && typeof document !== 'undefined' && !document.hasFocus();
+  console.log('[Toast] Background notification check:', {
+    toastBackgroundEnabled: prefs?.toastBackgroundEnabled,
+    isNotLoading: options.type !== 'loading',
+    documentExists: typeof document !== 'undefined',
+    appNotFocused: typeof document !== 'undefined' ? !document.hasFocus() : 'N/A',
+    willShow: shouldShowBackground,
+  });
+  
+  if (shouldShowBackground) {
     showBackgroundNotification(toast);
   }
 
@@ -129,6 +152,7 @@ function addToast(options: ToastOptions): string {
  * Show a Steam-style Tauri notification window when the app is in the background.
  */
 async function showBackgroundNotification(toast: Toast) {
+  console.log('[Toast] showBackgroundNotification called for:', toast.title);
   try {
     const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
     const { currentMonitor } = await import('@tauri-apps/api/window');
@@ -138,7 +162,10 @@ async function showBackgroundNotification(toast: Toast) {
     const duration = toast.duration === Infinity ? 10000 : (toast.duration ?? 5000);
 
     const monitor = await currentMonitor();
-    if (!monitor) return;
+    if (!monitor) {
+      console.warn('[Toast] No monitor found, cannot show notification');
+      return;
+    }
 
     const winWidth = 400;
     const winHeight = 100;
@@ -170,7 +197,7 @@ async function showBackgroundNotification(toast: Toast) {
 
     const notifWindow = new WebviewWindow(label, {
       url: `/notification.html?data=${params}`,
-      title: 'Notification',
+      title: '',
       width: winWidth,
       height: winHeight,
       x,
@@ -181,19 +208,39 @@ async function showBackgroundNotification(toast: Toast) {
       resizable: false,
       focus: false,
       transparent: true,
+      visible: false,
+      shadow: false, // Prevent Windows from rendering a shadow/ghost box behind the transparent window
+    });
+
+    // Wait for window to be created, then show it after a tiny delay
+    notifWindow.once('tauri://created', async () => {
+      console.log('[Toast] Notification window created successfully:', label);
+      // Small delay to let Windows settle before showing
+      setTimeout(async () => {
+        try {
+          await notifWindow.show();
+          console.log('[Toast] Notification window shown');
+        } catch (err) {
+          console.error('[Toast] Failed to show notification window:', err);
+        }
+      }, 100);
+    });
+
+    notifWindow.once('tauri://error', (e) => {
+      console.error('[Toast] Notification window creation failed:', e);
     });
 
     // Auto-close after duration
     setTimeout(async () => {
       try {
         await notifWindow.close();
-      } catch {
-        // Window may already be closed
+        console.log('[Toast] Notification window closed');
+      } catch (err) {
+        console.warn('[Toast] Failed to close notification window:', err);
       }
     }, duration);
   } catch (error) {
-    // Tauri APIs not available (e.g., in browser dev mode) - silently ignore
-    console.debug('[Toast] Background notification not available:', error);
+    console.error('[Toast] Failed to show background notification:', error);
   }
 }
 

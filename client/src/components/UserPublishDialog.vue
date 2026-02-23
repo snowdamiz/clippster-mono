@@ -328,13 +328,13 @@
         });
 
         if (response.success) {
-          toast({ title: 'Success', description: `Post scheduled for ${formatScheduleTime(scheduledDateTime.value)}` });
+          toast({ title: 'Success', description: `Post scheduled for ${formatScheduleTime(scheduledDateTime.value)}`, category: 'social' });
           emit('published');
           emit('close');
           resetForm();
         } else {
           error.value = response.error || 'Failed to schedule';
-          toast({ title: 'Error', description: response.error || 'Failed to schedule' });
+          toast({ title: 'Error', description: response.error || 'Failed to schedule', category: 'social' });
         }
       } else {
         // Publish immediately
@@ -346,19 +346,19 @@
         });
 
         if (response.success) {
-          toast({ title: 'Success', description: 'Post is being published to Instagram' });
+          toast({ title: 'Success', description: 'Post is being published to Instagram', category: 'social' });
           emit('published');
           emit('close');
           resetForm();
         } else {
           error.value = response.error || 'Failed to publish';
-          toast({ title: 'Error', description: response.error || 'Failed to publish' });
+          toast({ title: 'Error', description: response.error || 'Failed to publish', category: 'social' });
         }
       }
     } catch (err) {
       console.error('Failed to publish:', err);
       error.value = 'Failed to publish post. Please try again.';
-      toast({ title: 'Error', description: 'Failed to publish' });
+      toast({ title: 'Error', description: 'Failed to publish', category: 'social' });
     } finally {
       publishing.value = false;
     }

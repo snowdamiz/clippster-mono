@@ -98,7 +98,7 @@
   // Handle streamer went live event
   const handleStreamerWentLive = (event: CustomEvent) => {
     const { displayName } = event.detail;
-    success(`${displayName} is now live!`, undefined, 7000);
+    success(`${displayName} is now live!`, undefined, 7000, 'livestream');
   };
 
   // Handle user preferences loaded from server (dispatched by auth store)

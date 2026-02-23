@@ -1530,7 +1530,9 @@ export function useLivestreamMonitoring() {
 
       showSuccess(
         `${streamer.displayName} is live`,
-        options.detectClips ? 'Auto-detect recording started.' : 'Recording started.'
+        options.detectClips ? 'Auto-detect recording started.' : 'Recording started.',
+        undefined,
+        'livestream'
       );
 
       // Initial segment start log (use streamerId-1 as key)
@@ -1633,7 +1635,7 @@ export function useLivestreamMonitoring() {
           console.log(`[LiveMonitor] Auto DVR: Starting DVR for live streamer ${streamer.displayName}`);
           
           // Show toast notification that streamer went live
-          showSuccess(`${streamer.displayName} is now live!`, undefined, 7000);
+          showSuccess(`${streamer.displayName} is now live!`, undefined, 7000, 'livestream');
           
           const started = await startDvrRecordingForStreamer(streamer);
           if (started) {
@@ -1773,7 +1775,7 @@ export async function initGlobalLiveStatusPolling(): Promise<void> {
           // Show toast if went live (offline → online transition)
           // BUT skip toasts on initial poll to avoid spam when app first opens
           if (!wasLive && status.isLive && !isInitialPoll) {
-            showSuccess(`${record.display_name} is now live!`, undefined, 7000);
+            showSuccess(`${record.display_name} is now live!`, undefined, 7000, 'livestream');
 
             // Dispatch global event
             window.dispatchEvent(

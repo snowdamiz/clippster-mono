@@ -22,17 +22,7 @@ async function ensureVodPresetSchema(db: any) {
       FOREIGN KEY (creator_profile_id) REFERENCES creator_profiles(id) ON DELETE SET NULL
     )`);
 
-    // Ensure project columns exist
-    const columns = (await db.select('PRAGMA table_info(projects)')) as { name: string }[];
-    const colNames = columns.map((c: { name: string }) => c.name);
-    if (!colNames.includes('active_vod_preset_id')) {
-      await db.execute('ALTER TABLE projects ADD COLUMN active_vod_preset_id TEXT');
-      console.log('[vod-presets] Added active_vod_preset_id column to projects');
-    }
-    if (!colNames.includes('active_vod_preset_config')) {
-      await db.execute('ALTER TABLE projects ADD COLUMN active_vod_preset_config TEXT');
-      console.log('[vod-presets] Added active_vod_preset_config column to projects');
-    }
+    // Note: project columns (active_vod_preset_id, active_vod_preset_config) are added by schema-healing.ts migration 083
     vodColumnsVerified = true;
   } catch (e) {
     console.error('[vod-presets] ensureVodPresetSchema failed:', e);

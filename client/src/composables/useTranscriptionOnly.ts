@@ -190,7 +190,7 @@ export function useTranscriptionOnly() {
         error: errorMessage,
       };
 
-      showError('Transcription failed', errorMessage);
+      showError('Transcription failed', errorMessage, undefined, 'clips');
       return { success: false, error: errorMessage };
     } finally {
       isProcessing.value = false;
@@ -334,7 +334,7 @@ export function useTranscriptionOnly() {
         message: 'Transcript ready!',
       };
       dispatchTranscriptUpdated(projectId);
-      showSuccess('Transcription complete', 'Transcript is ready for viewing');
+      showSuccess('Transcription complete', 'Transcript is ready for viewing', undefined, 'clips');
       return { success: true, alreadyTranscribed: true };
     }
 
