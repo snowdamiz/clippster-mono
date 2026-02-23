@@ -269,6 +269,18 @@ export interface GenerationSummary {
   intensity: number;
   colorPalette: string[];
   keyFeatures: string[];
+  audience?: string;
+  platform?: string;
+  narrative?: string;
+  scenes?: Array<{
+    index: number;
+    description: string;
+    mediaNames: string[];
+    duration: number;
+    mood: string;
+    textOverlay?: string;
+    effects?: string;
+  }>;
 }
 
 export interface ReferenceStyleProfile {
