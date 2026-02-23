@@ -80,11 +80,24 @@ export function useAnnouncements() {
 
   /**
    * Subscribe to the announcements Phoenix channel for real-time pushes.
-   * The socket must already be connected (call after messagingSocket.connect).
+   * Waits for socket connection before joining.
    */
-  function subscribeToChannel(accountType: string) {
+  async function subscribeToChannel(accountType: string) {
     if (channelSubscribed) return;
     channelSubscribed = true;
+
+    // Wait for socket to be connected (with timeout)
+    const maxWaitTime = 5000; // 5 seconds
+    const startTime = Date.now();
+    while (!messagingSocket.isConnected() && Date.now() - startTime < maxWaitTime) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    if (!messagingSocket.isConnected()) {
+      console.warn('[useAnnouncements] Socket not connected after timeout, skipping channel subscription');
+      channelSubscribed = false;
+      return;
+    }
 
     messagingSocket.joinAnnouncementsChannel((payload: Announcement) => {
       const matchesAudience =
