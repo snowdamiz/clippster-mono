@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
 import { 
   SharedClip, 
   listOrganizationSharedClips, 
@@ -119,11 +120,7 @@ function formatDuration(seconds: number | null): string {
 }
 
 function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return fmtDate(dateStr);
 }
 
 function getBadgeVariant(color: 'green' | 'yellow' | 'red'): 'default' | 'secondary' | 'destructive' {

@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue';
+import { formatTime } from '@/utils/dateTimeUtils';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
@@ -219,13 +220,7 @@ function addActivityLog(
   const entry: ActivityLog = {
     id,
     timestamp:
-      log.timestamp ??
-      new Date().toLocaleTimeString([], {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      }),
+      log.timestamp ?? formatTime(new Date()),
     streamerId: log.streamerId,
     streamerName: log.streamerName,
     platform: log.platform,

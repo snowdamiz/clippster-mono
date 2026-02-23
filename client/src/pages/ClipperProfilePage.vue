@@ -1186,6 +1186,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, onMounted, onUnmounted, markRaw, computed, watch, h } from 'vue';
+  import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     UserCircle,
     Share2,
@@ -1754,8 +1755,7 @@
   const formatAmount = (amount: string | number) =>
     (typeof amount === 'string' ? parseFloat(amount) : amount).toFixed(2);
   const formatCpm = (cpm: string | number) => (typeof cpm === 'string' ? parseFloat(cpm) : cpm).toFixed(2);
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const formatDate = (dateStr: string) => fmtDate(dateStr);
   const truncateUrl = (url: string) => (url.length > 40 ? url.substring(0, 40) + '...' : url);
 
   const loadSocialAccounts = async () => {

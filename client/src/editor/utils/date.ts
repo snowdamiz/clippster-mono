@@ -1,7 +1,5 @@
+import { formatDate as fmtDate } from "@/utils/dateTimeUtils";
+
 export function formatDate({ date }: { date: Date }): string {
-	return date.toLocaleDateString("en-US", {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-	});
+	return fmtDate(date);
 }

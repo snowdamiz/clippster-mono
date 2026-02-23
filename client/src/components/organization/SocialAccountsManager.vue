@@ -203,6 +203,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted } from 'vue';
+  import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import { Button } from '@/components/ui/button';
   import {
     DropdownMenu,
@@ -402,7 +403,7 @@
     if (diffDays === 1) return 'yesterday';
     if (diffDays < 7) return `${diffDays} days ago`;
     if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-    return date.toLocaleDateString();
+    return fmtDate(dateString);
   }
 </script>
 

@@ -4,6 +4,7 @@
  */
 
 import api from './api';
+import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
 
 // ============================================
 // Types
@@ -331,5 +332,5 @@ export function formatDate(dateString: string): string {
   if (diffDays === 1) return 'yesterday';
   if (diffDays < 7) return `${diffDays} days ago`;
   if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`;
-  return date.toLocaleDateString();
+  return fmtDate(dateString);
 }

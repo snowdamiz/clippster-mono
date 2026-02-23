@@ -630,6 +630,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
+  import { formatDateTime } from '@/utils/dateTimeUtils';
   import { useToast } from '@/composables/useToast';
   import * as promoCodesApi from '@/services/promoCodesApi';
   import type { PromoCode, PromoCodeWithRedemptions } from '@/services/promoCodesApi';
@@ -805,14 +806,7 @@
 
   function formatDate(dateString: string | null): string {
     if (!dateString) return 'Never';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatDateTime(dateString);
   }
 
   async function copyCode(code: string) {

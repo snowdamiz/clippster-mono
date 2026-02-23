@@ -553,6 +553,7 @@
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
   import { useRouter } from 'vue-router';
+  import { formatDateTime } from '@/utils/dateTimeUtils';
   import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle, Plus, Crown, Settings, XCircle, ChevronDown, KeyRound, Trash2 } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
@@ -756,13 +757,7 @@
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      return formatDateTime(dateString);
     } catch {
       return 'Invalid date';
     }

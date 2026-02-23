@@ -837,6 +837,15 @@ export const useAuthStore = defineStore('auth', {
             await setUserContext(this.user.id);
           }
 
+          // Sync user preferences from server response
+          if (data.user?.preferences && this.user?.id) {
+            window.dispatchEvent(
+              new CustomEvent('user-preferences-loaded', {
+                detail: { userId: String(this.user.id), preferences: data.user.preferences },
+              })
+            );
+          }
+
           return true;
         } catch (error) {
           console.error('[Auth] Network error during auth check:', error);
@@ -890,6 +899,15 @@ export const useAuthStore = defineStore('auth', {
             // Update user data with fresh data from server
             this.user = { ...this.user, ...data.user };
             localStorage.setItem('user', JSON.stringify(this.user));
+
+            // Sync user preferences from server response
+            if (data.user.preferences && this.user?.id) {
+              window.dispatchEvent(
+                new CustomEvent('user-preferences-loaded', {
+                  detail: { userId: String(this.user.id), preferences: data.user.preferences },
+                })
+              );
+            }
           }
         } else if (response.status === 401) {
           // Token is invalid/expired, logout

@@ -1692,6 +1692,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, watch } from 'vue';
+  import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     Megaphone,
     Plus,
@@ -2001,7 +2002,7 @@
   };
 
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return fmtDate(dateStr);
   };
 
   const formatRelativeTime = (dateStr: string) => {
