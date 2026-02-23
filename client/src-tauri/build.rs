@@ -107,8 +107,38 @@ fn main() {
     // Generate migrations
     generate_migrations(&manifest_dir);
 
+    // On macOS/Linux, ensure ffmpeg-libs dylibs have at least 644 permissions.
+    // They are sometimes extracted/committed with 444 (read-only) which causes
+    // tauri_build::build() to fail with "Permission denied (os error 13)" when
+    // it tries to process them as bundle resources on the initial build.
+    #[cfg(unix)]
+    fix_ffmpeg_lib_permissions(&manifest_dir);
+
     // Run tauri-build
     tauri_build::build();
+}
+
+#[cfg(unix)]
+fn fix_ffmpeg_lib_permissions(manifest_dir: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let ffmpeg_libs_dir = manifest_dir.join("ffmpeg-libs");
+    if !ffmpeg_libs_dir.exists() {
+        return;
+    }
+    if let Ok(entries) = fs::read_dir(&ffmpeg_libs_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if ext == "dylib" || ext == "so" {
+                if let Ok(metadata) = fs::metadata(&path) {
+                    let mut perms = metadata.permissions();
+                    // Ensure owner read+write so tauri_build can process the file
+                    perms.set_mode(perms.mode() | 0o644);
+                    let _ = fs::set_permissions(&path, perms);
+                }
+            }
+        }
+    }
 }
 
 /// Generates a Rust file containing all SQL migrations from the migrations directory.
@@ -119,18 +149,27 @@ fn generate_migrations(manifest_dir: &Path) {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let output_path = out_dir.join("migrations_generated.rs");
 
-    // Tell Cargo to rerun if any migration file changes
+    // Tell Cargo to rerun if any individual migration file changes.
+    // Watching the directory alone is unreliable on some filesystems.
     println!("cargo:rerun-if-changed=migrations");
+    if let Ok(entries) = fs::read_dir(&migrations_dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "sql") {
+                println!("cargo:rerun-if-changed={}", path.display());
+            }
+        }
+    }
 
     // Read all .sql files from migrations directory
     let mut migration_files: Vec<(u32, String, PathBuf)> = Vec::new();
-    
+
     if let Ok(entries) = fs::read_dir(&migrations_dir) {
         for entry in entries.filter_map(|e| e.ok()) {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "sql") {
                 let filename = path.file_stem().unwrap().to_string_lossy().to_string();
-                
+
                 // Parse version number from filename (e.g., "001_initial_schema" -> 1)
                 if let Some(version) = parse_migration_version(&filename) {
                     migration_files.push((version, filename, path));
@@ -139,19 +178,27 @@ fn generate_migrations(manifest_dir: &Path) {
         }
     }
 
-    // Sort by version number
+    // Sort by version number first so duplicate detection is deterministic
     migration_files.sort_by_key(|(v, _, _)| *v);
 
-    // Handle duplicates: prefer _fixed versions
+    // Handle duplicates: prefer _fixed versions, fail hard on ambiguous duplicates
     let mut seen_versions: std::collections::HashMap<u32, (String, PathBuf)> = std::collections::HashMap::new();
     for (version, filename, path) in migration_files {
         if let Some((existing_filename, _)) = seen_versions.get(&version) {
-            // Prefer _fixed version
             if filename.ends_with("_fixed") && !existing_filename.ends_with("_fixed") {
+                // Prefer _fixed version over non-fixed
                 seen_versions.insert(version, (filename, path));
+            } else if !filename.ends_with("_fixed") && !existing_filename.ends_with("_fixed") {
+                // Two non-fixed files with the same version: this is a mistake that
+                // causes non-deterministic builds. Fail immediately with a clear message.
+                panic!(
+                    "Duplicate migration version {}: '{}' and '{}' both exist. \
+                     Rename one of them to a unique version number. \
+                     This causes non-deterministic builds.",
+                    version, existing_filename, filename
+                );
             }
-            // If existing is _fixed and new is not, keep existing
-            // If neither or both are _fixed, keep existing (first one wins)
+            // If existing is _fixed and new is not, keep existing (no action needed)
         } else {
             seen_versions.insert(version, (filename, path));
         }

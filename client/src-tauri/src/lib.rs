@@ -672,13 +672,13 @@ pub fn run() {
                         tauri_plugin_sql::Migration {
                             version: 86,
                             description: "add_source_start_time_to_audio_tracks",
-                            sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            sql: include_str!("../migrations/091_add_source_start_time_to_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
                             version: 87,
                             description: "add_transcript_raw_json_to_clip_segments",
-                            sql: include_str!("../migrations/083_add_transcript_raw_json_to_clip_segments.sql"),
+                            sql: include_str!("../migrations/092_add_transcript_raw_json_to_clip_segments.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
