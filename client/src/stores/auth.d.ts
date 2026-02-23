@@ -28,6 +28,21 @@ export interface AuthUser {
     hours_remaining: number
     minutes_remaining: number
   }
+  preferences?: {
+    time_format_preference: '12hr' | '24hr'
+    toast_enabled: boolean
+    toast_duration: number
+    toast_position: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left'
+    toast_sound_enabled: boolean
+    toast_background_enabled: boolean
+    notify_livestream: boolean
+    notify_clips: boolean
+    notify_downloads: boolean
+    notify_projects: boolean
+    notify_social: boolean
+    notify_organization: boolean
+    notify_system: boolean
+  }
 }
 
 export interface AuthState {

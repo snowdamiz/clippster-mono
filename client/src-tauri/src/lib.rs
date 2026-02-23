@@ -38,6 +38,10 @@ use std::sync::{Arc, Mutex};
 
 static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
 
+/// Stores the localhost plugin port for production builds so child windows (PIP) can use the same origin
+#[allow(dead_code)]
+static LOCALHOST_PORT: Lazy<Mutex<Option<u16>>> = Lazy::new(|| Mutex::new(None));
+
 /// Copy a file from source to destination
 #[tauri::command]
 async fn copy_file(source: String, destination: String) -> Result<(), String> {
@@ -79,21 +83,44 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
         return Ok(());
     }
 
-    // Create new always-on-top window with video player size (16:9 aspect ratio)
+    // In production, the PIP window MUST use the same WebviewUrl::External origin as the main window.
+    // WebviewUrl::App resolves to https://tauri.localhost in production, which uses a custom protocol
+    // that causes WebView2's compositor to not properly maintain HWND_TOPMOST z-order over fullscreen games.
+    // In dev mode, WebviewUrl::App resolves to the Vite dev server (http://localhost:1420) which works fine.
+    #[cfg(dev)]
+    let pip_url = WebviewUrl::App("/pip-controls".into());
+    
+    #[cfg(not(dev))]
+    let pip_url = {
+        let port = LOCALHOST_PORT.lock().unwrap();
+        match *port {
+            Some(p) => {
+                let url_str = format!("http://localhost:{}/pip-controls", p);
+                println!("[Rust] PIP window using localhost URL: {}", url_str);
+                WebviewUrl::External(url_str.parse().unwrap())
+            }
+            None => {
+                println!("[Rust] WARNING: No localhost port stored, falling back to WebviewUrl::App");
+                WebviewUrl::App("/pip-controls".into())
+            }
+        }
+    };
+
+    // Create new always-on-top window - initial size is a reasonable default;
+    // the frontend will detect the video's actual aspect ratio and resize accordingly.
     let window = WebviewWindowBuilder::new(
         &app,
         "pip-controls",
-        WebviewUrl::App("/pip-controls".into())
+        pip_url
     )
     .title("Stream")
-    .inner_size(400.0, 265.0)  // 16:9 video + controls bar
-    .min_inner_size(320.0, 220.0)
-    .max_inner_size(640.0, 400.0)
+    .inner_size(480.0, 270.0)
+    .min_inner_size(240.0, 135.0)
     .resizable(true)
     .decorations(false)
     .transparent(true)
     .always_on_top(true)
-    .visible_on_all_workspaces(true)  // Ensures window stays on top across all virtual desktops and fullscreen apps
+    .visible_on_all_workspaces(true)
     .skip_taskbar(true)
     .visible(true)
     .build()
@@ -112,32 +139,28 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowPos, GetWindowLongPtrW, SetWindowLongPtrW, BringWindowToTop,
+            SetWindowPos, GetWindowLongPtrW, SetWindowLongPtrW, BringWindowToTop, IsWindow,
             HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SWP_NOACTIVATE, SWP_FRAMECHANGED,
             WINDOW_EX_STYLE, GWL_EXSTYLE, WS_EX_TOPMOST, WS_EX_LAYERED, WS_EX_TOOLWINDOW
         };
         
         if let Ok(hwnd) = window.hwnd() {
+            let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
+            
             unsafe {
-                let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
-                
-                // CRITICAL FIX FOR FULLSCREEN GAMES:
-                // Fullscreen games use exclusive fullscreen mode which places them in a different Z-order.
-                // WS_EX_TOOLWINDOW creates a tool window that can appear above fullscreen applications.
-                // This is the ONLY way to stay on top of fullscreen exclusive mode games.
-                
                 // Step 1: Get current extended window styles
                 let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
                 
                 // Step 2: Add WS_EX_TOPMOST, WS_EX_LAYERED, and WS_EX_TOOLWINDOW flags
-                // WS_EX_TOOLWINDOW is the KEY - it allows the window to appear above fullscreen apps
+                // WS_EX_TOOLWINDOW prevents the window from appearing in the taskbar and
+                // helps it stay above fullscreen borderless windows
                 let new_ex_style = WINDOW_EX_STYLE(current_ex_style as u32) 
                     | WS_EX_TOPMOST 
                     | WS_EX_LAYERED 
                     | WS_EX_TOOLWINDOW;
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style.0 as isize);
                 
-                // Step 3: Use SetWindowPos with SWP_FRAMECHANGED to force the window to redraw with new styles
+                // Step 3: Apply HWND_TOPMOST with SWP_FRAMECHANGED to force style update
                 let _ = SetWindowPos(
                     hwnd,
                     HWND_TOPMOST,
@@ -148,9 +171,42 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                     SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 );
                 
-                // Step 4: Bring window to top to ensure it's visible
+                // Step 4: Bring window to top
                 let _ = BringWindowToTop(hwnd);
             }
+            
+            // Step 5: Spawn a background timer that periodically re-asserts HWND_TOPMOST.
+            // Fullscreen games (both exclusive and borderless) can cause the DWM to demote
+            // our topmost z-order when the game window gains focus. Professional overlay tools
+            // (Discord, Medal, OBS) use periodic re-assertion to survive this.
+            // The timer runs every 500ms and stops automatically when the PIP window is closed.
+            let hwnd_raw = hwnd.0 as isize;
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    
+                    unsafe {
+                        let hwnd = HWND(hwnd_raw as *mut core::ffi::c_void);
+                        
+                        // Stop the timer if the window has been destroyed
+                        if !IsWindow(hwnd).as_bool() {
+                            println!("[Rust] PIP topmost timer: window destroyed, stopping");
+                            break;
+                        }
+                        
+                        // Re-assert HWND_TOPMOST without activating or moving the window
+                        let _ = SetWindowPos(
+                            hwnd,
+                            HWND_TOPMOST,
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                        );
+                    }
+                }
+            });
         }
     }
 
@@ -735,14 +791,32 @@ pub fn run() {
                 app.handle().plugin(tauri_plugin_localhost::Builder::new(port).build())
                     .expect("failed to initialize localhost plugin");
                 
+                // Store the port so child windows (PIP) can use the same origin
+                {
+                    let mut stored_port = LOCALHOST_PORT.lock().unwrap();
+                    *stored_port = Some(port);
+                }
+                
                 let url_str = format!("http://localhost:{}", port);
                 println!("[Rust] Production mode: serving frontend from {}", url_str);
                 WebviewUrl::External(url_str.parse().unwrap())
             };
 
+            // Load saved window size or use defaults
+            let (width, height) = match ui_utils::load_window_size(app.handle().clone()) {
+                Ok(Some(size)) => {
+                    println!("[Rust] Restoring window size: {}x{}", size.width, size.height);
+                    (size.width, size.height)
+                }
+                _ => {
+                    println!("[Rust] Using default window size: 1280x720");
+                    (1280.0, 720.0)
+                }
+            };
+
             let window = WebviewWindowBuilder::new(app, "main", url)
                 .title("Clippster")
-                .inner_size(1280.0, 720.0)
+                .inner_size(width, height)
                 .min_inner_size(800.0, 600.0)
                 .decorations(false)
                 .transparent(true)
@@ -953,6 +1027,8 @@ commands::file_utils::generate_video_thumbnail,
             ui_utils::setup_macos_titlebar,
             ui_utils::get_platform,
             ui_utils::show_main_window,
+            ui_utils::save_window_size,
+            ui_utils::load_window_size,
             
             // File operations
             copy_file,

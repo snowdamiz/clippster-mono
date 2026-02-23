@@ -25,7 +25,7 @@ export function useAudioAssetOperations() {
       audioAssets.value = await getAllAudioAssets();
     } catch (err) {
       console.error('Failed to load audio assets:', err);
-      error('Failed to load audio assets', String(err));
+      error('Failed to load audio assets', String(err), undefined, 'projects');
     } finally {
       loading.value = false;
     }
@@ -78,7 +78,7 @@ export function useAudioAssetOperations() {
       console.log('Audio asset uploaded:', audioAssetId);
 
       // Show success toast
-      success('Audio uploaded', `"${result.original_filename}" has been uploaded successfully`);
+      success('Audio uploaded', `"${result.original_filename}" has been uploaded successfully`, undefined, 'projects');
 
       // Reload audio assets
       await loadAudioAssets();
@@ -95,7 +95,7 @@ export function useAudioAssetOperations() {
       return { success: true, audioAssetId };
     } catch (err) {
       console.error('Audio asset upload error:', err);
-      error('Upload failed', `Failed to upload audio: ${err}`);
+      error('Upload failed', `Failed to upload audio: ${err}`, undefined, 'projects');
       return { success: false, error: err };
     } finally {
       uploading.value = false;
@@ -115,14 +115,14 @@ export function useAudioAssetOperations() {
       await deleteAudioAsset(audioAsset.id);
 
       // Show success toast
-      success('Audio deleted', `"${deletedName}" has been deleted successfully`);
+      success('Audio deleted', `"${deletedName}" has been deleted successfully`, undefined, 'projects');
 
       // Reload audio assets
       await loadAudioAssets();
 
       return { success: true };
     } catch (err) {
-      error('Delete failed', `Failed to delete audio: ${err}`);
+      error('Delete failed', `Failed to delete audio: ${err}`, undefined, 'projects');
       return { success: false, error: err };
     }
   }

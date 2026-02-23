@@ -435,7 +435,19 @@
   import { ref, onMounted, onUnmounted } from 'vue';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { invoke } from '@tauri-apps/api/core';
-  import { KeyboardIcon, Play, ZoomIn, MousePointer, Edit3, Scissors, MoreHorizontal, X, Info, PanelLeftClose, PanelLeft } from 'lucide-vue-next';
+  import {
+    KeyboardIcon,
+    Play,
+    ZoomIn,
+    MousePointer,
+    Edit3,
+    Scissors,
+    MoreHorizontal,
+    X,
+    Info,
+    PanelLeftClose,
+    PanelLeft,
+  } from 'lucide-vue-next';
   import { useSidebarState } from '@/composables/useSidebarState';
 
   // Props
@@ -457,6 +469,10 @@
   const isWindows = ref(false);
   const platformOverride = ref(props.platformOverride);
   const appWindow = getCurrentWebviewWindow();
+  let resizeUnlisten: (() => void) | null = null;
+  let maximizeStateSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  let maximizeStateSyncInFlight = false;
+  let maximizeStateSyncQueued = false;
   const showKeyboardShortcuts = ref(false);
   const activeShortcutTab = ref('playback');
   const { isCollapsed, toggle: toggleSidebar } = useSidebarState();
@@ -535,6 +551,39 @@
     updatePlatformFlags(platform);
   };
 
+  async function syncMaximizeState() {
+    if (maximizeStateSyncInFlight) {
+      maximizeStateSyncQueued = true;
+      return;
+    }
+
+    maximizeStateSyncInFlight = true;
+
+    try {
+      isMaximized.value = await appWindow.isMaximized();
+    } catch (error) {
+      console.error('Failed to sync maximize state:', error);
+    } finally {
+      maximizeStateSyncInFlight = false;
+
+      if (maximizeStateSyncQueued) {
+        maximizeStateSyncQueued = false;
+        scheduleMaximizeStateSync(0);
+      }
+    }
+  }
+
+  function scheduleMaximizeStateSync(delayMs = 120) {
+    if (maximizeStateSyncTimer !== null) {
+      clearTimeout(maximizeStateSyncTimer);
+    }
+
+    maximizeStateSyncTimer = setTimeout(() => {
+      maximizeStateSyncTimer = null;
+      void syncMaximizeState();
+    }, delayMs);
+  }
+
   onMounted(async () => {
     try {
       // Add event listener for platform override
@@ -552,12 +601,15 @@
       }
 
       // Check if window is maximized on mount
-      isMaximized.value = await appWindow.isMaximized();
+      await syncMaximizeState();
 
-      // Listen for maximize state changes
-      appWindow.listen('tauri://resize', async () => {
-        isMaximized.value = await appWindow.isMaximized();
-      });
+      // macOS can get drag jitter if we poll maximize state during/after resize.
+      // Restrict resize-driven maximize sync to non-macOS platforms.
+      if (!isMacOS.value) {
+        resizeUnlisten = await appWindow.onResized(() => {
+          scheduleMaximizeStateSync();
+        });
+      }
     } catch (error) {
       console.error('Failed to initialize titlebar:', error);
     }
@@ -566,6 +618,16 @@
   // Cleanup event listener on unmount
   onUnmounted(() => {
     window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
+
+    if (maximizeStateSyncTimer !== null) {
+      clearTimeout(maximizeStateSyncTimer);
+      maximizeStateSyncTimer = null;
+    }
+
+    if (resizeUnlisten) {
+      resizeUnlisten();
+      resizeUnlisten = null;
+    }
   });
 </script>
 
@@ -860,7 +922,9 @@
     border: none;
     cursor: pointer;
     position: relative;
-    transition: background 0.15s ease, border-color 0.15s ease;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease;
     flex-shrink: 0;
     /* Default gray state - slightly lighter than titlebar bg (#0a0a0b) */
     background: #3a3a3c;

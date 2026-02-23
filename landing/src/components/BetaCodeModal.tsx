@@ -5,14 +5,13 @@ interface BetaCodeModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
-  onOpenWaitlist: () => void
 }
 
 const API_URL = import.meta.env.DEV 
   ? 'http://localhost:4000/api/beta/verify-code'
   : 'https://clippster-server.fly.dev/api/beta/verify-code'
 
-export function BetaCodeModal({ isOpen, onClose, onSuccess, onOpenWaitlist }: BetaCodeModalProps) {
+export function BetaCodeModal({ isOpen, onClose, onSuccess }: BetaCodeModalProps) {
   const [code, setCode] = useState('')
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
@@ -194,16 +193,7 @@ export function BetaCodeModal({ isOpen, onClose, onSuccess, onOpenWaitlist }: Be
           {/* Footer */}
           <div className="mt-6 pt-6 border-t border-zinc-800">
             <p className="text-sm text-zinc-400 text-center">
-              Don't have a code?{' '}
-              <button
-                onClick={() => {
-                  onClose()
-                  onOpenWaitlist()
-                }}
-                className="text-cyan-400 hover:text-cyan-300 transition-colors font-medium"
-              >
-                Join the waitlist
-              </button>
+              Don't have a code? Contact us to get access.
             </p>
           </div>
         </div>

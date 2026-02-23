@@ -496,6 +496,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
+  import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     Briefcase, Loader2, Plus, Pencil, Pause, Play, Trash2, Users, Video, Star,
     DollarSign, UserCircle, CheckCircle, X, RefreshCw, FileText, UserCheck, MessageCircle,
@@ -607,7 +608,7 @@
   }
 
   function formatDate(dateStr: string): string {
-    return new Date(dateStr).toLocaleDateString();
+    return fmtDate(dateStr);
   }
 
   // Load

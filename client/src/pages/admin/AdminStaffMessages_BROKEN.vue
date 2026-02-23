@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue';
+import { formatDate as fmtDate, formatTime as fmtTime } from '@/utils/dateTimeUtils';
 import { MessagesSquare, Plus, Send, Loader2, MessageSquare, Search, Users, User, X, Check } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import PageLayout from '@/components/PageLayout.vue';
@@ -196,13 +197,12 @@ const formatTime = (timestamp: string) => {
   if (diff < 60000) return 'Just now';
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return date.toLocaleDateString();
+  return fmtDate(date);
 };
 
 const formatMessageTime = (timestamp: string) => {
   if (!timestamp) return '';
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return fmtTime(timestamp);
 };
 
 const scrollToBottom = () => {

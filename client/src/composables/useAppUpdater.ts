@@ -55,7 +55,12 @@ async function checkForUpdates(): Promise<boolean> {
 
   try {
     console.log('[AppUpdater] Checking for updates...');
-    const update = await check();
+    const update = await Promise.race([
+      check(),
+      new Promise<null>((_, reject) =>
+        setTimeout(() => reject(new Error('Update check timed out')), 10_000)
+      ),
+    ]);
 
     if (update) {
       console.log('[AppUpdater] Update available:', update.version);

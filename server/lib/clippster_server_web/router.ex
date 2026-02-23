@@ -190,6 +190,10 @@ defmodule ClippsterServerWeb.Router do
     # Activity tracking (requires auth)
     post("/auth/activity-ping", AuthController, :activity_ping)
 
+    # User preferences
+    get("/user/preferences", UserPreferencesController, :get_preferences)
+    patch("/user/preferences", UserPreferencesController, :update_preferences)
+
     # User restrictions
     get("/user/restrictions", RestrictionController, :get_user_restrictions)
 

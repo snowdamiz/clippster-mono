@@ -1,9 +1,9 @@
-import { Check, X, ArrowLeft, Apple, Monitor, Minus, Loader2, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Clock, Package, TrendingUp, Trophy } from 'lucide-react'
+import { Check, X, ArrowLeft, Apple, Monitor, Minus, Loader2, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Package, TrendingUp, Trophy, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
 import { useDownloadContext } from '../context/DownloadContext'
 import { CTA } from '../components/CTA'
-import { WaitlistModal } from '../components/WaitlistModal'
+import { BetaCodeModal } from '../components/BetaCodeModal'
 import { useState } from 'react'
 
 // Subscription plans (actual pricing from server)
@@ -387,7 +387,7 @@ function FAQItem({ question, answer, isOpen, onClick, index }: {
 
 export function PricingPage() {
   const { primaryDownload, isLoading } = useDownloads()
-  const { downloadsEnabled, showWaitlistModal, setShowWaitlistModal, openWaitlistModal } = useDownloadContext()
+  const { downloadsEnabled, showBetaCodeModal, setShowBetaCodeModal, openBetaCodeModal, enableDownloads } = useDownloadContext()
   const [openFAQ, setOpenFAQ] = useState<number | null>(0)
 
   return (
@@ -414,11 +414,13 @@ export function PricingPage() {
             </div>
           ) : !downloadsEnabled ? (
             <button
-              onClick={openWaitlistModal}
+              onClick={openBetaCodeModal}
               className="px-5 py-2.5 rounded-full bg-white/10 text-white/70 font-medium text-sm border border-white/20 flex items-center gap-2 cursor-pointer hover:bg-cyan-500/15 hover:border-cyan-500/30 transition-colors group"
             >
-              <Clock className="w-4 h-4 text-cyan-400" />
-              <span className="hidden sm:inline group-hover:text-cyan-400 transition-colors">Coming Soon</span>
+              <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+              <span className="hidden sm:inline group-hover:text-cyan-400 transition-colors">Enter Beta Code</span>
             </button>
           ) : primaryDownload ? (
             <a
@@ -561,16 +563,18 @@ export function PricingPage() {
                       {/* CTA Button */}
                       {!downloadsEnabled ? (
                         <button
-                          onClick={openWaitlistModal}
+                          onClick={openBetaCodeModal}
                           className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden cursor-pointer ${
-                            plan.highlight 
-                              ? 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white' 
+                            plan.highlight
+                              ? 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
                               : 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
                           }`}
                         >
                           <span className="relative flex items-center justify-center gap-2">
-                            <Clock className="w-4 h-4" />
-                            Coming Soon
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                            </svg>
+                            Enter Beta Code
                           </span>
                         </button>
                       ) : (
@@ -754,16 +758,18 @@ export function PricingPage() {
                         {/* CTA Button */}
                         {!downloadsEnabled ? (
                           <button
-                            onClick={openWaitlistModal}
+                            onClick={openBetaCodeModal}
                             className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden cursor-pointer ${
-                              plan.highlight 
-                                ? 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white' 
+                              plan.highlight
+                                ? 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
                                 : 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
                             }`}
                           >
                             <span className="relative flex items-center justify-center gap-2">
-                              <Clock className="w-4 h-4" />
-                              Coming Soon
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                              </svg>
+                              Enter Beta Code
                             </span>
                           </button>
                         ) : (
@@ -1187,10 +1193,10 @@ export function PricingPage() {
         </div>
       </footer>
 
-      {/* Waitlist Modal */}
-      <WaitlistModal 
-        isOpen={showWaitlistModal} 
-        onClose={() => setShowWaitlistModal(false)} 
+      <BetaCodeModal
+        isOpen={showBetaCodeModal}
+        onClose={() => setShowBetaCodeModal(false)}
+        onSuccess={() => enableDownloads()}
       />
     </div>
   )

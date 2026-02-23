@@ -287,7 +287,7 @@ export function useChunkedClipDetection() {
         error: errorMessage,
       };
 
-      showError('Clip detection failed', errorMessage);
+      showError('Clip detection failed', errorMessage, undefined, 'clips');
       return { success: false, error: errorMessage };
     } finally {
       isProcessing.value = false;
@@ -630,7 +630,9 @@ export function useChunkedClipDetection() {
 
       showSuccess(
         'Clips detected',
-        `Found ${result.clips?.length || 0} clips using cached transcript`
+        `Found ${result.clips?.length || 0} clips using cached transcript`,
+        undefined,
+        'clips'
       );
 
       return { success: true, sessionId };
@@ -712,7 +714,7 @@ export function useChunkedClipDetection() {
         serverResponseId: result.jobId || null,
       });
 
-      showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`);
+      showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
 
       return { success: true, sessionId };
     } catch (error) {
@@ -817,7 +819,7 @@ export function useChunkedClipDetection() {
         serverResponseId: result.jobId || null,
       });
 
-      showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`);
+      showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
 
       return { success: true, sessionId };
     } catch (error) {
@@ -921,7 +923,7 @@ export function useChunkedClipDetection() {
         serverResponseId: result.jobId || null,
       });
 
-      showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`);
+      showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
 
       return { success: true, sessionId };
     } catch (error) {

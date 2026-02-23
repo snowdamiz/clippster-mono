@@ -1,4 +1,4 @@
-import { Apple, Monitor, ChevronDown, Loader2, Clock, Sparkles } from 'lucide-react'
+import { Apple, Monitor, ChevronDown, Loader2, Sparkles } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useDownloads, type PlatformDownload } from '../hooks/usePlatform'
@@ -6,7 +6,7 @@ import { useDownloadContext } from '../context/DownloadContext'
 
 export function CTA() {
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
-  const { downloadsEnabled, openWaitlistModal } = useDownloadContext()
+  const { downloadsEnabled, openBetaCodeModal } = useDownloadContext()
   const [showDropdown, setShowDropdown] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
@@ -67,11 +67,16 @@ export function CTA() {
             </div>
           ) : !downloadsEnabled ? (
             <button
-              onClick={openWaitlistModal}
-              className="group px-8 py-4 rounded-lg bg-[#141416] text-zinc-300 font-semibold border border-[#1f1f23] flex items-center gap-3 cursor-pointer hover:border-[rgba(255,255,255,0.1)] hover:text-white transition-all duration-200 shadow-lg shadow-black/20"
+              onClick={openBetaCodeModal}
+              className="group relative px-8 py-4 rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 text-white font-semibold text-base hover:from-cyan-400 hover:to-cyan-500 transition-all duration-200 flex items-center gap-3 shadow-xl shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]"
             >
-              <Clock className="w-5 h-5 group-hover:text-cyan-400 transition-colors" />
-              Coming Soon
+              <div className="absolute inset-0 rounded-lg bg-cyan-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <span className="relative flex items-center gap-3">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                Enter Beta Code
+              </span>
             </button>
           ) : primaryDownload ? (
             <a

@@ -786,6 +786,7 @@
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
   import { useAuthStore } from '@/stores/auth';
+  import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import { useToast } from '@/composables/useToast';
   import api from '@/services/api';
   import {
@@ -932,8 +933,7 @@
 
   function formatDate(dateString: string | null): string {
     if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return fmtDate(dateString);
   }
 
   function showAuthModal() {

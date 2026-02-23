@@ -499,6 +499,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { formatDate as fmtDate, formatDateTime } from '@/utils/dateTimeUtils';
 import {
   User,
   Shield,
@@ -579,21 +580,11 @@ const lastActive = computed(() => {
 });
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return fmtDate(dateString);
 };
 
 const formatFullDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatDateTime(dateString);
 };
 
 const loadUserProfile = async () => {

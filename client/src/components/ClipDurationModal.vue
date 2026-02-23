@@ -203,6 +203,7 @@
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
+  import { formatTime } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { Scissors, X, Lock, FolderOpen, Check, AlertCircle, ExternalLink } from 'lucide-vue-next';
   import { useRouter } from 'vue-router';
@@ -264,15 +265,7 @@
 
   // Computed
   const defaultClipName = computed(() => {
-    const date = new Date();
-    const timestamp = date
-      .toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      })
-      .replace(/:/g, '-');
+    const timestamp = formatTime(new Date()).replace(/:/g, '-').replace(/\s*(AM|PM)/i, '');
     return `Clip - ${timestamp}`;
   });
 

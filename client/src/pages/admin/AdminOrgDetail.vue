@@ -202,6 +202,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { formatDate as fmtDate, formatDateTime } from '@/utils/dateTimeUtils';
 import {
   Building2,
   Crown,
@@ -231,21 +232,11 @@ const org = ref<any>(null);
 const orgId = route.params.id as string;
 
 const formatDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  return fmtDate(dateString);
 };
 
 const formatFullDate = (dateString: string) => {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatDateTime(dateString);
 };
 
 const loadOrgDetails = async () => {

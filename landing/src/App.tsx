@@ -8,19 +8,15 @@ import { HowItWorks } from './components/HowItWorks'
 // import { Testimonials } from './components/Testimonials'
 import { CTA } from './components/CTA'
 import { Footer } from './components/Footer'
-import { WaitlistModal } from './components/WaitlistModal'
 import { BetaCodeModal } from './components/BetaCodeModal'
 import { AnnouncementDialog } from './components/AnnouncementDialog'
 import { useDownloadContext } from './context/DownloadContext'
 import { useAnnouncements } from './hooks/useAnnouncements'
 
 function App() {
-  const { 
-    showWaitlistModal, 
-    setShowWaitlistModal,
+  const {
     showBetaCodeModal,
     setShowBetaCodeModal,
-    openWaitlistModal,
     enableDownloads
   } = useDownloadContext()
   const { currentAnnouncement, queueLength, fetchAndEnqueue, dismissCurrent } = useAnnouncements()
@@ -50,12 +46,6 @@ function App() {
         onSuccess={() => {
           enableDownloads()
         }}
-        onOpenWaitlist={openWaitlistModal}
-      />
-
-      <WaitlistModal 
-        isOpen={showWaitlistModal} 
-        onClose={() => setShowWaitlistModal(false)} 
       />
 
       <AnnouncementDialog

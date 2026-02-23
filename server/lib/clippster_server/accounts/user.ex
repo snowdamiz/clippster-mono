@@ -67,6 +67,21 @@ defmodule ClippsterServer.Accounts.User do
     field :mod_discount_enabled, :boolean, default: false
     field :mod_discount_stripe_coupon_id, :string
 
+    # User preferences
+    field :time_format_preference, :string, default: "12hr"
+    field :toast_enabled, :boolean, default: true
+    field :toast_duration, :integer, default: 5000
+    field :toast_position, :string, default: "bottom-right"
+    field :toast_sound_enabled, :boolean, default: false
+    field :toast_background_enabled, :boolean, default: true
+    field :notify_livestream, :boolean, default: true
+    field :notify_clips, :boolean, default: true
+    field :notify_downloads, :boolean, default: true
+    field :notify_projects, :boolean, default: true
+    field :notify_social, :boolean, default: true
+    field :notify_organization, :boolean, default: true
+    field :notify_system, :boolean, default: true
+
     timestamps(type: :utc_datetime)
   end
 
@@ -370,5 +385,32 @@ defmodule ClippsterServer.Accounts.User do
   def valid_password?(_, _) do
     Pbkdf2.no_user_verify()
     false
+  end
+
+  @preference_fields [
+    :time_format_preference,
+    :toast_enabled,
+    :toast_duration,
+    :toast_position,
+    :toast_sound_enabled,
+    :toast_background_enabled,
+    :notify_livestream,
+    :notify_clips,
+    :notify_downloads,
+    :notify_projects,
+    :notify_social,
+    :notify_organization,
+    :notify_system
+  ]
+
+  @doc """
+  Changeset for updating user preferences (time format, toast notifications, etc.).
+  """
+  def preferences_changeset(user, attrs) do
+    user
+    |> cast(attrs, @preference_fields)
+    |> validate_inclusion(:time_format_preference, ["12hr", "24hr"])
+    |> validate_inclusion(:toast_position, ["top-right", "top-left", "bottom-right", "bottom-left"])
+    |> validate_inclusion(:toast_duration, [3000, 5000, 7000, 10000, 0])
   end
 end

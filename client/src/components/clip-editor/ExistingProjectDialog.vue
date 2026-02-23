@@ -68,11 +68,10 @@
 <script setup lang="ts">
   import { X, FolderOpen, Video, Plus } from 'lucide-vue-next';
   import type { VideoEditorProject } from '@/services/database';
+  import { formatUnixDate } from '@/utils/dateTimeUtils';
 
   function formatDate(timestamp: number): string {
-    return new Date(timestamp * 1000).toLocaleDateString(undefined, {
-      year: 'numeric', month: 'short', day: 'numeric',
-    });
+    return formatUnixDate(timestamp);
   }
 
   function formatDuration(seconds: number): string {

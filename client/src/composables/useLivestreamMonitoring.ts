@@ -1,4 +1,5 @@
 import { ref, computed } from 'vue';
+import { formatTime } from '@/utils/dateTimeUtils';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import {
@@ -219,13 +220,7 @@ function addActivityLog(
   const entry: ActivityLog = {
     id,
     timestamp:
-      log.timestamp ??
-      new Date().toLocaleTimeString([], {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      }),
+      log.timestamp ?? formatTime(new Date()),
     streamerId: log.streamerId,
     streamerName: log.streamerName,
     platform: log.platform,
@@ -1535,7 +1530,9 @@ export function useLivestreamMonitoring() {
 
       showSuccess(
         `${streamer.displayName} is live`,
-        options.detectClips ? 'Auto-detect recording started.' : 'Recording started.'
+        options.detectClips ? 'Auto-detect recording started.' : 'Recording started.',
+        undefined,
+        'livestream'
       );
 
       // Initial segment start log (use streamerId-1 as key)
@@ -1638,7 +1635,7 @@ export function useLivestreamMonitoring() {
           console.log(`[LiveMonitor] Auto DVR: Starting DVR for live streamer ${streamer.displayName}`);
           
           // Show toast notification that streamer went live
-          showSuccess(`${streamer.displayName} is now live!`, undefined, 7000);
+          showSuccess(`${streamer.displayName} is now live!`, undefined, 7000, 'livestream');
           
           const started = await startDvrRecordingForStreamer(streamer);
           if (started) {
@@ -1746,46 +1743,55 @@ export async function initGlobalLiveStatusPolling(): Promise<void> {
   async function checkAllStreamersLiveStatus() {
     try {
       const streamers = await getAllMonitoredStreamers();
-      
+
       if (streamers.length === 0) return;
-      
+
       console.log(`[GlobalLiveStatus] Checking ${streamers.length} streamers (initial: ${isInitialPoll})`);
-      
-      for (const record of streamers) {
-        const wasLive = Boolean(record.is_currently_live);
-        
-        // Check live status
-        const status = await fetchLiveStatus(
-          record.mint_id,
-          (record.platform as SupportedLivestreamPlatform) || 'PumpFun'
-        );
-        
-        // Update database
-        const { updateMonitoredStreamer } = await import('@/services/database');
-        await updateMonitoredStreamer(record.id, {
-          is_currently_live: status.isLive ? 1 : 0,
-          last_check_timestamp: Math.floor(Date.now() / 1000),
-        });
-        
-        // Show toast if went live (offline → online transition)
-        // BUT skip toasts on initial poll to avoid spam when app first opens
-        if (!wasLive && status.isLive && !isInitialPoll) {
-          showSuccess(`${record.display_name} is now live!`, undefined, 7000);
-          
-          // Dispatch global event
-          window.dispatchEvent(
-            new CustomEvent('streamer-went-live', {
-              detail: {
-                streamerId: record.id,
-                displayName: record.display_name,
-                platform: record.platform,
-                mintId: record.mint_id,
-              },
-            })
-          );
-        }
-      }
-      
+
+      const { updateMonitoredStreamer: updateStreamer } = await import('@/services/database');
+
+      // Check all streamers in parallel instead of sequentially
+      await Promise.allSettled(
+        streamers.map(async (record) => {
+          const wasLive = Boolean(record.is_currently_live);
+
+          // Check live status with a 10s timeout per streamer
+          const status = await Promise.race([
+            fetchLiveStatus(
+              record.mint_id,
+              (record.platform as SupportedLivestreamPlatform) || 'PumpFun'
+            ),
+            new Promise<LiveStatus>((resolve) =>
+              setTimeout(() => resolve({ isLive: false }), 10_000)
+            ),
+          ]);
+
+          // Update database
+          await updateStreamer(record.id, {
+            is_currently_live: status.isLive ? 1 : 0,
+            last_check_timestamp: Math.floor(Date.now() / 1000),
+          });
+
+          // Show toast if went live (offline → online transition)
+          // BUT skip toasts on initial poll to avoid spam when app first opens
+          if (!wasLive && status.isLive && !isInitialPoll) {
+            showSuccess(`${record.display_name} is now live!`, undefined, 7000, 'livestream');
+
+            // Dispatch global event
+            window.dispatchEvent(
+              new CustomEvent('streamer-went-live', {
+                detail: {
+                  streamerId: record.id,
+                  displayName: record.display_name,
+                  platform: record.platform,
+                  mintId: record.mint_id,
+                },
+              })
+            );
+          }
+        })
+      );
+
       // After first poll completes, mark as no longer initial
       if (isInitialPoll) {
         isInitialPoll = false;

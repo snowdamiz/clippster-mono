@@ -171,6 +171,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
+  import { formatDateTime } from '@/utils/dateTimeUtils';
   import {
     KeyRound,
     RefreshCw,
@@ -270,13 +271,7 @@
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      return formatDateTime(dateString);
     } catch {
       return 'Invalid date';
     }

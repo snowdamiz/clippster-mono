@@ -33,3 +33,4 @@ export * from './video-editor-edits';
 export * from './watermark-presets';
 export * from './watermarks';
 export * from './vod-presets';
+export * from './user-preferences';

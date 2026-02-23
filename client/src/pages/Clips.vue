@@ -896,6 +896,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, watch, Transition } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
+  import { formatDate } from '@/utils/dateTimeUtils';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
   import { save } from '@tauri-apps/plugin-dialog';
   import { useRouter } from 'vue-router';
@@ -1840,7 +1841,7 @@
     if (clipDate.getTime() === today.getTime()) return 'Today';
     if (clipDate.getTime() === yesterday.getTime()) return 'Yesterday';
 
-    return d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    return formatDate(d);
   }
 
   // Pagination functions

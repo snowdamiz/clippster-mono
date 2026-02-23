@@ -1,4 +1,15 @@
 #![allow(unexpected_cfgs)]
+use std::fs;
+use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use tauri::Manager;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WindowSize {
+    pub width: f64,
+    pub height: f64,
+}
+
 // Get platform information
 #[tauri::command]
 pub fn get_platform() -> String {
@@ -58,4 +69,50 @@ pub async fn setup_macos_titlebar(_window: tauri::Window) -> Result<(), String> 
     }
 
     Ok(())
+}
+
+// Get the path to the window state file
+fn get_window_state_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data directory: {}", e))?;
+    
+    fs::create_dir_all(&app_data_dir)
+        .map_err(|e| format!("Failed to create app data directory: {}", e))?;
+    
+    Ok(app_data_dir.join("window_state.json"))
+}
+
+// Save window size to app data directory
+#[tauri::command]
+pub fn save_window_size(app_handle: tauri::AppHandle, width: f64, height: f64) -> Result<(), String> {
+    let window_size = WindowSize { width, height };
+    let state_path = get_window_state_path(&app_handle)?;
+    
+    let json = serde_json::to_string(&window_size)
+        .map_err(|e| format!("Failed to serialize window size: {}", e))?;
+    
+    fs::write(&state_path, json)
+        .map_err(|e| format!("Failed to write window state: {}", e))?;
+    
+    Ok(())
+}
+
+// Load window size from app data directory
+#[tauri::command]
+pub fn load_window_size(app_handle: tauri::AppHandle) -> Result<Option<WindowSize>, String> {
+    let state_path = get_window_state_path(&app_handle)?;
+    
+    if !state_path.exists() {
+        return Ok(None);
+    }
+    
+    let json = fs::read_to_string(&state_path)
+        .map_err(|e| format!("Failed to read window state: {}", e))?;
+    
+    let window_size: WindowSize = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to deserialize window size: {}", e))?;
+    
+    Ok(Some(window_size))
 }

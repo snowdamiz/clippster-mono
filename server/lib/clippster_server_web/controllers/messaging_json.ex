@@ -17,6 +17,7 @@ defmodule ClippsterServerWeb.MessagingJSON do
       status: conversation.status,
       archived_at: conversation.archived_at,
       archived_by_user_id: conversation.archived_by_user_id,
+      scheduled_deletion_at: conversation.scheduled_deletion_at,
       created_at: conversation.inserted_at,
       participants: render_participants(conversation.participants)
     }

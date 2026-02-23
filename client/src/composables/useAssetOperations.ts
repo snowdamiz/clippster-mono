@@ -90,7 +90,9 @@ export function useAssetOperations() {
           const typeLabel = uploadData.type === 'intro' ? 'Intro' : 'Outro';
           success(
             `${typeLabel} uploaded`,
-            `"${uploadData.originalFilename}" has been uploaded successfully`
+            `"${uploadData.originalFilename}" has been uploaded successfully`,
+            undefined,
+            'projects'
           );
 
           // Notify all listeners about completion
@@ -103,11 +105,11 @@ export function useAssetOperations() {
           });
         } catch (dbError) {
           console.error('Failed to create database record for completed upload:', dbError);
-          error('Upload failed', `Failed to save asset: ${dbError}`);
+          error('Upload failed', `Failed to save asset: ${dbError}`, undefined, 'projects');
         }
       } else {
         // Show error toast for failed upload
-        error('Upload failed', result.error || 'Unknown upload error');
+        error('Upload failed', result.error || 'Unknown upload error', undefined, 'projects');
       }
     });
 
@@ -164,7 +166,7 @@ export function useAssetOperations() {
         originalFilename,
       }).catch((err) => {
         console.error('Failed to start async upload:', err);
-        error('Upload failed', `Failed to start upload: ${err}`);
+        error('Upload failed', `Failed to start upload: ${err}`, undefined, 'projects');
         // Remove from active uploads on error
         activeUploads.value.delete(uploadId);
         activeUploadsCount.value = Math.max(0, activeUploadsCount.value - 1); // Update counter
@@ -177,7 +179,7 @@ export function useAssetOperations() {
     } catch (err) {
       console.error('Asset upload error:', err);
       const typeLabel = type === 'intro' ? 'Intro' : 'Outro';
-      error('Upload failed', `Failed to upload ${typeLabel.toLowerCase()}: ${err}`);
+      error('Upload failed', `Failed to upload ${typeLabel.toLowerCase()}: ${err}`, undefined, 'projects');
       return { success: false, error: err };
     } finally {
       uploading.value = false;
@@ -199,11 +201,11 @@ export function useAssetOperations() {
       await deleteIntroOutro(asset.id);
 
       // Show success toast
-      success(`${typeLabel} deleted`, `"${deletedAssetName}" has been deleted successfully`);
+      success(`${typeLabel} deleted`, `"${deletedAssetName}" has been deleted successfully`, undefined, 'projects');
 
       return { success: true };
     } catch (err) {
-      error('Delete failed', `Failed to delete ${typeLabel.toLowerCase()}: ${err}`);
+      error('Delete failed', `Failed to delete ${typeLabel.toLowerCase()}: ${err}`, undefined, 'projects');
       return { success: false, error: err };
     }
   }

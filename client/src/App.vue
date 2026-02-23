@@ -23,14 +23,17 @@
   import { useAppUpdater } from '@/composables/useAppUpdater';
   import { useToast } from '@/composables/useToast';
   import { useActivityTracker } from '@/composables/useActivityTracker';
+  import { useUserPreferencesStore } from '@/stores/userPreferences';
   import { initGlobalLiveStatusPolling, stopGlobalLiveStatusPolling } from '@/composables/useLivestreamMonitoring';
   import { invoke } from '@tauri-apps/api/core';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
 
   // Platform detection for OS-specific styling (e.g., rounded corners on macOS)
   const detectedPlatform = ref<string>('unknown');
 
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
+  const preferencesStore = useUserPreferencesStore();
   const livestreamStore = useLivestreamStore();
   const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
   const { state: updateState, checkForUpdates } = useAppUpdater();
@@ -96,7 +99,15 @@
   // Handle streamer went live event
   const handleStreamerWentLive = (event: CustomEvent) => {
     const { displayName } = event.detail;
-    success(`${displayName} is now live!`, undefined, 7000);
+    success(`${displayName} is now live!`, undefined, 7000, 'livestream');
+  };
+
+  // Handle user preferences loaded from server (dispatched by auth store)
+  const handlePreferencesLoaded = (event: CustomEvent) => {
+    const { userId, preferences } = event.detail;
+    if (userId && preferences) {
+      preferencesStore.syncFromServer(userId, preferences);
+    }
   };
 
   // Key for router-view to force re-render on auth changes
@@ -141,6 +152,28 @@
     titleBarPlatformOverride.value = platform;
   };
 
+  // Window resize handler with debouncing
+  let resizeTimeout: number | null = null;
+  const handleWindowResize = async () => {
+    // Debounce resize events to avoid excessive saves
+    if (resizeTimeout !== null) {
+      clearTimeout(resizeTimeout);
+    }
+    
+    resizeTimeout = window.setTimeout(async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        const size = await appWindow.innerSize();
+        await invoke('save_window_size', { 
+          width: size.width, 
+          height: size.height 
+        });
+      } catch (error) {
+        console.error('[App] Failed to save window size:', error);
+      }
+    }, 500); // Wait 500ms after resize stops before saving
+  };
+
   // Ensure dark mode is always applied and initialize database
   onMounted(async () => {
     document.documentElement.classList.add('dark');
@@ -166,6 +199,13 @@
     } catch (error) {
       console.error('[App] Failed to show main window:', error);
     }
+
+    // Set up window resize listener to save size
+    const appWindow = getCurrentWindow();
+    const unlistenResize = await appWindow.onResized(handleWindowResize);
+    
+    // Store unlisten function for cleanup
+    (window as any).__unlistenWindowResize = unlistenResize;
 
     // MANDATORY UPDATE CHECK - must complete before app continues
     // Skip update check in development environment
@@ -207,91 +247,81 @@
       return;
     }
 
-    // Check authentication status on app start
-    try {
-      await authStore.checkAuth();
-      
-      // Start activity tracking after authentication is confirmed
-      if (authStore.isAuthenticated) {
-        console.log('[App] User authenticated, starting activity tracker');
-        startTracking();
-
-        // Fetch unseen announcements for already-authenticated users
-        await fetchAndEnqueue();
-        subscribeToChannel(authStore.user?.account_type ?? 'personal');
-      }
-    } catch (error) {
-      console.error('[App] Failed to check authentication:', error);
-    }
-
-    // Fetch feature flags (including beta mode status)
-    try {
-      await fetchFeatureFlags();
-    } catch (error) {
-      console.error('[App] Failed to fetch feature flags:', error);
-    }
-
-    // Listen for auth-required events (e.g., when token expires)
+    // Register event listeners (synchronous, no reason to delay)
     window.addEventListener('auth-required', handleAuthRequired);
-
-    // Listen for show-auth-modal events from components
     window.addEventListener('show-auth-modal', () => {
       showAuthModal.value = true;
     });
-
-    // Listen for auth state changes (login/logout) to refresh data
     window.addEventListener('auth-state-changed', handleAuthStateChanged as unknown as EventListener);
-
-    // Listen for platform override events from Admin panel
     window.addEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
-
-    // Listen for streamer went live events
     window.addEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
+    window.addEventListener('user-preferences-loaded', handlePreferencesLoaded as EventListener);
 
-    // Initialize database connection
-    try {
-      await initDatabase();
+    // Run independent startup tasks in parallel:
+    // - Auth check + announcements (announcements depend on auth, but both are independent of DB)
+    // - Feature flags (independent of everything)
+    // - Database init + schema healing + seeds (independent of network)
+    await Promise.allSettled([
+      // Auth path: check auth, then start tracker + fetch announcements if authenticated
+      (async () => {
+        await authStore.checkAuth();
+        if (authStore.isAuthenticated) {
+          console.log('[App] User authenticated, starting activity tracker');
+          startTracking();
+          // Load preferences from local cache immediately (server sync happens via event)
+          if (authStore.user?.id) {
+            preferencesStore.loadFromLocal(String(authStore.user.id)).catch((e) =>
+              console.error('[App] Failed to load local preferences:', e)
+            );
+          }
+          // Announcements don't need to block startup - fire and forget
+          fetchAndEnqueue().catch((e) => console.error('[App] Failed to fetch announcements:', e));
+          subscribeToChannel(authStore.user?.account_type ?? 'personal');
+        }
+      })().catch((error) => {
+        console.error('[App] Failed to check authentication:', error);
+      }),
 
-      // Ensure all expected columns exist (handles SQLite's lack of IF NOT EXISTS for ALTER TABLE)
-      await healSchema();
+      // Feature flags (independent)
+      fetchFeatureFlags().catch((error) => {
+        console.error('[App] Failed to fetch feature flags:', error);
+      }),
 
-      // Seed default prompts if they don't exist (order matters for display)
-      await seedDefaultPrompt();
-      await seedGamingPrompt();
-      await seedGamblingPrompt();
-      await seedBreakingNewsPrompt();
+      // Database init (local only, no network)
+      (async () => {
+        await initDatabase();
+        await healSchema();
+        await seedDefaultPrompt();
+        await seedGamingPrompt();
+        await seedGamblingPrompt();
+        await seedBreakingNewsPrompt();
+        await ensureOrganizationAssetColumns();
+      })().catch((error) => {
+        console.error('[App] Failed to initialize database:', error);
+      }),
+    ]);
 
-      // Ensure organization asset columns exist (migration)
-      await ensureOrganizationAssetColumns();
-    } catch (error) {
-      console.error('[App] Failed to initialize database:', error);
-    }
-
-    // Initialize window close handler
+    // These are fast local operations, run them after the parallel batch
     try {
       await initializeWindowCloseHandler();
     } catch (error) {
       console.error('[App] Failed to initialize window close handler:', error);
     }
 
-    // Initialize global clip build event handler
-    // This ensures database is always updated when builds complete, regardless of which view is active
     try {
       await initClipBuildEventHandler();
     } catch (error) {
       console.error('[App] Failed to initialize clip build event handler:', error);
     }
 
-    // Initialize global live status polling
-    // This checks all monitored streamers every 60s and shows toast notifications when they go live
-    try {
-      await initGlobalLiveStatusPolling();
-    } catch (error) {
-      console.error('[App] Failed to initialize global live status polling:', error);
-    }
-
-    // Hide loading screen after initialization
+    // Hide loading screen - app is usable now
     isLoading.value = false;
+
+    // Live status polling runs in the background AFTER the app is visible.
+    // It makes N external API calls and should never block the loading screen.
+    initGlobalLiveStatusPolling().catch((error) => {
+      console.error('[App] Failed to initialize global live status polling:', error);
+    });
   }
 
   // Cleanup auth event listener on unmount
@@ -303,6 +333,13 @@
     window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as unknown as EventListener);
     window.removeEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
+    window.removeEventListener('user-preferences-loaded', handlePreferencesLoaded as EventListener);
+
+    // Cleanup window resize listener
+    const unlistenResize = (window as any).__unlistenWindowResize;
+    if (unlistenResize) {
+      unlistenResize();
+    }
 
     // Cleanup global clip build event handler
     cleanupClipBuildEventHandler();
