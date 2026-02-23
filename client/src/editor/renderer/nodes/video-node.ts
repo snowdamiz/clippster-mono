@@ -32,6 +32,7 @@ export interface VideoNodeParams {
 	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
 	speed?: number;
+	reversed?: boolean;
 	fadeIn?: number;
 	fadeOut?: number;
 	keyframes?: ElementKeyframes;
@@ -53,6 +54,11 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 	private getSourceTime(time: number) {
 		const speed = this.params.speed ?? 1;
 		const elapsed = time - this.params.timeOffset;
+		if (this.params.reversed) {
+			// Play backwards: start from the end of the trimmed region
+			const trimEnd = this.params.trimStart + this.params.duration * speed;
+			return trimEnd - elapsed * speed;
+		}
 		return this.params.trimStart + elapsed * speed;
 	}
 

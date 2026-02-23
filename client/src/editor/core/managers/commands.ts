@@ -37,6 +37,14 @@ export class CommandManager {
 		return this.redoStack.length > 0;
 	}
 
+	getUndoStackSize(): number {
+		return this.history.length;
+	}
+
+	getRedoStackSize(): number {
+		return this.redoStack.length;
+	}
+
 	clear(): void {
 		this.history = [];
 		this.redoStack = [];

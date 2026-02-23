@@ -3,3 +3,4 @@ export { RemoveTrackCommand } from "./remove-track";
 export { ToggleTrackMuteCommand } from "./toggle-track-mute";
 export { ToggleTrackVisibilityCommand } from "./toggle-track-visibility";
 export { ToggleTrackLockCommand } from "./toggle-track-lock";
+export { ReorderTrackCommand } from "./reorder-track";

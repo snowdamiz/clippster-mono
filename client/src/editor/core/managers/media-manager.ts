@@ -5,10 +5,12 @@ import { generateUUID } from "../../utils/id";
 import { videoCache } from "../../video-cache/service";
 import { filmstripService } from "../../services/filmstrip-service";
 import { hasMediaId } from "../../lib/timeline/element-utils";
+import { waveformService } from "@/services/waveformService";
 
 export class MediaManager {
 	private assets: MediaAsset[] = [];
 	private isLoading = false;
+	private processingAssets = new Set<string>();
 	private listeners = new Set<() => void>();
 
 	constructor(private editor: EditorCore) {}
@@ -26,6 +28,7 @@ export class MediaManager {
 		};
 
 		this.assets = [...this.assets, newAsset];
+		this.processingAssets.add(newAsset.id);
 		this.notify();
 
 		try {
@@ -33,9 +36,20 @@ export class MediaManager {
 			// Populate filePath on the in-memory asset so export can find it
 			newAsset.filePath = resolvedPath;
 			this.notify();
+
+			// Pre-load waveform for video/audio assets so it's ready when added to timeline
+			if ((newAsset.type === "video" || newAsset.type === "audio") && resolvedPath) {
+				try {
+					await waveformService.loadAudio(resolvedPath);
+				} catch (waveformError) {
+					console.warn("[MediaManager] Waveform pre-load failed (non-fatal):", waveformError);
+				}
+			}
 		} catch (error) {
 			console.error("Failed to save media asset:", error);
 			this.assets = this.assets.filter((asset) => asset.id !== newAsset.id);
+		} finally {
+			this.processingAssets.delete(newAsset.id);
 			this.notify();
 		}
 	}
@@ -155,6 +169,10 @@ export class MediaManager {
 
 	isLoadingMedia(): boolean {
 		return this.isLoading;
+	}
+
+	isAssetProcessing(id: string): boolean {
+		return this.processingAssets.has(id);
 	}
 
 	subscribe(listener: () => void): () => void {

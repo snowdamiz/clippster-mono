@@ -8,7 +8,7 @@ import { zoomToSlider } from "../../lib/timeline/zoom-utils";
 
 interface UseTimelineZoomProps {
 	containerRef: Ref<HTMLDivElement | null>;
-	minZoom?: number;
+	minZoom?: Ref<number>;
 	initialZoom?: number;
 	initialScrollLeft?: number;
 	initialPlayheadTime?: number;
@@ -18,7 +18,7 @@ interface UseTimelineZoomProps {
 
 export function useTimelineZoom({
 	containerRef,
-	minZoom = TIMELINE_CONSTANTS.ZOOM_MIN,
+	minZoom,
 	initialZoom,
 	initialScrollLeft,
 	initialPlayheadTime,
@@ -27,10 +27,12 @@ export function useTimelineZoom({
 }: UseTimelineZoomProps) {
 	const { editor } = useEditor();
 
+	const minZoomValue = minZoom ?? ref(TIMELINE_CONSTANTS.ZOOM_MIN);
+
 	const zoomLevel = ref(
 		initialZoom !== undefined
-			? Math.max(minZoom, Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, initialZoom))
-			: minZoom,
+			? Math.max(minZoomValue.value, Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, initialZoom))
+			: minZoomValue.value,
 	);
 	let previousZoom = zoomLevel.value;
 	let hasRestoredScroll = false;
@@ -42,7 +44,7 @@ export function useTimelineZoom({
 			typeof zoomLevelOrUpdater === "function"
 				? zoomLevelOrUpdater(zoomLevel.value)
 				: zoomLevelOrUpdater;
-		zoomLevel.value = Math.max(minZoom, Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, nextZoom));
+		zoomLevel.value = Math.max(minZoomValue.value, Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, nextZoom));
 	}
 
 	function handleWheel(event: WheelEvent) {
@@ -55,7 +57,7 @@ export function useTimelineZoom({
 		if (isZoomGesture) {
 			const zoomMultiplier = event.deltaY > 0 ? 1 / 1.1 : 1.1;
 			setZoomLevel((prev) =>
-				Math.max(minZoom, Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, prev * zoomMultiplier)),
+				Math.max(minZoomValue.value, Math.min(TIMELINE_CONSTANTS.ZOOM_MAX, prev * zoomMultiplier)),
 			);
 		}
 	}
@@ -70,7 +72,7 @@ export function useTimelineZoom({
 
 		const currentScrollLeft = scrollElement.scrollLeft;
 		const playheadTime = editor.playback.getCurrentTime();
-		const sliderPercent = zoomToSlider({ zoomLevel: newZoom, minZoom });
+		const sliderPercent = zoomToSlider({ zoomLevel: newZoom, minZoom: minZoomValue.value });
 
 		if (sliderPercent >= TIMELINE_CONSTANTS.ZOOM_ANCHOR_PLAYHEAD_THRESHOLD) {
 			const playheadPixelsBefore =
