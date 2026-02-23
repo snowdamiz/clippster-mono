@@ -229,15 +229,26 @@ export const usePlatformStore = defineStore('platform', {
     // Background metadata fetch for Kick (avatar/username)
     async fetchKickMetadata(channelSlug: string) {
       try {
+        console.log('[Platform] Fetching Kick metadata for:', channelSlug);
         const status = await checkKickLivestream(channelSlug);
-        if (status) {
+        console.log('[Platform] Kick metadata response:', {
+          username: status.username,
+          profileImageUrl: status.profileImageUrl,
+          isLive: status.isLive,
+        });
+        
+        // Update metadata even if channel is offline (username/avatar should still be available)
+        if (status && (status.username || status.profileImageUrl)) {
           this.updateRecentSearchMetadata(channelSlug, 'kick', {
             name: status.username,
             imageUrl: status.profileImageUrl,
           });
+          console.log('[Platform] Updated Kick metadata for:', channelSlug);
+        } else {
+          console.warn('[Platform] No Kick metadata available for:', channelSlug);
         }
-      } catch {
-        // Ignore errors; non-fatal
+      } catch (error) {
+        console.error('[Platform] Failed to fetch Kick metadata for:', channelSlug, error);
       }
     },
 

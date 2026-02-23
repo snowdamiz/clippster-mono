@@ -16,6 +16,13 @@
     "core:window:allow-set-focus",
     "core:window:allow-request-user-attention",
     "core:webview:allow-create-webview-window",
-    "global-shortcut:default"
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to",
+    "global-shortcut:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered"
   ]
 }

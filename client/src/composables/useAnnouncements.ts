@@ -40,6 +40,7 @@ function markSeen(id: number) {
   if (!seen.includes(id)) {
     seen.push(id);
     localStorage.setItem(SEEN_KEY, JSON.stringify(seen));
+    console.log('[Announcements] Marked announcement as seen:', id, 'Total seen:', seen.length);
   }
 }
 
@@ -70,7 +71,11 @@ export function useAnnouncements() {
     try {
       const response = await api.get('/announcements/active', { timeout: 10_000 });
       const announcements: Announcement[] = response.data.announcements ?? [];
+      const seenIds = getSeenIds();
+      console.log('[Announcements] Fetched', announcements.length, 'active announcements. Already seen:', seenIds.length);
       for (const a of announcements) {
+        const wasSeen = seenIds.includes(a.id);
+        console.log('[Announcements] Processing announcement', a.id, '- Already seen:', wasSeen);
         enqueue(a);
       }
     } catch (error) {
