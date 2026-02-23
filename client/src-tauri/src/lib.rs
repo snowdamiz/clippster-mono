@@ -802,9 +802,21 @@ pub fn run() {
                 WebviewUrl::External(url_str.parse().unwrap())
             };
 
+            // Load saved window size or use defaults
+            let (width, height) = match ui_utils::load_window_size(app.handle().clone()) {
+                Ok(Some(size)) => {
+                    println!("[Rust] Restoring window size: {}x{}", size.width, size.height);
+                    (size.width, size.height)
+                }
+                _ => {
+                    println!("[Rust] Using default window size: 1280x720");
+                    (1280.0, 720.0)
+                }
+            };
+
             let window = WebviewWindowBuilder::new(app, "main", url)
                 .title("Clippster")
-                .inner_size(1280.0, 720.0)
+                .inner_size(width, height)
                 .min_inner_size(800.0, 600.0)
                 .decorations(false)
                 .transparent(true)
@@ -1015,6 +1027,8 @@ commands::file_utils::generate_video_thumbnail,
             ui_utils::setup_macos_titlebar,
             ui_utils::get_platform,
             ui_utils::show_main_window,
+            ui_utils::save_window_size,
+            ui_utils::load_window_size,
             
             // File operations
             copy_file,

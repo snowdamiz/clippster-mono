@@ -26,6 +26,7 @@
   import { useUserPreferencesStore } from '@/stores/userPreferences';
   import { initGlobalLiveStatusPolling, stopGlobalLiveStatusPolling } from '@/composables/useLivestreamMonitoring';
   import { invoke } from '@tauri-apps/api/core';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
 
   // Platform detection for OS-specific styling (e.g., rounded corners on macOS)
   const detectedPlatform = ref<string>('unknown');
@@ -151,6 +152,28 @@
     titleBarPlatformOverride.value = platform;
   };
 
+  // Window resize handler with debouncing
+  let resizeTimeout: number | null = null;
+  const handleWindowResize = async () => {
+    // Debounce resize events to avoid excessive saves
+    if (resizeTimeout !== null) {
+      clearTimeout(resizeTimeout);
+    }
+    
+    resizeTimeout = window.setTimeout(async () => {
+      try {
+        const appWindow = getCurrentWindow();
+        const size = await appWindow.innerSize();
+        await invoke('save_window_size', { 
+          width: size.width, 
+          height: size.height 
+        });
+      } catch (error) {
+        console.error('[App] Failed to save window size:', error);
+      }
+    }, 500); // Wait 500ms after resize stops before saving
+  };
+
   // Ensure dark mode is always applied and initialize database
   onMounted(async () => {
     document.documentElement.classList.add('dark');
@@ -176,6 +199,13 @@
     } catch (error) {
       console.error('[App] Failed to show main window:', error);
     }
+
+    // Set up window resize listener to save size
+    const appWindow = getCurrentWindow();
+    const unlistenResize = await appWindow.onResized(handleWindowResize);
+    
+    // Store unlisten function for cleanup
+    (window as any).__unlistenWindowResize = unlistenResize;
 
     // MANDATORY UPDATE CHECK - must complete before app continues
     // Skip update check in development environment
@@ -304,6 +334,12 @@
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as unknown as EventListener);
     window.removeEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
     window.removeEventListener('user-preferences-loaded', handlePreferencesLoaded as EventListener);
+
+    // Cleanup window resize listener
+    const unlistenResize = (window as any).__unlistenWindowResize;
+    if (unlistenResize) {
+      unlistenResize();
+    }
 
     // Cleanup global clip build event handler
     cleanupClipBuildEventHandler();
