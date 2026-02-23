@@ -49,6 +49,13 @@
   - Before finalizing a new modal, compare against at least one canonical in-app dialog and align container/header/input/footer token usage.
   - Prefer reusing the app’s established dialog visual primitives (surface, border, accent, button/input states) over inventing feature-specific styling.
 
+## 2026-02-23 - Frontend-to-Rust Export Contract Drift
+- Pattern observed: The frontend TypeScript interfaces (TauriVideoSource, TauriAudioTrack, TauriTextOverlay, etc.) sent fields that the Rust Deserialize structs didn't have. Serde silently drops unknown fields by default, causing features to work in preview (Web Audio / Canvas) but silently vanish from FFmpeg exports.
+- Preventive rule:
+  - When adding a new property to a frontend Tauri interface, always add the corresponding field to the Rust struct in the same commit.
+  - Periodically diff the TS interface fields against the Rust struct fields to catch drift.
+  - Consider adding `#[serde(deny_unknown_fields)]` to critical export config structs during development to surface mismatches as hard errors instead of silent drops.
+
 ## 2026-02-23 - Third-Party API Response Structure Changes
 - Pattern observed: Kick changed their `api.kick.com/private/v1/channels/{slug}` response structure, moving `username` and `profile_picture` under `data.account.user` instead of `data` root. This silently broke avatar loading across Live page, VOD page, and Creator Profiles.
 - Preventive rule:
