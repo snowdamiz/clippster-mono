@@ -636,13 +636,7 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
   # Helper functions
 
   defp get_base_url do
-    domain = Application.get_env(:clippster_server, :domain, "localhost")
-
-    if domain == "localhost" do
-      "http://localhost:1420"
-    else
-      "https://#{domain}"
-    end
+    Application.get_env(:clippster_server, :frontend_base_url, "http://localhost:1420")
   end
 
   defp get_sol_usd_rate do

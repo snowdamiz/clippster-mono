@@ -283,44 +283,49 @@ export type CaptionPresetId =
 	| "default"
 	| "karaoke"
 	| "karaoke-pop"
-	| "bold-outline"
 	| "neon-glow"
 	| "boxed"
-	| "typewriter"
-	| "minimal"
 	| "gradient-pop"
+	| "gradient-neon"
 	// Single-word styles
 	| "single-bold"
 	| "single-yellow"
 	| "single-red"
 	| "single-green"
-	| "single-cyan"
-	| "single-pink"
-	| "single-orange"
-	| "single-purple"
 	| "single-boxed"
 	| "single-glow"
 	| "single-outline"
 	| "single-gradient"
-	| "single-shadow"
 	// Multi-line / phrase styles
 	| "hormozi"
-	| "ali-abdaal"
 	| "mr-beast"
-	| "comic"
-	| "retro"
-	| "elegant"
-	| "fire"
-	| "ice"
-	| "pastel"
-	| "glitch"
-	| "thick-stroke"
-	| "drop-shadow"
-	| "highlight-box"
-	| "underline-pop"
-	| "gradient-blue"
-	| "gradient-sunset"
-	| "gradient-neon";
+	// TikTok pack
+	| "tiktok-bold"
+	| "tiktok-gen-z"
+	| "tiktok-mobile"
+	// YouTube pack
+	| "youtube-tutorial"
+	| "youtube-pro"
+	| "youtube-vlog"
+	// Instagram pack
+	| "instagram-aesthetic"
+	| "instagram-story"
+	| "instagram-reel"
+	// Podcast pack
+	| "podcast-minimal"
+	| "podcast-highlight"
+	| "podcast-pro"
+	// Gaming pack
+	| "gaming-neon"
+	| "gaming-cyber"
+	| "gaming-action"
+	// Business pack
+	| "business-clean"
+	| "business-accent"
+	| "business-modern"
+	// Motivational pack
+	| "motivational-bold"
+	| "motivational-gradient";
 
 export interface CaptionElement extends BaseTimelineElement {
 	type: "caption";

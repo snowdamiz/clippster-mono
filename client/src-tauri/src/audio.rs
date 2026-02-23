@@ -589,6 +589,113 @@ pub async fn extract_audio_to_file(
     })
 }
 
+/// Extract audio from a video file and save it as WAV format.
+/// WAV is more reliable for corrupted/livestream sources because it's uncompressed
+/// and has simpler headers that are less prone to decoding errors.
+#[tauri::command]
+pub async fn extract_audio_to_file_wav(
+    app: tauri::AppHandle,
+    video_path: String,
+    source_id: String,
+    trim_start: Option<f64>,
+    trim_duration: Option<f64>,
+) -> Result<ExtractedAudioFile, String> {
+    use tauri_plugin_shell::ShellExt;
+
+    println!("[Rust] ========================================");
+    println!("[Rust] extract_audio_to_file_wav called");
+    println!("[Rust] ========================================");
+    println!("[Rust]   video_path: {}", video_path);
+    println!("[Rust]   source_id: {}", source_id);
+    println!("[Rust]   trim_start: {:?}", trim_start);
+    println!("[Rust]   trim_duration: {:?}", trim_duration);
+
+    // Get storage paths
+    let paths = storage::init_storage_dirs()
+        .map_err(|e| {
+            println!("[Rust] Failed to get storage paths: {}", e);
+            format!("Failed to get storage paths: {}", e)
+        })?;
+
+    // Create audio directory if it doesn't exist
+    let audio_dir = paths.videos.join("extracted_audio");
+    std::fs::create_dir_all(&audio_dir)
+        .map_err(|e| format!("Failed to create audio directory: {}", e))?;
+
+    // Generate unique output filename based on source_id and timestamp
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let output_filename = format!("{}_{}_audio.wav", source_id, timestamp);
+    let output_path = audio_dir.join(&output_filename);
+
+    println!("[Rust] Output WAV path: {}", output_path.display());
+
+    // Build FFmpeg args for WAV extraction
+    let shell = app.shell();
+    println!("[Rust] Running FFmpeg to extract audio as WAV...");
+
+    let mut args: Vec<String> = Vec::new();
+    
+    // Add seek position if trim_start is provided (before input for fast seeking)
+    if let Some(start) = trim_start {
+        args.push("-ss".to_string());
+        args.push(format!("{:.3}", start));
+    }
+    
+    args.push("-i".to_string());
+    args.push(video_path.clone());
+    
+    // Add duration if trim_duration is provided
+    if let Some(duration) = trim_duration {
+        args.push("-t".to_string());
+        args.push(format!("{:.3}", duration));
+    }
+    
+    // WAV format settings - 16-bit PCM, 48kHz, stereo
+    args.push("-c:a".to_string());
+    args.push("pcm_s16le".to_string()); // 16-bit PCM
+    args.push("-ar".to_string());
+    args.push("48000".to_string());     // 48kHz sample rate
+    args.push("-ac".to_string());
+    args.push("2".to_string());         // Stereo
+    args.push("-vn".to_string());       // No video
+    args.push("-y".to_string());        // Overwrite output file
+    args.push(output_path.to_str().ok_or("Invalid output path")?.to_string());
+
+    println!("[Rust] FFmpeg WAV args: {:?}", args);
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    
+    let output = shell.sidecar("ffmpeg")
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+        .args(&args_refs)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!("[Rust] FFmpeg WAV extraction failed: {}", stderr);
+        return Err(format!("FFmpeg WAV extraction failed: {}", stderr));
+    }
+
+    println!("[Rust] FFmpeg WAV extraction completed successfully");
+
+    // Parse duration from FFmpeg output
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let duration = parse_duration_from_ffmpeg_output(&stderr).unwrap_or(0.0);
+
+    println!("[Rust] WAV audio duration: {} seconds", duration);
+    println!("[Rust] WAV audio extraction to file completed successfully");
+
+    Ok(ExtractedAudioFile {
+        file_path: output_path.to_string_lossy().to_string(),
+        filename: output_filename,
+        duration,
+    })
+}
+
 /// Get the duration of an audio file
 #[tauri::command]
 pub async fn get_audio_duration(
