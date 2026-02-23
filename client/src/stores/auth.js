@@ -773,9 +773,12 @@ export const useAuthStore = defineStore('auth', {
 
           // Verify token is still valid before setting authenticated state
           const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+          const authController = new AbortController();
+          const authTimeout = setTimeout(() => authController.abort(), 10_000);
           const response = await fetch(`${API_BASE}/api/auth/me`, {
             headers: { Authorization: `Bearer ${token}` },
-          });
+            signal: authController.signal,
+          }).finally(() => clearTimeout(authTimeout));
 
           if (!response.ok) {
             // Only clear auth on 401 (invalid token)

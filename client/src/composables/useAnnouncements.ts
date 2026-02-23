@@ -68,7 +68,7 @@ export function useAnnouncements() {
    */
   async function fetchAndEnqueue() {
     try {
-      const response = await api.get('/announcements/active');
+      const response = await api.get('/announcements/active', { timeout: 10_000 });
       const announcements: Announcement[] = response.data.announcements ?? [];
       for (const a of announcements) {
         enqueue(a);

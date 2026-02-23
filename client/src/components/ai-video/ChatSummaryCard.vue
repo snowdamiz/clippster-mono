@@ -39,6 +39,38 @@
           <span v-for="(f, i) in summary.keyFeatures" :key="i" class="feature-tag">{{ f }}</span>
         </div>
       </div>
+      <div v-if="summary.audience" class="summary-row">
+        <span class="summary-label">Audience</span>
+        <span class="summary-value">{{ summary.audience }}</span>
+      </div>
+      <div v-if="summary.platform" class="summary-row">
+        <span class="summary-label">Platform</span>
+        <span class="summary-value summary-badge">{{ summary.platform }}</span>
+      </div>
+      <div v-if="summary.narrative" class="summary-row">
+        <span class="summary-label">Narrative</span>
+        <span class="summary-value">{{ summary.narrative }}</span>
+      </div>
+    </div>
+    <!-- Scene plan -->
+    <div v-if="summary.scenes?.length" class="summary-card__scenes">
+      <div class="scenes-header">
+        <Film :size="13" />
+        <span>Scene Plan ({{ summary.scenes.length }} scenes)</span>
+      </div>
+      <div class="scenes-list">
+        <div v-for="scene in summary.scenes" :key="scene.index" class="scene-item">
+          <div class="scene-number">{{ scene.index + 1 }}</div>
+          <div class="scene-details">
+            <div class="scene-description">{{ scene.description }}</div>
+            <div class="scene-meta">
+              <span class="scene-duration">{{ scene.duration }}s</span>
+              <span v-if="scene.mood" class="scene-mood">{{ scene.mood }}</span>
+              <span v-if="scene.textOverlay" class="scene-text-hint" :title="scene.textOverlay">"{{ scene.textOverlay }}"</span>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <button class="summary-card__generate" :disabled="disabled" @click="$emit('generate')">
       <Wand2 :size="16" />
@@ -48,7 +80,7 @@
 </template>
 
 <script setup lang="ts">
-import { ClipboardList, Wand2 } from 'lucide-vue-next';
+import { ClipboardList, Film, Wand2 } from 'lucide-vue-next';
 import type { GenerationSummary } from '@/types/ai-video';
 
 defineProps<{
@@ -138,6 +170,91 @@ defineEmits<{
   border-radius: 4px;
   font-size: 11px;
   color: rgba(255, 255, 255, 0.7);
+}
+
+.summary-card__scenes {
+  border-top: 1px solid rgba(139, 92, 246, 0.12);
+  padding: 10px 12px;
+}
+
+.scenes-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #a78bfa;
+  margin-bottom: 8px;
+}
+
+.scenes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.scene-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.scene-number {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #c4b5fd;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.scene-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.scene-description {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.3;
+}
+
+.scene-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.scene-duration {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.scene-mood {
+  font-size: 10px;
+  color: rgba(167, 139, 250, 0.7);
+  background: rgba(139, 92, 246, 0.1);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.scene-text-hint {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  font-style: italic;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .summary-card__generate {
