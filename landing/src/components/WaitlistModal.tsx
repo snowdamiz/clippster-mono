@@ -6,7 +6,7 @@ interface WaitlistModalProps {
   onClose: () => void
 }
 
-const API_URL = 'https://clippster-server.fly.dev/api/waitlist'
+const API_URL = `${import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'}/api/waitlist`
 
 export function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
   const [email, setEmail] = useState('')

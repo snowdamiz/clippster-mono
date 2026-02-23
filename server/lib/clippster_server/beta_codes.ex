@@ -98,6 +98,36 @@ defmodule ClippsterServer.BetaCodes do
     |> Repo.delete_all()
   end
 
+  @doc """
+  Generates a single beta code assigned to a specific email.
+  Returns {:ok, beta_code} on success or {:error, changeset} on failure.
+  """
+  def generate_assigned_code(email) when is_binary(email) do
+    code = generate_unique_code()
+
+    %BetaCode{}
+    |> BetaCode.changeset(%{code: code, assigned_email: email})
+    |> Repo.insert()
+  end
+
+  @doc """
+  Verifies a beta code for landing page access and records verification.
+  Returns {:ok, beta_code} if valid, {:error, reason} if invalid.
+  """
+  def verify_code_for_landing(code, ip_address) when is_binary(code) do
+    normalized_code = String.upcase(String.trim(code))
+
+    case get_available_code(normalized_code) do
+      nil ->
+        {:error, :invalid_code}
+
+      beta_code ->
+        beta_code
+        |> BetaCode.verify_changeset(ip_address)
+        |> Repo.update()
+    end
+  end
+
   # Private functions
 
   defp generate_unique_code do

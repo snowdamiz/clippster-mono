@@ -259,12 +259,19 @@ export interface WaitlistEntry {
   id: number
   email: string
   created_at: string
+  invited_at?: string
+  email_sent_at?: string
+  email_delivery_error?: string
+  beta_code?: string
+  discount_code?: string
 }
 
 export interface WaitlistStats {
   total: number
   today: number
   this_week: number
+  invited: number
+  uninvited: number
 }
 
 export interface FeatureFlags {
@@ -848,8 +855,33 @@ export async function listWaitlist(): Promise<{ entries: WaitlistEntry[]; stats:
   )
   return {
     entries: res.entries || [],
-    stats: res.stats || { total: 0, today: 0, this_week: 0 },
+    stats: res.stats || { total: 0, today: 0, this_week: 0, invited: 0, uninvited: 0 },
   }
+}
+
+export interface InviteConfig {
+  percent_off: number
+  duration_months: number
+  allowed_tiers: string[]
+}
+
+export async function inviteWaitlist(config: InviteConfig): Promise<{ invited_count: number; skipped_count: number; errors: any[] }> {
+  const res = assertSuccess(
+    await api.post<{ success: boolean; invited_count?: number; skipped_count?: number; errors?: any[]; error?: string }>('/admin/waitlist/invite', config),
+    'Failed to send invites',
+  )
+  return {
+    invited_count: res.invited_count || 0,
+    skipped_count: res.skipped_count || 0,
+    errors: res.errors || [],
+  }
+}
+
+export async function inviteWaitlistEntry(id: number, config: InviteConfig): Promise<void> {
+  assertSuccess(
+    await api.post<{ success: boolean; error?: string }>(`/admin/waitlist/${id}/invite`, config),
+    'Failed to send invite',
+  )
 }
 
 export async function getAdminSettings(): Promise<{ settings: Record<string, string>; feature_flags: FeatureFlags }> {

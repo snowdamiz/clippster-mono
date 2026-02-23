@@ -58,6 +58,20 @@ defmodule ClippsterServerWeb.Router do
     plug(ClippsterServerWeb.ModeratorPlug)
   end
 
+  pipeline :api_rate_limited do
+    plug(:accepts, ["json"])
+
+    plug(CORSPlug,
+      origin: &__MODULE__.cors_origins/0,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      max_age: 86400,
+      credentials: true
+    )
+
+    plug(ClippsterServerWeb.RateLimit, max_requests: 10, window_seconds: 3600)
+  end
+
   # Define CORS origins - must be specific origins (not "*") when Authorization header is used
   # as the browser treats requests with Authorization as credentialed requests
   def cors_origins do
@@ -77,6 +91,14 @@ defmodule ClippsterServerWeb.Router do
       ~r/^tauri:\/\//,
       ~r/^https?:\/\/tauri\./
     ]
+  end
+
+  # Rate-limited public endpoints
+  scope "/api", ClippsterServerWeb do
+    pipe_through(:api_rate_limited)
+
+    # Beta code verification (rate limited to prevent brute force)
+    post("/beta/verify-code", BetaController, :verify_code)
   end
 
   scope "/api", ClippsterServerWeb do
@@ -1058,6 +1080,8 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin waitlist management
     get("/admin/waitlist", WaitlistController, :index)
+    post("/admin/waitlist/invite", AdminController, :invite_waitlist)
+    post("/admin/waitlist/:id/invite", AdminController, :invite_waitlist_entry)
 
     # Admin affiliate management
     get("/admin/affiliates", AffiliateController, :list_affiliates)

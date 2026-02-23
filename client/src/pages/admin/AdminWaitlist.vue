@@ -37,9 +37,18 @@
             <div class="admin-waitlist__card-icon admin-waitlist__card-icon--green">
               <Activity class="admin-waitlist__card-icon-svg" />
             </div>
-            <h3 class="admin-waitlist__card-label">Today</h3>
+            <h3 class="admin-waitlist__card-label">Invited</h3>
           </div>
-          <p class="admin-waitlist__card-value admin-waitlist__card-value--green">{{ waitlistStats.today }}</p>
+          <p class="admin-waitlist__card-value admin-waitlist__card-value--green">{{ waitlistStats.invited }}</p>
+        </div>
+        <div class="admin-waitlist__card">
+          <div class="admin-waitlist__card-header">
+            <div class="admin-waitlist__card-icon admin-waitlist__card-icon--amber">
+              <Activity class="admin-waitlist__card-icon-svg" />
+            </div>
+            <h3 class="admin-waitlist__card-label">Pending</h3>
+          </div>
+          <p class="admin-waitlist__card-value admin-waitlist__card-value--amber">{{ waitlistStats.uninvited }}</p>
         </div>
         <div class="admin-waitlist__card">
           <div class="admin-waitlist__card-header">
@@ -49,6 +58,49 @@
             <h3 class="admin-waitlist__card-label">This Week</h3>
           </div>
           <p class="admin-waitlist__card-value admin-waitlist__card-value--blue">{{ waitlistStats.this_week }}</p>
+        </div>
+      </div>
+
+      <!-- Invite Config Panel -->
+      <div v-if="waitlistStats.uninvited > 0" class="admin-waitlist__config">
+        <button 
+          class="admin-waitlist__config-toggle" 
+          @click="showInviteConfig = !showInviteConfig"
+        >
+          <span>Invite Settings</span>
+          <span v-if="showInviteConfig">▼</span>
+          <span v-else>▶</span>
+        </button>
+        
+        <div v-if="showInviteConfig" class="admin-waitlist__config-panel">
+          <div class="admin-waitlist__config-field">
+            <label>Discount Percent</label>
+            <input 
+              v-model.number="inviteConfig.percent_off" 
+              type="number" 
+              min="0" 
+              max="100"
+              class="admin-waitlist__config-input"
+            />
+          </div>
+          <div class="admin-waitlist__config-field">
+            <label>Duration (months)</label>
+            <input 
+              v-model.number="inviteConfig.duration_months" 
+              type="number" 
+              min="1" 
+              max="12"
+              class="admin-waitlist__config-input"
+            />
+          </div>
+          <div class="admin-waitlist__config-field">
+            <label>Allowed Tier</label>
+            <select v-model="inviteConfig.allowed_tiers[0]" class="admin-waitlist__config-select">
+              <option value="starter">Starter</option>
+              <option value="creator">Creator</option>
+              <option value="pro">Pro</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -64,6 +116,15 @@
           </div>
         </div>
         <div class="admin-waitlist__header-actions">
+          <button 
+            v-if="waitlistStats.uninvited > 0" 
+            class="admin-waitlist__invite-all-btn" 
+            @click="showBulkConfirm = true"
+            :disabled="inviting"
+          >
+            <UserPlus class="admin-waitlist__invite-all-icon" />
+            Invite All Pending ({{ waitlistStats.uninvited }})
+          </button>
           <button v-if="waitlistEntries.length > 0" class="admin-waitlist__copy-all-btn" @click="copyAllWaitlistEmails">
             <Copy class="admin-waitlist__copy-all-icon" />
             Copy All Emails
@@ -71,6 +132,21 @@
           <span class="admin-waitlist__count">
             {{ waitlistEntries.length }} email{{ waitlistEntries.length !== 1 ? 's' : '' }}
           </span>
+        </div>
+      </div>
+
+      <!-- Bulk Invite Confirmation Dialog -->
+      <div v-if="showBulkConfirm" class="admin-waitlist__confirm-overlay" @click="showBulkConfirm = false">
+        <div class="admin-waitlist__confirm-dialog" @click.stop>
+          <h3>Confirm Bulk Invite</h3>
+          <p>Send invites to {{ waitlistStats.uninvited }} pending users?</p>
+          <p class="admin-waitlist__confirm-config">
+            {{ inviteConfig.percent_off }}% off for {{ inviteConfig.duration_months }} month(s) - {{ inviteConfig.allowed_tiers[0] }} tier
+          </p>
+          <div class="admin-waitlist__confirm-actions">
+            <button @click="showBulkConfirm = false" class="admin-waitlist__confirm-cancel">Cancel</button>
+            <button @click="inviteAllPending" class="admin-waitlist__confirm-submit">Send Invites</button>
+          </div>
         </div>
       </div>
 
@@ -95,6 +171,9 @@
                 <th class="admin-waitlist__th">ID</th>
                 <th class="admin-waitlist__th">Email</th>
                 <th class="admin-waitlist__th">Signed Up</th>
+                <th class="admin-waitlist__th">Status</th>
+                <th class="admin-waitlist__th">Beta Code</th>
+                <th class="admin-waitlist__th">Discount Code</th>
                 <th class="admin-waitlist__th">Actions</th>
               </tr>
             </thead>
@@ -110,7 +189,39 @@
                   <span class="admin-waitlist__date">{{ formatDate(entry.created_at) }}</span>
                 </td>
                 <td class="admin-waitlist__td">
-                  <button class="admin-waitlist__copy-btn" @click="copyWaitlistEmail(entry.email)">
+                  <span v-if="entry.invited_at" class="admin-waitlist__status admin-waitlist__status--invited">
+                    ✓ Invited {{ formatDate(entry.invited_at) }}
+                  </span>
+                  <span v-else class="admin-waitlist__status admin-waitlist__status--pending">
+                    Pending
+                  </span>
+                  <span v-if="entry.email_delivery_error" class="admin-waitlist__status admin-waitlist__status--error" :title="entry.email_delivery_error">
+                    ⚠ Email Failed
+                  </span>
+                </td>
+                <td class="admin-waitlist__td">
+                  <span v-if="entry.beta_code" class="admin-waitlist__code">{{ entry.beta_code }}</span>
+                  <span v-else class="admin-waitlist__code-empty">—</span>
+                </td>
+                <td class="admin-waitlist__td">
+                  <span v-if="entry.discount_code" class="admin-waitlist__code">{{ entry.discount_code }}</span>
+                  <span v-else class="admin-waitlist__code-empty">—</span>
+                </td>
+                <td class="admin-waitlist__td">
+                  <button 
+                    v-if="!entry.invited_at" 
+                    class="admin-waitlist__invite-btn" 
+                    @click="inviteEntry(entry.id)"
+                    :disabled="inviting"
+                  >
+                    <UserPlus class="admin-waitlist__invite-icon" />
+                    Invite
+                  </button>
+                  <button 
+                    v-else 
+                    class="admin-waitlist__copy-btn" 
+                    @click="copyWaitlistEmail(entry.email)"
+                  >
                     <Copy class="admin-waitlist__copy-icon" />
                     Copy
                   </button>
@@ -143,18 +254,33 @@
     id: number;
     email: string;
     created_at: string;
+    invited_at?: string;
+    email_sent_at?: string;
+    email_delivery_error?: string;
+    beta_code?: string;
+    discount_code?: string;
   }
 
   interface WaitlistStats {
     total: number;
     today: number;
     this_week: number;
+    invited: number;
+    uninvited: number;
   }
 
   const waitlistEntries = ref<WaitlistEntry[]>([]);
-  const waitlistStats = ref<WaitlistStats>({ total: 0, today: 0, this_week: 0 });
+  const waitlistStats = ref<WaitlistStats>({ total: 0, today: 0, this_week: 0, invited: 0, uninvited: 0 });
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const inviting = ref(false);
+  const showInviteConfig = ref(false);
+  const showBulkConfirm = ref(false);
+  const inviteConfig = ref({
+    percent_off: 30,
+    duration_months: 1,
+    allowed_tiers: ['creator']
+  });
 
   const fetchWaitlist = async () => {
     loading.value = true;
@@ -192,6 +318,42 @@
       await navigator.clipboard.writeText(emails);
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
+    }
+  };
+
+  const inviteEntry = async (entryId: number) => {
+    inviting.value = true;
+    error.value = null;
+    try {
+      const response = await api.post(`/admin/waitlist/${entryId}/invite`, inviteConfig.value);
+      if (response.data.success) {
+        await fetchWaitlist();
+      } else {
+        error.value = response.data.error || 'Failed to send invite';
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      inviting.value = false;
+    }
+  };
+
+  const inviteAllPending = async () => {
+    showBulkConfirm.value = false;
+    inviting.value = true;
+    error.value = null;
+    try {
+      const response = await api.post('/admin/waitlist/invite', inviteConfig.value);
+      if (response.data.success) {
+        await fetchWaitlist();
+        alert(`Successfully invited ${response.data.invited_count} users. Skipped: ${response.data.skipped_count}. Errors: ${response.data.errors.length}`);
+      } else {
+        error.value = response.data.error || 'Failed to send invites';
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      inviting.value = false;
     }
   };
 
@@ -640,5 +802,262 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* Invite Config Panel */
+  .admin-waitlist__config {
+    padding: 1rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .admin-waitlist__config-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--sidebar-text);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 150ms ease;
+  }
+
+  .admin-waitlist__config-toggle:hover {
+    color: var(--sidebar-accent);
+  }
+
+  .admin-waitlist__config-panel {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  @media (min-width: 768px) {
+    .admin-waitlist__config-panel {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .admin-waitlist__config-field label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    margin-bottom: 0.5rem;
+  }
+
+  .admin-waitlist__config-input,
+  .admin-waitlist__config-select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    font-size: 0.875rem;
+    transition: all 150ms ease;
+  }
+
+  .admin-waitlist__config-input:focus,
+  .admin-waitlist__config-select:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    background-color: rgba(39, 39, 42, 0.8);
+  }
+
+  /* Amber card styling */
+  .admin-waitlist__card-icon--amber {
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.2) 100%);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+  }
+  .admin-waitlist__card-icon--amber .admin-waitlist__card-icon-svg {
+    color: #fbbf24;
+  }
+
+  .admin-waitlist__card-value--amber {
+    color: #fbbf24;
+  }
+
+  /* Invite All Button */
+  .admin-waitlist__invite-all-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .admin-waitlist__invite-all-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .admin-waitlist__invite-all-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .admin-waitlist__invite-all-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Bulk Confirm Dialog */
+  .admin-waitlist__confirm-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+  }
+
+  .admin-waitlist__confirm-dialog {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    max-width: 28rem;
+    width: calc(100% - 2rem);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  }
+
+  .admin-waitlist__confirm-dialog h3 {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .admin-waitlist__confirm-dialog p {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 0.5rem;
+  }
+
+  .admin-waitlist__confirm-config {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    padding: 0.75rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 6px;
+    margin-bottom: 1rem;
+  }
+
+  .admin-waitlist__confirm-actions {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .admin-waitlist__confirm-cancel,
+  .admin-waitlist__confirm-submit {
+    flex: 1;
+    padding: 0.625rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .admin-waitlist__confirm-cancel {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .admin-waitlist__confirm-cancel:hover {
+    background-color: rgba(63, 63, 70, 1);
+  }
+
+  .admin-waitlist__confirm-submit {
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+  }
+
+  .admin-waitlist__confirm-submit:hover {
+    opacity: 0.9;
+  }
+
+  /* Status badges */
+  .admin-waitlist__status {
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .admin-waitlist__status--invited {
+    color: #34d399;
+  }
+
+  .admin-waitlist__status--pending {
+    color: #fbbf24;
+  }
+
+  .admin-waitlist__status--error {
+    color: #f87171;
+    display: block;
+    margin-top: 0.25rem;
+  }
+
+  /* Code display */
+  .admin-waitlist__code {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--sidebar-accent);
+    background-color: rgba(6, 182, 212, 0.1);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+  }
+
+  .admin-waitlist__code-empty {
+    color: var(--sidebar-text-muted);
+    font-size: 0.875rem;
+  }
+
+  /* Invite button */
+  .admin-waitlist__invite-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.375rem 0.75rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .admin-waitlist__invite-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .admin-waitlist__invite-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .admin-waitlist__invite-icon {
+    width: 12px;
+    height: 12px;
+    margin-right: 0.375rem;
   }
 </style>
