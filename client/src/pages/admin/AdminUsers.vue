@@ -48,7 +48,17 @@
               <p class="admin-users__stats-desc">Manage user accounts, credits, and subscriptions</p>
             </div>
           </div>
-          <span class="admin-users__stats-count">{{ users.length }} user{{ users.length !== 1 ? 's' : '' }}</span>
+          <div class="admin-users__stats-actions">
+            <div class="admin-users__search">
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="Search by account..."
+                class="admin-users__search-input"
+              />
+            </div>
+            <span class="admin-users__stats-count">{{ filteredAndSortedUsers.length }} user{{ filteredAndSortedUsers.length !== 1 ? 's' : '' }}</span>
+          </div>
         </div>
 
         <!-- Users Table -->
@@ -57,17 +67,49 @@
             <table class="admin-users__table">
               <thead class="admin-users__thead">
                 <tr>
-                  <th class="admin-users__th">ID</th>
-                  <th class="admin-users__th">Account</th>
-                  <th class="admin-users__th">Role</th>
-                  <th class="admin-users__th">Subscription</th>
+                  <th class="admin-users__th admin-users__th--sortable" @click="toggleSort('id')">
+                    <div class="admin-users__th-content">
+                      <span>ID</span>
+                      <span class="admin-users__sort-indicator">
+                        <ChevronUp v-if="sortColumn === 'id' && sortDirection === 'asc'" :size="14" />
+                        <ChevronDown v-else-if="sortColumn === 'id' && sortDirection === 'desc'" :size="14" />
+                      </span>
+                    </div>
+                  </th>
+                  <th class="admin-users__th admin-users__th--sortable" @click="toggleSort('account')">
+                    <div class="admin-users__th-content">
+                      <span>Account</span>
+                      <span class="admin-users__sort-indicator">
+                        <ChevronUp v-if="sortColumn === 'account' && sortDirection === 'asc'" :size="14" />
+                        <ChevronDown v-else-if="sortColumn === 'account' && sortDirection === 'desc'" :size="14" />
+                      </span>
+                    </div>
+                  </th>
+                  <th class="admin-users__th admin-users__th--sortable" @click="toggleSort('role')">
+                    <div class="admin-users__th-content">
+                      <span>Role</span>
+                      <span class="admin-users__sort-indicator">
+                        <ChevronUp v-if="sortColumn === 'role' && sortDirection === 'asc'" :size="14" />
+                        <ChevronDown v-else-if="sortColumn === 'role' && sortDirection === 'desc'" :size="14" />
+                      </span>
+                    </div>
+                  </th>
+                  <th class="admin-users__th admin-users__th--sortable" @click="toggleSort('subscription')">
+                    <div class="admin-users__th-content">
+                      <span>Subscription</span>
+                      <span class="admin-users__sort-indicator">
+                        <ChevronUp v-if="sortColumn === 'subscription' && sortDirection === 'asc'" :size="14" />
+                        <ChevronDown v-else-if="sortColumn === 'subscription' && sortDirection === 'desc'" :size="14" />
+                      </span>
+                    </div>
+                  </th>
                   <th class="admin-users__th">Credits</th>
                   <th class="admin-users__th">Created</th>
                   <th class="admin-users__th">Actions</th>
                 </tr>
               </thead>
               <tbody class="admin-users__tbody">
-                <tr v-for="user in users" :key="user.id" class="admin-users__row admin-users__row--clickable" @click="navigateToUserProfile(user.id)">
+                <tr v-for="user in filteredAndSortedUsers" :key="user.id" class="admin-users__row admin-users__row--clickable" @click="navigateToUserProfile(user.id)">
                   <td class="admin-users__td">
                     <span class="admin-users__id">#{{ user.id }}</span>
                   </td>
@@ -694,7 +736,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
   import { formatDateTime } from '@/utils/dateTimeUtils';
   import {
@@ -711,6 +753,7 @@
     Layers,
     X,
     ChevronDown,
+    ChevronUp,
     Handshake,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
@@ -755,6 +798,11 @@
   const users = ref<UserType[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  
+  // Search and sort state
+  const searchQuery = ref('');
+  const sortColumn = ref<'id' | 'account' | 'role' | 'subscription'>('id');
+  const sortDirection = ref<'asc' | 'desc'>('asc');
   const promotingUserId = ref<number | null>(null);
   const showPromoteDialog = ref(false);
   const userToPromote = ref<UserType | null>(null);
@@ -792,6 +840,64 @@
   const userActionMenuRefs = ref<Map<number, HTMLElement>>(new Map());
 
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
+  // Filtered and sorted users
+  const filteredAndSortedUsers = computed(() => {
+    let result = [...users.value];
+
+    // Apply search filter
+    if (searchQuery.value.trim()) {
+      const query = searchQuery.value.toLowerCase().trim();
+      result = result.filter(user => {
+        const email = user.email?.toLowerCase() || '';
+        const wallet = user.wallet_address?.toLowerCase() || '';
+        return email.includes(query) || wallet.includes(query);
+      });
+    }
+
+    // Apply sorting
+    result.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortColumn.value) {
+        case 'id':
+          aValue = a.id;
+          bValue = b.id;
+          break;
+        case 'account':
+          aValue = (a.email || a.wallet_address || '').toLowerCase();
+          bValue = (b.email || b.wallet_address || '').toLowerCase();
+          break;
+        case 'role':
+          // Admin > Moderator > User
+          aValue = a.is_admin ? 3 : a.is_moderator ? 2 : 1;
+          bValue = b.is_admin ? 3 : b.is_moderator ? 2 : 1;
+          break;
+        case 'subscription':
+          aValue = a.subscription?.tier_name || '';
+          bValue = b.subscription?.tier_name || '';
+          break;
+        default:
+          return 0;
+      }
+
+      if (aValue < bValue) return sortDirection.value === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection.value === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  });
+
+  const toggleSort = (column: 'id' | 'account' | 'role' | 'subscription') => {
+    if (sortColumn.value === column) {
+      sortDirection.value = sortDirection.value === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortColumn.value = column;
+      sortDirection.value = 'asc';
+    }
+  };
 
   const fetchUsers = async () => {
     loading.value = true;
@@ -1449,6 +1555,37 @@
     margin: 0;
   }
 
+  .admin-users__stats-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .admin-users__search {
+    position: relative;
+  }
+
+  .admin-users__search-input {
+    width: 240px;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .admin-users__search-input::placeholder {
+    color: var(--sidebar-text-muted);
+  }
+
+  .admin-users__search-input:focus {
+    outline: none;
+    border-color: rgba(139, 92, 246, 0.5);
+    background-color: rgba(39, 39, 42, 0.5);
+  }
+
   .admin-users__stats-count {
     padding: 0.375rem 0.75rem;
     background-color: var(--sidebar-hover);
@@ -1456,6 +1593,7 @@
     font-size: 0.875rem;
     color: var(--sidebar-text);
     font-weight: 500;
+    white-space: nowrap;
   }
 
   /* ===== Table ===== */
@@ -1487,6 +1625,29 @@
     color: var(--sidebar-text-muted);
     text-transform: uppercase;
     letter-spacing: 0.05em;
+  }
+
+  .admin-users__th--sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: color 150ms ease;
+  }
+
+  .admin-users__th--sortable:hover {
+    color: var(--sidebar-text);
+  }
+
+  .admin-users__th-content {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .admin-users__sort-indicator {
+    display: inline-flex;
+    align-items: center;
+    color: #a78bfa;
+    opacity: 0.8;
   }
 
   .admin-users__tbody {
