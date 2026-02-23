@@ -49,6 +49,24 @@ defmodule ClippsterServerWeb.MessagingChannel do
           conversation_id: conversation_id,
           message: MessagingJSON.message(message)
         })
+
+        # Support auto-reply: if this is the first user message in a support conversation,
+        # insert and broadcast the automated welcome message
+        if Messaging.should_send_support_auto_reply?(conversation_id, user_id) do
+          case Messaging.insert_support_auto_reply(conversation_id) do
+            {:ok, auto_message} ->
+              auto_msg_json = MessagingJSON.message(auto_message)
+              broadcast!(socket, "new_message", auto_msg_json)
+
+              broadcast_to_participants(conversation_id, "new_message_notification", %{
+                conversation_id: conversation_id,
+                message: auto_msg_json
+              })
+
+            {:error, _reason} ->
+              :ok
+          end
+        end
         
         {:reply, {:ok, MessagingJSON.message(message)}, socket}
 

@@ -86,7 +86,11 @@ defmodule ClippsterServerWeb.MessagingJSON do
     %{
       id: user.id,
       display_name: user.name,
-      avatar_url: user.avatar_url
+      name: user.name,
+      email: user.email,
+      avatar_url: user.avatar_url,
+      is_admin: user.is_admin || false,
+      is_moderator: user.is_moderator || false
     }
   end
 

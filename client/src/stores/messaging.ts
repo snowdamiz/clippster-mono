@@ -42,6 +42,7 @@ export const useMessagingStore = defineStore('messaging', () => {
   const isLoadingMessages = ref(false);
   const currentOrgId = ref<number | null>(null);
   const isSocketConnected = ref(false);
+  const isInitialized = ref(false);
 
   // ============================================================================
   // Computed
@@ -127,7 +128,15 @@ export const useMessagingStore = defineStore('messaging', () => {
       console.error('[MessagingStore] Failed to initialize:', error);
     } finally {
       isLoading.value = false;
+      isInitialized.value = true;
     }
+  }
+
+  /**
+   * Add a conversation to the local store.
+   */
+  function addConversation(conversation: Conversation) {
+    conversations.value.set(conversation.id, conversation);
   }
 
   /**
@@ -639,6 +648,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     isLoadingMessages,
     currentOrgId,
     isSocketConnected,
+    isInitialized,
 
     // Computed
     conversationList,
@@ -649,6 +659,7 @@ export const useMessagingStore = defineStore('messaging', () => {
 
     // Actions
     initialize,
+    addConversation,
     loadConversations,
     loadUnreadCounts,
     setActiveConversation,

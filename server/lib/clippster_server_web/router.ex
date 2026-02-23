@@ -967,6 +967,7 @@ defmodule ClippsterServerWeb.Router do
     put("/affiliate/settings", AffiliateController, :update_settings)
     
     # Support conversation routes (any authenticated user)
+    get("/support/conversation/check", SupportController, :check)
     get("/support/conversation", SupportController, :get_or_create)
     post("/support/conversation/messages", SupportController, :send_message)
     get("/support/conversation/messages", SupportController, :get_messages)
