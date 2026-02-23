@@ -140,29 +140,41 @@ pub async fn check_kick_livestream(channel: String) -> Result<String, String> {
                             let data = json.get("data").or(Some(&json));
                             
                             // Try to get username from multiple possible locations
+                            // New API structure (2025+): data.account.user.username
+                            // Old API structure: data.username or data.user.username
                             let username = data
                                 .and_then(|d| {
-                                    d.get("username")
+                                    d.get("account").and_then(|a| a.get("user").and_then(|u| u.get("username")))
+                                        .or_else(|| d.get("username"))
                                         .or_else(|| d.get("user").and_then(|u| u.get("username")))
+                                        .or_else(|| d.get("account").and_then(|a| a.get("channel").and_then(|c| c.get("slug"))))
                                         .or_else(|| d.get("slug"))
                                 })
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string());
                             
                             // Try to get profile image from multiple possible locations
+                            // New API structure (2025+): data.account.user.profile_picture
+                            // Old API structure: data.profile_image_url or data.user.profile_pic
                             let profile_image = data
                                 .and_then(|d| {
-                                    d.get("profile_image_url")
+                                    d.get("account").and_then(|a| a.get("user").and_then(|u| u.get("profile_picture")))
+                                        .or_else(|| d.get("profile_image_url"))
                                         .or_else(|| d.get("user").and_then(|u| u.get("profile_pic")))
                                         .or_else(|| d.get("user").and_then(|u| u.get("profile_image_url")))
+                                        .or_else(|| d.get("user").and_then(|u| u.get("profile_picture")))
                                         .or_else(|| d.get("profile_pic"))
                                 })
                                 .and_then(|v| v.as_str())
                                 .filter(|s| !s.is_empty())
                                 .map(|s| s.to_string());
                             
+                            // Channel ID - new API uses string IDs, old API used numeric
                             let chan_id = data
-                                .and_then(|d| d.get("id"))
+                                .and_then(|d| {
+                                    d.get("id")
+                                        .or_else(|| d.get("account").and_then(|a| a.get("channel").and_then(|c| c.get("id"))))
+                                })
                                 .and_then(|v| v.as_i64());
                             
                             println!("[Kick] Parsed channel metadata - username: {:?}, profile_image: {:?}, id: {:?}", 
