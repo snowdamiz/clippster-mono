@@ -236,6 +236,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+  import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import { Megaphone, Plus, X, Loader2, Eye, EyeOff, Pencil, Trash2, Save, Info, AlertTriangle, Sparkles, Users, User, Building2, Bold, Italic, List, ListOrdered, LinkIcon, Code, Type, Heading2 } from 'lucide-vue-next';
   import { Underline as UnderlineIcon } from 'lucide-vue-next';
   import { useEditor, EditorContent } from '@tiptap/vue-3';
@@ -277,7 +278,7 @@
   function audienceLabel(a: string) { return audienceOptions.find((o) => o.value === a)?.label ?? a; }
   function formatDate(d: string | null) {
     if (!d) return '—';
-    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return fmtDate(d);
   }
   const canSave = computed(() => form.value.title.trim() && form.value.body.trim());
 

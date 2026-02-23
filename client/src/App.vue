@@ -23,6 +23,7 @@
   import { useAppUpdater } from '@/composables/useAppUpdater';
   import { useToast } from '@/composables/useToast';
   import { useActivityTracker } from '@/composables/useActivityTracker';
+  import { useUserPreferencesStore } from '@/stores/userPreferences';
   import { initGlobalLiveStatusPolling, stopGlobalLiveStatusPolling } from '@/composables/useLivestreamMonitoring';
   import { invoke } from '@tauri-apps/api/core';
 
@@ -31,6 +32,7 @@
 
   const { initializeWindowCloseHandler } = useWindowClose();
   const authStore = useAuthStore();
+  const preferencesStore = useUserPreferencesStore();
   const livestreamStore = useLivestreamStore();
   const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
   const { state: updateState, checkForUpdates } = useAppUpdater();
@@ -96,7 +98,15 @@
   // Handle streamer went live event
   const handleStreamerWentLive = (event: CustomEvent) => {
     const { displayName } = event.detail;
-    success(`${displayName} is now live!`, undefined, 7000);
+    success(`${displayName} is now live!`, undefined, 7000, 'livestream');
+  };
+
+  // Handle user preferences loaded from server (dispatched by auth store)
+  const handlePreferencesLoaded = (event: CustomEvent) => {
+    const { userId, preferences } = event.detail;
+    if (userId && preferences) {
+      preferencesStore.syncFromServer(userId, preferences);
+    }
   };
 
   // Key for router-view to force re-render on auth changes
@@ -215,6 +225,7 @@
     window.addEventListener('auth-state-changed', handleAuthStateChanged as unknown as EventListener);
     window.addEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
     window.addEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
+    window.addEventListener('user-preferences-loaded', handlePreferencesLoaded as EventListener);
 
     // Run independent startup tasks in parallel:
     // - Auth check + announcements (announcements depend on auth, but both are independent of DB)
@@ -227,6 +238,12 @@
         if (authStore.isAuthenticated) {
           console.log('[App] User authenticated, starting activity tracker');
           startTracking();
+          // Load preferences from local cache immediately (server sync happens via event)
+          if (authStore.user?.id) {
+            preferencesStore.loadFromLocal(String(authStore.user.id)).catch((e) =>
+              console.error('[App] Failed to load local preferences:', e)
+            );
+          }
           // Announcements don't need to block startup - fire and forget
           fetchAndEnqueue().catch((e) => console.error('[App] Failed to fetch announcements:', e));
           subscribeToChannel(authStore.user?.account_type ?? 'personal');
@@ -286,6 +303,7 @@
     window.removeEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as unknown as EventListener);
     window.removeEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
+    window.removeEventListener('user-preferences-loaded', handlePreferencesLoaded as EventListener);
 
     // Cleanup global clip build event handler
     cleanupClipBuildEventHandler();

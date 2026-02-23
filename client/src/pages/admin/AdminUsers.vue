@@ -696,6 +696,7 @@
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
+  import { formatDateTime } from '@/utils/dateTimeUtils';
   import {
     Users,
     RefreshCw,
@@ -837,13 +838,7 @@
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      return formatDateTime(dateString);
     } catch {
       return 'Invalid date';
     }

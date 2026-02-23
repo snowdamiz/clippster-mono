@@ -7,7 +7,7 @@
     <!-- Video fills entire container -->
     <video
       ref="videoRef"
-      class="w-full h-full object-contain"
+      class="w-full h-full object-fill"
       autoplay
       playsinline
       :muted="isMuted"
@@ -112,7 +112,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { listen, emitTo, type UnlistenFn } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { Play, Pause, Volume2, Volume1, VolumeX, Scissors, X } from 'lucide-vue-next';
 import Hls from 'hls.js';
 
@@ -120,6 +120,10 @@ const videoRef = ref<HTMLVideoElement | null>(null);
 const showControls = ref(false);
 let controlsTimeout: ReturnType<typeof setTimeout> | null = null;
 const CONTROLS_HIDE_DELAY = 2000; // 2 seconds
+
+// Aspect ratio locking
+let videoAspectRatio: number | null = null;
+let isEnforcingAspectRatio = false;
 
 // State synced from main window
 const streamerName = ref('Stream');
@@ -146,8 +150,38 @@ function showToast(message: string, type: 'success' | 'error' = 'success') {
 let hls: Hls | null = null;
 let unlistenFns: UnlistenFn[] = [];
 
+// Enforce aspect ratio on window resize
+async function enforceAspectRatio() {
+  if (!videoAspectRatio || isEnforcingAspectRatio) return;
+  isEnforcingAspectRatio = true;
+  try {
+    const win = getCurrentWindow();
+    const factor = await win.scaleFactor();
+    const physSize = await win.innerSize();
+    const currentWidth = physSize.width / factor;
+    const currentHeight = physSize.height / factor;
+    const expectedHeight = currentWidth / videoAspectRatio;
+    // Only correct if the aspect ratio is off by more than 2px (avoid infinite loop)
+    if (Math.abs(currentHeight - expectedHeight) > 2) {
+      await win.setSize(new LogicalSize(Math.round(currentWidth), Math.round(expectedHeight)));
+    }
+  } catch (e) {
+    console.warn('[PIP] Failed to enforce aspect ratio:', e);
+  } finally {
+    isEnforcingAspectRatio = false;
+  }
+}
+
 onMounted(async () => {
   console.log('[PIP] Component mounted, setting up listeners...');
+
+  // Listen for window resize to enforce aspect ratio lock
+  const win = getCurrentWindow();
+  unlistenFns.push(
+    await win.onResized(async () => {
+      await enforceAspectRatio();
+    })
+  );
   
   // Listen for state updates from main window
   unlistenFns.push(
@@ -264,6 +298,33 @@ function initHls(url: string) {
       networkErrorRetries = 0; // Reset on successful load
       if (videoRef.value && isPlaying.value) {
         videoRef.value.play().catch((e) => console.error('[PIP] Play error:', e));
+      }
+
+      // Detect video aspect ratio once metadata is available
+      if (videoRef.value) {
+        const onMeta = async () => {
+          const v = videoRef.value;
+          if (!v || !v.videoWidth || !v.videoHeight) return;
+          videoAspectRatio = v.videoWidth / v.videoHeight;
+          console.log(`[PIP] Video aspect ratio detected: ${v.videoWidth}x${v.videoHeight} = ${videoAspectRatio.toFixed(4)}`);
+          // Resize window to match video aspect ratio
+          try {
+            const win = getCurrentWindow();
+            const factor = await win.scaleFactor();
+            const physSize = await win.innerSize();
+            const currentWidth = physSize.width / factor;
+            const newHeight = Math.round(currentWidth / videoAspectRatio);
+            await win.setSize(new LogicalSize(Math.round(currentWidth), newHeight));
+            console.log(`[PIP] Window resized to ${Math.round(currentWidth)}x${newHeight}`);
+          } catch (e) {
+            console.warn('[PIP] Failed to resize window for aspect ratio:', e);
+          }
+        };
+        if (videoRef.value.videoWidth && videoRef.value.videoHeight) {
+          onMeta();
+        } else {
+          videoRef.value.addEventListener('loadedmetadata', onMeta, { once: true });
+        }
       }
     });
 

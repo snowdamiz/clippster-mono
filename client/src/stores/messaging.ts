@@ -26,6 +26,7 @@ import {
 } from '@/services/messagingApi';
 import { messagingSocket } from '@/services/messagingSocket';
 import { useAuthStore } from './auth';
+import { useToast } from '@/composables/useToast';
 
 export const useMessagingStore = defineStore('messaging', () => {
   // ============================================================================
@@ -558,6 +559,16 @@ export const useMessagingStore = defineStore('messaging', () => {
       conv.lastMessageAt = message.insertedAt;
       conv.lastMessagePreview = message.content.slice(0, 100);
       conversations.value.set(conversationId, { ...conv });
+    }
+
+    // Show desktop notification if app is not focused (not in-app notification)
+    // Only show for messages not from the current user
+    const authStore = useAuthStore();
+    if (message.senderId !== authStore.user?.id) {
+      const { info } = useToast();
+      const senderName = message.sender?.displayName || 'Someone';
+      const preview = message.content.length > 50 ? message.content.slice(0, 50) + '...' : message.content;
+      info(`${senderName}`, preview, undefined, 'social');
     }
 
     // Add to messages if loaded

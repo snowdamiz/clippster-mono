@@ -3,6 +3,7 @@
   import { useRoute, useRouter } from 'vue-router';
   import { useMessagingStore } from '@/stores/messaging';
   import { useAuthStore } from '@/stores/auth';
+  import { formatConversationTime, formatTime } from '@/utils/dateTimeUtils';
   import api from '@/services/api';
   import type { Conversation, Message } from '@/services/messagingApi';
   import { checkSupportConversation, getOrCreateSupportConversation } from '@/services/messagingApi';
@@ -316,28 +317,12 @@
     return null;
   }
 
-  function formatTime(dateString: string | null): string {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diffDays === 1) {
-      return 'Yesterday';
-    } else if (diffDays < 7) {
-      return date.toLocaleDateString([], { weekday: 'short' });
-    }
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  function formatConversationDate(dateString: string): string {
+    return formatConversationTime(dateString);
   }
 
   function formatMessageTime(dateString: string): string {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return '';
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return formatTime(dateString);
   }
 
   function scrollToBottom(smooth = true) {

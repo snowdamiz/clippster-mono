@@ -639,6 +639,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
+  import { formatDateTime } from '@/utils/dateTimeUtils';
   import type { ClipWithVersion, ClipBuild, Prompt } from '@/services/database';
   import {
     PlayIcon,
@@ -1412,14 +1413,7 @@
 
   function formatBuildDate(timestamp: number | null): string {
     if (!timestamp) return '';
-    // Timestamps are stored in seconds, convert to milliseconds for Date
-    const date = new Date(timestamp * 1000);
-    return date.toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatDateTime(new Date(timestamp * 1000));
   }
 
   function formatFileSize(bytes: number | null): string {

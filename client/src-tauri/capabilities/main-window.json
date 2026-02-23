@@ -15,6 +15,7 @@
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "core:window:allow-request-user-attention",
+    "core:webview:allow-create-webview-window",
     "global-shortcut:default"
   ]
 }

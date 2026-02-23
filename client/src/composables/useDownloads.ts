@@ -9,6 +9,7 @@ import {
 } from '@/services/database';
 import { generateId } from '@/services/database';
 import { trackEvent } from '@/services/analytics';
+import { useToast } from '@/composables/useToast';
 
 // Event emitter for download completion notifications
 const completionCallbacks = new Set<(download: ActiveDownload) => void>();
@@ -311,6 +312,10 @@ export function useDownloads() {
                 },
               });
 
+              // Show toast (triggers background notification if app not focused)
+              const { success: showSuccess } = useToast();
+              showSuccess('Download Complete', download.title, undefined, 'downloads');
+
               // Notify all listeners about completion
               completionCallbacks.forEach((callback) => {
                 try {
@@ -338,6 +343,10 @@ export function useDownloads() {
 
               // Refund free tier usage for failed download
               await refundFreeTierUsage();
+
+              // Show error toast
+              const { error: showError } = useToast();
+              showError('Download Failed', validationResult.error || 'Video validation failed', undefined, 'downloads');
 
               // Notify listeners about validation failure
               completionCallbacks.forEach((callback) => {

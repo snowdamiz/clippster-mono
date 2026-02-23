@@ -199,6 +199,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+  import { formatDateTime } from '@/utils/dateTimeUtils';
   import { Mail, Send, Users, User, UserPlus, RefreshCw, Loader2, Bold, Italic, List, ListOrdered, LinkIcon, Eye, Code, Type, Heading2 } from 'lucide-vue-next';
   import { useEditor, EditorContent } from '@tiptap/vue-3';
   import StarterKit from '@tiptap/starter-kit';
@@ -262,7 +263,7 @@
 
   function formatDate(d: string | null) {
     if (!d) return '—';
-    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return formatDateTime(d);
   }
 
   function confirmSend() { showConfirm.value = true; }

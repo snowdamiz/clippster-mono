@@ -781,14 +781,33 @@ export const useAuthStore = defineStore('auth', {
           }).finally(() => clearTimeout(authTimeout));
 
           if (!response.ok) {
-            // Token is invalid - clear stored data
-            console.warn('[Auth] Stored token is invalid, clearing auth state');
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('wallet_address');
-            localStorage.removeItem('email');
-            localStorage.removeItem('user');
-            localStorage.removeItem('auth_provider');
-            return false;
+            // Only clear auth on 401 (invalid token)
+            // For other errors (500, network issues), use cached data
+            if (response.status === 401) {
+              console.warn('[Auth] Token is invalid (401), clearing auth state');
+              localStorage.removeItem('auth_token');
+              localStorage.removeItem('wallet_address');
+              localStorage.removeItem('email');
+              localStorage.removeItem('user');
+              localStorage.removeItem('auth_provider');
+              return false;
+            }
+            
+            // Server error or network issue - use cached data
+            console.warn('[Auth] Server unreachable, using cached auth data');
+            this.token = token;
+            this.walletAddress = walletAddress;
+            this.email = email;
+            this.user = parsedUser;
+            this.authProvider = authProvider;
+            this.isAuthenticated = true;
+
+            // Set user context for database queries and storage paths
+            if (this.user && this.user.id) {
+              await setUserContext(this.user.id);
+            }
+
+            return true;
           }
 
           const data = await response.json();
@@ -818,19 +837,45 @@ export const useAuthStore = defineStore('auth', {
             await setUserContext(this.user.id);
           }
 
+          // Sync user preferences from server response
+          if (data.user?.preferences && this.user?.id) {
+            window.dispatchEvent(
+              new CustomEvent('user-preferences-loaded', {
+                detail: { userId: String(this.user.id), preferences: data.user.preferences },
+              })
+            );
+          }
+
           return true;
         } catch (error) {
-          console.error('[Auth] Failed to verify auth:', error);
-          // On network errors, we could either:
-          // 1. Clear auth (strict) - user must re-login
-          // 2. Use cached data (lenient) - allows offline usage
-          // Going with strict for security
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('wallet_address');
-          localStorage.removeItem('email');
-          localStorage.removeItem('user');
-          localStorage.removeItem('auth_provider');
-          return false;
+          console.error('[Auth] Network error during auth check:', error);
+          // Network error (server down, timeout, etc.) - use cached data
+          // This allows offline usage and prevents logout on temporary network issues
+          try {
+            const parsedUser = JSON.parse(userJson);
+            this.token = token;
+            this.walletAddress = walletAddress;
+            this.email = email;
+            this.user = parsedUser;
+            this.authProvider = authProvider;
+            this.isAuthenticated = true;
+
+            // Set user context for database queries and storage paths
+            if (this.user && this.user.id) {
+              await setUserContext(this.user.id);
+            }
+
+            console.log('[Auth] Using cached auth data due to network error');
+            return true;
+          } catch (parseError) {
+            console.error('[Auth] Failed to parse cached user data:', parseError);
+            localStorage.removeItem('auth_token');
+            localStorage.removeItem('wallet_address');
+            localStorage.removeItem('email');
+            localStorage.removeItem('user');
+            localStorage.removeItem('auth_provider');
+            return false;
+          }
         }
       }
       return false;
@@ -854,6 +899,15 @@ export const useAuthStore = defineStore('auth', {
             // Update user data with fresh data from server
             this.user = { ...this.user, ...data.user };
             localStorage.setItem('user', JSON.stringify(this.user));
+
+            // Sync user preferences from server response
+            if (data.user.preferences && this.user?.id) {
+              window.dispatchEvent(
+                new CustomEvent('user-preferences-loaded', {
+                  detail: { userId: String(this.user.id), preferences: data.user.preferences },
+                })
+              );
+            }
           }
         } else if (response.status === 401) {
           // Token is invalid/expired, logout

@@ -22,8 +22,10 @@ const ALLOWED_PREFIXES: &[&str] = &[
 /// an <img> src. Results are cached in memory for the lifetime of the app.
 #[tauri::command]
 pub async fn fetch_avatar_image(url: String) -> Result<String, String> {
-    // Security: only allow known avatar CDN domains
-    let allowed = ALLOWED_PREFIXES.iter().any(|prefix| url.starts_with(prefix));
+    // Security: only allow known avatar CDN domains or Cloudflare R2 presigned URLs
+    let allowed = ALLOWED_PREFIXES.iter().any(|prefix| url.starts_with(prefix))
+        || url.contains(".r2.cloudflarestorage.com/");
+    
     if !allowed {
         return Err(format!("URL domain not allowed for avatar proxy"));
     }
