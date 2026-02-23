@@ -230,3 +230,22 @@ Fix the new Add Reference dialog not appearing when launched from the AI Video C
     - standard input and footer button variants matching org dialogs
 - Verification:
   - `yarn --cwd client prettier --check src/components/ai-video/AIChatPanel.vue` passed.
+
+---
+
+# Task Plan - Tauri Main Window Default Size (13-inch MacBook Fit)
+
+## Objective
+Reduce the default Tauri main-window launch size so first-open fits comfortably on 13-inch MacBook displays.
+
+## Plan
+- [x] Locate the Rust code path that sets the main window fallback size.
+- [x] Update the fallback size to a smaller default suitable for 13-inch MacBook screens.
+- [x] Run a targeted Rust build check for `client/src-tauri` and record results.
+
+## Review
+- Located startup window sizing in `client/src-tauri/src/lib.rs` during main window creation inside `.setup(...)`.
+- Updated default fallback size from `1280x720` to `1120x680` for a more comfortable first-open size on 13-inch MacBook displays.
+- Added `.prevent_overflow()` to main window builder so restored/specified sizes cannot exceed the current monitor work area at creation time.
+- Verification:
+  - `cd client/src-tauri && cargo check` passed.

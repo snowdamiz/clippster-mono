@@ -802,6 +802,10 @@ pub fn run() {
                 WebviewUrl::External(url_str.parse().unwrap())
             };
 
+            // 13-inch MacBook friendly startup size when no prior state exists.
+            const DEFAULT_MAIN_WINDOW_WIDTH: f64 = 1120.0;
+            const DEFAULT_MAIN_WINDOW_HEIGHT: f64 = 680.0;
+
             // Load saved window size or use defaults
             let (width, height) = match ui_utils::load_window_size(app.handle().clone()) {
                 Ok(Some(size)) => {
@@ -809,8 +813,11 @@ pub fn run() {
                     (size.width, size.height)
                 }
                 _ => {
-                    println!("[Rust] Using default window size: 1280x720");
-                    (1280.0, 720.0)
+                    println!(
+                        "[Rust] Using default window size: {}x{}",
+                        DEFAULT_MAIN_WINDOW_WIDTH, DEFAULT_MAIN_WINDOW_HEIGHT
+                    );
+                    (DEFAULT_MAIN_WINDOW_WIDTH, DEFAULT_MAIN_WINDOW_HEIGHT)
                 }
             };
 
@@ -818,6 +825,7 @@ pub fn run() {
                 .title("Clippster")
                 .inner_size(width, height)
                 .min_inner_size(800.0, 600.0)
+                .prevent_overflow()
                 .decorations(false)
                 .transparent(true)
                 .visible(false)
