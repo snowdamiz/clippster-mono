@@ -48,3 +48,10 @@
 - Preventive rule:
   - Before finalizing a new modal, compare against at least one canonical in-app dialog and align container/header/input/footer token usage.
   - Prefer reusing the app’s established dialog visual primitives (surface, border, accent, button/input states) over inventing feature-specific styling.
+
+## 2026-02-23 - Third-Party API Response Structure Changes
+- Pattern observed: Kick changed their `api.kick.com/private/v1/channels/{slug}` response structure, moving `username` and `profile_picture` under `data.account.user` instead of `data` root. This silently broke avatar loading across Live page, VOD page, and Creator Profiles.
+- Preventive rule:
+  - When parsing third-party API responses, always log the raw response body (truncated) for debugging. The Rust code already did this, which made diagnosis fast.
+  - Use defensive multi-path JSON parsing with fallback chains (try new path first, fall back to old paths).
+  - For critical third-party integrations, consider adding a periodic health check that validates expected response fields are present.

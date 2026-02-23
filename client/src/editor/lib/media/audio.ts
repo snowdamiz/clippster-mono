@@ -352,9 +352,14 @@ export async function collectAudioClips({
 
 	for (const track of tracks) {
 		const isTrackMuted = canTracktHaveAudio(track) && track.muted;
+		console.log(`[collectAudioClips] Track ${track.id}: ${track.elements.length} elements, muted: ${isTrackMuted}`);
 
 		for (const element of track.elements) {
-			if (!canElementHaveAudio(element)) continue;
+			console.log(`[collectAudioClips] Processing element ${element.id} (${element.type})`);
+			if (!canElementHaveAudio(element)) {
+				console.log(`[collectAudioClips] Element ${element.id} (${element.type}) cannot have audio, skipping`);
+				continue;
+			}
 
 			const isElementMuted =
 				"muted" in element ? (element.muted ?? false) : false;
@@ -388,9 +393,14 @@ export async function collectAudioClips({
 
 			if (element.type === "video") {
 				const mediaAsset = mediaMap.get(element.mediaId);
-				if (!mediaAsset) continue;
+				if (!mediaAsset) {
+					console.warn(`[collectAudioClips] Video element ${element.id} has no media asset (mediaId: ${element.mediaId})`);
+					continue;
+				}
 
+				console.log(`[collectAudioClips] Video element ${element.id}: mediaAsset type=${mediaAsset.type}, name=${mediaAsset.name}`);
 				if (mediaSupportsAudio({ media: mediaAsset })) {
+					console.log(`[collectAudioClips] Adding audio clip from video element ${element.id}`);
 					clips.push(
 						collectMediaAudioClip({
 							element,
@@ -402,6 +412,8 @@ export async function collectAudioClips({
 							fadeOut: element.fadeOut ?? 0,
 						}),
 					);
+				} else {
+					console.warn(`[collectAudioClips] Video element ${element.id} media asset does not support audio (type: ${mediaAsset.type})`);
 				}
 			}
 		}
