@@ -154,8 +154,17 @@ function addToast(options: ToastOptions): string {
 async function showBackgroundNotification(toast: Toast) {
   console.log('[Toast] showBackgroundNotification called for:', toast.title);
   try {
-    const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
-    const { currentMonitor } = await import('@tauri-apps/api/window');
+    const { WebviewWindow, getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+    const { currentMonitor, UserAttentionType } = await import('@tauri-apps/api/window');
+
+    // Flash the taskbar icon to get user's attention (like Discord/Steam)
+    try {
+      const mainWindow = getCurrentWebviewWindow();
+      await mainWindow.requestUserAttention(UserAttentionType.Informational);
+      console.log('[Toast] Taskbar icon flashing');
+    } catch (err) {
+      console.warn('[Toast] Failed to flash taskbar icon:', err);
+    }
 
     const prefs = getPreferencesStore();
     const position = prefs?.toastPosition ?? 'bottom-right';
