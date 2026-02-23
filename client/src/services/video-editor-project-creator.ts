@@ -21,6 +21,7 @@ import {
   createVideoEditorWatermark,
   type VideoEditorSource,
 } from '@/services/database';
+import { base64ToUtf8 } from '@/utils/encoding';
 
 export interface ClipSegmentInput {
   start_time: number;
@@ -101,7 +102,7 @@ export async function createVideoEditorProjectFromClip(
           const match = videoSrc.match(/\/video\/([^?]+)/);
           if (match) {
             try {
-              vodPath = atob(match[1]);
+              vodPath = base64ToUtf8(match[1]);
             } catch {
               console.warn('[video-editor-project-creator] Failed to decode video path from URL');
             }

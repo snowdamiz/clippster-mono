@@ -1,7 +1,7 @@
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 
-const PADDING_MAX_RATIO = 0.75;
-const PADDING_MIN_RATIO = 0.15;
+const PADDING_MAX_RATIO = 0.2;
+const PADDING_MIN_RATIO = 0.1;
 const PADDING_MIN_AT_ZOOM_PERCENT = 0.2;
 
 export function getTimelineZoomMin({

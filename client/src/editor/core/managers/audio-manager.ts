@@ -146,6 +146,16 @@ export class AudioManager {
 		}
 
 		this.clips = await collectAudioClips({ tracks, mediaAssets });
+		console.log(`[AudioManager] Collected ${this.clips.length} audio clips:`, this.clips.map(c => ({
+			id: c.id,
+			sourceKey: c.sourceKey,
+			fileName: c.file.name,
+			fileType: c.file.type,
+			startTime: c.startTime,
+			duration: c.duration,
+			muted: c.muted,
+			volume: c.volume
+		})));
 		if (!this.editor.playback.getIsPlaying()) return;
 
 		this.playbackStartTime = time;
@@ -175,6 +185,7 @@ export class AudioManager {
 			if (clip.startTime > windowEnd) continue;
 
 			this.activeClipIds.add(clip.id);
+			console.log(`[AudioManager] Scheduling clip ${clip.id} (${clip.file.name}) at ${clip.startTime}s`);
 			this.runClipIterator({ clip, startTime: currentTime, sessionId: this.playbackSessionId })
 				.catch((err) => {
 					console.warn(`[AudioManager] Audio playback failed for clip ${clip.id}:`, err);
@@ -222,9 +233,11 @@ export class AudioManager {
 		// If mediabunny sink is unavailable (e.g. codec not supported on this platform),
 		// fall back to native Web Audio API decoding
 		if (!sink) {
+			console.log(`[AudioManager] Mediabunny sink unavailable for ${clip.file.name}, using native fallback`);
 			await this.runNativeFallback({ clip, startTime, sessionId });
 			return;
 		}
+		console.log(`[AudioManager] Using mediabunny sink for ${clip.file.name}`);
 
 		const clipStart = clip.startTime;
 		const clipEnd = clip.startTime + clip.duration;
@@ -488,17 +501,18 @@ export class AudioManager {
 
 			const decodable = await audioTrack.canDecode();
 			if (!decodable) {
-				console.warn(`[AudioManager] Audio track not decodable for clip ${clip.sourceKey}, skipping`);
+				console.warn(`[AudioManager] Audio track not decodable for clip ${clip.sourceKey} (${clip.file.name}), will try native fallback`);
 				input.dispose();
 				return null;
 			}
+			console.log(`[AudioManager] Audio track is decodable for ${clip.file.name}`);
 
 			const sink = new AudioBufferSink(audioTrack);
 			this.inputs.set(clip.sourceKey, input);
 			this.sinks.set(clip.sourceKey, sink);
 			return sink;
 		} catch (error) {
-			console.warn("[AudioManager] Failed to initialize audio sink:", error);
+			console.warn(`[AudioManager] Failed to initialize audio sink for ${clip.file.name}:`, error);
 			return null;
 		}
 	}
