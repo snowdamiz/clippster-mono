@@ -169,7 +169,7 @@ const savedViewState = editor.project.getTimelineViewState();
 
 const { zoomLevel, setZoomLevel, handleWheel, saveScrollPosition } = useTimelineZoom({
 	containerRef: timelineRef,
-	minZoom: minZoomLevel.value,
+	minZoom: minZoomLevel,
 	initialZoom: savedViewState?.zoomLevel,
 	initialScrollLeft: savedViewState?.scrollLeft,
 	initialPlayheadTime: savedViewState?.playheadTime,
