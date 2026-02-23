@@ -135,19 +135,36 @@ pub async fn check_kick_livestream(channel: String) -> Result<String, String> {
                     println!("[Kick] Channel API response body (first 500 chars): {}", body.chars().take(500).collect::<String>());
                     match serde_json::from_str::<serde_json::Value>(&body) {
                         Ok(json) => {
-                            let data = json.get("data");
+                            // Try multiple possible response structures
+                            // 1. Check if data exists at root level
+                            let data = json.get("data").or(Some(&json));
+                            
+                            // Try to get username from multiple possible locations
                             let username = data
-                                .and_then(|d| d.get("username"))
+                                .and_then(|d| {
+                                    d.get("username")
+                                        .or_else(|| d.get("user").and_then(|u| u.get("username")))
+                                        .or_else(|| d.get("slug"))
+                                })
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string());
+                            
+                            // Try to get profile image from multiple possible locations
                             let profile_image = data
-                                .and_then(|d| d.get("profile_image_url"))
+                                .and_then(|d| {
+                                    d.get("profile_image_url")
+                                        .or_else(|| d.get("user").and_then(|u| u.get("profile_pic")))
+                                        .or_else(|| d.get("user").and_then(|u| u.get("profile_image_url")))
+                                        .or_else(|| d.get("profile_pic"))
+                                })
                                 .and_then(|v| v.as_str())
                                 .filter(|s| !s.is_empty())
                                 .map(|s| s.to_string());
+                            
                             let chan_id = data
                                 .and_then(|d| d.get("id"))
                                 .and_then(|v| v.as_i64());
+                            
                             println!("[Kick] Parsed channel metadata - username: {:?}, profile_image: {:?}, id: {:?}", 
                                 username, profile_image.as_ref().map(|s| s.chars().take(50).collect::<String>()), chan_id);
                             (username, profile_image, chan_id)

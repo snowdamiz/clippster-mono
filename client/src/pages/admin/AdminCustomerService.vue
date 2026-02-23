@@ -76,15 +76,6 @@ async function selectConversation(conv: any) {
   activeConversation.value = conv;
   await loadMessages(conversationId);
   await markAsRead(conversationId);
-  // Reload conversations to get fresh status
-  await loadConversations();
-  // Update active conversation with fresh data
-  const freshConv = conversations.value.find(c => c.id === conversationId);
-  if (freshConv) {
-    console.log('Updated active conversation with fresh data:', freshConv);
-    console.log('Fresh conversation status:', freshConv.status);
-    activeConversation.value = freshConv;
-  }
 }
 
 async function loadMessages(conversationId: number) {
