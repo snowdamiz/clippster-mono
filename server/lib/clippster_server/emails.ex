@@ -131,6 +131,23 @@ defmodule ClippsterServer.Emails do
                 </td>
               </tr>
 
+              <!-- Join Our Community -->
+              <tr>
+                <td style="padding-top: 32px;">
+                  <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 24px; text-align: center;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: #ffffff;">
+                      🎮 Join Our Discord Community
+                    </h3>
+                    <p style="margin: 0 0 16px 0; font-size: 14px; color: #d4d4d8; line-height: 1.6;">
+                      Connect with other creators, get help, and stay updated on new features!
+                    </p>
+                    <a href="https://discord.gg/4kTCvKEVuV" style="display: inline-block; background: #5865F2; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+                      Join Discord →
+                    </a>
+                  </div>
+                </td>
+              </tr>
+
               <!-- Footer -->
               <tr>
                 <td style="padding-top: 32px; text-align: center;">
@@ -158,8 +175,14 @@ defmodule ClippsterServer.Emails do
 
     This code expires in 10 minutes.
 
-    Or click this link to verify: #{magic_link_url}
+    Or click this link to verify instantly: #{magic_link_url}
 
+    ---
+    JOIN OUR DISCORD COMMUNITY:
+    🎮 Connect with other creators, get help, and stay updated on new features!
+    Discord: https://discord.gg/4kTCvKEVuV
+
+    ---
     If you didn't create an account, you can safely ignore this email.
     """
   end
@@ -415,6 +438,23 @@ defmodule ClippsterServer.Emails do
                 </td>
               </tr>
 
+              <!-- Join Our Community -->
+              <tr>
+                <td style="padding-top: 32px;">
+                  <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 24px; text-align: center;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: #ffffff;">
+                      🎮 Join Our Discord Community
+                    </h3>
+                    <p style="margin: 0 0 16px 0; font-size: 14px; color: #d4d4d8; line-height: 1.6;">
+                      Connect with other teams, share collaboration tips, and get support from the community!
+                    </p>
+                    <a href="https://discord.gg/4kTCvKEVuV" style="display: inline-block; background: #5865F2; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+                      Join Discord →
+                    </a>
+                  </div>
+                </td>
+              </tr>
+
               <!-- Footer -->
               <tr>
                 <td style="padding-top: 32px; text-align: center;">
@@ -443,6 +483,14 @@ defmodule ClippsterServer.Emails do
     Click this link to accept the invitation: #{invite_url}
 
     This invitation expires in 7 days.
+
+    ---
+
+    JOIN OUR DISCORD COMMUNITY:
+    🎮 Connect with other teams, share collaboration tips, and get support!
+    Discord: https://discord.gg/4kTCvKEVuV
+
+    ---
 
     If you don't recognize this organization, you can safely ignore this email.
     """
@@ -527,6 +575,19 @@ defmodule ClippsterServer.Emails do
                     </table>
                   </div>
 
+                  <!-- Join Our Community -->
+                  <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: #ffffff;">
+                      🎮 Join Our Discord Community
+                    </h3>
+                    <p style="margin: 0 0 16px 0; font-size: 14px; color: #d4d4d8; line-height: 1.6;">
+                      While you wait for beta access, join our Discord to connect with the community and stay updated!
+                    </p>
+                    <a href="https://discord.gg/4kTCvKEVuV" style="display: inline-block; background: #5865F2; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+                      Join Discord →
+                    </a>
+                  </div>
+
                   <!-- Message Box -->
                   <div style="background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
                     <p style="margin: 0; font-size: 14px; color: #d4d4d8; line-height: 1.6;">
@@ -591,6 +652,12 @@ defmodule ClippsterServer.Emails do
 
     ---
 
+    JOIN OUR DISCORD COMMUNITY:
+    🎮 While you wait for beta access, join our Discord to connect with the community and stay updated!
+    Discord: https://discord.gg/4kTCvKEVuV
+
+    ---
+
     Visit: https://clippster.app
 
     Questions? Contact us at support@clippster.app
@@ -649,6 +716,20 @@ defmodule ClippsterServer.Emails do
                 </td>
               </tr>
 
+              <!-- Discord Footer -->
+              <tr>
+                <td style="padding-top: 32px;">
+                  <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 20px; text-align: center;">
+                    <p style="margin: 0 0 12px 0; font-size: 14px; color: #d4d4d8;">
+                      🎮 <strong style="color: #ffffff;">Join our Discord community</strong> for support and updates
+                    </p>
+                    <a href="https://discord.gg/4kTCvKEVuV" style="display: inline-block; background: #5865F2; color: #ffffff; text-decoration: none; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 13px;">
+                      Join Discord →
+                    </a>
+                  </div>
+                </td>
+              </tr>
+
               <!-- Footer -->
               <tr>
                 <td style="padding-top: 24px; text-align: center;">
@@ -680,6 +761,13 @@ defmodule ClippsterServer.Emails do
     #{plain}
 
     ---
+
+    JOIN OUR DISCORD COMMUNITY:
+    🎮 Get support, connect with other users, and stay updated!
+    Discord: https://discord.gg/4kTCvKEVuV
+
+    ---
+
     You're receiving this email because you have an account with #{app_name}.
     """
   end
@@ -695,7 +783,7 @@ defmodule ClippsterServer.Emails do
     new()
     |> to(email)
     |> from({app_name, from_email})
-    |> subject("Welcome to #{app_name} Beta - Your Access Code Inside")
+    |> subject("Welcome to #{app_name} Beta - Access Code Inside")
     |> html_body(waitlist_invite_html(beta_code, discount_code, discount_percent, app_name))
     |> text_body(waitlist_invite_text(beta_code, discount_code, discount_percent, app_name))
   end
@@ -764,7 +852,7 @@ defmodule ClippsterServer.Emails do
                       <tr>
                         <td style="padding: 8px 0;">
                           <span style="display: inline-block; width: 24px; height: 24px; background: #06b6d4; color: #0a0a0a; border-radius: 50%; text-align: center; line-height: 24px; font-weight: 700; font-size: 12px; margin-right: 12px;">2</span>
-                          <span style="color: #d4d4d8; font-size: 13px;">Enter your beta code above</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Enter Your Beta Code Above</span>
                         </td>
                       </tr>
                       <tr>
@@ -776,7 +864,7 @@ defmodule ClippsterServer.Emails do
                       <tr>
                         <td style="padding: 8px 0;">
                           <span style="display: inline-block; width: 24px; height: 24px; background: #06b6d4; color: #0a0a0a; border-radius: 50%; text-align: center; line-height: 24px; font-weight: 700; font-size: 12px; margin-right: 12px;">4</span>
-                          <span style="color: #d4d4d8; font-size: 13px;">Use discount code at signup</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Use Discount Code at Signup</span>
                         </td>
                       </tr>
                     </table>
@@ -794,13 +882,13 @@ defmodule ClippsterServer.Emails do
                       #{discount_code}
                     </p>
                     <p style="margin: 0 0 8px 0; font-size: 16px; color: #ffffff; font-weight: 600;">
-                      Save #{discount_percent}% off first month
+                      Save #{discount_percent}% off First Month
                     </p>
                     <p style="margin: 0 0 16px 0; font-size: 13px; color: #a1a1aa;">
-                      Creator Tier - $49.99/month
+                      Creator Tier - $54.99/month
                     </p>
                     <p style="margin: 0; font-size: 18px; color: #22c55e; font-weight: 700;">
-                      $34.99 <span style="font-size: 14px; color: #71717a; text-decoration: line-through; font-weight: 400;">$49.99</span>
+                      $38.49 <span style="font-size: 14px; color: #71717a; text-decoration: line-through; font-weight: 400;">$54.99</span>
                     </p>
                   </div>
 
@@ -838,7 +926,7 @@ defmodule ClippsterServer.Emails do
                   </div>
 
                   <!-- What You Get Access To -->
-                  <div style="background: rgba(39, 39, 42, 0.5); border-radius: 12px; padding: 20px; margin-bottom: 32px;">
+                  <div style="background: rgba(39, 39, 42, 0.5); border-radius: 12px; padding: 20px; margin-bottom: 24px;">
                     <h3 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 600; color: #ffffff; text-transform: uppercase; letter-spacing: 0.5px;">
                       What You Get Access To
                     </h3>
@@ -865,6 +953,43 @@ defmodule ClippsterServer.Emails do
                         <td style="padding: 6px 0;">
                           <span style="color: #06b6d4; margin-right: 8px;">•</span>
                           <span style="color: #d4d4d8; font-size: 13px;">Export to all platforms</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <!-- Join Our Community -->
+                  <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: #ffffff;">
+                      🎮 Join Our Discord Community
+                    </h3>
+                    <p style="margin: 0 0 16px 0; font-size: 14px; color: #d4d4d8; line-height: 1.6;">
+                      Connect with other beta testers, share feedback, get help, and be the first to hear about new features!
+                    </p>
+                    <a href="https://discord.gg/4kTCvKEVuV" style="display: inline-block; background: #5865F2; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+                      Join Discord →
+                    </a>
+                  </div>
+
+                  <!-- Need Help? -->
+                  <div style="background: rgba(39, 39, 42, 0.5); border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: #ffffff; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Need Help?
+                    </h3>
+                    <p style="margin: 0 0 12px 0; font-size: 13px; color: #d4d4d8; line-height: 1.6;">
+                      The app includes built-in support tools to help you:
+                    </p>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #06b6d4; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;"><strong style="color: #ffffff;">Bug Reporter</strong> - Report issues directly from the app</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #06b6d4; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;"><strong style="color: #ffffff;">Customer Service Chat</strong> - Get instant help from our team</span>
                         </td>
                       </tr>
                     </table>
@@ -934,8 +1059,8 @@ defmodule ClippsterServer.Emails do
     YOUR EXCLUSIVE DISCOUNT: #{discount_code}
 
     Save #{discount_percent}% off first month
-    Creator Tier - $49.99/month
-    Pay only $34.99 (save $15.00)
+    Creator Tier - $54.99/month
+    Pay only $38.49 (save $16.50)
 
     WHAT'S INCLUDED:
     • 1,800 credits/month (30 hours)
@@ -950,6 +1075,17 @@ defmodule ClippsterServer.Emails do
     • Professional timeline editor
     • Auto-generated captions
     • Export to all platforms
+
+    ---
+
+    JOIN OUR DISCORD COMMUNITY:
+    🎮 Connect with other beta testers, share feedback, and get help!
+    Discord: https://discord.gg/4kTCvKEVuV
+
+    NEED HELP?
+    The app includes built-in support tools:
+    • Bug Reporter - Report issues directly from the app
+    • Customer Service Chat - Get instant help from our team
 
     ---
 

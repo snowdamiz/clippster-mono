@@ -553,7 +553,7 @@ export function PricingPage() {
                         <div className="flex items-center gap-2">
                           <Sparkles className={`w-4 h-4 ${plan.highlight ? 'text-cyan-400' : 'text-zinc-500'}`} />
                           <span className={`font-semibold ${plan.highlight ? 'text-cyan-300' : 'text-zinc-300'}`}>
-                            {plan.credits.toLocaleString()} credits/month
+                            {plan.credits.toLocaleString()} {plan.name === 'Free' ? 'one-time credits' : 'credits/month'}
                           </span>
                         </div>
                       </div>

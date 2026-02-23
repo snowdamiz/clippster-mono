@@ -39,8 +39,8 @@ const features: Feature[] = [
   },
   {
     icon: Clock,
-    title: 'Real-Time Processing',
-    description: 'Process videos instantly with our desktop app. No queues, no waiting - clips are ready as soon as processing completes.',
+    title: 'Live Stream DVR & Clipping',
+    description: 'Watch streams in Picture-in-Picture mode, record with DVR, and clip highlights in real-time with AI detection or hotkeys.',
     accentColor: 'cyan',
   },
   {
