@@ -7,6 +7,7 @@
  */
 
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
+import { base64ToUtf8, utf8ToBase64Url } from '@/utils/encoding';
 
 // ============================================================================
 // Types
@@ -182,10 +183,10 @@ function resolveLocalPath(url: string): string | null {
   }
 
   // Check for streaming server URL: http://localhost:PORT/video/BASE64
-  const streamingMatch = url.match(/^http:\/\/localhost:\d+\/video\/([A-Za-z0-9+/=]+)$/);
+  const streamingMatch = url.match(/^http:\/\/localhost:\d+\/video\/([A-Za-z0-9+/_=-]+)$/);
   if (streamingMatch) {
     try {
-      const decoded = decodeURIComponent(escape(atob(streamingMatch[1])));
+      const decoded = base64ToUtf8(streamingMatch[1]);
       return decoded;
     } catch {
       // Invalid base64, continue to other checks
@@ -193,10 +194,10 @@ function resolveLocalPath(url: string): string | null {
   }
 
   // Check for HLS streaming server URL: http://localhost:PORT/ts-hls/BASE64/playlist.m3u8
-  const hlsMatch = url.match(/^http:\/\/localhost:\d+\/ts-hls\/([A-Za-z0-9+/=]+)\/playlist\.m3u8$/);
+  const hlsMatch = url.match(/^http:\/\/localhost:\d+\/ts-hls\/([A-Za-z0-9+/_=-]+)\/playlist\.m3u8$/);
   if (hlsMatch) {
     try {
-      const decoded = decodeURIComponent(escape(atob(hlsMatch[1])));
+      const decoded = base64ToUtf8(hlsMatch[1]);
       console.log('[WaveformService] Resolved HLS URL to local path:', decoded);
       return decoded;
     } catch {
@@ -225,7 +226,7 @@ function resolveLocalPath(url: string): string | null {
 async function fetchViaStreamingServer(path: string): Promise<ArrayBuffer | null> {
   try {
     const port = await invoke<number>('get_video_server_port');
-    const encodedPath = btoa(unescape(encodeURIComponent(path)));
+    const encodedPath = utf8ToBase64Url(path);
     const streamingUrl = `http://localhost:${port}/video/${encodedPath}`;
 
     const CHUNK_SIZE = 8 * 1024 * 1024; // 8MB chunks

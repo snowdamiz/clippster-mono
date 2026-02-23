@@ -14,7 +14,16 @@ export interface AIVideoComposition {
 
 export interface AIVideoTrack {
   id: string;
-  type: 'video' | 'audio' | 'image' | 'text' | 'shape' | 'cameraMotion' | 'impactFX' | 'transition' | 'motionGraphic';
+  type:
+    | 'video'
+    | 'audio'
+    | 'image'
+    | 'text'
+    | 'shape'
+    | 'cameraMotion'
+    | 'impactFX'
+    | 'transition'
+    | 'motionGraphic';
   name: string;
   source?: MediaSource;
   startTime: number;
@@ -41,19 +50,19 @@ export interface TrackProperties {
   scale?: number | KeyframeAnimation;
   rotation?: number | KeyframeAnimation;
   opacity?: number | KeyframeAnimation;
-  
+
   // Video/Audio specific
   trimStart?: number;
   trimEnd?: number;
   playbackRate?: number;
   volume?: number | KeyframeAnimation;
-  
+
   // Text specific
   text?: TextProperties;
-  
+
   // Shape specific
   shape?: ShapeProperties;
-  
+
   // Effects & transitions
   effects?: Effect[];
   enterTransition?: Transition;
@@ -80,7 +89,7 @@ export interface TextProperties {
   animation?: TextAnimation;
 }
 
-export type TextAnimation = 
+export type TextAnimation =
   | { type: 'none' }
   | { type: 'fade'; duration: number }
   | { type: 'slide-up'; duration: number; distance?: number }
@@ -181,13 +190,34 @@ export interface AIVideoMediaItem {
   dimensions?: { width: number; height: number };
   transcript?: string;
   audioPeaks?: Array<{ time: number; amplitude: number }>;
+  intendedParts?: string[];
   addedAt: Date;
 }
 
-// AI generation
-export type StylePreset = 'hype' | 'professional' | 'gaming' | 'cinematic' | 'tutorial' | 'vlog' | 'music_video' | 'product';
+export interface MediaRequest {
+  prompt: string;
+  required: boolean;
+  parts: string[];
+  accepted_types?: Array<'video' | 'audio' | 'image'>;
+}
 
-export type CaptionStylePreset = 'bold_tiktok' | 'clean_subtitle' | 'neon_glow' | 'minimal' | 'none';
+// AI generation
+export type StylePreset =
+  | 'hype'
+  | 'professional'
+  | 'gaming'
+  | 'cinematic'
+  | 'tutorial'
+  | 'vlog'
+  | 'music_video'
+  | 'product';
+
+export type CaptionStylePreset =
+  | 'bold_tiktok'
+  | 'clean_subtitle'
+  | 'neon_glow'
+  | 'minimal'
+  | 'none';
 
 export interface AIGenerationRequest {
   prompt: string;
@@ -252,6 +282,7 @@ export interface ChatResponse {
   message: string;
   ready_to_generate: boolean;
   summary: GenerationSummary | null;
+  media_request?: MediaRequest | null;
 }
 
 export interface RefinementResponse {
@@ -341,7 +372,7 @@ export interface ImportedClipData {
   thumbnailPath?: string;
   duration: number;
   transcript?: string;
-  
+
   // Complete edit data for re-composition
   audioTracks: Array<{
     filePath: string;
@@ -353,7 +384,7 @@ export interface ImportedClipData {
     fadeIn: number;
     fadeOut: number;
   }>;
-  
+
   textOverlays: Array<{
     text: string;
     startTime: number;
@@ -363,7 +394,7 @@ export interface ImportedClipData {
     styleData: any;
     animation: string;
   }>;
-  
+
   stickers: Array<{
     stickerPath: string;
     startTime: number;
@@ -373,7 +404,7 @@ export interface ImportedClipData {
     scale: number;
     rotation: number;
   }>;
-  
+
   watermarks: Array<{
     watermarkPath: string;
     startTime: number;
@@ -383,7 +414,7 @@ export interface ImportedClipData {
     scale: number;
     opacity: number;
   }>;
-  
+
   effects: Array<{
     effectType: string;
     startTime: number;

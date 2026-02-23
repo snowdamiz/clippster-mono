@@ -121,9 +121,8 @@ const showControls = ref(false);
 let controlsTimeout: ReturnType<typeof setTimeout> | null = null;
 const CONTROLS_HIDE_DELAY = 2000; // 2 seconds
 
-// Aspect ratio locking
+// Aspect ratio tracking (used for initial window sizing when video loads)
 let videoAspectRatio: number | null = null;
-let isEnforcingAspectRatio = false;
 
 // State synced from main window
 const streamerName = ref('Stream');
@@ -150,38 +149,10 @@ function showToast(message: string, type: 'success' | 'error' = 'success') {
 let hls: Hls | null = null;
 let unlistenFns: UnlistenFn[] = [];
 
-// Enforce aspect ratio on window resize
-async function enforceAspectRatio() {
-  if (!videoAspectRatio || isEnforcingAspectRatio) return;
-  isEnforcingAspectRatio = true;
-  try {
-    const win = getCurrentWindow();
-    const factor = await win.scaleFactor();
-    const physSize = await win.innerSize();
-    const currentWidth = physSize.width / factor;
-    const currentHeight = physSize.height / factor;
-    const expectedHeight = currentWidth / videoAspectRatio;
-    // Only correct if the aspect ratio is off by more than 2px (avoid infinite loop)
-    if (Math.abs(currentHeight - expectedHeight) > 2) {
-      await win.setSize(new LogicalSize(Math.round(currentWidth), Math.round(expectedHeight)));
-    }
-  } catch (e) {
-    console.warn('[PIP] Failed to enforce aspect ratio:', e);
-  } finally {
-    isEnforcingAspectRatio = false;
-  }
-}
-
 onMounted(async () => {
   console.log('[PIP] Component mounted, setting up listeners...');
-
-  // Listen for window resize to enforce aspect ratio lock
-  const win = getCurrentWindow();
-  unlistenFns.push(
-    await win.onResized(async () => {
-      await enforceAspectRatio();
-    })
-  );
+  // Note: Aspect ratio is enforced at the OS level via WM_SIZING subclass in Rust.
+  // No need for a reactive onResized listener here.
   
   // Listen for state updates from main window
   unlistenFns.push(
