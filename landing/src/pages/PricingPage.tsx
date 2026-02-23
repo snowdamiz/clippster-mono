@@ -1,4 +1,4 @@
-import { Check, X, ArrowLeft, Apple, Monitor, Minus, Loader2, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Package, TrendingUp, Trophy } from 'lucide-react'
+import { Check, X, ArrowLeft, Apple, Monitor, Minus, Loader2, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Package, TrendingUp, Trophy, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
 import { useDownloadContext } from '../context/DownloadContext'
