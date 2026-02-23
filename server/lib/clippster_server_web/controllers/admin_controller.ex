@@ -2010,4 +2010,84 @@ defmodule ClippsterServerWeb.AdminController do
         conn |> put_status(400) |> json(%{success: false, error: "Invalid moderator ID"})
     end
   end
+
+  @doc """
+  Invites all uninvited waitlist entries.
+  """
+  def invite_waitlist(conn, params) do
+    admin_id = conn.assigns.current_user.id
+
+    discount_config = %{
+      percent_off: Map.get(params, "percent_off", 30),
+      duration_months: Map.get(params, "duration_months", 1),
+      allowed_tiers: Map.get(params, "allowed_tiers", ["creator"])
+    }
+
+    {:ok, results} = ClippsterServer.Waitlist.invite_all_uninvited(admin_id, discount_config)
+    
+    json(conn, %{
+      success: true,
+      invited_count: results.invited_count,
+      skipped_count: results.skipped_count,
+      errors: format_invite_errors(results.errors)
+    })
+  end
+
+  @doc """
+  Invites a single waitlist entry by ID.
+  """
+  def invite_waitlist_entry(conn, %{"id" => entry_id_string} = params) do
+    admin_id = conn.assigns.current_user.id
+
+    discount_config = %{
+      percent_off: Map.get(params, "percent_off", 30),
+      duration_months: Map.get(params, "duration_months", 1),
+      allowed_tiers: Map.get(params, "allowed_tiers", ["creator"])
+    }
+
+    case Integer.parse(entry_id_string) do
+      {entry_id, ""} ->
+        entry = ClippsterServer.Repo.get(ClippsterServer.Waitlist.WaitlistEntry, entry_id)
+
+        if entry do
+          case ClippsterServer.Waitlist.invite_entry(entry, admin_id, discount_config) do
+            {:ok, updated_entry} ->
+              json(conn, %{
+                success: true,
+                entry: %{
+                  id: updated_entry.id,
+                  email: updated_entry.email,
+                  invited_at: updated_entry.invited_at,
+                  email_sent_at: updated_entry.email_sent_at
+                }
+              })
+
+            {:error, {:already_invited, email}} ->
+              conn
+              |> put_status(:conflict)
+              |> json(%{success: false, error: "#{email} has already been invited"})
+
+            {:error, reason} ->
+              conn
+              |> put_status(:internal_server_error)
+              |> json(%{success: false, error: inspect(reason)})
+          end
+        else
+          conn
+          |> put_status(:not_found)
+          |> json(%{success: false, error: "Waitlist entry not found"})
+        end
+
+      _ ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{success: false, error: "Invalid entry ID"})
+    end
+  end
+
+  defp format_invite_errors(errors) do
+    Enum.map(errors, fn {:error, {email, reason}} ->
+      %{email: email, error: inspect(reason)}
+    end)
+  end
 end

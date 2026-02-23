@@ -556,7 +556,7 @@
                 <ul class="org-billing__plan-features">
                   <li class="org-billing__plan-feature">
                     <Check class="org-billing__plan-feature-icon" />
-                    <span>{{ tier.seats === null ? 'Unlimited team seats' : `${tier.seats} team seats` }}</span>
+                    <span>{{ tier.seats === null ? 'Unlimited team seats' : tier.seats === 0 ? 'No team seats (owner only)' : `${tier.seats} team seats` }}</span>
                   </li>
                   <li v-if="tier.monthly_credits > 0" class="org-billing__plan-feature">
                     <Check class="org-billing__plan-feature-icon" />
@@ -705,7 +705,7 @@
                     <span class="org-billing__tier-option-name">{{ tier.name }}</span>
                     <span class="org-billing__tier-option-price">${{ tier.usd }}<span style="font-size:0.75rem;font-weight:400;color:var(--sidebar-text-muted)">/mo</span></span>
                     <span class="org-billing__tier-option-info">
-                      {{ tier.seats === null ? '∞' : tier.seats }} seats
+                      {{ tier.seats === null ? '∞' : tier.seats === 0 ? '0' : tier.seats }} seats
                       <template v-if="tier.monthly_credits > 0"> · {{ tier.monthly_credits.toLocaleString() }}/mo</template>
                     </span>
                   </button>
@@ -2226,9 +2226,9 @@
     }
   }
 
-  @media (min-width: 1024px) {
+  @media (min-width: 1400px) {
     .org-billing__plans-grid {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
     }
   }
 

@@ -411,6 +411,17 @@ export async function getPublicPortfolioClipPresignedUrl(slug: string, clipId: n
   }
 }
 
+export async function getPublicPortfolioClipThumbnailPresignedUrl(slug: string, clipId: number): Promise<string | null> {
+  try {
+    const response = await api.get<{ success: boolean; url: string }>(
+      `/clippers/${slug}/portfolio-clips/${clipId}/thumbnail-presigned-url`
+    );
+    return response.data.success ? response.data.url : null;
+  } catch {
+    return null;
+  }
+}
+
 // ============================================================================
 // Avatar Upload API
 // ============================================================================

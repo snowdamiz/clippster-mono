@@ -229,6 +229,24 @@ async function installBinary(config, name) {
   }
 }
 
+function fixFfmpegLibsPermissions() {
+  // ffmpeg-libs/*.dylib are sometimes extracted with 444 (read-only) permissions,
+  // which causes tauri_build::build() to fail with "Permission denied" when it
+  // tries to process them as bundle resources. Ensure they are 644.
+  if (PLATFORM === 'win32') return;
+  const ffmpegLibsDir = path.resolve(__dirname, '../client/src-tauri/ffmpeg-libs');
+  if (!fs.existsSync(ffmpegLibsDir)) return;
+  for (const file of fs.readdirSync(ffmpegLibsDir)) {
+    if (file.endsWith('.dylib') || file.endsWith('.so')) {
+      try {
+        fs.chmodSync(path.join(ffmpegLibsDir, file), 0o644);
+      } catch (e) {
+        console.error(`Warning: Could not fix permissions for ${file}: ${e.message}`);
+      }
+    }
+  }
+}
+
 async function main() {
   try {
     const ffmpeg = getFfmpegConfig();
@@ -236,7 +254,8 @@ async function main() {
 
     await installBinary(ffmpeg, 'FFmpeg');
     await installBinary(node, 'Node.js');
-    
+    fixFfmpegLibsPermissions();
+
     console.log('🎉 Binary setup complete.');
   } catch (e) {
     console.error('Setup failed:', e.message);

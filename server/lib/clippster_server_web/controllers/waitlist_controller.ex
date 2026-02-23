@@ -54,21 +54,27 @@ defmodule ClippsterServerWeb.WaitlistController do
   Admin endpoint to list all waitlist entries.
   """
   def index(conn, _params) do
-    entries = Waitlist.list_entries()
+    entries = Waitlist.list_entries() |> ClippsterServer.Repo.preload(:beta_code)
     stats = Waitlist.get_stats()
+    invite_stats = Waitlist.get_invite_stats()
 
     entries_data = Enum.map(entries, fn entry ->
       %{
         id: entry.id,
         email: entry.email,
-        created_at: entry.inserted_at
+        created_at: entry.inserted_at,
+        invited_at: entry.invited_at,
+        email_sent_at: entry.email_sent_at,
+        email_delivery_error: entry.email_delivery_error,
+        beta_code: if(entry.beta_code, do: entry.beta_code.code, else: nil),
+        discount_code: entry.discount_code
       }
     end)
 
     json(conn, %{
       success: true,
       entries: entries_data,
-      stats: stats,
+      stats: Map.merge(stats, invite_stats),
       count: length(entries_data)
     })
   end

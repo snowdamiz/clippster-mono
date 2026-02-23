@@ -1,17 +1,39 @@
-import { Check, X, ArrowLeft, Apple, Monitor, Minus, Loader2, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Clock, Package, TrendingUp, Trophy } from 'lucide-react'
+import { Check, X, ArrowLeft, Apple, Monitor, Minus, Loader2, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Package, TrendingUp, Trophy } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
 import { useDownloadContext } from '../context/DownloadContext'
 import { CTA } from '../components/CTA'
-import { WaitlistModal } from '../components/WaitlistModal'
+import { BetaCodeModal } from '../components/BetaCodeModal'
 import { useState } from 'react'
 
 // Subscription plans (actual pricing from server)
 // 1 credit = 1 minute of video processing
 const subscriptionPlans = [
   {
+    name: 'Free',
+    price: 0,
+    period: 'forever',
+    credits: 60,
+    description: 'Try Clippster',
+    icon: Package,
+    features: [
+      '60 one-time credits',
+      '5 clip builds/day',
+      '1 editor export/day',
+      '2 VOD downloads/day',
+    ],
+    limitations: [
+      'Admin watermark applied',
+      'No social posting',
+      'No AI Video Creator',
+    ],
+    cta: 'Get Started',
+    highlight: false,
+    accentColor: 'zinc'
+  },
+  {
     name: 'Starter',
-    price: 24.99,
+    price: 29.99,
     period: 'month',
     credits: 600,
     description: 'Perfect for beginners',
@@ -29,7 +51,7 @@ const subscriptionPlans = [
   },
   {
     name: 'Creator',
-    price: 49.99,
+    price: 54.99,
     period: 'month',
     credits: 1800,
     description: 'For growing creators',
@@ -48,7 +70,7 @@ const subscriptionPlans = [
   },
   {
     name: 'Pro',
-    price: 199.99,
+    price: 204.99,
     period: 'month',
     credits: 9000,
     description: 'For power users & teams',
@@ -70,8 +92,81 @@ const subscriptionPlans = [
 // 1 credit = 1 minute of video processing
 const creditPacks = [
   { name: 'Small Pack', credits: 240, price: 10, perCredit: '0.042', savings: null, icon: Package, valueBar: 33 },
-  { name: 'Medium Pack', credits: 600, price: 24.99, perCredit: '0.042', savings: null, popular: true, icon: TrendingUp, valueBar: 66 },
-  { name: 'Large Pack', credits: 1800, price: 49.99, perCredit: '0.028', savings: '33%', icon: Crown, valueBar: 100 },
+  { name: 'Medium Pack', credits: 600, price: 19.99, perCredit: '0.033', savings: null, popular: true, icon: TrendingUp, valueBar: 66 },
+  { name: 'Large Pack', credits: 1800, price: 44.99, perCredit: '0.025', savings: '40%', icon: Crown, valueBar: 100 },
+]
+
+// Organization plans (base tiers only, no add-ons)
+const organizationPlans = [
+  {
+    name: 'Solo',
+    price: 149.99,
+    period: 'month',
+    seats: 0,
+    credits: 0,
+    description: 'For individual creators',
+    icon: Package,
+    features: [
+      'No team seats (owner only)',
+      'Team collaboration tools',
+      'Shared assets & profiles',
+      'Buy credits separately',
+    ],
+    cta: 'Get Started',
+    highlight: false,
+  },
+  {
+    name: 'Enterprise Base',
+    price: 299.99,
+    period: 'month',
+    seats: 5,
+    credits: 0,
+    description: 'For small teams',
+    icon: Building2,
+    features: [
+      '5 team seats',
+      'Team collaboration tools',
+      'Shared assets & profiles',
+      'Buy credits separately',
+    ],
+    cta: 'Get Started',
+    highlight: false,
+  },
+  {
+    name: 'Enterprise AI',
+    price: 499.99,
+    period: 'month',
+    seats: 5,
+    credits: 20000,
+    description: 'For AI-powered teams',
+    icon: Sparkles,
+    popular: true,
+    features: [
+      '5 team seats',
+      '20,000 credits/month',
+      'Team collaboration tools',
+      'Shared assets & profiles',
+    ],
+    cta: 'Get Started',
+    highlight: true,
+  },
+  {
+    name: 'Enterprise Unlimited',
+    price: 1899.99,
+    period: 'month',
+    seats: null,
+    credits: 100000,
+    description: 'For large organizations',
+    icon: Trophy,
+    features: [
+      'Unlimited team seats',
+      '100,000 credits/month',
+      'Team collaboration tools',
+      'Shared assets & profiles',
+    ],
+    cta: 'Get Started',
+    highlight: false,
+  },
 ]
 
 // Credit usage examples (1 credit = 1 minute of video)
@@ -104,14 +199,15 @@ const comparisonFeatures: ComparisonCategory[] = [
     features: [
       { name: 'Pricing model', clippster: 'Sub + credit packs', opus: 'Monthly subscription', winner: 'clippster' },
       { name: 'Extra credits', clippster: 'Buy anytime', opus: 'Upgrade plan only', winner: 'clippster' },
-      { name: 'Starting price', clippster: '$24.99/month', opus: '$15/month' },
-      { name: 'Mid tier value', clippster: '1800 credits @ $49.99', opus: '~300 credits @ $29', winner: 'clippster' },
+      { name: 'Starting price', clippster: '$29.99/month', opus: '$15/month' },
+      { name: 'Mid tier value', clippster: '1800 credits @ $54.99', opus: '~300 credits @ $29', winner: 'clippster' },
     ]
   },
   {
     category: 'AI & Clipping',
     features: [
       { name: 'AI highlight detection', clippster: 'yes', opus: 'yes', winner: 'tie' },
+      { name: 'AI Video Creator', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Real-time live clipping', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Picture-in-Picture mode', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Manual clipping mode', clippster: 'yes', opus: 'no', winner: 'clippster' },
@@ -128,6 +224,9 @@ const comparisonFeatures: ComparisonCategory[] = [
       { name: 'Drag & drop segments', clippster: 'yes', opus: 'partial' },
       { name: 'Cut/split/merge tools', clippster: 'Full suite', opus: 'Basic', winner: 'clippster' },
       { name: 'Keyboard shortcuts', clippster: 'Comprehensive', opus: 'Limited', winner: 'clippster' },
+      { name: 'Text overlays & stickers', clippster: 'yes', opus: 'partial', winner: 'clippster' },
+      { name: 'Watermark customization', clippster: 'yes', opus: 'limited', winner: 'clippster' },
+      { name: 'Intro/outro templates', clippster: 'yes', opus: 'no', winner: 'clippster' },
     ]
   },
   {
@@ -135,7 +234,7 @@ const comparisonFeatures: ComparisonCategory[] = [
     features: [
       { name: 'Auto-captions', clippster: 'yes', opus: 'yes', winner: 'tie' },
       { name: 'Languages', clippster: '40+', opus: '20+', winner: 'clippster' },
-      { name: 'Caption styles', clippster: 'Multiple', opus: 'Templates' },
+      { name: 'Caption styles', clippster: 'Customizable', opus: 'Templates', winner: 'clippster' },
       { name: 'Custom fonts', clippster: 'All plans', opus: 'Pro only', winner: 'clippster' },
       { name: 'Filler word removal', clippster: 'yes', opus: 'yes', winner: 'tie' },
     ]
@@ -146,17 +245,18 @@ const comparisonFeatures: ComparisonCategory[] = [
       { name: 'App type', clippster: 'Desktop', opus: 'Web-based' },
       { name: 'Export quality', clippster: 'Up to 4K', opus: '1080p max', winner: 'clippster' },
       { name: 'Aspect ratios', clippster: 'All (any plan)', opus: 'Pro only', winner: 'clippster' },
-      { name: 'Watermark-free', clippster: 'All plans', opus: 'Paid only', winner: 'clippster' },
-      { name: 'Direct publishing', clippster: 'yes', opus: 'yes' },
+      { name: 'Watermark-free', clippster: 'Paid plans', opus: 'Paid only', winner: 'tie' },
+      { name: 'Direct publishing', clippster: 'yes', opus: 'yes', winner: 'tie' },
     ]
   },
   {
     category: 'Import Sources',
     features: [
-      { name: 'YouTube', clippster: 'yes', opus: 'yes', winner: 'tie' },
-      { name: 'Twitch', clippster: 'Coming Soon', opus: 'Pro only', winner: 'clippster' },
+      { name: 'YouTube', clippster: 'Coming Soon', opus: 'yes' },
+      { name: 'Twitch', clippster: 'yes', opus: 'Pro only', winner: 'clippster' },
       { name: 'Kick', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'PumpFun', clippster: 'yes', opus: 'no', winner: 'clippster' },
+      { name: 'Livestream DVR', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Local files', clippster: 'yes', opus: 'yes', winner: 'tie' },
       { name: 'File size limit', clippster: 'Unlimited', opus: '10-30GB', winner: 'clippster' },
     ]
@@ -167,10 +267,15 @@ const comparisonFeatures: ComparisonCategory[] = [
       { name: 'Organization dashboard', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Campaign management', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Clipper recruitment', clippster: 'yes', opus: 'no', winner: 'clippster' },
+      { name: 'Clipper profiles & leaderboards', clippster: 'yes', opus: 'no', winner: 'clippster' },
+      { name: 'Performance-based payments', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Project organization', clippster: 'yes', opus: 'yes', winner: 'tie' },
       { name: 'Folders & tags', clippster: 'yes', opus: 'partial', winner: 'clippster' },
       { name: 'Team collaboration', clippster: 'yes', opus: 'Pro only', winner: 'tie' },
       { name: 'Asset sharing', clippster: 'yes', opus: 'Business only', winner: 'clippster' },
+      { name: 'Shared credit pools', clippster: 'yes', opus: 'no', winner: 'clippster' },
+      { name: 'Member credit allocation', clippster: 'yes', opus: 'no', winner: 'clippster' },
+      { name: 'Social account management', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Team seats', clippster: 'Organization Accounts', opus: '2 (Pro)', winner: 'clippster' },
     ]
   },
@@ -282,7 +387,7 @@ function FAQItem({ question, answer, isOpen, onClick, index }: {
 
 export function PricingPage() {
   const { primaryDownload, isLoading } = useDownloads()
-  const { downloadsEnabled, showWaitlistModal, setShowWaitlistModal, openWaitlistModal } = useDownloadContext()
+  const { downloadsEnabled, showBetaCodeModal, setShowBetaCodeModal, openBetaCodeModal, enableDownloads } = useDownloadContext()
   const [openFAQ, setOpenFAQ] = useState<number | null>(0)
 
   return (
@@ -309,11 +414,13 @@ export function PricingPage() {
             </div>
           ) : !downloadsEnabled ? (
             <button
-              onClick={openWaitlistModal}
+              onClick={openBetaCodeModal}
               className="px-5 py-2.5 rounded-full bg-white/10 text-white/70 font-medium text-sm border border-white/20 flex items-center gap-2 cursor-pointer hover:bg-cyan-500/15 hover:border-cyan-500/30 transition-colors group"
             >
-              <Clock className="w-4 h-4 text-cyan-400" />
-              <span className="hidden sm:inline group-hover:text-cyan-400 transition-colors">Coming Soon</span>
+              <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+              </svg>
+              <span className="hidden sm:inline group-hover:text-cyan-400 transition-colors">Enter Beta Code</span>
             </button>
           ) : primaryDownload ? (
             <a
@@ -359,7 +466,7 @@ export function PricingPage() {
 
         {/* Subscription Plans */}
         <section className="mb-24">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-7xl mx-auto">
             {subscriptionPlans.map((plan, index) => {
               const Icon = plan.icon
               
@@ -448,7 +555,7 @@ export function PricingPage() {
                         <div className="flex items-center gap-2">
                           <Sparkles className={`w-4 h-4 ${plan.highlight ? 'text-cyan-400' : 'text-zinc-500'}`} />
                           <span className={`font-semibold ${plan.highlight ? 'text-cyan-300' : 'text-zinc-300'}`}>
-                            {plan.credits.toLocaleString()} credits/month
+                            {plan.credits.toLocaleString()} {plan.name === 'Free' ? 'one-time credits' : 'credits/month'}
                           </span>
                         </div>
                       </div>
@@ -456,16 +563,18 @@ export function PricingPage() {
                       {/* CTA Button */}
                       {!downloadsEnabled ? (
                         <button
-                          onClick={openWaitlistModal}
+                          onClick={openBetaCodeModal}
                           className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden cursor-pointer ${
-                            plan.highlight 
-                              ? 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white' 
+                            plan.highlight
+                              ? 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
                               : 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
                           }`}
                         >
                           <span className="relative flex items-center justify-center gap-2">
-                            <Clock className="w-4 h-4" />
-                            Coming Soon
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                            </svg>
+                            Enter Beta Code
                           </span>
                         </button>
                       ) : (
@@ -522,6 +631,192 @@ export function PricingPage() {
                 </div>
               )
             })}
+          </div>
+        </section>
+
+        {/* Organization Plans */}
+        <section className="mb-24 relative">
+          <div className="section-divider absolute top-0 left-0 right-0" />
+          <div className="pt-20">
+            <div className="text-center mb-12">
+              {/* Badge */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 mb-6">
+                <Building2 className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">For Organizations</span>
+              </div>
+              
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4 tracking-tight">
+                Team & Enterprise Plans
+              </h2>
+              <p className="text-zinc-500 max-w-lg mx-auto px-4 leading-relaxed">
+                Powerful collaboration tools for teams of all sizes
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-7xl mx-auto">
+              {organizationPlans.map((plan, index) => {
+                const Icon = plan.icon
+                
+                return (
+                  <div
+                    key={plan.name}
+                    className="group relative rounded-2xl transition-all duration-500 hover:-translate-y-1"
+                    style={{ animationDelay: `${index * 100}ms` }}
+                  >
+                    {/* Gradient border effect */}
+                    <div className={`absolute -inset-[1px] rounded-2xl transition-opacity duration-300 ${
+                      plan.highlight 
+                        ? 'bg-gradient-to-b from-cyan-500 via-blue-500 to-violet-500 opacity-100' 
+                        : 'bg-zinc-800 opacity-100 group-hover:opacity-0'
+                    }`} />
+                    {!plan.highlight && (
+                      <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-b from-zinc-600 via-zinc-700 to-zinc-800 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                    )}
+                    
+                    {/* Subtle glow on hover */}
+                    <div className={`absolute -inset-4 rounded-3xl opacity-0 group-hover:opacity-100 blur-xl transition-opacity duration-500 pointer-events-none hidden sm:block ${
+                      plan.highlight ? 'bg-cyan-500/10' : 'bg-zinc-500/5'
+                    }`} />
+                    
+                    {/* Popular badge */}
+                    {plan.popular && (
+                      <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+                        <div className="relative">
+                          <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 to-blue-500 blur-md opacity-50" />
+                          <div className="relative bg-gradient-to-r from-cyan-500 to-blue-500 text-white text-[10px] font-bold tracking-wider uppercase px-4 py-1.5 rounded-full flex items-center gap-1.5">
+                            <Sparkles className="w-3 h-3" />
+                            Most Popular
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Card content */}
+                    <div className={`relative h-full rounded-2xl overflow-hidden ${
+                      plan.highlight 
+                        ? 'bg-gradient-to-b from-zinc-900 to-zinc-950' 
+                        : 'bg-zinc-900'
+                    }`}>
+                      {plan.highlight && (
+                        <div className="absolute inset-0 bg-gradient-to-b from-cyan-500/5 via-transparent to-blue-500/5 pointer-events-none" />
+                      )}
+                      
+                      <div className="relative p-6">
+                        {/* Icon and Plan name */}
+                        <div className="flex items-center gap-3 mb-4">
+                          <div className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-300 group-hover:scale-110 ${
+                            plan.highlight 
+                              ? 'bg-gradient-to-br from-cyan-500 to-blue-500 shadow-lg shadow-cyan-500/20' 
+                              : 'bg-zinc-800 group-hover:bg-zinc-700'
+                          }`}>
+                            <Icon className={`w-5 h-5 ${plan.highlight ? 'text-white' : 'text-zinc-400'}`} />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">{plan.name}</h3>
+                            <p className="text-xs text-zinc-500">{plan.description}</p>
+                          </div>
+                        </div>
+                        
+                        {/* Price */}
+                        <div className="mb-4">
+                          <div className="flex items-baseline gap-1">
+                            <span className={`font-display text-4xl font-bold tracking-tight ${
+                              plan.highlight 
+                                ? 'bg-gradient-to-r from-white to-cyan-200 bg-clip-text text-transparent' 
+                                : 'text-white'
+                            }`}>
+                              ${plan.price}
+                            </span>
+                            <span className="text-zinc-500 text-sm">/{plan.period}</span>
+                          </div>
+                        </div>
+
+                        {/* Seats & Credits highlight */}
+                        <div className={`py-3 px-4 rounded-xl mb-5 ${
+                          plan.highlight 
+                            ? 'bg-cyan-500/10 border border-cyan-500/20' 
+                            : 'bg-zinc-800/50 border border-zinc-700/30'
+                        }`}>
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <div className="flex items-center gap-2">
+                              <Building2 className={`w-4 h-4 ${plan.highlight ? 'text-cyan-400' : 'text-zinc-500'}`} />
+                              <span className={`text-sm font-medium ${plan.highlight ? 'text-cyan-300' : 'text-zinc-300'}`}>
+                                {plan.seats === null ? 'Unlimited seats' : plan.seats === 0 ? 'No team seats' : `${plan.seats} seats`}
+                              </span>
+                            </div>
+                          </div>
+                          {plan.credits > 0 && (
+                            <div className="flex items-center gap-2">
+                              <Sparkles className={`w-4 h-4 ${plan.highlight ? 'text-cyan-400' : 'text-zinc-500'}`} />
+                              <span className={`text-sm font-medium ${plan.highlight ? 'text-cyan-300' : 'text-zinc-300'}`}>
+                                {plan.credits.toLocaleString()} credits/month
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* CTA Button */}
+                        {!downloadsEnabled ? (
+                          <button
+                            onClick={openBetaCodeModal}
+                            className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden cursor-pointer ${
+                              plan.highlight
+                                ? 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
+                                : 'bg-zinc-800/80 text-zinc-300 border border-zinc-700/50 hover:bg-zinc-700/80 hover:border-zinc-600/50 hover:text-white'
+                            }`}
+                          >
+                            <span className="relative flex items-center justify-center gap-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                              </svg>
+                              Enter Beta Code
+                            </span>
+                          </button>
+                        ) : (
+                          <a
+                            href={primaryDownload?.downloadUrl || '#'}
+                            className={`relative block w-full py-3.5 rounded-xl text-center font-medium text-sm transition-all duration-300 mb-5 overflow-hidden group/btn ${
+                              plan.highlight 
+                                ? 'text-white shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30 hover:scale-[1.02]' 
+                                : 'bg-zinc-800 text-white hover:bg-zinc-700'
+                            }`}
+                          >
+                            {plan.highlight && (
+                              <>
+                                <div className="absolute inset-0 bg-gradient-to-r from-cyan-600 via-blue-500 to-violet-500" />
+                                <div className="absolute inset-0 bg-gradient-to-r from-cyan-500 via-blue-400 to-violet-400 opacity-0 group-hover/btn:opacity-100 transition-opacity duration-300" />
+                              </>
+                            )}
+                            <span className="relative">{plan.cta}</span>
+                          </a>
+                        )}
+                        
+                        {/* Divider */}
+                        <div className={`h-px mb-5 ${plan.highlight ? 'bg-gradient-to-r from-transparent via-zinc-700 to-transparent' : 'bg-zinc-800'}`} />
+                        
+                        {/* Features list */}
+                        <ul className="space-y-2.5">
+                          {plan.features.map((feature) => (
+                            <li key={feature} className="flex items-start gap-2.5 text-sm">
+                              <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
+                                plan.highlight 
+                                  ? 'bg-cyan-500/20 text-cyan-400' 
+                                  : 'bg-zinc-800 text-zinc-500'
+                              }`}>
+                                <Check className="w-2.5 h-2.5" />
+                              </div>
+                              <span className="text-zinc-400 text-[13px] leading-relaxed">
+                                {feature}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </section>
 
@@ -898,10 +1193,10 @@ export function PricingPage() {
         </div>
       </footer>
 
-      {/* Waitlist Modal */}
-      <WaitlistModal 
-        isOpen={showWaitlistModal} 
-        onClose={() => setShowWaitlistModal(false)} 
+      <BetaCodeModal
+        isOpen={showBetaCodeModal}
+        onClose={() => setShowBetaCodeModal(false)}
+        onSuccess={() => enableDownloads()}
       />
     </div>
   )

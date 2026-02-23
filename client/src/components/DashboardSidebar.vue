@@ -149,16 +149,14 @@
             >
               <div class="shrink-0 flex items-center justify-center rounded-[20px] overflow-hidden"
                    :class="[
-                     displayAvatar && !avatarFailed ? '' : 'bg-[var(--sidebar-accent)]',
+                     displayAvatar ? '' : 'bg-[var(--sidebar-accent)]',
                      isCollapsed ? 'w-6 h-6' : 'w-7 h-7'
                    ]">
                 <img
-                  v-if="displayAvatar && !avatarFailed"
+                  v-if="displayAvatar"
                   :src="displayAvatar"
                   :alt="displayName"
                   class="w-full h-full object-cover"
-                  referrerpolicy="no-referrer"
-                  @error="avatarFailed = true"
                 />
                 <span v-else class="text-xs font-extrabold text-[#0a0a0b] uppercase">{{ userInitials }}</span>
               </div>
@@ -251,6 +249,7 @@
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useSidebarState } from '@/composables/useSidebarState';
+  import { useAvatarProxy } from '@/composables/useAvatarProxy';
   import { getSortedNavigationGroups, type NavigationItem } from '@/config/navigation';
   import { getMyClipperProfile, type ClipperProfile } from '@/services/clipperProfilesApi';
   import BugReportDialog from '@/components/BugReportDialog.vue';
@@ -290,7 +289,6 @@
   const showBugReportDialog = ref(false);
   const showAccountSettingsDialog = ref(false);
   const userOrganizations = ref<any[]>([]);
-  const avatarFailed = ref(false);
   const clipperProfile = ref<ClipperProfile | null>(null);
   const loadingClipperProfile = ref(false);
   let balanceRefreshInterval: ReturnType<typeof setInterval> | null = null;
@@ -326,15 +324,11 @@
     return formattedAddress.value;
   });
 
-  const displayAvatar = computed(() => {
-    if (clipperProfile.value?.avatar_url && !avatarFailed.value) {
-      return clipperProfile.value.avatar_url;
-    }
-    if (authStore.user?.avatar_url && !avatarFailed.value) {
-      return authStore.user.avatar_url;
-    }
-    return null;
-  });
+  const sourceAvatarUrl = computed(() =>
+    clipperProfile.value?.avatar_url || authStore.user?.avatar_url || null
+  );
+
+  const { resolvedUrl: displayAvatar } = useAvatarProxy(() => sourceAvatarUrl.value);
 
   const userInitials = computed(() => {
     if (!authStore.isAuthenticated) return '';
@@ -527,21 +521,6 @@
     { immediate: true }
   );
 
-  // Reset avatar failed state when user changes
-  watch(
-    () => authStore.user?.id,
-    () => {
-      avatarFailed.value = false;
-    }
-  );
-
-  // Reset avatar failed state when clipper profile changes
-  watch(
-    () => clipperProfile.value?.avatar_url,
-    () => {
-      avatarFailed.value = false;
-    }
-  );
 
   // ===== Lifecycle =====
   onMounted(() => {

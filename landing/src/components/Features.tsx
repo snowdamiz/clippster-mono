@@ -39,28 +39,27 @@ const features: Feature[] = [
   },
   {
     icon: Clock,
-    title: 'Real-Time Processing',
-    description: 'Clips are generated live as you stream. Post highlights before the stream ends with minimal latency.',
-    stat: { value: '<30s', label: 'latency' },
+    title: 'Live Stream DVR & Clipping',
+    description: 'Watch streams in Picture-in-Picture mode, record with DVR, and clip highlights in real-time with AI detection or hotkeys.',
     accentColor: 'cyan',
   },
   {
     icon: Share2,
     title: 'Multi-Platform Export',
-    description: 'One click to publish everywhere. Auto-optimized aspect ratios and formats for each platform.',
+    description: 'Schedule posts to Instagram and Twitter. Auto-optimized aspect ratios and formats for each platform.',
     stat: { value: '5+', label: 'platforms' },
     accentColor: 'pink',
   },
   {
     icon: Shield,
     title: 'Secure & Private',
-    description: 'Your content stays on your machine. Local processing means your videos never leave your computer unless you export them.',
+    description: 'Desktop app with local processing. Your videos stay on your machine and are only uploaded when you choose to export or schedule posts.',
     accentColor: 'green',
   },
   {
     icon: Zap,
     title: 'Batch Processing',
-    description: 'Process multiple streams at once. Queue content and let the AI work in the background.',
+    description: 'Process multiple videos simultaneously. Queue content and let the AI work in the background while you edit.',
     accentColor: 'cyan',
   },
 ]

@@ -4,7 +4,7 @@ const steps = [
   {
     number: '1',
     title: 'Connect',
-    description: 'Watch Kick or PumpFun streams live, download VODs directly, or upload your own videos—no account linking required.',
+    description: 'Watch Kick/Twitch streams live with Picture-in-Picture, download VODs, or upload local files—no account linking required.',
     icon: MonitorPlay,
     gradient: 'from-cyan-500 to-cyan-600',
     iconBg: 'bg-cyan-500/15',
@@ -13,7 +13,7 @@ const steps = [
   {
     number: '2',
     title: 'Analyze',
-    description: 'Our AI watches your stream in real-time, identifying viral-worthy moments automatically.',
+    description: 'Our AI analyzes content in real-time as you watch, identifying viral-worthy moments automatically. Clip with hotkeys or let AI do it.',
     icon: Sparkles,
     gradient: 'from-violet-500 to-violet-600',
     iconBg: 'bg-violet-500/15',
@@ -31,7 +31,7 @@ const steps = [
   {
     number: '4',
     title: 'Export',
-    description: 'Publish to TikTok, Shorts, Reels, and X simultaneously with platform optimization.',
+    description: 'Schedule posts to Instagram and Twitter with platform-optimized formats and aspect ratios.',
     icon: Upload,
     gradient: 'from-emerald-500 to-emerald-600',
     iconBg: 'bg-emerald-500/15',
