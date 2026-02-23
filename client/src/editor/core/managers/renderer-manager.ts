@@ -16,6 +16,7 @@ import type { CaptionNodeParams } from "../../renderer/nodes/caption-node";
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { resolveWatermarkById, resolveOverlayImagePath } from "@/services/database/watermarks";
 import { resolveIntroOutroById } from "@/services/database/intro-outros";
+import { base64ToUtf8 } from "@/utils/encoding";
 
 interface TauriAnimationData {
 	anim_type: string;
@@ -466,7 +467,7 @@ export class RendererManager {
 		try {
 			const match = url.match(/\/video\/(.+)$/);
 			if (match) {
-				return atob(match[1]);
+				return base64ToUtf8(match[1]);
 			}
 			return null;
 		} catch {
