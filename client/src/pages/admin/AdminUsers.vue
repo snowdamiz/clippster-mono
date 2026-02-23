@@ -303,6 +303,23 @@
                               <Layers v-else class="admin-users__dropdown-item-icon" />
                               <span>Subscription</span>
                             </button>
+                            <div v-if="!user.subscription?.tier_name" class="admin-users__dropdown-divider"></div>
+                            <button
+                              v-if="!user.subscription?.tier_name"
+                              class="admin-users__dropdown-item admin-users__dropdown-item--red"
+                              :disabled="deletingUserId === user.id"
+                              @click.stop="
+                                confirmDeleteUser(user);
+                                closeUserActionMenu();
+                              "
+                            >
+                              <Loader2
+                                v-if="deletingUserId === user.id"
+                                class="admin-users__dropdown-item-icon admin-users__dropdown-item-icon--spin"
+                              />
+                              <Trash2 v-else class="admin-users__dropdown-item-icon" />
+                              <span>Delete Account</span>
+                            </button>
                           </div>
                         </Teleport>
                       </div>
@@ -732,6 +749,19 @@
       @close="handleCancelSubscriptionDialogClose"
       @confirm="cancelSubscriptionConfirmed"
     />
+
+    <!-- Delete User Confirmation Modal -->
+    <ConfirmationModal
+      :show="showDeleteUserDialog"
+      title="Delete User Account"
+      :message="'Are you sure you want to permanently delete the account for'"
+      :item-name="userToDelete ? getUserDisplayName(userToDelete) : ''"
+      suffix="? This action cannot be undone."
+      confirm-text="Delete Account"
+      variant="destructive"
+      @close="handleDeleteUserDialogClose"
+      @confirm="deleteUserConfirmed"
+    />
   </PageLayout>
 </template>
 
@@ -755,6 +785,7 @@
     ChevronDown,
     ChevronUp,
     Handshake,
+    Trash2,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -834,6 +865,11 @@
   const subscriptionError = ref<string | null>(null);
   const subscriptionHistory = ref<any[]>([]);
   const showCancelSubscriptionDialog = ref(false);
+
+  // Delete user state
+  const showDeleteUserDialog = ref(false);
+  const userToDelete = ref<UserType | null>(null);
+  const deletingUserId = ref<number | null>(null);
 
   // User action menu dropdown state
   const openUserActionMenuId = ref<number | null>(null);
@@ -1360,6 +1396,40 @@
 
   const navigateToUserProfile = (userId: number) => {
     router.push(`/admin/users/${userId}`);
+  };
+
+  // Delete user functions
+  const confirmDeleteUser = (user: UserType) => {
+    userToDelete.value = user;
+    showDeleteUserDialog.value = true;
+  };
+
+  const handleDeleteUserDialogClose = () => {
+    showDeleteUserDialog.value = false;
+    userToDelete.value = null;
+  };
+
+  const deleteUserConfirmed = async () => {
+    if (!userToDelete.value) return;
+    deletingUserId.value = userToDelete.value.id;
+    try {
+      const response = await api.delete(`/admin/users/${userToDelete.value.id}`);
+      if (response.data.success) {
+        // Remove user from the list
+        users.value = users.value.filter((u) => u.id !== userToDelete.value!.id);
+        handleDeleteUserDialogClose();
+      } else {
+        throw new Error(response.data.error || 'Failed to delete user');
+      }
+    } catch (err: any) {
+      const errorMessage = err?.response?.data?.error || err?.message || 'Failed to delete user';
+      error.value = errorMessage;
+      console.error('Error deleting user:', err);
+    } finally {
+      deletingUserId.value = null;
+      showDeleteUserDialog.value = false;
+      userToDelete.value = null;
+    }
   };
 
   onMounted(() => {
