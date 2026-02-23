@@ -4,9 +4,6 @@ import { createContext, useContext, useState, useEffect, useMemo, type ReactNode
 interface DownloadContextType {
   downloadsEnabled: boolean
   enableDownloads: () => void
-  showWaitlistModal: boolean
-  setShowWaitlistModal: (show: boolean) => void
-  openWaitlistModal: () => void
   showBetaCodeModal: boolean
   setShowBetaCodeModal: (show: boolean) => void
   openBetaCodeModal: () => void
@@ -27,26 +24,17 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
   // Initialize state with computed values to avoid useEffect setState
   const initialAccess = useMemo(() => checkInitialAccess(), [])
   const [downloadsEnabled, setDownloadsEnabled] = useState(initialAccess)
-  const [showWaitlistModal, setShowWaitlistModal] = useState(false)
   const [showBetaCodeModal, setShowBetaCodeModal] = useState(false)
 
   useEffect(() => {
-    // Check if user has already joined the waitlist
-    const hasJoinedWaitlist = localStorage.getItem('clippster_waitlist_joined') === 'true'
-    
-    // Show waitlist modal on load if downloads are not enabled AND user hasn't already joined
-    if (!downloadsEnabled && !hasJoinedWaitlist) {
-      // Small delay for better UX
+    // Show beta code modal on load if downloads are not enabled
+    if (!downloadsEnabled) {
       const timer = setTimeout(() => {
-        setShowWaitlistModal(true)
+        setShowBetaCodeModal(true)
       }, 500)
       return () => clearTimeout(timer)
     }
   }, [downloadsEnabled])
-
-  const openWaitlistModal = () => {
-    setShowWaitlistModal(true)
-  }
 
   const openBetaCodeModal = () => {
     setShowBetaCodeModal(true)
@@ -85,9 +73,6 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
       value={{
         downloadsEnabled,
         enableDownloads,
-        showWaitlistModal,
-        setShowWaitlistModal,
-        openWaitlistModal,
         showBetaCodeModal,
         setShowBetaCodeModal,
         openBetaCodeModal,
