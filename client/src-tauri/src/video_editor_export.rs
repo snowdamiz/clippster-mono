@@ -20,6 +20,29 @@ pub struct VideoEffect {
 
 
 
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub struct AnimationData {
+    pub anim_type: String,
+    pub duration: f64,
+    pub easing: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub struct KeyframePoint {
+    pub offset: f64,
+    pub value: f64,
+    pub interpolation: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub struct KeyframeTrack {
+    pub property: String,
+    pub keyframes: Vec<KeyframePoint>,
+}
+
 #[derive(Debug, Deserialize)]
 
 pub struct VideoSource {
@@ -73,9 +96,35 @@ pub struct VideoSource {
 
     pub effects: Option<Vec<VideoEffect>>,
 
+    pub is_image: Option<bool>,
+
+    pub is_reversed: Option<bool>,
+
+    pub fade_in: Option<f64>,
+
+    pub fade_out: Option<f64>,
+
+    #[allow(dead_code)]
+    pub animation_in: Option<AnimationData>,
+
+    #[allow(dead_code)]
+    pub animation_out: Option<AnimationData>,
+
+    #[allow(dead_code)]
+    pub animation_loop: Option<AnimationData>,
+
+    #[allow(dead_code)]
+    pub keyframes: Option<Vec<KeyframeTrack>>,
+
 }
 
 
+
+#[derive(Debug, Deserialize)]
+pub struct AudioEffect {
+    pub effect_type: String,
+    pub params: std::collections::HashMap<String, serde_json::Value>,
+}
 
 #[derive(Debug, Deserialize)]
 
@@ -97,6 +146,8 @@ pub struct AudioTrack {
 
     pub fade_out: Option<f64>,
 
+    pub audio_effects: Option<Vec<AudioEffect>>,
+
 }
 
 
@@ -111,6 +162,13 @@ pub struct TextOverlay {
 
     pub end_time: f64,
 
+    pub animation_in: Option<AnimationData>,
+
+    pub animation_out: Option<AnimationData>,
+
+    #[allow(dead_code)]
+    pub animation_loop: Option<AnimationData>,
+
 }
 
 
@@ -124,6 +182,13 @@ pub struct StickerOverlay {
     pub start_time: f64,
 
     pub end_time: f64,
+
+    pub animation_in: Option<AnimationData>,
+
+    pub animation_out: Option<AnimationData>,
+
+    #[allow(dead_code)]
+    pub animation_loop: Option<AnimationData>,
 
 }
 
@@ -331,6 +396,12 @@ pub async fn export_video_editor_project(
     let mut source_has_audio = Vec::new();
 
     for source in &config.video_sources {
+        if source.is_image.unwrap_or(false) {
+            // Image sources never have audio
+            println!("  Source '{}' is_image: true, has_audio: false", source.source_path);
+            source_has_audio.push(false);
+            continue;
+        }
 
         let probe_output = shell
 
@@ -373,7 +444,11 @@ pub async fn export_video_editor_project(
     // Add video inputs (no -ss here, do all trimming in filters for better accuracy)
 
     for source in &config.video_sources {
-
+        if source.is_image.unwrap_or(false) {
+            // Image sources need -loop 1 to generate a continuous video stream
+            args.push("-loop".to_string());
+            args.push("1".to_string());
+        }
         args.push("-i".to_string());
 
         args.push(source.source_path.clone());
@@ -498,6 +573,51 @@ pub async fn export_video_editor_project(
 
 
 
+    // Helper: build a piecewise-linear FFmpeg expression from keyframe points.
+    // `duration` is the element duration in seconds, used to convert normalized offsets (0..1) to absolute time.
+    // Returns an FFmpeg expression string using `t` as the time variable, e.g. "0.5+0.5*(t/2)" segments.
+    fn build_keyframe_expression(keyframes: &[KeyframePoint], duration: f64, default_value: f64) -> Option<String> {
+        if keyframes.is_empty() { return None; }
+        if keyframes.len() == 1 {
+            let v = keyframes[0].value;
+            if (v - default_value).abs() < 0.001 { return None; }
+            return Some(format!("{}", v));
+        }
+
+        // Build piecewise expression: if(lt(t,t1),lerp0, if(lt(t,t2),lerp1, ...))
+        let mut parts = Vec::new();
+        for i in 0..keyframes.len() - 1 {
+            let kf0 = &keyframes[i];
+            let kf1 = &keyframes[i + 1];
+            let t0 = kf0.offset * duration;
+            let t1 = kf1.offset * duration;
+            let v0 = kf0.value;
+            let v1 = kf1.value;
+
+            if kf0.interpolation == "hold" {
+                parts.push((t1, format!("{}", v0)));
+            } else {
+                // Linear interpolation: v0 + (v1-v0) * (t-t0)/(t1-t0)
+                let dt = t1 - t0;
+                if dt.abs() < 0.0001 {
+                    parts.push((t1, format!("{}", v0)));
+                } else {
+                    let slope = (v1 - v0) / dt;
+                    parts.push((t1, format!("{}+{}*(t-{})", v0, slope, t0)));
+                }
+            }
+        }
+
+        // Build nested if expression
+        let last_val = keyframes.last().unwrap().value;
+        let mut expr = format!("{}", last_val);
+        for (t_end, segment_expr) in parts.iter().rev() {
+            expr = format!("if(lt(t\\,{})\\,{}\\,{})", t_end, segment_expr, expr);
+        }
+
+        Some(expr)
+    }
+
     // Helper: build per-source video transform filters
 
     fn build_video_transform_filter(source: &VideoSource, width: i32, height: i32) -> String {
@@ -548,7 +668,10 @@ pub async fn export_video_editor_project(
 
         }
 
-        
+        // Reverse video playback
+        if source.is_reversed.unwrap_or(false) {
+            transform_filters.push("reverse".to_string());
+        }
 
         // Crop (applied before scale so we crop the source, then fit to canvas)
 
@@ -684,15 +807,35 @@ pub async fn export_video_editor_project(
 
         
 
-        // Opacity via colorchannelmixer
+        // Opacity via colorchannelmixer — with keyframe support
+        let duration = source.end_time - source.start_time;
+        let opacity_kf = source.keyframes.as_ref()
+            .and_then(|tracks| tracks.iter().find(|t| t.property == "opacity" && !t.keyframes.is_empty()));
 
-        if (opacity - 1.0).abs() > 0.01 {
-
+        if let Some(kf_track) = opacity_kf {
+            // Build piecewise-linear opacity expression from keyframes
+            let expr = build_keyframe_expression(&kf_track.keyframes, duration, opacity);
+            if let Some(expr_str) = expr {
+                transform_filters.push(format!("colorchannelmixer=aa='{}'", expr_str));
+            } else if (opacity - 1.0).abs() > 0.01 {
+                transform_filters.push(format!("colorchannelmixer=aa={}", opacity));
+            }
+        } else if (opacity - 1.0).abs() > 0.01 {
             transform_filters.push(format!("colorchannelmixer=aa={}", opacity));
-
         }
 
-        
+        // Video fade in/out
+        let fade_in = source.fade_in.unwrap_or(0.0);
+        let fade_out = source.fade_out.unwrap_or(0.0);
+
+        if fade_in > 0.01 {
+            transform_filters.push(format!("fade=t=in:st=0:d={}", fade_in));
+        }
+
+        if fade_out > 0.01 {
+            let fade_start = (duration - fade_out).max(0.0);
+            transform_filters.push(format!("fade=t=out:st={}:d={}", fade_start, fade_out));
+        }
 
         transform_filters.join(",")
 
@@ -1064,16 +1207,30 @@ pub async fn export_video_editor_project(
 
             audio_extras.push_str(",volume=0");
 
-        } else if (vol - 1.0).abs() > 0.01 {
-
-            audio_extras.push_str(&format!(",volume={}", vol));
-
+        } else {
+            // Check for volume keyframes
+            let vol_kf = source.keyframes.as_ref()
+                .and_then(|tracks| tracks.iter().find(|t| t.property == "volume" && !t.keyframes.is_empty()));
+            if let Some(kf_track) = vol_kf {
+                let expr = build_keyframe_expression(&kf_track.keyframes, duration, vol);
+                if let Some(expr_str) = expr {
+                    audio_extras.push_str(&format!(",volume='{}'", expr_str));
+                } else if (vol - 1.0).abs() > 0.01 {
+                    audio_extras.push_str(&format!(",volume={}", vol));
+                }
+            } else if (vol - 1.0).abs() > 0.01 {
+                audio_extras.push_str(&format!(",volume={}", vol));
+            }
         }
 
         if (spd - 1.0).abs() > 0.001 {
 
             audio_extras.push_str(&format!(",atempo={}", spd));
 
+        }
+
+        if source.is_reversed.unwrap_or(false) {
+            audio_extras.push_str(",areverse");
         }
 
         if source_has_audio[0] {
@@ -1170,16 +1327,30 @@ pub async fn export_video_editor_project(
 
                 audio_extras.push_str(",volume=0");
 
-            } else if (vol - 1.0).abs() > 0.01 {
-
-                audio_extras.push_str(&format!(",volume={}", vol));
-
+            } else {
+                // Check for volume keyframes
+                let vol_kf = source.keyframes.as_ref()
+                    .and_then(|tracks| tracks.iter().find(|t| t.property == "volume" && !t.keyframes.is_empty()));
+                if let Some(kf_track) = vol_kf {
+                    let expr = build_keyframe_expression(&kf_track.keyframes, duration, vol);
+                    if let Some(expr_str) = expr {
+                        audio_extras.push_str(&format!(",volume='{}'", expr_str));
+                    } else if (vol - 1.0).abs() > 0.01 {
+                        audio_extras.push_str(&format!(",volume={}", vol));
+                    }
+                } else if (vol - 1.0).abs() > 0.01 {
+                    audio_extras.push_str(&format!(",volume={}", vol));
+                }
             }
 
             if (spd - 1.0).abs() > 0.001 {
 
                 audio_extras.push_str(&format!(",atempo={}", spd));
 
+            }
+
+            if source.is_reversed.unwrap_or(false) {
+                audio_extras.push_str(",areverse");
             }
 
             if source_has_audio[i] {
@@ -1280,7 +1451,137 @@ pub async fn export_video_editor_project(
 
             }
 
-            
+            // Audio effects (EQ, compressor, reverb, noise reduction, filters, etc.)
+            if let Some(ref effects) = audio.audio_effects {
+                for fx in effects {
+                    let get_f64 = |key: &str, default: f64| -> f64 {
+                        fx.params.get(key).and_then(|v| v.as_f64()).unwrap_or(default)
+                    };
+                    match fx.effect_type.as_str() {
+                        "eq" => {
+                            let low = get_f64("lowGain", 0.0);
+                            let mid = get_f64("midGain", 0.0);
+                            let high = get_f64("highGain", 0.0);
+                            let mid_freq = get_f64("midFreq", 1000.0);
+                            if low.abs() > 0.1 {
+                                extras.push_str(&format!(",equalizer=f=100:t=h:w=200:g={}", low));
+                            }
+                            if mid.abs() > 0.1 {
+                                extras.push_str(&format!(",equalizer=f={}:t=h:w=500:g={}", mid_freq, mid));
+                            }
+                            if high.abs() > 0.1 {
+                                extras.push_str(&format!(",equalizer=f=8000:t=h:w=2000:g={}", high));
+                            }
+                        }
+                        "compressor" => {
+                            let threshold = get_f64("threshold", -20.0);
+                            let ratio = get_f64("ratio", 4.0);
+                            let attack = get_f64("attack", 20.0) / 1000.0; // ms to seconds
+                            let release = get_f64("release", 250.0) / 1000.0;
+                            extras.push_str(&format!(
+                                ",acompressor=threshold={}dB:ratio={}:attack={}:release={}",
+                                threshold, ratio, attack, release
+                            ));
+                        }
+                        "lowpass" => {
+                            let freq = get_f64("frequency", 4000.0);
+                            extras.push_str(&format!(",lowpass=f={}", freq));
+                        }
+                        "highpass" => {
+                            let freq = get_f64("frequency", 200.0);
+                            extras.push_str(&format!(",highpass=f={}", freq));
+                        }
+                        "bandpass" => {
+                            let freq = get_f64("frequency", 1000.0);
+                            let bw = get_f64("bandwidth", 2.0);
+                            extras.push_str(&format!(",bandpass=f={}:w={}", freq, bw));
+                        }
+                        "noiseReduction" => {
+                            let strength = get_f64("strength", 50.0);
+                            // afftdn noise floor in dB: strength 0-100 maps to -20..-80 dB
+                            let nf = -20.0 - (strength / 100.0) * 60.0;
+                            extras.push_str(&format!(",afftdn=nf={}", nf));
+                        }
+                        "noisegate" => {
+                            let threshold = get_f64("threshold", -40.0);
+                            let attack = get_f64("attack", 10.0) / 1000.0;
+                            let release = get_f64("release", 100.0) / 1000.0;
+                            extras.push_str(&format!(
+                                ",agate=threshold={}dB:attack={}:release={}",
+                                threshold, attack, release
+                            ));
+                        }
+                        "limiter" => {
+                            let ceiling = get_f64("ceiling", -1.0);
+                            let limit_linear = 10.0_f64.powf(ceiling / 20.0);
+                            extras.push_str(&format!(",alimiter=limit={}", limit_linear));
+                        }
+                        "bassBoost" => {
+                            let gain = get_f64("gain", 6.0);
+                            let freq = get_f64("frequency", 100.0);
+                            extras.push_str(&format!(",equalizer=f={}:t=h:w=80:g={}", freq, gain));
+                        }
+                        "echo" => {
+                            let delay_ms = get_f64("delayMs", 500.0);
+                            let decay = get_f64("decay", 0.5);
+                            extras.push_str(&format!(",aecho=0.8:0.88:{}:{}", delay_ms, decay));
+                        }
+                        "tremolo" => {
+                            let rate = get_f64("rate", 5.0);
+                            let depth = get_f64("depth", 50.0) / 100.0;
+                            extras.push_str(&format!(",tremolo=f={}:d={}", rate, depth));
+                        }
+                        "chorus" => {
+                            let depth = get_f64("depth", 50.0) / 100.0 * 4.0; // 0-4ms
+                            let rate = get_f64("rate", 1.5);
+                            extras.push_str(&format!(
+                                ",chorus=0.5:0.9:50|60:{}|{}:0.25|0.4:{}|{}",
+                                depth, depth + 1.0, rate, rate * 1.3
+                            ));
+                        }
+                        "deesser" => {
+                            let freq = get_f64("frequency", 6000.0);
+                            // De-ess via bandreject on sibilant frequencies
+                            extras.push_str(&format!(",bandreject=f={}:w=2000", freq));
+                        }
+                        "telephone" => {
+                            // Bandpass 300-3400 Hz to simulate telephone
+                            extras.push_str(",highpass=f=300,lowpass=f=3400");
+                        }
+                        "radio" => {
+                            // Bandpass 500-5000 Hz + slight distortion
+                            extras.push_str(",highpass=f=500,lowpass=f=5000");
+                        }
+                        "vocalEnhance" => {
+                            let presence = get_f64("presence", 50.0);
+                            let clarity = get_f64("clarity", 50.0);
+                            // Boost presence range (2-5kHz) and clarity range (5-10kHz)
+                            if presence > 5.0 {
+                                let gain = presence / 100.0 * 6.0;
+                                extras.push_str(&format!(",equalizer=f=3500:t=h:w=2000:g={}", gain));
+                            }
+                            if clarity > 5.0 {
+                                let gain = clarity / 100.0 * 4.0;
+                                extras.push_str(&format!(",equalizer=f=7000:t=h:w=3000:g={}", gain));
+                            }
+                        }
+                        "distortion" => {
+                            let drive = get_f64("drive", 50.0);
+                            // Overdrive via volume boost + hard clip
+                            let gain = 1.0 + drive / 100.0 * 10.0;
+                            extras.push_str(&format!(",volume={}:precision=fixed", gain));
+                        }
+                        "reverb" | "delay" | "pitchShift" => {
+                            // These require complex filter graphs or external tools
+                            // Silently skip for now — they work in preview via Web Audio
+                            println!("[Rust] Audio effect '{}' not yet supported in export, skipping", fx.effect_type);
+                        }
+                        _ => {
+                            println!("[Rust] Unknown audio effect type '{}', skipping", fx.effect_type);
+                        }
+                    }
+                }
+            }
 
             // Trim and reset PTS, then use adelay for timeline positioning
 
@@ -1364,33 +1665,42 @@ pub async fn export_video_editor_project(
 
         let input_idx = existing_input_count + i;
 
-        
-
         let next_stream = format!("[vt{}]", i);
+        let overlay_duration = text.end_time - text.start_time;
 
-        
+        // Check if we need to apply fade animations on the overlay input
+        let has_fade_in = text.animation_in.as_ref().map_or(false, |a| a.duration > 0.01);
+        let has_fade_out = text.animation_out.as_ref().map_or(false, |a| a.duration > 0.01);
 
-        // Use overlay filter with enable expression for timing
+        if has_fade_in || has_fade_out {
+            // Pre-process the PNG overlay: loop it into a video stream, apply fade, then overlay
+            let prep_label = format!("[tp{}]", i);
+            let mut fade_filters = format!(
+                "[{}:v]format=rgba,loop=loop=-1:size=1,setpts=N/25/TB,trim=duration={}",
+                input_idx, overlay_duration
+            );
+            if has_fade_in {
+                let d = text.animation_in.as_ref().unwrap().duration;
+                fade_filters.push_str(&format!(",fade=t=in:st=0:d={}:alpha=1", d));
+            }
+            if has_fade_out {
+                let d = text.animation_out.as_ref().unwrap().duration;
+                let fade_start = (overlay_duration - d).max(0.0);
+                fade_filters.push_str(&format!(",fade=t=out:st={}:d={}:alpha=1", fade_start, d));
+            }
+            fade_filters.push_str(&prep_label);
+            filters.push(fade_filters);
 
-        // The PNG is full canvas size with transparency, so overlay at 0:0
-
-        filters.push(format!(
-
-            "{}[{}:v]overlay=0:0:enable='between(t,{},{})'{}",
-
-            video_stream,
-
-            input_idx,
-
-            text.start_time,
-
-            text.end_time,
-
-            next_stream
-
-        ));
-
-        
+            filters.push(format!(
+                "{}{}overlay=0:0:enable='between(t,{},{})'{}",
+                video_stream, prep_label, text.start_time, text.end_time, next_stream
+            ));
+        } else {
+            filters.push(format!(
+                "{}[{}:v]overlay=0:0:enable='between(t,{},{})'{}",
+                video_stream, input_idx, text.start_time, text.end_time, next_stream
+            ));
+        }
 
         video_stream = next_stream;
 
@@ -1409,30 +1719,41 @@ pub async fn export_video_editor_project(
     for (i, sticker) in config.sticker_overlays.iter().enumerate() {
 
         let input_idx = sticker_input_offset + i;
-
-
-
         let next_stream = format!("[vs{}]", i);
+        let overlay_duration = sticker.end_time - sticker.start_time;
 
+        // Check if we need to apply fade animations on the overlay input
+        let has_fade_in = sticker.animation_in.as_ref().map_or(false, |a| a.duration > 0.01);
+        let has_fade_out = sticker.animation_out.as_ref().map_or(false, |a| a.duration > 0.01);
 
+        if has_fade_in || has_fade_out {
+            let prep_label = format!("[sp{}]", i);
+            let mut fade_filters = format!(
+                "[{}:v]format=rgba,loop=loop=-1:size=1,setpts=N/25/TB,trim=duration={}",
+                input_idx, overlay_duration
+            );
+            if has_fade_in {
+                let d = sticker.animation_in.as_ref().unwrap().duration;
+                fade_filters.push_str(&format!(",fade=t=in:st=0:d={}:alpha=1", d));
+            }
+            if has_fade_out {
+                let d = sticker.animation_out.as_ref().unwrap().duration;
+                let fade_start = (overlay_duration - d).max(0.0);
+                fade_filters.push_str(&format!(",fade=t=out:st={}:d={}:alpha=1", fade_start, d));
+            }
+            fade_filters.push_str(&prep_label);
+            filters.push(fade_filters);
 
-        filters.push(format!(
-
-            "{}[{}:v]overlay=0:0:enable='between(t,{},{})'{}",
-
-            video_stream,
-
-            input_idx,
-
-            sticker.start_time,
-
-            sticker.end_time,
-
-            next_stream
-
-        ));
-
-
+            filters.push(format!(
+                "{}{}overlay=0:0:enable='between(t,{},{})'{}",
+                video_stream, prep_label, sticker.start_time, sticker.end_time, next_stream
+            ));
+        } else {
+            filters.push(format!(
+                "{}[{}:v]overlay=0:0:enable='between(t,{},{})'{}",
+                video_stream, input_idx, sticker.start_time, sticker.end_time, next_stream
+            ));
+        }
 
         video_stream = next_stream;
 

@@ -6,6 +6,8 @@ import { useActionHandler } from "./useActionHandler";
 import { useEditor } from "../useEditor";
 import { useElementSelection } from "../timeline/element/useElementSelection";
 import { getElementsAtTime } from "../../lib/timeline";
+import { isMainTrack } from "../../lib/timeline/track-utils";
+import { getMainTrackMagnet } from "../timeline/useTimelineTools";
 import type { ClipboardItem, CreateTimelineElement } from "../../types/timeline";
 
 export function useEditorActions() {
@@ -136,7 +138,54 @@ export function useEditorActions() {
 
 	useActionHandler("delete-selected", () => {
 		if (selectedElements.value.length === 0) return;
+
+		const tracks = editor.timeline.getTracks();
+		const mainTrack = tracks.find((t) => isMainTrack(t));
+		const shouldRipple = getMainTrackMagnet() && mainTrack;
+
+		// Collect info about main track elements being deleted (before deletion)
+		let deletedMainElements: Array<{ startTime: number; duration: number }> = [];
+		if (shouldRipple && mainTrack) {
+			for (const sel of selectedElements.value) {
+				if (sel.trackId === mainTrack.id) {
+					const el = mainTrack.elements.find((e) => e.id === sel.elementId);
+					if (el) {
+						deletedMainElements.push({ startTime: el.startTime, duration: el.duration });
+					}
+				}
+			}
+		}
+
 		editor.timeline.deleteElements({ elements: selectedElements.value });
+
+		// Ripple: shift subsequent main track elements left to close gaps
+		if (deletedMainElements.length > 0 && mainTrack) {
+			// Sort deleted elements by startTime ascending
+			deletedMainElements.sort((a, b) => a.startTime - b.startTime);
+
+			// Calculate total gap to shift by (sum of all deleted durations)
+			// Use the earliest deleted element's start as the gap boundary
+			const gapStart = deletedMainElements[0].startTime;
+			const totalGapDuration = deletedMainElements.reduce((sum, d) => sum + d.duration, 0);
+
+			// Get current state of main track after deletion
+			const currentTracks = editor.timeline.getTracks();
+			const currentMainTrack = currentTracks.find((t) => isMainTrack(t));
+			if (currentMainTrack) {
+				// Find elements that start at or after the gap
+				const elementIdsToShift = currentMainTrack.elements
+					.filter((e) => e.startTime >= gapStart)
+					.map((e) => e.id);
+
+				if (elementIdsToShift.length > 0) {
+					editor.timeline.moveElementsBatch({
+						trackId: currentMainTrack.id,
+						elementIds: elementIdsToShift,
+						timeDelta: -totalGapDuration,
+					});
+				}
+			}
+		}
 	});
 
 	useActionHandler("select-all", () => {
@@ -315,6 +364,53 @@ export function useEditorActions() {
 		if (clipboardItems.length === 0) return;
 		const currentTime = editor.playback.getCurrentTime();
 		editor.timeline.pasteAtTime({ time: currentTime, clipboardItems });
+	});
+
+	// Copy/paste style
+	let copiedStyle: Record<string, unknown> | null = null;
+
+	useActionHandler("copy-style", () => {
+		if (selectedElements.value.length === 0) return;
+		const sel = selectedElements.value[0];
+		const track = editor.timeline.getTrackById({ trackId: sel.trackId });
+		if (!track) return;
+		const el = track.elements.find((e) => e.id === sel.elementId);
+		if (!el) return;
+
+		// Extract style-relevant properties
+		const style: Record<string, unknown> = {};
+		if ("opacity" in el) style.opacity = el.opacity;
+		if ("transform" in el) style.transform = { ...(el as any).transform };
+		if ("volume" in el) style.volume = (el as any).volume;
+		if ("speed" in el) style.speed = (el as any).speed;
+		if ("fadeIn" in el) style.fadeIn = el.fadeIn;
+		if ("fadeOut" in el) style.fadeOut = el.fadeOut;
+		copiedStyle = style;
+	});
+
+	useActionHandler("paste-style", () => {
+		if (!copiedStyle || selectedElements.value.length === 0) return;
+		for (const sel of selectedElements.value) {
+			const track = editor.timeline.getTrackById({ trackId: sel.trackId });
+			if (!track) continue;
+			const el = track.elements.find((e) => e.id === sel.elementId);
+			if (!el) continue;
+
+			// Only apply properties that exist on the target element type
+			const updates: Record<string, unknown> = {};
+			for (const [key, value] of Object.entries(copiedStyle)) {
+				if (key in el) {
+					updates[key] = value;
+				}
+			}
+			if (Object.keys(updates).length > 0) {
+				editor.timeline.updateElement({
+					trackId: sel.trackId,
+					elementId: sel.elementId,
+					updates: updates as any,
+				});
+			}
+		}
 	});
 
 	useActionHandler("undo", () => {

@@ -157,6 +157,7 @@ export interface AudioClipSource {
 	speed: number;
 	fadeIn: number;
 	fadeOut: number;
+	audioEffects?: import("../../types/audio-effects").AudioEffect[];
 }
 
 async function fetchLibraryAudioSource({
@@ -280,6 +281,7 @@ function collectMediaAudioClip({
 		speed,
 		fadeIn,
 		fadeOut,
+		audioEffects: (element as any).audioEffects,
 	};
 }
 

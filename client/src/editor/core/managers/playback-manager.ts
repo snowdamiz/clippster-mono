@@ -6,6 +6,7 @@ export class PlaybackManager {
 	private volume = 1;
 	private muted = false;
 	private previousVolume = 1;
+	private playbackRate = 1;
 	private listeners = new Set<() => void>();
 	private playbackTimer: number | null = null;
 	private lastUpdate = 0;
@@ -101,6 +102,15 @@ export class PlaybackManager {
 		return this.muted;
 	}
 
+	setPlaybackRate({ rate }: { rate: number }): void {
+		this.playbackRate = Math.max(0.25, Math.min(4, rate));
+		this.notify();
+	}
+
+	getPlaybackRate(): number {
+		return this.playbackRate;
+	}
+
 	subscribe(listener: () => void): () => void {
 		this.listeners.add(listener);
 		return () => this.listeners.delete(listener);
@@ -133,7 +143,7 @@ export class PlaybackManager {
 		const delta = (now - this.lastUpdate) / 1000;
 		this.lastUpdate = now;
 
-		const newTime = this.currentTime + delta;
+		const newTime = this.currentTime + delta * this.playbackRate;
 		const duration = this.editor.timeline.getTotalDuration();
 
 		if (duration > 0 && newTime >= duration) {

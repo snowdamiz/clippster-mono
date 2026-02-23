@@ -171,9 +171,11 @@ export function useElementInteraction({
 	function getDragSnapResult({
 		frameSnappedTime,
 		movingElement,
+		sourceTrackId,
 	}: {
 		frameSnappedTime: number;
 		movingElement: TimelineElement | null | undefined;
+		sourceTrackId?: string;
 	}) {
 		if (!snappingEnabled.value || !movingElement) {
 			return { snappedTime: frameSnappedTime, snapPoint: null };
@@ -182,6 +184,48 @@ export function useElementInteraction({
 		const elementDuration = movingElement.duration;
 		const playheadTime = editor.playback.getCurrentTime();
 
+		// Magnetic same-track snap: stronger pull when near a neighbor on the same track
+		const MAGNETIC_THRESHOLD_PX = 15;
+		const pixelsPerSecond = TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
+		const magneticThresholdSec = MAGNETIC_THRESHOLD_PX / pixelsPerSecond;
+
+		if (sourceTrackId) {
+			const sourceTrack = tracks.value.find((t) => t.id === sourceTrackId);
+			if (sourceTrack) {
+				let bestMagneticSnap: { time: number; snapPoint: SnapPoint; distance: number } | null = null;
+				for (const neighbor of sourceTrack.elements) {
+					if (neighbor.id === movingElement.id) continue;
+					const neighborEnd = neighbor.startTime + neighbor.duration;
+					const neighborStart = neighbor.startTime;
+
+					// Dragged element start → neighbor end (close gap on left)
+					const startDist = Math.abs(frameSnappedTime - neighborEnd);
+					if (startDist < magneticThresholdSec && (!bestMagneticSnap || startDist < bestMagneticSnap.distance)) {
+						bestMagneticSnap = {
+							time: neighborEnd,
+							snapPoint: { time: neighborEnd, type: "element-end", elementId: neighbor.id, trackId: sourceTrackId },
+							distance: startDist,
+						};
+					}
+
+					// Dragged element end → neighbor start (close gap on right)
+					const endDist = Math.abs((frameSnappedTime + elementDuration) - neighborStart);
+					if (endDist < magneticThresholdSec && (!bestMagneticSnap || endDist < bestMagneticSnap.distance)) {
+						bestMagneticSnap = {
+							time: neighborStart - elementDuration,
+							snapPoint: { time: neighborStart, type: "element-start", elementId: neighbor.id, trackId: sourceTrackId },
+							distance: endDist,
+						};
+					}
+				}
+
+				if (bestMagneticSnap) {
+					return { snappedTime: bestMagneticSnap.time, snapPoint: bestMagneticSnap.snapPoint };
+				}
+			}
+		}
+
+		// Standard cross-track edge snapping
 		const startSnap = snapElementEdge({
 			targetTime: frameSnappedTime,
 			elementDuration,
@@ -279,7 +323,7 @@ export function useElementInteraction({
 
 		const sourceTrack = tracks.value.find(({ id }) => id === ds.trackId);
 		const movingElement = sourceTrack?.elements.find(({ id }) => id === ds.elementId);
-		const { snappedTime, snapPoint } = getDragSnapResult({ frameSnappedTime, movingElement });
+		const { snappedTime, snapPoint } = getDragSnapResult({ frameSnappedTime, movingElement, sourceTrackId: ds.trackId ?? undefined });
 
 		dragState.value = { ...ds, currentTime: snappedTime, currentMouseY: clientY };
 		onSnapPointChange?.(snapPoint);
@@ -350,19 +394,20 @@ export function useElementInteraction({
 			return;
 		}
 
-		// Check if multiple elements on the same track are selected (batch move)
-		const sameTrackSelected = selectedElements.value.filter(
-			(sel) => sel.trackId === ds.trackId,
-		);
 		const timeDelta = snappedTime - ds.startElementTime;
 
-		if (sameTrackSelected.length > 1 && !dropTarget.isNewTrack) {
-			// Batch move: shift all selected elements on this track by the same delta
-			editor.timeline.moveElementsBatch({
-				trackId: ds.trackId,
-				elementIds: sameTrackSelected.map((sel) => sel.elementId),
-				timeDelta,
-			});
+		// Multi-select drag: move all selected elements across all tracks by the same delta
+		if (selectedElements.value.length > 1 && !dropTarget.isNewTrack) {
+			// Group selected elements by track
+			const byTrack = new Map<string, string[]>();
+			for (const sel of selectedElements.value) {
+				const arr = byTrack.get(sel.trackId) ?? [];
+				arr.push(sel.elementId);
+				byTrack.set(sel.trackId, arr);
+			}
+			for (const [trackId, elementIds] of byTrack) {
+				editor.timeline.moveElementsBatch({ trackId, elementIds, timeDelta });
+			}
 		} else if (dropTarget.isNewTrack) {
 			const newTrackId = generateUUID();
 			editor.timeline.moveElement({
@@ -384,9 +429,33 @@ export function useElementInteraction({
 			}
 		}
 
+		// Sync linked element (e.g. extracted audio ↔ source video)
+		syncLinkedElement(ds.elementId, ds.trackId, timeDelta);
+
 		dragState.value = { ...initialDragState };
 		dragDropTarget.value = null;
 		onSnapPointChange?.(null);
+	}
+
+	function syncLinkedElement(elementId: string, trackId: string, timeDelta: number) {
+		if (timeDelta === 0) return;
+		const currentTracks = editor.timeline.getTracks();
+		const srcTrack = currentTracks.find((t) => t.id === trackId);
+		const srcEl = srcTrack?.elements.find((e) => e.id === elementId);
+		const linkedId = srcEl?.linkedElementId;
+		if (!linkedId) return;
+
+		for (const track of currentTracks) {
+			const linkedEl = track.elements.find((e) => e.id === linkedId);
+			if (linkedEl) {
+				editor.timeline.moveElementsBatch({
+					trackId: track.id,
+					elementIds: [linkedId],
+					timeDelta,
+				});
+				break;
+			}
+		}
 	}
 
 	// Pending drag mouse up (cancel pending)
