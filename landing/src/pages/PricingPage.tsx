@@ -199,14 +199,15 @@ const comparisonFeatures: ComparisonCategory[] = [
     features: [
       { name: 'Pricing model', clippster: 'Sub + credit packs', opus: 'Monthly subscription', winner: 'clippster' },
       { name: 'Extra credits', clippster: 'Buy anytime', opus: 'Upgrade plan only', winner: 'clippster' },
-      { name: 'Starting price', clippster: '$24.99/month', opus: '$15/month' },
-      { name: 'Mid tier value', clippster: '1800 credits @ $49.99', opus: '~300 credits @ $29', winner: 'clippster' },
+      { name: 'Starting price', clippster: '$29.99/month', opus: '$15/month' },
+      { name: 'Mid tier value', clippster: '1800 credits @ $54.99', opus: '~300 credits @ $29', winner: 'clippster' },
     ]
   },
   {
     category: 'AI & Clipping',
     features: [
       { name: 'AI highlight detection', clippster: 'yes', opus: 'yes', winner: 'tie' },
+      { name: 'AI Video Creator', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Real-time live clipping', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Picture-in-Picture mode', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Manual clipping mode', clippster: 'yes', opus: 'no', winner: 'clippster' },
@@ -223,6 +224,9 @@ const comparisonFeatures: ComparisonCategory[] = [
       { name: 'Drag & drop segments', clippster: 'yes', opus: 'partial' },
       { name: 'Cut/split/merge tools', clippster: 'Full suite', opus: 'Basic', winner: 'clippster' },
       { name: 'Keyboard shortcuts', clippster: 'Comprehensive', opus: 'Limited', winner: 'clippster' },
+      { name: 'Text overlays & stickers', clippster: 'yes', opus: 'partial', winner: 'clippster' },
+      { name: 'Watermark customization', clippster: 'yes', opus: 'limited', winner: 'clippster' },
+      { name: 'Intro/outro templates', clippster: 'yes', opus: 'no', winner: 'clippster' },
     ]
   },
   {
@@ -230,7 +234,7 @@ const comparisonFeatures: ComparisonCategory[] = [
     features: [
       { name: 'Auto-captions', clippster: 'yes', opus: 'yes', winner: 'tie' },
       { name: 'Languages', clippster: '40+', opus: '20+', winner: 'clippster' },
-      { name: 'Caption styles', clippster: 'Multiple', opus: 'Templates' },
+      { name: 'Caption styles', clippster: 'Customizable', opus: 'Templates', winner: 'clippster' },
       { name: 'Custom fonts', clippster: 'All plans', opus: 'Pro only', winner: 'clippster' },
       { name: 'Filler word removal', clippster: 'yes', opus: 'yes', winner: 'tie' },
     ]
@@ -241,17 +245,18 @@ const comparisonFeatures: ComparisonCategory[] = [
       { name: 'App type', clippster: 'Desktop', opus: 'Web-based' },
       { name: 'Export quality', clippster: 'Up to 4K', opus: '1080p max', winner: 'clippster' },
       { name: 'Aspect ratios', clippster: 'All (any plan)', opus: 'Pro only', winner: 'clippster' },
-      { name: 'Watermark-free', clippster: 'All plans', opus: 'Paid only', winner: 'clippster' },
-      { name: 'Direct publishing', clippster: 'yes', opus: 'yes' },
+      { name: 'Watermark-free', clippster: 'Paid plans', opus: 'Paid only', winner: 'tie' },
+      { name: 'Direct publishing', clippster: 'yes', opus: 'yes', winner: 'tie' },
     ]
   },
   {
     category: 'Import Sources',
     features: [
-      { name: 'YouTube', clippster: 'yes', opus: 'yes', winner: 'tie' },
-      { name: 'Twitch', clippster: 'Coming Soon', opus: 'Pro only', winner: 'clippster' },
+      { name: 'YouTube', clippster: 'Coming Soon', opus: 'yes' },
+      { name: 'Twitch', clippster: 'yes', opus: 'Pro only', winner: 'clippster' },
       { name: 'Kick', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'PumpFun', clippster: 'yes', opus: 'no', winner: 'clippster' },
+      { name: 'Livestream DVR', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Local files', clippster: 'yes', opus: 'yes', winner: 'tie' },
       { name: 'File size limit', clippster: 'Unlimited', opus: '10-30GB', winner: 'clippster' },
     ]
@@ -262,10 +267,15 @@ const comparisonFeatures: ComparisonCategory[] = [
       { name: 'Organization dashboard', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Campaign management', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Clipper recruitment', clippster: 'yes', opus: 'no', winner: 'clippster' },
+      { name: 'Clipper profiles & leaderboards', clippster: 'yes', opus: 'no', winner: 'clippster' },
+      { name: 'Performance-based payments', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Project organization', clippster: 'yes', opus: 'yes', winner: 'tie' },
       { name: 'Folders & tags', clippster: 'yes', opus: 'partial', winner: 'clippster' },
       { name: 'Team collaboration', clippster: 'yes', opus: 'Pro only', winner: 'tie' },
       { name: 'Asset sharing', clippster: 'yes', opus: 'Business only', winner: 'clippster' },
+      { name: 'Shared credit pools', clippster: 'yes', opus: 'no', winner: 'clippster' },
+      { name: 'Member credit allocation', clippster: 'yes', opus: 'no', winner: 'clippster' },
+      { name: 'Social account management', clippster: 'yes', opus: 'no', winner: 'clippster' },
       { name: 'Team seats', clippster: 'Organization Accounts', opus: '2 (Pro)', winner: 'clippster' },
     ]
   },
