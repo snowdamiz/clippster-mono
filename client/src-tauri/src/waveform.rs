@@ -63,7 +63,10 @@ pub fn extract_local_path_from_url(video_url: &str) -> Result<String, String> {
 
         // The path is base64 encoded, decode it
         use base64::{Engine as _, engine::general_purpose};
-        let decoded_bytes = general_purpose::STANDARD.decode(encoded_path)
+        let decoded_bytes = general_purpose::URL_SAFE_NO_PAD.decode(encoded_path)
+            .or_else(|_| general_purpose::URL_SAFE.decode(encoded_path))
+            .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(encoded_path))
+            .or_else(|_| general_purpose::STANDARD.decode(encoded_path))
             .map_err(|e| format!("Failed to decode base64 video path: {}", e))?;
 
         let decoded_path = String::from_utf8(decoded_bytes)

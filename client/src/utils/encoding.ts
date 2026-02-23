@@ -16,12 +16,21 @@ export function utf8ToBase64(str: string): string {
 }
 
 /**
+ * Encode a Unicode string to URL-safe base64 (RFC 4648, no padding).
+ */
+export function utf8ToBase64Url(str: string): string {
+  return utf8ToBase64(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+/**
  * Decode a base64 string to Unicode
  *
  * This is the inverse of utf8ToBase64()
  */
 export function base64ToUtf8(base64: string): string {
-  const binary = atob(base64);
+  const normalized = base64.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+  const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i);
