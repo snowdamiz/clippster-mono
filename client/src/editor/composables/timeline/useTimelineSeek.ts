@@ -87,6 +87,34 @@ export function useTimelineSeek({
 		return true;
 	}
 
+	function snapPlayheadToEdges(time: number): number {
+		const SNAP_THRESHOLD_PX = 8;
+		const pixelsPerSecond = TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
+		const thresholdSec = SNAP_THRESHOLD_PX / pixelsPerSecond;
+
+		const tracks = editor.timeline.getTracks();
+		let closestEdge: number | null = null;
+		let closestDist = Infinity;
+
+		for (const track of tracks) {
+			for (const el of track.elements) {
+				const startDist = Math.abs(time - el.startTime);
+				if (startDist < thresholdSec && startDist < closestDist) {
+					closestDist = startDist;
+					closestEdge = el.startTime;
+				}
+				const endTime = el.startTime + el.duration;
+				const endDist = Math.abs(time - endTime);
+				if (endDist < thresholdSec && endDist < closestDist) {
+					closestDist = endDist;
+					closestEdge = endTime;
+				}
+			}
+		}
+
+		return closestEdge !== null ? closestEdge : time;
+	}
+
 	function handleTimelineSeek(event: MouseEvent, source: "ruler" | "tracks") {
 		const scrollContainer =
 			source === "ruler" ? rulerScrollRef.value : tracksScrollRef.value;
@@ -107,7 +135,8 @@ export function useTimelineSeek({
 		);
 
 		const projectFps = activeProject?.settings.fps || 30;
-		const time = getSnappedSeekTime({ rawTime, duration: duration.value, fps: projectFps });
+		const frameSnapped = getSnappedSeekTime({ rawTime, duration: duration.value, fps: projectFps });
+		const time = snapPlayheadToEdges(frameSnapped);
 		seek(time);
 		editor.project.setTimelineViewState({
 			viewState: {

@@ -78,6 +78,7 @@ export class ExtractAudioCommand extends Command {
 			volume: videoElement.volume ?? 1,
 			muted: false,
 			speed: videoElement.speed,
+			linkedElementId: this.elementId,
 		};
 
 		// Build the new audio track
@@ -89,12 +90,12 @@ export class ExtractAudioCommand extends Command {
 
 		const updatedTracks = [...tracks];
 
-		// Mute the original video element
+		// Mute the original video element and link it to the extracted audio
 		const updatedSourceTrack = {
 			...updatedTracks[sourceTrackIndex],
 			elements: updatedTracks[sourceTrackIndex].elements.map((el) =>
 				el.id === this.elementId
-					? { ...el, muted: true }
+					? { ...el, muted: true, linkedElementId: this.audioElementId }
 					: el,
 			),
 		} as TimelineTrack;

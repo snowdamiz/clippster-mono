@@ -30,7 +30,20 @@ const aspectPresets = [
 
 const showAspectMenu = ref(false);
 const showSocialMenu = ref(false);
+const showSpeedMenu = ref(false);
 const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
+
+const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
+
+const currentSpeed = computed(() => {
+	void version.value;
+	return editor.playback.getPlaybackRate();
+});
+
+function setSpeed(rate: number) {
+	editor.playback.setPlaybackRate({ rate });
+	showSpeedMenu.value = false;
+}
 
 function toggleSocialOverlay(preset: SocialOverlayPreset) {
 	if (activeSocialOverlay.value?.platform === preset.platform) {
@@ -329,8 +342,47 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 
 <template>
 	<div class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
-		<!-- Aspect ratio selector bar -->
+		<!-- Aspect ratio + speed selector bar -->
 		<div class="relative flex items-center justify-center border-b border-white/10 px-3 py-1.5">
+			<!-- Playback speed selector (left) -->
+			<div class="absolute left-2 top-1/2 -translate-y-1/2">
+				<button
+					type="button"
+					:class="[
+						'flex items-center gap-0.5 rounded-md px-1.5 py-1 text-xs transition-colors',
+						currentSpeed !== 1
+							? 'bg-primary/15 text-primary'
+							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
+					]"
+					@click="showSpeedMenu = !showSpeedMenu"
+				>
+					{{ currentSpeed }}x
+					<ChevronDown class="size-3" />
+				</button>
+
+				<div
+					v-if="showSpeedMenu"
+					class="absolute left-0 top-full z-50 mt-0.5 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
+				>
+					<button
+						v-for="rate in SPEED_OPTIONS"
+						:key="rate"
+						type="button"
+						:class="[
+							'flex w-full items-center px-4 py-1.5 text-xs transition-colors',
+							currentSpeed === rate
+								? 'text-primary bg-primary/10'
+								: 'text-zinc-300 hover:bg-white/5',
+						]"
+						@click="setSpeed(rate)"
+					>
+						{{ rate }}x
+					</button>
+				</div>
+
+				<div v-if="showSpeedMenu" class="fixed inset-0 z-40" @click="showSpeedMenu = false" />
+			</div>
+
 			<button
 				type="button"
 				class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"

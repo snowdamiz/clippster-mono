@@ -53,6 +53,18 @@ interface TauriVideoSource {
 	animation_in: TauriAnimationData | null;
 	animation_out: TauriAnimationData | null;
 	animation_loop: TauriAnimationData | null;
+	keyframes: TauriKeyframeTrack[] | null;
+}
+
+interface TauriKeyframe {
+	offset: number;
+	value: number;
+	interpolation: string;
+}
+
+interface TauriKeyframeTrack {
+	property: string;
+	keyframes: TauriKeyframe[];
 }
 
 interface TauriVideoEffect {
@@ -346,6 +358,7 @@ export class RendererManager {
 						animation_in: serializeAnimation(videoEl.animationIn),
 						animation_out: serializeAnimation(videoEl.animationOut),
 						animation_loop: serializeAnimation(videoEl.animationLoop),
+						keyframes: serializeKeyframes(videoEl.keyframes),
 					});
 				}
 			} else if (track.type === "sticker") {
@@ -887,4 +900,21 @@ function serializeEffects(effects?: VideoEffect[]): TauriVideoEffect[] {
 				params,
 			};
 		});
+}
+
+function serializeKeyframes(kf?: import("../../types/keyframes").ElementKeyframes): TauriKeyframeTrack[] | null {
+	if (!kf || !kf.tracks) return null;
+	const result: TauriKeyframeTrack[] = [];
+	for (const [property, track] of Object.entries(kf.tracks)) {
+		if (!track || track.keyframes.length === 0) continue;
+		result.push({
+			property,
+			keyframes: track.keyframes.map((k) => ({
+				offset: k.offset,
+				value: k.value,
+				interpolation: k.interpolation,
+			})),
+		});
+	}
+	return result.length > 0 ? result : null;
 }

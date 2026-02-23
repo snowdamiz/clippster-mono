@@ -225,6 +225,7 @@ const {
 } = useTimelineDragDrop({
 	containerRef: tracksContainerRef,
 	headerRef: timelineHeaderRef,
+	scrollRef: tracksScrollRef,
 	zoomLevel,
 });
 
@@ -424,6 +425,60 @@ function handleKeyframeClick(payload: { elementId: string; offset: number; rect:
 function closeKeyframePopup() {
 	keyframePopup.value = null;
 }
+
+function scrollToPlayhead() {
+	const scrollEl = tracksScrollRef.value;
+	if (!scrollEl) return;
+	const playheadPx = editor.playback.getCurrentTime() * TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value;
+	const viewportWidth = scrollEl.clientWidth;
+	scrollEl.scrollLeft = Math.max(0, playheadPx - viewportWidth / 2);
+}
+
+function zoomToFit() {
+	const scrollEl = tracksScrollRef.value;
+	if (!scrollEl) return;
+	const totalDur = editor.timeline.getTotalDuration();
+	if (totalDur <= 0) return;
+	const viewportWidth = scrollEl.clientWidth;
+	const fitZoom = viewportWidth / (totalDur * TIMELINE_CONSTANTS.PIXELS_PER_SECOND);
+	setZoomLevel(Math.max(minZoomLevel.value, Math.min(fitZoom, TIMELINE_CONSTANTS.ZOOM_MAX)));
+	scrollEl.scrollLeft = 0;
+}
+
+// Track reorder drag-and-drop
+const trackDragId = ref<string | null>(null);
+const trackDragOverId = ref<string | null>(null);
+
+function onTrackDragStart(e: DragEvent, trackId: string) {
+	trackDragId.value = trackId;
+	if (e.dataTransfer) {
+		e.dataTransfer.effectAllowed = "move";
+		e.dataTransfer.setData("text/plain", trackId);
+	}
+}
+
+function onTrackDragOver(e: DragEvent, trackId: string) {
+	e.preventDefault();
+	if (trackDragId.value && trackDragId.value !== trackId) {
+		trackDragOverId.value = trackId;
+	}
+}
+
+function onTrackDrop(e: DragEvent, targetTrackId: string) {
+	e.preventDefault();
+	if (!trackDragId.value || trackDragId.value === targetTrackId) return;
+	const newIndex = tracks.value.findIndex((t) => t.id === targetTrackId);
+	if (newIndex !== -1) {
+		editor.timeline.reorderTrack({ trackId: trackDragId.value, newIndex });
+	}
+	trackDragId.value = null;
+	trackDragOverId.value = null;
+}
+
+function onTrackDragEnd() {
+	trackDragId.value = null;
+	trackDragOverId.value = null;
+}
 </script>
 
 <template>
@@ -449,6 +504,8 @@ function closeKeyframePopup() {
 			@toggle-main-track-magnet="toggleMainTrackMagnet"
 			@toggle-auto-snapping="toggleAutoSnapping"
 			@toggle-linkage="toggleLinkage"
+			@scroll-to-playhead="scrollToPlayhead"
+			@zoom-to-fit="zoomToFit"
 		/>
 
 		<div
@@ -504,8 +561,14 @@ function closeKeyframePopup() {
 								<div
 									v-for="track in tracks"
 									:key="track.id"
-									class="group flex items-center px-1"
+									draggable="true"
+									class="group flex items-center px-1 transition-colors"
+									:class="{ 'bg-primary/10 border-t border-primary/40': trackDragOverId === track.id }"
 									:style="{ height: `${getTrackHeight({ type: track.type })}px` }"
+									@dragstart="onTrackDragStart($event, track.id)"
+									@dragover="onTrackDragOver($event, track.id)"
+									@drop="onTrackDrop($event, track.id)"
+									@dragend="onTrackDragEnd"
 								>
 									<div class="flex min-w-0 flex-1 items-center justify-between gap-0.5">
 										<div class="flex flex-col min-w-0">

@@ -1,6 +1,7 @@
 import type { EditorCore } from "../../core";
 import type { AudioClipSource } from "../../lib/media/audio";
 import { createAudioContext, collectAudioClips } from "../../lib/media/audio";
+import { buildAudioEffectChain, connectChain } from "../../lib/media/audio-effect-nodes";
 import {
 	ALL_FORMATS,
 	AudioBufferSink,
@@ -250,12 +251,19 @@ export class AudioManager {
 			const node = audioContext.createBufferSource();
 			node.buffer = buffer;
 
-			// Apply speed via playbackRate
+			// Apply speed via playbackRate with pitch correction
 			if (clip.speed !== 1) {
 				node.playbackRate.value = clip.speed;
+				node.detune.value = -1200 * Math.log2(clip.speed);
 			}
 
-			node.connect(clipGain);
+			// Insert audio effect chain between source and gain
+			if (clip.audioEffects && clip.audioEffects.length > 0) {
+				const effectNodes = buildAudioEffectChain(audioContext, clip.audioEffects);
+				connectChain(node, effectNodes, clipGain);
+			} else {
+				node.connect(clipGain);
+			}
 
 			const startTimestamp =
 				this.playbackStartContextTime +
@@ -362,11 +370,19 @@ export class AudioManager {
 		const node = audioContext.createBufferSource();
 		node.buffer = audioBuffer;
 
+		// Apply speed via playbackRate with pitch correction
 		if (clip.speed !== 1) {
 			node.playbackRate.value = clip.speed;
+			node.detune.value = -1200 * Math.log2(clip.speed);
 		}
 
-		node.connect(clipGain);
+		// Insert audio effect chain between source and gain
+		if (clip.audioEffects && clip.audioEffects.length > 0) {
+			const effectNodes = buildAudioEffectChain(audioContext, clip.audioEffects);
+			connectChain(node, effectNodes, clipGain);
+		} else {
+			node.connect(clipGain);
+		}
 
 		// Schedule the node to start at the correct audio context time
 		const contextStartTime =

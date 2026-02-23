@@ -248,6 +248,17 @@ function handleKeyframeClick(ev: MouseEvent, offset: number) {
 function onContextAction(action: string) {
 	invokeAction(action as any);
 }
+
+function formatSec(s: number): string {
+	const m = Math.floor(s / 60);
+	const sec = (s % 60).toFixed(2);
+	return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+}
+
+const elementTooltip = computed(() => {
+	const el = props.element;
+	return `${el.name}\nDuration: ${formatSec(el.duration)}\nStart: ${formatSec(el.startTime)}`;
+});
 </script>
 
 <template>
@@ -258,6 +269,7 @@ function onContextAction(action: string) {
 			width: `${elementWidth}px`,
 			transform: isBeingDragged && dragState.isDragging ? `translate3d(0, ${dragOffsetY}px, 0)` : undefined,
 		}"
+		:title="elementTooltip"
 	>
 		<!-- Element inner -->
 		<div
@@ -334,6 +346,13 @@ function onContextAction(action: string) {
 							class="absolute right-0 left-0 w-full pointer-events-none"
 							style="bottom: 0; height: 35%; z-index: 25; mix-blend-mode: normal;"
 						/>
+						<div
+							v-if="!isMuted && waveformLoading && !waveformLoaded"
+							class="absolute right-0 left-0 flex items-center justify-center pointer-events-none"
+							style="bottom: 0; height: 35%; z-index: 26;"
+						>
+							<div class="text-[8px] text-white/30">Loading waveform...</div>
+						</div>
 					</div>
 
 					<!-- Video/Image fallback thumbnail (before filmstrip loads) -->
@@ -378,40 +397,60 @@ function onContextAction(action: string) {
 				/>
 			</button>
 
-			<!-- Fade-in gradient overlay -->
+			<!-- Fade-in overlay: diagonal ramp for audio/video, gradient for others -->
 			<div
 				v-if="fadeInPx > 0"
 				class="pointer-events-none absolute top-0 bottom-0 left-0 z-20"
-				:style="{ width: `${fadeInPx}px`, background: 'linear-gradient(to right, rgba(0,0,0,0.5), transparent)' }"
-			/>
-			<!-- Fade-out gradient overlay -->
+				:style="{ width: `${fadeInPx}px` }"
+			>
+				<svg v-if="isAudioElement || isVideoElement" class="size-full" preserveAspectRatio="none">
+					<line x1="0" y1="100%" x2="100%" y2="0" stroke="white" stroke-opacity="0.5" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+				</svg>
+				<div v-else class="size-full" :style="{ background: 'linear-gradient(to right, rgba(0,0,0,0.5), transparent)' }" />
+			</div>
+			<!-- Fade-out overlay: diagonal ramp for audio/video, gradient for others -->
 			<div
 				v-if="fadeOutPx > 0"
 				class="pointer-events-none absolute top-0 bottom-0 right-0 z-20"
-				:style="{ width: `${fadeOutPx}px`, background: 'linear-gradient(to left, rgba(0,0,0,0.5), transparent)' }"
-			/>
+				:style="{ width: `${fadeOutPx}px` }"
+			>
+				<svg v-if="isAudioElement || isVideoElement" class="size-full" preserveAspectRatio="none">
+					<line x1="0" y1="0" x2="100%" y2="100%" stroke="white" stroke-opacity="0.5" stroke-width="1.5" vector-effect="non-scaling-stroke" />
+				</svg>
+				<div v-else class="size-full" :style="{ background: 'linear-gradient(to left, rgba(0,0,0,0.5), transparent)' }" />
+			</div>
 
 			<!-- Fade-in triangle handle (bottom-left) -->
 			<div
-				v-if="isSelected || fadeInPx > 0"
+				v-if="isSelected || isAudioElement || isVideoElement || fadeInPx > 0"
 				class="absolute bottom-0 z-40 cursor-ew-resize group/fade"
 				:style="{ left: `${fadeInPx}px` }"
 				@mousedown="handleFadeStart($event, 'fadeIn')"
 			>
-				<svg width="8" height="8" viewBox="0 0 8 8" class="opacity-60 group-hover/fade:opacity-100 transition-opacity">
-					<polygon points="0,8 8,8 0,0" fill="white" />
+				<svg
+					:width="(isAudioElement || isVideoElement) ? 12 : 8"
+					:height="(isAudioElement || isVideoElement) ? 12 : 8"
+					:viewBox="(isAudioElement || isVideoElement) ? '0 0 12 12' : '0 0 8 8'"
+					:class="(isAudioElement || isVideoElement) ? 'opacity-70 group-hover/fade:opacity-100 transition-opacity' : 'opacity-60 group-hover/fade:opacity-100 transition-opacity'"
+				>
+					<polygon :points="(isAudioElement || isVideoElement) ? '0,12 12,12 0,0' : '0,8 8,8 0,0'" fill="white" />
 				</svg>
 			</div>
 
 			<!-- Fade-out triangle handle (bottom-right) -->
 			<div
-				v-if="isSelected || fadeOutPx > 0"
+				v-if="isSelected || isAudioElement || isVideoElement || fadeOutPx > 0"
 				class="absolute bottom-0 z-40 cursor-ew-resize group/fade"
 				:style="{ right: `${fadeOutPx}px` }"
 				@mousedown="handleFadeStart($event, 'fadeOut')"
 			>
-				<svg width="8" height="8" viewBox="0 0 8 8" class="opacity-60 group-hover/fade:opacity-100 transition-opacity">
-					<polygon points="0,8 8,8 8,0" fill="white" />
+				<svg
+					:width="(isAudioElement || isVideoElement) ? 12 : 8"
+					:height="(isAudioElement || isVideoElement) ? 12 : 8"
+					:viewBox="(isAudioElement || isVideoElement) ? '0 0 12 12' : '0 0 8 8'"
+					:class="(isAudioElement || isVideoElement) ? 'opacity-70 group-hover/fade:opacity-100 transition-opacity' : 'opacity-60 group-hover/fade:opacity-100 transition-opacity'"
+				>
+					<polygon :points="(isAudioElement || isVideoElement) ? '0,12 12,12 12,0' : '0,8 8,8 8,0'" fill="white" />
 				</svg>
 			</div>
 

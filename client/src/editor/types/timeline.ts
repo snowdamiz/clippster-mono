@@ -113,6 +113,7 @@ interface BaseAudioElement extends BaseTimelineElement {
 	muted?: boolean;
 	buffer?: AudioBuffer;
 	speed?: number; // 0.1-16, default 1
+	reversed?: boolean;
 	fadeIn?: number; // seconds
 	fadeOut?: number; // seconds
 	audioEffects?: import("./audio-effects").AudioEffect[];
@@ -139,6 +140,7 @@ interface BaseTimelineElement {
 	trimEnd: number;
 	fadeIn?: number; // seconds
 	fadeOut?: number; // seconds
+	linkedElementId?: string; // ID of a linked element (e.g. extracted audio ↔ source video)
 	keyframes?: import("./keyframes").ElementKeyframes;
 	animationIn?: import("./animations").ElementAnimation;
 	animationOut?: import("./animations").ElementAnimation;
@@ -154,6 +156,7 @@ export interface VideoElement extends BaseTimelineElement {
 	opacity: number;
 	volume?: number; // 0-2, default 1
 	speed?: number; // 0.1-16, default 1
+	reversed?: boolean;
 	flip?: FlipState;
 	crop?: CropRect;
 	colorAdjustments?: ColorAdjustments;
