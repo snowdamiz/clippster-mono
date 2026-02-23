@@ -3,25 +3,32 @@ import { createContext, useContext, useState, useEffect, useMemo, type ReactNode
 
 interface DownloadContextType {
   downloadsEnabled: boolean
+  enableDownloads: () => void
   showWaitlistModal: boolean
   setShowWaitlistModal: (show: boolean) => void
   openWaitlistModal: () => void
+  showBetaCodeModal: boolean
+  setShowBetaCodeModal: (show: boolean) => void
+  openBetaCodeModal: () => void
+  verifyBetaCode: (code: string) => Promise<boolean>
 }
 
 const DownloadContext = createContext<DownloadContextType | undefined>(undefined)
 
-// Check access at module load time to avoid useEffect setState
+const API_URL = `${import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'}/api/beta/verify-code`
+
+// Check if beta code exists in localStorage
 function checkInitialAccess(): boolean {
   if (typeof window === 'undefined') return false
-  const urlParams = new URLSearchParams(window.location.search)
-  return urlParams.get('access') === 'beta'
+  return localStorage.getItem('clippster_beta_code') !== null
 }
 
 export function DownloadProvider({ children }: { children: ReactNode }) {
   // Initialize state with computed values to avoid useEffect setState
   const initialAccess = useMemo(() => checkInitialAccess(), [])
-  const [downloadsEnabled] = useState(initialAccess)
+  const [downloadsEnabled, setDownloadsEnabled] = useState(initialAccess)
   const [showWaitlistModal, setShowWaitlistModal] = useState(false)
+  const [showBetaCodeModal, setShowBetaCodeModal] = useState(false)
 
   useEffect(() => {
     // Check if user has already joined the waitlist
@@ -41,13 +48,50 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
     setShowWaitlistModal(true)
   }
 
+  const openBetaCodeModal = () => {
+    setShowBetaCodeModal(true)
+  }
+
+  const enableDownloads = () => {
+    setDownloadsEnabled(true)
+  }
+
+  const verifyBetaCode = async (code: string): Promise<boolean> => {
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ code: code.trim().toUpperCase() }),
+      })
+
+      const data = await response.json()
+
+      if (data.valid) {
+        localStorage.setItem('clippster_beta_code', code.trim().toUpperCase())
+        setDownloadsEnabled(true)
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Beta code verification failed:', error)
+      return false
+    }
+  }
+
   return (
     <DownloadContext.Provider
       value={{
         downloadsEnabled,
+        enableDownloads,
         showWaitlistModal,
         setShowWaitlistModal,
         openWaitlistModal,
+        showBetaCodeModal,
+        setShowBetaCodeModal,
+        openBetaCodeModal,
+        verifyBetaCode,
       }}
     >
       {children}

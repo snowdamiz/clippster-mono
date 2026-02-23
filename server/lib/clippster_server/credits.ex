@@ -12,8 +12,8 @@ defmodule ClippsterServer.Credits do
   # 1 credit = 1 minute of video processing
   @credit_packs %{
     "small" => %{hours: 240, usd: 10.00, name: "Small Pack"},
-    "medium" => %{hours: 600, usd: 24.99, name: "Medium Pack"},
-    "large" => %{hours: 1800, usd: 49.99, name: "Large Pack"}
+    "medium" => %{hours: 600, usd: 19.99, name: "Medium Pack"},
+    "large" => %{hours: 1800, usd: 44.99, name: "Large Pack"}
   }
 
   @doc """

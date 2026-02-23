@@ -48,4 +48,34 @@ defmodule ClippsterServerWeb.BetaController do
     |> put_status(400)
     |> json(%{success: false, error: "Missing required parameter: code"})
   end
+
+  @doc """
+  Verifies a beta code for landing page access (public endpoint).
+  Does not consume the code, only checks validity and records verification.
+  """
+  def verify_code(conn, %{"code" => code}) do
+    # Get IP address from connection
+    ip_address = get_ip_address(conn)
+
+    case BetaCodes.verify_code_for_landing(code, ip_address) do
+      {:ok, _beta_code} ->
+        json(conn, %{valid: true})
+
+      {:error, _reason} ->
+        json(conn, %{valid: false})
+    end
+  end
+
+  def verify_code(conn, _params) do
+    conn
+    |> put_status(400)
+    |> json(%{success: false, error: "Missing required parameter: code"})
+  end
+
+  defp get_ip_address(conn) do
+    case Plug.Conn.get_req_header(conn, "x-forwarded-for") do
+      [ip | _] -> ip
+      [] -> to_string(:inet.ntoa(conn.remote_ip))
+    end
+  end
 end

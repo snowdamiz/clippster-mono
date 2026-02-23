@@ -38,7 +38,8 @@ export function BuyCreditsModal({ open, onClose }: Props) {
   const handleStripeCheckout = async () => {
     if (!selectedPack || !organizationId) return
     // Open Stripe checkout
-    window.open(`https://clippster-server.fly.dev/api/payments/stripe/checkout?pack=${selectedPack.id}&org_id=${organizationId}&token=${localStorage.getItem('auth_token')}`, '_blank')
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'
+    window.open(`${apiUrl}/api/payments/stripe/checkout?pack=${selectedPack.id}&org_id=${organizationId}&token=${localStorage.getItem('auth_token')}`, '_blank')
     onClose()
   }
 

@@ -6,6 +6,21 @@ defmodule ClippsterServerWeb.SupportController do
   alias ClippsterServerWeb.MessagingJSON
 
   @doc """
+  Checks if a support conversation exists for the current user (read-only, no creation).
+  """
+  def check(conn, _params) do
+    user_id = conn.assigns[:current_user_id]
+
+    case Messaging.check_support_conversation(user_id) do
+      {:ok, nil} ->
+        json(conn, %{conversation: nil})
+
+      {:ok, conversation} ->
+        json(conn, %{conversation: MessagingJSON.conversation(conversation)})
+    end
+  end
+
+  @doc """
   Gets or creates a support conversation for the current user.
   """
   def get_or_create(conn, _params) do
