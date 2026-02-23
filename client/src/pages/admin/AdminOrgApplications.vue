@@ -279,6 +279,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
+  import { formatDateTime } from '@/utils/dateTimeUtils';
   import { FileText, RefreshCw, Eye, Trash2, Loader2, X, Building2, AlertCircle, Check } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -462,14 +463,7 @@
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatDateTime(dateString);
   };
 
   const formatWalletAddress = (address: string | null) => {

@@ -58,6 +58,20 @@ defmodule ClippsterServerWeb.Router do
     plug(ClippsterServerWeb.ModeratorPlug)
   end
 
+  pipeline :api_rate_limited do
+    plug(:accepts, ["json"])
+
+    plug(CORSPlug,
+      origin: &__MODULE__.cors_origins/0,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      max_age: 86400,
+      credentials: true
+    )
+
+    plug(ClippsterServerWeb.RateLimit, max_requests: 10, window_seconds: 3600)
+  end
+
   # Define CORS origins - must be specific origins (not "*") when Authorization header is used
   # as the browser treats requests with Authorization as credentialed requests
   def cors_origins do
@@ -77,6 +91,14 @@ defmodule ClippsterServerWeb.Router do
       ~r/^tauri:\/\//,
       ~r/^https?:\/\/tauri\./
     ]
+  end
+
+  # Rate-limited public endpoints
+  scope "/api", ClippsterServerWeb do
+    pipe_through(:api_rate_limited)
+
+    # Beta code verification (rate limited to prevent brute force)
+    post("/beta/verify-code", BetaController, :verify_code)
   end
 
   scope "/api", ClippsterServerWeb do
@@ -167,6 +189,10 @@ defmodule ClippsterServerWeb.Router do
 
     # Activity tracking (requires auth)
     post("/auth/activity-ping", AuthController, :activity_ping)
+
+    # User preferences
+    get("/user/preferences", UserPreferencesController, :get_preferences)
+    patch("/user/preferences", UserPreferencesController, :update_preferences)
 
     # User restrictions
     get("/user/restrictions", RestrictionController, :get_user_restrictions)
@@ -790,6 +816,7 @@ defmodule ClippsterServerWeb.Router do
     get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
     get("/clippers/:slug", ClipperProfilesController, :show)
     get("/clippers/:slug/portfolio-clips/:clip_id/presigned-url", ClipperProfilesController, :public_portfolio_clip_presigned_url)
+    get("/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url", ClipperProfilesController, :public_portfolio_clip_thumbnail_presigned_url)
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 
     # ============================================================================
@@ -944,9 +971,13 @@ defmodule ClippsterServerWeb.Router do
     put("/affiliate/settings", AffiliateController, :update_settings)
     
     # Support conversation routes (any authenticated user)
+    get("/support/conversation/check", SupportController, :check)
     get("/support/conversation", SupportController, :get_or_create)
     post("/support/conversation/messages", SupportController, :send_message)
     get("/support/conversation/messages", SupportController, :get_messages)
+
+    # Announcements (active, filtered by account type)
+    get("/announcements/active", AnnouncementsController, :active)
   end
 
   # Moderator + Admin routes
@@ -1058,6 +1089,8 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin waitlist management
     get("/admin/waitlist", WaitlistController, :index)
+    post("/admin/waitlist/invite", AdminController, :invite_waitlist)
+    post("/admin/waitlist/:id/invite", AdminController, :invite_waitlist_entry)
 
     # Admin affiliate management
     get("/admin/affiliates", AffiliateController, :list_affiliates)
@@ -1072,6 +1105,16 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin organization application management (delete route only - index/approve/reject in mod scope)
     delete("/admin/organization-applications/:id", OrganizationApplicationController, :delete)
+
+    # Admin announcements management
+    get("/admin/announcements", AnnouncementsController, :index)
+    post("/admin/announcements", AnnouncementsController, :create)
+    put("/admin/announcements/:id", AnnouncementsController, :update)
+    delete("/admin/announcements/:id", AnnouncementsController, :delete)
+
+    # Admin messaging (bulk email campaigns)
+    post("/admin/messaging/send", AdminMessagingController, :send_campaign)
+    get("/admin/messaging/campaigns", AdminMessagingController, :list_campaigns)
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

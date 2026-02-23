@@ -13,14 +13,14 @@
 <script setup lang="ts">
 import { Sparkles } from 'lucide-vue-next';
 import type { AIChatMessage } from '@/types/ai-video';
+import { formatTime as fmtTime } from '@/utils/dateTimeUtils';
 
 defineProps<{
   message: AIChatMessage;
 }>();
 
 function formatTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return fmtTime(iso);
 }
 </script>
 

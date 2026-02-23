@@ -29,6 +29,7 @@ mod clip_extractor_commands;
 mod utils;
 mod font_commands;
 mod hls_proxy;
+mod avatar_proxy;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -39,6 +40,10 @@ use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
 
 static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+
+/// Stores the localhost plugin port for production builds so child windows (PIP) can use the same origin
+#[allow(dead_code)]
+static LOCALHOST_PORT: Lazy<Mutex<Option<u16>>> = Lazy::new(|| Mutex::new(None));
 
 /// Copy a file from source to destination
 #[tauri::command]
@@ -81,21 +86,44 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
         return Ok(());
     }
 
-    // Create new always-on-top window with video player size (16:9 aspect ratio)
+    // In production, the PIP window MUST use the same WebviewUrl::External origin as the main window.
+    // WebviewUrl::App resolves to https://tauri.localhost in production, which uses a custom protocol
+    // that causes WebView2's compositor to not properly maintain HWND_TOPMOST z-order over fullscreen games.
+    // In dev mode, WebviewUrl::App resolves to the Vite dev server (http://localhost:1420) which works fine.
+    #[cfg(dev)]
+    let pip_url = WebviewUrl::App("/pip-controls".into());
+    
+    #[cfg(not(dev))]
+    let pip_url = {
+        let port = LOCALHOST_PORT.lock().unwrap();
+        match *port {
+            Some(p) => {
+                let url_str = format!("http://localhost:{}/pip-controls", p);
+                println!("[Rust] PIP window using localhost URL: {}", url_str);
+                WebviewUrl::External(url_str.parse().unwrap())
+            }
+            None => {
+                println!("[Rust] WARNING: No localhost port stored, falling back to WebviewUrl::App");
+                WebviewUrl::App("/pip-controls".into())
+            }
+        }
+    };
+
+    // Create new always-on-top window - initial size is a reasonable default;
+    // the frontend will detect the video's actual aspect ratio and resize accordingly.
     let window = WebviewWindowBuilder::new(
         &app,
         "pip-controls",
-        WebviewUrl::App("/pip-controls".into())
+        pip_url
     )
     .title("Stream")
-    .inner_size(400.0, 265.0)  // 16:9 video + controls bar
-    .min_inner_size(320.0, 220.0)
-    .max_inner_size(640.0, 400.0)
+    .inner_size(480.0, 270.0)
+    .min_inner_size(240.0, 135.0)
     .resizable(true)
     .decorations(false)
     .transparent(true)
     .always_on_top(true)
-    .visible_on_all_workspaces(true)  // Ensures window stays on top across all virtual desktops and fullscreen apps
+    .visible_on_all_workspaces(true)
     .skip_taskbar(true)
     .visible(true)
     .build()
@@ -114,32 +142,28 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowPos, GetWindowLongPtrW, SetWindowLongPtrW, BringWindowToTop,
+            SetWindowPos, GetWindowLongPtrW, SetWindowLongPtrW, BringWindowToTop, IsWindow,
             HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SWP_NOACTIVATE, SWP_FRAMECHANGED,
             WINDOW_EX_STYLE, GWL_EXSTYLE, WS_EX_TOPMOST, WS_EX_LAYERED, WS_EX_TOOLWINDOW
         };
         
         if let Ok(hwnd) = window.hwnd() {
+            let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
+            
             unsafe {
-                let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
-                
-                // CRITICAL FIX FOR FULLSCREEN GAMES:
-                // Fullscreen games use exclusive fullscreen mode which places them in a different Z-order.
-                // WS_EX_TOOLWINDOW creates a tool window that can appear above fullscreen applications.
-                // This is the ONLY way to stay on top of fullscreen exclusive mode games.
-                
                 // Step 1: Get current extended window styles
                 let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
                 
                 // Step 2: Add WS_EX_TOPMOST, WS_EX_LAYERED, and WS_EX_TOOLWINDOW flags
-                // WS_EX_TOOLWINDOW is the KEY - it allows the window to appear above fullscreen apps
+                // WS_EX_TOOLWINDOW prevents the window from appearing in the taskbar and
+                // helps it stay above fullscreen borderless windows
                 let new_ex_style = WINDOW_EX_STYLE(current_ex_style as u32) 
                     | WS_EX_TOPMOST 
                     | WS_EX_LAYERED 
                     | WS_EX_TOOLWINDOW;
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style.0 as isize);
                 
-                // Step 3: Use SetWindowPos with SWP_FRAMECHANGED to force the window to redraw with new styles
+                // Step 3: Apply HWND_TOPMOST with SWP_FRAMECHANGED to force style update
                 let _ = SetWindowPos(
                     hwnd,
                     HWND_TOPMOST,
@@ -150,27 +174,59 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                     SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 );
                 
-                // Step 4: Bring window to top to ensure it's visible
+                // Step 4: Bring window to top
                 let _ = BringWindowToTop(hwnd);
             }
+            
+            // Step 5: Spawn a background timer that periodically re-asserts HWND_TOPMOST.
+            // Fullscreen games (both exclusive and borderless) can cause the DWM to demote
+            // our topmost z-order when the game window gains focus. Professional overlay tools
+            // (Discord, Medal, OBS) use periodic re-assertion to survive this.
+            // The timer runs every 500ms and stops automatically when the PIP window is closed.
+            let hwnd_raw = hwnd.0 as isize;
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                    
+                    unsafe {
+                        let hwnd = HWND(hwnd_raw as *mut core::ffi::c_void);
+                        
+                        // Stop the timer if the window has been destroyed
+                        if !IsWindow(hwnd).as_bool() {
+                            println!("[Rust] PIP topmost timer: window destroyed, stopping");
+                            break;
+                        }
+                        
+                        // Re-assert HWND_TOPMOST without activating or moving the window
+                        let _ = SetWindowPos(
+                            hwnd,
+                            HWND_TOPMOST,
+                            0,
+                            0,
+                            0,
+                            0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                        );
+                    }
+                }
+            });
         }
     }
 
     // macOS-specific: Set window collection behavior to appear over fullscreen apps
     #[cfg(target_os = "macos")]
     {
-        use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};
-        use cocoa::base::id;
-        
+        use objc::{msg_send, sel, sel_impl};
+        use objc::runtime::Object;
+
         if let Ok(ns_window) = window.ns_window() {
             unsafe {
-                let ns_window = ns_window as id;
+                let ns_window = ns_window as *mut Object;
                 // NSWindowCollectionBehaviorCanJoinAllSpaces (1 << 0) = 1
                 // NSWindowCollectionBehaviorFullScreenAuxiliary (1 << 8) = 256
                 // Combined: allows window to appear in all Spaces and over fullscreen apps
-                let behavior = NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
-                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary;
-                ns_window.setCollectionBehavior_(behavior);
+                let behavior: usize = 1 | 256;
+                let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
             }
         }
     }
@@ -675,13 +731,13 @@ pub fn run() {
                         tauri_plugin_sql::Migration {
                             version: 86,
                             description: "add_source_start_time_to_audio_tracks",
-                            sql: include_str!("../migrations/086_add_source_start_time_to_audio_tracks.sql"),
+                            sql: include_str!("../migrations/091_add_source_start_time_to_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
                             version: 87,
                             description: "add_transcript_raw_json_to_clip_segments",
-                            sql: include_str!("../migrations/087_add_transcript_raw_json_to_clip_segments.sql"),
+                            sql: include_str!("../migrations/092_add_transcript_raw_json_to_clip_segments.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
@@ -720,6 +776,7 @@ pub fn run() {
         // OTA Updates - required for automatic app updates
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // Localhost plugin - serves frontend from http://localhost in production to bypass LNA
         .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
         .setup(|app| {
             println!("[Rust] Application setup complete");
@@ -731,26 +788,51 @@ pub fn run() {
                 video_server::start_video_server_impl().await;
             });
 
-            // Create main window programmatically.
-            // In production, use localhost:1420 (served by tauri-plugin-localhost)
-            // so the origin is http://localhost:1420 (loopback), which allows
-            // fetches to the video server on localhost:48276 (loopback→loopback).
-            // Without this, the origin would be http://tauri.localhost which
-            // Chrome's Private Network Access policy blocks from reaching loopback.
-            let url = if cfg!(dev) {
-                WebviewUrl::App("/".into())
-            } else {
-                WebviewUrl::External("http://localhost:1420".parse().unwrap())
+            // Create main window programmatically (required for localhost plugin)
+            // In dev mode, use the default devUrl from tauri.conf.json
+            // In production, serve from localhost to bypass LNA restrictions
+            #[cfg(dev)]
+            let url = WebviewUrl::App("/".into());
+            
+            #[cfg(not(dev))]
+            let url = {
+                // Pick random unused port and initialize localhost plugin
+                let port = portpicker::pick_unused_port().expect("failed to find unused port");
+                app.handle().plugin(tauri_plugin_localhost::Builder::new(port).build())
+                    .expect("failed to initialize localhost plugin");
+                
+                // Store the port so child windows (PIP) can use the same origin
+                {
+                    let mut stored_port = LOCALHOST_PORT.lock().unwrap();
+                    *stored_port = Some(port);
+                }
+                
+                let url_str = format!("http://localhost:{}", port);
+                println!("[Rust] Production mode: serving frontend from {}", url_str);
+                WebviewUrl::External(url_str.parse().unwrap())
+            };
+
+            // Load saved window size or use defaults
+            let (width, height) = match ui_utils::load_window_size(app.handle().clone()) {
+                Ok(Some(size)) => {
+                    println!("[Rust] Restoring window size: {}x{}", size.width, size.height);
+                    (size.width, size.height)
+                }
+                _ => {
+                    println!("[Rust] Using default window size: 1280x720");
+                    (1280.0, 720.0)
+                }
             };
 
             let window = WebviewWindowBuilder::new(app, "main", url)
                 .title("Clippster")
-                .inner_size(1400.0, 850.0)
+                .inner_size(width, height)
+                .min_inner_size(800.0, 600.0)
                 .decorations(false)
-                .visible(false)
                 .transparent(true)
+                .visible(false)
                 .build()
-                .expect("Failed to create main window");
+                .expect("failed to create main window");
 
             // Enable devtools in production for debugging
             #[cfg(feature = "devtools")]
@@ -914,6 +996,7 @@ commands::file_utils::generate_video_thumbnail,
             audio::extract_audio_from_video,
             audio::extract_and_chunk_audio,
             audio::extract_audio_to_file,
+            audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
 
             // Waveform commands
@@ -982,6 +1065,8 @@ commands::file_utils::generate_video_thumbnail,
             ui_utils::setup_macos_titlebar,
             ui_utils::get_platform,
             ui_utils::show_main_window,
+            ui_utils::save_window_size,
+            ui_utils::load_window_size,
             
             // File operations
             copy_file,
@@ -1045,6 +1130,9 @@ font_commands::resolve_font_path,
 hls_proxy::read_hls_playlist,
 hls_proxy::read_hls_segment,
 hls_proxy::check_hls_playlist_exists,
+
+// Avatar proxy command
+avatar_proxy::fetch_avatar_image,
 
 // Remotion export commands
 remotion_export::start_remotion_export,

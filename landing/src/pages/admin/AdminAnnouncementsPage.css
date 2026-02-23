@@ -1,0 +1,181 @@
+.admin-ann {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ── Heading ── */
+.admin-ann__heading { margin-bottom: 0.5rem; }
+.admin-ann__title { font-size: 1.5rem; font-weight: 700; color: #fafafa; margin: 0 0 0.2rem; letter-spacing: -0.02em; }
+.admin-ann__subtitle { font-size: 0.875rem; color: #a1a1aa; margin: 0; }
+
+/* ── Action button ── */
+.ann-action-btn { display: flex; align-items: center; gap: 0.5rem; height: 32px; padding: 0 0.875rem; font-size: 0.75rem; font-weight: 600; border-radius: 6px; cursor: pointer; transition: all 150ms; border: none; background: #1f1f23; color: #fafafa; }
+.ann-action-btn--primary { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
+.ann-action-btn:hover:not(:disabled) { opacity: 0.9; }
+.ann-action-icon { width: 14px; height: 14px; }
+
+/* ── Stat cards ── */
+.admin-ann__cards { display: grid; grid-template-columns: repeat(1, 1fr); gap: 1rem; }
+@media (min-width: 640px) { .admin-ann__cards { grid-template-columns: repeat(3, 1fr); } }
+.admin-ann__card { padding: 1rem; background-color: #141416; border: 1px solid #27272a; border-radius: 10px; }
+.admin-ann__card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.admin-ann__card-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.admin-ann__card-icon--violet { background: linear-gradient(135deg, rgba(139,92,246,0.2), rgba(109,40,217,0.2)); border: 1px solid rgba(139,92,246,0.3); }
+.admin-ann__card-icon--violet .admin-ann__card-icon-svg { color: #a78bfa; }
+.admin-ann__card-icon--green { background: linear-gradient(135deg, rgba(34,197,94,0.2), rgba(16,185,129,0.2)); border: 1px solid rgba(34,197,94,0.3); }
+.admin-ann__card-icon--green .admin-ann__card-icon-svg { color: #34d399; }
+.admin-ann__card-icon--muted { background: rgba(63,63,70,0.4); border: 1px solid #27272a; }
+.admin-ann__card-icon--muted .admin-ann__card-icon-svg { color: #a1a1aa; }
+.admin-ann__card-icon-svg { width: 16px; height: 16px; }
+.admin-ann__card-label { font-size: 0.875rem; font-weight: 500; color: #a1a1aa; margin: 0; }
+.admin-ann__card-value { font-size: 1.5rem; font-weight: 700; color: #fafafa; margin: 0; }
+.admin-ann__card-value--green { color: #34d399; }
+
+/* ── Form card ── */
+.admin-ann__form-card { background-color: #141416; border: 1px solid #27272a; border-radius: 10px; overflow: hidden; }
+.admin-ann__form-header { display: flex; align-items: center; justify-content: space-between; padding: 1.25rem 1.5rem; border-bottom: 1px solid #27272a; }
+.admin-ann__form-header-left { display: flex; align-items: center; gap: 0.875rem; }
+.admin-ann__form-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(139,92,246,0.2), rgba(109,40,217,0.2)); border: 1px solid rgba(139,92,246,0.3); flex-shrink: 0; }
+.admin-ann__form-icon-svg { width: 18px; height: 18px; color: #a78bfa; }
+.admin-ann__form-title { font-size: 1rem; font-weight: 600; color: #fafafa; margin: 0; }
+.admin-ann__form-desc { font-size: 0.75rem; color: #a1a1aa; margin: 0.125rem 0 0; }
+.admin-ann__form-close { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 6px; border: 1px solid #27272a; background: transparent; color: #a1a1aa; cursor: pointer; transition: all 150ms; }
+.admin-ann__form-close:hover { background: #1f1f23; color: #fafafa; }
+.admin-ann__form-close-icon { width: 14px; height: 14px; }
+
+.admin-ann__form-body { display: flex; flex-direction: column; gap: 1.25rem; padding: 1.5rem; }
+.admin-ann__form-meta-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+@media (max-width: 700px) { .admin-ann__form-meta-row { grid-template-columns: 1fr; } }
+.admin-ann__form-meta-left { display: flex; flex-direction: column; }
+.admin-ann__form-meta-right { display: flex; flex-direction: column; }
+.admin-ann__form-footer { display: flex; align-items: center; justify-content: flex-end; gap: 0.75rem; padding: 1rem 1.5rem; border-top: 1px solid #27272a; background-color: rgba(24,24,27,0.4); }
+
+/* ── Fields ── */
+.admin-ann__field { margin-bottom: 1.25rem; }
+.admin-ann__field-row { display: flex; gap: 1rem; }
+.admin-ann__field--flex { flex: 1; }
+.admin-ann__field--shrink { flex-shrink: 0; }
+.admin-ann__label { display: block; font-size: 0.6875rem; font-weight: 600; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+.admin-ann__label-hint { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.admin-ann__input { width: 100%; background-color: #1f1f23; border: 1px solid #27272a; border-radius: 8px; padding: 0.625rem 0.875rem; font-size: 0.875rem; color: #fafafa; outline: none; transition: border-color 150ms; box-sizing: border-box; }
+.admin-ann__input:focus { border-color: rgba(139,92,246,0.5); box-shadow: 0 0 0 2px rgba(139,92,246,0.15); }
+
+/* ── Type grid ── */
+.admin-ann__type-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.375rem; }
+.admin-ann__type-btn { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: 0.625rem 0.25rem; border-radius: 8px; border: 1px solid #27272a; background: #1f1f23; font-size: 0.6875rem; font-weight: 600; cursor: pointer; transition: all 150ms; color: #a1a1aa; }
+.admin-ann__type-btn:hover { border-color: rgba(139,92,246,0.4); }
+.admin-ann__type-btn--active.admin-ann__type-btn--info { border-color: rgba(59,130,246,0.6); background: rgba(59,130,246,0.1); color: #60a5fa; }
+.admin-ann__type-btn--active.admin-ann__type-btn--warning { border-color: rgba(245,158,11,0.6); background: rgba(245,158,11,0.1); color: #fbbf24; }
+.admin-ann__type-btn--active.admin-ann__type-btn--feature { border-color: rgba(139,92,246,0.6); background: rgba(139,92,246,0.1); color: #a78bfa; }
+.admin-ann__type-btn--active.admin-ann__type-btn--campaign { border-color: rgba(34,197,94,0.6); background: rgba(34,197,94,0.1); color: #4ade80; }
+.admin-ann__type-icon { width: 15px; height: 15px; }
+
+/* ── Audience grid ── */
+.admin-ann__audience-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.375rem; }
+.admin-ann__audience-btn { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: 0.625rem 0.25rem; border-radius: 8px; border: 1px solid #27272a; background: #1f1f23; cursor: pointer; transition: all 150ms; }
+.admin-ann__audience-btn:hover { border-color: rgba(139,92,246,0.4); }
+.admin-ann__audience-btn--active { border-color: rgba(139,92,246,0.6); background: rgba(139,92,246,0.1); }
+.admin-ann__audience-icon { width: 16px; height: 16px; color: #a1a1aa; }
+.admin-ann__audience-btn--active .admin-ann__audience-icon { color: #a78bfa; }
+.admin-ann__audience-label { font-size: 0.6875rem; font-weight: 600; color: #fafafa; }
+
+/* ── Toggle ── */
+.admin-ann__toggle { position: relative; width: 42px; height: 24px; border-radius: 12px; border: none; background: #27272a; cursor: pointer; transition: background 200ms; padding: 0; }
+.admin-ann__toggle--on { background: #7c3aed; }
+.admin-ann__toggle-knob { position: absolute; top: 4px; left: 4px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform 200ms; display: block; }
+.admin-ann__toggle--on .admin-ann__toggle-knob { transform: translateX(18px); }
+
+/* ── Editor ── */
+.admin-ann__editor-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid #27272a; }
+.admin-ann__editor-tab { display: flex; align-items: center; gap: 0.375rem; padding: 0.5rem 0.875rem; font-size: 0.75rem; font-weight: 500; color: #a1a1aa; background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 150ms; margin-bottom: -1px; }
+.admin-ann__editor-tab:hover { color: #fafafa; }
+.admin-ann__editor-tab--active { color: #a78bfa; border-bottom-color: #a78bfa; }
+.admin-ann__tab-icon { width: 13px; height: 13px; }
+.admin-ann__tiptap-wrapper { border: 1px solid #27272a; border-top: none; border-radius: 0 0 8px 8px; overflow: hidden; }
+.admin-ann__toolbar { display: flex; align-items: center; gap: 0.125rem; padding: 0.375rem 0.5rem; background: #0a0a0b; border-bottom: 1px solid #27272a; flex-wrap: wrap; }
+.admin-ann__toolbar-btn { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 5px; border: none; background: transparent; color: #a1a1aa; cursor: pointer; transition: all 150ms; }
+.admin-ann__toolbar-btn:hover { background: #1f1f23; color: #fafafa; }
+.admin-ann__toolbar-icon { width: 14px; height: 14px; }
+.admin-ann__toolbar-divider { width: 1px; height: 18px; background: #27272a; margin: 0 0.25rem; }
+.admin-ann__html-textarea { width: 100%; min-height: 320px; background: #0a0a0b; border: none; padding: 0.875rem; font-size: 0.875rem; font-family: inherit; color: #fafafa; outline: none; resize: vertical; box-sizing: border-box; line-height: 1.6; display: block; }
+.admin-ann__preview-wrapper { border: 1px solid #27272a; border-top: none; border-radius: 0 0 8px 8px; min-height: 320px; background: #0a0a0b; }
+.admin-ann__preview-body { padding: 1rem; font-size: 0.875rem; color: #fafafa; line-height: 1.6; }
+.admin-ann__preview-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; min-height: 320px; color: #a1a1aa; font-size: 0.875rem; }
+.admin-ann__preview-empty-icon { width: 28px; height: 28px; opacity: 0.4; }
+
+/* ── Buttons ── */
+.admin-ann__cancel-btn { padding: 0.5rem 1rem; background: #1f1f23; border: 1px solid #27272a; border-radius: 8px; font-size: 0.875rem; font-weight: 500; color: #fafafa; cursor: pointer; transition: all 150ms; }
+.admin-ann__cancel-btn:hover { background: rgba(63,63,70,0.8); }
+.admin-ann__save-btn { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1.25rem; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 150ms; }
+.admin-ann__save-btn:hover:not(:disabled) { opacity: 0.9; }
+.admin-ann__save-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.admin-ann__save-icon { width: 15px; height: 15px; }
+.admin-ann__spin { animation: ann-spin 0.8s linear infinite; }
+@keyframes ann-spin { to { transform: rotate(360deg); } }
+
+/* ── Loading / empty ── */
+.admin-ann__loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 3rem; }
+.admin-ann__loading-icon { width: 32px; height: 32px; color: #a78bfa; animation: ann-spin 1s linear infinite; margin-bottom: 1rem; }
+.admin-ann__loading-text { color: #a1a1aa; margin: 0; }
+.admin-ann__empty { display: flex; flex-direction: column; align-items: center; padding: 3rem; background-color: #141416; border: 1px solid #27272a; border-radius: 10px; text-align: center; }
+.admin-ann__empty-icon-wrap { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(139,92,246,0.2), rgba(109,40,217,0.2)); border: 1px solid rgba(139,92,246,0.3); margin-bottom: 1rem; }
+.admin-ann__empty-icon-svg { width: 28px; height: 28px; color: #a78bfa; }
+.admin-ann__empty-text { color: #a1a1aa; margin: 0 0 1rem; }
+.admin-ann__empty-btn { padding: 0.5rem 1rem; background: linear-gradient(135deg, #7c3aed, #6d28d9); color: white; border: none; border-radius: 8px; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: all 150ms; }
+.admin-ann__empty-btn:hover { opacity: 0.9; }
+
+/* ── Table ── */
+.admin-ann__table-wrapper { background-color: #141416; border: 1px solid #27272a; border-radius: 10px; overflow: hidden; }
+.admin-ann__table-scroll { overflow-x: auto; }
+.admin-ann__table { width: 100%; border-collapse: collapse; }
+.admin-ann__thead { background-color: rgba(24,24,27,0.8); }
+.admin-ann__th { padding: 0.875rem 1.25rem; text-align: left; font-size: 0.6875rem; font-weight: 600; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.05em; }
+.admin-ann__tbody { border-top: 1px solid #27272a; }
+.admin-ann__row { transition: background-color 150ms; }
+.admin-ann__row:hover { background-color: rgba(39,39,42,0.3); }
+.admin-ann__row:not(:last-child) { border-bottom: 1px solid rgba(39,39,42,0.5); }
+.admin-ann__row--editing { background-color: rgba(139,92,246,0.05); }
+.admin-ann__td { padding: 1rem 1.25rem; white-space: nowrap; font-size: 0.875rem; color: #fafafa; }
+.admin-ann__td--muted { color: #a1a1aa; font-size: 0.8125rem; }
+.admin-ann__row-title { font-weight: 500; }
+.admin-ann__badge { display: inline-flex; align-items: center; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.admin-ann__badge--info { background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+.admin-ann__badge--warning { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+.admin-ann__badge--feature { background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); }
+.admin-ann__badge--campaign { background: rgba(34,197,94,0.15); color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+.admin-ann__badge--audience { background: rgba(161,161,170,0.1); color: #a1a1aa; border: 1px solid rgba(161,161,170,0.2); }
+.admin-ann__status { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.625rem; border-radius: 8px; font-size: 0.75rem; font-weight: 500; }
+.admin-ann__status--active { background: rgba(34,197,94,0.15); color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+.admin-ann__status--draft { background: rgba(63,63,70,0.4); color: #a1a1aa; border: 1px solid #27272a; }
+.admin-ann__status-icon { width: 12px; height: 12px; }
+.admin-ann__row-actions { display: flex; align-items: center; gap: 0.25rem; }
+.admin-ann__btn { display: inline-flex; align-items: center; padding: 0.375rem 0.5rem; background: #1f1f23; color: #a1a1aa; border: 1px solid #27272a; border-radius: 6px; font-size: 0.75rem; cursor: pointer; transition: all 150ms; }
+.admin-ann__btn:hover { background: rgba(63,63,70,0.8); color: #fafafa; }
+.admin-ann__btn--danger:hover { background: rgba(239,68,68,0.1); color: #f87171; border-color: rgba(239,68,68,0.3); }
+.admin-ann__btn-icon { width: 13px; height: 13px; }
+
+/* ── Delete modal ── */
+.ann-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 60; }
+.ann-modal { background: linear-gradient(to bottom, #18181b, #09090b); border-radius: 16px; max-width: 420px; width: calc(100% - 2rem); border: 1px solid rgba(255,255,255,0.1); overflow: hidden; }
+.ann-modal__bar { height: 4px; width: 100%; }
+.ann-modal__bar--red { background: linear-gradient(to right, #ef4444, #f43f5e, #ec4899); }
+.ann-modal__body { padding: 1.5rem; }
+.ann-modal__row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+.ann-modal__icon-wrap { padding: 0.5rem; border-radius: 8px; }
+.ann-modal__icon-wrap--red { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); }
+.ann-modal__icon { width: 20px; height: 20px; color: #f87171; }
+.ann-modal__title { font-size: 1rem; font-weight: 600; color: #fff; margin: 0; }
+.ann-modal__sub { font-size: 0.75rem; color: #a1a1aa; margin: 0.125rem 0 0; }
+.ann-modal__desc { font-size: 0.875rem; color: #a1a1aa; margin: 0 0 1.25rem; }
+.ann-modal__highlight { color: #fff; font-weight: 500; }
+.ann-modal__actions { display: flex; gap: 0.75rem; }
+.ann-modal__btn { flex: 1; padding: 0.625rem 1rem; border-radius: 12px; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all 150ms; border: none; }
+.ann-modal__btn--danger { background: linear-gradient(to right, #dc2626, #e11d48); color: #fff; }
+.ann-modal__btn--danger:hover { opacity: 0.9; }
+.ann-modal__btn--cancel { background: #27272a; color: #d4d4d8; }
+.ann-modal__btn--cancel:hover { background: #3f3f46; }

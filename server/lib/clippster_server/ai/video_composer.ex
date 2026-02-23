@@ -154,6 +154,76 @@ defmodule ClippsterServer.AI.VideoComposer do
   # ---------------------------------------------------------------------------
 
   defp plan_scenes(ctx, api_key) do
+    # First, check if the discovery conversation produced a user-approved scene plan
+    case extract_discovery_scenes(ctx) do
+      {:ok, scenes} ->
+        Logger.info("[VideoComposer] Using user-approved discovery scene plan (#{length(scenes)} scenes)")
+        {:ok, scenes}
+
+      :none ->
+        # No discovery scenes — fall back to AI scene planning
+        plan_scenes_with_ai(ctx, api_key)
+    end
+  end
+
+  defp extract_discovery_scenes(ctx) do
+    # Look for the USER-APPROVED SCENE PLAN section in the prompt
+    case Regex.run(~r/## USER-APPROVED SCENE PLAN\n.*?\n(\[.*\])/s, ctx.prompt) do
+      [_, json_str] ->
+        case Jason.decode(json_str) do
+          {:ok, scenes} when is_list(scenes) and length(scenes) > 0 ->
+            media_items = ctx.media || []
+
+            converted = scenes
+            |> Enum.with_index()
+            |> Enum.reduce({[], 0}, fn {scene, idx}, {acc, cumulative_start} ->
+              duration = Map.get(scene, "duration", 5)
+              start_time = cumulative_start
+              end_time = cumulative_start + duration
+
+              # Map mediaNames to mediaPaths by matching against uploaded media filenames
+              media_names = Map.get(scene, "mediaNames", [])
+              media_paths = Enum.flat_map(media_names, fn name ->
+                case Enum.find(media_items, fn item ->
+                  item_name = Map.get(item, "name", "")
+                  String.downcase(item_name) == String.downcase(name)
+                end) do
+                  nil -> []
+                  item ->
+                    path = get_media_path(item)
+                    if path, do: [path], else: []
+                end
+              end)
+
+              converted_scene = %{
+                "index" => idx,
+                "description" => Map.get(scene, "description", "Scene #{idx + 1}"),
+                "startTime" => start_time,
+                "endTime" => end_time,
+                "mediaPaths" => media_paths,
+                "transcriptSegment" => "",
+                "audioPeaks" => [],
+                "mood" => Map.get(scene, "mood", "auto"),
+                "textOverlay" => Map.get(scene, "textOverlay"),
+                "effects" => Map.get(scene, "effects")
+              }
+
+              {acc ++ [converted_scene], end_time}
+            end)
+            |> elem(0)
+
+            {:ok, converted}
+
+          _ ->
+            :none
+        end
+
+      _ ->
+        :none
+    end
+  end
+
+  defp plan_scenes_with_ai(ctx, api_key) do
     system_prompt = """
     You are a professional video editor planning scenes for a composition.
 
@@ -399,6 +469,8 @@ defmodule ClippsterServer.AI.VideoComposer do
     transcript_segment = Map.get(scene, "transcriptSegment", "")
     audio_peaks = Map.get(scene, "audioPeaks", [])
     mood = Map.get(scene, "mood", "auto")
+    text_overlay = Map.get(scene, "textOverlay")
+    discovery_effects = Map.get(scene, "effects")
 
     scene_context = all_scenes
     |> Enum.map(fn s ->
@@ -419,6 +491,30 @@ defmodule ClippsterServer.AI.VideoComposer do
       ""
     end
 
+    # Build discovery hints from user-approved scene plan
+    discovery_hints = cond do
+      text_overlay && discovery_effects ->
+        """
+        ## USER-APPROVED HINTS (from discovery conversation)
+        The user approved this scene with these specific choices — follow them:
+        - Text overlay: "#{text_overlay}" — use this as the primary text/headline for this scene
+        - Effects: #{discovery_effects} — use these specific effect templates/types
+        """
+      text_overlay ->
+        """
+        ## USER-APPROVED HINTS (from discovery conversation)
+        The user approved this scene with this specific text:
+        - Text overlay: "#{text_overlay}" — use this as the primary text/headline for this scene
+        """
+      discovery_effects ->
+        """
+        ## USER-APPROVED HINTS (from discovery conversation)
+        The user approved this scene with these specific effects:
+        - Effects: #{discovery_effects} — use these specific effect templates/types
+        """
+      true -> ""
+    end
+
     user_prompt = """
     Generate the OVERLAY tracks for Scene #{scene_index + 1} of the video.
 
@@ -428,6 +524,8 @@ defmodule ClippsterServer.AI.VideoComposer do
     - Mood: #{mood}
     #{if transcript_segment != "", do: "- Transcript: #{transcript_segment}", else: ""}
     #{peaks_context}
+
+    #{discovery_hints}
 
     ## Full Scene Plan (for context)
     #{scene_context}

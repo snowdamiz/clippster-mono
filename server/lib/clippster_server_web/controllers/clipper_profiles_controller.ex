@@ -494,6 +494,31 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   end
 
   @doc """
+  GET /api/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url
+  Returns a presigned URL for a portfolio clip thumbnail on a public profile.
+  No ownership check - clip must belong to the profile identified by slug.
+  """
+  def public_portfolio_clip_thumbnail_presigned_url(conn, %{"slug" => slug, "clip_id" => clip_id}) do
+    with %{} = profile <- ClipperProfiles.get_profile_by_slug(slug),
+         %ClipperPortfolioClip{} = clip <- ClipperProfiles.get_portfolio_clip(clip_id),
+         true <- clip.clipper_profile_id == profile.id do
+      if clip.thumbnail_url do
+        case Storage.presigned_url(clip.thumbnail_url, expires_in: 3600) do
+          {:ok, url} ->
+            json(conn, %{success: true, url: url})
+          {:error, _} ->
+            json(conn, %{success: true, url: clip.thumbnail_url})
+        end
+      else
+        conn |> put_status(:not_found) |> json(%{success: false, error: "No thumbnail available"})
+      end
+    else
+      nil -> conn |> put_status(:not_found) |> json(%{success: false, error: "Not found"})
+      false -> conn |> put_status(:not_found) |> json(%{success: false, error: "Not found"})
+    end
+  end
+
+  @doc """
   GET /api/clippers
   List public clipper profiles with filters.
   """

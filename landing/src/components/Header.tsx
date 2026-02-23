@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Menu, X, Apple, Monitor, Loader2, Clock } from 'lucide-react'
+import { Menu, X, Apple, Monitor, Loader2 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
 import { useDownloadContext } from '../context/DownloadContext'
@@ -15,7 +15,7 @@ export function Header() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
-  const { downloadsEnabled, openWaitlistModal } = useDownloadContext()
+  const { downloadsEnabled, openBetaCodeModal } = useDownloadContext()
   const location = useLocation()
   const navigate = useNavigate()
   
@@ -102,11 +102,13 @@ export function Header() {
               </div>
             ) : !downloadsEnabled ? (
               <button
-                onClick={openWaitlistModal}
+                onClick={openBetaCodeModal}
                 className="px-5 py-2.5 rounded-lg bg-[#141416] text-zinc-300 font-medium text-sm border border-[#1f1f23] flex items-center gap-2 cursor-pointer hover:border-[rgba(255,255,255,0.1)] hover:text-white transition-colors"
               >
-                <Clock className="w-4 h-4" />
-                Coming Soon
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                Enter Beta Code
               </button>
             ) : primaryDownload ? (
               <>
@@ -181,12 +183,14 @@ export function Header() {
                 <button
                   onClick={() => {
                     setIsMobileMenuOpen(false)
-                    openWaitlistModal()
+                    openBetaCodeModal()
                   }}
                   className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-[rgba(255,255,255,0.05)] text-zinc-300 font-medium border border-[#1f1f23]"
                 >
-                  <Clock className="w-4 h-4" />
-                  Coming Soon
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                  </svg>
+                  Enter Beta Code
                 </button>
               ) : primaryDownload && (
                 <>

@@ -163,7 +163,7 @@
               <div class="portfolio-grid">
                 <div v-for="clip in profile.portfolio_clips" :key="clip.id" class="portfolio-item">
                   <div class="portfolio-item__thumbnail">
-                    <img v-if="clip.thumbnail_url" :src="clip.thumbnail_url" class="portfolio-item__thumbnail-img" />
+                    <img v-if="thumbnailUrls.get(clip.id) || clip.thumbnail_url" :src="thumbnailUrls.get(clip.id) || clip.thumbnail_url || undefined" class="portfolio-item__thumbnail-img" />
                     <div v-else class="portfolio-item__thumbnail-placeholder">
                       <Video class="portfolio-item__thumbnail-icon" />
                     </div>
@@ -470,6 +470,7 @@
     getBadgeLabel,
     getBadgeColor,
     getPublicPortfolioClipPresignedUrl,
+    getPublicPortfolioClipThumbnailPresignedUrl,
   } from '@/services/clipperProfilesApi';
   import { useToast } from '@/composables/useToast';
   import { formatLastActive, isOnline } from '@/utils/timeUtils';
@@ -481,6 +482,7 @@
 
   const loading = ref(true);
   const profile = ref<ClipperProfile | null>(null);
+  const thumbnailUrls = ref<Map<number, string>>(new Map());
 
   const breadcrumbs = computed(() => {
     const from = route.query.from as string | undefined;
@@ -534,6 +536,24 @@
     showVideoPlayer.value = false;
     selectedClip.value = null;
     videoPlaybackUrl.value = null;
+  };
+
+  // Load presigned URLs for portfolio clip thumbnails
+  const loadThumbnailUrls = async () => {
+    if (!profile.value?.portfolio_clips?.length || !profile.value.slug) return;
+    
+    for (const clip of profile.value.portfolio_clips) {
+      if (clip.thumbnail_url) {
+        try {
+          const url = await getPublicPortfolioClipThumbnailPresignedUrl(profile.value.slug, clip.id);
+          if (url) {
+            thumbnailUrls.value.set(clip.id, url);
+          }
+        } catch (error) {
+          console.error(`Failed to load thumbnail for clip ${clip.id}:`, error);
+        }
+      }
+    }
   };
 
   // Endorsement dialog state
@@ -621,9 +641,11 @@
 
     loading.value = true;
     try {
-      const response = await getClipperBySlug(slug);
-      if (response.success) {
-        profile.value = response.profile;
+      const data = await getClipperBySlug(slug);
+      if (data.success && data.profile) {
+        profile.value = data.profile;
+        // Load presigned URLs for thumbnails
+        await loadThumbnailUrls();
       }
     } catch (error) {
       console.error('Failed to load profile:', error);
@@ -632,8 +654,20 @@
     }
   };
 
-  onMounted(() => {
-    loadProfile();
+  onMounted(async () => {
+    const slug = route.params.slug as string;
+    try {
+      const data = await getClipperBySlug(slug);
+      if (data.success && data.profile) {
+        profile.value = data.profile;
+        // Load presigned URLs for thumbnails
+        await loadThumbnailUrls();
+      }
+    } catch (error) {
+      console.error('Failed to load profile:', error);
+    } finally {
+      loading.value = false;
+    }
   });
 </script>
 

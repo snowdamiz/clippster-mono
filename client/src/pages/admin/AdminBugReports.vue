@@ -168,6 +168,7 @@
 
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
+  import { formatDateTime } from '@/utils/dateTimeUtils';
   import { FileText, RefreshCw, Check, Trash2, Loader2 } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
@@ -245,13 +246,7 @@
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      return formatDateTime(dateString);
     } catch {
       return 'Invalid date';
     }

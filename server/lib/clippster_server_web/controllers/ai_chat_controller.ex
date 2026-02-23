@@ -37,7 +37,7 @@ defmodule ClippsterServerWeb.AIChatController do
         # Add initial system greeting as first message
         {:ok, _greeting} = ChatSessions.create_message(
           session.id, "assistant",
-          "Hey! I'm your AI video editor. Upload your media and tell me what kind of video you want to create — or paste a YouTube link as a style reference. I'll help you nail the perfect look.",
+          "Hey! I'm your AI video editor. Let's build something great together — tell me about the video you want to create. What's it for, and who's going to see it?",
           %{"ready_to_generate" => false, "summary" => nil}
         )
 

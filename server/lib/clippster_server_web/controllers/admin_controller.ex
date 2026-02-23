@@ -698,108 +698,6 @@ defmodule ClippsterServerWeb.AdminController do
 
   @doc """
   Extend a user's subscription.
-  Requires admin authentication.
-  """
-  def extend_subscription(conn, %{"user_id" => user_id_string} = params) do
-    case parse_integer(user_id_string) do
-      {:ok, user_id} ->
-        days = Map.get(params, "days", "30")
-        grant_credits = Map.get(params, "grant_credits", "false")
-
-        days_int = parse_days(days)
-        grant_credits_bool = parse_boolean(grant_credits)
-
-        case Subscriptions.admin_extend_subscription(user_id, days_int, grant_credits_bool) do
-          {:ok, _result} ->
-            subscription_info = Subscriptions.get_subscription_status(user_id)
-
-            json(conn, %{
-              success: true,
-              message: "Successfully extended subscription by #{days_int} days",
-              subscription: subscription_info
-            })
-
-          {:error, :no_tier} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "User has no subscription tier to extend"})
-
-          {:error, :invalid_tier} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "Invalid subscription tier"})
-
-          {:error, reason} ->
-            conn
-            |> put_status(500)
-            |> json(%{success: false, error: "Failed to extend subscription: #{inspect(reason)}"})
-        end
-
-      {:error, _} ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: "Invalid user ID"})
-    end
-  end
-
-  @doc """
-  Change a user's subscription tier.
-  Requires admin authentication.
-  """
-  def change_subscription_tier(conn, %{"user_id" => user_id_string} = params) do
-    case parse_integer(user_id_string) do
-      {:ok, user_id} ->
-        tier = Map.get(params, "tier")
-        grant_credits = Map.get(params, "grant_credits", "false")
-
-        case validate_tier(tier) do
-          :ok ->
-            grant_credits_bool = parse_boolean(grant_credits)
-
-            case Subscriptions.admin_change_tier(user_id, tier, grant_credits_bool) do
-              {:ok, _result} ->
-                subscription_info = Subscriptions.get_subscription_status(user_id)
-
-                json(conn, %{
-                  success: true,
-                  message: "Successfully changed subscription tier to #{tier}",
-                  subscription: subscription_info
-                })
-
-              {:error, :invalid_tier} ->
-                conn
-                |> put_status(400)
-                |> json(%{success: false, error: "Invalid subscription tier"})
-
-              {:error, reason} ->
-                conn
-                |> put_status(500)
-                |> json(%{success: false, error: "Failed to change tier: #{inspect(reason)}"})
-            end
-
-          {:error, reason} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: reason})
-        end
-
-      {:error, _} ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: "Invalid user ID"})
-    end
-  end
-
-  @doc """
-  Cancel a user's subscription.
-  Requires admin authentication.
-  """
-  def cancel_user_subscription(conn, %{"user_id" => user_id_string}) do
-    case parse_integer(user_id_string) do
-      {:ok, user_id} ->
-        case Subscriptions.cancel_subscription(user_id) do
-          {:ok, _user} ->
-            subscription_info = Subscriptions.get_subscription_status(user_id)
 
             json(conn, %{
               success: true,
@@ -2044,5 +1942,89 @@ defmodule ClippsterServerWeb.AdminController do
       message: "Leaderboard recalculated successfully",
       recalculated: results
     })
+  end
+
+  # ============================================================================
+  # Waitlist Management
+  # ============================================================================
+
+  @doc """
+  Invites all uninvited waitlist entries.
+  """
+  def invite_waitlist(conn, params) do
+    admin_id = conn.assigns.current_user.id
+
+    discount_config = %{
+      percent_off: Map.get(params, "percent_off", 30),
+      duration_months: Map.get(params, "duration_months", 1),
+      allowed_tiers: Map.get(params, "allowed_tiers", ["creator"])
+    }
+
+    {:ok, results} = ClippsterServer.Waitlist.invite_all_uninvited(admin_id, discount_config)
+    
+    json(conn, %{
+      success: true,
+      invited_count: results.invited_count,
+      skipped_count: results.skipped_count,
+      errors: format_invite_errors(results.errors)
+    })
+  end
+
+  @doc """
+  Invites a single waitlist entry by ID.
+  """
+  def invite_waitlist_entry(conn, %{"id" => entry_id_string} = params) do
+    admin_id = conn.assigns.current_user.id
+
+    discount_config = %{
+      percent_off: Map.get(params, "percent_off", 30),
+      duration_months: Map.get(params, "duration_months", 1),
+      allowed_tiers: Map.get(params, "allowed_tiers", ["creator"])
+    }
+
+    case Integer.parse(entry_id_string) do
+      {entry_id, ""} ->
+        entry = ClippsterServer.Repo.get(ClippsterServer.Waitlist.WaitlistEntry, entry_id)
+
+        if entry do
+          case ClippsterServer.Waitlist.invite_entry(entry, admin_id, discount_config) do
+            {:ok, updated_entry} ->
+              json(conn, %{
+                success: true,
+                entry: %{
+                  id: updated_entry.id,
+                  email: updated_entry.email,
+                  invited_at: updated_entry.invited_at,
+                  email_sent_at: updated_entry.email_sent_at
+                }
+              })
+
+            {:error, {:already_invited, email}} ->
+              conn
+              |> put_status(:conflict)
+              |> json(%{success: false, error: "#{email} has already been invited"})
+
+            {:error, reason} ->
+              conn
+              |> put_status(:internal_server_error)
+              |> json(%{success: false, error: inspect(reason)})
+          end
+        else
+          conn
+          |> put_status(:not_found)
+          |> json(%{success: false, error: "Waitlist entry not found"})
+        end
+
+      _ ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{success: false, error: "Invalid entry ID"})
+    end
+  end
+
+  defp format_invite_errors(errors) do
+    Enum.map(errors, fn {:error, {email, reason}} ->
+      %{email: email, error: inspect(reason)}
+    end)
   end
 end

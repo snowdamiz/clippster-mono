@@ -374,9 +374,78 @@ defmodule ClippsterServer.PromoCodes do
     end
   end
 
+  @doc """
+  Creates a unique per-email Stripe discount code for waitlist invites.
+  Returns {:ok, %{code: code, stripe_promo_id: id}} or {:error, reason}.
+  """
+  def create_waitlist_discount_code(waitlist_entry_id, admin_id, config) do
+    percent_off = Map.get(config, :percent_off, 30)
+    duration_months = Map.get(config, :duration_months, 1)
+    _allowed_tiers = Map.get(config, :allowed_tiers, ["creator"])
+
+    # Generate unique code
+    case generate_unique_beta_discount_code() do
+      nil ->
+        {:error, "Failed to generate unique discount code after multiple attempts"}
+
+      code ->
+        # Create Stripe coupon
+        coupon_params = %{
+          percent_off: percent_off,
+          duration: "repeating",
+          duration_in_months: duration_months
+        }
+
+        with {:ok, coupon} <- Stripe.Coupon.create(coupon_params),
+             {:ok, promo_code} <- create_stripe_promo_with_metadata(code, coupon.id, waitlist_entry_id, admin_id) do
+          {:ok, %{code: code, stripe_promo_id: promo_code.id}}
+        else
+          {:error, %Stripe.Error{message: message}} -> {:error, message}
+          {:error, error} -> {:error, inspect(error)}
+        end
+    end
+  end
+
   # ============================================================================
   # Private Helper Functions
   # ============================================================================
+
+  defp create_stripe_promo_with_metadata(code, coupon_id, waitlist_entry_id, admin_id) do
+    promo_params = %{
+      coupon: coupon_id,
+      code: code,
+      max_redemptions: 1,
+      metadata: %{
+        source: "waitlist_invite",
+        waitlist_entry_id: waitlist_entry_id,
+        invited_by_admin_id: admin_id,
+        invited_at: DateTime.utc_now() |> DateTime.to_iso8601()
+      }
+    }
+
+    Stripe.PromotionCode.create(promo_params)
+  end
+
+  defp generate_unique_beta_discount_code(max_attempts \\ 5) do
+    Enum.reduce_while(1..max_attempts, nil, fn _attempt, _acc ->
+      code = "BETA-" <> generate_random_string(8)
+
+      # Check if code exists in local DB
+      case get_active_code(code) do
+        nil -> {:halt, code}
+        _ -> {:cont, nil}
+      end
+    end)
+  end
+
+  defp generate_random_string(length) do
+    chars = ~c"ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    chars_list = Enum.to_list(chars)
+
+    1..length
+    |> Enum.map(fn _ -> Enum.random(chars_list) end)
+    |> List.to_string()
+  end
 
   defp get_active_code(code) do
     PromoCode

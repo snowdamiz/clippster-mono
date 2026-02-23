@@ -104,17 +104,18 @@ export async function getAllUsageCounts(
 }
 
 /**
- * Gets today's date string in YYYY-MM-DD format (EST timezone).
- * Resets at midnight EST.
+ * Gets today's date string in YYYY-MM-DD format (Eastern Time).
+ * Uses America/New_York timezone which automatically handles EST/EDT transitions.
+ * Resets at midnight Eastern Time.
  */
 function getTodayDateString(): string {
   const now = new Date();
-  // Convert to EST (UTC-5)
-  const estOffset = -5 * 60;
-  const utcOffset = now.getTimezoneOffset();
-  const estTime = new Date(now.getTime() + (utcOffset + estOffset) * 60000);
-  const year = estTime.getFullYear();
-  const month = String(estTime.getMonth() + 1).padStart(2, '0');
-  const day = String(estTime.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  // en-CA locale formats as YYYY-MM-DD
+  return formatter.format(now);
 }

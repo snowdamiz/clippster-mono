@@ -1,5 +1,6 @@
 import { ref, computed, watch, type Ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { formatDate as fmtDate, formatDateTime } from '@/utils/dateTimeUtils';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/composables/useToast';
 import api from '@/services/api';
@@ -622,7 +623,7 @@ export function useOrganization(orgIdOverride?: string) {
 
   // Utility functions
   function formatDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString();
+    return fmtDate(dateStr);
   }
 
   function formatAllocation(value: string | undefined): string {
@@ -633,14 +634,7 @@ export function useOrganization(orgIdOverride?: string) {
   }
 
   function formatTransactionDate(dateStr: string) {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatDateTime(dateStr);
   }
 
   function getPaymentMethodLabel(method: string) {

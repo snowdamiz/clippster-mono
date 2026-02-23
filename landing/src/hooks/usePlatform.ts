@@ -16,7 +16,7 @@ export interface PlatformDownload {
 }
 
 // Backend API endpoint for release info (cached server-side)
-const API_URL = 'https://clippster-server.fly.dev/api/releases/latest'
+const API_URL = `${import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'}/api/releases/latest`
 const GITHUB_RELEASES_URL = 'https://github.com/snowdamiz/clippster-releases/releases/latest'
 
 // Platform configurations

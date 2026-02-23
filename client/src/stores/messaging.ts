@@ -26,6 +26,7 @@ import {
 } from '@/services/messagingApi';
 import { messagingSocket } from '@/services/messagingSocket';
 import { useAuthStore } from './auth';
+import { useToast } from '@/composables/useToast';
 
 export const useMessagingStore = defineStore('messaging', () => {
   // ============================================================================
@@ -42,6 +43,7 @@ export const useMessagingStore = defineStore('messaging', () => {
   const isLoadingMessages = ref(false);
   const currentOrgId = ref<number | null>(null);
   const isSocketConnected = ref(false);
+  const isInitialized = ref(false);
 
   // ============================================================================
   // Computed
@@ -93,6 +95,10 @@ export const useMessagingStore = defineStore('messaging', () => {
     isLoading.value = true;
 
     try {
+      messagingSocket.setOnConnectionStateChange((connected) => {
+        isSocketConnected.value = connected;
+      });
+
       // Connect to WebSocket
       await messagingSocket.connect(authStore.token, authStore.user.id);
       isSocketConnected.value = true;
@@ -123,7 +129,15 @@ export const useMessagingStore = defineStore('messaging', () => {
       console.error('[MessagingStore] Failed to initialize:', error);
     } finally {
       isLoading.value = false;
+      isInitialized.value = true;
     }
+  }
+
+  /**
+   * Add a conversation to the local store.
+   */
+  function addConversation(conversation: Conversation) {
+    conversations.value.set(conversation.id, conversation);
   }
 
   /**
@@ -341,8 +355,12 @@ export const useMessagingStore = defineStore('messaging', () => {
       throw new Error('Not authenticated');
     }
 
+    messagingSocket.setOnConnectionStateChange((connected) => {
+      isSocketConnected.value = connected;
+    });
+
     // Initialize WebSocket connection if not connected
-    if (!isSocketConnected.value) {
+    if (!messagingSocket.isConnected()) {
       await messagingSocket.connect(authStore.token, authStore.user.id);
       isSocketConnected.value = true;
 
@@ -370,8 +388,12 @@ export const useMessagingStore = defineStore('messaging', () => {
       throw new Error('Not authenticated');
     }
 
+    messagingSocket.setOnConnectionStateChange((connected) => {
+      isSocketConnected.value = connected;
+    });
+
     // Initialize WebSocket connection if not connected
-    if (!isSocketConnected.value) {
+    if (!messagingSocket.isConnected()) {
       await messagingSocket.connect(authStore.token, authStore.user.id);
       isSocketConnected.value = true;
 
@@ -491,6 +513,7 @@ export const useMessagingStore = defineStore('messaging', () => {
    * Cleanup and disconnect.
    */
   function cleanup() {
+    messagingSocket.setOnConnectionStateChange(null);
     messagingSocket.disconnect();
     isSocketConnected.value = false;
     conversations.value.clear();
@@ -536,6 +559,16 @@ export const useMessagingStore = defineStore('messaging', () => {
       conv.lastMessageAt = message.insertedAt;
       conv.lastMessagePreview = message.content.slice(0, 100);
       conversations.value.set(conversationId, { ...conv });
+    }
+
+    // Show desktop notification if app is not focused (not in-app notification)
+    // Only show for messages not from the current user
+    const authStore = useAuthStore();
+    if (message.senderId !== authStore.user?.id) {
+      const { info } = useToast();
+      const senderName = message.sender?.displayName || 'Someone';
+      const preview = message.content.length > 50 ? message.content.slice(0, 50) + '...' : message.content;
+      info(`${senderName}`, preview, undefined, 'social');
     }
 
     // Add to messages if loaded
@@ -626,6 +659,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     isLoadingMessages,
     currentOrgId,
     isSocketConnected,
+    isInitialized,
 
     // Computed
     conversationList,
@@ -636,6 +670,7 @@ export const useMessagingStore = defineStore('messaging', () => {
 
     // Actions
     initialize,
+    addConversation,
     loadConversations,
     loadUnreadCounts,
     setActiveConversation,

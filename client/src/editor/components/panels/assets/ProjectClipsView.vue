@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { formatUnixDate } from "@/utils/dateTimeUtils";
 import { appDataDir } from "@tauri-apps/api/path";
 import { useEditor } from "../../../composables/useEditor";
 import { getAllProjects, getChildProjects } from "@/services/database/projects";
@@ -82,8 +83,7 @@ function formatDuration(seconds: number | null): string {
 }
 
 function formatDate(ts: number): string {
-	const d = new Date(ts * 1000);
-	return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+	return formatUnixDate(ts);
 }
 
 function getCachedThumbnail(clipId: string): string | undefined {

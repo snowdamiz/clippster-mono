@@ -363,6 +363,16 @@ const router = createRouter({
           name: 'admin-mod-logs',
           component: () => import('@/pages/admin/AdminModLogs.vue'),
         },
+        {
+          path: 'messaging',
+          name: 'admin-messaging',
+          component: () => import('@/pages/admin/AdminMessaging.vue'),
+        },
+        {
+          path: 'announcements',
+          name: 'admin-announcements',
+          component: () => import('@/pages/admin/AdminAnnouncements.vue'),
+        },
       ],
     },
     // Affiliate dashboard (authenticated, affiliate users only)

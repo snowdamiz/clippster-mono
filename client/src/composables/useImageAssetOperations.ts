@@ -25,7 +25,7 @@ export function useImageAssetOperations() {
       imageAssets.value = await getAllImageAssets();
     } catch (err) {
       console.error('Failed to load image assets:', err);
-      error('Failed to load image assets', String(err));
+      error('Failed to load image assets', String(err), undefined, 'projects');
     } finally {
       loading.value = false;
     }
@@ -78,7 +78,7 @@ export function useImageAssetOperations() {
       console.log('Image asset uploaded:', imageAssetId);
 
       // Show success toast
-      success('Image uploaded', `"${result.original_filename}" has been uploaded successfully`);
+      success('Image uploaded', `"${result.original_filename}" has been uploaded successfully`, undefined, 'projects');
 
       // Reload image assets
       await loadImageAssets();
@@ -95,7 +95,7 @@ export function useImageAssetOperations() {
       return { success: true, imageAssetId };
     } catch (err) {
       console.error('Image asset upload error:', err);
-      error('Upload failed', `Failed to upload image: ${err}`);
+      error('Upload failed', `Failed to upload image: ${err}`, undefined, 'projects');
       return { success: false, error: err };
     } finally {
       uploading.value = false;
@@ -115,14 +115,14 @@ export function useImageAssetOperations() {
       await deleteImageAsset(imageAsset.id);
 
       // Show success toast
-      success('Image deleted', `"${deletedName}" has been deleted successfully`);
+      success('Image deleted', `"${deletedName}" has been deleted successfully`, undefined, 'projects');
 
       // Reload image assets
       await loadImageAssets();
 
       return { success: true };
     } catch (err) {
-      error('Delete failed', `Failed to delete image: ${err}`);
+      error('Delete failed', `Failed to delete image: ${err}`, undefined, 'projects');
       return { success: false, error: err };
     }
   }

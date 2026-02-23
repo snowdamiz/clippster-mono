@@ -32,14 +32,14 @@ defmodule ClippsterServer.OrganizationSubscriptions do
 
   # Base subscription tiers
   @org_subscription_tiers %{
-    "solo" => %{name: "Solo", seats: nil, monthly_credits: 0, usd: 149.99},
-    "enterprise_base" => %{name: "Enterprise Base", seats: 5, monthly_credits: 0, usd: 300},
-    "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 500},
+    "solo" => %{name: "Solo", seats: 0, monthly_credits: 0, usd: 149.99},
+    "enterprise_base" => %{name: "Enterprise Base", seats: 5, monthly_credits: 0, usd: 299.99},
+    "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 499.99},
     "enterprise_unlimited" => %{
       name: "Enterprise Unlimited",
       seats: nil,
       monthly_credits: 100_000,
-      usd: 1800
+      usd: 1899.99
     }
   }
 

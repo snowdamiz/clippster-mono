@@ -202,6 +202,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted } from 'vue';
+  import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     Handshake,
     Loader2,
@@ -328,7 +329,7 @@
   }
 
   function formatDate(dateStr: string) {
-    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return fmtDate(dateStr);
   }
 
   function formatEventType(type: string) {

@@ -218,7 +218,6 @@
                 </div>
               </div>
 
-
               <!-- Controls Overlay -->
               <div
                 :class="[
@@ -358,6 +357,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted, nextTick, type CSSProperties } from 'vue';
+  import { formatTime as fmtTime } from '@/utils/dateTimeUtils';
   import {
     X,
     Users,
@@ -427,10 +427,6 @@
   // Composable
   const viewer = useLivestreamViewer();
   const livestreamStore = useLivestreamStore();
-
-  // DEBUG: Visible overlay for production diagnostics (toggle with triple-click on title bar area)
-  const showDebugOverlay = ref(true);
-  const hlsDebugState = computed(() => viewer.hlsPlaybackState.value);
 
   // UI State
   const isFullscreen = ref(false);
@@ -753,14 +749,7 @@
       }
 
       // Generate clip name
-      const timestamp = new Date()
-        .toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false,
-        })
-        .replace(/:/g, '-');
+      const timestamp = fmtTime(new Date()).replace(/:/g, '-').replace(/\s*(AM|PM)/i, '');
       const clipName = `Quick Clip - ${timestamp}`;
       const clipEndTime = viewer.state.value.playbackPosition;
       const clipStartTime = clipEndTime - QUICK_CLIP_DURATION;

@@ -553,6 +553,7 @@
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
   import { useRouter } from 'vue-router';
+  import { formatDateTime } from '@/utils/dateTimeUtils';
   import { Building2, RefreshCw, Loader2, CreditCard, Users, X, AlertCircle, Plus, Crown, Settings, XCircle, ChevronDown, KeyRound, Trash2 } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
@@ -717,9 +718,9 @@
 
   const createTierOptions = [
     { value: 'solo', label: 'Solo ($149.99)' },
-    { value: 'enterprise_base', label: 'Enterprise Base ($300)' },
-    { value: 'enterprise_ai', label: 'Enterprise AI ($500)' },
-    { value: 'enterprise_unlimited', label: 'Enterprise Unlimited ($1800)' },
+    { value: 'enterprise_base', label: 'Enterprise Base ($299.99)' },
+    { value: 'enterprise_ai', label: 'Enterprise AI ($499.99)' },
+    { value: 'enterprise_unlimited', label: 'Enterprise Unlimited ($1899.99)' },
   ];
 
   const getTierDisplayName = (tierValue: string) => {
@@ -756,13 +757,7 @@
   const formatDate = (dateString: string) => {
     if (!dateString) return 'N/A';
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
+      return formatDateTime(dateString);
     } catch {
       return 'Invalid date';
     }

@@ -6,7 +6,7 @@
       v-model:open="toast.open"
       :duration="toast.duration"
       class="toast-root"
-      :class="[`toast-root--${toast.type}`]"
+      :class="[`toast-root--${toast.type}`, { 'toast-root--left': isLeftPosition }]"
       @update:open="(open) => !open && removeToast(toast.id)"
     >
       <!-- Accent Bar -->
@@ -37,17 +37,51 @@
       </div>
     </ToastRoot>
     <ToastViewport
-      class="fixed bottom-6 right-6 flex flex-col gap-3 w-[380px] max-w-[calc(100vw-3rem)] z-[9999] outline-none"
+      class="fixed flex flex-col gap-3 w-[380px] max-w-[calc(100vw-3rem)] z-[9999] outline-none"
+      :class="viewportPositionClass"
     />
   </ToastProvider>
 </template>
 
 <script setup lang="ts">
+  import { computed } from 'vue';
   import { ToastProvider, ToastRoot, ToastTitle, ToastDescription, ToastClose, ToastViewport } from 'radix-vue';
   import { useToastStore } from '@/composables/useToast';
+  import { useUserPreferencesStore } from '@/stores/userPreferences';
   import { CheckCircle, XCircle, AlertTriangle, Info, X, Loader2 } from 'lucide-vue-next';
 
   const { toasts, removeToast } = useToastStore();
+
+  // Dynamic toast position based on user preferences
+  function getPrefsStore() {
+    try {
+      return useUserPreferencesStore();
+    } catch {
+      return null;
+    }
+  }
+
+  const viewportPositionClass = computed(() => {
+    const prefs = getPrefsStore();
+    const position = prefs?.toastPosition ?? 'bottom-right';
+    switch (position) {
+      case 'top-right':
+        return 'top-6 right-6';
+      case 'top-left':
+        return 'top-6 left-6';
+      case 'bottom-left':
+        return 'bottom-6 left-6';
+      case 'bottom-right':
+      default:
+        return 'bottom-6 right-6';
+    }
+  });
+
+  const isLeftPosition = computed(() => {
+    const prefs = getPrefsStore();
+    const position = prefs?.toastPosition ?? 'bottom-right';
+    return position === 'top-left' || position === 'bottom-left';
+  });
 </script>
 
 <style>
@@ -66,6 +100,10 @@
 
   .toast-root[data-state='open'] {
     animation: toastSlideIn 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .toast-root--left[data-state='open'] {
+    animation: toastSlideInLeft 250ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .toast-root[data-state='closed'] {
@@ -209,6 +247,17 @@
     from {
       opacity: 0;
       transform: translateX(calc(100% + 1.5rem)) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+
+  @keyframes toastSlideInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(calc(-100% - 1.5rem)) scale(0.95);
     }
     to {
       opacity: 1;

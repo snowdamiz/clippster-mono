@@ -439,6 +439,7 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, Teleport, Transition } from 'vue';
   import { useRouter, useRoute } from 'vue-router';
+  import { formatDate, formatDateTime } from '@/utils/dateTimeUtils';
   import PageLayout from '@/components/PageLayout.vue';
   import EmptyState from '@/components/EmptyState.vue';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
@@ -689,22 +690,7 @@
     if (!timestamp) return 'No timestamp';
     const date = new Date(timestamp);
     if (Number.isNaN(date.getTime())) return 'Invalid date';
-
-    const dateOptions: Intl.DateTimeFormatOptions = {
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-    };
-
-    if (includeTime) {
-      return date.toLocaleString(undefined, {
-        ...dateOptions,
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    }
-
-    return date.toLocaleDateString(undefined, dateOptions);
+    return includeTime ? formatDateTime(date) : formatDate(date);
   }
 
   // Pagination
