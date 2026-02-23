@@ -26,6 +26,7 @@ mod clip_extractor_commands;
 mod utils;
 mod font_commands;
 mod hls_proxy;
+mod avatar_proxy;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -156,18 +157,17 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     // macOS-specific: Set window collection behavior to appear over fullscreen apps
     #[cfg(target_os = "macos")]
     {
-        use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};
-        use cocoa::base::id;
-        
+        use objc::{msg_send, sel, sel_impl};
+        use objc::runtime::Object;
+
         if let Ok(ns_window) = window.ns_window() {
             unsafe {
-                let ns_window = ns_window as id;
+                let ns_window = ns_window as *mut Object;
                 // NSWindowCollectionBehaviorCanJoinAllSpaces (1 << 0) = 1
                 // NSWindowCollectionBehaviorFullScreenAuxiliary (1 << 8) = 256
                 // Combined: allows window to appear in all Spaces and over fullscreen apps
-                let behavior = NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
-                    | NSWindowCollectionBehavior::NSWindowCollectionBehaviorFullScreenAuxiliary;
-                ns_window.setCollectionBehavior_(behavior);
+                let behavior: usize = 1 | 256;
+                let _: () = msg_send![ns_window, setCollectionBehavior: behavior];
             }
         }
     }
@@ -672,13 +672,13 @@ pub fn run() {
                         tauri_plugin_sql::Migration {
                             version: 86,
                             description: "add_source_start_time_to_audio_tracks",
-                            sql: include_str!("../migrations/081_add_source_start_time_to_audio_tracks.sql"),
+                            sql: include_str!("../migrations/091_add_source_start_time_to_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
                             version: 87,
                             description: "add_transcript_raw_json_to_clip_segments",
-                            sql: include_str!("../migrations/083_add_transcript_raw_json_to_clip_segments.sql"),
+                            sql: include_str!("../migrations/092_add_transcript_raw_json_to_clip_segments.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
@@ -1016,6 +1016,9 @@ font_commands::resolve_font_path,
 hls_proxy::read_hls_playlist,
 hls_proxy::read_hls_segment,
 hls_proxy::check_hls_playlist_exists,
+
+// Avatar proxy command
+avatar_proxy::fetch_avatar_image,
 
 // Remotion export commands
 remotion_export::start_remotion_export,
