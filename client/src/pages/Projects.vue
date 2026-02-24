@@ -3683,40 +3683,77 @@
       // Resolve per-ratio intro/outro from creator profile
       const introOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> = {};
       
-      if (folderCreatorProfile.value?.intro_outro_settings) {
+      // New approach: Use separate intro_ratio_settings and outro_ratio_settings
+      // Fall back to intro_outro_settings for backward compatibility
+      const profile = folderCreatorProfile.value;
+      
+      if (profile) {
         try {
-          const introOutroSettings = JSON.parse(folderCreatorProfile.value.intro_outro_settings);
+          // Parse intro ratio settings
+          let introRatioSettings: Record<string, { assetId: number }> = {};
+          if (profile.intro_ratio_settings) {
+            try {
+              introRatioSettings = JSON.parse(profile.intro_ratio_settings);
+            } catch (e) {
+              console.warn('[Projects] Failed to parse intro_ratio_settings:', e);
+            }
+          }
           
+          // Parse outro ratio settings
+          let outroRatioSettings: Record<string, { assetId: number }> = {};
+          if (profile.outro_ratio_settings) {
+            try {
+              outroRatioSettings = JSON.parse(profile.outro_ratio_settings);
+            } catch (e) {
+              console.warn('[Projects] Failed to parse outro_ratio_settings:', e);
+            }
+          }
+          
+          // Fallback: Try old intro_outro_settings format
+          let legacyIntroOutroSettings: Record<string, { introId?: number; outroId?: number }> = {};
+          if (profile.intro_outro_settings && (!profile.intro_ratio_settings && !profile.outro_ratio_settings)) {
+            try {
+              legacyIntroOutroSettings = JSON.parse(profile.intro_outro_settings);
+            } catch (e) {
+              console.warn('[Projects] Failed to parse intro_outro_settings:', e);
+            }
+          }
+          
+          // Resolve assets for each aspect ratio
           for (const ratio of settings.aspectRatios) {
-            const ratioConfig = introOutroSettings[ratio];
-            if (ratioConfig) {
-              const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
-              
-              // Resolve intro for this ratio
-              if (ratioConfig.introId) {
-                const introAsset = await getIntroOutroById(ratioConfig.introId);
-                if (introAsset) {
-                  ratioData.introPath = introAsset.file_path || undefined;
-                  ratioData.introDuration = introAsset.duration || undefined;
-                  console.log(`[Projects] Resolved intro for ${ratio}:`, introAsset.name);
-                }
+            const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
+            
+            // Resolve intro for this ratio
+            const introConfig = introRatioSettings[ratio] || legacyIntroOutroSettings[ratio];
+            const introAssetId = introConfig?.assetId || (introConfig as any)?.introId;
+            if (introAssetId) {
+              const introAsset = await getIntroOutroById(introAssetId);
+              if (introAsset) {
+                ratioData.introPath = introAsset.file_path || undefined;
+                ratioData.introDuration = introAsset.duration || undefined;
+                console.log(`[Projects] Resolved intro for ${ratio}:`, introAsset.name);
               }
-              
-              // Resolve outro for this ratio
-              if (ratioConfig.outroId) {
-                const outroAsset = await getIntroOutroById(ratioConfig.outroId);
-                if (outroAsset) {
-                  ratioData.outroPath = outroAsset.file_path || undefined;
-                  ratioData.outroDuration = outroAsset.duration || undefined;
-                  console.log(`[Projects] Resolved outro for ${ratio}:`, outroAsset.name);
-                }
+            }
+            
+            // Resolve outro for this ratio
+            const outroConfig = outroRatioSettings[ratio] || legacyIntroOutroSettings[ratio];
+            const outroAssetId = outroConfig?.assetId || (outroConfig as any)?.outroId;
+            if (outroAssetId) {
+              const outroAsset = await getIntroOutroById(outroAssetId);
+              if (outroAsset) {
+                ratioData.outroPath = outroAsset.file_path || undefined;
+                ratioData.outroDuration = outroAsset.duration || undefined;
+                console.log(`[Projects] Resolved outro for ${ratio}:`, outroAsset.name);
               }
-              
+            }
+            
+            // Only add to map if we found at least one asset
+            if (ratioData.introPath || ratioData.outroPath) {
               introOutroPerRatio[ratio] = ratioData;
             }
           }
         } catch (e) {
-          console.warn('[Projects] Failed to parse intro_outro_settings:', e);
+          console.warn('[Projects] Failed to resolve per-ratio intro/outro:', e);
         }
       }
 

@@ -300,11 +300,13 @@
   interface Props {
     show: boolean;
     overlayImagePath: string;
+    overlayImageUrl?: string; // Server URL for organization mode
     overlayLabel?: string;
     settings?: PerRatioOverlaySettings | null;
   }
 
   const props = withDefaults(defineProps<Props>(), {
+    overlayImageUrl: '',
     overlayLabel: '',
     settings: null,
   });
@@ -428,7 +430,8 @@
 
   // Load overlay image and measure dimensions
   async function loadOverlayImage() {
-    if (!props.overlayImagePath) {
+    // Priority: server URL (org mode) > local file path
+    if (!props.overlayImageUrl && !props.overlayImagePath) {
       overlayDataUrl.value = null;
       measuredWidth.value = null;
       measuredHeight.value = null;
@@ -437,9 +440,18 @@
 
     loadingOverlay.value = true;
     try {
-      const dataUrl = await invoke<string>('read_file_as_data_url', {
-        filePath: props.overlayImagePath,
-      });
+      let dataUrl: string;
+
+      if (props.overlayImageUrl) {
+        // Organization mode: use server URL directly
+        dataUrl = props.overlayImageUrl;
+      } else {
+        // Local mode: read from file system
+        dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: props.overlayImagePath,
+        });
+      }
+
       overlayDataUrl.value = dataUrl;
 
       // Measure image dimensions
@@ -448,6 +460,11 @@
         measuredWidth.value = img.naturalWidth;
         measuredHeight.value = img.naturalHeight;
         console.log(`[OverlayPositionPicker] Image dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
+      };
+      img.onerror = () => {
+        console.error('[OverlayPositionPicker] Failed to load image for measurement');
+        measuredWidth.value = null;
+        measuredHeight.value = null;
       };
       img.src = dataUrl;
     } catch (err) {
