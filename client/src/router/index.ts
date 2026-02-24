@@ -530,6 +530,13 @@ export function getDefaultRoute(
 // Navigation guard for authentication, admin access, and feature flags
 router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore();
+  const ownedOrganizationId = authStore.user?.owned_organization_id;
+
+  // Org-owner accounts should use organization billing, not personal billing.
+  if (ownedOrganizationId && to.path === '/billing') {
+    next(`/organization/${ownedOrganizationId}/billing`);
+    return;
+  }
 
   // Check if route requires authentication
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
@@ -539,7 +546,10 @@ router.beforeEach(async (to, _from, next) => {
   }
 
   // Check if route requires admin or moderator
-  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || (!authStore.user?.is_admin && !authStore.user?.is_moderator))) {
+  if (
+    to.meta.requiresAdmin &&
+    (!authStore.isAuthenticated || (!authStore.user?.is_admin && !authStore.user?.is_moderator))
+  ) {
     next('/projects');
     return;
   }
@@ -565,13 +575,13 @@ router.beforeEach(async (to, _from, next) => {
         };
         const routeName = typeof to.name === 'string' ? to.name : String(to.name);
         const context = routeLabels[routeName] || `Access ${routeName}`;
-        
+
         // Dispatch subscription gate event
         const event = new CustomEvent('show-subscription-gate', {
           detail: { context, type: 'general' },
         });
         window.dispatchEvent(event);
-        
+
         // Prevent navigation
         next(false);
         return;
@@ -587,11 +597,16 @@ router.beforeEach(async (to, _from, next) => {
     if (orgId && !isBillingPage) {
       // Check subscription status from cached org data or fetch
       try {
-        const { data } = await import('@/services/api').then(m => m.default.get(`/organizations/${orgId}/subscription`));
+        const { data } = await import('@/services/api').then((m) =>
+          m.default.get(`/organizations/${orgId}/subscription`)
+        );
         if (data.success && data.subscription) {
           const status = data.subscription.status;
           if (status === 'none' || status === 'expired') {
-            next({ path: `/organization/${orgId}/billing`, query: { subscription_required: 'true' } });
+            next({
+              path: `/organization/${orgId}/billing`,
+              query: { subscription_required: 'true' },
+            });
             return;
           }
         }

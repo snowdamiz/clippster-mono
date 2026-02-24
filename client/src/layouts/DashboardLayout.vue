@@ -21,31 +21,33 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { useRoute } from 'vue-router';
   import DashboardSidebar from '@/components/DashboardSidebar.vue';
   import AuthModal from '@/components/AuthModal.vue';
   import { useAuthStore } from '@/stores/auth';
   import { useSidebarState } from '@/composables/useSidebarState';
 
   const authStore = useAuthStore();
-  const route = useRoute();
   const { isCollapsed } = useSidebarState();
   const showAuthModal = ref(false);
+  const isOrgOnlyAccount = computed(
+    () => authStore.user?.account_type === 'organization' || !!authStore.user?.owned_organization_id
+  );
 
   // Compute sidebar disabled state based on subscription gate
   const sidebarDisabled = computed(() => {
     if (!authStore.isAuthenticated) return false;
     if (authStore.user?.is_admin) return false;
+    if (isOrgOnlyAccount.value) return false;
     if (authStore.user?.created_by_organization_id) return false;
-    
+
     const hasSelectedPlan = localStorage.getItem('has_selected_plan');
     const subscriptionStatus = (authStore.user as any)?.subscription_status;
-    
+
     // Users with active or cancelled subscriptions bypass the gate
     if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
       return false;
     }
-    
+
     // Disable sidebar if no plan selected OR subscription expired
     return !hasSelectedPlan || subscriptionStatus === 'expired';
   });

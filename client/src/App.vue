@@ -13,7 +13,14 @@
   import BrandingProfileSelector from '@/components/BrandingProfileSelector.vue';
   import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
-  import { initDatabase, seedDefaultPrompt, seedGamingPrompt, seedGamblingPrompt, seedBreakingNewsPrompt, ensureOrganizationAssetColumns } from '@/services/database';
+  import {
+    initDatabase,
+    seedDefaultPrompt,
+    seedGamingPrompt,
+    seedGamblingPrompt,
+    seedBreakingNewsPrompt,
+    ensureOrganizationAssetColumns,
+  } from '@/services/database';
   import { healSchema } from '@/services/database/schema-healing';
   import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
@@ -38,7 +45,7 @@
   const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
   const { state: updateState, checkForUpdates } = useAppUpdater();
   const { success } = useToast();
-  
+
   // Track user activity to update last_active_at
   // Will be initialized after authentication check completes
   const { startTracking } = useActivityTracker();
@@ -71,17 +78,18 @@
     if (!authStore.isAuthenticated) return false;
     if (isPipWindow.value) return false;
     if (authStore.user?.is_admin) return false;
+    if (authStore.user?.account_type === 'organization' || authStore.user?.owned_organization_id) return false;
     if (authStore.user?.created_by_organization_id) return false;
     if (currentRoute.path === '/billing') return false;
 
     const hasSelectedPlan = localStorage.getItem('has_selected_plan');
     const subscriptionStatus = (authStore.user as any)?.subscription_status;
-    
+
     // Users with active or cancelled subscriptions bypass the gate
     if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
       return false;
     }
-    
+
     // Show gate if no plan selected OR subscription expired
     return !hasSelectedPlan || subscriptionStatus === 'expired';
   });
@@ -143,18 +151,25 @@
   const routerKey = ref(0);
 
   // Watch for subscription gate and redirect to billing
-  watch(requiresSubscriptionGate, (needsGate) => {
-    if (needsGate && currentRoute.path !== '/billing') {
-      router.push('/billing?subscription_required=true');
-    }
-  }, { immediate: true });
+  watch(
+    requiresSubscriptionGate,
+    (needsGate) => {
+      if (needsGate && currentRoute.path !== '/billing') {
+        router.push('/billing?subscription_required=true');
+      }
+    },
+    { immediate: true }
+  );
 
   // Clear plan selection flag on logout
-  watch(() => authStore.isAuthenticated, (isAuth) => {
-    if (!isAuth) {
-      localStorage.removeItem('has_selected_plan');
+  watch(
+    () => authStore.isAuthenticated,
+    (isAuth) => {
+      if (!isAuth) {
+        localStorage.removeItem('has_selected_plan');
+      }
     }
-  });
+  );
 
   // Auth event listener function
   const handleAuthRequired = () => {
@@ -165,7 +180,7 @@
   // Handle auth state changes (login/logout) by refreshing the router view
   const handleAuthStateChanged = async (event: CustomEvent) => {
     console.log('[App] Auth state changed, refreshing data. User ID:', event.detail?.userId);
-    
+
     if (event.detail?.userId && authStore.isAuthenticated) {
       console.log('[App] User logged in, starting activity tracker');
       startTracking();
@@ -179,7 +194,7 @@
       // Clear plan selection flag
       localStorage.removeItem('has_selected_plan');
     }
-    
+
     // Increment key to force Vue to re-mount all route components
     routerKey.value++;
   };
@@ -204,14 +219,14 @@
     if (resizeTimeout !== null) {
       clearTimeout(resizeTimeout);
     }
-    
+
     resizeTimeout = window.setTimeout(async () => {
       try {
         const appWindow = getCurrentWindow();
         const size = await appWindow.innerSize();
-        await invoke('save_window_size', { 
-          width: size.width, 
-          height: size.height 
+        await invoke('save_window_size', {
+          width: size.width,
+          height: size.height,
         });
       } catch (error) {
         console.error('[App] Failed to save window size:', error);
@@ -248,7 +263,7 @@
     // Set up window resize listener to save size
     const appWindow = getCurrentWindow();
     const unlistenResize = await appWindow.onResized(handleWindowResize);
-    
+
     // Store unlisten function for cleanup
     (window as any).__unlistenWindowResize = unlistenResize;
 
@@ -315,9 +330,9 @@
           startTracking();
           // Load preferences from local cache immediately (server sync happens via event)
           if (authStore.user?.id) {
-            preferencesStore.loadFromLocal(String(authStore.user.id)).catch((e) =>
-              console.error('[App] Failed to load local preferences:', e)
-            );
+            preferencesStore
+              .loadFromLocal(String(authStore.user.id))
+              .catch((e) => console.error('[App] Failed to load local preferences:', e));
           }
           // Announcements don't need to block startup - fire and forget
           fetchAndEnqueue().catch((e) => console.error('[App] Failed to fetch announcements:', e));
@@ -415,7 +430,10 @@
     <TitleBar v-if="!isPipWindow" :dark-mode="true" :platform-override="titleBarPlatformOverride" />
 
     <!-- Main content area with scrolling -->
-    <div class="main-content dashboard-container" :class="{ 'pip-content': isPipWindow, 'editor-content': isEditorPage }">
+    <div
+      class="main-content dashboard-container"
+      :class="{ 'pip-content': isPipWindow, 'editor-content': isEditorPage }"
+    >
       <!-- Toast notifications provider -->
       <Toast />
       <!-- Router view for page content (key changes on auth to force refresh) -->
