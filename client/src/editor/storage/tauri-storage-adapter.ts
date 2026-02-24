@@ -15,6 +15,7 @@ import type { SavedSoundsData, SavedSound, SoundEffect } from "../types/sounds";
 import type { TimelineTrack, TScene } from "../types/timeline";
 import { getProjectDurationFromScenes } from "../lib/scenes";
 import { getDatabase, getCurrentUserId } from "@/services/database/core";
+import { base64ToUtf8 } from "@/utils/encoding";
 
 // ==========================================
 // Serialization Helpers
@@ -647,7 +648,7 @@ class TauriStorageService {
 			const videoMatch = mediaAsset.url.match(/\/video\/([^?]+)/);
 			if (videoMatch) {
 				try {
-					return atob(videoMatch[1]);
+					return base64ToUtf8(videoMatch[1]);
 				} catch {
 					// Not a base64 path
 				}

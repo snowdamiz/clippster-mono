@@ -152,7 +152,26 @@ export function useAudioWaveform({
 
 			// Only normalize when at full volume — at reduced volume the waveform
 			// should look quieter to give visual feedback
-			const normalizedPeaks = volume >= 1 ? normalizePeaks(peaks) : peaks;
+			let normalizedPeaks = volume >= 1 ? normalizePeaks(peaks) : peaks;
+
+			// Apply fade-in/fade-out tapering so waveform bars visually shrink toward zero
+			const fadeIn = el.fadeIn ?? 0;
+			const fadeOut = el.fadeOut ?? 0;
+			if ((fadeIn > 0 || fadeOut > 0) && normalizedPeaks.length > 0) {
+				const fadeInFraction = fadeIn / duration;
+				const fadeOutFraction = fadeOut / duration;
+				normalizedPeaks = normalizedPeaks.map((peak, i) => {
+					const progress = i / normalizedPeaks.length;
+					let multiplier = 1;
+					if (fadeInFraction > 0 && progress < fadeInFraction) {
+						multiplier = progress / fadeInFraction;
+					}
+					if (fadeOutFraction > 0 && progress > (1 - fadeOutFraction)) {
+						multiplier = Math.min(multiplier, (1 - progress) / fadeOutFraction);
+					}
+					return { min: peak.min * multiplier, max: peak.max * multiplier };
+				});
+			}
 
 			// Calculate playhead ratio relative to this element
 			// currentTime is global timeline time; element occupies [startTime, startTime + duration]
@@ -189,6 +208,32 @@ export function useAudioWaveform({
 					useGradientColors: true,
 				},
 			);
+
+			// Draw volume keyframe envelope overlay
+			const volumeTrack = el.keyframes?.tracks?.volume;
+			if (volumeTrack && volumeTrack.keyframes.length >= 2) {
+				const ctx = canvas.getContext("2d");
+				if (ctx) {
+					const { evaluateKeyframeTrack } = await import("../../types/keyframes");
+					const dpr = window.devicePixelRatio || 1;
+					const w = rect.width * dpr;
+					const h = rect.height * dpr;
+					ctx.save();
+					ctx.strokeStyle = "rgba(250, 204, 21, 0.8)"; // yellow
+					ctx.lineWidth = 1.5 * dpr;
+					ctx.beginPath();
+					for (let px = 0; px <= w; px++) {
+						const normalizedTime = px / w;
+						const vol = evaluateKeyframeTrack(volumeTrack, normalizedTime);
+						const clampedVol = Math.min(2, Math.max(0, vol));
+						const y = h - (clampedVol / 2) * h;
+						if (px === 0) ctx.moveTo(px, y);
+						else ctx.lineTo(px, y);
+					}
+					ctx.stroke();
+					ctx.restore();
+				}
+			}
 		} catch (error) {
 			console.error("[useAudioWaveform] Error rendering waveform:", error);
 		}
@@ -240,14 +285,24 @@ export function useAudioWaveform({
 		{ immediate: true },
 	);
 
-	// Re-render when waveform data loads, zoom changes, playhead moves, element width changes, or volume changes
+	// Re-trigger waveform load when filePath is populated (async save completing)
+	watch(
+		() => mediaAsset.value?.filePath,
+		async (newPath, oldPath) => {
+			if (newPath && newPath !== oldPath) {
+				await waveform.load(newPath);
+			}
+		},
+	);
+
+	// Re-render when waveform data loads, zoom changes, playhead moves, element width changes, volume or fade changes
 	watch(
 		[isLoaded, zoomLevel, currentTime, elementWidth, () => {
 			const el = element.value;
 			if (el.type === "audio") return (el as AudioElement).volume;
 			if (el.type === "video") return (el as VideoElement).volume;
 			return 1;
-		}],
+		}, () => element.value.fadeIn ?? 0, () => element.value.fadeOut ?? 0],
 		([loaded]) => {
 			if (loaded) {
 				nextTick(() => {

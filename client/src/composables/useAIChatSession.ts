@@ -9,6 +9,7 @@ import type {
   MediaAnalysis,
 } from '@/types/ai-video';
 import * as chatApi from '@/services/aiChatApi';
+import type { SessionSummary } from '@/services/aiChatApi';
 import type { StreamCallbacks } from '@/services/aiVideoApi';
 
 export function useAIChatSession() {
@@ -69,6 +70,15 @@ export function useAIChatSession() {
   // Actions
   // ---------------------------------------------------------------------------
 
+  async function listSessions(): Promise<SessionSummary[]> {
+    try {
+      return await chatApi.listChatSessions();
+    } catch (e: any) {
+      console.warn('[useAIChatSession] Failed to list sessions:', e);
+      return [];
+    }
+  }
+
   async function createSession(mediaItems: AIVideoMediaItem[] = []) {
     isLoading.value = true;
     error.value = null;
@@ -99,6 +109,38 @@ export function useAIChatSession() {
     } finally {
       isLoading.value = false;
     }
+  }
+
+  async function deleteSession(id: number) {
+    try {
+      await chatApi.deleteChatSession(id);
+      if (session.value?.id === id) {
+        session.value = null;
+        messages.value = [];
+      }
+    } catch (e: any) {
+      error.value = e.message || 'Failed to delete session';
+      throw e;
+    }
+  }
+
+  async function renameSession(id: number, name: string) {
+    try {
+      await chatApi.renameChatSession(id, name);
+      if (session.value?.id === id) {
+        (session.value as any).name = name;
+      }
+    } catch (e: any) {
+      error.value = e.message || 'Failed to rename session';
+      throw e;
+    }
+  }
+
+  function closeSession() {
+    session.value = null;
+    messages.value = [];
+    resetGenerationState();
+    error.value = null;
   }
 
   async function sendMessage(message: string) {
@@ -318,8 +360,12 @@ export function useAIChatSession() {
     generationSummary,
 
     // Actions
+    listSessions,
     createSession,
     loadSession,
+    deleteSession,
+    renameSession,
+    closeSession,
     sendMessage,
     generate,
     refine,

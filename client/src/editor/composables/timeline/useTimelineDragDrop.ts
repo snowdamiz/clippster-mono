@@ -17,6 +17,8 @@ import {
 } from "../../lib/timeline/element-utils";
 import { computeDropTarget } from "../../lib/timeline/drop-utils";
 import { getDragData, hasDragData } from "../../lib/drag-data";
+import { isMainTrack } from "../../lib/timeline/track-utils";
+import { getMainTrackMagnet } from "./useTimelineTools";
 import type { TrackType, DropTarget, ElementType } from "../../types/timeline";
 import type { MediaDragData, StickerDragData, EffectDragData, TransitionDragData } from "../../types/drag";
 import { generateUUID } from "../../utils/id";
@@ -25,12 +27,14 @@ import { SetTransitionCommand } from "../../lib/commands/scene";
 interface UseTimelineDragDropProps {
 	containerRef: Ref<HTMLDivElement | null>;
 	headerRef?: Ref<HTMLElement | null>;
+	scrollRef?: Ref<HTMLDivElement | null>;
 	zoomLevel: Ref<number>;
 }
 
 export function useTimelineDragDrop({
 	containerRef,
 	headerRef,
+	scrollRef,
 	zoomLevel,
 }: UseTimelineDragDropProps) {
 	const { editor, version } = useEditor();
@@ -115,7 +119,8 @@ export function useTimelineDragDrop({
 		// Transitions don't use normal drop targets — just track cursor position
 		if (elType === "transition") {
 			dragElementType.value = null;
-			const mouseX = e.clientX - rect.left;
+			const sl = scrollRef?.value?.scrollLeft ?? 0;
+			const mouseX = e.clientX - rect.left + sl;
 			const timeAtCursor = Math.max(0, mouseX / (TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value));
 			// Find nearest junction on a video track
 			const junction = findNearestJunction(timeAtCursor);
@@ -143,7 +148,8 @@ export function useTimelineDragDrop({
 			dragData?.type === "media" ? dragData.id : undefined,
 		);
 
-		const mouseX = e.clientX - rect.left;
+		const sl = scrollRef?.value?.scrollLeft ?? 0;
+		const mouseX = e.clientX - rect.left + sl;
 		const mouseY = Math.max(0, e.clientY - rect.top - headerHeight);
 
 		const target = computeDropTarget({
@@ -311,6 +317,24 @@ export function useTimelineDragDrop({
 		return best;
 	}
 
+	function rippleInsertOnMainTrack(trackId: string, insertTime: number, insertDuration: number) {
+		if (!getMainTrackMagnet()) return;
+		const track = editor.timeline.getTracks().find((t) => t.id === trackId);
+		if (!track || !isMainTrack(track)) return;
+
+		const elementIdsToShift = track.elements
+			.filter((e) => e.startTime >= insertTime)
+			.map((e) => e.id);
+
+		if (elementIdsToShift.length > 0) {
+			editor.timeline.moveElementsBatch({
+				trackId,
+				elementIds: elementIdsToShift,
+				timeDelta: insertDuration,
+			});
+		}
+	}
+
 	function executeMediaDrop(target: DropTarget, dragData: MediaDragData) {
 		const mediaAsset = mediaAssets.value.find((m) => m.id === dragData.id);
 		if (!mediaAsset) return;
@@ -327,6 +351,9 @@ export function useTimelineDragDrop({
 		}
 
 		const duration = mediaAsset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
+
+		// Auto-ripple: push subsequent elements right on main track before inserting
+		rippleInsertOnMainTrack(trackId, target.xPosition, duration);
 
 		if (dragData.mediaType === "audio") {
 			editor.timeline.insertElement({

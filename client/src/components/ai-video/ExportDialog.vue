@@ -185,6 +185,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void;
+  (e: 'exported', data: { outputPath: string; composition: AIVideoComposition }): void;
 }>();
 
 const isOpen = computed({
@@ -282,6 +283,10 @@ function cancel() {
 }
 
 function close() {
+  // Emit exported event if export was successful
+  if (exportComplete.value && outputPath.value && props.composition) {
+    emit('exported', { outputPath: outputPath.value, composition: props.composition });
+  }
   reset();
   isOpen.value = false;
 }

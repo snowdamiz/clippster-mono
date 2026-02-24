@@ -124,17 +124,15 @@
                   }"
                   :style="overlayStyle"
                 >
-                  <img
+                  <MediaPreview
                     :src="overlayDataUrl"
-                    :class="[
+                    :class-name="[
                       'drop-shadow-lg select-none',
                       fullFrameOverlayRatios[currentAspectRatio] || isFullFrameOverlay
                         ? 'w-full h-full object-cover'
                         : 'max-w-full max-h-full object-contain',
                     ]"
                     :style="{ opacity: currentSettings.opacity / 100 }"
-                    draggable="false"
-                    @dragstart.prevent
                     @error="handleImageError"
                   />
                   <!-- Resize Handles -->
@@ -295,6 +293,7 @@
     RectangleVertical,
   } from 'lucide-vue-next';
   import type { OverlayRatioPosition, PerRatioOverlaySettings } from '@/types';
+  import MediaPreview from '@/components/MediaPreview.vue';
 
   type AspectRatioId = '16:9' | '9:16' | '1:1' | '4:5';
 

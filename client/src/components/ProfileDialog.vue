@@ -1417,7 +1417,7 @@
       const { open } = await import('@tauri-apps/plugin-dialog');
       const result = await open({
         multiple: false,
-        filters: [{ name: 'Images', extensions: ['png', 'svg', 'webp', 'jpg', 'jpeg'] }],
+        filters: [{ name: 'Images & Videos', extensions: ['png', 'svg', 'webp', 'jpg', 'jpeg', 'mp4', 'mov', 'webm'] }],
       });
       if (!result) return;
       const filePath = result as string;
@@ -1430,6 +1430,7 @@
         const mimeMap: Record<string, string> = {
           png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
           webp: 'image/webp', svg: 'image/svg+xml', gif: 'image/gif',
+          mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
         };
         const bytes = await readFile(filePath);
         const file = new File([bytes], fileName, { type: mimeMap[ext] || 'image/png' });

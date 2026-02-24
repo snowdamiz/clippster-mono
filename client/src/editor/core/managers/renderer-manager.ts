@@ -16,6 +16,7 @@ import type { CaptionNodeParams } from "../../renderer/nodes/caption-node";
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
 import { resolveWatermarkById, resolveOverlayImagePath } from "@/services/database/watermarks";
 import { resolveIntroOutroById } from "@/services/database/intro-outros";
+import { base64ToUtf8 } from "@/utils/encoding";
 
 interface TauriAnimationData {
 	anim_type: string;
@@ -50,9 +51,23 @@ interface TauriVideoSource {
 	saturation: number;
 	temperature: number;
 	effects: TauriVideoEffect[];
+	is_image: boolean;
+	is_reversed: boolean;
 	animation_in: TauriAnimationData | null;
 	animation_out: TauriAnimationData | null;
 	animation_loop: TauriAnimationData | null;
+	keyframes: TauriKeyframeTrack[] | null;
+}
+
+interface TauriKeyframe {
+	offset: number;
+	value: number;
+	interpolation: string;
+}
+
+interface TauriKeyframeTrack {
+	property: string;
+	keyframes: TauriKeyframe[];
 }
 
 interface TauriVideoEffect {
@@ -308,45 +323,88 @@ export class RendererManager {
 		for (const track of tracks) {
 			if (track.type === "video") {
 				for (const el of track.elements) {
-					const videoEl = el as VideoElement;
-					const asset = mediaAssets.find((a) => a.id === videoEl.mediaId);
+					const isImage = el.type === "image";
+					const mediaId = isImage ? (el as ImageElement).mediaId : (el as VideoElement).mediaId;
+					const asset = mediaAssets.find((a) => a.id === mediaId);
 					if (!asset) continue;
 
 					// Use filePath from SQLite storage, fall back to URL-based extraction
 					const sourcePath = asset.filePath || (asset.url ? this.resolveFilePath(asset.url) : null);
 					if (!sourcePath) continue;
 
-					videoSources.push({
-						source_path: sourcePath,
-						start_time: videoEl.startTime,
-						end_time: videoEl.startTime + videoEl.duration,
-						trim_start: videoEl.trimStart || null,
-						trim_end: videoEl.trimEnd || null,
-						opacity: videoEl.opacity ?? 1,
-						scale: videoEl.transform?.scale ?? 1,
-						position_x: videoEl.transform?.position?.x ?? 0,
-						position_y: videoEl.transform?.position?.y ?? 0,
-						rotation: videoEl.transform?.rotate ?? 0,
-						is_muted: videoEl.muted ?? false,
-						volume: videoEl.volume ?? 1,
-						speed: videoEl.speed ?? 1,
-						fade_in: videoEl.fadeIn ?? 0,
-						fade_out: videoEl.fadeOut ?? 0,
-						flip_horizontal: videoEl.flip?.horizontal ?? false,
-						flip_vertical: videoEl.flip?.vertical ?? false,
-						crop_top: videoEl.crop?.top ?? 0,
-						crop_right: videoEl.crop?.right ?? 0,
-						crop_bottom: videoEl.crop?.bottom ?? 0,
-						crop_left: videoEl.crop?.left ?? 0,
-						brightness: videoEl.colorAdjustments?.brightness ?? 0,
-						contrast: videoEl.colorAdjustments?.contrast ?? 0,
-						saturation: videoEl.colorAdjustments?.saturation ?? 0,
-						temperature: videoEl.colorAdjustments?.temperature ?? 0,
-						effects: serializeEffects(videoEl.effects),
-						animation_in: serializeAnimation(videoEl.animationIn),
-						animation_out: serializeAnimation(videoEl.animationOut),
-						animation_loop: serializeAnimation(videoEl.animationLoop),
-					});
+					if (isImage) {
+						const imgEl = el as ImageElement;
+						videoSources.push({
+							source_path: sourcePath,
+							start_time: imgEl.startTime,
+							end_time: imgEl.startTime + imgEl.duration,
+							trim_start: null,
+							trim_end: null,
+							opacity: imgEl.opacity ?? 1,
+							scale: imgEl.transform?.scale ?? 1,
+							position_x: imgEl.transform?.position?.x ?? 0,
+							position_y: imgEl.transform?.position?.y ?? 0,
+							rotation: imgEl.transform?.rotate ?? 0,
+							is_muted: true,
+							volume: 0,
+							speed: 1,
+							fade_in: imgEl.fadeIn ?? 0,
+							fade_out: imgEl.fadeOut ?? 0,
+							flip_horizontal: imgEl.flip?.horizontal ?? false,
+							flip_vertical: imgEl.flip?.vertical ?? false,
+							crop_top: imgEl.crop?.top ?? 0,
+							crop_right: imgEl.crop?.right ?? 0,
+							crop_bottom: imgEl.crop?.bottom ?? 0,
+							crop_left: imgEl.crop?.left ?? 0,
+							brightness: imgEl.colorAdjustments?.brightness ?? 0,
+							contrast: imgEl.colorAdjustments?.contrast ?? 0,
+							saturation: imgEl.colorAdjustments?.saturation ?? 0,
+							temperature: imgEl.colorAdjustments?.temperature ?? 0,
+							effects: serializeEffects(imgEl.effects),
+							is_image: true,
+							is_reversed: false,
+							animation_in: serializeAnimation(imgEl.animationIn),
+							animation_out: serializeAnimation(imgEl.animationOut),
+							animation_loop: serializeAnimation(imgEl.animationLoop),
+							keyframes: serializeKeyframes(imgEl.keyframes),
+						});
+					} else {
+						const videoEl = el as VideoElement;
+						videoSources.push({
+							source_path: sourcePath,
+							start_time: videoEl.startTime,
+							end_time: videoEl.startTime + videoEl.duration,
+							trim_start: videoEl.trimStart || null,
+							trim_end: videoEl.trimEnd || null,
+							opacity: videoEl.opacity ?? 1,
+							scale: videoEl.transform?.scale ?? 1,
+							position_x: videoEl.transform?.position?.x ?? 0,
+							position_y: videoEl.transform?.position?.y ?? 0,
+							rotation: videoEl.transform?.rotate ?? 0,
+							is_muted: videoEl.muted ?? false,
+							volume: videoEl.volume ?? 1,
+							speed: videoEl.speed ?? 1,
+							fade_in: videoEl.fadeIn ?? 0,
+							fade_out: videoEl.fadeOut ?? 0,
+							flip_horizontal: videoEl.flip?.horizontal ?? false,
+							flip_vertical: videoEl.flip?.vertical ?? false,
+							crop_top: videoEl.crop?.top ?? 0,
+							crop_right: videoEl.crop?.right ?? 0,
+							crop_bottom: videoEl.crop?.bottom ?? 0,
+							crop_left: videoEl.crop?.left ?? 0,
+							brightness: videoEl.colorAdjustments?.brightness ?? 0,
+							contrast: videoEl.colorAdjustments?.contrast ?? 0,
+							saturation: videoEl.colorAdjustments?.saturation ?? 0,
+							temperature: videoEl.colorAdjustments?.temperature ?? 0,
+							effects: serializeEffects(videoEl.effects),
+							is_image: false,
+							is_reversed: videoEl.reversed ?? false,
+							animation_in: serializeAnimation(videoEl.animationIn),
+							animation_out: serializeAnimation(videoEl.animationOut),
+							animation_loop: serializeAnimation(videoEl.animationLoop),
+							keyframes: serializeKeyframes(videoEl.keyframes),
+						});
+					}
 				}
 			} else if (track.type === "sticker") {
 				// Stickers are pre-rendered to PNGs by preRenderStickerOverlays — skip here
@@ -461,12 +519,19 @@ export class RendererManager {
 	/**
 	 * Resolve a video server URL back to a local file path.
 	 * URLs are in the format: http://localhost:PORT/video/BASE64_ENCODED_PATH
+	 * Also handles direct file paths (e.g., from library audio downloads)
 	 */
 	private resolveFilePath(url: string): string | null {
 		try {
+			// If it's already a local file path (starts with drive letter or slash), return as-is
+			if (/^[A-Za-z]:[\\\/]/.test(url) || url.startsWith('/')) {
+				return url;
+			}
+			
+			// Otherwise, try to decode from video server URL
 			const match = url.match(/\/video\/(.+)$/);
 			if (match) {
-				return atob(match[1]);
+				return base64ToUtf8(match[1]);
 			}
 			return null;
 		} catch {
@@ -887,4 +952,21 @@ function serializeEffects(effects?: VideoEffect[]): TauriVideoEffect[] {
 				params,
 			};
 		});
+}
+
+function serializeKeyframes(kf?: import("../../types/keyframes").ElementKeyframes): TauriKeyframeTrack[] | null {
+	if (!kf || !kf.tracks) return null;
+	const result: TauriKeyframeTrack[] = [];
+	for (const [property, track] of Object.entries(kf.tracks)) {
+		if (!track || track.keyframes.length === 0) continue;
+		result.push({
+			property,
+			keyframes: track.keyframes.map((k) => ({
+				offset: k.offset,
+				value: k.value,
+				interpolation: k.interpolation,
+			})),
+		});
+	}
+	return result.length > 0 ? result : null;
 }

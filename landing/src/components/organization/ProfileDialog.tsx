@@ -549,7 +549,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                       </div>
                     )}
                   </div>
-                  <input ref={watermarkFileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="org-dialog__hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f, 'watermark'); e.target.value = '' }} />
+                  <input ref={watermarkFileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm" className="org-dialog__hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f, 'watermark'); e.target.value = '' }} />
                   <button type="button" onClick={() => watermarkFileRef.current?.click()} disabled={uploadingWatermark} className="org-dialog__asset-upload" title="Upload new watermark">
                     {uploadingWatermark ? <Loader2 size={16} className="org-dialog__spin" /> : <Upload size={16} />}
                   </button>
@@ -628,7 +628,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                   <input
                     ref={overlayFileRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
                     className="org-dialog__hidden"
                     onChange={async e => {
                       const f = e.target.files?.[0]

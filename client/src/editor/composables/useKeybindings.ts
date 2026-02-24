@@ -25,6 +25,7 @@ export function useKeybindingsListener() {
 		const key = ev.key.toLowerCase();
 		const ctrl = ev.ctrlKey || ev.metaKey;
 		const shift = ev.shiftKey;
+		const alt = ev.altKey;
 
 		let handled = false;
 
@@ -67,6 +68,12 @@ export function useKeybindingsListener() {
 		} else if (key === "d" && ctrl) {
 			invokeAction("duplicate-selected", undefined, "keypress");
 			handled = true;
+		} else if (key === "c" && ctrl && alt) {
+			invokeAction("copy-style", undefined, "keypress");
+			handled = true;
+		} else if (key === "v" && ctrl && alt) {
+			invokeAction("paste-style", undefined, "keypress");
+			handled = true;
 		} else if (key === "c" && ctrl) {
 			invokeAction("copy-selected", undefined, "keypress");
 			handled = true;
@@ -81,6 +88,12 @@ export function useKeybindingsListener() {
 			handled = true;
 		} else if (key === "m" && !ctrl) {
 			invokeAction("toggle-elements-muted-selected", undefined, "keypress");
+			handled = true;
+		} else if (key === "?" || (key === "/" && shift)) {
+			window.dispatchEvent(new CustomEvent("toggle-shortcuts-modal"));
+			handled = true;
+		} else if (key === "b" && ctrl) {
+			invokeAction("split", undefined, "keypress");
 			handled = true;
 		} else if (key === "b" && !ctrl) {
 			invokeAction("toggle-bookmark", undefined, "keypress");

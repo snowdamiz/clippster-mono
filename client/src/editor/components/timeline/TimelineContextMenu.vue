@@ -18,6 +18,8 @@ import {
 	MousePointerClick,
 	Gauge,
 	Snowflake,
+	ArrowLeftRight,
+	RefreshCw,
 } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -56,6 +58,14 @@ const currentSpeed = computed(() => {
 	if (!track) return 1;
 	const element = track.elements.find((el: { id: string }) => el.id === props.elementRef!.elementId);
 	return (element as any)?.speed ?? 1;
+});
+
+const isReversed = computed(() => {
+	if (!props.elementRef) return false;
+	const track = editor.timeline.getTrackById({ trackId: props.elementRef.trackId });
+	if (!track) return false;
+	const element = track.elements.find((el: { id: string }) => el.id === props.elementRef!.elementId);
+	return (element as any)?.reversed ?? false;
 });
 
 const showSpeedMenu = ref(false);
@@ -182,6 +192,57 @@ function handleSetSpeed(speed: number) {
 		speed,
 	});
 	emit("close");
+}
+
+function handleToggleReverse() {
+	if (!props.elementRef) return;
+	editor.timeline.updateElement({
+		trackId: props.elementRef.trackId,
+		elementId: props.elementRef.elementId,
+		updates: { reversed: !isReversed.value } as any,
+	});
+	emit("close");
+}
+
+const canReplaceMedia = computed(() => isVideoElement.value || elementType.value === "image");
+
+async function handleReplaceMedia() {
+	if (!props.elementRef) return;
+	emit("close");
+
+	const input = document.createElement("input");
+	input.type = "file";
+	input.accept = isVideoElement.value ? "video/*" : "image/*";
+	input.onchange = async () => {
+		const file = input.files?.[0];
+		if (!file) return;
+
+		const projectId = editor.project.getActive()?.metadata?.id;
+		if (!projectId) return;
+
+		const isVideo = file.type.startsWith("video/");
+		await editor.media.addMediaAsset({
+			projectId,
+			asset: {
+				name: file.name,
+				type: isVideo ? "video" : "image",
+				file,
+				url: URL.createObjectURL(file),
+				ephemeral: true,
+			},
+		});
+
+		const assets = editor.media.getAssets();
+		const newAsset = assets[assets.length - 1];
+		if (!newAsset || !props.elementRef) return;
+
+		editor.timeline.updateElement({
+			trackId: props.elementRef.trackId,
+			elementId: props.elementRef.elementId,
+			updates: { mediaId: newAsset.id } as any,
+		});
+	};
+	input.click();
 }
 </script>
 
@@ -339,11 +400,11 @@ function handleSetSpeed(speed: number) {
 								v-for="speed in speedOptions"
 								:key="speed"
 								class="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-white/10"
-								:class="speed === currentSpeed ? 'text-sky-400' : 'text-zinc-300'"
+								:class="speed === currentSpeed ? 'text-primary' : 'text-zinc-300'"
 								@click="handleSetSpeed(speed)"
 							>
 								{{ speed }}x
-								<span v-if="speed === currentSpeed" class="text-sky-400">✓</span>
+								<span v-if="speed === currentSpeed" class="text-primary">✓</span>
 							</button>
 						</div>
 					</div>
@@ -361,6 +422,18 @@ function handleSetSpeed(speed: number) {
 					</button>
 				</template>
 
+				<!-- Reverse (video/audio only) -->
+				<template v-if="isVideoElement || isAudioElement">
+					<button
+						class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/10"
+						:class="isReversed ? 'text-primary' : 'text-zinc-300'"
+						@click="handleToggleReverse"
+					>
+						<ArrowLeftRight class="size-3.5" />
+						{{ isReversed ? 'Unreverse' : 'Reverse' }}
+					</button>
+				</template>
+
 				<!-- Extract audio (video only) -->
 				<template v-if="isVideoElement">
 					<button
@@ -369,6 +442,17 @@ function handleSetSpeed(speed: number) {
 					>
 						<AudioLines class="size-3.5" />
 						Extract audio
+					</button>
+				</template>
+
+				<!-- Replace media (video/image only) -->
+				<template v-if="canReplaceMedia">
+					<button
+						class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
+						@click="handleReplaceMedia"
+					>
+						<RefreshCw class="size-3.5" />
+						Replace media
 					</button>
 				</template>
 

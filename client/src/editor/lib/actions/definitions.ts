@@ -73,7 +73,7 @@ export const ACTIONS = {
 	split: {
 		description: "Split elements at playhead",
 		category: "editing",
-		defaultShortcuts: ["s"],
+		defaultShortcuts: ["s", "ctrl+b"],
 	},
 	"split-left": {
 		description: "Split and remove left",
@@ -140,6 +140,16 @@ export const ACTIONS = {
 	"toggle-bookmark": {
 		description: "Toggle bookmark at playhead",
 		category: "timeline",
+	},
+	"copy-style": {
+		description: "Copy element style",
+		category: "editing",
+		defaultShortcuts: ["ctrl+alt+c"],
+	},
+	"paste-style": {
+		description: "Paste element style",
+		category: "editing",
+		defaultShortcuts: ["ctrl+alt+v"],
 	},
 	undo: {
 		description: "Undo",

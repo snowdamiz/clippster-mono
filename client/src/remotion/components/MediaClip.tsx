@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { AbsoluteFill, Img, Video, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { AIVideoTrack } from '../../types/ai-video';
+import { utf8ToBase64Url } from '../../utils/encoding';
 
 interface MediaClipProps {
   track: AIVideoTrack;
@@ -184,9 +185,18 @@ function getMediaUrl(path: string, videoServerPort: number): string {
   if (path.startsWith('asset://')) {
     return path;
   }
+  
+  // Check if this is an image file - use asset:// protocol for images
+  // The video server endpoint rejects image files
+  const isImage = /\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(path);
+  if (isImage) {
+    return `asset://localhost/${path}`;
+  }
+  
+  // Use video server for video files
   if (videoServerPort > 0) {
     // Video server expects base64-encoded path in URL path segment
-    const base64Path = btoa(path);
+    const base64Path = utf8ToBase64Url(path);
     return `http://localhost:${videoServerPort}/video/${base64Path}`;
   }
   return `asset://localhost/${path}`;

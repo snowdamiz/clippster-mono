@@ -81,7 +81,8 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
         // Window exists, just show and focus it
         if let Some(window) = app.get_webview_window("pip-controls") {
             window.show().map_err(|e| e.to_string())?;
-            window.set_focus().map_err(|e| e.to_string())?;
+            // Do NOT call set_focus() — stealing focus from a fullscreen game
+            // causes it to minimize. The window is already TOPMOST so it's visible.
         }
         return Ok(());
     }
@@ -142,9 +143,9 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowPos, GetWindowLongPtrW, SetWindowLongPtrW, BringWindowToTop, IsWindow,
+            SetWindowPos, GetWindowLongPtrW, SetWindowLongPtrW, IsWindow,
             HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SWP_NOACTIVATE, SWP_FRAMECHANGED,
-            WINDOW_EX_STYLE, GWL_EXSTYLE, WS_EX_TOPMOST, WS_EX_LAYERED, WS_EX_TOOLWINDOW
+            WINDOW_EX_STYLE, GWL_EXSTYLE, WS_EX_TOPMOST, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE
         };
         
         if let Ok(hwnd) = window.hwnd() {
@@ -154,13 +155,16 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                 // Step 1: Get current extended window styles
                 let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
                 
-                // Step 2: Add WS_EX_TOPMOST, WS_EX_LAYERED, and WS_EX_TOOLWINDOW flags
-                // WS_EX_TOOLWINDOW prevents the window from appearing in the taskbar and
-                // helps it stay above fullscreen borderless windows
+                // Step 2: Add WS_EX_TOPMOST, WS_EX_LAYERED, WS_EX_TOOLWINDOW, and WS_EX_NOACTIVATE flags
+                // WS_EX_TOOLWINDOW prevents the window from appearing in the taskbar
+                // WS_EX_NOACTIVATE prevents the window from stealing focus when clicked,
+                // which is critical — stealing focus from an exclusive fullscreen game
+                // causes Windows to minimize the game
                 let new_ex_style = WINDOW_EX_STYLE(current_ex_style as u32) 
                     | WS_EX_TOPMOST 
                     | WS_EX_LAYERED 
-                    | WS_EX_TOOLWINDOW;
+                    | WS_EX_TOOLWINDOW
+                    | WS_EX_NOACTIVATE;
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style.0 as isize);
                 
                 // Step 3: Apply HWND_TOPMOST with SWP_FRAMECHANGED to force style update
@@ -174,8 +178,106 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                     SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 );
                 
-                // Step 4: Bring window to top
-                let _ = BringWindowToTop(hwnd);
+                // Note: Do NOT call BringWindowToTop — it steals focus from the
+                // foreground window (the game), causing exclusive fullscreen games to minimize.
+                // HWND_TOPMOST via SetWindowPos with SWP_NOACTIVATE is sufficient.
+                
+                // Step 4: Subclass the window to intercept WM_SIZING for aspect ratio lock.
+                // This constrains the resize rect in real-time as the user drags, so the
+                // window NEVER appears stretched. Much smoother than reactive correction.
+                use windows::Win32::UI::Shell::{SetWindowSubclass, DefSubclassProc};
+                use windows::Win32::Foundation::{WPARAM, LPARAM, LRESULT, RECT};
+                
+                const WM_SIZING: u32 = 0x0214;
+                const WMSZ_LEFT: usize = 1;
+                const WMSZ_RIGHT: usize = 2;
+                const WMSZ_TOP: usize = 3;
+                const WMSZ_TOPLEFT: usize = 4;
+                const WMSZ_TOPRIGHT: usize = 5;
+                const WMSZ_BOTTOM: usize = 6;
+                const WMSZ_BOTTOMLEFT: usize = 7;
+                const WMSZ_BOTTOMRIGHT: usize = 8;
+                
+                // 16:9 aspect ratio encoded as fixed-point: 9000 / 16000
+                // dwRefData stores the aspect ratio as numerator << 16 | denominator
+                let aspect_data: usize = (9 << 16) | 16;
+                
+                unsafe extern "system" fn pip_sizing_subclass(
+                    hwnd: HWND,
+                    umsg: u32,
+                    wparam: WPARAM,
+                    lparam: LPARAM,
+                    _uidsubclass: usize,
+                    dwrefdata: usize,
+                ) -> LRESULT {
+                    if umsg == WM_SIZING && lparam.0 != 0 {
+                        let rect = &mut *(lparam.0 as *mut RECT);
+                        let numerator = (dwrefdata >> 16) as i32;   // 9
+                        let denominator = (dwrefdata & 0xFFFF) as i32; // 16
+                        let edge = wparam.0;
+                        
+                        let width = rect.right - rect.left;
+                        let height = rect.bottom - rect.top;
+                        
+                        // Calculate expected dimensions based on aspect ratio
+                        let expected_height = (width * numerator) / denominator;
+                        let expected_width = (height * denominator) / numerator;
+                        
+                        match edge {
+                            // Dragging left or right edge: adjust height to match width
+                            WMSZ_LEFT | WMSZ_RIGHT => {
+                                rect.bottom = rect.top + expected_height;
+                            }
+                            // Dragging top edge: adjust width to match height
+                            WMSZ_TOP => {
+                                rect.right = rect.left + expected_width;
+                            }
+                            // Dragging bottom edge: adjust width to match height
+                            WMSZ_BOTTOM => {
+                                rect.right = rect.left + expected_width;
+                            }
+                            // Dragging top-left corner: use the larger dimension change
+                            WMSZ_TOPLEFT => {
+                                if expected_width > width {
+                                    rect.left = rect.right - expected_width;
+                                } else {
+                                    rect.top = rect.bottom - expected_height;
+                                }
+                            }
+                            // Dragging top-right corner
+                            WMSZ_TOPRIGHT => {
+                                if expected_width > width {
+                                    rect.right = rect.left + expected_width;
+                                } else {
+                                    rect.top = rect.bottom - expected_height;
+                                }
+                            }
+                            // Dragging bottom-left corner
+                            WMSZ_BOTTOMLEFT => {
+                                if expected_width > width {
+                                    rect.left = rect.right - expected_width;
+                                } else {
+                                    rect.bottom = rect.top + expected_height;
+                                }
+                            }
+                            // Dragging bottom-right corner
+                            WMSZ_BOTTOMRIGHT => {
+                                if expected_width > width {
+                                    rect.right = rect.left + expected_width;
+                                } else {
+                                    rect.bottom = rect.top + expected_height;
+                                }
+                            }
+                            _ => {}
+                        }
+                        
+                        return LRESULT(1); // TRUE = we handled it
+                    }
+                    
+                    DefSubclassProc(hwnd, umsg, wparam, lparam)
+                }
+                
+                let _ = SetWindowSubclass(hwnd, Some(pip_sizing_subclass), 1, aspect_data);
             }
             
             // Step 5: Spawn a background timer that periodically re-asserts HWND_TOPMOST.
@@ -796,8 +898,47 @@ pub fn run() {
             
             #[cfg(not(dev))]
             let url = {
-                // Pick random unused port and initialize localhost plugin
-                let port = portpicker::pick_unused_port().expect("failed to find unused port");
+                // Persist the localhost port across restarts so localStorage (auth tokens, etc.)
+                // survives. On first launch we pick a random port and save it. On subsequent
+                // launches we reuse that port. If it's occupied we pick a new one and save it.
+                let port_file = app.handle()
+                    .path()
+                    .app_data_dir()
+                    .expect("failed to resolve app data dir")
+                    .join("localhost_port");
+                
+                // Try to read previously saved port
+                let saved_port: Option<u16> = std::fs::read_to_string(&port_file)
+                    .ok()
+                    .and_then(|s| s.trim().parse().ok());
+                
+                // Check if a port is available by trying to bind to it
+                fn is_port_available(port: u16) -> bool {
+                    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+                }
+                
+                let port = if let Some(p) = saved_port {
+                    if is_port_available(p) {
+                        println!("[Rust] Reusing saved localhost port: {}", p);
+                        p
+                    } else {
+                        println!("[Rust] Saved port {} is occupied, picking new one", p);
+                        let new_port = portpicker::pick_unused_port().expect("failed to find unused port");
+                        println!("[Rust] New port selected: {}", new_port);
+                        new_port
+                    }
+                } else {
+                    let new_port = portpicker::pick_unused_port().expect("failed to find unused port");
+                    println!("[Rust] First launch, selected port: {}", new_port);
+                    new_port
+                };
+                
+                // Save port for next launch
+                if let Some(parent) = port_file.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&port_file, port.to_string());
+                
                 app.handle().plugin(tauri_plugin_localhost::Builder::new(port).build())
                     .expect("failed to initialize localhost plugin");
                 
@@ -812,6 +953,10 @@ pub fn run() {
                 WebviewUrl::External(url_str.parse().unwrap())
             };
 
+            // 13-inch MacBook friendly startup size when no prior state exists.
+            const DEFAULT_MAIN_WINDOW_WIDTH: f64 = 1120.0;
+            const DEFAULT_MAIN_WINDOW_HEIGHT: f64 = 680.0;
+
             // Load saved window size or use defaults
             let (width, height) = match ui_utils::load_window_size(app.handle().clone()) {
                 Ok(Some(size)) => {
@@ -819,8 +964,11 @@ pub fn run() {
                     (size.width, size.height)
                 }
                 _ => {
-                    println!("[Rust] Using default window size: 1280x720");
-                    (1280.0, 720.0)
+                    println!(
+                        "[Rust] Using default window size: {}x{}",
+                        DEFAULT_MAIN_WINDOW_WIDTH, DEFAULT_MAIN_WINDOW_HEIGHT
+                    );
+                    (DEFAULT_MAIN_WINDOW_WIDTH, DEFAULT_MAIN_WINDOW_HEIGHT)
                 }
             };
 
@@ -828,6 +976,7 @@ pub fn run() {
                 .title("Clippster")
                 .inner_size(width, height)
                 .min_inner_size(800.0, 600.0)
+                .prevent_overflow()
                 .decorations(false)
                 .transparent(true)
                 .visible(false)
@@ -998,6 +1147,7 @@ commands::file_utils::generate_video_thumbnail,
             audio::extract_audio_to_file,
             audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
+            download_library_audio,
 
             // Waveform commands
             waveform::extract_audio_waveform,

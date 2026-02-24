@@ -10,6 +10,7 @@ import { listExternalPosts, syncOrgAnalytics } from '@/services/schedulingApi'
 import { listPostSubmissions, getAnalyticsSummary } from '@/services/socialAccountsApi'
 import { listOrganizationCampaignSubmissions } from '@/services/campaignApi'
 import { useToast } from '@/hooks/useToast'
+import { formatRelativeTime } from '@/utils/dateTimeUtils'
 import {
   FileText,
   Eye,
@@ -59,19 +60,6 @@ function formatNumber(num: number): string {
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
   if (num >= 1000) return (num / 1000).toFixed(1) + 'K'
   return num.toString()
-}
-
-function formatDate(dateString: string): string {
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / (1000 * 60))
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays < 7) return `${diffDays}d ago`
-  return date.toLocaleDateString()
 }
 
 function getStatusIndicatorColor(status: string): string {
@@ -615,7 +603,7 @@ export function OrgPosts() {
                             </span>
                           )}
                           <span className="flex items-center gap-1">
-                            <Clock className="w-3 h-3" /> {formatDate(post.inserted_at)}
+                            <Clock className="w-3 h-3" /> {formatRelativeTime(post.inserted_at)}
                           </span>
                         </div>
                       </div>
