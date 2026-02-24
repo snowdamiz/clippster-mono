@@ -1,13 +1,13 @@
 {
     "prerequisites-pass": true,
     "state": {
-        "ideation-completed": false,
+        "ideation-completed": true,
         "research-completed": false,
         "cadence-scripts-dir": "/Users/sn0w/.codex/skills/cadence/scripts",
         "repo-enabled": true,
         "project-mode": "brownfield",
         "brownfield-intake-completed": true,
-        "brownfield-documentation-completed": false
+        "brownfield-documentation-completed": true
     },
     "workflow": {
         "schema_version": 5,
@@ -72,7 +72,7 @@
                                             "skill_path": "skills/brownfield-documenter/SKILL.md",
                                             "reason": "Brownfield project context has not been documented into ideation yet."
                                         },
-                                        "status": "pending",
+                                        "status": "complete",
                                         "children": []
                                     },
                                     {
@@ -112,52 +112,52 @@
         "summary": {
             "total_items": 9,
             "total_actionable_items": 6,
-            "completed_actionable_items": 4,
-            "pending_actionable_items": 2,
+            "completed_actionable_items": 5,
+            "pending_actionable_items": 1,
             "in_progress_actionable_items": 0,
             "blocked_actionable_items": 0,
-            "completion_percent": 67
+            "completion_percent": 83
         },
         "next_item": {
-            "id": "task-brownfield-documentation",
-            "title": "Document existing project context",
+            "id": "task-research",
+            "title": "Research ideation agenda",
             "kind": "task",
             "status": "pending",
             "path_ids": [
                 "milestone-foundation",
                 "phase-project-setup",
                 "wave-initialize-cadence",
-                "task-brownfield-documentation"
+                "task-research"
             ],
             "path_titles": [
                 "Foundation",
                 "Project Setup",
                 "Initialize Cadence",
-                "Document existing project context"
+                "Research ideation agenda"
             ]
         },
         "active_item": {
-            "id": "task-brownfield-documentation",
-            "title": "Document existing project context",
+            "id": "task-research",
+            "title": "Research ideation agenda",
             "kind": "task",
             "status": "pending",
             "path_ids": [
                 "milestone-foundation",
                 "phase-project-setup",
                 "wave-initialize-cadence",
-                "task-brownfield-documentation"
+                "task-research"
             ],
             "path_titles": [
                 "Foundation",
                 "Project Setup",
                 "Initialize Cadence",
-                "Document existing project context"
+                "Research ideation agenda"
             ]
         },
         "next_route": {
-            "skill_name": "brownfield-documenter",
-            "skill_path": "skills/brownfield-documenter/SKILL.md",
-            "reason": "Brownfield project context has not been documented into ideation yet."
+            "skill_name": "researcher",
+            "skill_path": "skills/researcher/SKILL.md",
+            "reason": "Ideation research agenda has not been completed yet."
         },
         "phase_order": [
             "task-scaffold",
@@ -178,7 +178,7 @@
                 "status": "complete"
             },
             "task-brownfield-documentation": {
-                "status": "pending"
+                "status": "complete"
             },
             "task-ideation": {
                 "status": "skipped"
@@ -191,11 +191,12 @@
             "task-scaffold",
             "task-prerequisite-gate",
             "task-brownfield-intake",
+            "task-brownfield-documentation",
             "task-ideation"
         ],
-        "active_phase": "task-brownfield-documentation",
-        "next_phase": "task-brownfield-documentation",
-        "completion_percent": 67
+        "active_phase": "task-research",
+        "next_phase": "task-research",
+        "completion_percent": 83
     },
     "project-details": {
         "mode": "brownfield",
@@ -291,19 +292,1131 @@
                 "monorepo_detected": false
             }
         },
-        "last_inventory_at": "2026-02-24T02:13:59Z"
+        "last_inventory_at": "2026-02-24T02:13:59Z",
+        "last_documentation_at": "2026-02-24T02:19:48Z"
     },
     "ideation": {
+        "objective": "Document and stabilize a desktop-first AI clipping platform that turns long-form and livestream content into publishable short-form clips for individual creators and organization teams.",
+        "core_outcome": "A reliable end-to-end workflow from media ingestion through AI detection, editing, collaboration, and distribution across desktop and web interfaces.",
+        "target_audience": [
+            "Individual creators producing short-form clips from long videos and streams",
+            "Organization owners and team members managing shared content, assets, and campaigns",
+            "Internal admins and moderators operating support, policy, and growth workflows"
+        ],
+        "core_experience": [
+            "Ingest media from VOD/live/local sources and generate transcripts and candidate clips with AI.",
+            "Refine output in a professional editing experience (timeline/OpenCut) with local desktop performance.",
+            "Coordinate publishing, messaging, billing, and organization workflows through authenticated backend APIs."
+        ],
+        "success_signals": [
+            "Clip detection, transcription, and editing workflows complete consistently without manual recovery.",
+            "Organization collaboration surfaces (shared clips, messaging, creator/campaign tools) are actively used without access-control regressions.",
+            "Release pipeline continuously ships signed desktop artifacts and fresh server/landing deployments.",
+            "Billing and credit ledgers remain accurate across subscription, promo, and pay-per-use paths."
+        ],
+        "risks": [
+            "Heavy dependence on third-party services (OpenRouter, Whisper API, Stripe, social APIs) increases failure modes and operational variance.",
+            "Very broad backend API and controller surface raises regression risk when domain behavior changes.",
+            "Sparse automated tests (few backend tests, no evident client/landing test suite) weakens release confidence.",
+            "Cross-platform binary/signing/notarization complexity in the Tauri release flow can block shipping if tooling drifts."
+        ],
+        "assumptions": [
+            "Desktop (Tauri) remains the primary production surface while landing provides marketing plus authenticated web dashboard/admin entry points.",
+            "Credit/subscription economics remain tied to AI/media processing usage rather than unlimited free operations.",
+            "Organization workflows (members, assets, messaging, shared clips, campaigns) remain core product differentiators."
+        ],
+        "open_questions": [
+            "Which documented security hardening tasks are mandatory before the next production release gate?",
+            "What SLO/error budgets are acceptable for AI-dependent workflows given third-party API dependencies?",
+            "How should testing investment be prioritized across server, desktop client, and landing/admin surfaces?"
+        ],
         "research_agenda": {
             "version": 1,
             "summary": {
-                "block_count": 0,
-                "topic_count": 0,
-                "entity_count": 0
+                "block_count": 5,
+                "topic_count": 15,
+                "entity_count": 23
             },
-            "blocks": [],
-            "entity_registry": [],
-            "topic_index": {}
+            "blocks": [
+                {
+                    "block_id": "product-workflows",
+                    "title": "Product Surface and User Workflows",
+                    "rationale": "The repository contains multiple user-facing surfaces with overlapping capabilities and role-specific flows that need precise documentation.",
+                    "tags": [
+                        "product",
+                        "ux",
+                        "roles"
+                    ],
+                    "topics": [
+                        {
+                            "topic_id": "desktop-creator-flow",
+                            "title": "Desktop Creator Workflow",
+                            "category": "product",
+                            "priority": "high",
+                            "why_it_matters": "The desktop client is the primary runtime for ingestion, AI clip generation, and editing, so its user journey defines core product value.",
+                            "research_questions": [
+                                "What is the canonical step-by-step workflow from project creation to exported clip in the desktop app?",
+                                "Which flows are gated by tier or feature flags and how are those gates enforced client-side and server-side?"
+                            ],
+                            "keywords": [
+                                "Tauri",
+                                "Vue",
+                                "projects",
+                                "clips",
+                                "video editor",
+                                "OpenCut"
+                            ],
+                            "tags": [
+                                "desktop",
+                                "workflow",
+                                "gating"
+                            ],
+                            "related_entities": [
+                                "desktop-client",
+                                "account-role-model"
+                            ]
+                        },
+                        {
+                            "topic_id": "organization-collaboration-flow",
+                            "title": "Organization Collaboration Workflow",
+                            "category": "product",
+                            "priority": "high",
+                            "why_it_matters": "Organization features span membership, assets, messaging, and campaigns and significantly expand product scope beyond solo creators.",
+                            "research_questions": [
+                                "How do owner/admin/member permissions map across organization routes and APIs?",
+                                "What are the key collaboration loops between shared clips, messaging, and creator/campaign management?"
+                            ],
+                            "keywords": [
+                                "organizations",
+                                "members",
+                                "shared clips",
+                                "messaging",
+                                "campaigns"
+                            ],
+                            "tags": [
+                                "collaboration",
+                                "rbac"
+                            ],
+                            "related_entities": [
+                                "organization-workspace",
+                                "desktop-client"
+                            ]
+                        },
+                        {
+                            "topic_id": "web-landing-dashboard-scope",
+                            "title": "Landing and Web Dashboard Scope",
+                            "category": "product",
+                            "priority": "medium",
+                            "why_it_matters": "The landing app includes both marketing and authenticated dashboard/admin routes, which affects product boundary and ownership.",
+                            "research_questions": [
+                                "Which capabilities are marketing-only versus authenticated dashboard functionality in the landing codebase?",
+                                "How much overlap exists between desktop and landing-admin capabilities, and where should source-of-truth UX live?"
+                            ],
+                            "keywords": [
+                                "landing",
+                                "React",
+                                "dashboard",
+                                "admin",
+                                "downloads"
+                            ],
+                            "tags": [
+                                "web",
+                                "scope"
+                            ],
+                            "related_entities": [
+                                "landing-web-app",
+                                "organization-workspace"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "block_id": "ai-media-pipeline",
+                    "title": "AI and Media Processing Pipeline",
+                    "rationale": "AI/media orchestration is the core differentiator and combines transcription, chunking, multimodel detection, and editing/export runtime concerns.",
+                    "tags": [
+                        "ai",
+                        "media",
+                        "pipeline"
+                    ],
+                    "topics": [
+                        {
+                            "topic_id": "ingest-transcribe-detect-pipeline",
+                            "title": "Ingest, Transcription, and Detection Pipeline",
+                            "category": "architecture",
+                            "priority": "high",
+                            "why_it_matters": "Clip generation reliability depends on correct sequencing of upload/chunk/transcription/detection and error handling across services.",
+                            "research_questions": [
+                                "Where are chunk boundaries, retries, and timeout policies defined for transcription and detection?",
+                                "How are credits, jobs, and progress events tied into each pipeline phase?"
+                            ],
+                            "keywords": [
+                                "Whisper",
+                                "OpenRouter",
+                                "chunked detection",
+                                "processing jobs",
+                                "progress"
+                            ],
+                            "tags": [
+                                "pipeline",
+                                "retries"
+                            ],
+                            "related_entities": [
+                                "whisper-transcription-service",
+                                "openrouter-detection-service",
+                                "media-processing-runtime"
+                            ]
+                        },
+                        {
+                            "topic_id": "multimodal-consensus-logic",
+                            "title": "Multimodel Consensus and Fallback Logic",
+                            "category": "architecture",
+                            "priority": "high",
+                            "why_it_matters": "Multimodel orchestration introduces additional cost and complexity and must be understood for quality/cost tradeoffs.",
+                            "research_questions": [
+                                "How are model outputs merged, validated, and downgraded to fallback behavior when decider steps fail?",
+                                "What token/cost telemetry is captured per model and how is it surfaced?"
+                            ],
+                            "keywords": [
+                                "multimodal",
+                                "consensus",
+                                "decider",
+                                "token usage",
+                                "fallback"
+                            ],
+                            "tags": [
+                                "quality",
+                                "cost"
+                            ],
+                            "related_entities": [
+                                "multimodel-consensus-engine",
+                                "openrouter-detection-service"
+                            ]
+                        },
+                        {
+                            "topic_id": "editing-export-runtime",
+                            "title": "Desktop Editing and Export Runtime",
+                            "category": "architecture",
+                            "priority": "high",
+                            "why_it_matters": "Professional editing UX and export output quality are directly tied to local storage, ffmpeg sidecars, and editor-state persistence.",
+                            "research_questions": [
+                                "How do OpenCut storage adapters and local SQLite schemas coordinate with main project data?",
+                                "Which export paths rely on sidecars versus in-process media operations?"
+                            ],
+                            "keywords": [
+                                "OpenCut",
+                                "SQLite",
+                                "ffmpeg",
+                                "media assets",
+                                "export"
+                            ],
+                            "tags": [
+                                "desktop",
+                                "runtime"
+                            ],
+                            "related_entities": [
+                                "opencut-editor-runtime",
+                                "media-processing-runtime"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "block_id": "backend-domain-platform",
+                    "title": "Backend Domain and Platform Services",
+                    "rationale": "The Phoenix backend contains extensive domain modules and API endpoints that govern product behavior, access control, and monetization.",
+                    "tags": [
+                        "backend",
+                        "domain",
+                        "api"
+                    ],
+                    "topics": [
+                        {
+                            "topic_id": "api-surface-and-domain-boundaries",
+                            "title": "API Surface and Domain Boundaries",
+                            "category": "architecture",
+                            "priority": "high",
+                            "why_it_matters": "Large controller and route surfaces increase coupling and change risk; documenting boundaries supports safer evolution.",
+                            "research_questions": [
+                                "Which contexts are truly bounded domains versus convenience aggregations?",
+                                "Where do route groups and auth pipelines imply hidden coupling between features?"
+                            ],
+                            "keywords": [
+                                "Phoenix router",
+                                "contexts",
+                                "controllers",
+                                "pipelines",
+                                "CORS"
+                            ],
+                            "tags": [
+                                "maintainability",
+                                "coupling"
+                            ],
+                            "related_entities": [
+                                "phoenix-api-backend",
+                                "postgres-domain-schema"
+                            ]
+                        },
+                        {
+                            "topic_id": "realtime-messaging-and-progress",
+                            "title": "Realtime Messaging and Progress Channels",
+                            "category": "architecture",
+                            "priority": "medium",
+                            "why_it_matters": "Realtime channels back both team messaging and long-running AI workflow feedback, so channel auth and event design are critical.",
+                            "research_questions": [
+                                "How are websocket topics authorized and what ownership guarantees are enforced per channel?",
+                                "What event contracts must stay stable across desktop and landing clients?"
+                            ],
+                            "keywords": [
+                                "Phoenix Channels",
+                                "messaging",
+                                "progress",
+                                "announcements",
+                                "socket auth"
+                            ],
+                            "tags": [
+                                "realtime",
+                                "security"
+                            ],
+                            "related_entities": [
+                                "realtime-channel-layer",
+                                "phoenix-api-backend"
+                            ]
+                        },
+                        {
+                            "topic_id": "billing-credits-and-subscriptions",
+                            "title": "Billing, Credits, and Subscription Logic",
+                            "category": "domain",
+                            "priority": "high",
+                            "why_it_matters": "Credit and subscription logic controls access and revenue, and spans personal plus organization billing flows.",
+                            "research_questions": [
+                                "How do personal and organization subscription states interact with feature gates and credit deduction?",
+                                "Which Stripe and crypto paths are production-critical and where are idempotency guarantees enforced?"
+                            ],
+                            "keywords": [
+                                "credits",
+                                "subscriptions",
+                                "Stripe",
+                                "crypto",
+                                "promo codes"
+                            ],
+                            "tags": [
+                                "monetization",
+                                "gating"
+                            ],
+                            "related_entities": [
+                                "billing-credits-engine",
+                                "organization-subscription-engine"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "block_id": "release-deployment-ops",
+                    "title": "Release, Deployment, and Runtime Operations",
+                    "rationale": "Shipping depends on a complex release pipeline spanning signed desktop artifacts and Fly.io deployments for backend and landing.",
+                    "tags": [
+                        "release",
+                        "deploy",
+                        "ops"
+                    ],
+                    "topics": [
+                        {
+                            "topic_id": "tauri-release-automation",
+                            "title": "Tauri Multi-Platform Release Automation",
+                            "category": "delivery",
+                            "priority": "high",
+                            "why_it_matters": "Desktop distribution requires signing, notarization, updater artifacts, and architecture-specific binaries in one workflow.",
+                            "research_questions": [
+                                "Which steps in the GitHub release workflow are the highest failure-risk for macOS and Windows artifacts?",
+                                "How are sidecar binary provenance, signing, and updater signatures validated end-to-end?"
+                            ],
+                            "keywords": [
+                                "GitHub Actions",
+                                "Tauri",
+                                "notarization",
+                                "signing",
+                                "sidecars"
+                            ],
+                            "tags": [
+                                "release",
+                                "desktop"
+                            ],
+                            "related_entities": [
+                                "github-release-workflow",
+                                "tauri-updater-channel"
+                            ]
+                        },
+                        {
+                            "topic_id": "server-landing-deploy-topology",
+                            "title": "Server and Landing Deploy Topology",
+                            "category": "delivery",
+                            "priority": "medium",
+                            "why_it_matters": "Runtime behavior and incident response depend on how Phoenix and landing apps are deployed and scaled.",
+                            "research_questions": [
+                                "How are Fly.io app configs, health checks, and scaling defaults aligned with production traffic expectations?",
+                                "Which deployment steps are tightly coupled to the release branch workflow?"
+                            ],
+                            "keywords": [
+                                "Fly.io",
+                                "Phoenix deploy",
+                                "landing deploy",
+                                "health checks",
+                                "release branch"
+                            ],
+                            "tags": [
+                                "infrastructure",
+                                "operations"
+                            ],
+                            "related_entities": [
+                                "flyio-server-runtime",
+                                "flyio-landing-runtime"
+                            ]
+                        },
+                        {
+                            "topic_id": "runtime-config-and-secret-contracts",
+                            "title": "Runtime Config and Secret Contracts",
+                            "category": "operations",
+                            "priority": "high",
+                            "why_it_matters": "Many critical integrations are environment-driven; missing or misconfigured secrets can silently degrade key features.",
+                            "research_questions": [
+                                "Which env vars are hard requirements for production-safe behavior versus optional enhancements?",
+                                "How can startup validation and observability reduce misconfiguration time-to-detect?"
+                            ],
+                            "keywords": [
+                                "runtime.exs",
+                                "env vars",
+                                "Stripe",
+                                "OAuth",
+                                "R2",
+                                "PulseKit"
+                            ],
+                            "tags": [
+                                "configuration",
+                                "resilience"
+                            ],
+                            "related_entities": [
+                                "runtime-configuration-contract"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "block_id": "quality-risk-readiness",
+                    "title": "Quality, Security, and Readiness",
+                    "rationale": "Current test coverage and hardening posture determine the risk profile for continued feature velocity and production stability.",
+                    "tags": [
+                        "quality",
+                        "security",
+                        "readiness"
+                    ],
+                    "topics": [
+                        {
+                            "topic_id": "automated-test-strategy-gaps",
+                            "title": "Automated Test Strategy Gaps",
+                            "category": "quality",
+                            "priority": "high",
+                            "why_it_matters": "The codebase appears to have minimal automated tests relative to scope, increasing regression probability.",
+                            "research_questions": [
+                                "What is the minimum viable cross-surface test pyramid to protect core clipping and billing workflows?",
+                                "Which modules should be prioritized first for deterministic integration tests?"
+                            ],
+                            "keywords": [
+                                "mix test",
+                                "frontend tests",
+                                "integration tests",
+                                "regression"
+                            ],
+                            "tags": [
+                                "testing",
+                                "reliability"
+                            ],
+                            "related_entities": [
+                                "automated-test-surface",
+                                "technical-debt-ledger"
+                            ]
+                        },
+                        {
+                            "topic_id": "security-hardening-hotspots",
+                            "title": "Security Hardening Hotspots",
+                            "category": "security",
+                            "priority": "high",
+                            "why_it_matters": "Authentication, payment, and channel authorization paths include known high-impact hotspots that warrant formal hardening.",
+                            "research_questions": [
+                                "Which auth/payment/socket flows need immediate remediation before broader scale-out?",
+                                "How should security checks be codified as release gates rather than one-off audits?"
+                            ],
+                            "keywords": [
+                                "JWT",
+                                "webhooks",
+                                "socket auth",
+                                "authorization",
+                                "rate limiting"
+                            ],
+                            "tags": [
+                                "security",
+                                "compliance"
+                            ],
+                            "related_entities": [
+                                "auth-payment-security-surface",
+                                "operational-observability-stack"
+                            ]
+                        },
+                        {
+                            "topic_id": "operational-observability-readiness",
+                            "title": "Operational Observability and Maintenance",
+                            "category": "operations",
+                            "priority": "medium",
+                            "why_it_matters": "Sustainable operations require actionable logs, monitoring, and maintenance workflows across AI jobs and release systems.",
+                            "research_questions": [
+                                "Where are critical metrics/events emitted today and where are visibility gaps?",
+                                "What maintenance burdens (binary/toolchain drift, migration safety, doc drift) should be scheduled proactively?"
+                            ],
+                            "keywords": [
+                                "PulseKit",
+                                "logging",
+                                "alerts",
+                                "migrations",
+                                "release maintenance"
+                            ],
+                            "tags": [
+                                "observability",
+                                "maintenance"
+                            ],
+                            "related_entities": [
+                                "operational-observability-stack",
+                                "technical-debt-ledger"
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "entity_registry": [
+                {
+                    "entity_id": "account-role-model",
+                    "label": "Account and Role Model",
+                    "kind": "domain",
+                    "aliases": [
+                        "Account and Role Model",
+                        "account types",
+                        "admin/moderator/member roles",
+                        "auth roles"
+                    ],
+                    "owner_block_id": "product-workflows"
+                },
+                {
+                    "entity_id": "auth-payment-security-surface",
+                    "label": "Auth and Payment Security Surface",
+                    "kind": "risk_surface",
+                    "aliases": [
+                        "Auth and Payment Security Surface",
+                        "JWT validation",
+                        "payment verification",
+                        "authorization"
+                    ],
+                    "owner_block_id": "quality-risk-readiness"
+                },
+                {
+                    "entity_id": "automated-test-surface",
+                    "label": "Automated Test Surface",
+                    "kind": "quality_surface",
+                    "aliases": [
+                        "Automated Test Surface",
+                        "mix test suite",
+                        "frontend tests",
+                        "test coverage"
+                    ],
+                    "owner_block_id": "quality-risk-readiness"
+                },
+                {
+                    "entity_id": "billing-credits-engine",
+                    "label": "Personal Billing and Credits Engine",
+                    "kind": "domain",
+                    "aliases": [
+                        "Personal Billing and Credits Engine",
+                        "subscriptions",
+                        "credits",
+                        "payment controller"
+                    ],
+                    "owner_block_id": "backend-domain-platform"
+                },
+                {
+                    "entity_id": "desktop-client",
+                    "label": "Tauri Desktop Client",
+                    "kind": "application",
+                    "aliases": [
+                        "Tauri Desktop Client",
+                        "desktop app",
+                        "client",
+                        "tauri client"
+                    ],
+                    "owner_block_id": "product-workflows"
+                },
+                {
+                    "entity_id": "flyio-landing-runtime",
+                    "label": "Fly.io Landing Runtime",
+                    "kind": "deployment_target",
+                    "aliases": [
+                        "Fly.io Landing Runtime",
+                        "landing deploy",
+                        "Fly landing app"
+                    ],
+                    "owner_block_id": "release-deployment-ops"
+                },
+                {
+                    "entity_id": "flyio-server-runtime",
+                    "label": "Fly.io Server Runtime",
+                    "kind": "deployment_target",
+                    "aliases": [
+                        "Fly.io Server Runtime",
+                        "server deploy",
+                        "Fly server app",
+                        "production API runtime"
+                    ],
+                    "owner_block_id": "release-deployment-ops"
+                },
+                {
+                    "entity_id": "github-release-workflow",
+                    "label": "GitHub Release Workflow",
+                    "kind": "delivery_pipeline",
+                    "aliases": [
+                        "GitHub Release Workflow",
+                        "release.yml",
+                        "GitHub Actions release",
+                        "CI release"
+                    ],
+                    "owner_block_id": "release-deployment-ops"
+                },
+                {
+                    "entity_id": "landing-web-app",
+                    "label": "Landing and Web Dashboard App",
+                    "kind": "application",
+                    "aliases": [
+                        "Landing and Web Dashboard App",
+                        "landing",
+                        "web dashboard",
+                        "React landing"
+                    ],
+                    "owner_block_id": "product-workflows"
+                },
+                {
+                    "entity_id": "media-processing-runtime",
+                    "label": "Media Processing Runtime",
+                    "kind": "runtime_component",
+                    "aliases": [
+                        "Media Processing Runtime",
+                        "ffmpeg",
+                        "sidecars",
+                        "export runtime"
+                    ],
+                    "owner_block_id": "ai-media-pipeline"
+                },
+                {
+                    "entity_id": "multimodel-consensus-engine",
+                    "label": "Multimodel Consensus Engine",
+                    "kind": "pipeline_component",
+                    "aliases": [
+                        "Multimodel Consensus Engine",
+                        "multimodal detection",
+                        "decider model",
+                        "consensus logic"
+                    ],
+                    "owner_block_id": "ai-media-pipeline"
+                },
+                {
+                    "entity_id": "opencut-editor-runtime",
+                    "label": "OpenCut Editor Runtime",
+                    "kind": "runtime_component",
+                    "aliases": [
+                        "OpenCut Editor Runtime",
+                        "OpenCut",
+                        "editor storage",
+                        "timeline editor"
+                    ],
+                    "owner_block_id": "ai-media-pipeline"
+                },
+                {
+                    "entity_id": "openrouter-detection-service",
+                    "label": "OpenRouter Detection Service",
+                    "kind": "external_service",
+                    "aliases": [
+                        "OpenRouter Detection Service",
+                        "OpenRouter",
+                        "responses API",
+                        "clip detection model"
+                    ],
+                    "owner_block_id": "ai-media-pipeline"
+                },
+                {
+                    "entity_id": "operational-observability-stack",
+                    "label": "Operational Observability Stack",
+                    "kind": "operations",
+                    "aliases": [
+                        "Operational Observability Stack",
+                        "logging",
+                        "PulseKit",
+                        "alerts",
+                        "monitoring"
+                    ],
+                    "owner_block_id": "quality-risk-readiness"
+                },
+                {
+                    "entity_id": "organization-subscription-engine",
+                    "label": "Organization Subscription Engine",
+                    "kind": "domain",
+                    "aliases": [
+                        "Organization Subscription Engine",
+                        "org subscription",
+                        "addon checkout",
+                        "organization billing"
+                    ],
+                    "owner_block_id": "backend-domain-platform"
+                },
+                {
+                    "entity_id": "organization-workspace",
+                    "label": "Organization Workspace Model",
+                    "kind": "domain",
+                    "aliases": [
+                        "Organization Workspace Model",
+                        "organization",
+                        "team workspace",
+                        "org workflows"
+                    ],
+                    "owner_block_id": "product-workflows"
+                },
+                {
+                    "entity_id": "phoenix-api-backend",
+                    "label": "Phoenix API Backend",
+                    "kind": "application",
+                    "aliases": [
+                        "Phoenix API Backend",
+                        "server",
+                        "Phoenix",
+                        "Elixir backend"
+                    ],
+                    "owner_block_id": "backend-domain-platform"
+                },
+                {
+                    "entity_id": "postgres-domain-schema",
+                    "label": "PostgreSQL Domain Schema",
+                    "kind": "data_store",
+                    "aliases": [
+                        "PostgreSQL Domain Schema",
+                        "Ecto schemas",
+                        "migrations",
+                        "server database"
+                    ],
+                    "owner_block_id": "backend-domain-platform"
+                },
+                {
+                    "entity_id": "realtime-channel-layer",
+                    "label": "Realtime Channel Layer",
+                    "kind": "communication_layer",
+                    "aliases": [
+                        "Realtime Channel Layer",
+                        "messaging socket",
+                        "progress channel",
+                        "announcements channel"
+                    ],
+                    "owner_block_id": "backend-domain-platform"
+                },
+                {
+                    "entity_id": "runtime-configuration-contract",
+                    "label": "Runtime Configuration Contract",
+                    "kind": "configuration",
+                    "aliases": [
+                        "Runtime Configuration Contract",
+                        "runtime.exs",
+                        "environment variables",
+                        "secrets"
+                    ],
+                    "owner_block_id": "release-deployment-ops"
+                },
+                {
+                    "entity_id": "tauri-updater-channel",
+                    "label": "Tauri Updater Channel",
+                    "kind": "delivery_artifact",
+                    "aliases": [
+                        "Tauri Updater Channel",
+                        "latest.json",
+                        "updater artifacts",
+                        "desktop updates"
+                    ],
+                    "owner_block_id": "release-deployment-ops"
+                },
+                {
+                    "entity_id": "technical-debt-ledger",
+                    "label": "Technical Debt and Maintenance Backlog",
+                    "kind": "operations",
+                    "aliases": [
+                        "Technical Debt and Maintenance Backlog",
+                        "TODO backlog",
+                        "audit findings",
+                        "maintenance tasks"
+                    ],
+                    "owner_block_id": "quality-risk-readiness"
+                },
+                {
+                    "entity_id": "whisper-transcription-service",
+                    "label": "Whisper Transcription Service",
+                    "kind": "external_service",
+                    "aliases": [
+                        "Whisper Transcription Service",
+                        "lemonfox whisper",
+                        "transcription API"
+                    ],
+                    "owner_block_id": "ai-media-pipeline"
+                }
+            ],
+            "topic_index": {
+                "api-surface-and-domain-boundaries": {
+                    "topic_id": "api-surface-and-domain-boundaries",
+                    "title": "API Surface and Domain Boundaries",
+                    "block_id": "backend-domain-platform",
+                    "block_title": "Backend Domain and Platform Services",
+                    "category": "architecture",
+                    "priority": "high",
+                    "tags": [
+                        "maintainability",
+                        "coupling"
+                    ],
+                    "keywords": [
+                        "Phoenix router",
+                        "contexts",
+                        "controllers",
+                        "pipelines",
+                        "CORS"
+                    ],
+                    "related_entities": [
+                        "phoenix-api-backend",
+                        "postgres-domain-schema"
+                    ]
+                },
+                "automated-test-strategy-gaps": {
+                    "topic_id": "automated-test-strategy-gaps",
+                    "title": "Automated Test Strategy Gaps",
+                    "block_id": "quality-risk-readiness",
+                    "block_title": "Quality, Security, and Readiness",
+                    "category": "quality",
+                    "priority": "high",
+                    "tags": [
+                        "testing",
+                        "reliability"
+                    ],
+                    "keywords": [
+                        "mix test",
+                        "frontend tests",
+                        "integration tests",
+                        "regression"
+                    ],
+                    "related_entities": [
+                        "automated-test-surface",
+                        "technical-debt-ledger"
+                    ]
+                },
+                "billing-credits-and-subscriptions": {
+                    "topic_id": "billing-credits-and-subscriptions",
+                    "title": "Billing, Credits, and Subscription Logic",
+                    "block_id": "backend-domain-platform",
+                    "block_title": "Backend Domain and Platform Services",
+                    "category": "domain",
+                    "priority": "high",
+                    "tags": [
+                        "monetization",
+                        "gating"
+                    ],
+                    "keywords": [
+                        "credits",
+                        "subscriptions",
+                        "Stripe",
+                        "crypto",
+                        "promo codes"
+                    ],
+                    "related_entities": [
+                        "billing-credits-engine",
+                        "organization-subscription-engine"
+                    ]
+                },
+                "desktop-creator-flow": {
+                    "topic_id": "desktop-creator-flow",
+                    "title": "Desktop Creator Workflow",
+                    "block_id": "product-workflows",
+                    "block_title": "Product Surface and User Workflows",
+                    "category": "product",
+                    "priority": "high",
+                    "tags": [
+                        "desktop",
+                        "workflow",
+                        "gating"
+                    ],
+                    "keywords": [
+                        "Tauri",
+                        "Vue",
+                        "projects",
+                        "clips",
+                        "video editor",
+                        "OpenCut"
+                    ],
+                    "related_entities": [
+                        "desktop-client",
+                        "account-role-model"
+                    ]
+                },
+                "editing-export-runtime": {
+                    "topic_id": "editing-export-runtime",
+                    "title": "Desktop Editing and Export Runtime",
+                    "block_id": "ai-media-pipeline",
+                    "block_title": "AI and Media Processing Pipeline",
+                    "category": "architecture",
+                    "priority": "high",
+                    "tags": [
+                        "desktop",
+                        "runtime"
+                    ],
+                    "keywords": [
+                        "OpenCut",
+                        "SQLite",
+                        "ffmpeg",
+                        "media assets",
+                        "export"
+                    ],
+                    "related_entities": [
+                        "opencut-editor-runtime",
+                        "media-processing-runtime"
+                    ]
+                },
+                "ingest-transcribe-detect-pipeline": {
+                    "topic_id": "ingest-transcribe-detect-pipeline",
+                    "title": "Ingest, Transcription, and Detection Pipeline",
+                    "block_id": "ai-media-pipeline",
+                    "block_title": "AI and Media Processing Pipeline",
+                    "category": "architecture",
+                    "priority": "high",
+                    "tags": [
+                        "pipeline",
+                        "retries"
+                    ],
+                    "keywords": [
+                        "Whisper",
+                        "OpenRouter",
+                        "chunked detection",
+                        "processing jobs",
+                        "progress"
+                    ],
+                    "related_entities": [
+                        "whisper-transcription-service",
+                        "openrouter-detection-service",
+                        "media-processing-runtime"
+                    ]
+                },
+                "multimodal-consensus-logic": {
+                    "topic_id": "multimodal-consensus-logic",
+                    "title": "Multimodel Consensus and Fallback Logic",
+                    "block_id": "ai-media-pipeline",
+                    "block_title": "AI and Media Processing Pipeline",
+                    "category": "architecture",
+                    "priority": "high",
+                    "tags": [
+                        "quality",
+                        "cost"
+                    ],
+                    "keywords": [
+                        "multimodal",
+                        "consensus",
+                        "decider",
+                        "token usage",
+                        "fallback"
+                    ],
+                    "related_entities": [
+                        "multimodel-consensus-engine",
+                        "openrouter-detection-service"
+                    ]
+                },
+                "operational-observability-readiness": {
+                    "topic_id": "operational-observability-readiness",
+                    "title": "Operational Observability and Maintenance",
+                    "block_id": "quality-risk-readiness",
+                    "block_title": "Quality, Security, and Readiness",
+                    "category": "operations",
+                    "priority": "medium",
+                    "tags": [
+                        "observability",
+                        "maintenance"
+                    ],
+                    "keywords": [
+                        "PulseKit",
+                        "logging",
+                        "alerts",
+                        "migrations",
+                        "release maintenance"
+                    ],
+                    "related_entities": [
+                        "operational-observability-stack",
+                        "technical-debt-ledger"
+                    ]
+                },
+                "organization-collaboration-flow": {
+                    "topic_id": "organization-collaboration-flow",
+                    "title": "Organization Collaboration Workflow",
+                    "block_id": "product-workflows",
+                    "block_title": "Product Surface and User Workflows",
+                    "category": "product",
+                    "priority": "high",
+                    "tags": [
+                        "collaboration",
+                        "rbac"
+                    ],
+                    "keywords": [
+                        "organizations",
+                        "members",
+                        "shared clips",
+                        "messaging",
+                        "campaigns"
+                    ],
+                    "related_entities": [
+                        "organization-workspace",
+                        "desktop-client"
+                    ]
+                },
+                "realtime-messaging-and-progress": {
+                    "topic_id": "realtime-messaging-and-progress",
+                    "title": "Realtime Messaging and Progress Channels",
+                    "block_id": "backend-domain-platform",
+                    "block_title": "Backend Domain and Platform Services",
+                    "category": "architecture",
+                    "priority": "medium",
+                    "tags": [
+                        "realtime",
+                        "security"
+                    ],
+                    "keywords": [
+                        "Phoenix Channels",
+                        "messaging",
+                        "progress",
+                        "announcements",
+                        "socket auth"
+                    ],
+                    "related_entities": [
+                        "realtime-channel-layer",
+                        "phoenix-api-backend"
+                    ]
+                },
+                "runtime-config-and-secret-contracts": {
+                    "topic_id": "runtime-config-and-secret-contracts",
+                    "title": "Runtime Config and Secret Contracts",
+                    "block_id": "release-deployment-ops",
+                    "block_title": "Release, Deployment, and Runtime Operations",
+                    "category": "operations",
+                    "priority": "high",
+                    "tags": [
+                        "configuration",
+                        "resilience"
+                    ],
+                    "keywords": [
+                        "runtime.exs",
+                        "env vars",
+                        "Stripe",
+                        "OAuth",
+                        "R2",
+                        "PulseKit"
+                    ],
+                    "related_entities": [
+                        "runtime-configuration-contract"
+                    ]
+                },
+                "security-hardening-hotspots": {
+                    "topic_id": "security-hardening-hotspots",
+                    "title": "Security Hardening Hotspots",
+                    "block_id": "quality-risk-readiness",
+                    "block_title": "Quality, Security, and Readiness",
+                    "category": "security",
+                    "priority": "high",
+                    "tags": [
+                        "security",
+                        "compliance"
+                    ],
+                    "keywords": [
+                        "JWT",
+                        "webhooks",
+                        "socket auth",
+                        "authorization",
+                        "rate limiting"
+                    ],
+                    "related_entities": [
+                        "auth-payment-security-surface",
+                        "operational-observability-stack"
+                    ]
+                },
+                "server-landing-deploy-topology": {
+                    "topic_id": "server-landing-deploy-topology",
+                    "title": "Server and Landing Deploy Topology",
+                    "block_id": "release-deployment-ops",
+                    "block_title": "Release, Deployment, and Runtime Operations",
+                    "category": "delivery",
+                    "priority": "medium",
+                    "tags": [
+                        "infrastructure",
+                        "operations"
+                    ],
+                    "keywords": [
+                        "Fly.io",
+                        "Phoenix deploy",
+                        "landing deploy",
+                        "health checks",
+                        "release branch"
+                    ],
+                    "related_entities": [
+                        "flyio-server-runtime",
+                        "flyio-landing-runtime"
+                    ]
+                },
+                "tauri-release-automation": {
+                    "topic_id": "tauri-release-automation",
+                    "title": "Tauri Multi-Platform Release Automation",
+                    "block_id": "release-deployment-ops",
+                    "block_title": "Release, Deployment, and Runtime Operations",
+                    "category": "delivery",
+                    "priority": "high",
+                    "tags": [
+                        "release",
+                        "desktop"
+                    ],
+                    "keywords": [
+                        "GitHub Actions",
+                        "Tauri",
+                        "notarization",
+                        "signing",
+                        "sidecars"
+                    ],
+                    "related_entities": [
+                        "github-release-workflow",
+                        "tauri-updater-channel"
+                    ]
+                },
+                "web-landing-dashboard-scope": {
+                    "topic_id": "web-landing-dashboard-scope",
+                    "title": "Landing and Web Dashboard Scope",
+                    "block_id": "product-workflows",
+                    "block_title": "Product Surface and User Workflows",
+                    "category": "product",
+                    "priority": "medium",
+                    "tags": [
+                        "web",
+                        "scope"
+                    ],
+                    "keywords": [
+                        "landing",
+                        "React",
+                        "dashboard",
+                        "admin",
+                        "downloads"
+                    ],
+                    "related_entities": [
+                        "landing-web-app",
+                        "organization-workspace"
+                    ]
+                }
+            }
         },
         "research_execution": {
             "version": 1,
@@ -314,15 +1427,181 @@
                 "latest_round": 0
             },
             "summary": {
-                "topic_total": 0,
+                "topic_total": 15,
                 "topic_complete": 0,
                 "topic_needs_followup": 0,
-                "topic_pending": 0,
+                "topic_pending": 15,
                 "pass_pending": 0,
                 "pass_complete": 0,
                 "next_pass_id": ""
             },
-            "topic_status": {},
+            "topic_status": {
+                "desktop-creator-flow": {
+                    "topic_id": "desktop-creator-flow",
+                    "title": "Desktop Creator Workflow",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "organization-collaboration-flow": {
+                    "topic_id": "organization-collaboration-flow",
+                    "title": "Organization Collaboration Workflow",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "web-landing-dashboard-scope": {
+                    "topic_id": "web-landing-dashboard-scope",
+                    "title": "Landing and Web Dashboard Scope",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "ingest-transcribe-detect-pipeline": {
+                    "topic_id": "ingest-transcribe-detect-pipeline",
+                    "title": "Ingest, Transcription, and Detection Pipeline",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "multimodal-consensus-logic": {
+                    "topic_id": "multimodal-consensus-logic",
+                    "title": "Multimodel Consensus and Fallback Logic",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "editing-export-runtime": {
+                    "topic_id": "editing-export-runtime",
+                    "title": "Desktop Editing and Export Runtime",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "api-surface-and-domain-boundaries": {
+                    "topic_id": "api-surface-and-domain-boundaries",
+                    "title": "API Surface and Domain Boundaries",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "realtime-messaging-and-progress": {
+                    "topic_id": "realtime-messaging-and-progress",
+                    "title": "Realtime Messaging and Progress Channels",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "billing-credits-and-subscriptions": {
+                    "topic_id": "billing-credits-and-subscriptions",
+                    "title": "Billing, Credits, and Subscription Logic",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "tauri-release-automation": {
+                    "topic_id": "tauri-release-automation",
+                    "title": "Tauri Multi-Platform Release Automation",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "server-landing-deploy-topology": {
+                    "topic_id": "server-landing-deploy-topology",
+                    "title": "Server and Landing Deploy Topology",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "runtime-config-and-secret-contracts": {
+                    "topic_id": "runtime-config-and-secret-contracts",
+                    "title": "Runtime Config and Secret Contracts",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "automated-test-strategy-gaps": {
+                    "topic_id": "automated-test-strategy-gaps",
+                    "title": "Automated Test Strategy Gaps",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "security-hardening-hotspots": {
+                    "topic_id": "security-hardening-hotspots",
+                    "title": "Security Hardening Hotspots",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "operational-observability-readiness": {
+                    "topic_id": "operational-observability-readiness",
+                    "title": "Operational Observability and Maintenance",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                }
+            },
             "pass_queue": [],
             "pass_history": [],
             "source_registry": [],
