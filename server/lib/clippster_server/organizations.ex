@@ -467,7 +467,7 @@ defmodule ClippsterServer.Organizations do
          {:ok, _} <- ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id),
          organization when not is_nil(organization) <- get_organization(organization_id),
          user when not is_nil(user) <- Accounts.get_user_by_email(email),
-         nil <- (if is_member?(organization_id, user.id), do: :already_member, else: nil),
+         false <- is_member?(organization_id, user.id),
          nil <- get_pending_invitation(organization_id, email) do
       # Generate plain token first
       plain_token = OrganizationInvitation.generate_token()
