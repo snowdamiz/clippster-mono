@@ -9,11 +9,35 @@ export interface HubTool {
   route: string
   stat?: number | string
   statLabel?: string
+  comingSoon?: boolean
 }
 
 function HubToolCard({ tool }: { tool: HubTool }) {
   const Icon = tool.icon
 
+  // Coming Soon card (non-clickable)
+  if (tool.comingSoon) {
+    return (
+      <div className="relative flex overflow-hidden rounded-[10px] border border-zinc-800 bg-zinc-900/60 opacity-40 cursor-not-allowed pointer-events-none">
+        <div className="flex flex-1 items-center gap-3.5 px-[1.125rem] py-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.04]">
+            <Icon className="h-5 w-5 text-zinc-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-semibold text-zinc-200 mb-1 m-0">
+              {tool.title}
+            </h3>
+            <p className="text-xs text-zinc-500 m-0 leading-[1.4] line-clamp-1">{tool.description}</p>
+          </div>
+          <span className="flex items-center justify-center shrink-0 ml-auto px-2 py-[3px] text-[10px] font-semibold bg-zinc-800 text-zinc-500 rounded uppercase tracking-wider">
+            Coming Soon
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  // Normal clickable card
   return (
     <Link
       to={tool.route}

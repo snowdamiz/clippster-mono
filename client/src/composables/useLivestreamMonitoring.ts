@@ -1374,6 +1374,28 @@ export function useLivestreamMonitoring() {
       const segmentDuration = requestedDuration > 0 ? requestedDuration : 5;
       const isInfiniteSegment = options.segmentDurationMinutes === 0;
 
+      // CRITICAL: Add to activeSessions IMMEDIATELY after getting sessionInfo
+      // This prevents race conditions where viewer checks for existing sessions
+      // before they're tracked, which would cause both to use the same session ID
+      activeSessions.value.set(streamer.id, {
+        sessionId: sessionInfo.sessionId,
+        streamerId: streamer.id,
+        mintId: streamer.mintId,
+        startedAt: Date.now(),
+        streamStartTime: status.streamStartTimestamp || Date.now(),
+        totalSegments: 0,
+        processedSegments: 0,
+        isRecording: true,
+        projectId: sessionInfo.projectId,
+        displayName: streamer.displayName,
+        platform: streamer.platform,
+        profileImageUrl: streamer.profileImageUrl,
+        detectClips: options.detectClips,
+        segmentDurationMinutes: segmentDuration,
+        promptId: options.promptId,
+        promptContent: options.promptContent,
+      });
+
       // Start platform-specific recording
       if (streamer.platform === 'Kick') {
         await startKickRecording(
@@ -1496,26 +1518,6 @@ export function useLivestreamMonitoring() {
           map.set(streamer.id, { mintId: streamer.mintId });
         });
       }
-
-      // Update activeSessions immediately so UI shows LIVE status
-      activeSessions.value.set(streamer.id, {
-        sessionId: sessionInfo.sessionId,
-        streamerId: streamer.id,
-        mintId: streamer.mintId,
-        startedAt: Date.now(),
-        streamStartTime: status.streamStartTimestamp || Date.now(),
-        totalSegments: 0,
-        processedSegments: 0,
-        isRecording: true,
-        projectId: sessionInfo.projectId,
-        displayName: streamer.displayName,
-        platform: streamer.platform,
-        profileImageUrl: streamer.profileImageUrl,
-        detectClips: options.detectClips,
-        segmentDurationMinutes: segmentDuration,
-        promptId: options.promptId,
-        promptContent: options.promptContent,
-      });
 
       // Add log
       addActivityLog({

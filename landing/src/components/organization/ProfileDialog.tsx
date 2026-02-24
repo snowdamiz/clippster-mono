@@ -15,6 +15,9 @@ import {
   UserCircle, Plus, X, Play, SkipForward, Image as ImageIcon,
   Loader2, Upload, ChevronDown, Trash2, Users, Paintbrush, Layers, Settings2,
 } from 'lucide-react'
+import { WatermarkPositionPicker, type CreatorWatermarkSettings } from './WatermarkPositionPicker'
+import { OverlayPositionPicker, type PerRatioOverlaySettings } from './OverlayPositionPicker'
+import { IntroOutroRatioPicker, type RatioAssetMap } from './IntroOutroRatioPicker'
 
 type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube'
 
@@ -83,6 +86,13 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
   const [uploadingWatermark, setUploadingWatermark] = useState(false)
   const [uploadingOverlay, setUploadingOverlay] = useState(false)
   const [showOverlayDropdown, setShowOverlayDropdown] = useState(false)
+  const [showWatermarkPositionPicker, setShowWatermarkPositionPicker] = useState(false)
+  const [showOverlayPositionPicker, setShowOverlayPositionPicker] = useState(false)
+  const [activeOverlayIndex, setActiveOverlayIndex] = useState(-1)
+  const [showIntroOutroRatioPicker, setShowIntroOutroRatioPicker] = useState(false)
+  const [ratioPickerMode, setRatioPickerMode] = useState<'intro' | 'outro'>('intro')
+  const [introRatioSettings, setIntroRatioSettings] = useState<string | null>(null)
+  const [outroRatioSettings, setOutroRatioSettings] = useState<string | null>(null)
 
   // Refs
   const introFileRef = useRef<HTMLInputElement>(null)
@@ -119,6 +129,8 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
       setWatermarkId(profile.watermark_id ?? null)
       setWatermarkSettings((profile.watermark_settings as Record<string, unknown>) || null)
       setLayoutOverlays((profile.layout_overlays as LayoutOverlay[]) || [])
+      setIntroRatioSettings((profile as any).intro_ratio_settings || null)
+      setOutroRatioSettings((profile as any).outro_ratio_settings || null)
       setScope(((profile as any).scope as 'streamer' | 'global') || scopeProp || 'streamer')
       setPlatformLinks(
         (profile.platform_links || []).map(link => ({
@@ -139,6 +151,8 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
       setWatermarkId(null)
       setWatermarkSettings(null)
       setLayoutOverlays([])
+      setIntroRatioSettings(null)
+      setOutroRatioSettings(null)
       setScope(scopeProp || 'streamer')
       setPlatformLinks([])
     }
@@ -219,6 +233,79 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
     }
   }
 
+  // Intro/Outro ratio picker handlers
+  const openRatioPicker = (mode: 'intro' | 'outro') => {
+    setRatioPickerMode(mode)
+    setShowIntroOutroRatioPicker(true)
+  }
+
+  const handleRatioSettingsSave = (settings: RatioAssetMap) => {
+    const settingsJson = JSON.stringify(settings)
+    if (ratioPickerMode === 'intro') {
+      setIntroRatioSettings(settingsJson)
+    } else {
+      setOutroRatioSettings(settingsJson)
+    }
+    setShowIntroOutroRatioPicker(false)
+  }
+
+  const getInitialRatioSettings = (mode: 'intro' | 'outro'): RatioAssetMap | null => {
+    const raw = mode === 'intro' ? introRatioSettings : outroRatioSettings
+    if (!raw) return null
+    try {
+      return JSON.parse(raw)
+    } catch {
+      return null
+    }
+  }
+
+  const hasIntroRatioConfig = (): boolean => {
+    if (!introRatioSettings) return false
+    try {
+      const settings = JSON.parse(introRatioSettings)
+      return Object.values(settings).some(config => config !== null)
+    } catch {
+      return false
+    }
+  }
+
+  const hasOutroRatioConfig = (): boolean => {
+    if (!outroRatioSettings) return false
+    try {
+      const settings = JSON.parse(outroRatioSettings)
+      return Object.values(settings).some(config => config !== null)
+    } catch {
+      return false
+    }
+  }
+
+  // Position picker handlers
+  const openWatermarkPositionPicker = () => {
+    setShowWatermarkPositionPicker(true)
+  }
+
+  const handleWatermarkSettingsSave = (settings: CreatorWatermarkSettings) => {
+    setWatermarkSettings(settings as unknown as Record<string, unknown>)
+    setShowWatermarkPositionPicker(false)
+  }
+
+  const openOverlayPositionPicker = (idx: number) => {
+    setActiveOverlayIndex(idx)
+    setShowOverlayPositionPicker(true)
+  }
+
+  const handleOverlayPositionSave = (settings: PerRatioOverlaySettings) => {
+    if (activeOverlayIndex < 0 || activeOverlayIndex >= layoutOverlays.length) return
+
+    const updatedOverlays = [...layoutOverlays]
+    updatedOverlays[activeOverlayIndex] = {
+      ...updatedOverlays[activeOverlayIndex],
+      perRatioSettings: settings as unknown as Record<string, unknown>,
+    }
+    setLayoutOverlays(updatedOverlays)
+    setShowOverlayPositionPicker(false)
+  }
+
   // Submit
   const handleSubmit = async () => {
     if (!name.trim() || !organizationId) return
@@ -237,6 +324,8 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
           watermark_id: watermarkId,
           watermark_settings: watermarkSettings,
           layout_overlays: layoutOverlays.length > 0 ? layoutOverlays : null,
+          intro_ratio_settings: introRatioSettings,
+          outro_ratio_settings: outroRatioSettings,
           scope,
         })
         if (!res.success || !res.profile) throw new Error(res.error || 'Failed to update profile')
@@ -274,6 +363,8 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
           watermark_id: watermarkId,
           watermark_settings: watermarkSettings || undefined,
           layout_overlays: layoutOverlays.length > 0 ? layoutOverlays : undefined,
+          intro_ratio_settings: introRatioSettings || undefined,
+          outro_ratio_settings: outroRatioSettings || undefined,
           scope,
         })
         if (!res.success || !res.profile) throw new Error(res.error || 'Failed to create profile')
@@ -481,11 +572,25 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                       </div>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => openRatioPicker('intro')}
+                    className={`org-dialog__asset-upload${hasIntroRatioConfig() ? ' org-dialog__asset-upload--active' : ''}`}
+                    title="Configure intro per aspect ratio"
+                  >
+                    <Settings2 size={16} />
+                  </button>
                   <input ref={introFileRef} type="file" accept="video/mp4,video/webm,video/quicktime" className="org-dialog__hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f, 'intro'); e.target.value = '' }} />
                   <button type="button" onClick={() => introFileRef.current?.click()} disabled={uploadingIntro} className="org-dialog__asset-upload" title="Upload new intro">
                     {uploadingIntro ? <Loader2 size={16} className="org-dialog__spin" /> : <Upload size={16} />}
                   </button>
                 </div>
+                {hasIntroRatioConfig() && (
+                  <p className="org-dialog__asset-hint">
+                    <Settings2 size={12} />
+                    Per-ratio intros configured
+                  </p>
+                )}
               </div>
 
               {/* Outro */}
@@ -515,11 +620,25 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                       </div>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => openRatioPicker('outro')}
+                    className={`org-dialog__asset-upload${hasOutroRatioConfig() ? ' org-dialog__asset-upload--active' : ''}`}
+                    title="Configure outro per aspect ratio"
+                  >
+                    <Settings2 size={16} />
+                  </button>
                   <input ref={outroFileRef} type="file" accept="video/mp4,video/webm,video/quicktime" className="org-dialog__hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f, 'outro'); e.target.value = '' }} />
                   <button type="button" onClick={() => outroFileRef.current?.click()} disabled={uploadingOutro} className="org-dialog__asset-upload" title="Upload new outro">
                     {uploadingOutro ? <Loader2 size={16} className="org-dialog__spin" /> : <Upload size={16} />}
                   </button>
                 </div>
+                {hasOutroRatioConfig() && (
+                  <p className="org-dialog__asset-hint">
+                    <Settings2 size={12} />
+                    Per-ratio outros configured
+                  </p>
+                )}
               </div>
 
               {/* Watermark */}
@@ -549,6 +668,15 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                       </div>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={openWatermarkPositionPicker}
+                    disabled={!watermarkId}
+                    className={`org-dialog__asset-upload${watermarkSettings ? ' org-dialog__asset-upload--active' : ''}`}
+                    title="Configure watermark position"
+                  >
+                    <Settings2 size={16} />
+                  </button>
                   <input ref={watermarkFileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm" className="org-dialog__hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f, 'watermark'); e.target.value = '' }} />
                   <button type="button" onClick={() => watermarkFileRef.current?.click()} disabled={uploadingWatermark} className="org-dialog__asset-upload" title="Upload new watermark">
                     {uploadingWatermark ? <Loader2 size={16} className="org-dialog__spin" /> : <Upload size={16} />}
@@ -613,6 +741,14 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                               </div>
                               <button
                                 type="button"
+                                onClick={e => { e.stopPropagation(); openOverlayPositionPicker(idx) }}
+                                className={`org-dialog__overlay-action${overlay.perRatioSettings ? ' org-dialog__overlay-action--active' : ''}`}
+                                title="Configure position per aspect ratio"
+                              >
+                                <Settings2 size={14} />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={e => { e.stopPropagation(); setLayoutOverlays(prev => prev.filter((_, i) => i !== idx)) }}
                                 className="org-dialog__overlay-action org-dialog__overlay-action--danger"
                                 title="Remove overlay"
@@ -625,6 +761,9 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                       </div>
                     )}
                   </div>
+                  <button type="button" disabled={layoutOverlays.length === 0} className={`org-dialog__asset-upload${layoutOverlays.some(o => o.perRatioSettings) ? ' org-dialog__asset-upload--active' : ''}`} onClick={() => openOverlayPositionPicker(0)} title="Configure overlay position">
+                    <Settings2 size={16} />
+                  </button>
                   <input
                     ref={overlayFileRef}
                     type="file"
@@ -683,6 +822,42 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
           </button>
         </div>
       </div>
+
+      {/* Watermark Position Picker */}
+      <WatermarkPositionPicker
+        show={showWatermarkPositionPicker}
+        watermarkUrl={watermarkAssets.find(a => a.id === watermarkId)?.url}
+        watermarkId={watermarkId || undefined}
+        watermarkWidth={watermarkAssets.find(a => a.id === watermarkId)?.width || undefined}
+        watermarkHeight={watermarkAssets.find(a => a.id === watermarkId)?.height || undefined}
+        settings={watermarkSettings as unknown as CreatorWatermarkSettings | undefined}
+        watermarkAssets={watermarkAssets.map(a => ({ ...a, width: a.width || undefined, height: a.height || undefined }))}
+        organizationId={organizationId ? Number(organizationId) : undefined}
+        onClose={() => setShowWatermarkPositionPicker(false)}
+        onSave={handleWatermarkSettingsSave}
+      />
+
+      {/* Overlay Position Picker */}
+      {activeOverlayIndex >= 0 && activeOverlayIndex < layoutOverlays.length && (
+        <OverlayPositionPicker
+          show={showOverlayPositionPicker}
+          overlayImageUrl={layoutOverlays[activeOverlayIndex]?.imageUrl || ''}
+          overlayLabel={layoutOverlays[activeOverlayIndex]?.label}
+          settings={layoutOverlays[activeOverlayIndex]?.perRatioSettings as PerRatioOverlaySettings | undefined}
+          onClose={() => setShowOverlayPositionPicker(false)}
+          onSave={handleOverlayPositionSave}
+        />
+      )}
+
+      {/* Intro/Outro Ratio Picker */}
+      <IntroOutroRatioPicker
+        show={showIntroOutroRatioPicker}
+        mode={ratioPickerMode}
+        initialSettings={getInitialRatioSettings(ratioPickerMode)}
+        organizationId={organizationId ? Number(organizationId) : undefined}
+        onClose={() => setShowIntroOutroRatioPicker(false)}
+        onSave={handleRatioSettingsSave}
+      />
     </div>,
     document.body
   )

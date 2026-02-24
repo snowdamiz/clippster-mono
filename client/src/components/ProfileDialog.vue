@@ -689,6 +689,7 @@
   <OverlayPositionPicker
     :show="showOverlayPositionPicker"
     :overlay-image-path="activeOverlayForPosition?.imagePath || ''"
+    :overlay-image-url="activeOverlayForPosition ? overlayPreviews[activeOverlayForPosition.id] : ''"
     :overlay-label="activeOverlayForPosition?.label || ''"
     :settings="activeOverlayForPosition?.perRatioSettings || undefined"
     @close="showOverlayPositionPicker = false"

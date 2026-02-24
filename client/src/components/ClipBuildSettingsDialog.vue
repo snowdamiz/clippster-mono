@@ -226,21 +226,19 @@
                       <!-- Mode Toggle -->
                       <div class="build-dialog__framing-grid">
                         <button
-                          @click="framingMode = 'auto'"
-                          class="build-dialog__framing-mode"
-                          :class="{ 'build-dialog__framing-mode--active': framingMode === 'auto' }"
+                          disabled
+                          class="build-dialog__framing-mode build-dialog__framing-mode--disabled"
                         >
                           <div class="build-dialog__framing-mode-header">
                             <div
                               class="build-dialog__framing-mode-icon"
-                              :class="{ 'build-dialog__framing-mode-icon--active': framingMode === 'auto' }"
                             >
                               <SparklesIcon class="build-dialog__framing-icon" />
                             </div>
                             <span class="build-dialog__framing-mode-label">Auto</span>
                           </div>
                           <p class="build-dialog__framing-mode-desc">
-                            AI automatically detects speakers and content regions
+                            Coming soon - Use manual configuration
                           </p>
                         </button>
 
@@ -864,8 +862,8 @@
   const showIntroDropdown = ref(false);
   const showOutroDropdown = ref(false);
 
-  // Framing mode state
-  const framingMode = ref<'auto' | 'manual'>('auto');
+  // Framing mode state (forced to manual since auto is not implemented)
+  const framingMode = ref<'auto' | 'manual'>('manual');
   const manualFramingConfigs = ref<import('@/types').ManualFramingConfigs>({});
   const showManualPOIEditor = ref(false);
   const editingAspectRatio = ref<string>('9:16');
@@ -1052,7 +1050,7 @@
           framingMode.value = 'manual';
           console.log('[ClipBuildSettingsDialog] Initialized framing mode from VOD preset: manual');
         } else {
-          framingMode.value = 'auto';
+          framingMode.value = 'manual';
         }
 
         if (props.initialFramingConfigs && Object.keys(props.initialFramingConfigs).length > 0) {
@@ -1966,6 +1964,12 @@
   .build-dialog__framing-mode--active {
     border-color: var(--sidebar-accent);
     background-color: rgba(6, 182, 212, 0.1);
+  }
+
+  .build-dialog__framing-mode--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 
   .build-dialog__framing-mode-header {
