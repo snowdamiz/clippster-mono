@@ -7,6 +7,7 @@ export interface ClipperProfile {
   avatar_url: string | null
   slug: string | null
   bio: string | null
+  is_public?: boolean
   is_verified: boolean
   looking_for_work: boolean
   experience_level: string | null
@@ -44,6 +45,13 @@ export interface DirectoryFilters {
   content_style_tags?: string[]
   preferred_platforms?: string[]
   languages?: string[]
+}
+
+function isDirectoryVisibleProfile(profile: ClipperProfile): boolean {
+  const displayName = profile.display_name?.trim()
+  const slug = profile.slug?.trim()
+  const isPublic = profile.is_public ?? true
+  return isPublic && Boolean(displayName) && Boolean(slug)
 }
 
 export const EXPERIENCE_LEVELS = [
@@ -122,7 +130,12 @@ export async function listClippers(filters?: DirectoryFilters) {
     if (filters.languages?.length) filters.languages.forEach(l => params.append('languages[]', l))
   }
   const qs = params.toString() ? `?${params.toString()}` : ''
-  return api.get<{ success: boolean; profiles: ClipperProfile[]; error?: string }>(`/clipper-profiles${qs}`)
+  const response = await api.get<{ success: boolean; profiles: ClipperProfile[]; error?: string }>(`/clipper-profiles${qs}`)
+  if (!response.success) return response
+  return {
+    ...response,
+    profiles: (response.profiles || []).filter(isDirectoryVisibleProfile),
+  }
 }
 
 export async function getLeaderboard(period: 'weekly' | 'monthly' = 'weekly') {

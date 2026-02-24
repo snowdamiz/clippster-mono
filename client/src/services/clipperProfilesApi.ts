@@ -489,6 +489,12 @@ export interface DirectoryFilters {
   verified_only?: boolean;
 }
 
+function isDirectoryVisibleProfile(profile: ClipperProfile): boolean {
+  const displayName = profile.display_name?.trim();
+  const slug = profile.slug?.trim();
+  return profile.is_public === true && Boolean(displayName) && Boolean(slug);
+}
+
 export async function listClippers(filters?: DirectoryFilters): Promise<ProfilesResponse> {
   const params = new URLSearchParams();
 
@@ -519,7 +525,15 @@ export async function listClippers(filters?: DirectoryFilters): Promise<Profiles
   const queryString = params.toString();
   const url = queryString ? `/clippers?${queryString}` : '/clippers';
   const response = await api.get(url);
-  return response.data;
+
+  if (!response.data?.success) {
+    return response.data;
+  }
+
+  return {
+    ...response.data,
+    profiles: (response.data.profiles || []).filter(isDirectoryVisibleProfile),
+  };
 }
 
 export async function getClipperBySlug(slug: string): Promise<ProfileResponse> {
