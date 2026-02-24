@@ -5,6 +5,7 @@ defmodule ClippsterServer.AI.ChatSession do
   @valid_statuses ~w(discovery generating generated refining completed)
 
   schema "ai_chat_sessions" do
+    field :name, :string
     field :status, :string, default: "discovery"
     field :media_items, {:array, :map}, default: []
     field :composition, :map
@@ -26,7 +27,7 @@ defmodule ClippsterServer.AI.ChatSession do
   def changeset(session, attrs) do
     session
     |> cast(attrs, [
-      :status, :media_items, :composition, :refinement_round,
+      :name, :status, :media_items, :composition, :refinement_round,
       :refinement_messages_used, :max_refinement_rounds, :max_messages_per_round,
       :style_context, :reference_analysis, :media_analysis, :reference_url, :user_id
     ])

@@ -232,8 +232,11 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/reference/analyze", AIChatController, :analyze_reference)
 
     # AI chat sessions (conversational video generation)
+    get("/ai/chat/sessions", AIChatController, :list_sessions)
     post("/ai/chat/sessions", AIChatController, :create_session)
     get("/ai/chat/sessions/:id", AIChatController, :get_session)
+    delete("/ai/chat/sessions/:id", AIChatController, :delete_session)
+    put("/ai/chat/sessions/:id/name", AIChatController, :rename_session)
     post("/ai/chat/sessions/:id/message", AIChatController, :send_message)
     post("/ai/chat/sessions/:id/generate", AIChatController, :trigger_generation)
     post("/ai/chat/sessions/:id/refine", AIChatController, :send_refinement)

@@ -22,7 +22,6 @@ import {
   verifySubmission,
   rejectSubmission
 } from '@/services/campaignApi'
-import { useToast } from '@/hooks/useToast'
 import type { Campaign } from '@/types/organization'
 import {
   Megaphone,

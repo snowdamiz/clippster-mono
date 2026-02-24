@@ -15,6 +15,19 @@ import type { StreamCallbacks } from './aiVideoApi';
 // Session CRUD
 // ---------------------------------------------------------------------------
 
+export interface SessionSummary {
+  id: number;
+  name: string | null;
+  status: string;
+  updated_at: string;
+  inserted_at: string;
+}
+
+export async function listChatSessions(): Promise<SessionSummary[]> {
+  const response = await api.get('/ai/chat/sessions');
+  return response.data.sessions;
+}
+
 export async function createChatSession(mediaItems: AIVideoMediaItem[] = []): Promise<AIChatSession> {
   const response = await api.post('/ai/chat/sessions', { media_items: mediaItems });
   return response.data;
@@ -23,6 +36,14 @@ export async function createChatSession(mediaItems: AIVideoMediaItem[] = []): Pr
 export async function getChatSession(sessionId: number): Promise<AIChatSession> {
   const response = await api.get(`/ai/chat/sessions/${sessionId}`);
   return response.data;
+}
+
+export async function deleteChatSession(sessionId: number): Promise<void> {
+  await api.delete(`/ai/chat/sessions/${sessionId}`);
+}
+
+export async function renameChatSession(sessionId: number, name: string): Promise<void> {
+  await api.put(`/ai/chat/sessions/${sessionId}/name`, { name });
 }
 
 // ---------------------------------------------------------------------------
