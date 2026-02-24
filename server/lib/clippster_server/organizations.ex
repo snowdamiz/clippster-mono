@@ -198,15 +198,26 @@ defmodule ClippsterServer.Organizations do
   Owner role bypasses seat limit checks.
   """
   def add_member(organization_id, user_id, role \\ "member") do
+    IO.puts("[Organizations] add_member called: org_id=#{organization_id}, user_id=#{user_id}, role=#{role}")
+    
     # Skip seat limit check for owner role
     if role == "owner" do
-      %OrganizationMember{}
+      result = %OrganizationMember{}
       |> OrganizationMember.create_changeset(%{
         organization_id: organization_id,
         user_id: user_id,
         role: role
       })
       |> Repo.insert()
+      
+      case result do
+        {:ok, member} ->
+          IO.puts("[Organizations] add_member SUCCESS: created member id=#{member.id}")
+          {:ok, member}
+        {:error, changeset} ->
+          IO.puts("[Organizations] add_member FAILED: #{inspect(changeset.errors)}")
+          {:error, changeset}
+      end
     else
       # Check seat limit for non-owner members
       case ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id) do
@@ -272,18 +283,28 @@ defmodule ClippsterServer.Organizations do
   Gets a specific member record.
   """
   def get_member(organization_id, user_id) do
+    IO.puts("[Organizations] get_member called: org_id=#{inspect(organization_id)}, user_id=#{inspect(user_id)}")
+    
     with org_id when is_integer(org_id) <- normalize_id(organization_id),
          user_id_int when is_integer(user_id_int) <- normalize_id(user_id) do
+      IO.puts("[Organizations] get_member normalized: org_id=#{org_id}, user_id=#{user_id_int}")
+      
       case fetch_member(org_id, user_id_int) do
         nil ->
+          IO.puts("[Organizations] get_member: member not found, attempting backfill")
           maybe_backfill_owner_membership(org_id, user_id_int)
-          fetch_member(org_id, user_id_int)
+          result = fetch_member(org_id, user_id_int)
+          IO.puts("[Organizations] get_member after backfill: #{inspect(result)}")
+          result
 
         member ->
+          IO.puts("[Organizations] get_member: found member with role=#{member.role}")
           member
       end
     else
-      _ -> nil
+      _ -> 
+        IO.puts("[Organizations] get_member: normalization failed")
+        nil
     end
   end
 
@@ -326,7 +347,9 @@ defmodule ClippsterServer.Organizations do
   Checks if a user is a member of an organization (any role).
   """
   def is_member?(organization_id, user_id) do
-    get_member(organization_id, user_id) != nil
+    result = get_member(organization_id, user_id) != nil
+    IO.puts("[Organizations] is_member? org_id=#{organization_id}, user_id=#{user_id} => #{result}")
+    result
   end
 
   defp fetch_member(organization_id, user_id) do
@@ -355,17 +378,27 @@ defmodule ClippsterServer.Organizations do
   end
 
   defp maybe_backfill_owner_membership(organization_id, user_id) do
+    IO.puts("[Organizations] maybe_backfill_owner_membership: org_id=#{organization_id}, user_id=#{user_id}")
+    
     case Repo.get(Organization, organization_id) do
-      %Organization{owner_id: ^user_id} ->
+      %Organization{owner_id: ^user_id} = org ->
+        IO.puts("[Organizations] User #{user_id} IS the owner of org #{organization_id} (owner_id=#{org.owner_id}), backfilling...")
         ensure_owner_membership(organization_id, user_id)
 
-      _ ->
+      %Organization{owner_id: actual_owner_id} ->
+        IO.puts("[Organizations] User #{user_id} is NOT the owner of org #{organization_id} (owner_id=#{inspect(actual_owner_id)})")
+        :ok
+
+      nil ->
+        IO.puts("[Organizations] Organization #{organization_id} not found!")
         :ok
     end
   end
 
   defp ensure_owner_membership(organization_id, owner_id) do
     if is_nil(fetch_member(organization_id, owner_id)) do
+      IO.puts("[Organizations] ensure_owner_membership: inserting member for org=#{organization_id}, user=#{owner_id}")
+      
       %OrganizationMember{}
       |> OrganizationMember.create_changeset(%{
         organization_id: organization_id,
@@ -377,10 +410,16 @@ defmodule ClippsterServer.Organizations do
         conflict_target: [:organization_id, :user_id]
       )
       |> case do
-        {:ok, _} -> :ok
-        {:error, _} -> :ok
+        {:ok, member} ->
+          IO.puts("[Organizations] ensure_owner_membership SUCCESS: member id=#{member.id}")
+          :ok
+        {:error, changeset} ->
+          IO.puts("[Organizations] ensure_owner_membership FAILED: #{inspect(changeset.errors)}")
+          IO.puts("[Organizations] ensure_owner_membership changeset: #{inspect(changeset)}")
+          :ok
       end
     else
+      IO.puts("[Organizations] ensure_owner_membership: member already exists for org=#{organization_id}, user=#{owner_id}")
       :ok
     end
   end

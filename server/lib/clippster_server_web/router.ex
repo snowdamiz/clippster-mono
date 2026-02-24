@@ -1075,6 +1075,9 @@ defmodule ClippsterServerWeb.Router do
     get("/admin/settings", AdminController, :get_settings)
     put("/admin/settings/:key", AdminController, :update_setting)
 
+    # Admin diagnostic
+    get("/admin/diagnostic/org-membership", AdminController, :diagnose_org_membership)
+
     # Admin free tier branding
     get("/admin/free-tier-branding", AdminController, :get_free_tier_branding)
     put("/admin/free-tier-branding", AdminController, :save_free_tier_branding)
