@@ -1,5 +1,5 @@
 {
-    "prerequisites-pass": false,
+    "prerequisites-pass": true,
     "state": {
         "ideation-completed": false,
         "research-completed": false,
@@ -48,7 +48,7 @@
                                             "skill_path": "skills/prerequisite-gate/SKILL.md",
                                             "reason": "Prerequisite gate has not passed yet."
                                         },
-                                        "status": "pending",
+                                        "status": "complete",
                                         "children": []
                                     },
                                     {
@@ -112,52 +112,52 @@
         "summary": {
             "total_items": 9,
             "total_actionable_items": 6,
-            "completed_actionable_items": 1,
-            "pending_actionable_items": 5,
+            "completed_actionable_items": 2,
+            "pending_actionable_items": 4,
             "in_progress_actionable_items": 0,
             "blocked_actionable_items": 0,
-            "completion_percent": 17
+            "completion_percent": 33
         },
         "next_item": {
-            "id": "task-prerequisite-gate",
-            "title": "Run prerequisite gate",
+            "id": "task-brownfield-intake",
+            "title": "Capture project mode and baseline",
             "kind": "task",
             "status": "pending",
             "path_ids": [
                 "milestone-foundation",
                 "phase-project-setup",
                 "wave-initialize-cadence",
-                "task-prerequisite-gate"
+                "task-brownfield-intake"
             ],
             "path_titles": [
                 "Foundation",
                 "Project Setup",
                 "Initialize Cadence",
-                "Run prerequisite gate"
+                "Capture project mode and baseline"
             ]
         },
         "active_item": {
-            "id": "task-prerequisite-gate",
-            "title": "Run prerequisite gate",
+            "id": "task-brownfield-intake",
+            "title": "Capture project mode and baseline",
             "kind": "task",
             "status": "pending",
             "path_ids": [
                 "milestone-foundation",
                 "phase-project-setup",
                 "wave-initialize-cadence",
-                "task-prerequisite-gate"
+                "task-brownfield-intake"
             ],
             "path_titles": [
                 "Foundation",
                 "Project Setup",
                 "Initialize Cadence",
-                "Run prerequisite gate"
+                "Capture project mode and baseline"
             ]
         },
         "next_route": {
-            "skill_name": "prerequisite-gate",
-            "skill_path": "skills/prerequisite-gate/SKILL.md",
-            "reason": "Prerequisite gate has not passed yet."
+            "skill_name": "brownfield-intake",
+            "skill_path": "skills/brownfield-intake/SKILL.md",
+            "reason": "Project mode and existing codebase baseline have not been captured yet."
         },
         "phase_order": [
             "task-scaffold",
@@ -172,7 +172,7 @@
                 "status": "complete"
             },
             "task-prerequisite-gate": {
-                "status": "pending"
+                "status": "complete"
             },
             "task-brownfield-intake": {
                 "status": "pending"
@@ -188,11 +188,12 @@
             }
         },
         "completed_phases": [
-            "task-scaffold"
+            "task-scaffold",
+            "task-prerequisite-gate"
         ],
-        "active_phase": "task-prerequisite-gate",
-        "next_phase": "task-prerequisite-gate",
-        "completion_percent": 17
+        "active_phase": "task-brownfield-intake",
+        "next_phase": "task-brownfield-intake",
+        "completion_percent": 33
     },
     "project-details": {
         "mode": "unknown",
