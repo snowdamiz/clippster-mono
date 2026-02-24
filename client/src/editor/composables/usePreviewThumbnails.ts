@@ -4,173 +4,48 @@ export const THUMB_W = 240;
 export const THUMB_H = 160;
 
 /**
- * Scene A: Vibrant cityscape at golden hour — bright, colorful, lots of detail.
- * Designed to look like a real photo thumbnail so effects are clearly visible.
+ * Professional stock images for effect/transition previews.
+ * Bundled locally for production reliability (no CORS, no network dependency).
  */
-export function drawSampleScene(ctx: CanvasRenderingContext2D, w: number, h: number) {
-	// Vivid sunset sky
-	const sky = ctx.createLinearGradient(0, 0, 0, h * 0.55);
-	sky.addColorStop(0, "#0f1b4c");
-	sky.addColorStop(0.3, "#3a1078");
-	sky.addColorStop(0.6, "#e94560");
-	sky.addColorStop(0.85, "#ff8c32");
-	sky.addColorStop(1, "#ffcf48");
-	ctx.fillStyle = sky;
-	ctx.fillRect(0, 0, w, h * 0.55);
+const STOCK_IMAGES = {
+	sceneA: "/editor/stock/city-sunset.jpg", // City skyline at sunset
+	sceneB: "/editor/stock/mountain-landscape.jpg", // Mountain landscape
+	model: "/editor/stock/portrait.jpg", // Professional portrait
+};
 
-	// Sun glow
-	const sunGrad = ctx.createRadialGradient(w * 0.65, h * 0.42, 0, w * 0.65, h * 0.42, w * 0.22);
-	sunGrad.addColorStop(0, "rgba(255,240,180,0.9)");
-	sunGrad.addColorStop(0.3, "rgba(255,180,60,0.5)");
-	sunGrad.addColorStop(1, "transparent");
-	ctx.fillStyle = sunGrad;
-	ctx.fillRect(0, 0, w, h);
-
-	// City buildings silhouette
-	ctx.fillStyle = "#1a1a2e";
-	const buildings = [
-		[0.02, 0.30, 0.06, 0.25],
-		[0.09, 0.25, 0.05, 0.30],
-		[0.15, 0.18, 0.07, 0.37],
-		[0.23, 0.28, 0.05, 0.27],
-		[0.29, 0.22, 0.08, 0.33],
-		[0.38, 0.15, 0.06, 0.40],
-		[0.45, 0.20, 0.07, 0.35],
-		[0.53, 0.12, 0.05, 0.43],
-		[0.59, 0.24, 0.06, 0.31],
-		[0.66, 0.19, 0.08, 0.36],
-		[0.75, 0.26, 0.05, 0.29],
-		[0.81, 0.14, 0.06, 0.41],
-		[0.88, 0.22, 0.07, 0.33],
-		[0.96, 0.28, 0.05, 0.27],
-	];
-	for (const [bx, by, bw, bh] of buildings) {
-		ctx.fillRect(w * bx, h * by, w * bw, h * bh);
-	}
-
-	// Building windows (yellow dots)
-	ctx.fillStyle = "#ffdd44";
-	for (const [bx, by, bw, bh] of buildings) {
-		const cols = Math.max(2, Math.floor(bw * w / 5));
-		const rows = Math.max(3, Math.floor(bh * h / 6));
-		for (let r = 1; r < rows; r++) {
-			for (let c = 0; c < cols; c++) {
-				if (Math.random() > 0.5) {
-					const wx = w * bx + 2 + c * (w * bw - 4) / cols;
-					const wy = h * by + 3 + r * (h * bh - 6) / rows;
-					ctx.globalAlpha = 0.4 + Math.random() * 0.6;
-					ctx.fillRect(wx, wy, 2, 2);
-				}
-			}
-		}
-	}
-	ctx.globalAlpha = 1;
-
-	// Water / ground reflection
-	const water = ctx.createLinearGradient(0, h * 0.55, 0, h);
-	water.addColorStop(0, "#1a0a3e");
-	water.addColorStop(0.3, "#2a1555");
-	water.addColorStop(1, "#0a0a1a");
-	ctx.fillStyle = water;
-	ctx.fillRect(0, h * 0.55, w, h * 0.45);
-
-	// Water reflection highlights
-	ctx.fillStyle = "rgba(255,140,50,0.15)";
-	for (let i = 0; i < 12; i++) {
-		const rx = Math.random() * w;
-		const ry = h * 0.58 + Math.random() * h * 0.35;
-		ctx.fillRect(rx, ry, 8 + Math.random() * 20, 1);
-	}
-
-	// Bright reflection streak
-	const refl = ctx.createLinearGradient(w * 0.55, h * 0.55, w * 0.75, h);
-	refl.addColorStop(0, "rgba(255,200,100,0.25)");
-	refl.addColorStop(1, "transparent");
-	ctx.fillStyle = refl;
-	ctx.fillRect(w * 0.55, h * 0.55, w * 0.2, h * 0.45);
+/**
+ * Load an image and draw it to canvas.
+ */
+async function loadAndDrawImage(
+	ctx: CanvasRenderingContext2D,
+	w: number,
+	h: number,
+	imageUrl: string,
+): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const img = new Image();
+		img.crossOrigin = "anonymous";
+		img.onload = () => {
+			ctx.drawImage(img, 0, 0, w, h);
+			resolve();
+		};
+		img.onerror = reject;
+		img.src = imageUrl;
+	});
 }
 
 /**
- * Scene B: Tropical beach with turquoise water — warm, bright, contrasting with Scene A.
+ * Scene A: Professional cityscape stock image.
  */
-export function drawSampleSceneB(ctx: CanvasRenderingContext2D, w: number, h: number) {
-	// Bright blue sky
-	const sky = ctx.createLinearGradient(0, 0, 0, h * 0.45);
-	sky.addColorStop(0, "#0099ff");
-	sky.addColorStop(1, "#66ccff");
-	ctx.fillStyle = sky;
-	ctx.fillRect(0, 0, w, h * 0.45);
+export async function drawSampleScene(ctx: CanvasRenderingContext2D, w: number, h: number) {
+	await loadAndDrawImage(ctx, w, h, STOCK_IMAGES.sceneA);
+}
 
-	// Clouds
-	ctx.fillStyle = "rgba(255,255,255,0.7)";
-	const clouds = [[0.15, 0.12, 0.18], [0.55, 0.08, 0.14], [0.8, 0.15, 0.12]];
-	for (const [cx, cy, cr] of clouds) {
-		ctx.beginPath();
-		ctx.ellipse(w * cx, h * cy, w * cr, h * 0.04, 0, 0, Math.PI * 2);
-		ctx.fill();
-		ctx.beginPath();
-		ctx.ellipse(w * cx + w * 0.04, h * cy - h * 0.02, w * cr * 0.7, h * 0.035, 0, 0, Math.PI * 2);
-		ctx.fill();
-	}
-
-	// Ocean
-	const ocean = ctx.createLinearGradient(0, h * 0.4, 0, h * 0.7);
-	ocean.addColorStop(0, "#00b4d8");
-	ocean.addColorStop(0.5, "#0096c7");
-	ocean.addColorStop(1, "#0077b6");
-	ctx.fillStyle = ocean;
-	ctx.fillRect(0, h * 0.4, w, h * 0.3);
-
-	// Wave lines
-	ctx.strokeStyle = "rgba(255,255,255,0.3)";
-	ctx.lineWidth = 1;
-	for (let i = 0; i < 5; i++) {
-		const y = h * 0.45 + i * h * 0.05;
-		ctx.beginPath();
-		ctx.moveTo(0, y);
-		for (let x = 0; x < w; x += 4) {
-			ctx.lineTo(x, y + Math.sin(x * 0.08 + i) * 2);
-		}
-		ctx.stroke();
-	}
-
-	// Sandy beach
-	const sand = ctx.createLinearGradient(0, h * 0.68, 0, h);
-	sand.addColorStop(0, "#f4d58d");
-	sand.addColorStop(0.5, "#e8c170");
-	sand.addColorStop(1, "#d4a853");
-	ctx.fillStyle = sand;
-	ctx.fillRect(0, h * 0.68, w, h * 0.32);
-
-	// Beach texture dots
-	ctx.fillStyle = "rgba(180,140,60,0.3)";
-	for (let i = 0; i < 40; i++) {
-		const dx = Math.random() * w;
-		const dy = h * 0.7 + Math.random() * h * 0.28;
-		ctx.fillRect(dx, dy, 1, 1);
-	}
-
-	// Palm tree
-	ctx.fillStyle = "#5c3a1e";
-	ctx.fillRect(w * 0.12, h * 0.15, w * 0.015, h * 0.55);
-	// Palm leaves
-	ctx.fillStyle = "#2d8a4e";
-	const leaves = [[-0.08, -0.06], [0.06, -0.08], [-0.06, -0.1], [0.08, -0.04], [0, -0.12]];
-	for (const [lx, ly] of leaves) {
-		ctx.beginPath();
-		ctx.ellipse(w * 0.13 + w * lx, h * 0.15 + h * ly, w * 0.06, h * 0.025, Math.atan2(ly, lx), 0, Math.PI * 2);
-		ctx.fill();
-	}
-
-	// Sun
-	const sunGrad = ctx.createRadialGradient(w * 0.75, h * 0.18, 0, w * 0.75, h * 0.18, w * 0.08);
-	sunGrad.addColorStop(0, "#fff9c4");
-	sunGrad.addColorStop(0.5, "#ffee58");
-	sunGrad.addColorStop(1, "rgba(255,238,88,0)");
-	ctx.fillStyle = sunGrad;
-	ctx.beginPath();
-	ctx.arc(w * 0.75, h * 0.18, w * 0.08, 0, Math.PI * 2);
-	ctx.fill();
+/**
+ * Scene B: Professional mountain landscape stock image.
+ */
+export async function drawSampleSceneB(ctx: CanvasRenderingContext2D, w: number, h: number) {
+	await loadAndDrawImage(ctx, w, h, STOCK_IMAGES.sceneB);
 }
 
 /** Helper: apply a CSS filter by copying through a temp canvas */
@@ -195,7 +70,7 @@ function snapshot(ctx: CanvasRenderingContext2D, w: number, h: number): HTMLCanv
 	return tmp;
 }
 
-function applyEffectToCanvas(
+async function applyEffectToCanvas(
 	ctx: CanvasRenderingContext2D,
 	effectType: string,
 	w: number,
@@ -457,7 +332,7 @@ function applyEffectToCanvas(
  * Render a transition at a given progress (0-1) using pre-rendered scene canvases.
  * If sceneA/sceneB are not provided, they are generated internally.
  */
-export function renderTransitionPreview(
+export async function renderTransitionPreview(
 	ctx: CanvasRenderingContext2D,
 	transitionType: string,
 	w: number,
@@ -466,16 +341,16 @@ export function renderTransitionPreview(
 	sceneA?: HTMLCanvasElement,
 	sceneB?: HTMLCanvasElement,
 ) {
-	const tempA = sceneA ?? (() => {
+	const tempA = sceneA ?? await (async () => {
 		const c = document.createElement("canvas");
 		c.width = w; c.height = h;
-		drawSampleScene(c.getContext("2d")!, w, h);
+		await drawSampleScene(c.getContext("2d")!, w, h);
 		return c;
 	})();
-	const tempB = sceneB ?? (() => {
+	const tempB = sceneB ?? await (async () => {
 		const c = document.createElement("canvas");
 		c.width = w; c.height = h;
-		drawSampleSceneB(c.getContext("2d")!, w, h);
+		await drawSampleSceneB(c.getContext("2d")!, w, h);
 		return c;
 	})();
 	const ctxB = tempB.getContext("2d")!;
@@ -803,7 +678,7 @@ export function renderTransitionPreview(
 export function useEffectPreviews(effectTypes: string[]) {
 	const previews = ref<Record<string, string>>({});
 
-	onMounted(() => {
+	onMounted(async () => {
 		const canvas = document.createElement("canvas");
 		canvas.width = THUMB_W;
 		canvas.height = THUMB_H;
@@ -813,9 +688,9 @@ export function useEffectPreviews(effectTypes: string[]) {
 		for (const effectType of effectTypes) {
 			// Draw fresh scene
 			ctx.clearRect(0, 0, THUMB_W, THUMB_H);
-			drawSampleScene(ctx, THUMB_W, THUMB_H);
+			await drawSampleScene(ctx, THUMB_W, THUMB_H);
 			// Apply effect
-			applyEffectToCanvas(ctx, effectType, THUMB_W, THUMB_H);
+			await applyEffectToCanvas(ctx, effectType, THUMB_W, THUMB_H);
 			result[effectType] = canvas.toDataURL("image/png");
 		}
 		// Assign all at once to trigger a single reactive update
@@ -832,7 +707,7 @@ export function useEffectPreviews(effectTypes: string[]) {
 export function useTransitionPreviews(transitionTypes: string[]) {
 	const previews = ref<Record<string, string>>({});
 
-	onMounted(() => {
+	onMounted(async () => {
 		const canvas = document.createElement("canvas");
 		canvas.width = THUMB_W;
 		canvas.height = THUMB_H;
@@ -841,7 +716,7 @@ export function useTransitionPreviews(transitionTypes: string[]) {
 		const result: Record<string, string> = {};
 		for (const transitionType of transitionTypes) {
 			ctx.clearRect(0, 0, THUMB_W, THUMB_H);
-			renderTransitionPreview(ctx, transitionType, THUMB_W, THUMB_H);
+			await renderTransitionPreview(ctx, transitionType, THUMB_W, THUMB_H);
 			result[transitionType] = canvas.toDataURL("image/png");
 		}
 		// Assign all at once to trigger a single reactive update

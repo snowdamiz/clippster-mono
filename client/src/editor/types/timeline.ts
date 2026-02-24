@@ -328,7 +328,15 @@ export type CaptionPresetId =
 	| "business-modern"
 	// Motivational pack
 	| "motivational-bold"
-	| "motivational-gradient";
+	| "motivational-gradient"
+	// Subtitle pack
+	| "subtitle-documentary"
+	| "subtitle-tutorial"
+	| "subtitle-cinematic"
+	// Additional creator styles
+	| "ali-abdaal"
+	| "mkbhd"
+	| "gary-vee";
 
 export interface CaptionElement extends BaseTimelineElement {
 	type: "caption";

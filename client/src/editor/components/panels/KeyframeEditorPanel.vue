@@ -7,6 +7,7 @@ import { EASING_PRESETS } from "../../constants/easing-constants";
 import type { KeyframableProperty, KeyframeInterpolation } from "../../types/keyframes";
 import type { TimelineTrack, TimelineElement } from "../../types/timeline";
 import { Diamond, Plus, Trash2, ChevronDown, X } from "lucide-vue-next";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
@@ -138,7 +139,7 @@ const applicableProperties = computed(() => {
 			<div
 				v-for="prop in applicableProperties"
 				:key="prop.key"
-				class="rounded-md border border-white/5 bg-white/[0.02]"
+				class="rounded-md border border-white/10 bg-white/[0.02]"
 			>
 				<!-- Property header -->
 				<button
@@ -181,7 +182,7 @@ const applicableProperties = computed(() => {
 				</button>
 
 				<!-- Keyframe list -->
-				<div v-if="expandedProperties.has(prop.key)" class="border-t border-white/5 px-2.5 py-2 space-y-1.5">
+				<div v-if="expandedProperties.has(prop.key)" class="border-t border-white/10 px-2.5 py-2 space-y-1.5">
 					<div v-if="getPropertyKeyframes(prop.key).length === 0" class="py-2 text-center">
 						<p class="text-[10px] text-zinc-600">No keyframes. Click + to add one.</p>
 					</div>
@@ -221,15 +222,19 @@ const applicableProperties = computed(() => {
 						/>
 
 						<!-- Easing dropdown -->
-						<select
-							:value="keyframe.interpolation"
-							class="h-5 flex-1 min-w-0 rounded border border-white/10 bg-white/5 px-0.5 text-[9px] text-zinc-400"
-							@change="(e) => updateKeyframeInterpolation(prop.key, keyframe.id, (e.target as HTMLSelectElement).value as KeyframeInterpolation)"
+						<Select
+							:model-value="keyframe.interpolation"
+							@update:model-value="(v) => updateKeyframeInterpolation(prop.key, keyframe.id, v as KeyframeInterpolation)"
 						>
-							<option v-for="easing in EASING_PRESETS" :key="easing.id" :value="easing.id">
-								{{ easing.label }}
-							</option>
-						</select>
+							<SelectTrigger class="h-5 flex-1 min-w-0 rounded border border-white/10 bg-white/5 px-1 text-[9px] text-zinc-400">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent class="bg-zinc-900 border-white/10">
+								<SelectItem v-for="easing in EASING_PRESETS" :key="easing.id" :value="easing.id" class="text-[9px] text-zinc-200">
+									{{ easing.label }}
+								</SelectItem>
+							</SelectContent>
+						</Select>
 
 						<!-- Delete -->
 						<button

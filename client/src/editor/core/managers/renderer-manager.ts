@@ -519,9 +519,16 @@ export class RendererManager {
 	/**
 	 * Resolve a video server URL back to a local file path.
 	 * URLs are in the format: http://localhost:PORT/video/BASE64_ENCODED_PATH
+	 * Also handles direct file paths (e.g., from library audio downloads)
 	 */
 	private resolveFilePath(url: string): string | null {
 		try {
+			// If it's already a local file path (starts with drive letter or slash), return as-is
+			if (/^[A-Za-z]:[\\\/]/.test(url) || url.startsWith('/')) {
+				return url;
+			}
+			
+			// Otherwise, try to decode from video server URL
 			const match = url.match(/\/video\/(.+)$/);
 			if (match) {
 				return base64ToUtf8(match[1]);

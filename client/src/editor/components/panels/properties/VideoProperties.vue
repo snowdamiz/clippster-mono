@@ -479,7 +479,7 @@ function formatTime(seconds: number): string {
 					<!-- Transform -->
 					<div class="space-y-3">
 						<div class="flex items-center justify-between">
-							<span class="text-xs font-medium text-zinc-400">Transform</span>
+							<span class="text-xs font-medium text-zinc-300">Transform</span>
 							<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" @click="resetTransform">
 								<RotateCcw class="size-3" />
 							</button>
@@ -547,7 +547,7 @@ function formatTime(seconds: number): string {
 					</div>
 
 					<!-- Opacity -->
-					<div class="space-y-1 border-t border-white/5 pt-3">
+					<div class="space-y-1 border-t border-white/10 pt-4">
 						<div class="flex items-center justify-between">
 							<label class="text-[11px] text-zinc-500">Opacity</label>
 							<KeyframeToggle :active="hasKf('opacity')" label="opacity" @toggle="toggleOpacityKeyframe" />
@@ -562,7 +562,7 @@ function formatTime(seconds: number): string {
 					</div>
 
 					<!-- Fade In / Out -->
-					<div class="space-y-1 border-t border-white/5 pt-3">
+					<div class="space-y-1 border-t border-white/10 pt-4">
 						<label class="text-[11px] text-zinc-500">Fade</label>
 						<div class="flex items-center gap-3">
 							<div class="flex flex-1 flex-col gap-1">
@@ -579,7 +579,7 @@ function formatTime(seconds: number): string {
 					</div>
 
 					<!-- Visibility -->
-					<div class="flex items-center justify-between border-t border-white/5 pt-3">
+					<div class="flex items-center justify-between border-t border-white/10 pt-4">
 						<span class="text-[11px] text-zinc-500">Visible</span>
 						<button
 							:class="[
@@ -593,19 +593,21 @@ function formatTime(seconds: number): string {
 					</div>
 
 					<!-- Info -->
-					<div class="flex gap-3 border-t border-white/5 pt-3 text-[10px] text-zinc-600">
+					<div class="flex gap-3 border-t border-white/10 pt-4 text-[10px] text-zinc-600">
 						<span>{{ formatTime(element.startTime) }} – {{ formatTime(element.startTime + element.duration) }}</span>
 						<span>{{ formatTime(element.duration) }}</span>
 					</div>
 
 					<!-- Delete -->
-					<button
-						class="flex w-full items-center justify-center gap-1.5 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
-						@click="handleDelete"
-					>
-						<Trash2 class="size-3.5" />
-						Delete
-					</button>
+					<div class="border-t border-white/10 pt-4 mt-2">
+						<button
+							class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20"
+							@click="handleDelete"
+						>
+							<Trash2 class="size-3.5" />
+							Delete
+						</button>
+					</div>
 				</div>
 
 				<!-- ── Crop sub-tab ── -->
@@ -1081,7 +1083,7 @@ function formatTime(seconds: number): string {
 		<div v-else-if="activeTab === 'adjust'" class="flex-1 overflow-y-auto p-3">
 			<div class="space-y-3">
 				<div class="flex items-center justify-between">
-					<span class="text-xs font-medium text-zinc-400">Color</span>
+					<span class="text-xs font-medium text-zinc-300">Color</span>
 					<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" @click="resetColor">
 						<RotateCcw class="size-3" />
 					</button>
