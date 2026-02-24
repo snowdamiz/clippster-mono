@@ -124,9 +124,21 @@ defmodule ClippsterServer.Accounts do
   def get_or_create_oauth_user(provider, provider_id, oauth_info \\ %{}, referral_code \\ nil) do
     case get_user_by_provider(provider, provider_id) do
       nil ->
-        case create_oauth_user(provider, provider_id, oauth_info, referral_code) do
-          {:ok, user} -> {:ok, user, true}
-          error -> error
+        # Check if user exists with this email but different OAuth provider
+        email = Map.get(oauth_info, :email)
+        case email && get_user_by_email(email) do
+          nil ->
+            # No existing user, create new one
+            case create_oauth_user(provider, provider_id, oauth_info, referral_code) do
+              {:ok, user} -> {:ok, user, true}
+              error -> error
+            end
+          existing_user ->
+            # User exists with this email, link the new OAuth provider
+            case link_oauth_provider(existing_user, provider, provider_id, oauth_info) do
+              {:ok, user} -> {:ok, user, false}
+              error -> error
+            end
         end
       user ->
         case update_oauth_info(user, oauth_info) do
@@ -185,6 +197,22 @@ defmodule ClippsterServer.Accounts do
 
     user
     |> User.oauth_update_changeset(oauth_attrs)
+    |> Repo.update()
+  end
+
+  # Links a new OAuth provider to an existing user (e.g., user created with email/password, now logging in with Google)
+  defp link_oauth_provider(user, provider, provider_id, oauth_info) do
+    oauth_attrs = %{
+      provider: provider,
+      provider_id: provider_id,
+      email: Map.get(oauth_info, :email) || user.email,
+      name: Map.get(oauth_info, :name) || user.name,
+      avatar_url: Map.get(oauth_info, :avatar_url) || user.avatar_url,
+      email_verified: true
+    }
+
+    user
+    |> User.oauth_changeset(oauth_attrs)
     |> Repo.update()
   end
 

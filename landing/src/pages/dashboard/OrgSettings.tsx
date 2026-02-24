@@ -112,7 +112,8 @@ export function OrgSettings() {
       editData.restriction_defaults.allow_clip_deletion !== (rd.allow_clip_deletion === true) ||
       editData.restriction_defaults.allow_hiring_browse !== (rd.allow_hiring_browse !== false) ||
       editData.restriction_defaults.force_org_watermark !== (rd.force_org_watermark !== false) ||
-      editData.restriction_defaults.require_clip_approval !== (rd.require_clip_approval === true)
+      editData.restriction_defaults.require_clip_approval !== (rd.require_clip_approval === true) ||
+      editData.restriction_defaults.clips_visible_to_admins !== (rd.clips_visible_to_admins !== false)
 
     return (
       editData.name !== organization.name ||

@@ -26,28 +26,21 @@
         </div>
 
         <div class="social-accounts__actions-panel">
-          <div class="social-accounts__platform-connect">
+          <div class="social-accounts__platform-connect social-accounts__platform-connect--disabled">
             <div class="social-accounts__platform-info">
               <div class="social-accounts__platform-badge social-accounts__platform-badge--instagram">
                 <Instagram />
               </div>
               <div class="social-accounts__platform-details">
-                <h3 class="social-accounts__platform-name">Instagram</h3>
+                <h3 class="social-accounts__platform-name">
+                  Instagram
+                  <span class="social-accounts__coming-soon">Coming Soon</span>
+                </h3>
                 <p class="social-accounts__platform-desc">
                   Connect your Instagram Business or Creator account to publish Reels directly
                 </p>
               </div>
             </div>
-            <button
-              v-if="isAdmin"
-              class="social-accounts__connect-btn"
-              @click="connectInstagram"
-              :disabled="connecting"
-            >
-              <Loader2 v-if="connecting" class="social-accounts__connect-spinner" />
-              <Plus v-else class="social-accounts__connect-icon" />
-              {{ connecting ? 'Connecting...' : 'Connect Account' }}
-            </button>
           </div>
 
           <div class="social-accounts__platform-connect social-accounts__platform-connect--disabled">

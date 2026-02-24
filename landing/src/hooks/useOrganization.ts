@@ -119,6 +119,7 @@ export function useOrganization() {
   const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 
   // Computed
+  console.log('[useOrganization] Computing isAdmin:', { role: state.role, isAdmin: state.role === 'owner' || state.role === 'admin' || auth.user?.is_admin === true })
   const isAdmin = state.role === 'owner' || state.role === 'admin' || auth.user?.is_admin === true
   const isOwner = state.role === 'owner'
   const poolBalance = useMemo(() => {
@@ -150,8 +151,10 @@ export function useOrganization() {
 
     try {
       const orgResult = await auth.getOrganization(Number(orgId))
+      console.log('[useOrganization] getOrganization response:', { orgId, role: orgResult.role, success: orgResult.success })
       if (orgResult.success) {
         updateState(orgId, { organization: orgResult.organization, role: orgResult.role ?? '' })
+        console.log('[useOrganization] State updated with role:', orgResult.role)
       } else {
         throw new Error(orgResult.error)
       }

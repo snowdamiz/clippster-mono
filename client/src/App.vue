@@ -1,6 +1,6 @@
 <script setup lang="ts">
   import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
-  import { useRoute } from 'vue-router';
+  import { useRoute, useRouter } from 'vue-router';
   import Toast from '@/components/Toast.vue';
   import AppCloseDialog from '@/components/AppCloseDialog.vue';
   import TitleBar from '@/components/TitleBar.vue';
@@ -52,6 +52,7 @@
   const isLoading = ref(true);
   const titleBarPlatformOverride = ref('auto');
   const showAuthModal = ref(false);
+  const router = useRouter();
 
   // Check if this is the PIP window (no title bar needed)
   const isPipWindow = computed(() => window.location.pathname === '/pip-controls');
@@ -59,6 +60,34 @@
   // Check if this is the full-screen editor page (no scroll, minimal chrome)
   const currentRoute = useRoute();
   const isEditorPage = computed(() => currentRoute.path === '/editor');
+
+  // Authentication Gate: Block all app interaction until user authenticates
+  const requiresAuthGate = computed(() => {
+    return !authStore.isAuthenticated && !isPipWindow.value;
+  });
+
+  // Subscription Gate: Force plan selection for authenticated users
+  const requiresSubscriptionGate = computed(() => {
+    if (!authStore.isAuthenticated) return false;
+    if (isPipWindow.value) return false;
+    if (authStore.user?.is_admin) return false;
+    if (authStore.user?.created_by_organization_id) return false;
+    if (currentRoute.path === '/billing') return false;
+
+    const hasSelectedPlan = localStorage.getItem('has_selected_plan');
+    const subscriptionStatus = (authStore.user as any)?.subscription_status;
+    
+    // Users with active or cancelled subscriptions bypass the gate
+    if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
+      return false;
+    }
+    
+    // Show gate if no plan selected OR subscription expired
+    return !hasSelectedPlan || subscriptionStatus === 'expired';
+  });
+
+  // Sidebar should be disabled when subscription gate is active
+  const sidebarDisabled = computed(() => requiresSubscriptionGate.value);
 
   // Show beta activation dialog when:
   // - User is authenticated
@@ -113,6 +142,20 @@
   // Key for router-view to force re-render on auth changes
   const routerKey = ref(0);
 
+  // Watch for subscription gate and redirect to billing
+  watch(requiresSubscriptionGate, (needsGate) => {
+    if (needsGate && currentRoute.path !== '/billing') {
+      router.push('/billing?subscription_required=true');
+    }
+  }, { immediate: true });
+
+  // Clear plan selection flag on logout
+  watch(() => authStore.isAuthenticated, (isAuth) => {
+    if (!isAuth) {
+      localStorage.removeItem('has_selected_plan');
+    }
+  });
+
   // Auth event listener function
   const handleAuthRequired = () => {
     console.log('[App] Auth required, showing auth modal');
@@ -133,6 +176,8 @@
     } else if (!event.detail?.userId) {
       // User logged out — clear announcement queue and leave channel
       unsubscribe();
+      // Clear plan selection flag
+      localStorage.removeItem('has_selected_plan');
     }
     
     // Increment key to force Vue to re-mount all route components
@@ -363,6 +408,9 @@
 
   <!-- Main app (hidden while loading or updating) -->
   <div v-else class="app-container">
+    <!-- Mandatory Authentication Gate (blocks all interaction until authenticated) -->
+    <AuthModal v-if="requiresAuthGate" :model-value="true" :mandatory="true" />
+
     <!-- Custom titlebar (hidden for PIP window) -->
     <TitleBar v-if="!isPipWindow" :dark-mode="true" :platform-override="titleBarPlatformOverride" />
 
@@ -371,10 +419,10 @@
       <!-- Toast notifications provider -->
       <Toast />
       <!-- Router view for page content (key changes on auth to force refresh) -->
-      <router-view :key="routerKey" />
+      <router-view :key="routerKey" :sidebar-disabled="sidebarDisabled" />
       <!-- Global app close confirmation dialog -->
       <AppCloseDialog />
-      <!-- Authentication Modal -->
+      <!-- Authentication Modal (optional, for manual trigger) -->
       <AuthModal v-model="showAuthModal" />
 
       <!-- Beta Activation Dialog -->

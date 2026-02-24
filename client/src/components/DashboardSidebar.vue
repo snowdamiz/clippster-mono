@@ -4,9 +4,12 @@
     :class="{
       'sidebar--native': isNativeEnvironment,
       'w-60': !isCollapsed,
-      'w-12': isCollapsed
+      'w-12': isCollapsed,
+      'sidebar--disabled': disabled
     }"
   >
+    <!-- Disabled Overlay -->
+    <div v-if="disabled" class="sidebar-disabled-overlay"></div>
     <!-- Bug Report Dialog -->
     <BugReportDialog
       :show="showBugReportDialog"
@@ -242,6 +245,10 @@
   import { ref, computed, onMounted, onUnmounted, watch, type Component } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
+
+  const props = defineProps<{
+    disabled?: boolean;
+  }>();
   import { useMessagingStore } from '@/stores/messaging';
   import { usePermissionsStore } from '@/stores/permissions';
   import { useLiveStatusStore } from '@/stores/liveStatus';
@@ -744,5 +751,20 @@
     border-top-color: var(--sidebar-accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+  }
+
+  /* Disabled state */
+  .sidebar--disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .sidebar-disabled-overlay {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.3);
+    z-index: 50;
+    pointer-events: all;
+    cursor: not-allowed;
   }
 </style>

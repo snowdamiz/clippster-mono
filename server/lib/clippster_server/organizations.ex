@@ -195,21 +195,33 @@ defmodule ClippsterServer.Organizations do
   @doc """
   Adds a user as a member to an organization.
   Enforces seat limits if organization has an active subscription.
+  Owner role bypasses seat limit checks.
   """
   def add_member(organization_id, user_id, role \\ "member") do
-    # Check seat limit
-    case ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id) do
-      {:error, :seat_limit_reached} ->
-        {:error, :seat_limit_reached}
+    # Skip seat limit check for owner role
+    if role == "owner" do
+      %OrganizationMember{}
+      |> OrganizationMember.create_changeset(%{
+        organization_id: organization_id,
+        user_id: user_id,
+        role: role
+      })
+      |> Repo.insert()
+    else
+      # Check seat limit for non-owner members
+      case ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id) do
+        {:error, :seat_limit_reached} ->
+          {:error, :seat_limit_reached}
 
-      {:ok, _} ->
-        %OrganizationMember{}
-        |> OrganizationMember.create_changeset(%{
-          organization_id: organization_id,
-          user_id: user_id,
-          role: role
-        })
-        |> Repo.insert()
+        {:ok, _} ->
+          %OrganizationMember{}
+          |> OrganizationMember.create_changeset(%{
+            organization_id: organization_id,
+            user_id: user_id,
+            role: role
+          })
+          |> Repo.insert()
+      end
     end
   end
 
