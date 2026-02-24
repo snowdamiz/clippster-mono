@@ -1708,7 +1708,7 @@ defmodule ClippsterServerWeb.AdminController do
   # ============================================
 
   @doc """
-  Schedules a user for deletion.
+  Deletes a user or schedules deletion if they have an active subscription.
   """
   def delete_user(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
@@ -1719,23 +1719,30 @@ defmodule ClippsterServerWeb.AdminController do
           conn |> put_status(404) |> json(%{success: false, error: "User not found"})
         else
           # If user has active Stripe subscription, schedule deletion at end of billing cycle
-          deletion_date =
-            if user.subscription_status == "active" and user.subscription_end_date do
-              user.subscription_end_date
-            else
-              DateTime.utc_now() |> DateTime.truncate(:second)
+          if user.subscription_status == "active" and user.subscription_end_date do
+            case Accounts.schedule_user_deletion(user_id, user.subscription_end_date) do
+              {:ok, user} ->
+                json(conn, %{
+                  success: true,
+                  message: "User scheduled for deletion at end of billing cycle",
+                  deletion_date: user.scheduled_deletion_at
+                })
+
+              {:error, reason} ->
+                conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
             end
+          else
+            # No active subscription - delete immediately
+            case Accounts.delete_user(user_id) do
+              {:ok, _user} ->
+                json(conn, %{
+                  success: true,
+                  message: "User deleted successfully"
+                })
 
-          case Accounts.schedule_user_deletion(user_id, deletion_date) do
-            {:ok, user} ->
-              json(conn, %{
-                success: true,
-                message: "User scheduled for deletion",
-                deletion_date: user.scheduled_deletion_at
-              })
-
-            {:error, reason} ->
-              conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+              {:error, reason} ->
+                conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            end
           end
         end
 
@@ -2009,5 +2016,85 @@ defmodule ClippsterServerWeb.AdminController do
       {:error, _} ->
         conn |> put_status(400) |> json(%{success: false, error: "Invalid moderator ID"})
     end
+  end
+
+  @doc """
+  Invites all uninvited waitlist entries.
+  """
+  def invite_waitlist(conn, params) do
+    admin_id = conn.assigns.current_user.id
+
+    discount_config = %{
+      percent_off: Map.get(params, "percent_off", 30),
+      duration_months: Map.get(params, "duration_months", 1),
+      allowed_tiers: Map.get(params, "allowed_tiers", ["creator"])
+    }
+
+    {:ok, results} = ClippsterServer.Waitlist.invite_all_uninvited(admin_id, discount_config)
+    
+    json(conn, %{
+      success: true,
+      invited_count: results.invited_count,
+      skipped_count: results.skipped_count,
+      errors: format_invite_errors(results.errors)
+    })
+  end
+
+  @doc """
+  Invites a single waitlist entry by ID.
+  """
+  def invite_waitlist_entry(conn, %{"id" => entry_id_string} = params) do
+    admin_id = conn.assigns.current_user.id
+
+    discount_config = %{
+      percent_off: Map.get(params, "percent_off", 30),
+      duration_months: Map.get(params, "duration_months", 1),
+      allowed_tiers: Map.get(params, "allowed_tiers", ["creator"])
+    }
+
+    case Integer.parse(entry_id_string) do
+      {entry_id, ""} ->
+        entry = ClippsterServer.Repo.get(ClippsterServer.Waitlist.WaitlistEntry, entry_id)
+
+        if entry do
+          case ClippsterServer.Waitlist.invite_entry(entry, admin_id, discount_config) do
+            {:ok, updated_entry} ->
+              json(conn, %{
+                success: true,
+                entry: %{
+                  id: updated_entry.id,
+                  email: updated_entry.email,
+                  invited_at: updated_entry.invited_at,
+                  email_sent_at: updated_entry.email_sent_at
+                }
+              })
+
+            {:error, {:already_invited, email}} ->
+              conn
+              |> put_status(:conflict)
+              |> json(%{success: false, error: "#{email} has already been invited"})
+
+            {:error, reason} ->
+              conn
+              |> put_status(:internal_server_error)
+              |> json(%{success: false, error: inspect(reason)})
+          end
+        else
+          conn
+          |> put_status(:not_found)
+          |> json(%{success: false, error: "Waitlist entry not found"})
+        end
+
+      _ ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{success: false, error: "Invalid entry ID"})
+    end
+  end
+
+  defp format_invite_errors(errors) do
+    Enum.map(errors, fn {:error, {email, reason}} ->
+      %{email: email, error: inspect(reason)}
+    end)
   end
 end

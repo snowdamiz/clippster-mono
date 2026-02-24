@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
 import { useAuthStore } from '@/stores/auth';
 import api from '@/services/api';
 import PageLayout from '@/components/PageLayout.vue';
@@ -29,9 +30,13 @@ const showArchiveDialog = ref(false);
 
 // Computed
 const filteredConversations = computed(() => {
-  if (!searchQuery.value) return conversations.value;
+  // Filter out blank conversations (no messages ever sent)
+  const nonEmpty = conversations.value.filter((conv: any) => {
+    return conv.last_message_at || conv.lastMessageAt;
+  });
+  if (!searchQuery.value) return nonEmpty;
   const query = searchQuery.value.toLowerCase();
-  return conversations.value.filter((conv) => {
+  return nonEmpty.filter((conv: any) => {
     const userName = getUserName(conv).toLowerCase();
     return userName.includes(query);
   });
@@ -71,15 +76,6 @@ async function selectConversation(conv: any) {
   activeConversation.value = conv;
   await loadMessages(conversationId);
   await markAsRead(conversationId);
-  // Reload conversations to get fresh status
-  await loadConversations();
-  // Update active conversation with fresh data
-  const freshConv = conversations.value.find(c => c.id === conversationId);
-  if (freshConv) {
-    console.log('Updated active conversation with fresh data:', freshConv);
-    console.log('Fresh conversation status:', freshConv.status);
-    activeConversation.value = freshConv;
-  }
 }
 
 async function loadMessages(conversationId: number) {
@@ -136,27 +132,33 @@ async function markAsRead(conversationId: number) {
 }
 
 function getUserName(conv: any) {
-  const user = conv.participants?.find((p: any) => !p.user?.isAdmin && !p.user?.is_admin && !p.user?.isModerator && !p.user?.is_moderator);
-  return user?.user?.name || user?.user?.displayName || user?.user?.display_name || user?.user?.email || 'Unknown User';
+  const createdByUserId = conv.created_by_user_id || conv.createdByUserId;
+  const participants = conv.participants || [];
+  const customerParticipant = participants.find((p: any) => (p.user_id || p.userId) === createdByUserId);
+  const user = customerParticipant?.user;
+  return user?.name || user?.display_name || user?.displayName || user?.email || 'Unknown User';
 }
 
 function getUserEmail(conv: any) {
-  const user = conv.participants?.find((p: any) => !p.user?.isAdmin && !p.user?.is_admin && !p.user?.isModerator && !p.user?.is_moderator);
-  return user?.user?.email || '';
+  const createdByUserId = conv.created_by_user_id || conv.createdByUserId;
+  const participants = conv.participants || [];
+  const customerParticipant = participants.find((p: any) => (p.user_id || p.userId) === createdByUserId);
+  return customerParticipant?.user?.email || '';
 }
 
 function getSenderName(message: any) {
-  const sender = activeConversation.value?.participants?.find(
-    (p: any) => p.userId === message.senderId || p.user_id === message.senderId || p.user_id === message.sender_id
-  );
-  return sender?.user?.name || sender?.user?.displayName || sender?.user?.display_name || sender?.user?.email || 'Unknown';
+  const sender = message.sender;
+  if (sender) {
+    return sender.name || sender.display_name || sender.displayName || sender.email || 'Unknown';
+  }
+  return 'Unknown';
 }
 
 function isStaffMessage(message: any) {
-  const sender = activeConversation.value?.participants?.find(
-    (p: any) => p.userId === message.senderId || p.user_id === message.senderId || p.user_id === message.sender_id
-  );
-  return sender?.user?.isAdmin || sender?.user?.is_admin || sender?.user?.isModerator || sender?.user?.is_moderator;
+  const senderId = message.sender_id || message.senderId;
+  const createdByUserId = activeConversation.value?.created_by_user_id || activeConversation.value?.createdByUserId;
+  if (!senderId || !createdByUserId) return false;
+  return senderId !== createdByUserId;
 }
 
 function formatTime(timestamp: string | null): string {
@@ -168,7 +170,7 @@ function formatTime(timestamp: string | null): string {
   if (diff < 60000) return 'Just now';
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return date.toLocaleDateString();
+  return fmtDate(date);
 }
 
 function scrollToBottom() {

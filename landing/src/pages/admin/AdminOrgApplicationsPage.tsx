@@ -2,13 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertCircle, Building2, Check, ChevronDown, Eye, FileText, Loader2, Trash2, X } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
-import {
-  approveOrgApplication,
-  deleteOrgApplication,
-  listOrgApplications,
-  rejectOrgApplication,
-  type OrgApplication,
-} from '@/services/adminApi'
+import { listOrgApplications, approveOrgApplication, rejectOrgApplication, deleteOrgApplication, type OrgApplication } from '@/services/adminApi'
+import { formatDateTime as formatDate } from './adminFormat'
 import './AdminOrgApplicationsPage.css'
 
 interface ConfirmationModalProps {
@@ -75,20 +70,6 @@ function ConfirmationModal({
     </div>,
     document.body,
   )
-}
-
-function formatDate(value: string | null) {
-  if (!value) return 'N/A'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'N/A'
-
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 function formatWalletAddress(address: string | null) {

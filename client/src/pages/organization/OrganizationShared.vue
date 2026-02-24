@@ -462,6 +462,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+  import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     DropdownMenu,
     DropdownMenuContent,
@@ -714,7 +715,7 @@
     if (diffDays < 1) return 'Today';
     if (diffDays === 1) return 'Yesterday';
     if (diffDays < 7) return `${diffDays}d ago`;
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    return fmtDate(dateStr);
   }
 
   // Filter label helpers

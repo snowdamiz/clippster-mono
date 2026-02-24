@@ -321,6 +321,16 @@ export async function getTotalUnread(): Promise<number> {
 // ============================================================================
 
 /**
+ * Check if the user has an existing support conversation (read-only, no creation).
+ * Returns the conversation or null.
+ */
+export async function checkSupportConversation(): Promise<Conversation | null> {
+  const response = await api.get<{ conversation: any }>('/support/conversation/check');
+  if (!response.data.conversation) return null;
+  return normalizeConversation(response.data.conversation);
+}
+
+/**
  * Get or create the user's support conversation.
  */
 export async function getOrCreateSupportConversation(): Promise<Conversation> {

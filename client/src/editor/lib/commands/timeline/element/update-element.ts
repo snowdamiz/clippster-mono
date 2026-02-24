@@ -16,15 +16,15 @@ import type {
 import { EditorCore } from "../../../../core";
 
 export type UpdatableVideoProps = Partial<
-	Pick<VideoElement, "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut">
+	Pick<VideoElement, "mediaId" | "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "reversed" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut">
 >;
 
 export type UpdatableImageProps = Partial<
-	Pick<ImageElement, "opacity" | "transform" | "hidden" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut">
+	Pick<ImageElement, "mediaId" | "opacity" | "transform" | "hidden" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut">
 >;
 
 export type UpdatableAudioProps = Partial<
-	Pick<AudioElement, "volume" | "muted" | "speed" | "fadeIn" | "fadeOut" | "audioEffects">
+	Pick<AudioElement, "volume" | "muted" | "speed" | "reversed" | "fadeIn" | "fadeOut" | "audioEffects">
 >;
 
 export type UpdatableStickerProps = Partial<

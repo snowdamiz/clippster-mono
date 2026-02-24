@@ -33,7 +33,7 @@ const props = defineProps<{
 }>();
 
 const { editor, version } = useEditor();
-const { allFonts, ensureFontLoaded } = useFontManager();
+const { allFonts, ensureFontLoaded, uploadCustomFont } = useFontManager();
 
 // ── Top-level tabs (CapCut style) ──
 type TopTab = "captions" | "text" | "animation";
@@ -445,6 +445,15 @@ const captionText = computed(() => {
 const wordCount = computed(() => {
 	return props.element.lines.reduce((sum, l) => sum + l.words.length, 0);
 });
+
+// ── Upload custom font ──
+async function handleUploadFont() {
+	const font = await uploadCustomFont();
+	if (font) {
+		// Apply the newly uploaded font to the caption
+		update({ fontFamily: font.family, fontFilePath: font.filePath });
+	}
+}
 </script>
 
 <template>
@@ -455,7 +464,7 @@ const wordCount = computed(() => {
 				v-for="tab in (['captions', 'text', 'animation'] as TopTab[])"
 				:key="tab"
 				class="flex-1 py-2 text-center text-xs font-medium capitalize transition-colors"
-				:class="activeTopTab === tab ? 'text-sky-400 border-b-2 border-sky-400' : 'text-zinc-400 hover:text-zinc-200'"
+				:class="activeTopTab === tab ? 'text-primary border-b-2 border-primary' : 'text-zinc-500 hover:text-zinc-300'"
 				@click="activeTopTab = tab"
 			>
 				{{ tab === 'captions' ? 'Captions' : tab === 'text' ? 'Text' : 'Animation' }}
@@ -480,7 +489,7 @@ const wordCount = computed(() => {
 				>
 					<!-- Line number (click to seek) -->
 					<span
-						class="mt-1 w-5 shrink-0 text-right text-zinc-500 text-[11px] cursor-pointer hover:text-sky-400 transition-colors"
+						class="mt-1 w-5 shrink-0 text-right text-zinc-500 text-[11px] cursor-pointer hover:text-primary transition-colors"
 						title="Seek to line"
 						@click="seekToLine(item.line)"
 					>{{ item.globalIndex + 1 }}</span>
@@ -518,12 +527,12 @@ const wordCount = computed(() => {
 		<!-- ═══════════════════════════════════════════ -->
 		<div v-else-if="activeTopTab === 'text'" class="flex flex-col overflow-y-auto" style="max-height: calc(100vh - 200px)">
 			<!-- Sub-tab bar -->
-			<div class="flex border-b border-white/10 mx-3 mt-2">
+			<div class="flex gap-1 border-b border-white/5 px-3 py-1.5">
 				<button
 					v-for="sub in (['basic', 'templates', 'effects'] as TextSubTab[])"
 					:key="sub"
-					class="flex-1 pb-2 text-center text-[11px] font-medium capitalize transition-colors"
-					:class="activeTextSubTab === sub ? 'text-white border-b-2 border-white' : 'text-zinc-500 hover:text-zinc-300'"
+					class="rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors"
+					:class="activeTextSubTab === sub ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'"
 					@click="activeTextSubTab = sub"
 				>
 					{{ sub }}
@@ -534,7 +543,7 @@ const wordCount = computed(() => {
 			<div class="flex items-center gap-2 px-3 pt-3 pb-1">
 				<button
 					class="flex size-4 items-center justify-center rounded border transition-colors"
-					:class="applyToAll ? 'border-sky-500 bg-sky-500' : 'border-white/20 bg-transparent'"
+					:class="applyToAll ? 'border-primary bg-primary' : 'border-white/20 bg-transparent'"
 					@click="applyToAll = !applyToAll"
 				>
 					<Check v-if="applyToAll" class="size-3 text-white" />
@@ -552,7 +561,7 @@ const wordCount = computed(() => {
 				<!-- ── Transform section ── -->
 				<div class="space-y-2">
 					<div class="flex items-center justify-between">
-						<span class="text-zinc-400 font-medium">Transform</span>
+						<span class="text-zinc-300 font-medium">Transform</span>
 						<button class="text-zinc-500 hover:text-zinc-300" title="Reset transform" @click="resetTransform">
 							<RotateCcw class="size-3.5" />
 						</button>
@@ -567,7 +576,7 @@ const wordCount = computed(() => {
 								min="10"
 								max="500"
 								:value="Math.round(element.transform.scale * 100)"
-								class="flex-1 accent-sky-500"
+								class="flex-1"
 								@input="handleScaleSlider(($event.target as HTMLInputElement).value)"
 							/>
 							<div class="flex items-center">
@@ -618,8 +627,18 @@ const wordCount = computed(() => {
 				</div>
 
 				<!-- ── Font section ── -->
-				<div class="space-y-2 border-t border-white/5 pt-3">
-					<span class="text-zinc-400 font-medium">Font</span>
+				<div class="space-y-2 border-t border-white/10 pt-4">
+					<div class="flex items-center justify-between">
+						<span class="text-zinc-300 font-medium">Font</span>
+						<button
+							@click="handleUploadFont"
+							class="flex items-center gap-1 px-2 py-1 text-[10px] text-primary hover:text-primary/80 bg-primary/10 rounded transition-colors border border-primary/20"
+							title="Upload custom font"
+						>
+							<Plus class="size-3" />
+							Upload Font
+						</button>
+					</div>
 
 					<!-- Font family -->
 					<Select :model-value="element.fontFamily" @update:model-value="(v) => selectFont(String(v))">
@@ -672,21 +691,21 @@ const wordCount = computed(() => {
 					<div class="flex gap-1">
 						<button
 							class="flex-1 rounded-md border p-1.5 transition-all"
-							:class="element.textAlign === 'left' ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 hover:bg-white/5'"
+							:class="element.textAlign === 'left' ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:bg-white/5'"
 							@click="update({ textAlign: 'left' })"
 						>
 							<AlignLeft class="mx-auto size-3.5 text-zinc-300" />
 						</button>
 						<button
 							class="flex-1 rounded-md border p-1.5 transition-all"
-							:class="element.textAlign === 'center' ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 hover:bg-white/5'"
+							:class="element.textAlign === 'center' ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:bg-white/5'"
 							@click="update({ textAlign: 'center' })"
 						>
 							<AlignCenter class="mx-auto size-3.5 text-zinc-300" />
 						</button>
 						<button
 							class="flex-1 rounded-md border p-1.5 transition-all"
-							:class="element.textAlign === 'right' ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 hover:bg-white/5'"
+							:class="element.textAlign === 'right' ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:bg-white/5'"
 							@click="update({ textAlign: 'right' })"
 						>
 							<AlignRight class="mx-auto size-3.5 text-zinc-300" />
@@ -719,8 +738,8 @@ const wordCount = computed(() => {
 				</div>
 
 				<!-- ── Highlight section ── -->
-				<div class="space-y-2 border-t border-white/5 pt-3">
-					<span class="text-zinc-400 font-medium">Highlight</span>
+				<div class="space-y-2 border-t border-white/10 pt-4">
+					<span class="text-zinc-300 font-medium">Highlight</span>
 					<Select :model-value="element.highlightStyle" @update:model-value="(v) => update({ highlightStyle: String(v) })">
 						<SelectTrigger class="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200">
 							<SelectValue />
@@ -768,14 +787,14 @@ const wordCount = computed(() => {
 				<div class="flex flex-wrap gap-1">
 					<button
 						class="rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors"
-						:class="activeTemplateCategory === 'all' ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
+						:class="activeTemplateCategory === 'all' ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
 						@click="activeTemplateCategory = 'all'"
 					>All</button>
 					<button
 						v-for="cat in CATEGORY_ORDER"
 						:key="cat"
 						class="rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors"
-						:class="activeTemplateCategory === cat ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
+						:class="activeTemplateCategory === cat ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
 						@click="activeTemplateCategory = cat"
 					>{{ CATEGORY_LABELS[cat] }}</button>
 				</div>
@@ -788,7 +807,7 @@ const wordCount = computed(() => {
 							v-for="preset in group.presets"
 							:key="preset.id"
 							class="group relative flex flex-col items-center gap-1 rounded-lg border p-2 text-center transition-all hover:border-white/20 hover:bg-white/5"
-							:class="element.presetId === preset.id ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 bg-white/[0.02]'"
+							:class="element.presetId === preset.id ? 'border-primary/50 bg-primary/10' : 'border-white/10 bg-white/[0.02]'"
 							@click="applyPreset(preset.id)"
 						>
 							<div
@@ -826,7 +845,7 @@ const wordCount = computed(() => {
 					<label class="text-zinc-400">Stroke</label>
 					<button
 						class="h-5 w-9 rounded-full transition-colors"
-						:class="showStroke ? 'bg-sky-500' : 'bg-white/10'"
+						:class="showStroke ? 'bg-primary' : 'bg-white/10'"
 						@click="showStroke = !showStroke; update({ stroke: showStroke ? { color: element.stroke?.color || '#000000', width: element.stroke?.width || 3 } : undefined })"
 					>
 						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showStroke ? 'translate-x-4' : 'translate-x-0.5'" />
@@ -834,7 +853,7 @@ const wordCount = computed(() => {
 				</div>
 				<div v-if="showStroke && element.stroke" class="flex gap-2 pl-2">
 					<input type="color" :value="element.stroke.color" class="h-6 w-6 cursor-pointer rounded border border-white/10 bg-transparent" @input="update({ stroke: { ...element.stroke!, color: ($event.target as HTMLInputElement).value } })" />
-					<input type="range" min="1" max="10" :value="element.stroke.width" class="flex-1 accent-sky-500" @input="update({ stroke: { ...element.stroke!, width: parseInt(($event.target as HTMLInputElement).value) } })" />
+					<input type="range" min="1" max="10" :value="element.stroke.width" class="flex-1" @input="update({ stroke: { ...element.stroke!, width: parseInt(($event.target as HTMLInputElement).value) } })" />
 					<span class="w-6 text-right text-zinc-500">{{ element.stroke.width }}</span>
 				</div>
 
@@ -843,7 +862,7 @@ const wordCount = computed(() => {
 					<label class="text-zinc-400">Shadow</label>
 					<button
 						class="h-5 w-9 rounded-full transition-colors"
-						:class="showShadow ? 'bg-sky-500' : 'bg-white/10'"
+						:class="showShadow ? 'bg-primary' : 'bg-white/10'"
 						@click="showShadow = !showShadow; update({ shadow: showShadow ? { color: element.shadow?.color || 'rgba(0,0,0,0.8)', offsetX: 2, offsetY: 2, blur: 4 } : undefined })"
 					>
 						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showShadow ? 'translate-x-4' : 'translate-x-0.5'" />
@@ -853,7 +872,7 @@ const wordCount = computed(() => {
 					<div class="flex items-center gap-2">
 						<input type="color" :value="element.shadow.color" class="h-6 w-6 cursor-pointer rounded border border-white/10 bg-transparent" @input="update({ shadow: { ...element.shadow!, color: ($event.target as HTMLInputElement).value } })" />
 						<label class="text-zinc-500">Blur</label>
-						<input type="range" min="0" max="20" :value="element.shadow.blur" class="flex-1 accent-sky-500" @input="update({ shadow: { ...element.shadow!, blur: parseInt(($event.target as HTMLInputElement).value) } })" />
+						<input type="range" min="0" max="20" :value="element.shadow.blur" class="flex-1" @input="update({ shadow: { ...element.shadow!, blur: parseInt(($event.target as HTMLInputElement).value) } })" />
 						<span class="w-6 text-right text-zinc-500">{{ element.shadow.blur }}</span>
 					</div>
 				</div>
@@ -863,7 +882,7 @@ const wordCount = computed(() => {
 					<label class="text-zinc-400">Glow</label>
 					<button
 						class="h-5 w-9 rounded-full transition-colors"
-						:class="showGlow ? 'bg-sky-500' : 'bg-white/10'"
+						:class="showGlow ? 'bg-primary' : 'bg-white/10'"
 						@click="showGlow = !showGlow; update({ glow: showGlow ? { color: element.glow?.color || '#22D3EE', intensity: element.glow?.intensity || 10 } : undefined })"
 					>
 						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showGlow ? 'translate-x-4' : 'translate-x-0.5'" />
@@ -871,7 +890,7 @@ const wordCount = computed(() => {
 				</div>
 				<div v-if="showGlow && element.glow" class="flex gap-2 pl-2">
 					<input type="color" :value="element.glow.color" class="h-6 w-6 cursor-pointer rounded border border-white/10 bg-transparent" @input="update({ glow: { ...element.glow!, color: ($event.target as HTMLInputElement).value } })" />
-					<input type="range" min="1" max="30" :value="element.glow.intensity" class="flex-1 accent-sky-500" @input="update({ glow: { ...element.glow!, intensity: parseInt(($event.target as HTMLInputElement).value) } })" />
+					<input type="range" min="1" max="30" :value="element.glow.intensity" class="flex-1" @input="update({ glow: { ...element.glow!, intensity: parseInt(($event.target as HTMLInputElement).value) } })" />
 					<span class="w-6 text-right text-zinc-500">{{ element.glow.intensity }}</span>
 				</div>
 
@@ -901,12 +920,12 @@ const wordCount = computed(() => {
 		<!-- ═══════════════════════════════════════════ -->
 		<div v-else-if="activeTopTab === 'animation'" class="flex flex-col overflow-y-auto" style="max-height: calc(100vh - 200px)">
 			<!-- Sub-tab bar -->
-			<div class="flex border-b border-white/10 mx-3 mt-2">
+			<div class="flex gap-1 border-b border-white/5 px-3 py-1.5">
 				<button
 					v-for="sub in (['in', 'out', 'loop', 'captions'] as AnimSubTab[])"
 					:key="sub"
-					class="flex-1 pb-2 text-center text-[11px] font-medium capitalize transition-colors"
-					:class="activeAnimSubTab === sub ? 'text-white border-b-2 border-white' : 'text-zinc-500 hover:text-zinc-300'"
+					class="rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors"
+					:class="activeAnimSubTab === sub ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'"
 					@click="activeAnimSubTab = sub"
 				>
 					{{ sub === 'captions' ? 'Captions' : sub === 'in' ? 'In' : sub === 'out' ? 'Out' : 'Loop' }}
@@ -917,7 +936,7 @@ const wordCount = computed(() => {
 			<div class="flex items-center gap-2 px-3 pt-3 pb-1">
 				<button
 					class="flex size-4 items-center justify-center rounded border transition-colors"
-					:class="applyToAll ? 'border-sky-500 bg-sky-500' : 'border-white/20 bg-transparent'"
+					:class="applyToAll ? 'border-primary bg-primary' : 'border-white/20 bg-transparent'"
 					@click="applyToAll = !applyToAll"
 				>
 					<Check v-if="applyToAll" class="size-3 text-white" />
@@ -930,7 +949,7 @@ const wordCount = computed(() => {
 				<!-- None option -->
 				<button
 					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="!currentAnimIn ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
+					:class="!currentAnimIn ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
 					@click="setAnimation('in', null)"
 				>
 					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
@@ -946,7 +965,7 @@ const wordCount = computed(() => {
 					v-for="preset in animInPresets"
 					:key="preset.type"
 					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="currentAnimIn === preset.type ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
+					:class="currentAnimIn === preset.type ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
 					@click="setAnimation('in', preset.type)"
 				>
 					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
@@ -960,7 +979,7 @@ const wordCount = computed(() => {
 			<div v-else-if="activeAnimSubTab === 'out'" class="grid grid-cols-4 gap-1.5 p-3">
 				<button
 					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="!currentAnimOut ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
+					:class="!currentAnimOut ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
 					@click="setAnimation('out', null)"
 				>
 					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
@@ -976,7 +995,7 @@ const wordCount = computed(() => {
 					v-for="preset in animOutPresets"
 					:key="preset.type"
 					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="currentAnimOut === preset.type ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
+					:class="currentAnimOut === preset.type ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
 					@click="setAnimation('out', preset.type)"
 				>
 					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
@@ -990,7 +1009,7 @@ const wordCount = computed(() => {
 			<div v-else-if="activeAnimSubTab === 'loop'" class="grid grid-cols-4 gap-1.5 p-3">
 				<button
 					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="!currentAnimLoop ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
+					:class="!currentAnimLoop ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
 					@click="setAnimation('loop', null)"
 				>
 					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
@@ -1006,7 +1025,7 @@ const wordCount = computed(() => {
 					v-for="preset in animLoopPresets"
 					:key="preset.type"
 					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="currentAnimLoop === preset.type ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
+					:class="currentAnimLoop === preset.type ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
 					@click="setAnimation('loop', preset.type)"
 				>
 					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
@@ -1024,7 +1043,7 @@ const wordCount = computed(() => {
 						v-for="hs in highlightStyles"
 						:key="hs.value"
 						class="rounded-md border px-3 py-2 text-[11px] transition-all"
-						:class="element.highlightStyle === hs.value ? 'border-sky-500/50 bg-sky-500/10 text-sky-300' : 'border-white/10 text-zinc-400 hover:border-white/20 hover:text-zinc-300'"
+						:class="element.highlightStyle === hs.value ? 'border-primary/50 bg-primary/10 text-primary' : 'border-white/10 text-zinc-400 hover:border-white/20 hover:text-zinc-300'"
 						@click="update({ highlightStyle: hs.value })"
 					>
 						{{ hs.label }}

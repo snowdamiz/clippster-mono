@@ -888,6 +888,22 @@ defmodule ClippsterServer.Messaging do
   # ============================================================================
 
   @doc """
+  Gets a user's existing support conversation without creating one.
+  Returns {:ok, conversation} or {:ok, nil}.
+  """
+  def check_support_conversation(user_id) do
+    case get_user_support_conversation(user_id) do
+      nil -> {:ok, nil}
+      conversation ->
+        if conversation.status == "archived" do
+          {:ok, nil}
+        else
+          {:ok, conversation}
+        end
+    end
+  end
+
+  @doc """
   Gets or creates a support conversation for a user.
   Each user has at most one active support conversation.
   """
@@ -972,6 +988,43 @@ defmodule ClippsterServer.Messaging do
   """
   def get_support_auto_message do
     "Thanks for reaching out! This is an automated message. A member of our team will get back to you within 24 hours."
+  end
+
+  @doc """
+  Checks if a support conversation should receive an auto-reply after a message.
+  Returns true if the conversation is type "support" and the user has sent exactly
+  one message (the one just sent). Called after send_message succeeds.
+  """
+  def should_send_support_auto_reply?(conversation_id, user_id) do
+    conversation = Repo.get(Conversation, conversation_id)
+
+    if conversation && conversation.type == "support" do
+      user_message_count =
+        Message
+        |> where([m], m.conversation_id == ^conversation_id)
+        |> where([m], m.sender_id == ^user_id)
+        |> Repo.aggregate(:count, :id)
+
+      user_message_count == 1
+    else
+      false
+    end
+  end
+
+  @doc """
+  Inserts the support auto-reply system message and returns it.
+  """
+  def insert_support_auto_reply(conversation_id) do
+    auto_message_content = get_support_auto_message()
+
+    %Message{}
+    |> Message.changeset(%{
+      conversation_id: conversation_id,
+      sender_id: nil,
+      content: auto_message_content,
+      message_type: "system"
+    })
+    |> Repo.insert()
   end
 
   @doc """

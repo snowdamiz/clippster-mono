@@ -616,6 +616,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted } from 'vue';
+  import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     Users,
     UserPlus,
@@ -719,8 +720,7 @@
 
   function formatJoinDate(dateString: string | null): string {
     if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    return fmtDate(dateString);
   }
 
   async function handleResendInvitation(invitation: OrganizationInvitation) {

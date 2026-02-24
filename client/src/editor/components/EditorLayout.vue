@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useEditorActions } from "../composables/actions/useEditorActions";
 import { useKeybindingsListener } from "../composables/useKeybindings";
 import { useImageMode } from "../composables/useImageMode";
+import { useAutoSave } from "../composables/useAutoSave";
+import KeyboardShortcutsModal from "./KeyboardShortcutsModal.vue";
 import EditorHeader from "./EditorHeader.vue";
 import Timeline from "./timeline/Timeline.vue";
 import PreviewPanel from "./preview/PreviewPanel.vue";
@@ -29,6 +31,7 @@ import {
 // Register global editor actions and keybindings
 useEditorActions();
 useKeybindingsListener();
+useAutoSave();
 
 const { isImageMode } = useImageMode();
 
@@ -83,6 +86,15 @@ const tabConfig: Record<Tab, { icon: any; label: string }> = {
 };
 
 const activeTab = ref<Tab>("media");
+const shortcutsOpen = ref(false);
+
+function toggleShortcutsModal() {
+	shortcutsOpen.value = !shortcutsOpen.value;
+}
+
+onMounted(() => {
+	window.addEventListener("toggle-shortcuts-modal", toggleShortcutsModal);
+});
 
 // Timeline resize
 const TIMELINE_MIN_HEIGHT = 160;
@@ -118,6 +130,7 @@ function startTimelineResize(e: MouseEvent) {
 onUnmounted(() => {
 	document.body.style.cursor = "";
 	document.body.style.userSelect = "";
+	window.removeEventListener("toggle-shortcuts-modal", toggleShortcutsModal);
 });
 </script>
 
@@ -237,5 +250,7 @@ onUnmounted(() => {
 				<Timeline />
 			</div>
 		</template>
+
+		<KeyboardShortcutsModal :open="shortcutsOpen" @close="shortcutsOpen = false" />
 	</div>
 </template>

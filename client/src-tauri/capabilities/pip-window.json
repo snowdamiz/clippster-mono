@@ -3,12 +3,24 @@
   "identifier": "pip-window-permissions",
   "description": "Permissions for the PIP control window",
   "windows": ["pip-controls"],
+  "remote": {
+    "urls": [
+      "http://localhost:*",
+      "http://127.0.0.1:*"
+    ]
+  },
   "permissions": [
     "core:default",
     "core:window:default",
     "core:window:allow-close",
     "core:window:allow-start-dragging",
     "core:window:allow-set-position",
-    "core:event:default"
+    "core:window:allow-set-size",
+    "core:window:allow-inner-size",
+    "core:window:allow-scale-factor",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
+    "core:event:allow-emit-to"
   ]
 }

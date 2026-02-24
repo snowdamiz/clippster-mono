@@ -179,6 +179,8 @@
     Headset,
     MessagesSquare,
     ScrollText,
+    Mail,
+    Megaphone,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
@@ -346,6 +348,20 @@
         description: 'View all moderator actions and activity',
         icon: ScrollText,
         route: '/admin/mod-logs',
+      },
+      {
+        id: 'messaging',
+        title: 'Email Campaigns',
+        description: 'Send email campaigns to users or waitlist',
+        icon: Mail,
+        route: '/admin/messaging',
+      },
+      {
+        id: 'announcements',
+        title: 'Announcements',
+        description: 'Create and manage in-app announcements',
+        icon: Megaphone,
+        route: '/admin/announcements',
       },
     ];
   });

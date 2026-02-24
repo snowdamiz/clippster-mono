@@ -13,6 +13,16 @@ fn make_even(n: u32) -> u32 {
     if n.is_multiple_of(2) { n } else { n + 1 }
 }
 
+/// Check if a file is a video file based on extension
+/// Used to determine if we need to add loop flags for animated watermarks/overlays
+fn is_video_file(path: &str) -> bool {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    matches!(ext.to_lowercase().as_str(), "mp4" | "mov")
+}
+
 /// Build time-based FFmpeg filter string from filter segments
 /// This creates a filter string with enable expressions for each segment's time range
 fn build_video_filter_string(segments: Option<&Vec<VideoFilterSegment>>) -> Option<String> {
@@ -629,10 +639,26 @@ async fn apply_watermark_to_video_with_ratio(
     // Build encoder-specific args with hardware acceleration
     let mut args = build_hwaccel_args(&encoder, true);
     
+    // Add main video input
     args.extend(vec![
         "-i".to_string(), input_path.to_string_lossy().to_string(),
-        "-i".to_string(), watermark_file_path.clone(),
+    ]);
+    
+    // Add watermark input with loop flags if it's a video
+    if is_video_file(watermark_file_path) {
+        args.extend(vec![
+            "-stream_loop".to_string(), "-1".to_string(),  // Loop infinitely
+            "-i".to_string(), watermark_file_path.clone(),
+        ]);
+    } else {
+        args.extend(vec![
+            "-i".to_string(), watermark_file_path.clone(),
+        ]);
+    }
+    
+    args.extend(vec![
         "-filter_complex".to_string(), filter_complex,
+        "-shortest".to_string(),  // Stop when shortest input ends
         "-c:v".to_string(), encoder.codec.clone(),
     ]);
     
@@ -3231,8 +3257,12 @@ pub async fn apply_clip_watermarks_to_video(
         "-i".to_string(), input_path.to_string_lossy().to_string(),
     ]);
     
-    // Add watermark image inputs
+    // Add watermark inputs with loop flags for video files
     for watermark_path in &overlay_inputs {
+        if is_video_file(watermark_path) {
+            args.push("-stream_loop".to_string());
+            args.push("-1".to_string());
+        }
         args.push("-i".to_string());
         args.push(watermark_path.clone());
     }
@@ -3242,6 +3272,7 @@ pub async fn apply_clip_watermarks_to_video(
     
     args.extend(vec![
         "-filter_complex".to_string(), filter_complex,
+        "-shortest".to_string(),  // Stop when shortest input ends
         "-map".to_string(), format!("[{}]", current_label),
         "-map".to_string(), "0:a?".to_string(), // Map audio if present
         "-c:v".to_string(), encoder.codec.clone(),
@@ -3371,7 +3402,12 @@ pub async fn apply_layout_overlays_to_video(
         "-i".to_string(), input_path.to_string_lossy().to_string(),
     ]);
 
+    // Add overlay inputs with loop flags for video files
     for path in &overlay_inputs {
+        if is_video_file(path) {
+            args.push("-stream_loop".to_string());
+            args.push("-1".to_string());
+        }
         args.push("-i".to_string());
         args.push(path.clone());
     }
@@ -3380,6 +3416,7 @@ pub async fn apply_layout_overlays_to_video(
 
     args.extend(vec![
         "-filter_complex".to_string(), filter_complex,
+        "-shortest".to_string(),  // Stop when shortest input ends
         "-map".to_string(), format!("[{}]", current_label),
         "-map".to_string(), "0:a?".to_string(),
         "-c:v".to_string(), encoder.codec.clone(),

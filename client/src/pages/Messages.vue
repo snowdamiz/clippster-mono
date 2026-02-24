@@ -3,9 +3,10 @@
   import { useRoute, useRouter } from 'vue-router';
   import { useMessagingStore } from '@/stores/messaging';
   import { useAuthStore } from '@/stores/auth';
+  import { formatConversationTime, formatTime } from '@/utils/dateTimeUtils';
   import api from '@/services/api';
   import type { Conversation, Message } from '@/services/messagingApi';
-  import { getOrCreateSupportConversation } from '@/services/messagingApi';
+  import { checkSupportConversation, getOrCreateSupportConversation } from '@/services/messagingApi';
   import PageLayout from '@/components/PageLayout.vue';
   import {
     MessageSquare,
@@ -316,28 +317,12 @@
     return null;
   }
 
-  function formatTime(dateString: string | null): string {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 0) {
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    } else if (diffDays === 1) {
-      return 'Yesterday';
-    } else if (diffDays < 7) {
-      return date.toLocaleDateString([], { weekday: 'short' });
-    }
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  function formatConversationDate(dateString: string): string {
+    return formatConversationTime(dateString);
   }
 
   function formatMessageTime(dateString: string): string {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return '';
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return formatTime(dateString);
   }
 
   function scrollToBottom(smooth = true) {
@@ -596,7 +581,7 @@
   async function loadSupportConversation() {
     try {
       isLoadingSupportConversation.value = true;
-      supportConversation.value = await getOrCreateSupportConversation();
+      supportConversation.value = await checkSupportConversation();
     } catch (error) {
       console.error('Failed to load support conversation:', error);
     } finally {
@@ -605,9 +590,24 @@
   }
 
   async function selectSupportConversation() {
-    if (!supportConversation.value) {
-      await loadSupportConversation();
+    // Ensure messaging store is initialized (socket connected)
+    if (!messagingStore.isInitialized) {
+      await messagingStore.initialize();
     }
+
+    // Create conversation on demand if it doesn't exist yet
+    if (!supportConversation.value) {
+      try {
+        supportConversation.value = await getOrCreateSupportConversation();
+        if (supportConversation.value) {
+          messagingStore.addConversation(supportConversation.value);
+        }
+      } catch (error) {
+        console.error('Failed to create support conversation:', error);
+        return;
+      }
+    }
+
     if (supportConversation.value) {
       await messagingStore.setActiveConversation(supportConversation.value.id);
     }
@@ -716,22 +716,21 @@
 
                 <!-- Conversations -->
                 <template v-else>
-                  <!-- Pinned Support Chat -->
+                  <!-- Pinned Support Chat (always visible) -->
                   <div
-                    v-if="supportConversation"
                     class="messages-conv messages-conv--pinned"
                     :class="{
-                      'messages-conv--active': supportConversation.id === messagingStore.activeConversationId,
-                      'messages-conv--unread': getUnreadCount(supportConversation.id) > 0,
+                      'messages-conv--active': supportConversation && supportConversation.id === messagingStore.activeConversationId,
+                      'messages-conv--unread': supportConversation && getUnreadCount(supportConversation.id) > 0,
                     }"
                     @click="selectSupportConversation"
                   >
                     <div
                       class="messages-conv__indicator"
                       :class="{
-                        'messages-conv__indicator--active': supportConversation.id === messagingStore.activeConversationId,
+                        'messages-conv__indicator--active': supportConversation && supportConversation.id === messagingStore.activeConversationId,
                         'messages-conv__indicator--unread':
-                          getUnreadCount(supportConversation.id) > 0 && supportConversation.id !== messagingStore.activeConversationId,
+                          supportConversation && getUnreadCount(supportConversation.id) > 0 && supportConversation.id !== messagingStore.activeConversationId,
                       }"
                     ></div>
                     <div class="messages-conv__inner">
@@ -743,11 +742,11 @@
                       <div class="messages-conv__content">
                         <div class="messages-conv__header">
                           <span class="messages-conv__name">Clippster Customer Support</span>
-                          <span class="messages-conv__time">{{ formatTime(supportConversation.lastMessageAt) }}</span>
+                          <span v-if="supportConversation" class="messages-conv__time">{{ formatTime(supportConversation.lastMessageAt) }}</span>
                         </div>
                         <div class="messages-conv__footer">
-                          <span class="messages-conv__preview">{{ supportConversation.lastMessagePreview || 'Get help from our support team' }}</span>
-                          <span v-if="getUnreadCount(supportConversation.id) > 0" class="messages-conv__badge">
+                          <span class="messages-conv__preview">{{ supportConversation?.lastMessagePreview || 'Get help from our support team' }}</span>
+                          <span v-if="supportConversation && getUnreadCount(supportConversation.id) > 0" class="messages-conv__badge">
                             {{ getUnreadCount(supportConversation.id) > 99 ? '99+' : getUnreadCount(supportConversation.id) }}
                           </span>
                         </div>

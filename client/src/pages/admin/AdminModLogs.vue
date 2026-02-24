@@ -154,6 +154,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { formatDate as fmtDate, formatTime as fmtTime } from '@/utils/dateTimeUtils';
 import { ScrollText, Filter, Loader2, AlertTriangle, User, RefreshCw } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import PageLayout from '@/components/PageLayout.vue';
@@ -248,18 +249,11 @@ const nextPage = () => {
 };
 
 const formatDate = (timestamp: string) => {
-  return new Date(timestamp).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric'
-  });
+  return fmtDate(timestamp);
 };
 
 const formatTime = (timestamp: string) => {
-  return new Date(timestamp).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  return fmtTime(timestamp);
 };
 
 const formatActionType = (actionType: string) => {

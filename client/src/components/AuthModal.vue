@@ -161,7 +161,7 @@
                         <span>Google</span>
                       </button>
 
-                      <button @click="connectWallet" :disabled="authStore.loading" class="auth-modal__social-btn">
+                      <button v-if="false" @click="connectWallet" :disabled="authStore.loading" class="auth-modal__social-btn">
                         <Wallet v-if="!authStore.loading || authMethod !== 'wallet'" :size="16" />
                         <Loader2 v-else :size="16" class="auth-modal__spinner" />
                         <span>Phantom Wallet</span>

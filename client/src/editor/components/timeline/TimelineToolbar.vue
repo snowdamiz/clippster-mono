@@ -28,6 +28,8 @@ import {
 	MousePointerClick,
 	Navigation2,
 	Crop,
+	Crosshair,
+	Maximize2,
 } from "lucide-vue-next";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,8 @@ const emit = defineEmits<{
 	(e: "toggleMainTrackMagnet"): void;
 	(e: "toggleAutoSnapping"): void;
 	(e: "toggleLinkage"): void;
+	(e: "scrollToPlayhead"): void;
+	(e: "zoomToFit"): void;
 }>();
 
 const { editor, version } = useEditor();
@@ -93,6 +97,14 @@ const canUndo = computed(() => {
 const canRedo = computed(() => {
 	void version.value;
 	return editor.command.canRedo();
+});
+const undoCount = computed(() => {
+	void version.value;
+	return editor.command.getUndoStackSize();
+});
+const redoCount = computed(() => {
+	void version.value;
+	return editor.command.getRedoStackSize();
 });
 
 const sliderValue = computed(() => zoomToSlider({ zoomLevel: props.zoomLevel, minZoom: props.minZoom }));
@@ -161,8 +173,9 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Undo -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!canUndo" @click="handleAction('undo', $event)">
+						<Button variant="ghost" size="icon" class="relative" :disabled="!canUndo" @click="handleAction('undo', $event)">
 							<Undo2 class="size-4" />
+							<span v-if="undoCount > 0" class="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-zinc-600 text-[8px] text-white">{{ undoCount > 99 ? '99' : undoCount }}</span>
 						</Button>
 					</TooltipTrigger>
 					<TooltipContent>Undo (Ctrl+Z)</TooltipContent>
@@ -171,8 +184,9 @@ function handleAction(action: string, event?: MouseEvent) {
 				<!-- Redo -->
 				<Tooltip>
 					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!canRedo" @click="handleAction('redo', $event)">
+						<Button variant="ghost" size="icon" class="relative" :disabled="!canRedo" @click="handleAction('redo', $event)">
 							<Redo2 class="size-4" />
+							<span v-if="redoCount > 0" class="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-zinc-600 text-[8px] text-white">{{ redoCount > 99 ? '99' : redoCount }}</span>
 						</Button>
 					</TooltipTrigger>
 					<TooltipContent>Redo (Ctrl+Shift+Z)</TooltipContent>
@@ -354,6 +368,28 @@ function handleAction(action: string, event?: MouseEvent) {
 			<div class="mx-1 h-6 w-px bg-white/10" />
 
 			<div class="flex items-center gap-1">
+				<TooltipProvider :delay-duration="500">
+					<!-- Scroll to playhead -->
+					<Tooltip>
+						<TooltipTrigger as-child>
+							<Button variant="ghost" size="icon" @click="emit('scrollToPlayhead')">
+								<Crosshair class="size-4" />
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent>Scroll to playhead</TooltipContent>
+					</Tooltip>
+
+					<!-- Zoom to fit -->
+					<Tooltip>
+						<TooltipTrigger as-child>
+							<Button variant="ghost" size="icon" @click="emit('zoomToFit')">
+								<Maximize2 class="size-4" />
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent>Zoom to fit</TooltipContent>
+					</Tooltip>
+				</TooltipProvider>
+
 				<Button variant="ghost" size="icon" @click="handleZoom('out')">
 					<ZoomOut class="size-4" />
 				</Button>

@@ -218,23 +218,6 @@
                 </div>
               </div>
 
-              <!-- DEBUG OVERLAY - Remove after fixing livestream playback -->
-              <div
-                v-if="showDebugOverlay"
-                class="absolute top-2 left-2 z-50 bg-black/80 text-green-400 text-[10px] font-mono p-2 rounded max-w-[320px] pointer-events-none select-none leading-tight"
-              >
-                <div class="text-yellow-400 font-bold mb-0.5">DEBUG (remove after fix)</div>
-                <div>conn: {{ viewer.state.value.connectionState }} | err: {{ viewer.state.value.connectionError || 'none' }}</div>
-                <div>playing: {{ viewer.state.value.isPlaying }} | buffering: {{ viewer.state.value.isBuffering }}</div>
-                <div>mode: {{ viewer.state.value.playbackMode }} | platform: {{ viewer.state.value.platform }}</div>
-                <div>hlsDir: {{ viewer.hlsOutputDir.value ? '✓ set' : '✗ null' }}</div>
-                <div>hlsInit: {{ hlsDebugState.isInitialized }} | hlsErr: {{ hlsDebugState.error || 'none' }}</div>
-                <div>hlsDur: {{ hlsDebugState.duration?.toFixed(1) }}s | hlsPlaying: {{ hlsDebugState.isPlaying }}</div>
-                <div>hlsBuf: {{ hlsDebugState.isBuffering }} | hlsLive: {{ hlsDebugState.isLive }}</div>
-                <div>segs: {{ viewer.state.value.availableSegments.length }} | totalDur: {{ viewer.state.value.totalRecordedDuration.toFixed(1) }}s</div>
-                <div>videoEl: {{ hlsVideoRef ? ('ready:' + hlsVideoRef.readyState + ' paused:' + hlsVideoRef.paused + ' src:' + (hlsVideoRef.src ? 'set' : 'empty') + ' err:' + (hlsVideoRef.error ? hlsVideoRef.error.code : 'none')) : 'null' }}</div>
-              </div>
-
               <!-- Controls Overlay -->
               <div
                 :class="[
@@ -374,6 +357,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted, nextTick, type CSSProperties } from 'vue';
+  import { formatTime as fmtTime } from '@/utils/dateTimeUtils';
   import {
     X,
     Users,
@@ -443,10 +427,6 @@
   // Composable
   const viewer = useLivestreamViewer();
   const livestreamStore = useLivestreamStore();
-
-  // DEBUG: Visible overlay for production diagnostics (toggle with triple-click on title bar area)
-  const showDebugOverlay = ref(true);
-  const hlsDebugState = computed(() => viewer.hlsPlaybackState.value);
 
   // UI State
   const isFullscreen = ref(false);
@@ -769,14 +749,7 @@
       }
 
       // Generate clip name
-      const timestamp = new Date()
-        .toLocaleTimeString('en-US', {
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: false,
-        })
-        .replace(/:/g, '-');
+      const timestamp = fmtTime(new Date()).replace(/:/g, '-').replace(/\s*(AM|PM)/i, '');
       const clipName = `Quick Clip - ${timestamp}`;
       const clipEndTime = viewer.state.value.playbackPosition;
       const clipStartTime = clipEndTime - QUICK_CLIP_DURATION;

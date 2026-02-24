@@ -1,6 +1,7 @@
 import React from 'react';
 import { Audio, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { AIVideoTrack } from '../../types/ai-video';
+import { utf8ToBase64Url } from '../../utils/encoding';
 
 interface AudioTrackProps {
   track: AIVideoTrack;
@@ -81,7 +82,7 @@ function getAudioUrl(path: string, videoServerPort: number): string {
   }
   if (videoServerPort > 0) {
     // Video server expects base64-encoded path in URL path segment
-    const base64Path = btoa(path);
+    const base64Path = utf8ToBase64Url(path);
     return `http://localhost:${videoServerPort}/video/${base64Path}`;
   }
   return `asset://localhost/${path}`;

@@ -155,24 +155,24 @@ function generateCaptionElements(words: CaptionWord[]) {
 
 	const preset = selectedPreset.value;
 	const maxPerLine = preset.maxWordsPerLine;
-	const linesPerElement = 2;
 
 	// 1. Split words into speech segments separated by silence gaps
 	const speechSegments = splitWordsBySilence(words);
 
 	// 2. For each speech segment, group words → lines → elements
+	// IMPORTANT: Each element contains ONE line only, so captions only show when speech is active
 	const allElements: { lines: CaptionLine[]; start: number; end: number }[] = [];
 
 	for (const segWords of speechSegments) {
 		const lines = groupWordsIntoLines(segWords, maxPerLine);
 		if (lines.length === 0) continue;
 
-		for (let i = 0; i < lines.length; i += linesPerElement) {
-			const group = lines.slice(i, i + linesPerElement);
+		// Create one element per line (not multiple lines per element)
+		for (const line of lines) {
 			allElements.push({
-				lines: group,
-				start: group[0].startTime,
-				end: group[group.length - 1].endTime,
+				lines: [line],
+				start: line.startTime,
+				end: line.endTime,
 			});
 		}
 	}
@@ -409,14 +409,14 @@ function handleRemoveCaptions() {
 			<div class="flex flex-wrap gap-1">
 				<button
 					class="rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors"
-					:class="activeCategory === 'all' ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
+					:class="activeCategory === 'all' ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
 					@click="activeCategory = 'all'"
 				>All</button>
 				<button
 					v-for="cat in CATEGORY_ORDER"
 					:key="cat"
 					class="rounded-full px-2.5 py-1 text-[10px] font-medium transition-colors"
-					:class="activeCategory === cat ? 'bg-sky-500/20 text-sky-400 border border-sky-500/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
+					:class="activeCategory === cat ? 'bg-primary/20 text-primary border border-primary/40' : 'bg-white/5 text-zinc-400 border border-white/10 hover:text-zinc-200'"
 					@click="activeCategory = cat"
 				>{{ CATEGORY_LABELS[cat] }}</button>
 			</div>
@@ -429,7 +429,7 @@ function handleRemoveCaptions() {
 						v-for="preset in group.presets"
 						:key="preset.id"
 						class="group relative flex flex-col items-center gap-1.5 rounded-lg border p-3 text-center transition-all hover:border-white/20 hover:bg-white/5"
-						:class="selectedPresetId === preset.id ? 'border-sky-500/50 bg-sky-500/10' : 'border-white/10 bg-white/[0.02]'"
+						:class="selectedPresetId === preset.id ? 'border-primary/50 bg-primary/10' : 'border-white/10 bg-white/[0.02]'"
 						@click="applyPreset(preset)"
 					>
 						<div
@@ -461,14 +461,14 @@ function handleRemoveCaptions() {
 		</div>
 
 		<!-- Divider -->
-		<div class="border-t border-white/5" />
+		<div class="border-t border-white/10" />
 
 		<!-- Generate Subtitles -->
 		<div class="space-y-3">
 			<h3 class="text-xs font-medium text-zinc-400 uppercase tracking-wider">Generate</h3>
 
 			<button
-				class="flex w-full items-center justify-center gap-2 rounded-md border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 text-sm font-medium text-sky-300 hover:bg-sky-500/20 disabled:opacity-50 transition-colors"
+				class="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5 text-sm font-medium text-primary hover:bg-primary/20 disabled:opacity-50 transition-colors"
 				:disabled="isProcessing"
 				@click="handleGenerateSubtitles"
 			>

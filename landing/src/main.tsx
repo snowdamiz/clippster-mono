@@ -62,6 +62,8 @@ const AdminOrgDetailPage = lazy(() => import('./pages/admin/AdminOrgDetailPage')
 const AdminCustomerServicePage = lazy(() => import('./pages/admin/AdminCustomerServicePage').then(m => ({ default: m.AdminCustomerServicePage })))
 const AdminStaffMessagesPage = lazy(() => import('./pages/admin/AdminStaffMessagesPage').then(m => ({ default: m.AdminStaffMessagesPage })))
 const AdminModLogsPage = lazy(() => import('./pages/admin/AdminModLogsPage').then(m => ({ default: m.AdminModLogsPage })))
+const AdminAnnouncementsPage = lazy(() => import('./pages/admin/AdminAnnouncementsPage').then(m => ({ default: m.AdminAnnouncementsPage })))
+const AdminMessagingPage = lazy(() => import('./pages/admin/AdminMessagingPage').then(m => ({ default: m.AdminMessagingPage })))
 
 function renderAdminChildRoutes() {
   return (
@@ -84,6 +86,8 @@ function renderAdminChildRoutes() {
       <Route path="customer-service" element={<AdminCustomerServicePage />} />
       <Route path="staff-messages" element={<AdminStaffMessagesPage />} />
       <Route path="mod-logs" element={<AdminModLogsPage />} />
+      <Route path="announcements" element={<AdminAnnouncementsPage />} />
+      <Route path="messaging" element={<AdminMessagingPage />} />
     </>
   )
 }

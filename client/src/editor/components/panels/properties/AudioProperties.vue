@@ -266,7 +266,7 @@ function formatTime(seconds: number): string {
 			<button class="flex w-full items-center justify-between" @click="showAudioEffects = !showAudioEffects">
 				<div class="flex items-center gap-1.5">
 					<Wand2 class="size-3.5 text-zinc-500" />
-					<label class="text-xs font-medium text-zinc-400">Audio Effects</label>
+					<label class="text-xs font-medium text-zinc-300">Audio Effects</label>
 					<span v-if="audioEffects.length > 0" class="rounded-full bg-purple-500/20 px-1.5 text-[10px] font-medium text-purple-400">{{ audioEffects.length }}</span>
 				</div>
 				<ChevronDown class="size-3.5 text-zinc-500 transition-transform" :class="{ 'rotate-180': !showAudioEffects }" />
@@ -523,12 +523,14 @@ function formatTime(seconds: number): string {
 		</div>
 
 		<!-- Delete -->
-		<button
-			class="flex w-full items-center justify-center gap-2 rounded-md border border-red-500/30 bg-red-500/15 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/25 hover:border-red-500/50"
-			@click="handleDelete"
-		>
-			<Trash2 class="size-4" />
-			Delete Audio
-		</button>
+		<div class="border-t border-white/10 pt-4 mt-2">
+			<button
+				class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20"
+				@click="handleDelete"
+			>
+				<Trash2 class="size-3.5" />
+				Delete Audio
+			</button>
+		</div>
 	</div>
 </template>

@@ -17,6 +17,7 @@ defmodule ClippsterServerWeb.MessagingJSON do
       status: conversation.status,
       archived_at: conversation.archived_at,
       archived_by_user_id: conversation.archived_by_user_id,
+      scheduled_deletion_at: conversation.scheduled_deletion_at,
       created_at: conversation.inserted_at,
       participants: render_participants(conversation.participants)
     }
@@ -86,7 +87,11 @@ defmodule ClippsterServerWeb.MessagingJSON do
     %{
       id: user.id,
       display_name: user.name,
-      avatar_url: user.avatar_url
+      name: user.name,
+      email: user.email,
+      avatar_url: user.avatar_url,
+      is_admin: user.is_admin || false,
+      is_moderator: user.is_moderator || false
     }
   end
 

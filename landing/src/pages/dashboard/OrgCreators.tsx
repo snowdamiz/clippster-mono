@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useOrganization } from '@/hooks/useOrganization'
-
+import { formatRelativeTime } from '@/utils/dateTimeUtils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ProfileDialog } from '@/components/organization/ProfileDialog'
 import { deleteOrganizationCreatorProfile, assignProfile, unassignProfile, toggleCreatorProfileDisabled } from '@/services/organizationApi'
@@ -50,23 +50,6 @@ function getPlatformFilter(platform: string): string {
       'brightness(0) saturate(100%) invert(22%) sepia(99%) saturate(3013%) hue-rotate(352deg) brightness(95%) contrast(91%)'
   }
   return filters[platform] || 'none'
-}
-
-function formatUpdatedAt(dateStr?: string): string {
-  if (!dateStr) return ''
-  try {
-    const date = new Date(dateStr)
-    const now = new Date()
-    const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000)
-    if (diffSec < 60) return 'Just now'
-    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`
-    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`
-    if (diffSec < 604800) return `${Math.floor(diffSec / 86400)}d ago`
-    if (diffSec < 2592000) return `${Math.floor(diffSec / 604800)}w ago`
-    return `${Math.floor(diffSec / 2592000)}mo ago`
-  } catch {
-    return ''
-  }
 }
 
 export function OrgCreators() {
@@ -537,7 +520,7 @@ export function OrgCreators() {
 
                   {/* Card Footer */}
                   <div className="oc-card__footer">
-                    <span className="oc-card__updated">{formatUpdatedAt(profile.updated_at)}</span>
+                    <span className="oc-card__updated">{formatRelativeTime(profile.updated_at)}</span>
                   </div>
                 </div>
               ))}

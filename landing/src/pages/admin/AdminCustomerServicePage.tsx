@@ -37,10 +37,6 @@ type SupportMessageRecord = SupportMessage & {
   message_type?: string
 }
 
-function isStaffUser(user?: SupportParticipantUser): boolean {
-  return Boolean(user?.isAdmin || user?.is_admin || user?.isModerator || user?.is_moderator)
-}
-
 function getParticipantUserId(participant: SupportParticipant): number | null {
   return participant.userId ?? participant.user_id ?? null
 }
@@ -59,16 +55,18 @@ function getExtendedDisplayName(user?: ConversationParticipant['user']): string 
 }
 
 function getUserName(conversation: SupportConversationRecord): string {
+  const createdByUserId = (conversation as any).created_by_user_id ?? (conversation as any).createdByUserId
   const participants = conversation.participants || []
-  const userParticipant = participants.find((participant) => !isStaffUser(participant.user))
-  const user = userParticipant?.user
+  const customerParticipant = participants.find((participant) => getParticipantUserId(participant) === createdByUserId)
+  const user = customerParticipant?.user
   return user?.name || getExtendedDisplayName(user) || user?.email || 'Unknown User'
 }
 
 function getUserEmail(conversation: SupportConversationRecord): string {
+  const createdByUserId = (conversation as any).created_by_user_id ?? (conversation as any).createdByUserId
   const participants = conversation.participants || []
-  const userParticipant = participants.find((participant) => !isStaffUser(participant.user))
-  return userParticipant?.user?.email || ''
+  const customerParticipant = participants.find((participant) => getParticipantUserId(participant) === createdByUserId)
+  return customerParticipant?.user?.email || ''
 }
 
 function getConversationLastMessageAt(conversation: SupportConversationRecord): string | null {
@@ -201,25 +199,22 @@ export function AdminCustomerServicePage() {
 
   const getSenderName = useCallback(
     (message: SupportMessageRecord): string => {
-      const senderId = getMessageSenderId(message)
-      if (senderId === null) return 'Unknown'
-
-      const participants = activeConversation?.participants || []
-      const sender = participants.find((participant) => getParticipantUserId(participant) === senderId)
-      const user = sender?.user
-      return user?.name || getExtendedDisplayName(user) || user?.email || 'Unknown'
+      const sender = (message as any).sender
+      if (sender) {
+        return sender.name || sender.display_name || sender.displayName || sender.email || 'Unknown'
+      }
+      return 'Unknown'
     },
-    [activeConversation],
+    [],
   )
 
   const isStaffMessage = useCallback(
     (message: SupportMessageRecord): boolean => {
       const senderId = getMessageSenderId(message)
       if (senderId === null) return false
-
-      const participants = activeConversation?.participants || []
-      const sender = participants.find((participant) => getParticipantUserId(participant) === senderId)
-      return isStaffUser(sender?.user)
+      const createdByUserId = (activeConversation as any)?.created_by_user_id ?? (activeConversation as any)?.createdByUserId
+      if (!createdByUserId) return false
+      return senderId !== createdByUserId
     },
     [activeConversation],
   )
@@ -241,9 +236,14 @@ export function AdminCustomerServicePage() {
   }, [loadConversations])
 
   const filteredConversations = useMemo(() => {
-    if (!searchQuery) return conversations
+    // Filter out blank conversations (no messages ever sent)
+    const nonEmpty = conversations.filter((conversation) => {
+      const lastMsg = getConversationLastMessageAt(conversation)
+      return lastMsg !== null
+    })
+    if (!searchQuery) return nonEmpty
     const query = searchQuery.toLowerCase()
-    return conversations.filter((conversation) => getUserName(conversation).toLowerCase().includes(query))
+    return nonEmpty.filter((conversation) => getUserName(conversation).toLowerCase().includes(query))
   }, [conversations, searchQuery])
 
   const sortedMessages = useMemo(() => {

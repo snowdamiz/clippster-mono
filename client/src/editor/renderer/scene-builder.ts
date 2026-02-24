@@ -92,6 +92,7 @@ export function buildScene(params: BuildSceneParams) {
 						crop: videoEl.crop,
 						colorAdjustments: videoEl.colorAdjustments,
 						speed: videoEl.speed,
+						reversed: videoEl.reversed,
 						fadeIn: videoEl.fadeIn,
 						fadeOut: videoEl.fadeOut,
 						keyframes: videoEl.keyframes,

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Header } from './components/Header'
 import { Hero } from './components/Hero'
 import { Product } from './components/Product'
@@ -7,11 +8,23 @@ import { HowItWorks } from './components/HowItWorks'
 // import { Testimonials } from './components/Testimonials'
 import { CTA } from './components/CTA'
 import { Footer } from './components/Footer'
-import { WaitlistModal } from './components/WaitlistModal'
+import { BetaCodeModal } from './components/BetaCodeModal'
+import { AnnouncementDialog } from './components/AnnouncementDialog'
 import { useDownloadContext } from './context/DownloadContext'
+import { useAnnouncements } from './hooks/useAnnouncements'
 
 function App() {
-  const { showWaitlistModal, setShowWaitlistModal } = useDownloadContext()
+  const {
+    showBetaCodeModal,
+    setShowBetaCodeModal,
+    enableDownloads
+  } = useDownloadContext()
+  const { currentAnnouncement, queueLength, fetchAndEnqueue, dismissCurrent } = useAnnouncements()
+
+  // Fetch active announcements on mount (landing page is public — no auth needed)
+  useEffect(() => {
+    fetchAndEnqueue()
+  }, [fetchAndEnqueue])
 
   return (
     <div className="min-h-screen bg-[#0a0a0b]">
@@ -27,9 +40,18 @@ function App() {
       </main>
       <Footer />
       
-      <WaitlistModal 
-        isOpen={showWaitlistModal} 
-        onClose={() => setShowWaitlistModal(false)} 
+      <BetaCodeModal
+        isOpen={showBetaCodeModal}
+        onClose={() => setShowBetaCodeModal(false)}
+        onSuccess={() => {
+          enableDownloads()
+        }}
+      />
+
+      <AnnouncementDialog
+        announcement={currentAnnouncement}
+        queueLength={queueLength}
+        onDismiss={dismissCurrent}
       />
     </div>
   )

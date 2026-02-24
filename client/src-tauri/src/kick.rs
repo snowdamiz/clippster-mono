@@ -118,9 +118,93 @@ pub struct KickLiveStatus {
 pub async fn check_kick_livestream(channel: String) -> Result<String, String> {
     let channel_slug = normalize_channel_slug(&channel);
 
-    // First try the fast api.kick.com endpoint (no Cloudflare)
-    let api_url = format!("https://api.kick.com/private/v1/channels/{}/livestream", channel_slug);
+    // First fetch channel metadata to get username and profile image
+    let channel_url = format!("https://api.kick.com/private/v1/channels/{}", channel_slug);
+    println!("[Kick] Fetching channel metadata for {} via api.kick.com", channel_slug);
 
+    let channel_response = KICK_API_CLIENT
+        .get(&channel_url)
+        .header("Accept", "application/json")
+        .send()
+        .await;
+
+    let (username, profile_image_url, channel_id) = match channel_response {
+        Ok(resp) if resp.status().is_success() => {
+            match resp.text().await {
+                Ok(body) => {
+                    println!("[Kick] Channel API response body (first 500 chars): {}", body.chars().take(500).collect::<String>());
+                    match serde_json::from_str::<serde_json::Value>(&body) {
+                        Ok(json) => {
+                            // Try multiple possible response structures
+                            // 1. Check if data exists at root level
+                            let data = json.get("data").or(Some(&json));
+                            
+                            // Try to get username from multiple possible locations
+                            // New API structure (2025+): data.account.user.username
+                            // Old API structure: data.username or data.user.username
+                            let username = data
+                                .and_then(|d| {
+                                    d.get("account").and_then(|a| a.get("user").and_then(|u| u.get("username")))
+                                        .or_else(|| d.get("username"))
+                                        .or_else(|| d.get("user").and_then(|u| u.get("username")))
+                                        .or_else(|| d.get("account").and_then(|a| a.get("channel").and_then(|c| c.get("slug"))))
+                                        .or_else(|| d.get("slug"))
+                                })
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+                            
+                            // Try to get profile image from multiple possible locations
+                            // New API structure (2025+): data.account.user.profile_picture
+                            // Old API structure: data.profile_image_url or data.user.profile_pic
+                            let profile_image = data
+                                .and_then(|d| {
+                                    d.get("account").and_then(|a| a.get("user").and_then(|u| u.get("profile_picture")))
+                                        .or_else(|| d.get("profile_image_url"))
+                                        .or_else(|| d.get("user").and_then(|u| u.get("profile_pic")))
+                                        .or_else(|| d.get("user").and_then(|u| u.get("profile_image_url")))
+                                        .or_else(|| d.get("user").and_then(|u| u.get("profile_picture")))
+                                        .or_else(|| d.get("profile_pic"))
+                                })
+                                .and_then(|v| v.as_str())
+                                .filter(|s| !s.is_empty())
+                                .map(|s| s.to_string());
+                            
+                            // Channel ID - new API uses string IDs, old API used numeric
+                            let chan_id = data
+                                .and_then(|d| {
+                                    d.get("id")
+                                        .or_else(|| d.get("account").and_then(|a| a.get("channel").and_then(|c| c.get("id"))))
+                                })
+                                .and_then(|v| v.as_i64());
+                            
+                            println!("[Kick] Parsed channel metadata - username: {:?}, profile_image: {:?}, id: {:?}", 
+                                username, profile_image.as_ref().map(|s| s.chars().take(50).collect::<String>()), chan_id);
+                            (username, profile_image, chan_id)
+                        }
+                        Err(e) => {
+                            println!("[Kick] Failed to parse channel API JSON: {}", e);
+                            (None, None, None)
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("[Kick] Failed to read channel API response body: {}", e);
+                    (None, None, None)
+                }
+            }
+        }
+        Ok(resp) => {
+            println!("[Kick] Channel API returned non-success status: {}", resp.status());
+            (None, None, None)
+        }
+        Err(e) => {
+            println!("[Kick] Channel API request failed: {}", e);
+            (None, None, None)
+        }
+    };
+
+    // Now check livestream status
+    let api_url = format!("https://api.kick.com/private/v1/channels/{}/livestream", channel_slug);
     println!("[Kick] Checking livestream status for {} via api.kick.com", channel_slug);
 
     let response = KICK_API_CLIENT
@@ -158,10 +242,10 @@ pub async fn check_kick_livestream(channel: String) -> Result<String, String> {
 
                 let status = KickLiveStatus {
                     is_live: true,
-                    channel_id: None,
+                    channel_id,
                     channel_slug: Some(channel_slug),
-                    username: None, // Not available from this endpoint
-                    profile_image_url: None,
+                    username,
+                    profile_image_url,
                     stream_title: title,
                     viewer_count: viewers,
                     thumbnail_url: thumbnail,
@@ -174,10 +258,10 @@ pub async fn check_kick_livestream(channel: String) -> Result<String, String> {
                 println!("[Kick] Channel {} is not live", channel_slug);
                 let status = KickLiveStatus {
                     is_live: false,
-                    channel_id: None,
+                    channel_id,
                     channel_slug: Some(channel_slug),
-                    username: None,
-                    profile_image_url: None,
+                    username,
+                    profile_image_url,
                     stream_title: None,
                     viewer_count: None,
                     thumbnail_url: None,
@@ -191,10 +275,10 @@ pub async fn check_kick_livestream(channel: String) -> Result<String, String> {
             println!("[Kick] api.kick.com returned {} for {}, channel likely doesn't exist", resp.status(), channel_slug);
             let status = KickLiveStatus {
                 is_live: false,
-                channel_id: None,
+                channel_id,
                 channel_slug: Some(channel_slug),
-                username: None,
-                profile_image_url: None,
+                username,
+                profile_image_url,
                 stream_title: None,
                 viewer_count: None,
                 thumbnail_url: None,
@@ -208,10 +292,10 @@ pub async fn check_kick_livestream(channel: String) -> Result<String, String> {
             // Return not-live on network errors rather than failing the whole command
             let status = KickLiveStatus {
                 is_live: false,
-                channel_id: None,
+                channel_id,
                 channel_slug: Some(channel_slug),
-                username: None,
-                profile_image_url: None,
+                username,
+                profile_image_url,
                 stream_title: None,
                 viewer_count: None,
                 thumbnail_url: None,

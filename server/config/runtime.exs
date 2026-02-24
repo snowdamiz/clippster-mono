@@ -47,6 +47,17 @@ config :clippster_server, :stripe,
   success_url: System.get_env("STRIPE_SUCCESS_URL") || "http://localhost:48276/stripe-success",
   cancel_url: System.get_env("STRIPE_CANCEL_URL") || "http://localhost:48276/stripe-cancel"
 
+# Frontend base URL used for redirects from server-driven browser flows (e.g. Stripe checkout)
+frontend_base_url =
+  System.get_env("FRONTEND_URL") ||
+    if config_env() == :prod do
+      "https://clippster.app"
+    else
+      "http://localhost:1420"
+    end
+
+config :clippster_server, :frontend_base_url, frontend_base_url
+
 # Resend email configuration (all environments)
 resend_api_key = System.get_env("RESEND_API_KEY")
 
@@ -103,6 +114,10 @@ config :clippster_server, :twitter_oauth,
   client_id: System.get_env("TWITTER_CLIENT_ID"),
   client_secret: System.get_env("TWITTER_CLIENT_SECRET"),
   redirect_uri: System.get_env("TWITTER_REDIRECT_URI")
+
+# Freesound API (sound effects search proxy)
+config :clippster_server, :freesound,
+  api_key: System.get_env("FREESOUND_API_KEY")
 
 # PulseKit error tracking and event monitoring
 pulsekit_key = System.get_env("PULSEKIT_CLIPPSTER_SERVER_KEY")
@@ -226,10 +241,16 @@ if config_env() == :prod do
     check_origin: [
       "//clippster-server.fly.dev",
       "//api.clippster.app",
+      # Landing app origins (production web app)
+      "//clippster.app",
+      "//www.clippster.app",
       # Tauri custom protocol
       "tauri://localhost",
       "https://tauri.localhost",
-      "http://tauri.localhost"
+      "http://tauri.localhost",
+      # Tauri localhost plugin (production desktop origin uses random loopback port)
+      "//localhost",
+      "//127.0.0.1"
     ]
 
   # ## SSL Support

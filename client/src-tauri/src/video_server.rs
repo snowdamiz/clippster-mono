@@ -52,7 +52,10 @@ pub async fn start_video_server_impl() {
         .and(warp::head())
         .and_then(|encoded_path: String| async move {
             use base64::{Engine as _, engine::general_purpose};
-            let decoded = match general_purpose::STANDARD.decode(&encoded_path) {
+            let decoded = match general_purpose::URL_SAFE_NO_PAD.decode(&encoded_path)
+                .or_else(|_| general_purpose::URL_SAFE.decode(&encoded_path))
+                .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_path))
+                .or_else(|_| general_purpose::STANDARD.decode(&encoded_path)) {
                 Ok(d) => d,
                 Err(_) => {
                     let resp = warp::reply::with_header("", "Access-Control-Allow-Origin", "*");
@@ -91,7 +94,10 @@ pub async fn start_video_server_impl() {
         .and_then(|encoded_path: String, range_header: Option<String>| async move {
             // Decode the base64-encoded path
             use base64::{Engine as _, engine::general_purpose};
-            let decoded = match general_purpose::STANDARD.decode(encoded_path) {
+            let decoded = match general_purpose::URL_SAFE_NO_PAD.decode(&encoded_path)
+                .or_else(|_| general_purpose::URL_SAFE.decode(&encoded_path))
+                .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_path))
+                .or_else(|_| general_purpose::STANDARD.decode(&encoded_path)) {
                 Ok(d) => d,
                 Err(_) => {
                     return Ok::<_, warp::Rejection>(warp::reply::with_status(

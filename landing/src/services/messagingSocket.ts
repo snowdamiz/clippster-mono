@@ -17,6 +17,7 @@ export type NotificationHandler = (notification: MessageNotification) => void
 export type TypingHandler = (event: { userId: number }) => void
 export type ReadHandler = (event: { userId: number; conversationId: number }) => void
 export type DeleteHandler = (event: { messageId: number }) => void
+export type ConnectionStateHandler = (isConnected: boolean) => void
 
 // ============================================================================
 // MessagingSocket Class
@@ -26,10 +27,13 @@ class MessagingSocket {
   private socket: Socket | null = null
   private userChannel: Channel | null = null
   private conversationChannels: Map<number, Channel> = new Map()
+  private isSocketOpen = false
+  private connectPromise: Promise<void> | null = null
 
   private onNewMessageNotification: NotificationHandler | null = null
   private onConversationCreated: ConversationHandler | null = null
   private onMessageReadNotification: ReadHandler | null = null
+  private onConnectionStateChange: ConnectionStateHandler | null = null
   private conversationHandlers: Map<
     number,
     {
@@ -48,14 +52,45 @@ class MessagingSocket {
     return `${protocol}//${url.host}/messaging`
   }
 
-  connect(token: string, userId: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (this.socket) {
-        resolve()
-        return
-      }
+  private setConnectionState(isConnected: boolean): void {
+    if (this.isSocketOpen === isConnected) return
+    this.isSocketOpen = isConnected
+    this.onConnectionStateChange?.(isConnected)
+  }
 
-      const socketUrl = this.getSocketUrl()
+  connect(token: string, userId: number): Promise<void> {
+    if (this.isSocketOpen && this.socket) {
+      return Promise.resolve()
+    }
+
+    if (this.connectPromise) {
+      return this.connectPromise
+    }
+
+    if (this.socket && !this.isSocketOpen) {
+      this.socket.disconnect()
+      this.socket = null
+    }
+
+    const socketUrl = this.getSocketUrl()
+
+    this.connectPromise = new Promise((resolve, reject) => {
+      let settled = false
+      const connectTimeout = window.setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.connectPromise = null
+        this.disconnect()
+        reject(new Error('Messaging socket connection timeout'))
+      }, 15_000)
+
+      const finish = (fn: () => void) => {
+        if (settled) return
+        settled = true
+        window.clearTimeout(connectTimeout)
+        this.connectPromise = null
+        fn()
+      }
 
       this.socket = new Socket(socketUrl, {
         params: { token },
@@ -64,21 +99,40 @@ class MessagingSocket {
 
       this.socket.onOpen(() => {
         console.log('[MessagingSocket] Connected')
+        this.setConnectionState(true)
+
+        // After initial connect settles, Phoenix will auto-rejoin channels.
+        // Avoid creating duplicate user channels on reconnect.
+        if (settled) {
+          return
+        }
+
         this.joinUserChannel(userId)
-          .then(() => resolve())
-          .catch(reject)
+          .then(() => finish(() => resolve()))
+          .catch((error: unknown) => {
+            finish(() => {
+              this.disconnect()
+              reject(error instanceof Error ? error : new Error(String(error)))
+            })
+          })
       })
 
-      this.socket.onError((error: any) => {
+      this.socket.onError((error: unknown) => {
         console.error('[MessagingSocket] Socket error:', error)
+        if (!this.isSocketOpen) {
+          this.setConnectionState(false)
+        }
       })
 
       this.socket.onClose(() => {
         console.log('[MessagingSocket] Socket closed')
+        this.setConnectionState(false)
       })
 
       this.socket.connect()
     })
+
+    return this.connectPromise
   }
 
   private joinUserChannel(userId: number): Promise<void> {
@@ -268,11 +322,49 @@ class MessagingSocket {
     this.onMessageReadNotification = handler
   }
 
+  setOnConnectionStateChange(handler: ConnectionStateHandler | null): void {
+    this.onConnectionStateChange = handler
+    this.onConnectionStateChange?.(this.isSocketOpen)
+  }
+
+  joinAnnouncementsChannel(onNewAnnouncement: (payload: any) => void): void {
+    if (!this.socket) {
+      console.warn('[MessagingSocket] Cannot join announcements channel: socket not connected')
+      return
+    }
+
+    const channel = this.socket.channel('announcements:lobby')
+
+    channel.on('new_announcement', (payload: any) => {
+      onNewAnnouncement(payload)
+    })
+
+    channel
+      .join()
+      .receive('ok', () => {
+        console.log('[MessagingSocket] Joined announcements channel')
+      })
+      .receive('error', (reason: unknown) => {
+        console.error('[MessagingSocket] Failed to join announcements channel:', reason)
+      })
+
+    this.conversationChannels.set(-1, channel)
+  }
+
+  leaveAnnouncementsChannel(): void {
+    const channel = this.conversationChannels.get(-1)
+    if (channel) {
+      channel.leave()
+      this.conversationChannels.delete(-1)
+    }
+  }
+
   isConnected(): boolean {
-    return this.socket !== null
+    return this.isSocketOpen
   }
 
   disconnect(): void {
+    this.connectPromise = null
     this.conversationChannels.forEach((channel) => channel.leave())
     this.conversationChannels.clear()
     this.conversationHandlers.clear()
@@ -280,6 +372,7 @@ class MessagingSocket {
     this.userChannel = null
     this.socket?.disconnect()
     this.socket = null
+    this.setConnectionState(false)
     console.log('[MessagingSocket] Disconnected')
   }
 }

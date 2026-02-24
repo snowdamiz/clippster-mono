@@ -16,6 +16,7 @@ const categories: { value: TextPresetCategory | "all"; label: string }[] = [
 	{ value: "basic", label: "Basic" },
 	{ value: "titles", label: "Titles" },
 	{ value: "subtitles", label: "Subs" },
+	{ value: "lower-thirds", label: "L3" },
 	{ value: "social", label: "Social" },
 	{ value: "gaming", label: "Gaming" },
 	{ value: "neon", label: "Neon" },
@@ -23,9 +24,14 @@ const categories: { value: TextPresetCategory | "all"; label: string }[] = [
 	{ value: "handwritten", label: "Hand" },
 ];
 
+const hoveredPreset = ref<string | null>(null);
+const searchQuery = ref("");
+
 const filteredPresets = computed(() => {
-	if (activeCategory.value === "all") return TEXT_PRESETS;
-	return TEXT_PRESETS.filter((p) => p.category === activeCategory.value);
+	let presets = activeCategory.value === "all" ? TEXT_PRESETS : TEXT_PRESETS.filter((p) => p.category === activeCategory.value);
+	const q = searchQuery.value.trim().toLowerCase();
+	if (q) presets = presets.filter((p) => p.name.toLowerCase().includes(q) || p.element.content?.toLowerCase().includes(q));
+	return presets;
 });
 
 function addPreset(presetId: string) {
@@ -130,10 +136,24 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 		<!-- Header -->
 		<div class="flex items-center justify-between border-b border-white/5 px-3 py-2">
 			<span class="text-xs font-medium uppercase tracking-wider text-zinc-400">Text</span>
-			<button class="flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200" @click="handleUploadFont">
+			<button
+				class="flex items-center gap-1 px-2 py-1 text-[10px] text-primary hover:text-primary/80 bg-primary/10 rounded transition-colors border border-primary/20"
+				title="Upload custom font"
+				@click="handleUploadFont"
+			>
 				<Upload class="size-3" />
-				Font
+				Upload Font
 			</button>
+		</div>
+
+		<!-- Search bar -->
+		<div class="px-2 pt-1.5">
+			<input
+				type="text"
+				v-model="searchQuery"
+				placeholder="Search presets..."
+				class="w-full rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-primary/50 focus:outline-none"
+			/>
 		</div>
 
 		<!-- Category tabs -->
@@ -143,9 +163,9 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 				:key="cat.value"
 				type="button"
 				:class="[
-					'shrink-0 rounded px-2 py-1 text-[10px] font-medium transition-all',
+					'shrink-0 rounded px-2.5 py-1 text-xs font-medium transition-all',
 					activeCategory === cat.value
-						? 'bg-blue-500/15 text-blue-400'
+						? 'bg-primary/15 text-primary'
 						: 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5',
 				]"
 				@click="activeCategory = cat.value"
@@ -159,11 +179,11 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 			<!-- Add default text button -->
 			<button
 				type="button"
-				class="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-white/10 py-2.5 text-xs text-zinc-500 transition-colors hover:border-blue-500/30 hover:text-blue-400"
+				class="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 py-3 text-xs text-primary transition-colors hover:border-primary/50 hover:bg-primary/10"
 				@click="addDefaultText"
 			>
-				<Plus class="size-3.5" />
-				Default Text
+				<Plus class="size-4" />
+				Add Default Text
 			</button>
 
 			<div class="grid grid-cols-2 gap-1.5">
@@ -171,25 +191,41 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 					v-for="preset in filteredPresets"
 					:key="preset.id"
 					type="button"
-					class="group relative flex flex-col items-center justify-center overflow-hidden rounded-lg border border-white/5 transition-all hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5"
+					class="group relative flex flex-col items-center justify-center overflow-hidden rounded-lg border border-white/5 transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5"
 					:class="getPresetCardBg(preset)"
-					style="min-height: 64px"
+					style="min-height: 96px"
 					@click="addPreset(preset.id)"
+					@mouseenter="hoveredPreset = preset.id"
+					@mouseleave="hoveredPreset = null"
 				>
 					<!-- Preview area -->
-					<div class="flex flex-1 items-center justify-center px-2 py-2.5">
+					<div class="flex flex-1 items-center justify-center px-3 py-3">
 						<div :style="getPresetBgStyle(preset)" class="relative flex items-center justify-center">
 							<span
 								:style="getPresetPreviewStyle(preset)"
 								class="select-none truncate whitespace-nowrap leading-tight"
 							>
-								{{ preset.element.content || 'Text' }}
+								Sample
 							</span>
 						</div>
 					</div>
 					<!-- Label -->
 					<div class="w-full border-t border-white/[0.03] bg-black/20 px-1.5 py-1">
 						<span class="block truncate text-center text-[9px] leading-none text-zinc-600 group-hover:text-zinc-400">{{ preset.name }}</span>
+					</div>
+					<!-- Hover tooltip -->
+					<div
+						v-if="hoveredPreset === preset.id"
+						class="pointer-events-none absolute inset-x-0 -top-10 z-10 flex items-center justify-center"
+					>
+						<div class="rounded bg-zinc-800 px-2 py-1 shadow-lg border border-white/10">
+							<span
+								:style="{ ...getPresetPreviewStyle(preset), fontSize: '16px' }"
+								class="select-none whitespace-nowrap leading-tight"
+							>
+								Sample Text
+							</span>
+						</div>
 					</div>
 				</button>
 			</div>

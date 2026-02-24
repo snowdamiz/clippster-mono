@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { buildLibraryAudioElement } from "../../../lib/timeline/element-utils";
 import {
@@ -50,12 +50,13 @@ function handleSearchInput() {
 	}, 400);
 }
 
-async function doSearch() {
-	if (!searchQuery.value.trim()) return;
+async function doSearch(query?: string) {
+	const searchTerm = query || searchQuery.value.trim();
+	if (!searchTerm) return;
 	isSearching.value = true;
 	try {
 		searchResponse.value = await searchSounds({
-			query: searchQuery.value,
+			query: searchTerm,
 			page: currentPage.value,
 			pageSize: 15,
 		});
@@ -66,6 +67,14 @@ async function doSearch() {
 		isSearching.value = false;
 	}
 }
+
+// Load default trending sounds on mount
+onMounted(() => {
+	if (configured.value) {
+		// Load popular/trending sounds by default
+		doSearch("popular");
+	}
+});
 
 async function loadMore() {
 	if (!searchResponse.value?.next || isLoadingMore.value) return;
@@ -130,6 +139,15 @@ async function addSoundToTimeline(sound: SoundEffect) {
 
 	addingSound.value = sound.id;
 	try {
+		// Download audio to local storage via Tauri
+		const filename = `freesound_${sound.id}_${sound.name.replace(/[^a-zA-Z0-9]/g, '_')}.mp3`;
+		const { invoke } = await import('@tauri-apps/api/core');
+		const localFilePath = await invoke<string>('download_library_audio', {
+			url: audioUrl,
+			filename,
+		});
+
+		// Decode audio for preview playback
 		const response = await fetch(audioUrl);
 		if (!response.ok) throw new Error(`Failed to download audio: ${response.statusText}`);
 
@@ -139,7 +157,7 @@ async function addSoundToTimeline(sound: SoundEffect) {
 
 		const currentTime = editor.playback.getCurrentTime();
 		const element = buildLibraryAudioElement({
-			sourceUrl: audioUrl,
+			sourceUrl: localFilePath,
 			name: sound.name,
 			duration: sound.duration,
 			startTime: currentTime,
@@ -279,7 +297,7 @@ onUnmounted(() => {
 							placeholder="Search sound effects..."
 							class="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-8 pr-3 text-sm text-zinc-200 placeholder-zinc-500 outline-none focus:border-white/20"
 							@input="handleSearchInput"
-							@keydown.enter="doSearch"
+							@keydown.enter="() => doSearch()"
 						/>
 					</div>
 				</div>
@@ -291,8 +309,8 @@ onUnmounted(() => {
 						<Loader2 class="size-6 animate-spin text-zinc-500" />
 					</div>
 
-					<!-- Empty state -->
-					<div v-else-if="!searchResponse" class="flex flex-col items-center justify-center gap-3 p-6 pt-12">
+					<!-- Empty state (only shown if search failed) -->
+					<div v-else-if="!searchResponse && searchQuery" class="flex flex-col items-center justify-center gap-3 p-6 pt-12">
 						<Headphones class="size-10 text-zinc-600" :stroke-width="1" />
 						<div class="flex flex-col gap-1 text-center">
 							<p class="text-sm text-zinc-400">Search for sound effects</p>
@@ -303,13 +321,13 @@ onUnmounted(() => {
 					</div>
 
 					<!-- No results -->
-					<div v-else-if="searchResponse.results.length === 0" class="flex flex-col items-center justify-center gap-2 py-12 text-center">
+					<div v-else-if="searchResponse && searchResponse.results.length === 0" class="flex flex-col items-center justify-center gap-2 py-12 text-center">
 						<p class="text-sm text-zinc-400">No sounds found</p>
 						<p class="text-xs text-zinc-500">Try a different search term</p>
 					</div>
 
 					<!-- Results list -->
-					<div v-else class="flex flex-col">
+					<div v-else-if="searchResponse && searchResponse.results.length > 0" class="flex flex-col">
 						<div
 							v-for="sound in searchResponse.results"
 							:key="sound.id"

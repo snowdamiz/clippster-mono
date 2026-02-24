@@ -188,33 +188,32 @@ function removeTransition() {
 				<p class="text-xs text-zinc-500">No transitions found</p>
 			</div>
 
-			<div v-else class="grid grid-cols-2 gap-2">
+			<div v-else class="grid grid-cols-2 gap-2.5">
 				<button
 					v-for="preset in filteredPresets"
 					:key="preset.type"
 					draggable="true"
 					:class="[
-						'group overflow-hidden rounded-lg border transition-all cursor-grab active:cursor-grabbing',
+						'group overflow-hidden rounded-xl border transition-all cursor-grab active:cursor-grabbing active:scale-[0.97]',
 						activeTransition?.type === preset.type
 							? 'border-blue-500/40 bg-blue-500/10'
-							: 'border-white/5 bg-white/[0.02] hover:border-[#E040FB]/30 hover:bg-[#E040FB]/5',
+							: 'border-white/[0.08] bg-zinc-900/40 hover:border-[#E040FB]/40 hover:bg-[#E040FB]/[0.08]',
 					]"
 					@click="applyTransition(preset)"
 					@dragstart="handleDragStart($event, preset)"
 				>
 					<!-- Transition preview thumbnail -->
-					<div class="relative aspect-[3/2] w-full overflow-hidden bg-zinc-900">
+					<div class="relative aspect-[4/3] w-full overflow-hidden bg-zinc-950">
 						<TransitionPreviewCanvas :transition-type="preset.type" />
 						<!-- Active checkmark -->
-						<div v-if="activeTransition?.type === preset.type" class="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-blue-500">
-							<Check class="size-2.5 text-white" />
+						<div v-if="activeTransition?.type === preset.type" class="absolute top-1.5 right-1.5 flex size-5 items-center justify-center rounded-full bg-blue-500">
+							<Check class="size-3 text-white" />
 						</div>
 					</div>
-					<div class="px-2 py-1.5 text-center">
-						<p class="text-[11px] font-medium" :class="activeTransition?.type === preset.type ? 'text-blue-400' : 'text-zinc-300 group-hover:text-zinc-100'">
+					<div class="px-2.5 py-2 text-center">
+						<p class="text-[11px] font-medium" :class="activeTransition?.type === preset.type ? 'text-blue-400' : 'text-zinc-200 group-hover:text-white'">
 							{{ preset.label }}
 						</p>
-						<p class="mt-0.5 text-[9px] leading-tight text-zinc-600">{{ preset.description }}</p>
 					</div>
 				</button>
 			</div>

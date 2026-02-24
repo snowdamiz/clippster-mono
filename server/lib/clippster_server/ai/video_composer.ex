@@ -89,12 +89,20 @@ defmodule ClippsterServer.AI.VideoComposer do
         ambient_tracks = build_ambient_tracks(scenes)
 
         # Phase 2: Generate OVERLAY tracks for each scene (text, camera, effects, transitions)
-        all_overlay_tracks = Enum.reduce_while(scenes, {:ok, []}, fn scene, {:ok, acc} ->
-          case generate_scene_overlay_tracks(ctx, scene, scenes, api_key) do
-            {:ok, tracks} -> {:cont, {:ok, acc ++ tracks}}
+        # Track what was used in previous scenes to enforce diversity
+        all_overlay_tracks = Enum.reduce_while(scenes, {:ok, [], %{templates: [], camera_types: [], transition_types: []}}, fn scene, {:ok, acc, diversity_tracker} ->
+          case generate_scene_overlay_tracks(ctx, scene, scenes, api_key, diversity_tracker) do
+            {:ok, tracks} -> 
+              # Update diversity tracker with what was used in this scene
+              new_tracker = update_diversity_tracker(diversity_tracker, tracks)
+              {:cont, {:ok, acc ++ tracks, new_tracker}}
             {:error, reason} -> {:halt, {:error, reason}}
           end
         end)
+        |> case do
+          {:ok, tracks, _tracker} -> {:ok, tracks}
+          error -> error
+        end
 
         case all_overlay_tracks do
           {:ok, overlay_tracks} ->
@@ -123,16 +131,23 @@ defmodule ClippsterServer.AI.VideoComposer do
         ambient_tracks = build_ambient_tracks(scenes)
 
         # Phase 2: Generate OVERLAY tracks for each scene, streaming progress
-        result = Enum.reduce_while(Enum.with_index(scenes), {:ok, []}, fn {scene, idx}, {:ok, acc} ->
-          case generate_scene_overlay_tracks(ctx, scene, scenes, api_key) do
+        # Track what was used in previous scenes to enforce diversity
+        result = Enum.reduce_while(Enum.with_index(scenes), {:ok, [], %{templates: [], camera_types: [], transition_types: []}}, fn {scene, idx}, {:ok, acc, diversity_tracker} ->
+          case generate_scene_overlay_tracks(ctx, scene, scenes, api_key, diversity_tracker) do
             {:ok, tracks} ->
               send_fn.(%{event: "scene", data: %{index: idx, total: length(scenes), tracks: tracks, description: Map.get(scene, "description", "Scene #{idx + 1}")}})
-              {:cont, {:ok, acc ++ tracks}}
+              # Update diversity tracker with what was used in this scene
+              new_tracker = update_diversity_tracker(diversity_tracker, tracks)
+              {:cont, {:ok, acc ++ tracks, new_tracker}}
             {:error, reason} ->
               send_fn.(%{event: "error", data: %{message: "Scene #{idx + 1} failed: #{reason}"}})
               {:halt, {:error, reason}}
           end
         end)
+        |> case do
+          {:ok, tracks, _tracker} -> {:ok, tracks}
+          error -> error
+        end
 
         case result do
           {:ok, overlay_tracks} ->
@@ -154,6 +169,92 @@ defmodule ClippsterServer.AI.VideoComposer do
   # ---------------------------------------------------------------------------
 
   defp plan_scenes(ctx, api_key) do
+    # First, check if the discovery conversation produced a user-approved scene plan
+    case extract_discovery_scenes(ctx) do
+      {:ok, scenes} ->
+        Logger.info("[VideoComposer] Using user-approved discovery scene plan (#{length(scenes)} scenes)")
+        {:ok, scenes}
+
+      :none ->
+        # No discovery scenes — fall back to AI scene planning
+        plan_scenes_with_ai(ctx, api_key)
+    end
+  end
+
+  defp extract_discovery_scenes(ctx) do
+    # Look for the USER-APPROVED SCENE PLAN section in the prompt
+    case Regex.run(~r/## USER-APPROVED SCENE PLAN\n.*?\n(\[.*\])/s, ctx.prompt) do
+      [_, json_str] ->
+        case Jason.decode(json_str) do
+          {:ok, scenes} when is_list(scenes) and length(scenes) > 0 ->
+            media_items = ctx.media || []
+
+            converted = scenes
+            |> Enum.with_index()
+            |> Enum.reduce({[], 0}, fn {scene, idx}, {acc, cumulative_start} ->
+              duration = Map.get(scene, "duration", 5)
+              start_time = cumulative_start
+              end_time = cumulative_start + duration
+
+              # Map mediaNames to mediaPaths by matching against uploaded media filenames
+              media_names = Map.get(scene, "mediaNames", [])
+              media_paths = Enum.flat_map(media_names, fn name ->
+                case Enum.find(media_items, fn item ->
+                  item_name = Map.get(item, "name", "")
+                  String.downcase(item_name) == String.downcase(name)
+                end) do
+                  nil -> []
+                  item ->
+                    path = get_media_path(item)
+                    if path, do: [path], else: []
+                end
+              end)
+
+              converted_scene = %{
+                "index" => idx,
+                "description" => Map.get(scene, "description", "Scene #{idx + 1}"),
+                "startTime" => start_time,
+                "endTime" => end_time,
+                "mediaPaths" => media_paths,
+                "transcriptSegment" => "",
+                "audioPeaks" => [],
+                "mood" => Map.get(scene, "mood", "auto"),
+                "textOverlay" => Map.get(scene, "textOverlay"),
+                "effects" => Map.get(scene, "effects")
+              }
+
+              {acc ++ [converted_scene], end_time}
+            end)
+            |> elem(0)
+
+            {:ok, converted}
+
+          _ ->
+            :none
+        end
+
+      _ ->
+        :none
+    end
+  end
+
+  defp plan_scenes_with_ai(ctx, api_key) do
+    # Count media types to guide scene planning
+    media_items = ctx.media || []
+    image_count = Enum.count(media_items, fn item -> Map.get(item, "type") in ["image", "screenshot"] end)
+    video_count = Enum.count(media_items, fn item -> Map.get(item, "type") == "video" end)
+    
+    media_type_hint = cond do
+      image_count > 0 && video_count == 0 ->
+        "CRITICAL: This is an IMAGE SLIDESHOW with #{image_count} images. You MUST create #{image_count} scenes (one per image). Each scene should use a DIFFERENT image from the media list. Assign mediaPaths for EVERY scene."
+      image_count > 0 && video_count > 0 ->
+        "CRITICAL: Mix of #{video_count} videos and #{image_count} images. Ensure ALL #{image_count} images are used across scenes. Assign mediaPaths for EVERY scene."
+      video_count > 0 ->
+        "Video content with #{video_count} videos. Break into scenes based on content/transcript. Assign mediaPaths for EVERY scene."
+      true ->
+        "Assign mediaPaths for EVERY scene using the exact paths from the media list."
+    end
+
     system_prompt = """
     You are a professional video editor planning scenes for a composition.
 
@@ -163,12 +264,15 @@ defmodule ClippsterServer.AI.VideoComposer do
     ## Available Media
     #{ctx.media_context}
 
+    ## Media Type Instructions
+    #{media_type_hint}
+
     ## Rules
     - Total duration must equal #{ctx.duration} seconds
-    - Each scene must specify which media items to use (by their exact file paths)
+    - **MANDATORY**: Each scene MUST specify which media items to use in the "mediaPaths" array (use EXACT file paths from the media list above)
     - Scenes must cover the ENTIRE duration with no gaps
     - For videos with transcripts, break at natural speech pauses or topic changes
-    - For image slideshows, each image gets its own scene
+    - **For image slideshows**: Create ONE scene per image, use EVERY image exactly once
     - Include a brief description of what effects/style each scene should have
 
     ## Output Format
@@ -186,8 +290,10 @@ defmodule ClippsterServer.AI.VideoComposer do
       }
     ]
 
-    IMPORTANT:
-    - mediaPaths must use EXACT paths from the media list
+    CRITICAL REQUIREMENTS:
+    - **mediaPaths is MANDATORY for EVERY scene** - use EXACT paths from the media list (copy the "Path:" field verbatim)
+    - **For image slideshows**: Create exactly #{image_count} scenes if there are #{image_count} images, one image per scene
+    - **Use ALL uploaded media** - every image/video in the media list must appear in at least one scene's mediaPaths
     - transcriptSegment should contain the transcript text that falls within this scene's time range
     - audioPeaks should list any notable audio peaks within this scene's time range
     - Return ONLY the JSON array, nothing else
@@ -254,25 +360,32 @@ defmodule ClippsterServer.AI.VideoComposer do
     # Parse media items to get paths and types
     media_items = ctx.media || []
 
+    # Check if ANY scene has mediaPaths assigned by the AI planner
+    has_explicit_assignments = Enum.any?(scenes, fn scene ->
+      media_paths = Map.get(scene, "mediaPaths", [])
+      is_list(media_paths) && length(media_paths) > 0
+    end)
+
+    # If NO scenes have explicit assignments, distribute ALL media across scenes intelligently
+    scenes_with_media = if has_explicit_assignments do
+      scenes
+    else
+      distribute_media_across_scenes(scenes, media_items)
+    end
+
     # For each scene, create a video/image track for its media
-    scenes
+    scenes_with_media
     |> Enum.flat_map(fn scene ->
       scene_index = Map.get(scene, "index", 0)
       scene_start = Map.get(scene, "startTime", 0)
       scene_end = Map.get(scene, "endTime", ctx.duration)
       media_paths = Map.get(scene, "mediaPaths", [])
 
-      # If scene specifies media paths, use them; otherwise use the first available media
+      # Use assigned media paths
       paths = if is_list(media_paths) && length(media_paths) > 0 do
         media_paths
       else
-        # Fallback: find media that covers this time range, or use first media
-        case media_items do
-          [first | _] ->
-            path = get_media_path(first)
-            if path, do: [path], else: []
-          _ -> []
-        end
+        []
       end
 
       paths
@@ -311,6 +424,36 @@ defmodule ClippsterServer.AI.VideoComposer do
         }
       end)
     end)
+  end
+
+  # Distribute all available media items across scenes when AI planner didn't assign them
+  defp distribute_media_across_scenes(scenes, media_items) do
+    if length(media_items) == 0 do
+      scenes
+    else
+      # Get all media paths
+      all_media_paths = media_items
+      |> Enum.map(&get_media_path/1)
+      |> Enum.filter(&(&1 != nil))
+
+      if length(all_media_paths) == 0 do
+        scenes
+      else
+        # Distribute media evenly across scenes
+        # If we have 14 images and 10 scenes, some scenes get multiple images
+        # If we have 14 images and 20 scenes, some scenes share images
+        scenes
+        |> Enum.with_index()
+        |> Enum.map(fn {scene, idx} ->
+          # Calculate which media item(s) this scene should use
+          # For image slideshows: one image per scene, cycling through all images
+          media_idx = rem(idx, length(all_media_paths))
+          assigned_path = Enum.at(all_media_paths, media_idx)
+          
+          Map.put(scene, "mediaPaths", [assigned_path])
+        end)
+      end
+    end
   end
 
   # Build guaranteed ambient overlay tracks for every scene so there is always
@@ -391,7 +534,43 @@ defmodule ClippsterServer.AI.VideoComposer do
   # Phase 2: Generate OVERLAY tracks for a single scene (no video/image tracks)
   # ---------------------------------------------------------------------------
 
-  defp generate_scene_overlay_tracks(ctx, scene, all_scenes, api_key) do
+  # Track what templates/effects were used in previous scenes to enforce variety
+  defp update_diversity_tracker(tracker, tracks) do
+    templates = Enum.flat_map(tracks, fn track ->
+      case get_in(track, ["properties", "motionGraphic", "templateId"]) do
+        nil -> []
+        template -> [template]
+      end
+    end)
+    
+    camera_types = Enum.flat_map(tracks, fn track ->
+      if Map.get(track, "type") == "cameraMotion" do
+        get_in(track, ["properties", "effects"]) || []
+        |> Enum.map(&Map.get(&1, "type"))
+        |> Enum.filter(&(&1 != nil))
+      else
+        []
+      end
+    end)
+    
+    transition_types = Enum.flat_map(tracks, fn track ->
+      if Map.get(track, "type") == "transition" do
+        get_in(track, ["properties", "transitions"]) || []
+        |> Enum.map(&Map.get(&1, "type"))
+        |> Enum.filter(&(&1 != nil))
+      else
+        []
+      end
+    end)
+    
+    %{
+      templates: (tracker.templates ++ templates) |> Enum.take(-10),  # Keep last 10
+      camera_types: (tracker.camera_types ++ camera_types) |> Enum.take(-10),
+      transition_types: (tracker.transition_types ++ transition_types) |> Enum.take(-10)
+    }
+  end
+
+  defp generate_scene_overlay_tracks(ctx, scene, all_scenes, api_key, diversity_tracker) do
     scene_index = Map.get(scene, "index", 0)
     scene_start = Map.get(scene, "startTime", 0)
     scene_end = Map.get(scene, "endTime", ctx.duration)
@@ -399,6 +578,8 @@ defmodule ClippsterServer.AI.VideoComposer do
     transcript_segment = Map.get(scene, "transcriptSegment", "")
     audio_peaks = Map.get(scene, "audioPeaks", [])
     mood = Map.get(scene, "mood", "auto")
+    text_overlay = Map.get(scene, "textOverlay")
+    discovery_effects = Map.get(scene, "effects")
 
     scene_context = all_scenes
     |> Enum.map(fn s ->
@@ -407,6 +588,28 @@ defmodule ClippsterServer.AI.VideoComposer do
       "  Scene #{idx + 1} (#{Map.get(s, "startTime", 0)}s-#{Map.get(s, "endTime", 0)}s): #{Map.get(s, "description", "")}#{marker}"
     end)
     |> Enum.join("\n")
+    
+    # Build diversity enforcement context
+    diversity_context = if scene_index > 0 do
+      used_templates = diversity_tracker.templates |> Enum.uniq() |> Enum.join(", ")
+      used_camera = diversity_tracker.camera_types |> Enum.uniq() |> Enum.join(", ")
+      used_transitions = diversity_tracker.transition_types |> Enum.uniq() |> Enum.join(", ")
+      
+      """
+      ## DIVERSITY ENFORCEMENT (CRITICAL)
+      Previous scenes already used these — you MUST use DIFFERENT ones:
+      - Motion Graphics: #{if String.length(used_templates) > 0, do: used_templates, else: "none yet"}
+      - Camera Motions: #{if String.length(used_camera) > 0, do: used_camera, else: "none yet"}
+      - Transitions: #{if String.length(used_transitions) > 0, do: used_transitions, else: "none yet"}
+      
+      **MANDATORY**: Pick DIFFERENT templates/motions/transitions than the ones listed above. Never repeat the same effect twice in a row.
+      """
+    else
+      """
+      ## DIVERSITY ENFORCEMENT
+      This is the first scene. Choose varied templates/motions for visual interest.
+      """
+    end
 
     system_prompt = build_scene_overlay_system_prompt(ctx)
 
@@ -419,8 +622,34 @@ defmodule ClippsterServer.AI.VideoComposer do
       ""
     end
 
+    # Build discovery hints from user-approved scene plan
+    discovery_hints = cond do
+      text_overlay && discovery_effects ->
+        """
+        ## USER-APPROVED HINTS (from discovery conversation)
+        The user approved this scene with these specific choices — follow them:
+        - Text overlay: "#{text_overlay}" — use this as the primary text/headline for this scene
+        - Effects: #{discovery_effects} — use these specific effect templates/types
+        """
+      text_overlay ->
+        """
+        ## USER-APPROVED HINTS (from discovery conversation)
+        The user approved this scene with this specific text:
+        - Text overlay: "#{text_overlay}" — use this as the primary text/headline for this scene
+        """
+      discovery_effects ->
+        """
+        ## USER-APPROVED HINTS (from discovery conversation)
+        The user approved this scene with these specific effects:
+        - Effects: #{discovery_effects} — use these specific effect templates/types
+        """
+      true -> ""
+    end
+
     user_prompt = """
     Generate the OVERLAY tracks for Scene #{scene_index + 1} of the video.
+    
+    #{diversity_context}
 
     ## Scene Details
     - Time range: #{scene_start}s to #{scene_end}s (#{Float.round((scene_end - scene_start) / 1, 1)}s duration)
@@ -428,6 +657,8 @@ defmodule ClippsterServer.AI.VideoComposer do
     - Mood: #{mood}
     #{if transcript_segment != "", do: "- Transcript: #{transcript_segment}", else: ""}
     #{peaks_context}
+
+    #{discovery_hints}
 
     ## Full Scene Plan (for context)
     #{scene_context}

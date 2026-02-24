@@ -13,86 +13,86 @@
 <script setup lang="ts">
 import { Sparkles } from 'lucide-vue-next';
 import type { AIChatMessage } from '@/types/ai-video';
+import { formatTime as fmtTime } from '@/utils/dateTimeUtils';
 
-defineProps<{
-  message: AIChatMessage;
-}>();
+  defineProps<{
+    message: AIChatMessage;
+  }>();
 
 function formatTime(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return fmtTime(iso);
 }
 </script>
 
 <style scoped>
-.chat-msg {
-  display: flex;
-  gap: 8px;
-  padding: 4px 0;
-}
+  .chat-msg {
+    display: flex;
+    gap: 8px;
+    padding: 4px 0;
+  }
 
-.chat-msg--user {
-  flex-direction: row-reverse;
-}
+  .chat-msg--user {
+    flex-direction: row-reverse;
+  }
 
-.chat-msg--system {
-  justify-content: center;
-}
+  .chat-msg--system {
+    justify-content: center;
+  }
 
-.chat-msg__avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: rgba(139, 92, 246, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #a78bfa;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
+  .chat-msg__avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(14, 165, 233, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #38bdf8;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
 
-.chat-msg__bubble {
-  max-width: 85%;
-  padding: 8px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  line-height: 1.45;
-}
+  .chat-msg__bubble {
+    max-width: 85%;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
 
-.chat-msg--assistant .chat-msg__bubble {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.9);
-  border-bottom-left-radius: 4px;
-}
+  .chat-msg--assistant .chat-msg__bubble {
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.9);
+    border-bottom-left-radius: 4px;
+  }
 
-.chat-msg--user .chat-msg__bubble {
-  background: rgba(139, 92, 246, 0.25);
-  color: rgba(255, 255, 255, 0.95);
-  border-bottom-right-radius: 4px;
-}
+  .chat-msg--user .chat-msg__bubble {
+    background: rgba(14, 165, 233, 0.25);
+    color: rgba(255, 255, 255, 0.95);
+    border-bottom-right-radius: 4px;
+  }
 
-.chat-msg--system .chat-msg__bubble {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 12px;
-  font-style: italic;
-  max-width: 100%;
-  text-align: center;
-}
+  .chat-msg--system .chat-msg__bubble {
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 12px;
+    font-style: italic;
+    max-width: 100%;
+    text-align: center;
+  }
 
-.chat-msg__content {
-  white-space: pre-wrap;
-  word-break: break-word;
-}
+  .chat-msg__content {
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
 
-.chat-msg__time {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.3);
-  margin-top: 4px;
-}
+  .chat-msg__time {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.3);
+    margin-top: 4px;
+  }
 
-.chat-msg--user .chat-msg__time {
-  text-align: right;
-}
+  .chat-msg--user .chat-msg__time {
+    text-align: right;
+  }
 </style>
