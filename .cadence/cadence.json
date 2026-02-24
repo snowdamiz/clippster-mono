@@ -5,8 +5,8 @@
         "research-completed": false,
         "cadence-scripts-dir": "/Users/sn0w/.codex/skills/cadence/scripts",
         "repo-enabled": true,
-        "project-mode": "unknown",
-        "brownfield-intake-completed": false,
+        "project-mode": "brownfield",
+        "brownfield-intake-completed": true,
         "brownfield-documentation-completed": false
     },
     "workflow": {
@@ -60,7 +60,7 @@
                                             "skill_path": "skills/brownfield-intake/SKILL.md",
                                             "reason": "Project mode and existing codebase baseline have not been captured yet."
                                         },
-                                        "status": "pending",
+                                        "status": "complete",
                                         "children": []
                                     },
                                     {
@@ -84,7 +84,7 @@
                                             "skill_path": "skills/ideator/SKILL.md",
                                             "reason": "Ideation has not been completed yet."
                                         },
-                                        "status": "pending",
+                                        "status": "skipped",
                                         "children": []
                                     },
                                     {
@@ -112,52 +112,52 @@
         "summary": {
             "total_items": 9,
             "total_actionable_items": 6,
-            "completed_actionable_items": 2,
-            "pending_actionable_items": 4,
+            "completed_actionable_items": 4,
+            "pending_actionable_items": 2,
             "in_progress_actionable_items": 0,
             "blocked_actionable_items": 0,
-            "completion_percent": 33
+            "completion_percent": 67
         },
         "next_item": {
-            "id": "task-brownfield-intake",
-            "title": "Capture project mode and baseline",
+            "id": "task-brownfield-documentation",
+            "title": "Document existing project context",
             "kind": "task",
             "status": "pending",
             "path_ids": [
                 "milestone-foundation",
                 "phase-project-setup",
                 "wave-initialize-cadence",
-                "task-brownfield-intake"
+                "task-brownfield-documentation"
             ],
             "path_titles": [
                 "Foundation",
                 "Project Setup",
                 "Initialize Cadence",
-                "Capture project mode and baseline"
+                "Document existing project context"
             ]
         },
         "active_item": {
-            "id": "task-brownfield-intake",
-            "title": "Capture project mode and baseline",
+            "id": "task-brownfield-documentation",
+            "title": "Document existing project context",
             "kind": "task",
             "status": "pending",
             "path_ids": [
                 "milestone-foundation",
                 "phase-project-setup",
                 "wave-initialize-cadence",
-                "task-brownfield-intake"
+                "task-brownfield-documentation"
             ],
             "path_titles": [
                 "Foundation",
                 "Project Setup",
                 "Initialize Cadence",
-                "Capture project mode and baseline"
+                "Document existing project context"
             ]
         },
         "next_route": {
-            "skill_name": "brownfield-intake",
-            "skill_path": "skills/brownfield-intake/SKILL.md",
-            "reason": "Project mode and existing codebase baseline have not been captured yet."
+            "skill_name": "brownfield-documenter",
+            "skill_path": "skills/brownfield-documenter/SKILL.md",
+            "reason": "Brownfield project context has not been documented into ideation yet."
         },
         "phase_order": [
             "task-scaffold",
@@ -175,13 +175,13 @@
                 "status": "complete"
             },
             "task-brownfield-intake": {
-                "status": "pending"
+                "status": "complete"
             },
             "task-brownfield-documentation": {
                 "status": "pending"
             },
             "task-ideation": {
-                "status": "pending"
+                "status": "skipped"
             },
             "task-research": {
                 "status": "pending"
@@ -189,15 +189,109 @@
         },
         "completed_phases": [
             "task-scaffold",
-            "task-prerequisite-gate"
+            "task-prerequisite-gate",
+            "task-brownfield-intake",
+            "task-ideation"
         ],
-        "active_phase": "task-brownfield-intake",
-        "next_phase": "task-brownfield-intake",
-        "completion_percent": 33
+        "active_phase": "task-brownfield-documentation",
+        "next_phase": "task-brownfield-documentation",
+        "completion_percent": 67
     },
     "project-details": {
-        "mode": "unknown",
-        "brownfield_baseline": {}
+        "mode": "brownfield",
+        "brownfield_baseline": {
+            "captured_at": "2026-02-24T02:13:59Z",
+            "repo": {
+                "git_initialized": true,
+                "repo_root": "/Users/sn0w/Documents/dev/clippster-mono",
+                "branch": "main",
+                "remote_count": 1,
+                "remotes": [
+                    {
+                        "name": "origin",
+                        "url": "https://github.com/snowdamiz/clippster-mono.git"
+                    }
+                ]
+            },
+            "inventory": {
+                "top_level_entries": [
+                    ".antigravity/",
+                    ".claude/",
+                    ".cursor/",
+                    ".DS_Store",
+                    ".github/",
+                    ".gitignore",
+                    ".husky/",
+                    ".planning/",
+                    ".prettierignore",
+                    ".prettierrc",
+                    ".windsurf/",
+                    "client/",
+                    "docs/",
+                    "landing/",
+                    "node_modules/",
+                    "package.json",
+                    "README.md",
+                    "scripts/",
+                    "server/",
+                    "yarn.lock"
+                ],
+                "file_count": 30633,
+                "directory_count": 3691,
+                "inspected_file_count": 3000,
+                "languages": [
+                    {
+                        "extension": ".beam",
+                        "count": 2360
+                    },
+                    {
+                        "extension": ".app",
+                        "count": 96
+                    },
+                    {
+                        "extension": ".elixir_scm",
+                        "count": 96
+                    },
+                    {
+                        "extension": ".tsx",
+                        "count": 93
+                    },
+                    {
+                        "extension": ".exs",
+                        "count": 90
+                    },
+                    {
+                        "extension": ".elixir",
+                        "count": 83
+                    },
+                    {
+                        "extension": ".md",
+                        "count": 50
+                    },
+                    {
+                        "extension": "(no-ext)",
+                        "count": 28
+                    }
+                ],
+                "manifests": [
+                    "landing/Dockerfile",
+                    "landing/package-lock.json",
+                    "landing/package.json",
+                    "landing/yarn.lock",
+                    "package.json",
+                    "server/Dockerfile",
+                    "server/docker-compose.yml",
+                    "server/package-lock.json",
+                    "server/package.json",
+                    "server/yarn.lock",
+                    "yarn.lock"
+                ],
+                "ci_workflows": [],
+                "test_commands": [],
+                "monorepo_detected": false
+            }
+        },
+        "last_inventory_at": "2026-02-24T02:13:59Z"
     },
     "ideation": {
         "research_agenda": {
