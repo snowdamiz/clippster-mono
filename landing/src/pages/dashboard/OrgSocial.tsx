@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
-import { useOrganization } from '@/hooks/useOrganization'
-import { useAuth } from '@/hooks/useAuth'
+import { useOrganization } from '@/context/OrganizationContext'
+import { useToast } from '@/hooks/useToast'
+import { formatRelativeTime } from '@/utils/dateTimeUtils'
 import { useOAuthPopup } from '@/hooks/useOAuthPopup'
 import { useToast } from '@/hooks/useToast'
 import {
@@ -51,18 +52,6 @@ function getPlatformIcon(platform: string) {
   if (platform === 'instagram') return Instagram
   if (platform === 'twitter') return XIcon
   return Globe
-}
-
-function formatDate(dateStr?: string): string {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
-  if (diffDays === 0) return 'today'
-  if (diffDays === 1) return 'yesterday'
-  if (diffDays < 7) return `${diffDays} days ago`
-  if (diffDays < 30) return `${Math.floor(diffDays / 7)} weeks ago`
-  return date.toLocaleDateString()
 }
 
 function isTokenExpiringSoon(account: SocialAccount): boolean {
@@ -834,7 +823,7 @@ export function OrgSocial() {
                         <div className="flex items-center flex-wrap gap-3">
                           <span className="flex items-center gap-1 text-[0.6875rem] text-zinc-500">
                             <Clock className="w-3 h-3" />
-                            Connected {formatDate(account.connected_at || account.inserted_at)}
+                            Connected {formatRelativeTime(account.connected_at || account.inserted_at)}
                           </span>
                           {account.assignments && account.assignments.length > 0 && (
                             <span className="flex items-center gap-1 text-[0.6875rem] text-zinc-500">

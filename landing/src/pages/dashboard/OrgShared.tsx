@@ -7,6 +7,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { ShareClipDialog } from '@/components/organization/ShareClipDialog'
 import { listOrganizationSharedClips, deleteSharedClip, getExpirationBadgeColor, getExpirationText } from '@/services/sharedClipsApi'
 import { useToast } from '@/hooks/useToast'
+import { formatRelativeTime } from '@/utils/dateTimeUtils'
 import type { SharedClip } from '@/types/organization'
 import {
   Film, Eye, Download, Send, Filter, Share2, Plus, RefreshCw,
@@ -29,17 +30,6 @@ function formatDuration(seconds: number | null): string {
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   return `${mins}:${secs.toString().padStart(2, '0')}`
-}
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  if (diffDays < 1) return 'Today'
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays < 7) return `${diffDays}d ago`
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 /* ───── Filter Dropdown ───── */
@@ -585,7 +575,7 @@ export function OrgShared() {
                           )}
                           <span className="flex items-center gap-1 text-[0.6875rem] text-zinc-500">
                             <Calendar className="w-3 h-3" />
-                            {formatDate(clip.inserted_at)}
+                            {formatRelativeTime(clip.inserted_at)}
                           </span>
                           <span className="flex items-center gap-1 text-[0.6875rem] text-zinc-500">
                             <HardDrive className="w-3 h-3" />
