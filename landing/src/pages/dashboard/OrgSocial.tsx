@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
-import { useOrganization } from '@/context/OrganizationContext'
+import { useOrganization } from '@/hooks/useOrganization'
 import { useToast } from '@/hooks/useToast'
 import { formatRelativeTime } from '@/utils/dateTimeUtils'
 import { useOAuthPopup } from '@/hooks/useOAuthPopup'
-import { useToast } from '@/hooks/useToast'
+import { useAuth } from '@/hooks/useAuth'
 import {
   listSocialAccounts,
   deleteSocialAccount,

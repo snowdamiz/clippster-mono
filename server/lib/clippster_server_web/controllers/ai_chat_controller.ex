@@ -26,6 +26,65 @@ defmodule ClippsterServerWeb.AIChatController do
   end
 
   # ---------------------------------------------------------------------------
+  # List sessions
+  # ---------------------------------------------------------------------------
+
+  def list_sessions(conn, _params) do
+    user = conn.assigns.current_user
+    sessions = ChatSessions.list_user_sessions(user.id, limit: 10)
+
+    json(conn, %{
+      sessions: Enum.map(sessions, fn s ->
+        %{
+          id: s.id,
+          name: s.name,
+          status: s.status,
+          updated_at: s.updated_at,
+          inserted_at: s.inserted_at
+        }
+      end)
+    })
+  end
+
+  # ---------------------------------------------------------------------------
+  # Delete session
+  # ---------------------------------------------------------------------------
+
+  def delete_session(conn, %{"id" => id}) do
+    user = conn.assigns.current_user
+
+    case ChatSessions.get_user_session(id, user.id) do
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+
+      session ->
+        case ChatSessions.delete_session(session) do
+          {:ok, _} -> json(conn, %{ok: true})
+          {:error, _} -> conn |> put_status(:internal_server_error) |> json(%{error: "Failed to delete session"})
+        end
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Rename session
+  # ---------------------------------------------------------------------------
+
+  def rename_session(conn, %{"id" => id, "name" => name}) do
+    user = conn.assigns.current_user
+
+    with session when not is_nil(session) <- ChatSessions.get_user_session(id, user.id),
+         {:ok, updated} <- ChatSessions.update_session(session, %{name: name}) do
+      json(conn, %{ok: true, name: updated.name})
+    else
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+
+      {:error, _} ->
+        conn |> put_status(:internal_server_error) |> json(%{error: "Failed to rename session"})
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Create session
   # ---------------------------------------------------------------------------
 
@@ -477,6 +536,7 @@ defmodule ClippsterServerWeb.AIChatController do
 
     %{
       id: session.id,
+      name: session.name,
       status: session.status,
       media_items: session.media_items,
       composition: session.composition,

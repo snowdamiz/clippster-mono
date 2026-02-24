@@ -48,6 +48,16 @@ defmodule ClippsterServer.AI.ChatSessions do
     |> Repo.all()
   end
 
+  def count_user_sessions(user_id) do
+    ChatSession
+    |> where([s], s.user_id == ^user_id)
+    |> Repo.aggregate(:count, :id)
+  end
+
+  def delete_session(session) do
+    Repo.delete(session)
+  end
+
   def update_session(session, attrs) do
     session
     |> ChatSession.changeset(attrs)

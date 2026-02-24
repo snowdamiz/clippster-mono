@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertCircle, Building2, Check, ChevronDown, Eye, FileText, Loader2, Trash2, X } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
-import { listOrgApplications, approveOrgApplication, rejectOrgApplication, type OrgApplication } from '@/services/adminApi'
+import { listOrgApplications, approveOrgApplication, rejectOrgApplication, deleteOrgApplication, type OrgApplication } from '@/services/adminApi'
 import { formatDateTime as formatDate } from './adminFormat'
 import './AdminOrgApplicationsPage.css'
 
