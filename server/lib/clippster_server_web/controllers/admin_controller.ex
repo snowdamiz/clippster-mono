@@ -1708,7 +1708,7 @@ defmodule ClippsterServerWeb.AdminController do
   # ============================================
 
   @doc """
-  Schedules a user for deletion.
+  Deletes a user or schedules deletion if they have an active subscription.
   """
   def delete_user(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
@@ -1719,23 +1719,30 @@ defmodule ClippsterServerWeb.AdminController do
           conn |> put_status(404) |> json(%{success: false, error: "User not found"})
         else
           # If user has active Stripe subscription, schedule deletion at end of billing cycle
-          deletion_date =
-            if user.subscription_status == "active" and user.subscription_end_date do
-              user.subscription_end_date
-            else
-              DateTime.utc_now() |> DateTime.truncate(:second)
+          if user.subscription_status == "active" and user.subscription_end_date do
+            case Accounts.schedule_user_deletion(user_id, user.subscription_end_date) do
+              {:ok, user} ->
+                json(conn, %{
+                  success: true,
+                  message: "User scheduled for deletion at end of billing cycle",
+                  deletion_date: user.scheduled_deletion_at
+                })
+
+              {:error, reason} ->
+                conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
             end
+          else
+            # No active subscription - delete immediately
+            case Accounts.delete_user(user_id) do
+              {:ok, _user} ->
+                json(conn, %{
+                  success: true,
+                  message: "User deleted successfully"
+                })
 
-          case Accounts.schedule_user_deletion(user_id, deletion_date) do
-            {:ok, user} ->
-              json(conn, %{
-                success: true,
-                message: "User scheduled for deletion",
-                deletion_date: user.scheduled_deletion_at
-              })
-
-            {:error, reason} ->
-              conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+              {:error, reason} ->
+                conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            end
           end
         end
 

@@ -943,6 +943,21 @@ defmodule ClippsterServer.Accounts do
     end
   end
 
+  @doc """
+  Permanently deletes a user from the database.
+  This should only be used for users without active subscriptions.
+  For users with active subscriptions, use schedule_user_deletion instead.
+  """
+  def delete_user(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      Repo.delete(user)
+    end
+  end
+
   # ============================================
   # User Discounts
   # ============================================
