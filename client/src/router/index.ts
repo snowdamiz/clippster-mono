@@ -533,8 +533,8 @@ router.beforeEach(async (to, _from, next) => {
 
   // Check if route requires authentication
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    // Save intended destination and redirect to login
-    next({ path: '/login', query: { redirect: to.fullPath } });
+    // Auth gate in App.vue will show modal, but we still prevent route navigation
+    next(false);
     return;
   }
 
