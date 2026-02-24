@@ -466,11 +466,9 @@ defmodule ClippsterServer.Organizations do
     with {:ok, _} <- verify_admin(organization_id, inviter.id),
          {:ok, _} <- ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id),
          organization when not is_nil(organization) <- get_organization(organization_id),
+         user when not is_nil(user) <- Accounts.get_user_by_email(email),
          nil <-
-           Accounts.get_user_by_email(email)
-           |> then(fn user ->
-             if user && is_member?(organization_id, user.id), do: :already_member, else: nil
-           end),
+           if is_member?(organization_id, user.id), do: :already_member, else: nil,
          nil <- get_pending_invitation(organization_id, email) do
       # Generate plain token first
       plain_token = OrganizationInvitation.generate_token()
@@ -506,7 +504,7 @@ defmodule ClippsterServer.Organizations do
           {:error, changeset}
       end
     else
-      nil -> {:error, :organization_not_found}
+      nil -> {:error, :user_not_found}
       :already_member -> {:error, :already_member}
       %OrganizationInvitation{} -> {:error, :invitation_pending}
       {:error, :seat_limit_reached} -> {:error, :seat_limit_reached}
