@@ -1,13 +1,13 @@
 {
     "prerequisites-pass": true,
     "state": {
-        "ideation-completed": false,
+        "ideation-completed": true,
         "research-completed": false,
         "cadence-scripts-dir": "/Users/sn0w/.codex/skills/cadence/scripts",
         "repo-enabled": true,
         "project-mode": "brownfield",
         "brownfield-intake-completed": true,
-        "brownfield-documentation-completed": false
+        "brownfield-documentation-completed": true
     },
     "workflow": {
         "schema_version": 5,
@@ -72,7 +72,7 @@
                                             "skill_path": "skills/brownfield-documenter/SKILL.md",
                                             "reason": "Brownfield project context has not been documented into ideation yet."
                                         },
-                                        "status": "pending",
+                                        "status": "complete",
                                         "children": []
                                     },
                                     {
@@ -112,52 +112,52 @@
         "summary": {
             "total_items": 9,
             "total_actionable_items": 6,
-            "completed_actionable_items": 4,
-            "pending_actionable_items": 2,
+            "completed_actionable_items": 5,
+            "pending_actionable_items": 1,
             "in_progress_actionable_items": 0,
             "blocked_actionable_items": 0,
-            "completion_percent": 67
+            "completion_percent": 83
         },
         "next_item": {
-            "id": "task-brownfield-documentation",
-            "title": "Document existing project context",
+            "id": "task-research",
+            "title": "Research ideation agenda",
             "kind": "task",
             "status": "pending",
             "path_ids": [
                 "milestone-foundation",
                 "phase-project-setup",
                 "wave-initialize-cadence",
-                "task-brownfield-documentation"
+                "task-research"
             ],
             "path_titles": [
                 "Foundation",
                 "Project Setup",
                 "Initialize Cadence",
-                "Document existing project context"
+                "Research ideation agenda"
             ]
         },
         "active_item": {
-            "id": "task-brownfield-documentation",
-            "title": "Document existing project context",
+            "id": "task-research",
+            "title": "Research ideation agenda",
             "kind": "task",
             "status": "pending",
             "path_ids": [
                 "milestone-foundation",
                 "phase-project-setup",
                 "wave-initialize-cadence",
-                "task-brownfield-documentation"
+                "task-research"
             ],
             "path_titles": [
                 "Foundation",
                 "Project Setup",
                 "Initialize Cadence",
-                "Document existing project context"
+                "Research ideation agenda"
             ]
         },
         "next_route": {
-            "skill_name": "brownfield-documenter",
-            "skill_path": "skills/brownfield-documenter/SKILL.md",
-            "reason": "Brownfield project context has not been documented into ideation yet."
+            "skill_name": "researcher",
+            "skill_path": "skills/researcher/SKILL.md",
+            "reason": "Ideation research agenda has not been completed yet."
         },
         "phase_order": [
             "task-scaffold",
@@ -178,7 +178,7 @@
                 "status": "complete"
             },
             "task-brownfield-documentation": {
-                "status": "pending"
+                "status": "complete"
             },
             "task-ideation": {
                 "status": "skipped"
@@ -191,11 +191,12 @@
             "task-scaffold",
             "task-prerequisite-gate",
             "task-brownfield-intake",
+            "task-brownfield-documentation",
             "task-ideation"
         ],
-        "active_phase": "task-brownfield-documentation",
-        "next_phase": "task-brownfield-documentation",
-        "completion_percent": 67
+        "active_phase": "task-research",
+        "next_phase": "task-research",
+        "completion_percent": 83
     },
     "project-details": {
         "mode": "brownfield",
@@ -291,19 +292,953 @@
                 "monorepo_detected": false
             }
         },
-        "last_inventory_at": "2026-02-24T02:47:38Z"
+        "last_inventory_at": "2026-02-24T02:47:38Z",
+        "last_documentation_at": "2026-02-24T02:56:17Z"
     },
     "ideation": {
+        "objective": "Document and stabilize the current Clippster monorepo architecture and delivery posture so future planning can start from accurate codebase evidence.",
+        "core_outcome": "An evidence-backed map of product surfaces, runtime paths, and operational risks across the Tauri client, Phoenix API, and landing web app.",
+        "target_audience": "Core maintainers and contributors shipping desktop video-creation workflows for creators and organizations.",
+        "core_experience": "Users authenticate (wallet, Google, or email), ingest long-form video, run AI-assisted clip detection, edit in a desktop timeline, and publish through personal or organization workflows.",
+        "in_scope": [
+            "Monorepo architecture mapping across client, server, and landing applications.",
+            "Runtime entrypoints and major code paths for authentication, clip detection, editing, messaging, and posting.",
+            "Operational surfaces: testing, CI/release workflow, and Fly.io deployment configuration."
+        ],
+        "out_of_scope": [
+            "Implementing new product features.",
+            "Performing third-party vendor security audits.",
+            "Refactoring existing runtime modules during documentation capture."
+        ],
+        "constraints": [
+            "The repository is a mixed-stack monorepo with Vue+Tauri desktop code, Elixir Phoenix backend code, and a separate React landing/web surface.",
+            "Desktop packaging depends on bundled sidecar binaries (FFmpeg, Node, yt-dlp) and local SQLite state.",
+            "Release automation is centralized in a single GitHub Actions release pipeline that also deploys server and landing apps to Fly.io.",
+            "Authentication, billing/credits, and organization role checks are cross-cutting concerns across many routes and modules."
+        ],
+        "risks": [
+            "API complexity risk: router surface includes hundreds of route declarations spanning many domains, increasing regression probability during changes.",
+            "Verification gap risk: automated tests are sparse (few backend tests and no discovered client/landing test suites), so critical paths can regress silently.",
+            "Operational visibility risk: widespread direct debug logging (`IO.puts`) in server runtime paths can reduce structured observability quality.",
+            "Documentation drift risk: project docs are inconsistent (for example, landing README remains template-level while runtime code is feature-rich), which raises onboarding and maintenance cost."
+        ],
+        "success_signals": [
+            "New contributors can identify authoritative entrypoints for each app surface in under one review session.",
+            "Critical flows (auth, clip detection, credits, messaging, release) are traceable from route to implementation.",
+            "A prioritized research agenda exists to reduce ambiguity before major roadmap work."
+        ],
+        "assumptions": [
+            "Documentation reflects the repository snapshot on branch `c-test` as captured on 2026-02-24.",
+            "Brownfield documentation should prioritize code evidence over existing markdown claims when discrepancies exist."
+        ],
+        "open_questions": [
+            "Should the `landing/` app remain primarily marketing plus dashboard/admin surfaces, or become a full parity web client with the desktop app?",
+            "What level of route/API contraction is acceptable to improve maintainability without blocking active feature work?",
+            "Is unauthenticated progress-channel access intentional product behavior or a temporary implementation state?",
+            "What minimum automated test coverage is required before release pipeline promotion?"
+        ],
         "research_agenda": {
             "version": 1,
             "summary": {
-                "block_count": 0,
-                "topic_count": 0,
-                "entity_count": 0
+                "block_count": 4,
+                "topic_count": 12,
+                "entity_count": 17
             },
-            "blocks": [],
-            "entity_registry": [],
-            "topic_index": {}
+            "blocks": [
+                {
+                    "block_id": "block-product-workflows",
+                    "title": "Product Workflows and Experience Surfaces",
+                    "rationale": "The repo exposes multiple user journeys across desktop and web surfaces, with account-type and role-based branching that affects onboarding and day-to-day use.",
+                    "tags": [
+                        "product",
+                        "ux",
+                        "workflow"
+                    ],
+                    "topics": [
+                        {
+                            "topic_id": "topic-auth-and-account-journey",
+                            "title": "Authentication and account journey consistency",
+                            "category": "product",
+                            "priority": "high",
+                            "why_it_matters": "Wallet, Google, and email authentication paths plus account-type branching can fragment onboarding and session behavior if not clearly unified.",
+                            "research_questions": [
+                                "What is the canonical first-session journey for personal, organization-owner, and organization-member accounts?",
+                                "Where do desktop and landing auth/session behaviors intentionally diverge versus accidentally differ?",
+                                "Which auth events should be considered the source of truth for cross-surface state refresh?"
+                            ],
+                            "keywords": [
+                                "auth challenge",
+                                "email otp",
+                                "google oauth",
+                                "account_type",
+                                "owned_organization_id"
+                            ],
+                            "tags": [
+                                "onboarding",
+                                "auth",
+                                "identity"
+                            ],
+                            "related_entities": [
+                                "ent-product-client-desktop",
+                                "ent-product-landing-web",
+                                "ent-product-auth-stack"
+                            ]
+                        },
+                        {
+                            "topic_id": "topic-clip-creation-to-distribution",
+                            "title": "Clip creation to distribution lifecycle",
+                            "category": "product",
+                            "priority": "high",
+                            "why_it_matters": "Core product value depends on a reliable path from ingestion and AI analysis through editing and eventual publishing or sharing.",
+                            "research_questions": [
+                                "What are the exact handoff boundaries between AI detection output, local editing state, and server-backed publishing endpoints?",
+                                "Which steps are desktop-only versus shared with web/admin flows?",
+                                "Where do users most often change context between personal and organization workflows?"
+                            ],
+                            "keywords": [
+                                "chunked detection",
+                                "video editor",
+                                "shared clips",
+                                "social posts",
+                                "organization assets"
+                            ],
+                            "tags": [
+                                "lifecycle",
+                                "editing",
+                                "distribution"
+                            ],
+                            "related_entities": [
+                                "ent-product-client-desktop",
+                                "ent-product-client-router",
+                                "ent-product-landing-web"
+                            ]
+                        },
+                        {
+                            "topic_id": "topic-role-specific-navigation-and-permissions",
+                            "title": "Role-specific navigation and permission boundaries",
+                            "category": "product",
+                            "priority": "medium",
+                            "why_it_matters": "Admin, moderator, creator, and organization roles influence route availability and operational capabilities throughout the stack.",
+                            "research_questions": [
+                                "Which route guards and server-side plugs enforce each role boundary today?",
+                                "Are there role transitions that can leave stale client navigation or capability assumptions?",
+                                "What role model should be documented as the contract for future features?"
+                            ],
+                            "keywords": [
+                                "requiresAdmin",
+                                "requiresAuth",
+                                "moderator",
+                                "organization subscription",
+                                "route guards"
+                            ],
+                            "tags": [
+                                "roles",
+                                "authorization",
+                                "navigation"
+                            ],
+                            "related_entities": [
+                                "ent-product-client-router",
+                                "ent-product-auth-stack",
+                                "ent-product-landing-web"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "block_id": "block-backend-api-domain",
+                    "title": "Backend API and Domain Boundaries",
+                    "rationale": "The Phoenix backend has a broad route surface and many domain contexts, so clear boundary documentation is needed to keep changes safe and coherent.",
+                    "tags": [
+                        "backend",
+                        "api",
+                        "domain"
+                    ],
+                    "topics": [
+                        {
+                            "topic_id": "topic-api-surface-partitioning",
+                            "title": "API surface partitioning and ownership",
+                            "category": "architecture",
+                            "priority": "high",
+                            "why_it_matters": "A large, evolving route graph can become difficult to reason about without explicit domain ownership and route grouping conventions.",
+                            "research_questions": [
+                                "How should route families be grouped and owned for maintainability?",
+                                "Which controllers are central integration points versus edge modules?",
+                                "Where can route-level simplification reduce operational and testing overhead?"
+                            ],
+                            "keywords": [
+                                "router pipelines",
+                                "api_auth",
+                                "api_admin",
+                                "controllers",
+                                "resources"
+                            ],
+                            "tags": [
+                                "routing",
+                                "maintainability",
+                                "ownership"
+                            ],
+                            "related_entities": [
+                                "ent-backend-api-router",
+                                "ent-backend-auth-stack",
+                                "ent-backend-ai-services"
+                            ]
+                        },
+                        {
+                            "topic_id": "topic-credit-billing-and-org-allocation-invariants",
+                            "title": "Credit, billing, and organization allocation invariants",
+                            "category": "finance",
+                            "priority": "high",
+                            "why_it_matters": "Credit deduction, subscription state, and organization allocations directly affect monetization correctness and user trust.",
+                            "research_questions": [
+                                "What invariants must hold across personal credits, organization allocations, and subscription tiers?",
+                                "Where are idempotency and failure-handling guarantees enforced for payment and credit updates?",
+                                "How should processing-job cancellation and refunds be normalized across controllers?"
+                            ],
+                            "keywords": [
+                                "credits",
+                                "subscriptions",
+                                "stripe",
+                                "organization subscriptions",
+                                "processing jobs"
+                            ],
+                            "tags": [
+                                "billing",
+                                "monetization",
+                                "invariants"
+                            ],
+                            "related_entities": [
+                                "ent-backend-credits-subscriptions",
+                                "ent-backend-api-router",
+                                "ent-backend-ai-services"
+                            ]
+                        },
+                        {
+                            "topic_id": "topic-realtime-channel-authorization",
+                            "title": "Realtime channel authorization model",
+                            "category": "security",
+                            "priority": "high",
+                            "why_it_matters": "Realtime progress and messaging channels expose user and project state; authorization strategy must be explicit and consistent.",
+                            "research_questions": [
+                                "What authentication and membership checks are required per channel topic type?",
+                                "Which channel events carry sensitive data and need stricter validation?",
+                                "How should socket auth behavior be documented as a backend contract?"
+                            ],
+                            "keywords": [
+                                "Phoenix sockets",
+                                "messaging channel",
+                                "progress channel",
+                                "join authorization"
+                            ],
+                            "tags": [
+                                "realtime",
+                                "security",
+                                "channels"
+                            ],
+                            "related_entities": [
+                                "ent-backend-messaging-realtime",
+                                "ent-backend-api-router",
+                                "ent-backend-auth-stack"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "block_id": "block-desktop-media-runtime",
+                    "title": "Desktop Runtime and Media Processing",
+                    "rationale": "The desktop app combines web UI, Rust commands, local data, and external binaries, making runtime boundaries and failure modes critical to document.",
+                    "tags": [
+                        "desktop",
+                        "media",
+                        "runtime"
+                    ],
+                    "topics": [
+                        {
+                            "topic_id": "topic-chunked-and-multimodal-detection-pipeline",
+                            "title": "Chunked and multimodal AI detection pipeline behavior",
+                            "category": "architecture",
+                            "priority": "high",
+                            "why_it_matters": "Clip detection cost, latency, and output quality are central to product value and are influenced by chunking, model strategy, and retries.",
+                            "research_questions": [
+                                "How should normal versus multimodal detection modes be selected and communicated to users?",
+                                "What retry, timeout, and fallback policies are currently implemented and where are they brittle?",
+                                "What telemetry should be standardized for per-chunk model performance and quality outcomes?"
+                            ],
+                            "keywords": [
+                                "detect_chunked",
+                                "multimodal",
+                                "OpenRouter",
+                                "Whisper",
+                                "progress updates"
+                            ],
+                            "tags": [
+                                "ai",
+                                "pipeline",
+                                "performance"
+                            ],
+                            "related_entities": [
+                                "ent-desktop-chunked-detection",
+                                "ent-desktop-tauri-runtime",
+                                "ent-desktop-local-sqlite"
+                            ]
+                        },
+                        {
+                            "topic_id": "topic-local-persistence-and-user-context-sync",
+                            "title": "Local persistence and user-context synchronization",
+                            "category": "architecture",
+                            "priority": "high",
+                            "why_it_matters": "The desktop app persists significant local state and must keep user context synchronized across TypeScript, Rust, and remote APIs.",
+                            "research_questions": [
+                                "What data is authoritative locally versus server-side for each editing and publishing step?",
+                                "How is user context propagated and cleared across store, SQLite, and Rust storage commands?",
+                                "What migration and schema-healing behaviors need guardrails or additional observability?"
+                            ],
+                            "keywords": [
+                                "sqlite",
+                                "tauri sql plugin",
+                                "set_current_user_id",
+                                "schema healing",
+                                "local cache"
+                            ],
+                            "tags": [
+                                "state",
+                                "data",
+                                "desktop"
+                            ],
+                            "related_entities": [
+                                "ent-desktop-local-sqlite",
+                                "ent-desktop-tauri-runtime",
+                                "ent-desktop-chunked-detection"
+                            ]
+                        },
+                        {
+                            "topic_id": "topic-cross-platform-sidecar-and-update-behavior",
+                            "title": "Cross-platform sidecar packaging and update behavior",
+                            "category": "operations",
+                            "priority": "medium",
+                            "why_it_matters": "Release success depends on platform-specific binary handling, signing, and updater artifact consistency.",
+                            "research_questions": [
+                                "How should sidecar binary sourcing and verification be standardized across local and CI builds?",
+                                "What are the minimal guarantees for updater metadata and platform artifact naming?",
+                                "Which packaging steps are most failure-prone and need explicit runbook coverage?"
+                            ],
+                            "keywords": [
+                                "ffmpeg",
+                                "yt-dlp",
+                                "node sidecar",
+                                "tauri updater",
+                                "artifact signing"
+                            ],
+                            "tags": [
+                                "packaging",
+                                "release",
+                                "cross-platform"
+                            ],
+                            "related_entities": [
+                                "ent-desktop-sidecar-packaging",
+                                "ent-desktop-tauri-runtime",
+                                "ent-desktop-chunked-detection"
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "block_id": "block-operational-quality",
+                    "title": "Operational Readiness and Quality Gates",
+                    "rationale": "Current release and deployment automation is sophisticated, but quality gates and documentation contracts need clearer governance to reduce production risk.",
+                    "tags": [
+                        "operations",
+                        "quality",
+                        "delivery"
+                    ],
+                    "topics": [
+                        {
+                            "topic_id": "topic-release-workflow-and-artifact-integrity",
+                            "title": "Release workflow and artifact integrity guarantees",
+                            "category": "operations",
+                            "priority": "high",
+                            "why_it_matters": "The release pipeline handles build, signing, deployment, and publication, so integrity expectations must be explicit.",
+                            "research_questions": [
+                                "What release invariants should be validated before publishing to the public release repository?",
+                                "How are server/landing deploy outcomes coupled to desktop release publication decisions?",
+                                "Which secrets and signing dependencies represent single points of failure?"
+                            ],
+                            "keywords": [
+                                "release branch",
+                                "GitHub Actions",
+                                "notarization",
+                                "latest.json",
+                                "Fly deploy"
+                            ],
+                            "tags": [
+                                "ci",
+                                "release",
+                                "integrity"
+                            ],
+                            "related_entities": [
+                                "ent-ops-release-workflow",
+                                "ent-ops-fly-deploy",
+                                "ent-ops-docs-runbooks"
+                            ]
+                        },
+                        {
+                            "topic_id": "topic-automated-test-strategy-and-gates",
+                            "title": "Automated test strategy and enforcement gaps",
+                            "category": "quality",
+                            "priority": "high",
+                            "why_it_matters": "Sparse test coverage and limited CI test gating increase the chance of regressions in high-change domains.",
+                            "research_questions": [
+                                "What minimum smoke and contract tests should gate release and deployment?",
+                                "Which user-critical paths need first-priority integration coverage?",
+                                "How should test ownership be split across desktop, backend, and landing surfaces?"
+                            ],
+                            "keywords": [
+                                "ExUnit",
+                                "CI gates",
+                                "regression",
+                                "integration tests",
+                                "smoke tests"
+                            ],
+                            "tags": [
+                                "testing",
+                                "quality",
+                                "risk"
+                            ],
+                            "related_entities": [
+                                "ent-ops-test-surface",
+                                "ent-ops-release-workflow",
+                                "ent-ops-fly-deploy"
+                            ]
+                        },
+                        {
+                            "topic_id": "topic-documentation-and-source-of-truth-governance",
+                            "title": "Documentation currency and source-of-truth governance",
+                            "category": "documentation",
+                            "priority": "medium",
+                            "why_it_matters": "Docs drift can hide real architecture and operational behavior, slowing onboarding and increasing avoidable errors.",
+                            "research_questions": [
+                                "Which repository documents are normative versus historical planning records?",
+                                "What lightweight process should keep README and deployment docs aligned with runtime code?",
+                                "How should archived planning artifacts in `docs/` be categorized for discoverability?"
+                            ],
+                            "keywords": [
+                                "README",
+                                "docs backlog",
+                                "runbooks",
+                                "source of truth",
+                                "maintenance"
+                            ],
+                            "tags": [
+                                "documentation",
+                                "governance",
+                                "onboarding"
+                            ],
+                            "related_entities": [
+                                "ent-ops-docs-runbooks",
+                                "ent-ops-release-workflow",
+                                "ent-ops-test-surface"
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "entity_registry": [
+                {
+                    "entity_id": "ent-backend-ai-services",
+                    "label": "AI backend services (Whisper/OpenRouter/composer)",
+                    "kind": "capability",
+                    "aliases": [
+                        "AI backend services (Whisper/OpenRouter/composer)",
+                        "AI services",
+                        "clip detection backend"
+                    ],
+                    "owner_block_id": "block-backend-api-domain"
+                },
+                {
+                    "entity_id": "ent-backend-api-router",
+                    "label": "Phoenix API router and controller surface",
+                    "kind": "module",
+                    "aliases": [
+                        "Phoenix API router and controller surface",
+                        "server router",
+                        "api routes"
+                    ],
+                    "owner_block_id": "block-backend-api-domain"
+                },
+                {
+                    "entity_id": "ent-backend-auth-stack",
+                    "label": "Backend authentication and authorization pipeline",
+                    "kind": "capability",
+                    "aliases": [
+                        "Backend authentication and authorization pipeline",
+                        "AuthPlug",
+                        "JWT",
+                        "pipelines"
+                    ],
+                    "owner_block_id": "block-backend-api-domain"
+                },
+                {
+                    "entity_id": "ent-backend-credits-subscriptions",
+                    "label": "Credits and subscription domains",
+                    "kind": "domain",
+                    "aliases": [
+                        "Credits and subscription domains",
+                        "credits",
+                        "billing",
+                        "subscriptions"
+                    ],
+                    "owner_block_id": "block-backend-api-domain"
+                },
+                {
+                    "entity_id": "ent-backend-messaging-realtime",
+                    "label": "Realtime socket and channel layer",
+                    "kind": "capability",
+                    "aliases": [
+                        "Realtime socket and channel layer",
+                        "messaging socket",
+                        "progress channel",
+                        "phoenix channels"
+                    ],
+                    "owner_block_id": "block-backend-api-domain"
+                },
+                {
+                    "entity_id": "ent-desktop-chunked-detection",
+                    "label": "Chunked and multimodal clip detection flow",
+                    "kind": "pipeline",
+                    "aliases": [
+                        "Chunked and multimodal clip detection flow",
+                        "detect_chunked",
+                        "multimodal detection"
+                    ],
+                    "owner_block_id": "block-desktop-media-runtime"
+                },
+                {
+                    "entity_id": "ent-desktop-local-sqlite",
+                    "label": "Local SQLite persistence layer",
+                    "kind": "data_store",
+                    "aliases": [
+                        "Local SQLite persistence layer",
+                        "tauri sql",
+                        "client database"
+                    ],
+                    "owner_block_id": "block-desktop-media-runtime"
+                },
+                {
+                    "entity_id": "ent-desktop-sidecar-packaging",
+                    "label": "Desktop sidecar binary packaging",
+                    "kind": "build_artifact",
+                    "aliases": [
+                        "Desktop sidecar binary packaging",
+                        "ffmpeg binary",
+                        "yt-dlp",
+                        "node sidecar"
+                    ],
+                    "owner_block_id": "block-desktop-media-runtime"
+                },
+                {
+                    "entity_id": "ent-desktop-tauri-runtime",
+                    "label": "Tauri Rust runtime and commands",
+                    "kind": "runtime",
+                    "aliases": [
+                        "Tauri Rust runtime and commands",
+                        "src-tauri",
+                        "rust commands"
+                    ],
+                    "owner_block_id": "block-desktop-media-runtime"
+                },
+                {
+                    "entity_id": "ent-ops-docs-runbooks",
+                    "label": "Repository documentation and runbooks",
+                    "kind": "knowledge_base",
+                    "aliases": [
+                        "Repository documentation and runbooks",
+                        "README",
+                        "docs folder",
+                        "plans"
+                    ],
+                    "owner_block_id": "block-operational-quality"
+                },
+                {
+                    "entity_id": "ent-ops-fly-deploy",
+                    "label": "Fly.io deployment configuration",
+                    "kind": "deployment",
+                    "aliases": [
+                        "Fly.io deployment configuration",
+                        "server fly",
+                        "landing fly",
+                        "fly.toml"
+                    ],
+                    "owner_block_id": "block-operational-quality"
+                },
+                {
+                    "entity_id": "ent-ops-release-workflow",
+                    "label": "GitHub Actions release workflow",
+                    "kind": "workflow",
+                    "aliases": [
+                        "GitHub Actions release workflow",
+                        "release.yml",
+                        "CI release pipeline"
+                    ],
+                    "owner_block_id": "block-operational-quality"
+                },
+                {
+                    "entity_id": "ent-ops-test-surface",
+                    "label": "Automated test surface",
+                    "kind": "quality_system",
+                    "aliases": [
+                        "Automated test surface",
+                        "ExUnit tests",
+                        "test coverage"
+                    ],
+                    "owner_block_id": "block-operational-quality"
+                },
+                {
+                    "entity_id": "ent-product-auth-stack",
+                    "label": "Authentication stack (wallet, Google OAuth, email)",
+                    "kind": "capability",
+                    "aliases": [
+                        "Authentication stack (wallet, Google OAuth, email)",
+                        "auth",
+                        "identity",
+                        "session"
+                    ],
+                    "owner_block_id": "block-product-workflows"
+                },
+                {
+                    "entity_id": "ent-product-client-desktop",
+                    "label": "Desktop client (client/ - Vue + Tauri)",
+                    "kind": "application",
+                    "aliases": [
+                        "Desktop client (client/ - Vue + Tauri)",
+                        "client",
+                        "desktop app",
+                        "tauri client"
+                    ],
+                    "owner_block_id": "block-product-workflows"
+                },
+                {
+                    "entity_id": "ent-product-client-router",
+                    "label": "Desktop route and guard layer",
+                    "kind": "module",
+                    "aliases": [
+                        "Desktop route and guard layer",
+                        "client router",
+                        "route guards"
+                    ],
+                    "owner_block_id": "block-product-workflows"
+                },
+                {
+                    "entity_id": "ent-product-landing-web",
+                    "label": "Landing/web app (landing/ - React)",
+                    "kind": "application",
+                    "aliases": [
+                        "Landing/web app (landing/ - React)",
+                        "landing",
+                        "web app"
+                    ],
+                    "owner_block_id": "block-product-workflows"
+                }
+            ],
+            "topic_index": {
+                "topic-api-surface-partitioning": {
+                    "topic_id": "topic-api-surface-partitioning",
+                    "title": "API surface partitioning and ownership",
+                    "block_id": "block-backend-api-domain",
+                    "block_title": "Backend API and Domain Boundaries",
+                    "category": "architecture",
+                    "priority": "high",
+                    "tags": [
+                        "routing",
+                        "maintainability",
+                        "ownership"
+                    ],
+                    "keywords": [
+                        "router pipelines",
+                        "api_auth",
+                        "api_admin",
+                        "controllers",
+                        "resources"
+                    ],
+                    "related_entities": [
+                        "ent-backend-api-router",
+                        "ent-backend-auth-stack",
+                        "ent-backend-ai-services"
+                    ]
+                },
+                "topic-auth-and-account-journey": {
+                    "topic_id": "topic-auth-and-account-journey",
+                    "title": "Authentication and account journey consistency",
+                    "block_id": "block-product-workflows",
+                    "block_title": "Product Workflows and Experience Surfaces",
+                    "category": "product",
+                    "priority": "high",
+                    "tags": [
+                        "onboarding",
+                        "auth",
+                        "identity"
+                    ],
+                    "keywords": [
+                        "auth challenge",
+                        "email otp",
+                        "google oauth",
+                        "account_type",
+                        "owned_organization_id"
+                    ],
+                    "related_entities": [
+                        "ent-product-client-desktop",
+                        "ent-product-landing-web",
+                        "ent-product-auth-stack"
+                    ]
+                },
+                "topic-automated-test-strategy-and-gates": {
+                    "topic_id": "topic-automated-test-strategy-and-gates",
+                    "title": "Automated test strategy and enforcement gaps",
+                    "block_id": "block-operational-quality",
+                    "block_title": "Operational Readiness and Quality Gates",
+                    "category": "quality",
+                    "priority": "high",
+                    "tags": [
+                        "testing",
+                        "quality",
+                        "risk"
+                    ],
+                    "keywords": [
+                        "ExUnit",
+                        "CI gates",
+                        "regression",
+                        "integration tests",
+                        "smoke tests"
+                    ],
+                    "related_entities": [
+                        "ent-ops-test-surface",
+                        "ent-ops-release-workflow",
+                        "ent-ops-fly-deploy"
+                    ]
+                },
+                "topic-chunked-and-multimodal-detection-pipeline": {
+                    "topic_id": "topic-chunked-and-multimodal-detection-pipeline",
+                    "title": "Chunked and multimodal AI detection pipeline behavior",
+                    "block_id": "block-desktop-media-runtime",
+                    "block_title": "Desktop Runtime and Media Processing",
+                    "category": "architecture",
+                    "priority": "high",
+                    "tags": [
+                        "ai",
+                        "pipeline",
+                        "performance"
+                    ],
+                    "keywords": [
+                        "detect_chunked",
+                        "multimodal",
+                        "OpenRouter",
+                        "Whisper",
+                        "progress updates"
+                    ],
+                    "related_entities": [
+                        "ent-desktop-chunked-detection",
+                        "ent-desktop-tauri-runtime",
+                        "ent-desktop-local-sqlite"
+                    ]
+                },
+                "topic-clip-creation-to-distribution": {
+                    "topic_id": "topic-clip-creation-to-distribution",
+                    "title": "Clip creation to distribution lifecycle",
+                    "block_id": "block-product-workflows",
+                    "block_title": "Product Workflows and Experience Surfaces",
+                    "category": "product",
+                    "priority": "high",
+                    "tags": [
+                        "lifecycle",
+                        "editing",
+                        "distribution"
+                    ],
+                    "keywords": [
+                        "chunked detection",
+                        "video editor",
+                        "shared clips",
+                        "social posts",
+                        "organization assets"
+                    ],
+                    "related_entities": [
+                        "ent-product-client-desktop",
+                        "ent-product-client-router",
+                        "ent-product-landing-web"
+                    ]
+                },
+                "topic-credit-billing-and-org-allocation-invariants": {
+                    "topic_id": "topic-credit-billing-and-org-allocation-invariants",
+                    "title": "Credit, billing, and organization allocation invariants",
+                    "block_id": "block-backend-api-domain",
+                    "block_title": "Backend API and Domain Boundaries",
+                    "category": "finance",
+                    "priority": "high",
+                    "tags": [
+                        "billing",
+                        "monetization",
+                        "invariants"
+                    ],
+                    "keywords": [
+                        "credits",
+                        "subscriptions",
+                        "stripe",
+                        "organization subscriptions",
+                        "processing jobs"
+                    ],
+                    "related_entities": [
+                        "ent-backend-credits-subscriptions",
+                        "ent-backend-api-router",
+                        "ent-backend-ai-services"
+                    ]
+                },
+                "topic-cross-platform-sidecar-and-update-behavior": {
+                    "topic_id": "topic-cross-platform-sidecar-and-update-behavior",
+                    "title": "Cross-platform sidecar packaging and update behavior",
+                    "block_id": "block-desktop-media-runtime",
+                    "block_title": "Desktop Runtime and Media Processing",
+                    "category": "operations",
+                    "priority": "medium",
+                    "tags": [
+                        "packaging",
+                        "release",
+                        "cross-platform"
+                    ],
+                    "keywords": [
+                        "ffmpeg",
+                        "yt-dlp",
+                        "node sidecar",
+                        "tauri updater",
+                        "artifact signing"
+                    ],
+                    "related_entities": [
+                        "ent-desktop-sidecar-packaging",
+                        "ent-desktop-tauri-runtime",
+                        "ent-desktop-chunked-detection"
+                    ]
+                },
+                "topic-documentation-and-source-of-truth-governance": {
+                    "topic_id": "topic-documentation-and-source-of-truth-governance",
+                    "title": "Documentation currency and source-of-truth governance",
+                    "block_id": "block-operational-quality",
+                    "block_title": "Operational Readiness and Quality Gates",
+                    "category": "documentation",
+                    "priority": "medium",
+                    "tags": [
+                        "documentation",
+                        "governance",
+                        "onboarding"
+                    ],
+                    "keywords": [
+                        "README",
+                        "docs backlog",
+                        "runbooks",
+                        "source of truth",
+                        "maintenance"
+                    ],
+                    "related_entities": [
+                        "ent-ops-docs-runbooks",
+                        "ent-ops-release-workflow",
+                        "ent-ops-test-surface"
+                    ]
+                },
+                "topic-local-persistence-and-user-context-sync": {
+                    "topic_id": "topic-local-persistence-and-user-context-sync",
+                    "title": "Local persistence and user-context synchronization",
+                    "block_id": "block-desktop-media-runtime",
+                    "block_title": "Desktop Runtime and Media Processing",
+                    "category": "architecture",
+                    "priority": "high",
+                    "tags": [
+                        "state",
+                        "data",
+                        "desktop"
+                    ],
+                    "keywords": [
+                        "sqlite",
+                        "tauri sql plugin",
+                        "set_current_user_id",
+                        "schema healing",
+                        "local cache"
+                    ],
+                    "related_entities": [
+                        "ent-desktop-local-sqlite",
+                        "ent-desktop-tauri-runtime",
+                        "ent-desktop-chunked-detection"
+                    ]
+                },
+                "topic-realtime-channel-authorization": {
+                    "topic_id": "topic-realtime-channel-authorization",
+                    "title": "Realtime channel authorization model",
+                    "block_id": "block-backend-api-domain",
+                    "block_title": "Backend API and Domain Boundaries",
+                    "category": "security",
+                    "priority": "high",
+                    "tags": [
+                        "realtime",
+                        "security",
+                        "channels"
+                    ],
+                    "keywords": [
+                        "Phoenix sockets",
+                        "messaging channel",
+                        "progress channel",
+                        "join authorization"
+                    ],
+                    "related_entities": [
+                        "ent-backend-messaging-realtime",
+                        "ent-backend-api-router",
+                        "ent-backend-auth-stack"
+                    ]
+                },
+                "topic-release-workflow-and-artifact-integrity": {
+                    "topic_id": "topic-release-workflow-and-artifact-integrity",
+                    "title": "Release workflow and artifact integrity guarantees",
+                    "block_id": "block-operational-quality",
+                    "block_title": "Operational Readiness and Quality Gates",
+                    "category": "operations",
+                    "priority": "high",
+                    "tags": [
+                        "ci",
+                        "release",
+                        "integrity"
+                    ],
+                    "keywords": [
+                        "release branch",
+                        "GitHub Actions",
+                        "notarization",
+                        "latest.json",
+                        "Fly deploy"
+                    ],
+                    "related_entities": [
+                        "ent-ops-release-workflow",
+                        "ent-ops-fly-deploy",
+                        "ent-ops-docs-runbooks"
+                    ]
+                },
+                "topic-role-specific-navigation-and-permissions": {
+                    "topic_id": "topic-role-specific-navigation-and-permissions",
+                    "title": "Role-specific navigation and permission boundaries",
+                    "block_id": "block-product-workflows",
+                    "block_title": "Product Workflows and Experience Surfaces",
+                    "category": "product",
+                    "priority": "medium",
+                    "tags": [
+                        "roles",
+                        "authorization",
+                        "navigation"
+                    ],
+                    "keywords": [
+                        "requiresAdmin",
+                        "requiresAuth",
+                        "moderator",
+                        "organization subscription",
+                        "route guards"
+                    ],
+                    "related_entities": [
+                        "ent-product-client-router",
+                        "ent-product-auth-stack",
+                        "ent-product-landing-web"
+                    ]
+                }
+            }
         },
         "research_execution": {
             "version": 1,
@@ -314,15 +1249,148 @@
                 "latest_round": 0
             },
             "summary": {
-                "topic_total": 0,
+                "topic_total": 12,
                 "topic_complete": 0,
                 "topic_needs_followup": 0,
-                "topic_pending": 0,
+                "topic_pending": 12,
                 "pass_pending": 0,
                 "pass_complete": 0,
                 "next_pass_id": ""
             },
-            "topic_status": {},
+            "topic_status": {
+                "topic-auth-and-account-journey": {
+                    "topic_id": "topic-auth-and-account-journey",
+                    "title": "Authentication and account journey consistency",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-clip-creation-to-distribution": {
+                    "topic_id": "topic-clip-creation-to-distribution",
+                    "title": "Clip creation to distribution lifecycle",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-role-specific-navigation-and-permissions": {
+                    "topic_id": "topic-role-specific-navigation-and-permissions",
+                    "title": "Role-specific navigation and permission boundaries",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-api-surface-partitioning": {
+                    "topic_id": "topic-api-surface-partitioning",
+                    "title": "API surface partitioning and ownership",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-credit-billing-and-org-allocation-invariants": {
+                    "topic_id": "topic-credit-billing-and-org-allocation-invariants",
+                    "title": "Credit, billing, and organization allocation invariants",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-realtime-channel-authorization": {
+                    "topic_id": "topic-realtime-channel-authorization",
+                    "title": "Realtime channel authorization model",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-chunked-and-multimodal-detection-pipeline": {
+                    "topic_id": "topic-chunked-and-multimodal-detection-pipeline",
+                    "title": "Chunked and multimodal AI detection pipeline behavior",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-local-persistence-and-user-context-sync": {
+                    "topic_id": "topic-local-persistence-and-user-context-sync",
+                    "title": "Local persistence and user-context synchronization",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-cross-platform-sidecar-and-update-behavior": {
+                    "topic_id": "topic-cross-platform-sidecar-and-update-behavior",
+                    "title": "Cross-platform sidecar packaging and update behavior",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-release-workflow-and-artifact-integrity": {
+                    "topic_id": "topic-release-workflow-and-artifact-integrity",
+                    "title": "Release workflow and artifact integrity guarantees",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-automated-test-strategy-and-gates": {
+                    "topic_id": "topic-automated-test-strategy-and-gates",
+                    "title": "Automated test strategy and enforcement gaps",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                },
+                "topic-documentation-and-source-of-truth-governance": {
+                    "topic_id": "topic-documentation-and-source-of-truth-governance",
+                    "title": "Documentation currency and source-of-truth governance",
+                    "status": "pending",
+                    "passes_attempted": 0,
+                    "last_pass_id": "",
+                    "latest_summary": "",
+                    "unresolved_questions": [],
+                    "source_ids": [],
+                    "updated_at": ""
+                }
+            },
             "pass_queue": [],
             "pass_history": [],
             "source_registry": [],
