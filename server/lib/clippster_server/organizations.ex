@@ -504,7 +504,7 @@ defmodule ClippsterServer.Organizations do
       end
     else
       nil -> {:error, :user_not_found}
-      :already_member -> {:error, :already_member}
+      true -> {:error, :already_member}
       %OrganizationInvitation{} -> {:error, :invitation_pending}
       {:error, :seat_limit_reached} -> {:error, :seat_limit_reached}
       {:error, reason} -> {:error, reason}
