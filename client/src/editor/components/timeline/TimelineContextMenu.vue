@@ -400,11 +400,11 @@ async function handleReplaceMedia() {
 								v-for="speed in speedOptions"
 								:key="speed"
 								class="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-white/10"
-								:class="speed === currentSpeed ? 'text-sky-400' : 'text-zinc-300'"
+								:class="speed === currentSpeed ? 'text-primary' : 'text-zinc-300'"
 								@click="handleSetSpeed(speed)"
 							>
 								{{ speed }}x
-								<span v-if="speed === currentSpeed" class="text-sky-400">✓</span>
+								<span v-if="speed === currentSpeed" class="text-primary">✓</span>
 							</button>
 						</div>
 					</div>
@@ -426,7 +426,7 @@ async function handleReplaceMedia() {
 				<template v-if="isVideoElement || isAudioElement">
 					<button
 						class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/10"
-						:class="isReversed ? 'text-sky-400' : 'text-zinc-300'"
+						:class="isReversed ? 'text-primary' : 'text-zinc-300'"
 						@click="handleToggleReverse"
 					>
 						<ArrowLeftRight class="size-3.5" />

@@ -283,6 +283,15 @@ pub fn init_storage_dirs() -> Result<StoragePaths, String> {
     Ok(paths)
 }
 
+/// Get the library audio directory (for downloaded sound effects from Freesound, etc.)
+pub fn get_library_audio_dir() -> Result<PathBuf, String> {
+    let base_dir = get_storage_base_dir()?;
+    let library_audio_dir = base_dir.join("library_audio");
+    std::fs::create_dir_all(&library_audio_dir)
+        .map_err(|e| format!("Failed to create library audio directory: {}", e))?;
+    Ok(library_audio_dir)
+}
+
 /// Get the livestream recordings directory
 pub fn get_livestream_recordings_dir() -> Result<PathBuf, String> {
     let base_dir = get_storage_base_dir()?;

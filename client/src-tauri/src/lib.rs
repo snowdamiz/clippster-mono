@@ -1109,6 +1109,7 @@ commands::file_utils::generate_video_thumbnail,
             audio::extract_audio_to_file,
             audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
+            download_library_audio,
 
             // Waveform commands
             waveform::extract_audio_waveform,
