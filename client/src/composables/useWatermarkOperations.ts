@@ -37,14 +37,14 @@ export function useWatermarkOperations() {
     try {
       uploading.value = true;
 
-      // Open native file dialog for image selection
+      // Open native file dialog for image/video selection
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
         multiple: false,
         filters: [
           {
-            name: 'Images',
-            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+            name: 'Images & Videos',
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov'],
           },
         ],
       });

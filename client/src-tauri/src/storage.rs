@@ -537,6 +537,8 @@ pub fn read_file_as_data_url(file_path: String) -> Result<String, String> {
         Some("png") => "image/png",
         Some("gif") => "image/gif",
         Some("webp") => "image/webp",
+        Some("mp4") => "video/mp4",
+        Some("mov") => "video/quicktime",
         _ => "application/octet-stream",
     };
     

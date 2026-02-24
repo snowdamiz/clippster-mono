@@ -233,17 +233,15 @@
                   }"
                   :style="watermarkStyle"
                 >
-                  <img
+                  <MediaPreview
                     :src="watermarkDataUrl"
-                    :class="[
+                    :class-name="[
                       'drop-shadow-lg select-none',
                       fullFrameOverlayRatios[currentAspectRatio] || isFullFrameWatermark
                         ? 'w-full h-full object-cover'
                         : 'max-w-full max-h-full object-contain',
                     ]"
                     :style="{ opacity: currentSettings.opacity / 100 }"
-                    draggable="false"
-                    @dragstart.prevent
                     @error="handleImageError"
                   />
                   <!-- Resize Handles -->
@@ -381,6 +379,7 @@
   } from 'lucide-vue-next';
   import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
+  import MediaPreview from '@/components/MediaPreview.vue';
 
   // Types for watermark settings per aspect ratio
   export type AspectRatioId = '16:9' | '9:16' | '1:1' | '4:5';
