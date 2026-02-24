@@ -130,9 +130,13 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 		<!-- Header -->
 		<div class="flex items-center justify-between border-b border-white/5 px-3 py-2">
 			<span class="text-xs font-medium uppercase tracking-wider text-zinc-400">Text</span>
-			<button class="flex items-center gap-1 rounded border border-white/10 bg-white/5 px-2 py-1 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200" @click="handleUploadFont">
+			<button
+				class="flex items-center gap-1 px-2 py-1 text-[10px] text-sky-400 hover:text-sky-300 bg-sky-500/10 rounded transition-colors border border-sky-500/20"
+				title="Upload custom font"
+				@click="handleUploadFont"
+			>
 				<Upload class="size-3" />
-				Font
+				Upload Font
 			</button>
 		</div>
 
@@ -143,9 +147,9 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 				:key="cat.value"
 				type="button"
 				:class="[
-					'shrink-0 rounded px-2 py-1 text-[10px] font-medium transition-all',
+					'shrink-0 rounded px-2.5 py-1 text-[11px] font-medium transition-all',
 					activeCategory === cat.value
-						? 'bg-blue-500/15 text-blue-400'
+						? 'bg-sky-500/15 text-sky-400'
 						: 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5',
 				]"
 				@click="activeCategory = cat.value"
@@ -159,11 +163,11 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 			<!-- Add default text button -->
 			<button
 				type="button"
-				class="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-white/10 py-2.5 text-xs text-zinc-500 transition-colors hover:border-blue-500/30 hover:text-blue-400"
+				class="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-sky-500/30 bg-sky-500/5 py-3 text-xs text-sky-400 transition-colors hover:border-sky-500/50 hover:bg-sky-500/10"
 				@click="addDefaultText"
 			>
-				<Plus class="size-3.5" />
-				Default Text
+				<Plus class="size-4" />
+				Add Default Text
 			</button>
 
 			<div class="grid grid-cols-2 gap-1.5">
@@ -171,9 +175,9 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 					v-for="preset in filteredPresets"
 					:key="preset.id"
 					type="button"
-					class="group relative flex flex-col items-center justify-center overflow-hidden rounded-lg border border-white/5 transition-all hover:border-blue-500/30 hover:shadow-lg hover:shadow-blue-500/5"
+					class="group relative flex flex-col items-center justify-center overflow-hidden rounded-lg border border-white/5 transition-all hover:border-sky-500/30 hover:shadow-lg hover:shadow-sky-500/5"
 					:class="getPresetCardBg(preset)"
-					style="min-height: 64px"
+					style="min-height: 80px"
 					@click="addPreset(preset.id)"
 				>
 					<!-- Preview area -->

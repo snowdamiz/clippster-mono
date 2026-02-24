@@ -4,6 +4,7 @@ import { useEditor } from "../../../composables/useEditor";
 import type { ElementAnimation, AnimationType, AnimationEasing, AnimationCategory } from "../../../types/animations";
 import { ANIMATION_PRESETS, getPresetsForDirection, ANIMATION_CATEGORIES } from "../../../constants/animation-constants";
 import { X, RotateCcw } from "lucide-vue-next";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const props = defineProps<{
 	elementId: string;
@@ -161,13 +162,14 @@ function updateEasing(easing: AnimationEasing) {
 			<!-- Easing -->
 			<div class="space-y-1">
 				<label class="text-[10px] text-zinc-500">Easing</label>
-				<select
-					:value="currentAnim!.easing"
-					class="h-6 w-full rounded-sm border border-white/10 bg-white/5 px-1.5 text-[10px] text-zinc-300 outline-none"
-					@change="(e) => updateEasing((e.target as HTMLSelectElement).value as AnimationEasing)"
-				>
-					<option v-for="opt in easingOptions" :key="opt.id" :value="opt.id">{{ opt.label }}</option>
-				</select>
+				<Select :model-value="currentAnim!.easing" @update:model-value="(v) => updateEasing(v as AnimationEasing)">
+					<SelectTrigger class="h-6 w-full rounded-sm border border-white/10 bg-white/5 px-1.5 text-[10px] text-zinc-300">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent class="bg-zinc-900 border-white/10">
+						<SelectItem v-for="opt in easingOptions" :key="opt.id" :value="opt.id" class="text-[10px] text-zinc-200">{{ opt.label }}</SelectItem>
+					</SelectContent>
+				</Select>
 			</div>
 		</div>
 
