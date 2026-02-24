@@ -68,7 +68,6 @@ const presets = [
 export function WatermarkPositionPicker({
   show,
   watermarkUrl,
-  watermarkId,
   watermarkWidth,
   watermarkHeight,
   settings,
@@ -85,7 +84,7 @@ export function WatermarkPositionPicker({
   const [hasDragged, setHasDragged] = useState(false)
   const [justFinishedResize, setJustFinishedResize] = useState(false)
   const [watermarkDataUrl, setWatermarkDataUrl] = useState<string | null>(null)
-  const [loadingWatermark, setLoadingWatermark] = useState(false)
+  const [loadingWatermark] = useState(false)
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null)
   const [measuredHeight, setMeasuredHeight] = useState<number | null>(null)
   const [showWatermarkDropdown, setShowWatermarkDropdown] = useState(false)
