@@ -254,6 +254,7 @@ export type ChatSessionStatus = 'discovery' | 'generating' | 'generated' | 'refi
 
 export interface AIChatSession {
   id: number;
+  name: string | null;
   status: ChatSessionStatus;
   media_items: AIVideoMediaItem[];
   composition: AIVideoComposition | null;

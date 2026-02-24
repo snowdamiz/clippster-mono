@@ -4,12 +4,91 @@
     <Teleport to="body">
       <Transition name="modal">
         <div class="aiv-overlay">
-          <div class="aiv-editor">
+          <!-- Project Picker (shown when no session is active) -->
+          <div v-if="showProjectPicker" class="aiv-project-picker">
+            <div class="aiv-project-picker__header">
+              <div class="aiv-project-picker__header-left">
+                <Wand2 :size="20" class="aiv-project-picker__icon" />
+                <h2 class="aiv-project-picker__title">AI Video Creator</h2>
+                <span class="aiv-header__badge">BETA</span>
+              </div>
+              <button @click="router.back()" class="aiv-header__close" title="Close">
+                <X :size="18" />
+              </button>
+            </div>
+
+            <div class="aiv-project-picker__body">
+              <div class="aiv-project-picker__section">
+                <h3 class="aiv-project-picker__section-title">Your Projects</h3>
+                <p class="aiv-project-picker__section-desc">
+                  You can have up to 2 active projects. {{ savedSessions.length >= 2 ? 'Delete a project to create a new one.' : '' }}
+                </p>
+              </div>
+
+              <!-- Saved projects list -->
+              <div class="aiv-project-picker__list">
+                <div
+                  v-for="s in savedSessions"
+                  :key="s.id"
+                  class="aiv-project-card"
+                  @click="openProject(s.id)"
+                >
+                  <div class="aiv-project-card__info">
+                    <div class="aiv-project-card__name">{{ s.name || 'Untitled Project' }}</div>
+                    <div class="aiv-project-card__meta">
+                      <span class="aiv-project-card__status" :class="`aiv-project-card__status--${s.status}`">
+                        {{ formatStatus(s.status) }}
+                      </span>
+                      <span class="aiv-project-card__date">{{ formatDate(s.updated_at) }}</span>
+                    </div>
+                  </div>
+                  <button
+                    class="aiv-project-card__delete"
+                    title="Delete project"
+                    @click.stop="deleteProject(s.id)"
+                  >
+                    <Trash2 :size="14" />
+                  </button>
+                </div>
+
+                <!-- Empty state -->
+                <div v-if="savedSessions.length === 0 && !isLoadingSessions" class="aiv-project-picker__empty">
+                  <Wand2 :size="32" />
+                  <p>No projects yet. Create your first AI video!</p>
+                </div>
+
+                <!-- Loading state -->
+                <div v-if="isLoadingSessions" class="aiv-project-picker__loading">
+                  <Loader2 :size="24" class="animate-spin" />
+                  <p>Loading projects...</p>
+                </div>
+              </div>
+
+              <!-- New project button -->
+              <button
+                class="aiv-project-picker__new-btn"
+                :disabled="savedSessions.length >= 2"
+                @click="createNewProject"
+              >
+                <Plus :size="16" />
+                <span>New Project</span>
+              </button>
+              <p v-if="savedSessions.length >= 2" class="aiv-project-picker__limit-msg">
+                Maximum 2 projects reached. Delete a project to create a new one.
+              </p>
+            </div>
+          </div>
+
+          <!-- Editor (shown when a session is active) -->
+          <div v-else class="aiv-editor">
             <!-- Header -->
             <div class="aiv-header">
               <div class="aiv-header__left">
+                <button @click="backToProjects" class="aiv-header__back" title="Back to projects">
+                  <ArrowLeft :size="16" />
+                </button>
                 <Wand2 :size="18" class="aiv-header__icon" />
-                <span class="aiv-header__title">AI Video Creator</span>
+                <span class="aiv-header__title">{{ chatSession.session.value?.name || 'Untitled Project' }}</span>
                 <span class="aiv-header__badge">BETA</span>
               </div>
               <div class="aiv-header__right">
@@ -186,7 +265,7 @@
           <!-- Modals (inside overlay so they share stacking context) -->
           <ClipPickerDialog v-model="showClipPicker" @select="handleClipsSelected" />
           <AssetPickerDialog v-model="showAssetPicker" @select="handleAssetsSelected" />
-          <ExportDialog v-model="showExportDialog" :composition="composition" />
+          <ExportDialog v-model="showExportDialog" :composition="composition" @exported="handleExported" />
 
           <!-- Credit Confirmation Dialog -->
           <Teleport to="body">
@@ -236,6 +315,9 @@
     Check,
     SkipBack,
     SkipForward,
+    Trash2,
+    Plus,
+    ArrowLeft,
   } from 'lucide-vue-next';
   import { open } from '@tauri-apps/plugin-dialog';
   import { invoke } from '@tauri-apps/api/core';
@@ -287,6 +369,87 @@
 
   // AI Chat session
   const chatSession = useAIChatSession();
+
+  // Project picker state
+  const savedSessions = ref<Array<{ id: number; name: string | null; status: string; updated_at: string; inserted_at: string }>>([]);
+  const isLoadingSessions = ref(false);
+  const showProjectPicker = computed(() => !chatSession.session.value);
+
+  function formatStatus(status: string): string {
+    const map: Record<string, string> = {
+      discovery: 'Planning',
+      generating: 'Generating...',
+      generated: 'Ready',
+      refining: 'Refining',
+      completed: 'Completed',
+    };
+    return map[status] || status;
+  }
+
+  function formatDate(dateStr: string): string {
+    try {
+      const d = new Date(dateStr);
+      const now = new Date();
+      const diffMs = now.getTime() - d.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      const diffHours = Math.floor(diffMins / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays < 7) return `${diffDays}d ago`;
+      return d.toLocaleDateString();
+    } catch {
+      return '';
+    }
+  }
+
+  async function loadSessions() {
+    isLoadingSessions.value = true;
+    try {
+      savedSessions.value = await chatSession.listSessions();
+    } catch (e) {
+      console.error('[AIVideoCreator] Failed to load sessions:', e);
+    } finally {
+      isLoadingSessions.value = false;
+    }
+  }
+
+  async function openProject(id: number) {
+    try {
+      await chatSession.loadSession(id);
+      // Restore media items from session
+      if (chatSession.session.value?.media_items) {
+        mediaItems.value = chatSession.session.value.media_items;
+      }
+    } catch (e) {
+      console.error('[AIVideoCreator] Failed to open project:', e);
+    }
+  }
+
+  async function createNewProject() {
+    if (savedSessions.value.length >= 2) return;
+    try {
+      await chatSession.createSession(mediaItems.value);
+    } catch (e) {
+      console.error('[AIVideoCreator] Failed to create project:', e);
+    }
+  }
+
+  async function deleteProject(id: number) {
+    try {
+      await chatSession.deleteSession(id);
+      savedSessions.value = savedSessions.value.filter((s) => s.id !== id);
+    } catch (e) {
+      console.error('[AIVideoCreator] Failed to delete project:', e);
+    }
+  }
+
+  function backToProjects() {
+    chatSession.closeSession();
+    mediaItems.value = [];
+    loadSessions();
+  }
 
   function handleDraftMessageUpdate(value: string) {
     chatDraftMessage.value = value;
@@ -762,13 +925,9 @@
     return 'image';
   }
 
-  // Initialize chat session on mount
+  // Initialize: load saved sessions on mount
   onMounted(async () => {
-    try {
-      await chatSession.createSession(mediaItems.value);
-    } catch (e) {
-      console.error('[AIVideoCreator] Failed to create chat session:', e);
-    }
+    await loadSessions();
   });
 
   // Sync media items to chat session when they change
@@ -1086,6 +1245,80 @@
   function openExport() {
     if (composition.value) showExportDialog.value = true;
   }
+
+  async function handleExported(data: { outputPath: string; composition: import('@/types/ai-video').AIVideoComposition }) {
+    console.log('[AIVideoCreator] Export completed, saving as built clip:', data.outputPath);
+    try {
+      const { createClip } = await import('@/services/database/clips');
+      const { updateClipBuildStatus } = await import('@/services/database/clip-build');
+
+      // Get file metadata for the exported video
+      let fileDuration: number | undefined;
+      let fileSize: number | undefined;
+      try {
+        const metadata = await invoke<any>('get_media_metadata', { path: data.outputPath });
+        fileDuration = metadata?.duration;
+      } catch (e) {
+        console.warn('[AIVideoCreator] Failed to get exported video metadata:', e);
+      }
+      try {
+        const { stat } = await import('@tauri-apps/plugin-fs');
+        const fileInfo = await stat(data.outputPath);
+        fileSize = fileInfo.size;
+      } catch (e) {
+        console.warn('[AIVideoCreator] Failed to get file size:', e);
+      }
+
+      // Generate a thumbnail for the exported video
+      let thumbnailPath: string | undefined;
+      try {
+        const outputFileName = data.outputPath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') || 'ai-video';
+        thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+          videoPath: data.outputPath,
+          timestampSeconds: 1.0,
+          outputFilename: `${outputFileName}_thumb`,
+        });
+        console.log('[AIVideoCreator] Generated thumbnail:', thumbnailPath);
+      } catch (e) {
+        console.warn('[AIVideoCreator] Failed to generate thumbnail:', e);
+      }
+
+      const clipName = chatSession.session.value?.name || data.composition.name || 'AI Video';
+
+      // Create a clip record in the local database
+      const clipId = await createClip(
+        null as any, // no project_id for AI video exports
+        data.outputPath,
+        {
+          name: clipName,
+          duration: fileDuration || data.composition.duration,
+          thumbnailPath,
+        }
+      );
+
+      // Mark it as built/completed immediately
+      await updateClipBuildStatus(clipId, 'completed', {
+        builtFilePath: data.outputPath,
+        builtThumbnailPath: thumbnailPath,
+        builtDuration: fileDuration || data.composition.duration,
+        builtFileSize: fileSize,
+        progress: 100,
+      });
+
+      console.log('[AIVideoCreator] ✅ Saved exported video as built clip:', clipId);
+
+      // Also auto-name the session if it doesn't have a name yet
+      if (chatSession.session.value && !chatSession.session.value.name) {
+        try {
+          await chatSession.renameSession(chatSession.session.value.id, clipName);
+        } catch (e) {
+          console.warn('[AIVideoCreator] Failed to auto-name session:', e);
+        }
+      }
+    } catch (e) {
+      console.error('[AIVideoCreator] Failed to save exported video as built clip:', e);
+    }
+  }
   function removeMedia(id: string) {
     mediaItems.value = mediaItems.value.filter((x) => x.id !== id);
   }
@@ -1206,6 +1439,237 @@
   .aiv-header__close:hover {
     background: rgba(255, 255, 255, 0.08);
     color: #f4f4f5;
+  }
+
+  .aiv-header__back {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: 1px solid #2a2a2e;
+    border-radius: 6px;
+    color: #a1a1aa;
+    cursor: pointer;
+    transition: all 150ms;
+  }
+
+  .aiv-header__back:hover {
+    background: #1e1e22;
+    border-color: #3f3f46;
+    color: #f4f4f5;
+  }
+
+  /* ═══ Project Picker ═══ */
+  .aiv-project-picker {
+    width: 100%;
+    height: 100%;
+    background: #0a0a0b;
+    display: flex;
+    flex-direction: column;
+    color: #f4f4f5;
+  }
+
+  .aiv-project-picker__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1rem;
+    height: 44px;
+    background: #111113;
+    border-bottom: 1px solid #1e1e22;
+    flex-shrink: 0;
+  }
+
+  .aiv-project-picker__header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .aiv-project-picker__icon {
+    color: #0ea5e9;
+  }
+
+  .aiv-project-picker__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .aiv-project-picker__body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 3rem 1rem;
+    max-width: 480px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  .aiv-project-picker__section {
+    text-align: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .aiv-project-picker__section-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0 0 0.375rem;
+  }
+
+  .aiv-project-picker__section-desc {
+    font-size: 0.8125rem;
+    color: #71717a;
+    margin: 0;
+  }
+
+  .aiv-project-picker__list {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .aiv-project-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+    background: #111113;
+    border: 1px solid #1e1e22;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 150ms;
+  }
+
+  .aiv-project-card:hover {
+    background: #18181b;
+    border-color: #0ea5e9;
+  }
+
+  .aiv-project-card__info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+
+  .aiv-project-card__name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #f4f4f5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .aiv-project-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .aiv-project-card__status {
+    padding: 0.0625rem 0.375rem;
+    border-radius: 3px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+  }
+
+  .aiv-project-card__status--discovery {
+    background: #1e3a5f;
+    color: #7dd3fc;
+  }
+
+  .aiv-project-card__status--generated,
+  .aiv-project-card__status--completed {
+    background: #14532d;
+    color: #86efac;
+  }
+
+  .aiv-project-card__status--generating,
+  .aiv-project-card__status--refining {
+    background: #422006;
+    color: #fdba74;
+  }
+
+  .aiv-project-card__date {
+    color: #52525b;
+  }
+
+  .aiv-project-card__delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: #52525b;
+    cursor: pointer;
+    transition: all 150ms;
+    flex-shrink: 0;
+  }
+
+  .aiv-project-card__delete:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+  }
+
+  .aiv-project-picker__empty,
+  .aiv-project-picker__loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 2.5rem 1rem;
+    color: #52525b;
+    text-align: center;
+  }
+
+  .aiv-project-picker__empty p,
+  .aiv-project-picker__loading p {
+    margin: 0;
+    font-size: 0.8125rem;
+  }
+
+  .aiv-project-picker__new-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    width: 100%;
+    padding: 0.75rem;
+    background: #0ea5e9;
+    border: none;
+    border-radius: 8px;
+    color: #000;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms;
+  }
+
+  .aiv-project-picker__new-btn:hover:not(:disabled) {
+    background: #38bdf8;
+  }
+
+  .aiv-project-picker__new-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .aiv-project-picker__limit-msg {
+    font-size: 0.75rem;
+    color: #71717a;
+    text-align: center;
+    margin: 0.5rem 0 0;
   }
 
   /* ═══ Content Layout ═══ */

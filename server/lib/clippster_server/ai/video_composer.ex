@@ -570,7 +570,7 @@ defmodule ClippsterServer.AI.VideoComposer do
     }
   end
 
-  defp generate_scene_overlay_tracks(ctx, scene, all_scenes, api_key, diversity_tracker \\ %{templates: [], camera_types: [], transition_types: []}) do
+  defp generate_scene_overlay_tracks(ctx, scene, all_scenes, api_key, diversity_tracker) do
     scene_index = Map.get(scene, "index", 0)
     scene_start = Map.get(scene, "startTime", 0)
     scene_end = Map.get(scene, "endTime", ctx.duration)
