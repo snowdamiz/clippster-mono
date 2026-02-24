@@ -480,21 +480,6 @@ export function OrgSocial() {
     loadAccounts()
   }, [organizationId])
 
-  const connectInstagram = () => {
-    if (!organizationId || !token) return
-    setConnecting(true)
-    openOAuth('instagram', organizationId, token, (result) => {
-      setConnecting(false)
-      if (result.success) {
-        toast.success(`Instagram account @${result.username} connected!`)
-        loadAccounts()
-        loadOrganization()
-      } else {
-        toast.error(result.error || 'Failed to connect Instagram')
-      }
-    })
-  }
-
   const connectTwitter = () => {
     if (!organizationId || !token) return
     setConnecting(true)
