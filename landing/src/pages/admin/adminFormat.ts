@@ -1,29 +1,19 @@
+import { formatDate as formatDateUtil, formatDateTime as formatDateTimeUtil } from '@/utils/dateTimeUtils'
+
 export function formatNumber(value: number | null | undefined): string {
   return new Intl.NumberFormat('en-US').format(Number(value || 0))
 }
 
 export function formatDate(value: string | null | undefined): string {
   if (!value) return 'N/A'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return 'N/A'
-  return d.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
+  const result = formatDateUtil(value)
+  return result || 'N/A'
 }
 
 export function formatDateTime(value: string | null | undefined): string {
   if (!value) return 'N/A'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return 'N/A'
-  return d.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  const result = formatDateTimeUtil(value)
+  return result || 'N/A'
 }
 
 export function formatWalletAddress(value: string | null | undefined): string {

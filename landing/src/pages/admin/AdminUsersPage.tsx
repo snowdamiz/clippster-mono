@@ -32,6 +32,7 @@ import {
   type AdminUser,
 } from '@/services/adminApi'
 import { formatWalletAddress } from './adminFormat'
+import { formatDateTime } from '@/utils/dateTimeUtils'
 import './AdminUsersPage.css'
 
 type Tier = 'starter' | 'creator' | 'pro'
@@ -91,19 +92,6 @@ function getUserDisplayName(user: AdminUser) {
     return user.email
   }
   return formatWalletAddress(user.wallet_address)
-}
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return 'N/A'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Invalid date'
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 function formatCredits(value: number | 'unlimited' | null | undefined) {

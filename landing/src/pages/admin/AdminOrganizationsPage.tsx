@@ -28,6 +28,7 @@ import {
   updateOrganizationSubscription,
   type AdminOrganization,
 } from '@/services/adminApi'
+import { formatDateTime } from './adminFormat'
 import './AdminOrganizationsPage.css'
 
 interface CreateOrgForm {
@@ -51,20 +52,6 @@ interface EditSubForm {
   max_seats: number
   monthly_credits: number
   price_dollars: number
-}
-
-function formatDateTime(value: string | null | undefined) {
-  if (!value) return 'N/A'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Invalid date'
-
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 function formatCredits(credits: number | null | undefined) {
