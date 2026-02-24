@@ -667,7 +667,7 @@
       const { open } = await import('@tauri-apps/plugin-dialog');
       const result = await open({
         multiple: false,
-        filters: [{ name: 'Images', extensions: ['png', 'svg', 'webp', 'jpg', 'jpeg'] }],
+        filters: [{ name: 'Images & Videos', extensions: ['png', 'svg', 'webp', 'jpg', 'jpeg', 'mp4', 'mov', 'webm'] }],
       });
 
       if (!result) return;

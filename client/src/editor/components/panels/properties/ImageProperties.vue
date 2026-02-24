@@ -266,7 +266,7 @@ function formatTime(seconds: number): string {
 		<!-- Transform section -->
 		<div class="space-y-3">
 			<div class="flex items-center justify-between">
-				<label class="text-xs font-medium text-zinc-400">Transform</label>
+				<label class="text-xs font-medium text-zinc-300">Transform</label>
 				<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" title="Reset transform" @click="resetTransform">
 					<RotateCcw class="size-3" />
 					Reset
@@ -338,7 +338,7 @@ function formatTime(seconds: number): string {
 		<!-- Color Adjustments -->
 		<div class="space-y-3">
 			<div class="flex items-center justify-between">
-				<label class="text-xs font-medium text-zinc-400">Color Adjustments</label>
+				<label class="text-xs font-medium text-zinc-300">Color Adjustments</label>
 				<button class="flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300" title="Reset color" @click="resetColor">
 					<RotateCcw class="size-3" />
 					Reset
@@ -397,7 +397,7 @@ function formatTime(seconds: number): string {
 			<button class="flex w-full items-center justify-between" @click="showChromakey = !showChromakey">
 				<div class="flex items-center gap-1.5">
 					<Pipette class="size-3.5 text-zinc-500" />
-					<label class="text-xs font-medium text-zinc-400">Chroma Key</label>
+					<label class="text-xs font-medium text-zinc-300">Chroma Key</label>
 					<span v-if="chromakey.enabled" class="rounded-full bg-green-500/20 px-1.5 text-[10px] font-medium text-green-400">On</span>
 				</div>
 				<ChevronDown class="size-3.5 text-zinc-500 transition-transform" :class="{ 'rotate-180': !showChromakey }" />
@@ -451,7 +451,7 @@ function formatTime(seconds: number): string {
 			<button class="flex w-full items-center justify-between" @click="showEffects = !showEffects">
 				<div class="flex items-center gap-1.5">
 					<Wand2 class="size-3.5 text-zinc-500" />
-					<label class="text-xs font-medium text-zinc-400">Effects</label>
+					<label class="text-xs font-medium text-zinc-300">Effects</label>
 					<span v-if="effects.length > 0" class="rounded-full bg-blue-500/20 px-1.5 text-[10px] font-medium text-blue-400">{{ effects.length }}</span>
 				</div>
 				<ChevronDown class="size-3.5 text-zinc-500 transition-transform" :class="{ 'rotate-180': !showEffects }" />
@@ -747,7 +747,7 @@ function formatTime(seconds: number): string {
 
 		<!-- Animation -->
 		<div class="space-y-1.5">
-			<label class="text-xs font-medium text-zinc-400">Animation</label>
+			<label class="text-xs font-medium text-zinc-300">Animation</label>
 			<div class="rounded-md border border-white/5 bg-white/[0.01]">
 				<AnimationProperties
 					:element-id="element.id"
@@ -761,12 +761,14 @@ function formatTime(seconds: number): string {
 		</div>
 
 		<!-- Delete -->
-		<button
-			class="flex w-full items-center justify-center gap-2 rounded-md border border-red-500/30 bg-red-500/15 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/25 hover:border-red-500/50"
-			@click="handleDelete"
-		>
-			<Trash2 class="size-4" />
-			Delete Image
-		</button>
+		<div class="border-t border-white/10 pt-4 mt-2">
+			<button
+				class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20"
+				@click="handleDelete"
+			>
+				<Trash2 class="size-3.5" />
+				Delete Image
+			</button>
+		</div>
 	</div>
 </template>

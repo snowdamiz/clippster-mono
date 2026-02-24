@@ -98,16 +98,16 @@ const categoryTabs = computed(() => [
 				<p class="text-xs text-zinc-500">No effects found</p>
 			</div>
 
-			<div v-else class="grid grid-cols-2 gap-2">
+			<div v-else class="grid grid-cols-2 gap-2.5">
 				<div
 					v-for="preset in filteredPresets"
 					:key="preset.type"
-					class="group cursor-grab overflow-hidden rounded-lg border border-white/5 bg-white/[0.02] transition-all hover:border-[#E040FB]/30 hover:bg-[#E040FB]/5 active:cursor-grabbing active:scale-95"
+					class="group cursor-grab overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-900/40 transition-all hover:border-[#E040FB]/40 hover:bg-[#E040FB]/[0.08] active:cursor-grabbing active:scale-[0.97]"
 					draggable="true"
 					@dragstart="(e: DragEvent) => handleDragStart(e, preset)"
 				>
 					<!-- Effect preview thumbnail -->
-					<div class="relative aspect-[3/2] w-full overflow-hidden bg-zinc-900">
+					<div class="relative aspect-[4/3] w-full overflow-hidden bg-zinc-950">
 						<img
 							v-if="previews[preset.type]"
 							:src="previews[preset.type]"
@@ -115,12 +115,11 @@ const categoryTabs = computed(() => [
 							class="size-full object-cover"
 						/>
 						<div v-else class="flex size-full items-center justify-center">
-							<div class="size-4 animate-pulse rounded-full bg-white/10" />
+							<div class="size-5 animate-pulse rounded-full bg-white/10" />
 						</div>
 					</div>
-					<div class="px-2 py-1.5 text-center">
-						<p class="text-[11px] font-medium text-zinc-300 group-hover:text-zinc-100">{{ preset.label }}</p>
-						<p class="mt-0.5 text-[9px] leading-tight text-zinc-600">{{ preset.description }}</p>
+					<div class="px-2.5 py-2 text-center">
+						<p class="text-[11px] font-medium text-zinc-200 group-hover:text-white">{{ preset.label }}</p>
 					</div>
 				</div>
 			</div>

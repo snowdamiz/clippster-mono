@@ -978,6 +978,9 @@ defmodule ClippsterServerWeb.Router do
 
     # Announcements (active, filtered by account type)
     get("/announcements/active", AnnouncementsController, :active)
+
+    # Freesound sound effects search proxy
+    get("/freesound/search", FreesoundController, :search)
   end
 
   # Moderator + Admin routes

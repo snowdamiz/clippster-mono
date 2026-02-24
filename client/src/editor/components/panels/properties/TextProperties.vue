@@ -15,6 +15,7 @@ import {
 	Underline,
 	Strikethrough,
 	RotateCcw,
+	Trash2,
 } from "lucide-vue-next";
 import AnimationProperties from "./AnimationProperties.vue";
 
@@ -42,6 +43,8 @@ const showStroke = ref(!!props.element.stroke);
 const showShadow = ref(!!props.element.shadow);
 const showGlow = ref(!!props.element.glow);
 const showGradient = ref(!!props.element.gradient?.enabled);
+const fadeInInput = ref((props.element.fadeIn ?? 0).toFixed(1));
+const fadeOutInput = ref((props.element.fadeOut ?? 0).toFixed(1));
 
 // ── Watchers ──
 watch(() => props.element.fontSize, (v) => { fontSizeInput.value = v.toString(); });
@@ -55,6 +58,8 @@ watch(() => props.element.stroke, (v) => { showStroke.value = !!v; });
 watch(() => props.element.shadow, (v) => { showShadow.value = !!v; });
 watch(() => props.element.glow, (v) => { showGlow.value = !!v; });
 watch(() => props.element.gradient, (v) => { showGradient.value = !!v?.enabled; });
+watch(() => props.element.fadeIn, (v) => { fadeInInput.value = (v ?? 0).toFixed(1); });
+watch(() => props.element.fadeOut, (v) => { fadeOutInput.value = (v ?? 0).toFixed(1); });
 
 function update(updates: Record<string, unknown>) {
 	editor.timeline.updateTextElement({
@@ -219,6 +224,38 @@ function toggleGradient() {
 	}
 }
 
+// ── Delete ──
+function handleDelete() {
+	editor.timeline.deleteElements({
+		elements: [{ trackId: props.trackId, elementId: props.element.id }],
+	});
+}
+
+// ── Time formatting ──
+function formatTime(seconds: number): string {
+	const m = Math.floor(seconds / 60);
+	const s = seconds % 60;
+	const whole = Math.floor(s);
+	const ms = Math.round((s - whole) * 100);
+	return `${m}:${whole.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
+}
+
+// ── Fade In/Out ──
+function handleFadeInSlider(value: string) {
+	const parsed = parseFloat(value);
+	if (!Number.isNaN(parsed)) {
+		fadeInInput.value = parsed.toFixed(1);
+		update({ fadeIn: parsed });
+	}
+}
+function handleFadeOutSlider(value: string) {
+	const parsed = parseFloat(value);
+	if (!Number.isNaN(parsed)) {
+		fadeOutInput.value = parsed.toFixed(1);
+		update({ fadeOut: parsed });
+	}
+}
+
 // ── Options ──
 const caseOptions: { value: TextCase; label: string }[] = [
 	{ value: "none", label: "Aa" },
@@ -275,7 +312,7 @@ const quickStyles = [
 				v-for="tab in (['style', 'effects', 'bubble', 'animate'] as TopTab[])"
 				:key="tab"
 				class="flex-1 py-2 text-center text-xs font-medium capitalize transition-colors"
-				:class="activeTopTab === tab ? 'text-sky-400 border-b-2 border-sky-400' : 'text-zinc-400 hover:text-zinc-200'"
+				:class="activeTopTab === tab ? 'text-primary border-b-2 border-primary' : 'text-zinc-500 hover:text-zinc-300'"
 				@click="activeTopTab = tab"
 			>
 				{{ tab === 'animate' ? 'Animate' : tab.charAt(0).toUpperCase() + tab.slice(1) }}
@@ -288,19 +325,19 @@ const quickStyles = [
 		<div v-if="activeTopTab === 'style'" class="flex flex-col gap-3 overflow-y-auto p-3" style="max-height: calc(100vh - 200px)">
 			<!-- Text content -->
 			<textarea
-				class="min-h-16 w-full resize-none rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-sky-500/50 focus:outline-none"
+				class="min-h-16 w-full resize-none rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 placeholder:text-zinc-600 focus:border-primary/50 focus:outline-none"
 				placeholder="Enter text..."
 				:value="contentInput"
 				@input="handleContentChange"
 			/>
 
 			<!-- ── Font section ── -->
-			<div class="space-y-2 border-t border-white/5 pt-3">
+			<div class="space-y-2 border-t border-white/10 pt-4">
 				<div class="flex items-center justify-between">
-					<span class="text-zinc-400 font-medium">Font</span>
+					<span class="text-zinc-300 font-medium">Font</span>
 					<button
 						@click="handleUploadFont"
-						class="flex items-center gap-1 px-2 py-1 text-[10px] text-sky-400 hover:text-sky-300 bg-sky-500/10 rounded transition-colors border border-sky-500/20"
+						class="flex items-center gap-1 px-2 py-1 text-[10px] text-primary hover:text-primary/80 bg-primary/10 rounded transition-colors border border-primary/20"
 						title="Upload custom font"
 					>
 						<Plus class="size-3" />
@@ -325,7 +362,7 @@ const quickStyles = [
 					<div class="flex-1 space-y-1">
 						<label class="text-zinc-500">Size</label>
 						<div class="flex items-center gap-2">
-							<input type="range" min="8" max="300" :value="element.fontSize" class="flex-1 accent-sky-500"
+							<input type="range" min="8" max="300" :value="element.fontSize" class="flex-1"
 								@input="(e) => handleFontSizeChange((e.target as HTMLInputElement).value)" />
 							<input
 								type="text"
@@ -355,22 +392,22 @@ const quickStyles = [
 					<div class="flex items-center rounded border border-white/10">
 						<button
 							class="flex size-7 items-center justify-center text-zinc-400 transition-colors first:rounded-l last:rounded-r hover:text-zinc-200"
-							:class="element.fontWeight === 'bold' || element.fontWeight === '700' ? 'bg-sky-500/20 text-sky-400' : ''"
+							:class="element.fontWeight === 'bold' || element.fontWeight === '700' ? 'bg-primary/20 text-primary' : ''"
 							@click="update({ fontWeight: element.fontWeight === 'bold' || element.fontWeight === '700' ? 'normal' : 'bold' })"
 						><Bold class="size-3.5" /></button>
 						<button
 							class="flex size-7 items-center justify-center border-l border-white/10 text-zinc-400 transition-colors hover:text-zinc-200"
-							:class="element.fontStyle === 'italic' ? 'bg-sky-500/20 text-sky-400' : ''"
+							:class="element.fontStyle === 'italic' ? 'bg-primary/20 text-primary' : ''"
 							@click="update({ fontStyle: element.fontStyle === 'italic' ? 'normal' : 'italic' })"
 						><Italic class="size-3.5" /></button>
 						<button
 							class="flex size-7 items-center justify-center border-l border-white/10 text-zinc-400 transition-colors hover:text-zinc-200"
-							:class="element.textDecoration === 'underline' ? 'bg-sky-500/20 text-sky-400' : ''"
+							:class="element.textDecoration === 'underline' ? 'bg-primary/20 text-primary' : ''"
 							@click="update({ textDecoration: element.textDecoration === 'underline' ? 'none' : 'underline' })"
 						><Underline class="size-3.5" /></button>
 						<button
 							class="flex size-7 items-center justify-center border-l border-white/10 text-zinc-400 transition-colors last:rounded-r hover:text-zinc-200"
-							:class="element.textDecoration === 'line-through' ? 'bg-sky-500/20 text-sky-400' : ''"
+							:class="element.textDecoration === 'line-through' ? 'bg-primary/20 text-primary' : ''"
 							@click="update({ textDecoration: element.textDecoration === 'line-through' ? 'none' : 'line-through' })"
 						><Strikethrough class="size-3.5" /></button>
 					</div>
@@ -379,17 +416,17 @@ const quickStyles = [
 					<div class="flex items-center rounded border border-white/10">
 						<button
 							class="flex size-7 items-center justify-center text-zinc-400 transition-colors first:rounded-l hover:text-zinc-200"
-							:class="element.textAlign === 'left' ? 'bg-sky-500/20 text-sky-400' : ''"
+							:class="element.textAlign === 'left' ? 'bg-primary/20 text-primary' : ''"
 							@click="update({ textAlign: 'left' })"
 						><AlignLeft class="size-3.5" /></button>
 						<button
 							class="flex size-7 items-center justify-center border-l border-white/10 text-zinc-400 transition-colors hover:text-zinc-200"
-							:class="element.textAlign === 'center' ? 'bg-sky-500/20 text-sky-400' : ''"
+							:class="element.textAlign === 'center' ? 'bg-primary/20 text-primary' : ''"
 							@click="update({ textAlign: 'center' })"
 						><AlignCenter class="size-3.5" /></button>
 						<button
 							class="flex size-7 items-center justify-center border-l border-white/10 text-zinc-400 transition-colors last:rounded-r hover:text-zinc-200"
-							:class="element.textAlign === 'right' ? 'bg-sky-500/20 text-sky-400' : ''"
+							:class="element.textAlign === 'right' ? 'bg-primary/20 text-primary' : ''"
 							@click="update({ textAlign: 'right' })"
 						><AlignRight class="size-3.5" /></button>
 					</div>
@@ -398,7 +435,7 @@ const quickStyles = [
 					<div class="flex items-center rounded border border-white/10">
 						<button v-for="c in caseOptions" :key="c.value"
 							class="flex size-7 items-center justify-center border-l border-white/10 text-[10px] font-semibold text-zinc-400 transition-colors first:border-l-0 first:rounded-l last:rounded-r hover:text-zinc-200"
-							:class="element.textCase === c.value ? 'bg-sky-500/20 text-sky-400' : ''"
+							:class="element.textCase === c.value ? 'bg-primary/20 text-primary' : ''"
 							@click="update({ textCase: c.value })"
 						>{{ c.label }}</button>
 					</div>
@@ -417,9 +454,9 @@ const quickStyles = [
 			</div>
 
 			<!-- ── Transform section ── -->
-			<div class="space-y-2 border-t border-white/5 pt-3">
+			<div class="space-y-2 border-t border-white/10 pt-4">
 				<div class="flex items-center justify-between">
-					<span class="text-zinc-400 font-medium">Transform</span>
+					<span class="text-zinc-300 font-medium">Transform</span>
 					<button class="text-zinc-500 hover:text-zinc-300" title="Reset transform" @click="resetTransform">
 						<RotateCcw class="size-3.5" />
 					</button>
@@ -434,7 +471,7 @@ const quickStyles = [
 							min="10"
 							max="500"
 							:value="Math.round(element.transform.scale * 100)"
-							class="flex-1 accent-sky-500"
+							class="flex-1"
 							@input="handleScaleSlider(($event.target as HTMLInputElement).value)"
 						/>
 						<div class="flex items-center">
@@ -485,14 +522,14 @@ const quickStyles = [
 			</div>
 
 			<!-- ── Appearance section ── -->
-			<div class="space-y-2 border-t border-white/5 pt-3">
-				<span class="text-zinc-400 font-medium">Appearance</span>
+			<div class="space-y-2 border-t border-white/10 pt-4">
+				<span class="text-zinc-300 font-medium">Appearance</span>
 
 				<!-- Letter Spacing -->
 				<div class="space-y-1">
 					<label class="text-zinc-500">Spacing</label>
 					<div class="flex items-center gap-2">
-						<input type="range" :value="element.letterSpacing" min="-5" max="30" step="0.5" class="flex-1 accent-sky-500"
+						<input type="range" :value="element.letterSpacing" min="-5" max="30" step="0.5" class="flex-1"
 							@input="(e) => update({ letterSpacing: Number((e.target as HTMLInputElement).value) })" />
 						<span class="w-10 text-right font-mono text-[10px] text-zinc-400">{{ element.letterSpacing }}px</span>
 					</div>
@@ -502,7 +539,7 @@ const quickStyles = [
 				<div class="space-y-1">
 					<label class="text-zinc-500">Line Height</label>
 					<div class="flex items-center gap-2">
-						<input type="range" :value="element.lineHeight" min="0.8" max="3" step="0.1" class="flex-1 accent-sky-500"
+						<input type="range" :value="element.lineHeight" min="0.8" max="3" step="0.1" class="flex-1"
 							@input="(e) => update({ lineHeight: Number((e.target as HTMLInputElement).value) })" />
 						<span class="w-10 text-right font-mono text-[10px] text-zinc-400">{{ element.lineHeight?.toFixed(1) }}</span>
 					</div>
@@ -512,7 +549,7 @@ const quickStyles = [
 				<div class="space-y-1">
 					<label class="text-zinc-500">Opacity</label>
 					<div class="flex items-center gap-2">
-						<input type="range" :value="element.opacity * 100" min="0" max="100" step="1" class="flex-1 accent-sky-500"
+						<input type="range" :value="element.opacity * 100" min="0" max="100" step="1" class="flex-1"
 							@input="(e) => { const val = Number((e.target as HTMLInputElement).value); update({ opacity: val / 100 }); opacityInput = val.toString(); }" />
 						<div class="flex items-center">
 							<input type="text" :value="opacityInput"
@@ -545,8 +582,8 @@ const quickStyles = [
 			</div>
 
 			<!-- ── Quick Style Presets ── -->
-			<div class="space-y-2 border-t border-white/5 pt-3">
-				<span class="text-zinc-400 font-medium">Quick Styles</span>
+			<div class="space-y-2 border-t border-white/10 pt-4">
+				<span class="text-zinc-300 font-medium">Quick Styles</span>
 				<div class="grid grid-cols-3 gap-1.5">
 					<button
 						v-for="qs in quickStyles"
@@ -558,6 +595,45 @@ const quickStyles = [
 					</button>
 				</div>
 			</div>
+			<!-- ── Timing info ── -->
+			<div class="flex items-center gap-3 border-t border-white/10 pt-3">
+				<span class="text-[10px] text-zinc-500">Start: {{ formatTime(element.startTime) }}</span>
+				<span class="text-[10px] text-zinc-500">|</span>
+				<span class="text-[10px] text-zinc-500">End: {{ formatTime(element.startTime + element.duration) }}</span>
+				<span class="text-[10px] text-zinc-500">|</span>
+				<span class="text-[10px] text-zinc-500">Duration: {{ element.duration.toFixed(2) }}s</span>
+			</div>
+
+			<!-- ── Fade In/Out ── -->
+			<div class="space-y-2 border-t border-white/10 pt-4">
+				<span class="text-zinc-300 font-medium">Fade</span>
+				<div class="space-y-1">
+					<label class="text-zinc-500">Fade In</label>
+					<div class="flex items-center gap-2">
+						<input type="range" :value="element.fadeIn ?? 0" min="0" max="2" step="0.1" class="flex-1"
+							@input="(e) => handleFadeInSlider((e.target as HTMLInputElement).value)" />
+						<span class="w-10 text-right font-mono text-[10px] text-zinc-400">{{ fadeInInput }}s</span>
+					</div>
+				</div>
+				<div class="space-y-1">
+					<label class="text-zinc-500">Fade Out</label>
+					<div class="flex items-center gap-2">
+						<input type="range" :value="element.fadeOut ?? 0" min="0" max="2" step="0.1" class="flex-1"
+							@input="(e) => handleFadeOutSlider((e.target as HTMLInputElement).value)" />
+						<span class="w-10 text-right font-mono text-[10px] text-zinc-400">{{ fadeOutInput }}s</span>
+					</div>
+				</div>
+			</div>
+
+			<!-- ── Delete ── -->
+			<div class="border-t border-white/10 pt-4 mt-2">
+				<button
+					class="flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20"
+					@click="handleDelete"
+				>
+					<Trash2 class="size-3.5" /> Delete Text
+				</button>
+			</div>
 		</div>
 
 		<!-- ═══════════════════════════════════════════ -->
@@ -568,7 +644,7 @@ const quickStyles = [
 			<div class="rounded-md border border-white/5 bg-white/[0.02]">
 				<button class="flex w-full items-center justify-between px-2.5 py-1.5" @click="toggleStroke">
 					<span class="text-xs text-zinc-300">Stroke</span>
-					<div class="h-5 w-9 rounded-full transition-colors" :class="showStroke ? 'bg-sky-500' : 'bg-white/10'">
+					<div class="h-5 w-9 rounded-full transition-colors" :class="showStroke ? 'bg-primary' : 'bg-white/10'">
 						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showStroke ? 'translate-x-4' : 'translate-x-0.5'" style="margin-top: 2px" />
 					</div>
 				</button>
@@ -578,7 +654,7 @@ const quickStyles = [
 							@input="(e) => update({ stroke: { ...element.stroke!, color: (e.target as HTMLInputElement).value } })" />
 						<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: element.stroke.color }" />
 					</div>
-					<input type="range" :value="element.stroke.width" min="1" max="20" step="0.5" class="flex-1 accent-sky-500"
+					<input type="range" :value="element.stroke.width" min="1" max="20" step="0.5" class="flex-1"
 						@input="(e) => update({ stroke: { ...element.stroke!, width: Number((e.target as HTMLInputElement).value) } })" />
 					<span class="w-6 text-right text-zinc-500">{{ element.stroke.width }}</span>
 				</div>
@@ -588,7 +664,7 @@ const quickStyles = [
 			<div class="rounded-md border border-white/5 bg-white/[0.02]">
 				<button class="flex w-full items-center justify-between px-2.5 py-1.5" @click="toggleShadow">
 					<span class="text-xs text-zinc-300">Shadow</span>
-					<div class="h-5 w-9 rounded-full transition-colors" :class="showShadow ? 'bg-sky-500' : 'bg-white/10'">
+					<div class="h-5 w-9 rounded-full transition-colors" :class="showShadow ? 'bg-primary' : 'bg-white/10'">
 						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showShadow ? 'translate-x-4' : 'translate-x-0.5'" style="margin-top: 2px" />
 					</div>
 				</button>
@@ -604,15 +680,15 @@ const quickStyles = [
 					</div>
 					<div class="flex items-center gap-2">
 						<span class="w-5 text-[10px] text-zinc-500">X</span>
-						<input type="range" :value="element.shadow.offsetX" min="-20" max="20" step="1" class="flex-1 accent-sky-500"
+						<input type="range" :value="element.shadow.offsetX" min="-20" max="20" step="1" class="flex-1"
 							@input="(e) => update({ shadow: { ...element.shadow!, offsetX: Number((e.target as HTMLInputElement).value) } })" />
 						<span class="w-5 text-[10px] text-zinc-500">Y</span>
-						<input type="range" :value="element.shadow.offsetY" min="-20" max="20" step="1" class="flex-1 accent-sky-500"
+						<input type="range" :value="element.shadow.offsetY" min="-20" max="20" step="1" class="flex-1"
 							@input="(e) => update({ shadow: { ...element.shadow!, offsetY: Number((e.target as HTMLInputElement).value) } })" />
 					</div>
 					<div class="flex items-center gap-2">
 						<span class="w-5 text-[10px] text-zinc-500">Blur</span>
-						<input type="range" :value="element.shadow.blur" min="0" max="30" step="1" class="flex-1 accent-sky-500"
+						<input type="range" :value="element.shadow.blur" min="0" max="30" step="1" class="flex-1"
 							@input="(e) => update({ shadow: { ...element.shadow!, blur: Number((e.target as HTMLInputElement).value) } })" />
 						<span class="w-6 text-right text-zinc-500">{{ element.shadow.blur }}</span>
 					</div>
@@ -623,7 +699,7 @@ const quickStyles = [
 			<div class="rounded-md border border-white/5 bg-white/[0.02]">
 				<button class="flex w-full items-center justify-between px-2.5 py-1.5" @click="toggleGlow">
 					<span class="text-xs text-zinc-300">Glow</span>
-					<div class="h-5 w-9 rounded-full transition-colors" :class="showGlow ? 'bg-sky-500' : 'bg-white/10'">
+					<div class="h-5 w-9 rounded-full transition-colors" :class="showGlow ? 'bg-primary' : 'bg-white/10'">
 						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showGlow ? 'translate-x-4' : 'translate-x-0.5'" style="margin-top: 2px" />
 					</div>
 				</button>
@@ -633,7 +709,7 @@ const quickStyles = [
 							@input="(e) => update({ glow: { ...element.glow!, color: (e.target as HTMLInputElement).value } })" />
 						<div class="size-5 rounded border border-white/10" :style="{ backgroundColor: element.glow.color }" />
 					</div>
-					<input type="range" :value="element.glow.intensity" min="1" max="30" step="1" class="flex-1 accent-sky-500"
+					<input type="range" :value="element.glow.intensity" min="1" max="30" step="1" class="flex-1"
 						@input="(e) => update({ glow: { ...element.glow!, intensity: Number((e.target as HTMLInputElement).value) } })" />
 					<span class="w-6 text-right text-zinc-500">{{ element.glow.intensity }}</span>
 				</div>
@@ -643,7 +719,7 @@ const quickStyles = [
 			<div class="rounded-md border border-white/5 bg-white/[0.02]">
 				<button class="flex w-full items-center justify-between px-2.5 py-1.5" @click="toggleGradient">
 					<span class="text-xs text-zinc-300">Gradient</span>
-					<div class="h-5 w-9 rounded-full transition-colors" :class="showGradient ? 'bg-sky-500' : 'bg-white/10'">
+					<div class="h-5 w-9 rounded-full transition-colors" :class="showGradient ? 'bg-primary' : 'bg-white/10'">
 						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showGradient ? 'translate-x-4' : 'translate-x-0.5'" style="margin-top: 2px" />
 					</div>
 				</button>
@@ -663,7 +739,7 @@ const quickStyles = [
 					</div>
 					<div class="flex items-center gap-2">
 						<span class="text-[10px] text-zinc-500">Angle</span>
-						<input type="range" :value="element.gradient.angle" min="0" max="360" step="15" class="flex-1 accent-sky-500"
+						<input type="range" :value="element.gradient.angle" min="0" max="360" step="15" class="flex-1"
 							@input="(e) => update({ gradient: { ...element.gradient!, angle: Number((e.target as HTMLInputElement).value) } })" />
 						<span class="w-8 text-right text-zinc-500">{{ element.gradient.angle }}°</span>
 					</div>
@@ -680,7 +756,7 @@ const quickStyles = [
 				<button v-for="b in bubbleOptions" :key="b.value"
 					class="group flex flex-col items-center gap-1 rounded-md border p-1.5 transition-all"
 					:class="element.bubbleStyle === b.value
-						? 'border-sky-500/60 bg-sky-500/10'
+						? 'border-primary/60 bg-primary/10'
 						: 'border-white/5 bg-white/[0.02] hover:border-white/15 hover:bg-white/5'"
 					@click="update({ bubbleStyle: b.value })"
 				>
@@ -717,13 +793,13 @@ const quickStyles = [
 						</template>
 					</svg>
 					<span class="text-[9px] leading-none"
-						:class="element.bubbleStyle === b.value ? 'text-sky-400' : 'text-zinc-500 group-hover:text-zinc-400'"
+						:class="element.bubbleStyle === b.value ? 'text-primary' : 'text-zinc-500 group-hover:text-zinc-400'"
 					>{{ b.label }}</span>
 				</button>
 			</div>
 
 			<!-- Bubble Color + Padding (when bubble active) -->
-			<div v-if="element.bubbleStyle !== 'none'" class="space-y-2 border-t border-white/5 pt-3">
+			<div v-if="element.bubbleStyle !== 'none'" class="space-y-2 border-t border-white/10 pt-4">
 				<div class="space-y-1">
 					<label class="text-zinc-500">Color</label>
 					<div class="flex items-center gap-2">
@@ -738,7 +814,7 @@ const quickStyles = [
 				<div class="space-y-1">
 					<label class="text-zinc-500">Padding</label>
 					<div class="flex items-center gap-2">
-						<input type="range" :value="element.bubblePadding ?? 16" min="4" max="40" step="2" class="flex-1 accent-sky-500"
+						<input type="range" :value="element.bubblePadding ?? 16" min="4" max="40" step="2" class="flex-1"
 							@input="(e) => update({ bubblePadding: Number((e.target as HTMLInputElement).value) })" />
 						<span class="w-10 text-right font-mono text-[10px] text-zinc-400">{{ element.bubblePadding ?? 16 }}px</span>
 					</div>

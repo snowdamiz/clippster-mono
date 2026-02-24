@@ -48,7 +48,8 @@ export type TextPresetCategory =
 	| "gaming"
 	| "neon"
 	| "bubbles"
-	| "handwritten";
+	| "handwritten"
+	| "lower-thirds";
 
 export const TEXT_PRESETS: TextPreset[] = [
 	// ═══ BASIC ═══
@@ -104,6 +105,48 @@ export const TEXT_PRESETS: TextPreset[] = [
 			letterSpacing: 4,
 		},
 	},
+	{
+		id: "basic-label",
+		name: "Label",
+		category: "basic",
+		element: {
+			content: "Label",
+			fontSize: 28,
+			fontFamily: "Inter",
+			color: "#e4e4e7",
+			fontWeight: "400",
+			letterSpacing: 0,
+		},
+	},
+	{
+		id: "basic-annotation",
+		name: "Annotation",
+		category: "basic",
+		element: {
+			content: "Note",
+			fontSize: 24,
+			fontFamily: "Inter",
+			color: "#a1a1aa",
+			fontWeight: "500",
+			backgroundColor: "rgba(0,0,0,0.6)",
+			animationIn: { type: "fadeIn", duration: 0.3, easing: "ease-out" },
+			animationOut: { type: "fadeOut", duration: 0.3, easing: "ease-in" },
+		},
+	},
+	{
+		id: "basic-small-caps",
+		name: "Small Caps",
+		category: "basic",
+		element: {
+			content: "SMALL CAPS",
+			fontSize: 26,
+			fontFamily: "Inter",
+			color: "#d4d4d8",
+			fontWeight: "600",
+			textCase: "uppercase",
+			letterSpacing: 6,
+		},
+	},
 
 	// ═══ TITLES ═══
 	{
@@ -119,6 +162,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 			textCase: "uppercase",
 			stroke: { color: "#000000", width: 4 },
 			letterSpacing: 3,
+			animationIn: { type: "popIn", duration: 0.3, easing: "ease-out-back" },
 		},
 	},
 	{
@@ -134,6 +178,8 @@ export const TEXT_PRESETS: TextPreset[] = [
 			textCase: "uppercase",
 			letterSpacing: 12,
 			shadow: { color: "rgba(0,0,0,0.9)", offsetX: 0, offsetY: 4, blur: 12 },
+			animationIn: { type: "fadeIn", duration: 0.8, easing: "ease-out" },
+			animationOut: { type: "fadeOut", duration: 0.6, easing: "ease-in" },
 		},
 	},
 	{
@@ -149,6 +195,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 			textCase: "uppercase",
 			gradient: { enabled: true, colors: ["#f97316", "#ec4899"], angle: 135 },
 			letterSpacing: 4,
+			animationIn: { type: "zoomIn", duration: 0.4, easing: "ease-out-cubic" },
 		},
 	},
 	{
@@ -268,6 +315,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 			textCase: "uppercase",
 			stroke: { color: "#000000", width: 3 },
 			shadow: { color: "rgba(0,0,0,0.5)", offsetX: 2, offsetY: 2, blur: 4 },
+			animationIn: { type: "slideUpIn", duration: 0.3, easing: "ease-out" },
 		},
 	},
 	{
@@ -341,6 +389,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 			textCase: "uppercase",
 			stroke: { color: "#000000", width: 4 },
 			shadow: { color: "rgba(0,0,0,0.7)", offsetX: 3, offsetY: 3, blur: 0 },
+			animationIn: { type: "popIn", duration: 0.25, easing: "ease-out-back" },
 		},
 	},
 
@@ -352,12 +401,13 @@ export const TEXT_PRESETS: TextPreset[] = [
 		element: {
 			content: "EPIC",
 			fontSize: 80,
-			fontFamily: "Impact",
+			fontFamily: "Bebas Neue",
 			color: "#ff4500",
-			fontWeight: "bold",
+			fontWeight: "normal",
 			textCase: "uppercase",
 			stroke: { color: "#000000", width: 4 },
 			glow: { color: "#ff6600", intensity: 15 },
+			animationIn: { type: "zoomIn", duration: 0.3, easing: "ease-out-back" },
 		},
 	},
 	{
@@ -367,13 +417,14 @@ export const TEXT_PRESETS: TextPreset[] = [
 		element: {
 			content: "GLITCH",
 			fontSize: 72,
-			fontFamily: "Impact",
+			fontFamily: "Montserrat",
 			color: "#00ff88",
-			fontWeight: "bold",
+			fontWeight: "900",
 			textCase: "uppercase",
 			letterSpacing: 8,
 			stroke: { color: "#ff0066", width: 2 },
 			shadow: { color: "#00ff88", offsetX: -3, offsetY: 3, blur: 0 },
+			animationIn: { type: "glitchIn", duration: 0.4, easing: "linear" },
 		},
 	},
 	{
@@ -383,13 +434,14 @@ export const TEXT_PRESETS: TextPreset[] = [
 		element: {
 			content: "VICTORY",
 			fontSize: 76,
-			fontFamily: "Impact",
+			fontFamily: "Bebas Neue",
 			color: "#fbbf24",
-			fontWeight: "bold",
+			fontWeight: "normal",
 			textCase: "uppercase",
 			gradient: { enabled: true, colors: ["#fbbf24", "#f59e0b"], angle: 180 },
 			stroke: { color: "#78350f", width: 3 },
 			glow: { color: "#f59e0b", intensity: 10 },
+			animationIn: { type: "bounceIn", duration: 0.5, easing: "ease-out-bounce" },
 		},
 	},
 	{
@@ -399,12 +451,14 @@ export const TEXT_PRESETS: TextPreset[] = [
 		element: {
 			content: "ELIMINATED",
 			fontSize: 68,
-			fontFamily: "Impact",
+			fontFamily: "Montserrat",
 			color: "#ef4444",
-			fontWeight: "bold",
+			fontWeight: "900",
 			textCase: "uppercase",
 			stroke: { color: "#7f1d1d", width: 3 },
 			letterSpacing: 4,
+			animationIn: { type: "popIn", duration: 0.3, easing: "ease-out-back" },
+			animationOut: { type: "shrinkOut", duration: 0.3, easing: "ease-in" },
 		},
 	},
 	{
@@ -414,13 +468,14 @@ export const TEXT_PRESETS: TextPreset[] = [
 		element: {
 			content: "10x COMBO",
 			fontSize: 64,
-			fontFamily: "Impact",
+			fontFamily: "Bebas Neue",
 			color: "#ffffff",
-			fontWeight: "bold",
+			fontWeight: "normal",
 			textCase: "uppercase",
 			gradient: { enabled: true, colors: ["#a855f7", "#ec4899"], angle: 90 },
 			stroke: { color: "#000000", width: 3 },
 			glow: { color: "#a855f7", intensity: 12 },
+			animationIn: { type: "popIn", duration: 0.25, easing: "ease-out-back" },
 		},
 	},
 	{
@@ -436,6 +491,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 			textCase: "uppercase",
 			stroke: { color: "#000000", width: 5 },
 			shadow: { color: "#166534", offsetX: 4, offsetY: 4, blur: 0 },
+			animationIn: { type: "bounceIn", duration: 0.4, easing: "ease-out-bounce" },
 		},
 	},
 
@@ -453,6 +509,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 			textCase: "uppercase",
 			glow: { color: "#3b82f6", intensity: 20 },
 			letterSpacing: 6,
+			animationIn: { type: "fadeIn", duration: 0.5, easing: "ease-out" },
 		},
 	},
 	{
@@ -547,6 +604,8 @@ export const TEXT_PRESETS: TextPreset[] = [
 			bubbleStyle: "rounded",
 			bubbleColor: "#3b82f6",
 			bubblePadding: 20,
+			animationIn: { type: "popIn", duration: 0.3, easing: "ease-out-back" },
+			animationOut: { type: "shrinkOut", duration: 0.2, easing: "ease-in" },
 		},
 	},
 	{
@@ -670,7 +729,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 		element: {
 			content: "Remember this!",
 			fontSize: 44,
-			fontFamily: "Comic Sans MS",
+			fontFamily: "Segoe Script",
 			color: "#1a1a1a",
 			fontWeight: "bold",
 			backgroundColor: "#fbbf24",
@@ -683,7 +742,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 		element: {
 			content: "Chalk Text",
 			fontSize: 56,
-			fontFamily: "Comic Sans MS",
+			fontFamily: "Bradley Hand",
 			color: "#f5f5f4",
 			fontWeight: "bold",
 			shadow: { color: "rgba(255,255,255,0.3)", offsetX: 1, offsetY: 1, blur: 2 },
@@ -696,7 +755,7 @@ export const TEXT_PRESETS: TextPreset[] = [
 		element: {
 			content: "Important!",
 			fontSize: 48,
-			fontFamily: "Comic Sans MS",
+			fontFamily: "Brush Script MT",
 			color: "#ef4444",
 			fontWeight: "bold",
 			fontStyle: "italic",
@@ -710,10 +769,85 @@ export const TEXT_PRESETS: TextPreset[] = [
 		element: {
 			content: "sketch notes",
 			fontSize: 40,
-			fontFamily: "Comic Sans MS",
+			fontFamily: "Segoe Script",
 			color: "#78716c",
 			fontWeight: "normal",
 			fontStyle: "italic",
+		},
+	},
+
+	// ═══ LOWER THIRDS ═══
+	{
+		id: "lower-third-name",
+		name: "Name Title",
+		category: "lower-thirds",
+		element: {
+			content: "John Doe",
+			fontSize: 32,
+			fontFamily: "Inter",
+			color: "#ffffff",
+			fontWeight: "600",
+			backgroundColor: "rgba(0,0,0,0.7)",
+			transform: { scale: 1, position: { x: -200, y: 220 }, rotate: 0 },
+			textAlign: "left",
+			animationIn: { type: "slideLeftIn", duration: 0.4, easing: "ease-out-cubic" },
+			animationOut: { type: "slideLeftOut", duration: 0.3, easing: "ease-in" },
+		},
+	},
+	{
+		id: "lower-third-bar",
+		name: "Bar Title",
+		category: "lower-thirds",
+		element: {
+			content: "Speaker Name",
+			fontSize: 28,
+			fontFamily: "Inter",
+			color: "#ffffff",
+			fontWeight: "500",
+			bubbleStyle: "label" as TextBubbleStyle,
+			bubbleColor: "#3b82f6",
+			bubblePadding: 14,
+			transform: { scale: 1, position: { x: -180, y: 230 }, rotate: 0 },
+			textAlign: "left",
+			animationIn: { type: "slideUpIn", duration: 0.35, easing: "ease-out-cubic" },
+			animationOut: { type: "slideDownOut", duration: 0.25, easing: "ease-in" },
+		},
+	},
+	{
+		id: "lower-third-minimal",
+		name: "Minimal L3",
+		category: "lower-thirds",
+		element: {
+			content: "Jane Smith",
+			fontSize: 26,
+			fontFamily: "Inter",
+			color: "#d4d4d8",
+			fontWeight: "400",
+			letterSpacing: 2,
+			transform: { scale: 1, position: { x: -200, y: 240 }, rotate: 0 },
+			textAlign: "left",
+			animationIn: { type: "fadeIn", duration: 0.5, easing: "ease-out" },
+			animationOut: { type: "fadeOut", duration: 0.4, easing: "ease-in" },
+		},
+	},
+	{
+		id: "lower-third-news",
+		name: "News Banner",
+		category: "lower-thirds",
+		element: {
+			content: "BREAKING NEWS",
+			fontSize: 30,
+			fontFamily: "Roboto Condensed",
+			color: "#ffffff",
+			fontWeight: "700",
+			textCase: "uppercase",
+			letterSpacing: 3,
+			bubbleStyle: "label" as TextBubbleStyle,
+			bubbleColor: "#dc2626",
+			bubblePadding: 12,
+			transform: { scale: 1, position: { x: 0, y: 230 }, rotate: 0 },
+			animationIn: { type: "slideUpIn", duration: 0.3, easing: "ease-out" },
+			animationOut: { type: "slideDownOut", duration: 0.3, easing: "ease-in" },
 		},
 	},
 ];
@@ -731,7 +865,9 @@ export const BUILT_IN_FONTS = [
 	{ family: "Courier New", label: "Courier New", category: "monospace" as const },
 	{ family: "Verdana", label: "Verdana", category: "sans-serif" as const },
 	{ family: "Impact", label: "Impact", category: "display" as const },
-	{ family: "Comic Sans MS", label: "Comic Sans MS", category: "handwriting" as const },
+	{ family: "Segoe Script", label: "Segoe Script", category: "handwriting" as const },
+	{ family: "Bradley Hand", label: "Bradley Hand", category: "handwriting" as const },
+	{ family: "Brush Script MT", label: "Brush Script MT", category: "handwriting" as const },
 ] as const;
 
 export type FontCategory = "sans-serif" | "serif" | "monospace" | "display" | "handwriting" | "custom";

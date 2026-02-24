@@ -1,16 +1,5 @@
+import api from "../../services/api";
 import type { SoundEffect } from "../types/sounds";
-
-const FREESOUND_BASE_URL = "https://freesound.org/apiv2";
-
-function getApiKey(): string {
-	const key = import.meta.env.VITE_FREESOUND_API_KEY;
-	if (!key) {
-		throw new Error(
-			"VITE_FREESOUND_API_KEY is not set. Get a free API key at https://freesound.org/apiv2/apply/",
-		);
-	}
-	return key;
-}
 
 export interface FreesoundSearchParams {
 	query: string;
@@ -26,29 +15,6 @@ export interface FreesoundSearchResponse {
 	previous: string | null;
 	results: SoundEffect[];
 }
-
-const FIELDS = [
-	"id",
-	"name",
-	"description",
-	"url",
-	"previews",
-	"download",
-	"duration",
-	"filesize",
-	"type",
-	"channels",
-	"bitrate",
-	"bitdepth",
-	"samplerate",
-	"username",
-	"tags",
-	"license",
-	"created",
-	"num_downloads",
-	"avg_rating",
-	"num_ratings",
-].join(",");
 
 interface FreesoundRawResult {
 	id: number;
@@ -108,32 +74,19 @@ function transformResult(result: FreesoundRawResult): SoundEffect {
 export async function searchSounds(
 	params: FreesoundSearchParams,
 ): Promise<FreesoundSearchResponse> {
-	const apiKey = getApiKey();
-
-	const urlParams = new URLSearchParams({
+	const queryParams: Record<string, string> = {
 		query: params.query,
-		token: apiKey,
 		page: (params.page || 1).toString(),
 		page_size: (params.pageSize || 15).toString(),
 		sort: params.sort || "score",
-		fields: FIELDS,
-	});
+	};
 
 	if (params.filter) {
-		urlParams.append("filter", params.filter);
+		queryParams.filter = params.filter;
 	}
 
-	const response = await fetch(
-		`${FREESOUND_BASE_URL}/search/text/?${urlParams.toString()}`,
-	);
-
-	if (!response.ok) {
-		const errorText = await response.text();
-		console.error("Freesound API error:", response.status, errorText);
-		throw new Error(`Freesound API error: ${response.status}`);
-	}
-
-	const data = await response.json();
+	const response = await api.get("/freesound/search", { params: queryParams });
+	const data = response.data;
 
 	return {
 		count: data.count,
@@ -144,5 +97,6 @@ export async function searchSounds(
 }
 
 export function isFreesoundConfigured(): boolean {
-	return !!import.meta.env.VITE_FREESOUND_API_KEY;
+	// Always configured — the API key lives server-side
+	return true;
 }

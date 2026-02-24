@@ -17,34 +17,39 @@ let animId = 0;
 let isHovering = false;
 let sceneA: HTMLCanvasElement | null = null;
 let sceneB: HTMLCanvasElement | null = null;
+let scenesReady = false;
 
-function ensureScenes() {
+async function ensureScenes() {
+	if (scenesReady) return;
+	
 	if (!sceneA) {
 		sceneA = document.createElement("canvas");
 		sceneA.width = THUMB_W;
 		sceneA.height = THUMB_H;
-		drawSampleScene(sceneA.getContext("2d")!, THUMB_W, THUMB_H);
+		await drawSampleScene(sceneA.getContext("2d")!, THUMB_W, THUMB_H);
 	}
 	if (!sceneB) {
 		sceneB = document.createElement("canvas");
 		sceneB.width = THUMB_W;
 		sceneB.height = THUMB_H;
-		drawSampleSceneB(sceneB.getContext("2d")!, THUMB_W, THUMB_H);
+		await drawSampleSceneB(sceneB.getContext("2d")!, THUMB_W, THUMB_H);
 	}
+	
+	scenesReady = true;
 }
 
-function drawFrame(progress: number) {
+async function drawFrame(progress: number) {
 	const canvas = canvasRef.value;
 	if (!canvas) return;
 	const ctx = canvas.getContext("2d");
 	if (!ctx) return;
-	ensureScenes();
+	await ensureScenes();
 	ctx.clearRect(0, 0, THUMB_W, THUMB_H);
-	renderTransitionPreview(ctx, props.transitionType, THUMB_W, THUMB_H, progress, sceneA!, sceneB!);
+	await renderTransitionPreview(ctx, props.transitionType, THUMB_W, THUMB_H, progress, sceneA!, sceneB!);
 }
 
-function drawStatic() {
-	drawFrame(0);
+async function drawStatic() {
+	await drawFrame(0);
 }
 
 let startTime = 0;

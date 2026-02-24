@@ -115,6 +115,10 @@ config :clippster_server, :twitter_oauth,
   client_secret: System.get_env("TWITTER_CLIENT_SECRET"),
   redirect_uri: System.get_env("TWITTER_REDIRECT_URI")
 
+# Freesound API (sound effects search proxy)
+config :clippster_server, :freesound,
+  api_key: System.get_env("FREESOUND_API_KEY")
+
 # PulseKit error tracking and event monitoring
 pulsekit_key = System.get_env("PULSEKIT_CLIPPSTER_SERVER_KEY")
 pulsekit_endpoint = System.get_env("PULSEKIT_ENDPOINT") || "https://pulsekit.fly.dev"

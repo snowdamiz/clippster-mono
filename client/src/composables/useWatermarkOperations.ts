@@ -44,7 +44,7 @@ export function useWatermarkOperations() {
         filters: [
           {
             name: 'Images & Videos',
-            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov'],
+            extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov', 'webm'],
           },
         ],
       });
