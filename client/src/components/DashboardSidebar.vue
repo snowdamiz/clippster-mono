@@ -281,7 +281,6 @@
     FileText,
     FolderOpen,
     Receipt,
-    Building2,
     Briefcase,
   } from 'lucide-vue-next';
 
@@ -386,7 +385,6 @@
           { name: 'Assets', path: `${basePath}/assets`, icon: FolderOpen, group: 'manage' },
           { name: 'Billing', path: `${basePath}/billing`, icon: Receipt, group: 'manage' },
           { name: 'Settings', path: `${basePath}/settings`, icon: Settings, group: 'manage' },
-          { name: 'Organizations', path: '/organizations', icon: Building2, group: 'manage' },
         ],
       },
     ];
