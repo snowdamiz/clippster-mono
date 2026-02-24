@@ -25,6 +25,9 @@ defmodule ClippsterServerWeb.RateLimit do
   end
 
   def call(conn, opts) do
+    # Ensure table exists (ETS tables are lost on app restart)
+    ensure_table_exists()
+    
     identifier = get_identifier(conn, opts.identifier)
     key = {identifier, :beta_verify}
     now = System.system_time(:second)
@@ -69,5 +72,14 @@ defmodule ClippsterServerWeb.RateLimit do
 
   defp get_identifier(conn, :user_id) do
     conn.assigns[:current_user_id] || get_identifier(conn, :ip)
+  end
+
+  defp ensure_table_exists do
+    case :ets.whereis(@table_name) do
+      :undefined ->
+        :ets.new(@table_name, [:set, :public, :named_table])
+      _ ->
+        :ok
+    end
   end
 end
