@@ -873,8 +873,10 @@ defmodule ClippsterServer.OrganizationSubscriptions do
                                  |> Repo.update() do
                               {:ok, _user} ->
                                 # Add owner as member
+                                IO.puts("[OrgSubscriptions] Adding owner as member: org_id=#{updated_org.id}, user_id=#{user.id}")
                                 case Organizations.add_member(updated_org.id, user.id, "owner") do
-                                  {:ok, _member} ->
+                                  {:ok, member} ->
+                                    IO.puts("[OrgSubscriptions] Successfully added owner as member: #{inspect(member)}")
                                     # Grant initial credits if any
                                     if monthly_credits > 0 do
                                       case Organizations.add_organization_credits(updated_org.id, monthly_credits) do
