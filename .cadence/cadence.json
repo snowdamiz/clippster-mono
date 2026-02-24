@@ -1,0 +1,221 @@
+{
+    "prerequisites-pass": false,
+    "state": {
+        "ideation-completed": false,
+        "research-completed": false,
+        "cadence-scripts-dir": "/Users/sn0w/.codex/skills/cadence/scripts",
+        "repo-enabled": true,
+        "project-mode": "unknown",
+        "brownfield-intake-completed": false
+    },
+    "workflow": {
+        "schema_version": 4,
+        "plan": [
+            {
+                "id": "milestone-foundation",
+                "kind": "milestone",
+                "title": "Foundation",
+                "children": [
+                    {
+                        "id": "phase-project-setup",
+                        "kind": "phase",
+                        "title": "Project Setup",
+                        "children": [
+                            {
+                                "id": "wave-initialize-cadence",
+                                "kind": "wave",
+                                "title": "Initialize Cadence",
+                                "children": [
+                                    {
+                                        "id": "task-scaffold",
+                                        "kind": "task",
+                                        "title": "Scaffold project",
+                                        "route": {
+                                            "skill_name": "scaffold",
+                                            "skill_path": "skills/scaffold/SKILL.md",
+                                            "reason": "Project scaffolding has not completed yet."
+                                        },
+                                        "status": "complete",
+                                        "children": []
+                                    },
+                                    {
+                                        "id": "task-prerequisite-gate",
+                                        "kind": "task",
+                                        "title": "Run prerequisite gate",
+                                        "route": {
+                                            "skill_name": "prerequisite-gate",
+                                            "skill_path": "skills/prerequisite-gate/SKILL.md",
+                                            "reason": "Prerequisite gate has not passed yet."
+                                        },
+                                        "status": "pending",
+                                        "children": []
+                                    },
+                                    {
+                                        "id": "task-brownfield-intake",
+                                        "kind": "task",
+                                        "title": "Capture project mode and baseline",
+                                        "route": {
+                                            "skill_name": "brownfield-intake",
+                                            "skill_path": "skills/brownfield-intake/SKILL.md",
+                                            "reason": "Project mode and existing codebase baseline have not been captured yet."
+                                        },
+                                        "status": "pending",
+                                        "children": []
+                                    },
+                                    {
+                                        "id": "task-ideation",
+                                        "kind": "task",
+                                        "title": "Complete ideation",
+                                        "route": {
+                                            "skill_name": "ideator",
+                                            "skill_path": "skills/ideator/SKILL.md",
+                                            "reason": "Ideation has not been completed yet."
+                                        },
+                                        "status": "pending",
+                                        "children": []
+                                    },
+                                    {
+                                        "id": "task-research",
+                                        "kind": "task",
+                                        "title": "Research ideation agenda",
+                                        "route": {
+                                            "skill_name": "researcher",
+                                            "skill_path": "skills/researcher/SKILL.md",
+                                            "reason": "Ideation research agenda has not been completed yet."
+                                        },
+                                        "status": "pending",
+                                        "children": []
+                                    }
+                                ],
+                                "status": "in_progress"
+                            }
+                        ],
+                        "status": "in_progress"
+                    }
+                ],
+                "status": "in_progress"
+            }
+        ],
+        "summary": {
+            "total_items": 8,
+            "total_actionable_items": 5,
+            "completed_actionable_items": 1,
+            "pending_actionable_items": 4,
+            "in_progress_actionable_items": 0,
+            "blocked_actionable_items": 0,
+            "completion_percent": 20
+        },
+        "next_item": {
+            "id": "task-prerequisite-gate",
+            "title": "Run prerequisite gate",
+            "kind": "task",
+            "status": "pending",
+            "path_ids": [
+                "milestone-foundation",
+                "phase-project-setup",
+                "wave-initialize-cadence",
+                "task-prerequisite-gate"
+            ],
+            "path_titles": [
+                "Foundation",
+                "Project Setup",
+                "Initialize Cadence",
+                "Run prerequisite gate"
+            ]
+        },
+        "active_item": {
+            "id": "task-prerequisite-gate",
+            "title": "Run prerequisite gate",
+            "kind": "task",
+            "status": "pending",
+            "path_ids": [
+                "milestone-foundation",
+                "phase-project-setup",
+                "wave-initialize-cadence",
+                "task-prerequisite-gate"
+            ],
+            "path_titles": [
+                "Foundation",
+                "Project Setup",
+                "Initialize Cadence",
+                "Run prerequisite gate"
+            ]
+        },
+        "next_route": {
+            "skill_name": "prerequisite-gate",
+            "skill_path": "skills/prerequisite-gate/SKILL.md",
+            "reason": "Prerequisite gate has not passed yet."
+        },
+        "phase_order": [
+            "task-scaffold",
+            "task-prerequisite-gate",
+            "task-brownfield-intake",
+            "task-ideation",
+            "task-research"
+        ],
+        "phases": {
+            "task-scaffold": {
+                "status": "complete"
+            },
+            "task-prerequisite-gate": {
+                "status": "pending"
+            },
+            "task-brownfield-intake": {
+                "status": "pending"
+            },
+            "task-ideation": {
+                "status": "pending"
+            },
+            "task-research": {
+                "status": "pending"
+            }
+        },
+        "completed_phases": [
+            "task-scaffold"
+        ],
+        "active_phase": "task-prerequisite-gate",
+        "next_phase": "task-prerequisite-gate",
+        "completion_percent": 20
+    },
+    "project-details": {
+        "mode": "unknown",
+        "brownfield_baseline": {}
+    },
+    "ideation": {
+        "research_agenda": {
+            "version": 1,
+            "summary": {
+                "block_count": 0,
+                "topic_count": 0,
+                "entity_count": 0
+            },
+            "blocks": [],
+            "entity_registry": [],
+            "topic_index": {}
+        },
+        "research_execution": {
+            "version": 1,
+            "status": "pending",
+            "planning": {
+                "target_effort_per_pass": 12,
+                "max_topics_per_pass": 4,
+                "latest_round": 0
+            },
+            "summary": {
+                "topic_total": 0,
+                "topic_complete": 0,
+                "topic_needs_followup": 0,
+                "topic_pending": 0,
+                "pass_pending": 0,
+                "pass_complete": 0,
+                "next_pass_id": ""
+            },
+            "topic_status": {},
+            "pass_queue": [],
+            "pass_history": [],
+            "source_registry": [],
+            "handoff_required": false,
+            "handoff_message": "Start a new chat and say \"continue research\"."
+        }
+    }
+}
