@@ -33,6 +33,7 @@ interface NavItem {
   icon: LucideIcon
   path: string
   adminOnly?: boolean
+  comingSoon?: boolean
 }
 
 interface NavGroup {
@@ -53,7 +54,7 @@ const orgNavGroups: NavGroup[] = [
   {
     header: 'Content',
     items: [
-      { label: 'Campaigns', icon: Megaphone, path: 'campaigns' },
+      { label: 'Campaigns', icon: Megaphone, path: 'campaigns', comingSoon: true },
       { label: 'Clippers', icon: Scissors, path: 'clippers' },
       { label: 'Shared Clips', icon: Share2, path: 'shared' },
       { label: 'Social Accounts', icon: Globe, path: 'social' },
@@ -222,6 +223,25 @@ export function DashboardSidebar({ variant = 'organization' }: DashboardSidebarP
                   const active = isActive(item.path)
                   const Icon = item.icon
                   const linkPath = resolvePath(item.path)
+                  
+                  // Coming Soon items (non-clickable)
+                  if (item.comingSoon) {
+                    return (
+                      <li key={item.path}>
+                        <div
+                          className="flex items-center gap-3 w-full py-2 px-3 rounded-md text-sm no-underline transition-all duration-150 opacity-40 cursor-not-allowed pointer-events-none text-zinc-500"
+                        >
+                          <Icon className="w-[18px] h-[18px] shrink-0" />
+                          <span className="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">{item.label}</span>
+                          <span className="ml-auto flex items-center justify-center px-2 py-[3px] text-[10px] font-semibold bg-zinc-800 text-zinc-500 rounded uppercase tracking-wider">
+                            Coming Soon
+                          </span>
+                        </div>
+                      </li>
+                    )
+                  }
+                  
+                  // Normal clickable items
                   return (
                     <li key={item.path}>
                       <Link

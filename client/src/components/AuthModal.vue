@@ -1,14 +1,14 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="modelValue" class="auth-modal__overlay" @click.self="close" @keydown.esc="close" tabindex="-1">
+      <div v-if="modelValue" class="auth-modal__overlay" @click.self="!mandatory && close()" @keydown.esc="!mandatory && close()" tabindex="-1">
         <Transition name="dialog" appear>
           <div v-if="modelValue" class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
             <!-- Accent bar -->
             <div class="auth-modal__accent"></div>
 
-            <!-- Close Button -->
-            <button @click="close" :disabled="authStore.loading" class="auth-modal__close" aria-label="Close dialog">
+            <!-- Close Button (hidden when mandatory) -->
+            <button v-if="!mandatory" @click="close" :disabled="authStore.loading" class="auth-modal__close" aria-label="Close dialog">
               <X :size="18" />
             </button>
 
@@ -388,6 +388,7 @@
 
   const props = defineProps<{
     modelValue: boolean;
+    mandatory?: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -539,6 +540,9 @@
   };
 
   const close = () => {
+    // Prevent closing if mandatory
+    if (props.mandatory) return;
+    
     if (!authStore.loading) {
       emit('update:modelValue', false);
       // Reset state when closing
@@ -555,7 +559,7 @@
 
   // Handle ESC key press
   const handleEscKey = (event: KeyboardEvent) => {
-    if (event.key === 'Escape' && props.modelValue) {
+    if (event.key === 'Escape' && props.modelValue && !props.mandatory) {
       close();
     }
   };
