@@ -2,7 +2,8 @@ import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useOrganization } from '@/hooks/useOrganization'
-
+import { useToast } from '@/hooks/useToast'
+import { formatDate } from '@/utils/dateTimeUtils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import {
   listOrganizationCampaigns,
@@ -65,14 +66,6 @@ function formatBudget(budget: string | number) {
   if (isNaN(v)) return '0'
   if (v >= 1000) return `${(v / 1000).toFixed(1)}K`
   return v.toFixed(0)
-}
-function formatDate(d: string | null) {
-  if (!d) return ''
-  try {
-    return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  } catch {
-    return ''
-  }
 }
 function getDaysRemaining(campaign: Campaign): number | null {
   if (!campaign.ends_at) return null

@@ -5,6 +5,7 @@ import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useMessaging } from '@/hooks/useMessaging'
 import { useAuth } from '@/hooks/useAuth'
 import { useOrganization } from '@/hooks/useOrganization'
+import { formatConversationTime, formatTime } from '@/utils/dateTimeUtils'
 import {
   MessageSquare, Search, Plus, X, Send, Bell, BellOff,
   Users, User, Check, Pencil, Trash2, Loader2, Megaphone,
@@ -21,23 +22,6 @@ function getParticipantDisplayName(p: any): string {
 
 function getParticipantUserId(p: any): number {
   return p?.userId ?? p?.user_id ?? 0
-}
-
-function formatTime(dateString: string | null | undefined): string {
-  if (!dateString) return ''
-  const date = new Date(dateString)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  if (diffDays === 0) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  if (diffDays === 1) return 'Yesterday'
-  if (diffDays < 7) return date.toLocaleDateString([], { weekday: 'short' })
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
-}
-
-function formatMessageTime(dateString: string | undefined): string {
-  if (!dateString) return ''
-  return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 function getConversationName(conv: any, currentUserId?: number): string {
@@ -87,7 +71,7 @@ function ConversationList({
         const isActive = conv.id === activeId
         const name = getConversationName(conv, currentUserId)
         const preview = conv.lastMessagePreview ?? conv.last_message_preview ?? 'No messages yet'
-        const time = conv.lastMessageAt ?? conv.last_message_at
+        const time = formatTime(conv.lastMessageAt ?? conv.last_message_at)
 
         return (
           <button
@@ -116,7 +100,7 @@ function ConversationList({
                 <span className={`text-sm truncate ${unread > 0 ? 'font-semibold text-white' : 'font-medium text-zinc-300'}`}>
                   {name}
                 </span>
-                <span className="text-[11px] text-zinc-600 shrink-0 ml-2">{formatTime(time)}</span>
+                <span className="text-[11px] text-zinc-600 shrink-0 ml-2">{formatConversationTime(time)}</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`text-xs truncate flex-1 ${unread > 0 ? 'text-zinc-300' : 'text-zinc-600'}`}>
@@ -156,7 +140,7 @@ function MessageBubble({
   const isEdited = !!(message.editedAt ?? message.edited_at)
   const isSystem = (message.messageType ?? message.message_type) === 'system'
   const senderName = message.sender?.displayName ?? message.sender?.display_name ?? 'Unknown'
-  const time = message.insertedAt ?? message.inserted_at
+  const time = formatTime(message.insertedAt ?? message.inserted_at)
 
   if (isSystem) {
     return (
@@ -205,7 +189,7 @@ function MessageBubble({
 
         {/* Meta */}
         <div className="flex items-center gap-1.5 mt-1.5">
-          <span className={`text-[10px] font-semibold ${isOwn ? 'text-white drop-shadow-sm' : 'text-zinc-500'}`}>{formatMessageTime(time)}</span>
+          <span className={`text-[10px] font-semibold ${isOwn ? 'text-white drop-shadow-sm' : 'text-zinc-500'}`}>{formatConversationTime(time)}</span>
           {isEdited && !isDeleted && <span className={`text-[10px] font-semibold ${isOwn ? 'text-white drop-shadow-sm' : 'text-zinc-500'}`}>• edited</span>}
           {isOwn && !isDeleted && (
             <span className={`text-[10px] font-bold drop-shadow-sm ${message.readBy && message.readBy.length > 1 ? 'text-yellow-200' : 'text-white'}`}>
@@ -565,12 +549,12 @@ function NewConversationDialog({
             <>
               {/* Search */}
               <div className="relative mb-3">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-600" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-600" />
                 <input
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   placeholder="Search members..."
-                  className="w-full pl-9 pr-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/50"
+                  className="w-full pl-8 pr-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-cyan-500/40"
                 />
               </div>
 
