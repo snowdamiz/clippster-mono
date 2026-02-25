@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { X, Mail, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
+import { API_BASE } from '@/lib/apiBase'
 
 interface WaitlistModalProps {
   isOpen: boolean
   onClose: () => void
 }
 
-const API_URL = `${import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'}/api/waitlist`
+const API_URL = `${API_BASE}/waitlist`
 
 export function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
   const [email, setEmail] = useState('')

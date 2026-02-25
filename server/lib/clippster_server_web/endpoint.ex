@@ -53,7 +53,14 @@ defmodule ClippsterServerWeb.Endpoint do
   plug CORSPlug,
     origin: &ClippsterServerWeb.Router.cors_origins/0,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    headers: [
+      "Authorization",
+      "Content-Type",
+      "Accept",
+      "Origin",
+      "X-Requested-With",
+      "X-Client-Platform"
+    ],
     max_age: 86400,
     credentials: true
 
@@ -61,8 +68,10 @@ defmodule ClippsterServerWeb.Endpoint do
     parsers: [:urlencoded, :multipart, :json],
     pass: ["*/*"],
     json_decoder: Phoenix.json_library(),
-    length: 200_000_000,  # 200MB max request size for large video uploads
-    body_reader: {ClippsterServerWeb.StripeWebhookPlug, :read_body, []}  # Capture raw body for Stripe webhooks
+    # 200MB max request size for large video uploads
+    length: 200_000_000,
+    # Capture raw body for Stripe webhooks
+    body_reader: {ClippsterServerWeb.StripeWebhookPlug, :read_body, []}
 
   # Debug: Print configuration info
   plug Plug.Logger, log: :debug

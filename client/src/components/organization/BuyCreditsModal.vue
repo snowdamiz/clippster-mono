@@ -471,6 +471,7 @@
 
       const payload: any = {
         pack_type: selectedPackKey.value,
+        return_context: 'desktop',
       };
 
       // Add promo code if validated

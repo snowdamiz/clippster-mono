@@ -4,6 +4,7 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
   alias ClippsterServer.Organizations
   alias ClippsterServer.Accounts
   alias ClippsterServer.PromoCodes
+  alias ClippsterServerWeb.StripeReturn
 
   plug ClippsterServerWeb.AuthPlug
 
@@ -44,10 +45,11 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
       |> put_status(:forbidden)
       |> json(%{success: false, error: "Admin access required"})
     else
-      type = case Map.get(params, "type", "subscription") do
-        "credit_pack" -> :credit_pack
-        _ -> :subscription
-      end
+      type =
+        case Map.get(params, "type", "subscription") do
+          "credit_pack" -> :credit_pack
+          _ -> :subscription
+        end
 
       case PromoCodes.validate_org_promo(code, tier, org_id, type) do
         {:ok, promo} ->
@@ -63,15 +65,29 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
           })
 
         {:error, reason} ->
-          error_message = case reason do
-            :invalid_code -> "Invalid promo code"
-            :inactive_code -> "This promo code is not active"
-            :expired_code -> "This promo code has expired"
-            :tier_not_allowed -> "This promo code is not valid for the selected plan"
-            :max_redemptions_reached -> "This promo code has reached its maximum redemption limit"
-            :already_redeemed -> "Your organization has already used this promo code"
-            _ -> "Invalid promo code"
-          end
+          error_message =
+            case reason do
+              :invalid_code ->
+                "Invalid promo code"
+
+              :inactive_code ->
+                "This promo code is not active"
+
+              :expired_code ->
+                "This promo code has expired"
+
+              :tier_not_allowed ->
+                "This promo code is not valid for the selected plan"
+
+              :max_redemptions_reached ->
+                "This promo code has reached its maximum redemption limit"
+
+              :already_redeemed ->
+                "Your organization has already used this promo code"
+
+              _ ->
+                "Invalid promo code"
+            end
 
           conn
           |> put_status(:bad_request)
@@ -98,13 +114,15 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
       addon_tiers = OrganizationSubscriptions.get_addon_tiers()
 
       # Convert maps to list format for JSON
-      base_tiers_list = Enum.map(base_tiers, fn {id, info} ->
-        Map.put(info, :id, id)
-      end)
+      base_tiers_list =
+        Enum.map(base_tiers, fn {id, info} ->
+          Map.put(info, :id, id)
+        end)
 
-      addon_tiers_list = Enum.map(addon_tiers, fn {id, info} ->
-        Map.put(info, :id, id)
-      end)
+      addon_tiers_list =
+        Enum.map(addon_tiers, fn {id, info} ->
+          Map.put(info, :id, id)
+        end)
 
       conn
       |> json(%{
@@ -138,34 +156,49 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
         |> json(%{success: false, error: "Invalid tier"})
       else
         # Validate promo code if provided
-        validated_promo = if promo_code do
-          case PromoCodes.validate_org_promo(promo_code, tier, org_id, :subscription) do
-            {:ok, promo} -> promo
-            {:error, _reason} -> nil
+        validated_promo =
+          if promo_code do
+            case PromoCodes.validate_org_promo(promo_code, tier, org_id, :subscription) do
+              {:ok, promo} -> promo
+              {:error, _reason} -> nil
+            end
+          else
+            nil
           end
-        else
-          nil
-        end
 
         _org = Organizations.get_organization(organization_id)
         user = Accounts.get_user(user_id)
 
         # Create Stripe checkout session
-        stripe_secret_key = Application.get_env(:clippster_server, :stripe_secret_key)
+        stripe_secret_key = Application.get_env(:stripity_stripe, :api_key)
 
         headers = [
           {"Authorization", "Bearer #{stripe_secret_key}"},
           {"Content-Type", "application/x-www-form-urlencoded"}
         ]
 
-        success_url = "#{get_base_url()}/stripe-success?session_id={CHECKOUT_SESSION_ID}"
-        cancel_url = "#{get_base_url()}/organization/#{organization_id}/billing"
+        desktop_return? = StripeReturn.desktop_return?(conn, params)
+
+        success_url =
+          if(desktop_return?,
+            do: StripeReturn.desktop_success_url(),
+            else: StripeReturn.web_success_url()
+          )
+          |> StripeReturn.with_query(session_id: "{CHECKOUT_SESSION_ID}")
+
+        cancel_url =
+          if desktop_return? do
+            StripeReturn.desktop_cancel_url()
+          else
+            "#{StripeReturn.frontend_base_url()}/organization/#{organization_id}/billing"
+          end
 
         # Build form data
         line_items = [
           "line_items[0][price_data][currency]": "usd",
           "line_items[0][price_data][product_data][name]": tier_info.name,
-          "line_items[0][price_data][product_data][description]": "#{tier_info.seats} seats, #{tier_info.monthly_credits} credits/month",
+          "line_items[0][price_data][product_data][description]":
+            "#{tier_info.seats} seats, #{tier_info.monthly_credits} credits/month",
           "line_items[0][price_data][unit_amount]": round(tier_info.usd * 100),
           "line_items[0][price_data][recurring][interval]": "month",
           "line_items[0][quantity]": 1,
@@ -183,17 +216,18 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
         ]
 
         # Add promo code to Stripe session if validated
-        line_items = if validated_promo && validated_promo.stripe_promo_code_id do
-          line_items ++
-            [
-              "discounts[0][promotion_code]": validated_promo.stripe_promo_code_id,
-              "metadata[promo_code_id]": validated_promo.id,
-              "metadata[promo_code]": validated_promo.code,
-              "subscription_data[metadata][promo_code_id]": validated_promo.id
-            ]
-        else
-          line_items
-        end
+        line_items =
+          if validated_promo && validated_promo.stripe_promo_code_id do
+            line_items ++
+              [
+                "discounts[0][promotion_code]": validated_promo.stripe_promo_code_id,
+                "metadata[promo_code_id]": validated_promo.id,
+                "metadata[promo_code]": validated_promo.code,
+                "subscription_data[metadata][promo_code_id]": validated_promo.id
+              ]
+          else
+            line_items
+          end
 
         body = URI.encode_query(line_items)
 
@@ -212,12 +246,14 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
 
           {:ok, %HTTPoison.Response{body: error_body}} ->
             IO.puts("[OrgSubscription] Stripe error: #{error_body}")
+
             conn
             |> put_status(:internal_server_error)
             |> json(%{success: false, error: "Stripe checkout failed"})
 
           {:error, %HTTPoison.Error{reason: reason}} ->
             IO.puts("[OrgSubscription] HTTP error: #{inspect(reason)}")
+
             conn
             |> put_status(:internal_server_error)
             |> json(%{success: false, error: "Network error"})
@@ -240,47 +276,62 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
       conn
       |> put_status(:forbidden)
       |> json(%{success: false, error: "Admin access required"})
-      else
-        addon_info = OrganizationSubscriptions.get_addon_info(addon_tier)
-        org = Organizations.get_organization(org_id)
+    else
+      addon_info = OrganizationSubscriptions.get_addon_info(addon_tier)
+      org = Organizations.get_organization(org_id)
 
-        cond do
-          is_nil(addon_info) ->
-            conn
-            |> put_status(:bad_request)
-            |> json(%{success: false, error: "Invalid addon tier"})
+      cond do
+        is_nil(addon_info) ->
+          conn
+          |> put_status(:bad_request)
+          |> json(%{success: false, error: "Invalid addon tier"})
 
-          org.subscription_status != "active" ->
+        org.subscription_status != "active" ->
           conn
           |> put_status(:bad_request)
           |> json(%{success: false, error: "Base subscription required before adding add-ons"})
 
         true ->
           # Validate promo code if provided
-          validated_promo = if promo_code do
-            case PromoCodes.validate_org_promo(promo_code, addon_tier, org_id, :subscription) do
-              {:ok, promo} -> promo
-              {:error, _reason} -> nil
+          validated_promo =
+            if promo_code do
+              case PromoCodes.validate_org_promo(promo_code, addon_tier, org_id, :subscription) do
+                {:ok, promo} -> promo
+                {:error, _reason} -> nil
+              end
+            else
+              nil
             end
-          else
-            nil
-          end
 
           user = Accounts.get_user(user_id)
-          stripe_secret_key = Application.get_env(:clippster_server, :stripe_secret_key)
+          stripe_secret_key = Application.get_env(:stripity_stripe, :api_key)
 
           headers = [
             {"Authorization", "Bearer #{stripe_secret_key}"},
             {"Content-Type", "application/x-www-form-urlencoded"}
           ]
 
-          success_url = "#{get_base_url()}/stripe-success?session_id={CHECKOUT_SESSION_ID}"
-          cancel_url = "#{get_base_url()}/organization/#{org_id}/billing"
+          desktop_return? = StripeReturn.desktop_return?(conn, params)
+
+          success_url =
+            if(desktop_return?,
+              do: StripeReturn.desktop_success_url(),
+              else: StripeReturn.web_success_url()
+            )
+            |> StripeReturn.with_query(session_id: "{CHECKOUT_SESSION_ID}")
+
+          cancel_url =
+            if desktop_return? do
+              StripeReturn.desktop_cancel_url()
+            else
+              "#{StripeReturn.frontend_base_url()}/organization/#{org_id}/billing"
+            end
 
           line_items = [
             "line_items[0][price_data][currency]": "usd",
             "line_items[0][price_data][product_data][name]": addon_info.name,
-            "line_items[0][price_data][product_data][description]": "#{addon_info.seats} seats, #{addon_info.monthly_credits} credits/month",
+            "line_items[0][price_data][product_data][description]":
+              "#{addon_info.seats} seats, #{addon_info.monthly_credits} credits/month",
             "line_items[0][price_data][unit_amount]": round(addon_info.usd * 100),
             "line_items[0][price_data][recurring][interval]": "month",
             "line_items[0][quantity]": 1,
@@ -298,17 +349,18 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
           ]
 
           # Add promo code to Stripe session if validated
-          line_items = if validated_promo && validated_promo.stripe_promo_code_id do
-            line_items ++
-              [
-                "discounts[0][promotion_code]": validated_promo.stripe_promo_code_id,
-                "metadata[promo_code_id]": validated_promo.id,
-                "metadata[promo_code]": validated_promo.code,
-                "subscription_data[metadata][promo_code_id]": validated_promo.id
-              ]
-          else
-            line_items
-          end
+          line_items =
+            if validated_promo && validated_promo.stripe_promo_code_id do
+              line_items ++
+                [
+                  "discounts[0][promotion_code]": validated_promo.stripe_promo_code_id,
+                  "metadata[promo_code_id]": validated_promo.id,
+                  "metadata[promo_code]": validated_promo.code,
+                  "subscription_data[metadata][promo_code_id]": validated_promo.id
+                ]
+            else
+              line_items
+            end
 
           body = URI.encode_query(line_items)
 
@@ -327,12 +379,14 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
 
             {:ok, %HTTPoison.Response{body: error_body}} ->
               IO.puts("[OrgSubscription] Stripe addon error: #{error_body}")
+
               conn
               |> put_status(:internal_server_error)
               |> json(%{success: false, error: "Stripe checkout failed"})
 
             {:error, %HTTPoison.Error{reason: reason}} ->
               IO.puts("[OrgSubscription] HTTP error: #{inspect(reason)}")
+
               conn
               |> put_status(:internal_server_error)
               |> json(%{success: false, error: "Network error"})
@@ -361,7 +415,8 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
           conn
           |> json(%{
             success: true,
-            message: "Subscription cancelled. Access continues until #{org.subscription_end_date}",
+            message:
+              "Subscription cancelled. Access continues until #{org.subscription_end_date}",
             subscription: status
           })
 
@@ -393,11 +448,12 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
       |> put_status(:forbidden)
       |> json(%{success: false, error: "Admin access required"})
     else
-      tier_info = case type do
-        "base" -> OrganizationSubscriptions.get_tier_info(tier)
-        "addon" -> OrganizationSubscriptions.get_addon_info(tier)
-        _ -> nil
-      end
+      tier_info =
+        case type do
+          "base" -> OrganizationSubscriptions.get_tier_info(tier)
+          "addon" -> OrganizationSubscriptions.get_addon_info(tier)
+          _ -> nil
+        end
 
       if is_nil(tier_info) do
         conn
@@ -408,22 +464,26 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
         base_usd = tier_info.usd
 
         # Apply promo code discount if provided and valid
-        {final_usd, promo_info} = if promo_code do
-          case PromoCodes.validate_org_promo(promo_code, tier, org_id, :subscription) do
-            {:ok, promo} ->
-              discount = promo.percent_off / 100
-              discounted_usd = base_usd * (1 - discount)
-              {discounted_usd, %{
-                code: promo.code,
-                percent_off: promo.percent_off,
-                original_usd: base_usd
-              }}
-            {:error, _reason} ->
-              {base_usd, nil}
+        {final_usd, promo_info} =
+          if promo_code do
+            case PromoCodes.validate_org_promo(promo_code, tier, org_id, :subscription) do
+              {:ok, promo} ->
+                discount = promo.percent_off / 100
+                discounted_usd = base_usd * (1 - discount)
+
+                {discounted_usd,
+                 %{
+                   code: promo.code,
+                   percent_off: promo.percent_off,
+                   original_usd: base_usd
+                 }}
+
+              {:error, _reason} ->
+                {base_usd, nil}
+            end
+          else
+            {base_usd, nil}
           end
-        else
-          {base_usd, nil}
-        end
 
         # Get current SOL/USD rate
         sol_usd_rate = get_sol_usd_rate()
@@ -438,11 +498,12 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
         }
 
         # Add promo info if applied
-        quote = if promo_info do
-          Map.put(quote, :promo_applied, promo_info)
-        else
-          quote
-        end
+        quote =
+          if promo_info do
+            Map.put(quote, :promo_applied, promo_info)
+          else
+            quote
+          end
 
         conn
         |> json(%{
@@ -458,12 +519,15 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
   Confirms a crypto payment for a subscription.
   Optionally accepts promo_code parameter.
   """
-  def crypto_confirm(conn, %{
-        "id" => organization_id,
-        "tier" => tier,
-        "type" => type,
-        "tx_signature" => tx_signature
-      } = params) do
+  def crypto_confirm(
+        conn,
+        %{
+          "id" => organization_id,
+          "tier" => tier,
+          "type" => type,
+          "tx_signature" => tx_signature
+        } = params
+      ) do
     user_id = conn.assigns[:current_user_id]
     org_id = String.to_integer(organization_id)
     promo_code = Map.get(params, "promo_code")
@@ -474,36 +538,39 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
       |> json(%{success: false, error: "Admin access required"})
     else
       # Validate promo code if provided
-      validated_promo = if promo_code do
-        case PromoCodes.validate_org_promo(promo_code, tier, org_id, :subscription) do
-          {:ok, promo} -> promo
-          {:error, _reason} -> nil
+      validated_promo =
+        if promo_code do
+          case PromoCodes.validate_org_promo(promo_code, tier, org_id, :subscription) do
+            {:ok, promo} -> promo
+            {:error, _reason} -> nil
+          end
+        else
+          nil
         end
-      else
-        nil
-      end
 
       # Verify transaction on Solana (simplified - in production, verify amount, recipient, etc.)
-      result = case type do
-        "base" ->
-          OrganizationSubscriptions.create_crypto_subscription(org_id, tier, tx_signature)
+      result =
+        case type do
+          "base" ->
+            OrganizationSubscriptions.create_crypto_subscription(org_id, tier, tx_signature)
 
-        "addon" ->
-          OrganizationSubscriptions.add_addon_crypto(org_id, tier, tx_signature)
+          "addon" ->
+            OrganizationSubscriptions.add_addon_crypto(org_id, tier, tx_signature)
 
-        _ ->
-          {:error, :invalid_type}
-      end
+          _ ->
+            {:error, :invalid_type}
+        end
 
       case result do
         {:ok, data} ->
           # Record promo code redemption if validated
           if validated_promo do
-            subscription_id = case data do
-              %{subscription: sub} -> sub.id
-              %{org: _org} -> nil
-              _ -> nil
-            end
+            subscription_id =
+              case data do
+                %{subscription: sub} -> sub.id
+                %{org: _org} -> nil
+                _ -> nil
+              end
 
             PromoCodes.create_org_redemption(validated_promo.id, org_id, user_id, %{
               subscription_id: subscription_id
@@ -549,7 +616,11 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
             success: true,
             message: "Subscription tier changed",
             subscription: status,
-            change_type: if(status.pending_subscription_tier, do: "downgrade_scheduled", else: "upgrade_applied"),
+            change_type:
+              if(status.pending_subscription_tier,
+                do: "downgrade_scheduled",
+                else: "upgrade_applied"
+              ),
             new_tier_name: if(new_tier_info, do: new_tier_info.name, else: new_tier)
           })
 
@@ -557,13 +628,19 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
           conn |> put_status(:bad_request) |> json(%{success: false, error: "Invalid tier"})
 
         {:error, :no_active_subscription} ->
-          conn |> put_status(:bad_request) |> json(%{success: false, error: "No active subscription"})
+          conn
+          |> put_status(:bad_request)
+          |> json(%{success: false, error: "No active subscription"})
 
         {:error, :same_tier} ->
-          conn |> put_status(:bad_request) |> json(%{success: false, error: "Already on this tier"})
+          conn
+          |> put_status(:bad_request)
+          |> json(%{success: false, error: "Already on this tier"})
 
         {:error, reason} ->
-          conn |> put_status(:internal_server_error) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+          conn
+          |> put_status(:internal_server_error)
+          |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
       end
     end
   end
@@ -582,7 +659,12 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
       |> json(%{success: false, error: "Admin access required"})
     else
       org = Organizations.get_organization(org_id)
-      current_tier_info = if org.subscription_tier, do: OrganizationSubscriptions.get_tier_info(org.subscription_tier), else: nil
+
+      current_tier_info =
+        if org.subscription_tier,
+          do: OrganizationSubscriptions.get_tier_info(org.subscription_tier),
+          else: nil
+
       new_tier_info = OrganizationSubscriptions.get_tier_info(new_tier)
 
       cond do
@@ -590,30 +672,35 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
           conn |> put_status(:bad_request) |> json(%{success: false, error: "Invalid tier"})
 
         is_nil(current_tier_info) ->
-          conn |> put_status(:bad_request) |> json(%{success: false, error: "No current subscription"})
+          conn
+          |> put_status(:bad_request)
+          |> json(%{success: false, error: "No current subscription"})
 
         true ->
           # Calculate proration
-          days_remaining = OrganizationSubscriptions.get_subscription_days() |> then(fn _total_days ->
-            if org.subscription_end_date do
-              diff = DateTime.diff(org.subscription_end_date, DateTime.utc_now(), :day)
-              max(0, diff)
-            else
-              0
-            end
-          end)
+          days_remaining =
+            OrganizationSubscriptions.get_subscription_days()
+            |> then(fn _total_days ->
+              if org.subscription_end_date do
+                diff = DateTime.diff(org.subscription_end_date, DateTime.utc_now(), :day)
+                max(0, diff)
+              else
+                0
+              end
+            end)
 
           total_days = OrganizationSubscriptions.get_subscription_days()
           daily_rate_current = current_tier_info.usd / total_days
           daily_rate_new = new_tier_info.usd / total_days
 
-          proration_amount = if new_tier_info.usd > current_tier_info.usd do
-            # Upgrade: charge difference for remaining days
-            (daily_rate_new - daily_rate_current) * days_remaining
-          else
-            # Downgrade: no immediate charge, takes effect at renewal
-            0
-          end
+          proration_amount =
+            if new_tier_info.usd > current_tier_info.usd do
+              # Upgrade: charge difference for remaining days
+              (daily_rate_new - daily_rate_current) * days_remaining
+            else
+              # Downgrade: no immediate charge, takes effect at renewal
+              0
+            end
 
           conn
           |> json(%{
@@ -625,8 +712,13 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
               new_price: new_tier_info.usd,
               days_remaining: days_remaining,
               proration_amount: Float.round(proration_amount, 2),
-              change_type: if(new_tier_info.usd > current_tier_info.usd, do: "upgrade", else: "downgrade"),
-              effective_date: if(new_tier_info.usd > current_tier_info.usd, do: "immediate", else: to_string(org.subscription_end_date))
+              change_type:
+                if(new_tier_info.usd > current_tier_info.usd, do: "upgrade", else: "downgrade"),
+              effective_date:
+                if(new_tier_info.usd > current_tier_info.usd,
+                  do: "immediate",
+                  else: to_string(org.subscription_end_date)
+                )
             }
           })
       end
@@ -634,10 +726,6 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
   end
 
   # Helper functions
-
-  defp get_base_url do
-    Application.get_env(:clippster_server, :frontend_base_url, "http://localhost:1420")
-  end
 
   defp get_sol_usd_rate do
     # In production, fetch from CoinGecko or similar

@@ -8,10 +8,24 @@ const router = createRouter({
     {
       path: '/',
       redirect: () => {
-        // Dynamic redirect based on user type
         const authStore = useAuthStore();
+        const user = authStore.user;
+        // New users without a plan go to billing
+        if (
+          user &&
+          !user.is_admin &&
+          user.account_type !== 'organization' &&
+          !user.owned_organization_id &&
+          !user.created_by_organization_id &&
+          !localStorage.getItem('has_selected_plan')
+        ) {
+          const subStatus = (user as any).subscription?.status;
+          if (subStatus !== 'active' && subStatus !== 'cancelled') {
+            return '/billing?new_user=true';
+          }
+        }
         const isOrgOwner =
-          authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
+          user?.account_type === 'organization' && user?.owned_organization_id;
         return isOrgOwner ? '/organizations' : '/creators';
       },
     },
@@ -514,16 +528,32 @@ const router = createRouter({
 
 // Helper to check if a user is an organization account owner
 export function isOrgAccountOwner(
-  user?: { account_type?: string; owned_organization_id?: string | null } | null
+  user?: { account_type?: string; owned_organization_id?: string | number | null } | null
 ): boolean {
   const userData = user ?? useAuthStore().user;
   return userData?.account_type === 'organization' && !!userData?.owned_organization_id;
 }
 
+// Helper to check if a user needs to select a plan (new user flow)
+function needsPlanSelection(
+  user?: { account_type?: string; owned_organization_id?: string | number | null; is_admin?: boolean; created_by_organization_id?: string | number | null; subscription?: { status?: string } } | null
+): boolean {
+  if (!user) return false;
+  if (user.is_admin) return false;
+  if (user.account_type === 'organization' || user.owned_organization_id) return false;
+  if (user.created_by_organization_id) return false;
+  const hasSelectedPlan = localStorage.getItem('has_selected_plan');
+  if (hasSelectedPlan) return false;
+  const subStatus = user.subscription?.status;
+  if (subStatus === 'active' || subStatus === 'cancelled') return false;
+  return true;
+}
+
 // Helper to get the default landing route for a user
 export function getDefaultRoute(
-  user?: { account_type?: string; owned_organization_id?: string | null } | null
+  user?: { account_type?: string; owned_organization_id?: string | number | null; is_admin?: boolean; created_by_organization_id?: string | number | null; subscription?: { status?: string } } | null
 ): string {
+  if (needsPlanSelection(user)) return '/billing?new_user=true';
   return isOrgAccountOwner(user) ? '/organizations' : '/creators';
 }
 

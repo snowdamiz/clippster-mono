@@ -1,4 +1,4 @@
-const API_BASE = `${import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'}/api`
+import { API_BASE } from './apiBase'
 
 function getAuthToken(): string | null {
   return localStorage.getItem('auth_token')
