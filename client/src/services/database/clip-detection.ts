@@ -241,16 +241,6 @@ export async function getClipsWithVersionsByProjectId(
 ): Promise<ClipWithVersion[]> {
   const db = await getDatabase();
 
-  // Check for child projects (e.g., livestream segments stored under child projects)
-  const childProjects = await db.select<{ id: string }[]>(
-    `SELECT id FROM projects WHERE parent_id = ?`,
-    [projectId]
-  );
-
-  // Build list of project IDs to query: parent + all children
-  const projectIds = [projectId, ...childProjects.map((p) => p.id)];
-  const placeholders = projectIds.map(() => '?').join(', ');
-
   const clips = await db.select<any[]>(
     `SELECT
       c.*,
@@ -275,9 +265,9 @@ export async function getClipsWithVersionsByProjectId(
      FROM clips c
      LEFT JOIN clip_versions cv ON c.current_version_id = cv.id
      LEFT JOIN clip_detection_sessions s ON c.detection_session_id = s.id
-     WHERE c.project_id IN (${placeholders})
+     WHERE c.project_id = ?
      ORDER BY COALESCE(cv.start_time, c.start_time) ASC`,
-    projectIds
+    [projectId]
   );
 
   // Load segments for each clip's current version
