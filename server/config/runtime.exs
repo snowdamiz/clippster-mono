@@ -41,12 +41,6 @@ if stripe_secret_key do
     api_key: stripe_secret_key
 end
 
-# Store webhook secret in application config for access in controllers
-config :clippster_server, :stripe,
-  webhook_secret: stripe_webhook_secret,
-  success_url: System.get_env("STRIPE_SUCCESS_URL") || "http://localhost:48276/stripe-success",
-  cancel_url: System.get_env("STRIPE_CANCEL_URL") || "http://localhost:48276/stripe-cancel"
-
 # Frontend base URL used for redirects from server-driven browser flows (e.g. Stripe checkout)
 frontend_base_url =
   System.get_env("FRONTEND_URL") ||
@@ -57,6 +51,12 @@ frontend_base_url =
     end
 
 config :clippster_server, :frontend_base_url, frontend_base_url
+
+# Store webhook secret in application config for access in controllers
+config :clippster_server, :stripe,
+  webhook_secret: stripe_webhook_secret,
+  success_url: System.get_env("STRIPE_SUCCESS_URL") || frontend_base_url <> "/stripe-success",
+  cancel_url: System.get_env("STRIPE_CANCEL_URL") || frontend_base_url <> "/stripe-cancel"
 
 # Resend email configuration (all environments)
 resend_api_key = System.get_env("RESEND_API_KEY")

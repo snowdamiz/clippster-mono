@@ -395,6 +395,27 @@ pub async fn start_user_twitter_oauth(
     Ok(())
 }
 
+// Stub implementations for callback servers that are called but not yet implemented
+pub fn start_auth_callback_server(_app: tauri::AppHandle) {
+    // TODO: Implement wallet auth callback server
+    println!("[Auth] Wallet auth callback server not yet implemented");
+}
+
+pub fn start_payment_callback_server(_app: tauri::AppHandle) {
+    // TODO: Implement wallet payment callback server
+    println!("[Auth] Wallet payment callback server not yet implemented");
+}
+
+pub fn start_google_callback_server(_app: tauri::AppHandle) {
+    // TODO: Implement Google auth callback server
+    println!("[Auth] Google auth callback server not yet implemented");
+}
+
+pub fn start_instagram_callback_server(_app: tauri::AppHandle) {
+    // TODO: Implement Instagram auth callback server
+    println!("[Auth] Instagram auth callback server not yet implemented");
+}
+
 pub fn start_twitter_callback_server(app: tauri::AppHandle) {
     use std::sync::atomic::{AtomicBool, Ordering};
     static SERVER_STARTED: AtomicBool = AtomicBool::new(false);

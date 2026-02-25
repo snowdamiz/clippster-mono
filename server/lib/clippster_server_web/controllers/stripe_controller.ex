@@ -16,9 +16,12 @@ defmodule ClippsterServerWeb.StripeController do
          {:ok, user} <- get_user(user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type) do
       # Get Stripe configuration
-      stripe_config = Application.get_env(:clippster_server, :stripe)
-      success_url = stripe_config[:success_url] || "http://localhost:48276/stripe-success"
-      cancel_url = stripe_config[:cancel_url] || "http://localhost:48276/stripe-cancel"
+      stripe_config = Application.get_env(:clippster_server, :stripe, [])
+      frontend_base_url =
+        Application.get_env(:clippster_server, :frontend_base_url, "http://localhost:1420")
+
+      success_url = stripe_config[:success_url] || "#{frontend_base_url}/stripe-success"
+      cancel_url = stripe_config[:cancel_url] || "#{frontend_base_url}/stripe-cancel"
 
       # Create Stripe Checkout session
       session_params = %{
@@ -110,9 +113,12 @@ defmodule ClippsterServerWeb.StripeController do
       end
 
       # Get Stripe configuration
-      stripe_config = Application.get_env(:clippster_server, :stripe)
-      success_url = stripe_config[:success_url] || "http://localhost:48276/stripe-success"
-      cancel_url = stripe_config[:cancel_url] || "http://localhost:48276/stripe-cancel"
+      stripe_config = Application.get_env(:clippster_server, :stripe, [])
+      frontend_base_url =
+        Application.get_env(:clippster_server, :frontend_base_url, "http://localhost:1420")
+
+      success_url = stripe_config[:success_url] || "#{frontend_base_url}/stripe-success"
+      cancel_url = stripe_config[:cancel_url] || "#{frontend_base_url}/stripe-cancel"
 
       # Create Stripe Checkout session with organization context
       session_params = %{

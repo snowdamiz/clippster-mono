@@ -187,9 +187,12 @@ defmodule ClippsterServerWeb.SubscriptionController do
       end
 
       # Get Stripe price IDs from config
-      stripe_config = Application.get_env(:clippster_server, :stripe)
-      success_url = stripe_config[:success_url] || "http://localhost:48276/stripe-success"
-      cancel_url = stripe_config[:cancel_url] || "http://localhost:48276/stripe-cancel"
+      stripe_config = Application.get_env(:clippster_server, :stripe, [])
+      frontend_base_url =
+        Application.get_env(:clippster_server, :frontend_base_url, "http://localhost:1420")
+
+      success_url = stripe_config[:success_url] || "#{frontend_base_url}/stripe-success"
+      cancel_url = stripe_config[:cancel_url] || "#{frontend_base_url}/stripe-cancel"
 
       Logger.debug(
         "Creating checkout for tier: #{tier}, user: #{user_id}, promo_code: #{inspect(promo_code)}"

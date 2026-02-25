@@ -151,7 +151,7 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
         user = Accounts.get_user(user_id)
 
         # Create Stripe checkout session
-        stripe_secret_key = Application.get_env(:clippster_server, :stripe_secret_key)
+        stripe_secret_key = Application.get_env(:stripity_stripe, :api_key)
 
         headers = [
           {"Authorization", "Bearer #{stripe_secret_key}"},
@@ -267,7 +267,7 @@ defmodule ClippsterServerWeb.OrganizationSubscriptionController do
           end
 
           user = Accounts.get_user(user_id)
-          stripe_secret_key = Application.get_env(:clippster_server, :stripe_secret_key)
+          stripe_secret_key = Application.get_env(:stripity_stripe, :api_key)
 
           headers = [
             {"Authorization", "Bearer #{stripe_secret_key}"},

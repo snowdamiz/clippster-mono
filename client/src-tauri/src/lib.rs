@@ -4,6 +4,7 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 mod storage;
 mod ffmpeg_utils;
 mod auth;
+mod stripe_callback;
 mod downloads;
 mod audio;
 mod clips;
@@ -1022,20 +1023,13 @@ commands::file_utils::generate_video_thumbnail,
 // Auth commands
             auth::open_wallet_auth_window,
             auth::open_wallet_payment_window,
-            auth::close_auth_window,
-            auth::poll_auth_result,
-            auth::poll_payment_result,
             auth::open_google_auth_window,
-            auth::poll_google_auth_result,
-            auth::open_stripe_payment_window,
-            auth::poll_stripe_payment_result,
-            auth::start_email_verification_listener,
-            auth::poll_email_verification_result,
+            stripe_callback::open_stripe_payment_window,
+            stripe_callback::poll_stripe_payment_result,
+            stripe_callback::clear_stripe_payment_result,
             auth::open_instagram_auth_window,
-            auth::poll_instagram_auth_result,
             auth::start_user_instagram_oauth,
             auth::open_twitter_auth_window,
-            auth::poll_twitter_auth_result,
             auth::start_user_twitter_oauth,
 
             // PumpFun commands
