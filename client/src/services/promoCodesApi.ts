@@ -196,7 +196,13 @@ export async function createPromoCode(data: {
   notes?: string;
 }): Promise<CreatePromoResponse> {
   try {
-    const response = await api.post('/admin/promos', data);
+    // Remove undefined values to prevent sending them as empty strings
+    const cleanData = Object.fromEntries(
+      Object.entries(data).filter(([_, v]) => v !== undefined)
+    );
+    
+    console.log('[PromoCodes API] Sending cleaned payload:', cleanData);
+    const response = await api.post('/admin/promos', cleanData);
     return response.data;
   } catch (error: any) {
     console.error('[PromoCodes] Failed to create promo:', error);

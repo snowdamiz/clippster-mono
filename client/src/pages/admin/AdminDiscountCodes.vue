@@ -915,16 +915,25 @@
           notes: formData.value.notes || undefined,
         });
       } else {
+        // Helper to convert numeric fields properly
+        const toNumberOrUndefined = (val: any) => {
+          if (val === null || val === undefined || val === '') return undefined;
+          const num = Number(val);
+          return isNaN(num) ? undefined : num;
+        };
+
         const payload = {
           code: formData.value.code.toUpperCase().trim(),
           name: formData.value.name || undefined,
           percent_off: formData.value.percent_off,
           duration_kind: formData.value.duration_kind,
-          duration_months: formData.value.duration_kind === 'repeating' ? formData.value.duration_months : undefined,
+          duration_months: formData.value.duration_kind === 'repeating' 
+            ? toNumberOrUndefined(formData.value.duration_months) 
+            : undefined,
           allowed_tiers: formData.value.allowed_tiers,
           allowed_org_tiers: formData.value.allowed_org_tiers,
           allowed_credit_packs: formData.value.allowed_credit_packs,
-          max_redemptions: formData.value.max_redemptions ? Number(formData.value.max_redemptions) : undefined,
+          max_redemptions: toNumberOrUndefined(formData.value.max_redemptions),
           redeem_by: formData.value.redeem_by || undefined,
           notes: formData.value.notes || undefined,
         };
