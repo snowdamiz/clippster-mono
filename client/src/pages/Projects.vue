@@ -1768,6 +1768,7 @@
     if (project && videoEditorProjects.value[project.name]) {
       const vep = videoEditorProjects.value[project.name];
       if (vep.total_duration > 0) {
+        console.log('[Projects] Using video editor project duration:', vep.total_duration, 'for project:', project.name);
         return formatDuration(vep.total_duration);
       }
     }
@@ -1778,6 +1779,7 @@
     // Check direct videos on this project
     const videos = projectVideos.value[projectId];
     if (videos && videos.length > 0) {
+      console.log('[Projects] Raw videos for project', projectId, ':', videos.map(v => ({ id: v.id, duration: v.duration, filename: v.original_filename })));
       totalDuration += videos.reduce((acc, v) => acc + (v.duration || 0), 0);
     }
 
@@ -1787,12 +1789,14 @@
       for (const child of children) {
         const childVideos = projectVideos.value[child.id];
         if (childVideos && childVideos.length > 0) {
+          console.log('[Projects] Child videos for', child.id, ':', childVideos.map(v => ({ id: v.id, duration: v.duration, filename: v.original_filename })));
           totalDuration += childVideos.reduce((acc, v) => acc + (v.duration || 0), 0);
         }
       }
     }
 
     if (totalDuration > 0) {
+      console.log('[Projects] Total duration for project', projectId, ':', totalDuration, 'formatted:', formatDuration(totalDuration));
       return formatDuration(totalDuration);
     }
     return null;

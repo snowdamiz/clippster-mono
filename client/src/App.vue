@@ -82,16 +82,27 @@
     if (authStore.user?.created_by_organization_id) return false;
     if (currentRoute.path === '/billing') return false;
 
+    const subscriptionStatus = (authStore.user as any)?.subscription?.status;
     const hasSelectedPlan = localStorage.getItem('has_selected_plan');
-    const subscriptionStatus = (authStore.user as any)?.subscription_status;
 
-    // Users with active or cancelled subscriptions bypass the gate
+    // Users with active or cancelled subscriptions always bypass the gate
     if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
+      // Also set the flag so future checks are faster
+      if (!hasSelectedPlan) {
+        localStorage.setItem('has_selected_plan', 'true');
+      }
       return false;
     }
 
-    // Show gate if no plan selected OR subscription expired
-    return !hasSelectedPlan || subscriptionStatus === 'expired';
+    // Show gate only if:
+    // 1. No plan has been selected AND
+    // 2. Subscription is either expired or doesn't exist (none/undefined)
+    if (!hasSelectedPlan) {
+      return true;
+    }
+
+    // If plan was selected but subscription is now expired, show gate again
+    return subscriptionStatus === 'expired';
   });
 
   // Sidebar should be disabled when subscription gate is active
