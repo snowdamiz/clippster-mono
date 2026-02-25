@@ -179,27 +179,33 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                 // foreground window (the game), causing exclusive fullscreen games to minimize.
                 // HWND_TOPMOST via SetWindowPos with SWP_NOACTIVATE is sufficient.
                 
-                // Step 4: Subclass the window to intercept WM_SIZING for aspect ratio lock.
-                // This constrains the resize rect in real-time as the user drags, so the
-                // window NEVER appears stretched. Much smoother than reactive correction.
+                // Step 4: Subclass the window to intercept WM_WINDOWPOSCHANGING for aspect ratio lock.
+                // WM_WINDOWPOSCHANGING is more reliable than WM_SIZING because it fires for ALL
+                // size changes (user drag, SetWindowPos calls, aero snap, etc.) and is processed
+                // before the window is actually resized. tao's own borderless resize handling
+                // uses WM_NCHITTEST which may interfere with WM_SIZING subclass ordering.
                 use windows::Win32::UI::Shell::{SetWindowSubclass, DefSubclassProc};
-                use windows::Win32::Foundation::{WPARAM, LPARAM, LRESULT, RECT};
+                use windows::Win32::Foundation::{WPARAM, LPARAM, LRESULT};
                 
-                const WM_SIZING: u32 = 0x0214;
-                const WMSZ_LEFT: usize = 1;
-                const WMSZ_RIGHT: usize = 2;
-                const WMSZ_TOP: usize = 3;
-                const WMSZ_TOPLEFT: usize = 4;
-                const WMSZ_TOPRIGHT: usize = 5;
-                const WMSZ_BOTTOM: usize = 6;
-                const WMSZ_BOTTOMLEFT: usize = 7;
-                const WMSZ_BOTTOMRIGHT: usize = 8;
+                const WM_WINDOWPOSCHANGING: u32 = 0x0046;
+                const SWP_NOSIZE_RAW: u32 = 0x0001;
                 
-                // 16:9 aspect ratio encoded as fixed-point: 9000 / 16000
-                // dwRefData stores the aspect ratio as numerator << 16 | denominator
-                let aspect_data: usize = (9 << 16) | 16;
+                #[repr(C)]
+                struct WINDOWPOS_RAW {
+                    hwnd: HWND,
+                    hwnd_insert_after: HWND,
+                    x: i32,
+                    y: i32,
+                    cx: i32,
+                    cy: i32,
+                    flags: u32,
+                }
                 
-                unsafe extern "system" fn pip_sizing_subclass(
+                // dwRefData stores the aspect ratio as ratio_w << 16 | ratio_h
+                // 16:9 → ratio_w=16, ratio_h=9
+                let aspect_data: usize = (16 << 16) | 9;
+                
+                unsafe extern "system" fn pip_aspect_subclass(
                     hwnd: HWND,
                     umsg: u32,
                     wparam: WPARAM,
@@ -207,74 +213,41 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                     _uidsubclass: usize,
                     dwrefdata: usize,
                 ) -> LRESULT {
-                    if umsg == WM_SIZING && lparam.0 != 0 {
-                        let rect = &mut *(lparam.0 as *mut RECT);
-                        let numerator = (dwrefdata >> 16) as i32;   // 9
-                        let denominator = (dwrefdata & 0xFFFF) as i32; // 16
-                        let edge = wparam.0;
+                    if umsg == WM_WINDOWPOSCHANGING && lparam.0 != 0 {
+                        let pos = &mut *(lparam.0 as *mut WINDOWPOS_RAW);
                         
-                        let width = rect.right - rect.left;
-                        let height = rect.bottom - rect.top;
-                        
-                        // Calculate expected dimensions based on aspect ratio
-                        let expected_height = (width * numerator) / denominator;
-                        let expected_width = (height * denominator) / numerator;
-                        
-                        match edge {
-                            // Dragging left or right edge: adjust height to match width
-                            WMSZ_LEFT | WMSZ_RIGHT => {
-                                rect.bottom = rect.top + expected_height;
-                            }
-                            // Dragging top edge: adjust width to match height
-                            WMSZ_TOP => {
-                                rect.right = rect.left + expected_width;
-                            }
-                            // Dragging bottom edge: adjust width to match height
-                            WMSZ_BOTTOM => {
-                                rect.right = rect.left + expected_width;
-                            }
-                            // Dragging top-left corner: use the larger dimension change
-                            WMSZ_TOPLEFT => {
-                                if expected_width > width {
-                                    rect.left = rect.right - expected_width;
-                                } else {
-                                    rect.top = rect.bottom - expected_height;
-                                }
-                            }
-                            // Dragging top-right corner
-                            WMSZ_TOPRIGHT => {
-                                if expected_width > width {
-                                    rect.right = rect.left + expected_width;
-                                } else {
-                                    rect.top = rect.bottom - expected_height;
-                                }
-                            }
-                            // Dragging bottom-left corner
-                            WMSZ_BOTTOMLEFT => {
-                                if expected_width > width {
-                                    rect.left = rect.right - expected_width;
-                                } else {
-                                    rect.bottom = rect.top + expected_height;
-                                }
-                            }
-                            // Dragging bottom-right corner
-                            WMSZ_BOTTOMRIGHT => {
-                                if expected_width > width {
-                                    rect.right = rect.left + expected_width;
-                                } else {
-                                    rect.bottom = rect.top + expected_height;
-                                }
-                            }
-                            _ => {}
+                        // Skip if size isn't changing
+                        if (pos.flags & SWP_NOSIZE_RAW) != 0 {
+                            return DefSubclassProc(hwnd, umsg, wparam, lparam);
                         }
                         
-                        return LRESULT(1); // TRUE = we handled it
+                        let ratio_w = (dwrefdata >> 16) as i32;    // 16
+                        let ratio_h = (dwrefdata & 0xFFFF) as i32; // 9
+                        
+                        // Minimum size
+                        let min_w = 240;
+                        let min_h = (min_w * ratio_h) / ratio_w; // 135
+                        
+                        if pos.cx < min_w { pos.cx = min_w; }
+                        if pos.cy < min_h { pos.cy = min_h; }
+                        
+                        // Enforce 16:9: width is authoritative, adjust height to match.
+                        // This means the window can ONLY be uniformly scaled — exactly
+                        // like taking a 16:9 video and making it bigger or smaller.
+                        let correct_height = (pos.cx * ratio_h) / ratio_w;
+                        pos.cy = correct_height;
+                        
+                        // Re-enforce minimum after correction
+                        if pos.cy < min_h {
+                            pos.cy = min_h;
+                            pos.cx = (pos.cy * ratio_w) / ratio_h;
+                        }
                     }
                     
                     DefSubclassProc(hwnd, umsg, wparam, lparam)
                 }
                 
-                let _ = SetWindowSubclass(hwnd, Some(pip_sizing_subclass), 1, aspect_data);
+                let _ = SetWindowSubclass(hwnd, Some(pip_aspect_subclass), 1, aspect_data);
             }
             
             // Step 5: Spawn a background timer that periodically re-asserts HWND_TOPMOST.

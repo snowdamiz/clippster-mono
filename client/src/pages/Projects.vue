@@ -1,5 +1,5 @@
 <template>
-  <PageLayout title="Projects" description="Manage and organize your video projects" :show-header="true" :icon="Folder">
+  <PageLayout title="VOD Library" description="Manage and organize your video projects" :show-header="true" :icon="Folder">
     <template #actions>
       <div class="projects-header-actions">
         <!-- Search -->
@@ -91,8 +91,8 @@
         v-if="projects.length > 0 || loading || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
         class="projects__heading"
       >
-        <h1 class="projects__title">Projects</h1>
-        <p class="projects__subtitle">Manage and organize your video projects, detect clips, and build content</p>
+        <h1 class="projects__title">VOD Library</h1>
+        <p class="projects__subtitle">Manage and organize your downloaded vods and detect clips</p>
       </div>
 
       <!-- Loading State -->
@@ -1318,6 +1318,7 @@
     getIntroOutroById,
     getWatermarkByServerId,
     getVideoEditorProjectsForClip,
+    getAllVideoEditorProjects,
     type Project,
     type RawVideo,
     type ClipWithVersion,
@@ -1397,6 +1398,7 @@
   const workspaceProject = ref<Project | null>(null);
   const workspaceInitialClipId = ref<string | null>(null);
   const projectVideos = ref<Record<string, RawVideo[]>>({});
+  const videoEditorProjects = ref<Record<string, VideoEditorProject>>({});
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const clipThumbnailCache = ref<Map<string, string>>(new Map());
   const { getRelativeTime, formatDuration } = useFormatters();
@@ -1639,6 +1641,14 @@
       console.log('[Projects] Top-level projects:', projects.value.filter((p) => !p.parent_id).length);
       console.log('[Projects] Child projects:', projects.value.filter((p) => p.parent_id).length);
 
+      // Load video editor projects and create mapping by name
+      const allVideoEditorProjects = await getAllVideoEditorProjects();
+      videoEditorProjects.value = {};
+      for (const vep of allVideoEditorProjects) {
+        videoEditorProjects.value[vep.name] = vep;
+      }
+      console.log('[Projects] Loaded video editor projects:', allVideoEditorProjects.length);
+
       // Load clip counts and video thumbnails for each project
       for (const project of projects.value) {
         const clips = await getClipsWithVersionsByProjectId(project.id);
@@ -1753,6 +1763,16 @@
   }
 
   function getProjectDuration(projectId: string): string | null {
+    // First check if this is a video editor project (by name)
+    const project = projects.value.find(p => p.id === projectId);
+    if (project && videoEditorProjects.value[project.name]) {
+      const vep = videoEditorProjects.value[project.name];
+      if (vep.total_duration > 0) {
+        return formatDuration(vep.total_duration);
+      }
+    }
+
+    // Fall back to raw_videos duration calculation
     let totalDuration = 0;
 
     // Check direct videos on this project

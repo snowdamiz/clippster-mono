@@ -1095,6 +1095,7 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin waitlist management
     get("/admin/waitlist", WaitlistController, :index)
+    post("/admin/waitlist", AdminController, :add_to_waitlist)
     post("/admin/waitlist/invite", AdminController, :invite_waitlist)
     post("/admin/waitlist/:id/invite", AdminController, :invite_waitlist_entry)
 

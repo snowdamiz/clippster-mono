@@ -7,75 +7,86 @@
           <!-- Project Picker (shown when no session is active) -->
           <div v-if="showProjectPicker" class="aiv-project-picker">
             <div class="aiv-project-picker__header">
-              <div class="aiv-project-picker__header-left">
-                <Wand2 :size="20" class="aiv-project-picker__icon" />
-                <h2 class="aiv-project-picker__title">AI Video Creator</h2>
-                <span class="aiv-header__badge">BETA</span>
+              <div class="aiv-project-picker__header-content">
+                <div class="aiv-project-picker__header-left">
+                  <div class="aiv-project-picker__icon-wrapper">
+                    <Wand2 :size="24" class="aiv-project-picker__icon" />
+                  </div>
+                  <div>
+                    <h2 class="aiv-project-picker__title">AI Video Creator</h2>
+                    <p class="aiv-project-picker__subtitle">Create and manage your AI video projects</p>
+                  </div>
+                </div>
+                <button @click="router.back()" class="aiv-header__close" title="Close">
+                  <X :size="20" />
+                </button>
               </div>
-              <button @click="router.back()" class="aiv-header__close" title="Close">
-                <X :size="18" />
-              </button>
             </div>
 
             <div class="aiv-project-picker__body">
-              <div class="aiv-project-picker__section">
-                <h3 class="aiv-project-picker__section-title">Your Projects</h3>
-                <p class="aiv-project-picker__section-desc">
-                  You can have up to 2 active projects. {{ savedSessions.length >= 2 ? 'Delete a project to create a new one.' : '' }}
-                </p>
+              <!-- Loading state -->
+              <div v-if="isLoadingSessions" class="aiv-project-picker__loading">
+                <Loader2 :size="32" class="animate-spin" />
+                <p>Loading your projects...</p>
               </div>
 
-              <!-- Saved projects list -->
-              <div class="aiv-project-picker__list">
-                <div
-                  v-for="s in savedSessions"
-                  :key="s.id"
-                  class="aiv-project-card"
-                  @click="openProject(s.id)"
-                >
-                  <div class="aiv-project-card__info">
-                    <div class="aiv-project-card__name">{{ s.name || 'Untitled Project' }}</div>
-                    <div class="aiv-project-card__meta">
-                      <span class="aiv-project-card__status" :class="`aiv-project-card__status--${s.status}`">
-                        {{ formatStatus(s.status) }}
-                      </span>
-                      <span class="aiv-project-card__date">{{ formatDate(s.updated_at) }}</span>
-                    </div>
-                  </div>
-                  <button
-                    class="aiv-project-card__delete"
-                    title="Delete project"
-                    @click.stop="deleteProject(s.id)"
-                  >
-                    <Trash2 :size="14" />
+              <!-- Empty state -->
+              <div v-else-if="savedSessions.length === 0" class="aiv-project-picker__empty">
+                <div class="aiv-empty__icon">
+                  <Wand2 :size="48" />
+                </div>
+                <h3 class="aiv-empty__title">No projects yet</h3>
+                <p class="aiv-empty__desc">Create your first AI video project to get started</p>
+                <button class="aiv-empty__cta" @click="createNewProject">
+                  <Plus :size="18" />
+                  <span>Create Your First Project</span>
+                </button>
+              </div>
+
+              <!-- Projects grid -->
+              <div v-else class="aiv-project-picker__content">
+                <div class="aiv-project-picker__actions">
+                  <button class="aiv-project-picker__new-btn" @click="createNewProject">
+                    <Plus :size="18" />
+                    <span>New Project</span>
                   </button>
                 </div>
 
-                <!-- Empty state -->
-                <div v-if="savedSessions.length === 0 && !isLoadingSessions" class="aiv-project-picker__empty">
-                  <Wand2 :size="32" />
-                  <p>No projects yet. Create your first AI video!</p>
-                </div>
-
-                <!-- Loading state -->
-                <div v-if="isLoadingSessions" class="aiv-project-picker__loading">
-                  <Loader2 :size="24" class="animate-spin" />
-                  <p>Loading projects...</p>
+                <div class="aiv-project-picker__grid">
+                  <div
+                    v-for="(s, index) in savedSessions"
+                    :key="s.id"
+                    class="aiv-project-card"
+                    @click="openProject(s.id)"
+                  >
+                    <div class="aiv-project-card__thumbnail" :data-gradient="index % 5">
+                      <div class="aiv-project-card__pattern"></div>
+                      <div class="aiv-project-card__thumbnail-content">
+                        <div class="aiv-project-card__thumbnail-icon">
+                          <Wand2 :size="40" />
+                        </div>
+                        <div class="aiv-project-card__thumbnail-text">AI Video</div>
+                      </div>
+                      <div class="aiv-project-card__status-badge" :class="`aiv-project-card__status-badge--${s.status}`">
+                        {{ formatStatus(s.status) }}
+                      </div>
+                    </div>
+                    <div class="aiv-project-card__content">
+                      <div class="aiv-project-card__header">
+                        <h3 class="aiv-project-card__name">{{ s.name || 'Untitled Project' }}</h3>
+                        <button
+                          class="aiv-project-card__delete"
+                          title="Delete project"
+                          @click.stop="deleteProject(s.id)"
+                        >
+                          <Trash2 :size="16" />
+                        </button>
+                      </div>
+                      <p class="aiv-project-card__date">{{ formatDate(s.updated_at) }}</p>
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              <!-- New project button -->
-              <button
-                class="aiv-project-picker__new-btn"
-                :disabled="savedSessions.length >= 2"
-                @click="createNewProject"
-              >
-                <Plus :size="16" />
-                <span>New Project</span>
-              </button>
-              <p v-if="savedSessions.length >= 2" class="aiv-project-picker__limit-msg">
-                Maximum 2 projects reached. Delete a project to create a new one.
-              </p>
             </div>
           </div>
 
@@ -267,6 +278,42 @@
           <AssetPickerDialog v-model="showAssetPicker" @select="handleAssetsSelected" />
           <ExportDialog v-model="showExportDialog" :composition="composition" @exported="handleExported" />
 
+          <!-- Project Name Dialog -->
+          <Teleport to="body">
+            <Transition name="modal">
+              <div v-if="showProjectNameDialog" class="credit-confirm-overlay" @click.self="showProjectNameDialog = false">
+                <div class="credit-confirm-dialog">
+                  <div class="credit-confirm__icon">
+                    <Wand2 :size="24" />
+                  </div>
+                  <h3 class="credit-confirm__title">Name Your Project</h3>
+                  <p class="credit-confirm__desc">Give your AI video project a memorable name</p>
+                  <div style="width: 100%; margin: 1.5rem 0;">
+                    <input
+                      v-model="projectNameInput"
+                      type="text"
+                      placeholder="e.g., Product Launch Video"
+                      maxlength="100"
+                      class="project-name-input"
+                      @keyup.enter="confirmCreateProject"
+                      autofocus
+                    />
+                    <p v-if="projectNameError" class="project-name-error">{{ projectNameError }}</p>
+                  </div>
+                  <div class="credit-confirm__actions">
+                    <button class="credit-confirm__btn credit-confirm__btn--cancel" @click="showProjectNameDialog = false">
+                      Cancel
+                    </button>
+                    <button class="credit-confirm__btn credit-confirm__btn--confirm" @click="confirmCreateProject">
+                      <Plus :size="14" />
+                      <span>Create Project</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </Teleport>
+
           <!-- Credit Confirmation Dialog -->
           <Teleport to="body">
             <Transition name="modal">
@@ -343,6 +390,9 @@
   const showClipPicker = ref(false);
   const showAssetPicker = ref(false);
   const showExportDialog = ref(false);
+  const showProjectNameDialog = ref(false);
+  const projectNameInput = ref('');
+  const projectNameError = ref('');
 
   // Credit confirmation dialog
   const creditConfirm = ref<{
@@ -427,21 +477,49 @@
     }
   }
 
-  async function createNewProject() {
-    if (savedSessions.value.length >= 2) return;
+  function createNewProject() {
+    projectNameInput.value = '';
+    projectNameError.value = '';
+    showProjectNameDialog.value = true;
+  }
+
+  async function confirmCreateProject() {
+    const name = projectNameInput.value.trim();
+    if (!name) {
+      projectNameError.value = 'Project name is required';
+      return;
+    }
+    if (name.length > 100) {
+      projectNameError.value = 'Project name must be 100 characters or less';
+      return;
+    }
+
     try {
       await chatSession.createSession(mediaItems.value);
+      if (chatSession.session.value) {
+        await chatSession.renameSession(chatSession.session.value.id, name);
+      }
+      showProjectNameDialog.value = false;
     } catch (e) {
       console.error('[AIVideoCreator] Failed to create project:', e);
+      projectNameError.value = 'Failed to create project. Please try again.';
     }
   }
 
   async function deleteProject(id: number) {
+    const project = savedSessions.value.find(s => s.id === id);
+    const projectName = project?.name || 'Untitled Project';
+    
+    if (!confirm(`Are you sure you want to delete "${projectName}"? This action cannot be undone.`)) {
+      return;
+    }
+
     try {
       await chatSession.deleteSession(id);
       savedSessions.value = savedSessions.value.filter((s) => s.id !== id);
     } catch (e) {
       console.error('[AIVideoCreator] Failed to delete project:', e);
+      alert('Failed to delete project. Please try again.');
     }
   }
 
@@ -1472,20 +1550,35 @@
   }
 
   .aiv-project-picker__header {
+    padding: 1.5rem 0.5rem;
+    background: linear-gradient(to bottom, #111113, #0a0a0b);
+    border-bottom: 1px solid #1e1e22;
+    flex-shrink: 0;
+  }
+
+  .aiv-project-picker__header-content {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 1rem;
-    height: 44px;
-    background: #111113;
-    border-bottom: 1px solid #1e1e22;
-    flex-shrink: 0;
+    margin: 0 auto;
+    padding: 0 1.5rem;
   }
 
   .aiv-project-picker__header-left {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 1rem;
+  }
+
+  .aiv-project-picker__icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.15), rgba(14, 165, 233, 0.05));
+    border: 1px solid rgba(14, 165, 233, 0.2);
+    border-radius: 12px;
   }
 
   .aiv-project-picker__icon {
@@ -1493,183 +1586,302 @@
   }
 
   .aiv-project-picker__title {
-    font-size: 0.9375rem;
-    font-weight: 600;
+    font-size: 1.5rem;
+    font-weight: 700;
     margin: 0;
+    color: #f4f4f5;
+  }
+
+  .aiv-project-picker__subtitle {
+    font-size: 0.875rem;
+    color: #71717a;
+    margin: 0.25rem 0 0 0;
   }
 
   .aiv-project-picker__body {
     flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 3rem 1rem;
-    max-width: 480px;
-    margin: 0 auto;
-    width: 100%;
+    overflow-y: auto;
+    padding: 2rem 2rem;
   }
 
-  .aiv-project-picker__section {
-    text-align: center;
+  .aiv-project-picker__content {
+    margin: 0 auto;
+    max-width: 1400px;
+  }
+
+  .aiv-project-picker__actions {
+    display: flex;
+    justify-content: flex-end;
     margin-bottom: 1.5rem;
   }
 
-  .aiv-project-picker__section-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin: 0 0 0.375rem;
-  }
-
-  .aiv-project-picker__section-desc {
-    font-size: 0.8125rem;
-    color: #71717a;
-    margin: 0;
-  }
-
-  .aiv-project-picker__list {
-    width: 100%;
+  .aiv-project-picker__new-btn {
     display: flex;
-    flex-direction: column;
+    align-items: center;
     gap: 0.5rem;
-    margin-bottom: 1.25rem;
+    padding: 0.75rem 1.5rem;
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);
+  }
+
+  .aiv-project-picker__new-btn:hover {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(14, 165, 233, 0.35);
+  }
+
+  .aiv-project-picker__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.25rem;
   }
 
   .aiv-project-card {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.875rem 1rem;
     background: #111113;
     border: 1px solid #1e1e22;
-    border-radius: 8px;
+    border-radius: 12px;
+    overflow: hidden;
     cursor: pointer;
-    transition: all 150ms;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
   }
 
   .aiv-project-card:hover {
-    background: #18181b;
     border-color: #0ea5e9;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(14, 165, 233, 0.15);
   }
 
-  .aiv-project-card__info {
+  .aiv-project-card__thumbnail {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-bottom: 1px solid #1e1e22;
+    overflow: hidden;
+  }
+
+  /* Subtle dark backgrounds with minimal accent */
+  .aiv-project-card__thumbnail[data-gradient="0"],
+  .aiv-project-card__thumbnail[data-gradient="1"],
+  .aiv-project-card__thumbnail[data-gradient="2"],
+  .aiv-project-card__thumbnail[data-gradient="3"],
+  .aiv-project-card__thumbnail[data-gradient="4"] {
+    background: linear-gradient(135deg, #18181b 0%, #0a0a0b 100%);
+  }
+
+  /* Subtle grid pattern */
+  .aiv-project-card__pattern {
+    position: absolute;
+    inset: 0;
+    background-image: 
+      linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    background-size: 20px 20px;
+    opacity: 1;
+  }
+
+  .aiv-project-card__thumbnail-content {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    min-width: 0;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .aiv-project-card__thumbnail-icon {
+    color: rgba(14, 165, 233, 0.4);
+    transition: all 0.3s;
+  }
+
+  .aiv-project-card:hover .aiv-project-card__thumbnail-icon {
+    color: rgba(14, 165, 233, 0.6);
+    transform: scale(1.05);
+  }
+
+  .aiv-project-card__thumbnail-text {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.3);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+  }
+
+  .aiv-project-card__status-badge {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    backdrop-filter: blur(8px);
+  }
+
+  .aiv-project-card__status-badge--discovery {
+    background: rgba(30, 58, 95, 0.9);
+    color: #7dd3fc;
+    border: 1px solid rgba(125, 211, 252, 0.2);
+  }
+
+  .aiv-project-card__status-badge--generated,
+  .aiv-project-card__status-badge--completed {
+    background: rgba(20, 83, 45, 0.9);
+    color: #86efac;
+    border: 1px solid rgba(134, 239, 172, 0.2);
+  }
+
+  .aiv-project-card__status-badge--generating,
+  .aiv-project-card__status-badge--refining {
+    background: rgba(66, 32, 6, 0.9);
+    color: #fdba74;
+    border: 1px solid rgba(253, 186, 116, 0.2);
+  }
+
+  .aiv-project-card__content {
+    padding: 1rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .aiv-project-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.5rem;
   }
 
   .aiv-project-card__name {
-    font-size: 0.875rem;
+    font-size: 0.9375rem;
     font-weight: 600;
     color: #f4f4f5;
-    white-space: nowrap;
+    margin: 0;
+    line-height: 1.4;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .aiv-project-card__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-  }
-
-  .aiv-project-card__status {
-    padding: 0.0625rem 0.375rem;
-    border-radius: 3px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-  }
-
-  .aiv-project-card__status--discovery {
-    background: #1e3a5f;
-    color: #7dd3fc;
-  }
-
-  .aiv-project-card__status--generated,
-  .aiv-project-card__status--completed {
-    background: #14532d;
-    color: #86efac;
-  }
-
-  .aiv-project-card__status--generating,
-  .aiv-project-card__status--refining {
-    background: #422006;
-    color: #fdba74;
-  }
-
-  .aiv-project-card__date {
-    color: #52525b;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
 
   .aiv-project-card__delete {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
     border-radius: 6px;
     color: #52525b;
     cursor: pointer;
-    transition: all 150ms;
+    transition: all 0.15s;
     flex-shrink: 0;
   }
 
   .aiv-project-card__delete:hover {
-    background: rgba(239, 68, 68, 0.15);
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
     color: #ef4444;
   }
 
-  .aiv-project-picker__empty,
+  .aiv-project-card__date {
+    font-size: 0.75rem;
+    color: #71717a;
+    margin: 0;
+  }
+
+  /* Empty State */
+  .aiv-project-picker__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    text-align: center;
+    padding: 3rem 2rem;
+  }
+
+  .aiv-empty__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 96px;
+    height: 96px;
+    background: linear-gradient(135deg, rgba(14, 165, 233, 0.1), rgba(14, 165, 233, 0.05));
+    border: 2px solid rgba(14, 165, 233, 0.2);
+    border-radius: 24px;
+    color: #0ea5e9;
+    margin-bottom: 1.5rem;
+  }
+
+  .aiv-empty__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #f4f4f5;
+    margin: 0 0 0.5rem 0;
+  }
+
+  .aiv-empty__desc {
+    font-size: 0.9375rem;
+    color: #71717a;
+    margin: 0 0 2rem 0;
+    max-width: 400px;
+  }
+
+  .aiv-empty__cta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.875rem 2rem;
+    background: linear-gradient(135deg, #0ea5e9, #0284c7);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
+  }
+
+  .aiv-empty__cta:hover {
+    background: linear-gradient(135deg, #0284c7, #0369a1);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(14, 165, 233, 0.4);
+  }
+
+  /* Loading State */
   .aiv-project-picker__loading {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.75rem;
-    padding: 2.5rem 1rem;
-    color: #52525b;
-    text-align: center;
+    justify-content: center;
+    min-height: 400px;
+    gap: 1rem;
+    color: #71717a;
   }
 
-  .aiv-project-picker__empty p,
   .aiv-project-picker__loading p {
     margin: 0;
-    font-size: 0.8125rem;
-  }
-
-  .aiv-project-picker__new-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.375rem;
-    width: 100%;
-    padding: 0.75rem;
-    background: #0ea5e9;
-    border: none;
-    border-radius: 8px;
-    color: #000;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms;
-  }
-
-  .aiv-project-picker__new-btn:hover:not(:disabled) {
-    background: #38bdf8;
-  }
-
-  .aiv-project-picker__new-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .aiv-project-picker__limit-msg {
-    font-size: 0.75rem;
-    color: #71717a;
-    text-align: center;
-    margin: 0.5rem 0 0;
+    font-size: 0.9375rem;
+    font-weight: 500;
   }
 
   /* ═══ Content Layout ═══ */
@@ -2898,5 +3110,36 @@
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: #3f3f46;
+  }
+
+  /* ═══ Project Name Input ═══ */
+  .project-name-input {
+    width: 100%;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    color: white;
+    font-size: 14px;
+    font-family: inherit;
+    transition: all 0.2s;
+  }
+
+  .project-name-input:focus {
+    outline: none;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: #0ea5e9;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+  }
+
+  .project-name-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  .project-name-error {
+    margin: 8px 0 0 0;
+    font-size: 12px;
+    color: #ef4444;
+    font-weight: 500;
   }
 </style>

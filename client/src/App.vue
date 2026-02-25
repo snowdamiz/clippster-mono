@@ -133,8 +133,9 @@
     );
   }
 
-  // Handle streamer went live event
+  // Handle streamer went live event (skip toast on Live page — status already visible)
   const handleStreamerWentLive = (event: CustomEvent) => {
+    if (currentRoute.path.startsWith('/live-clip')) return;
     const { displayName } = event.detail;
     success(`${displayName} is now live!`, undefined, 7000, 'livestream');
   };

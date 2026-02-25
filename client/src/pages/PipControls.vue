@@ -7,7 +7,7 @@
     <!-- Video fills entire container -->
     <video
       ref="videoRef"
-      class="w-full h-full object-fill"
+      class="w-full h-full object-contain"
       autoplay
       playsinline
       :muted="isMuted"

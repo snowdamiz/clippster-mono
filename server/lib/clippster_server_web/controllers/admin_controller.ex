@@ -2019,6 +2019,32 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
+  Manually adds a user to the waitlist (admin only).
+  """
+  def add_to_waitlist(conn, %{"email" => email}) do
+    case ClippsterServer.Waitlist.admin_create_entry(%{email: email}) do
+      {:ok, entry} ->
+        json(conn, %{
+          success: true,
+          entry: %{
+            id: entry.id,
+            email: entry.email,
+            inserted_at: entry.inserted_at
+          }
+        })
+
+      {:error, changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{
+          success: false,
+          error: "Failed to add user to waitlist",
+          details: format_changeset_errors(changeset)
+        })
+    end
+  end
+
+  @doc """
   Invites all uninvited waitlist entries.
   """
   def invite_waitlist(conn, params) do
