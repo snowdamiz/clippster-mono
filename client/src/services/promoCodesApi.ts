@@ -200,8 +200,7 @@ export async function createPromoCode(data: {
     const cleanData = Object.fromEntries(
       Object.entries(data).filter(([_, v]) => v !== undefined)
     );
-    
-    console.log('[PromoCodes API] Sending cleaned payload:', cleanData);
+
     const response = await api.post('/admin/promos', cleanData);
     return response.data;
   } catch (error: any) {
