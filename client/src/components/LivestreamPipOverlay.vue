@@ -96,7 +96,7 @@
             <!-- Right: Clip Button -->
             <button
               @click="handleClip"
-              class="p-1.5 rounded bg-violet-600 hover:bg-violet-500 text-white transition-colors flex items-center gap-1"
+              class="p-1.5 rounded bg-[var(--sidebar-accent)] hover:opacity-90 text-white transition-colors flex items-center gap-1"
               title="Create Clip (C)"
             >
               <Scissors class="w-4 h-4" />
@@ -402,8 +402,8 @@ input[type='range']::-webkit-slider-runnable-track {
   height: 4px;
   background: linear-gradient(
     to right,
-    #8b5cf6 0%,
-    #8b5cf6 var(--value, 50%),
+    var(--sidebar-accent) 0%,
+    var(--sidebar-accent) var(--value, 50%),
     #52525b var(--value, 50%),
     #52525b 100%
   );

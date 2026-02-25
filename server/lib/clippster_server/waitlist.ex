@@ -30,6 +30,27 @@ defmodule ClippsterServer.Waitlist do
   end
 
   @doc """
+  Creates a new waitlist entry and sends confirmation email (admin use).
+  Returns {:ok, entry} on success or {:error, changeset} on failure.
+  """
+  def admin_create_entry(attrs) do
+    result =
+      %WaitlistEntry{}
+      |> WaitlistEntry.changeset(attrs)
+      |> Repo.insert()
+
+    case result do
+      {:ok, entry} ->
+        # Send confirmation email
+        send_confirmation_email(entry.email)
+        {:ok, entry}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
+  @doc """
   Lists all waitlist entries ordered by most recent first.
   """
   def list_entries do

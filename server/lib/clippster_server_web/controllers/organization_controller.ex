@@ -404,6 +404,11 @@ defmodule ClippsterServerWeb.OrganizationController do
         |> put_status(400)
         |> json(%{success: false, error: "An invitation has already been sent to this email address"})
 
+      {:error, :user_not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "No account found with this email address. The user must create an account before they can be invited to an organization."})
+
       {:error, changeset} ->
         conn
         |> put_status(422)

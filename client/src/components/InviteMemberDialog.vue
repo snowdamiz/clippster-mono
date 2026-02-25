@@ -44,7 +44,7 @@
               <!-- Invite Mode -->
               <div v-if="mode === 'invite'" class="invite-dialog__form">
                 <p class="invite-dialog__description">
-                  Send an email invitation to an existing Clippster user or someone who will create their own account.
+                  Send an email invitation to an existing Clippster user. The email must be associated with an active account.
                 </p>
 
                 <div class="invite-dialog__field">
@@ -67,16 +67,6 @@
                     class="invite-dialog__dropdown"
                     trigger-class="invite-dialog__dropdown-trigger"
                   />
-                </div>
-
-                <div class="invite-dialog__note">
-                  <div class="invite-dialog__note-icon">
-                    <Info :size="16" />
-                  </div>
-                  <p class="invite-dialog__note-text">
-                    The user will receive an email with a link to accept the invitation. If they don't have a Clippster
-                    account, they'll need to create one first.
-                  </p>
                 </div>
               </div>
 
@@ -158,7 +148,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { X, Mail, UserPlus, UserCog, Info, Eye, EyeOff, Sparkles } from 'lucide-vue-next';
+  import { X, Mail, UserPlus, UserCog, Eye, EyeOff, Sparkles } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import CustomDropdown from '@/components/CustomDropdown.vue';

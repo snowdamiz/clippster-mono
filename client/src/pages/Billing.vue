@@ -793,7 +793,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useAuthStore } from '@/stores/auth';
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import { useToast } from '@/composables/useToast';
@@ -957,6 +957,13 @@
 
   onMounted(async () => {
     await loadAllData();
+    
+    // Listen for auth state changes and refetch data
+    window.addEventListener('auth-state-changed', loadAllData);
+  });
+
+  onUnmounted(() => {
+    window.removeEventListener('auth-state-changed', loadAllData);
   });
 
   async function loadAllData() {

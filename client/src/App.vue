@@ -82,16 +82,39 @@
     if (authStore.user?.created_by_organization_id) return false;
     if (currentRoute.path === '/billing') return false;
 
+    const subscriptionStatus = (authStore.user as any)?.subscription?.status;
     const hasSelectedPlan = localStorage.getItem('has_selected_plan');
-    const subscriptionStatus = (authStore.user as any)?.subscription_status;
 
-    // Users with active or cancelled subscriptions bypass the gate
+    console.log('[App] Subscription gate check:', {
+      subscriptionStatus,
+      hasSelectedPlan,
+      userSubscription: (authStore.user as any)?.subscription,
+    });
+
+    // Users with active or cancelled subscriptions always bypass the gate
     if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
+      // Also set the flag so future checks are faster
+      if (!hasSelectedPlan) {
+        localStorage.setItem('has_selected_plan', 'true');
+      }
       return false;
     }
 
-    // Show gate if no plan selected OR subscription expired
-    return !hasSelectedPlan || subscriptionStatus === 'expired';
+    // Show gate only if:
+    // 1. No plan has been selected AND
+    // 2. Subscription is either expired or doesn't exist (none/undefined)
+    if (!hasSelectedPlan) {
+      console.log('[App] No plan selected, showing subscription gate');
+      return true;
+    }
+
+    // If plan was selected but subscription is now expired, show gate again
+    if (subscriptionStatus === 'expired') {
+      console.log('[App] Subscription expired, showing subscription gate');
+      return true;
+    }
+
+    return false;
   });
 
   // Sidebar should be disabled when subscription gate is active
@@ -133,8 +156,9 @@
     );
   }
 
-  // Handle streamer went live event
+  // Handle streamer went live event (skip toast on Live page — status already visible)
   const handleStreamerWentLive = (event: CustomEvent) => {
+    if (currentRoute.path.startsWith('/live-clip')) return;
     const { displayName } = event.detail;
     success(`${displayName} is now live!`, undefined, 7000, 'livestream');
   };
@@ -151,10 +175,12 @@
   const routerKey = ref(0);
 
   // Watch for subscription gate and redirect to billing
+  // Also watch authStore.user to re-evaluate when user data loads
   watch(
-    requiresSubscriptionGate,
-    (needsGate) => {
+    [requiresSubscriptionGate, () => authStore.user],
+    ([needsGate]) => {
       if (needsGate && currentRoute.path !== '/billing') {
+        console.log('[App] Subscription gate active, redirecting to billing');
         router.push('/billing?subscription_required=true');
       }
     },
