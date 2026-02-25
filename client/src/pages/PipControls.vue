@@ -217,13 +217,30 @@ watch([volume, isMuted], () => {
 });
 
 // Watch for play state changes
-watch(isPlaying, (playing) => {
-  if (videoRef.value) {
-    if (playing) {
-      videoRef.value.play().catch(() => {});
-    } else {
-      videoRef.value.pause();
+watch(isPlaying, async (playing) => {
+  if (!videoRef.value) return;
+  
+  console.log('[PIP] Play state changed to:', playing);
+  
+  if (playing) {
+    try {
+      await videoRef.value.play();
+      console.log('[PIP] Video playback started successfully');
+    } catch (error) {
+      console.error('[PIP] Failed to start playback:', error);
+      // Retry after a short delay
+      setTimeout(async () => {
+        try {
+          await videoRef.value?.play();
+          console.log('[PIP] Video playback started on retry');
+        } catch (retryError) {
+          console.error('[PIP] Retry play failed:', retryError);
+        }
+      }, 100);
     }
+  } else {
+    videoRef.value.pause();
+    console.log('[PIP] Video paused (HLS continues loading)');
   }
 });
 
