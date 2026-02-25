@@ -36,6 +36,9 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
   Changeset for creating a new promo code.
   """
   def create_changeset(promo_code, attrs) do
+    # Sanitize integer fields - convert empty strings to nil
+    attrs = sanitize_integer_fields(attrs, [:duration_months, :max_redemptions])
+
     promo_code
     |> cast(attrs, [
       :code,
@@ -231,5 +234,25 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
           changeset
         end
     end
+  end
+
+  defp sanitize_integer_fields(attrs, fields) do
+    Enum.reduce(fields, attrs, fn field, acc ->
+      field_str = to_string(field)
+      field_atom = field
+
+      cond do
+        # Check string key - handle empty string or "null" string
+        Map.has_key?(acc, field_str) and (acc[field_str] == "" or acc[field_str] == "null") ->
+          Map.put(acc, field_str, nil)
+
+        # Check atom key - handle empty string or "null" string
+        Map.has_key?(acc, field_atom) and (acc[field_atom] == "" or acc[field_atom] == "null") ->
+          Map.put(acc, field_atom, nil)
+
+        true ->
+          acc
+      end
+    end)
   end
 end
