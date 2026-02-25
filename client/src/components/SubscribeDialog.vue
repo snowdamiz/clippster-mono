@@ -484,6 +484,8 @@ async function initiateStripePayment() {
       }
     }
 
+    payload.return_context = 'desktop';
+
     const response = await api.post(endpoint, payload);
 
     if (!response.data.success) {

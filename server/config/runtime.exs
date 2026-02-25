@@ -50,13 +50,50 @@ frontend_base_url =
       "http://localhost:1420"
     end
 
+stripe_success_url =
+  System.get_env("STRIPE_SUCCESS_URL") || frontend_base_url <> "/stripe-success"
+
+stripe_cancel_url = System.get_env("STRIPE_CANCEL_URL") || frontend_base_url <> "/stripe-cancel"
+
+# Desktop checkout redirects return to a local Tauri callback server.
+stripe_desktop_callback_base_url =
+  System.get_env("STRIPE_DESKTOP_CALLBACK_BASE_URL") || "http://localhost:48277"
+
 config :clippster_server, :frontend_base_url, frontend_base_url
+config :clippster_server, :stripe_desktop_callback_base_url, stripe_desktop_callback_base_url
+
+if config_env() == :prod do
+  ensure_https_url = fn env_name, value ->
+    case URI.parse(value || "") do
+      %URI{scheme: "https", host: host} when is_binary(host) and host != "" ->
+        :ok
+
+      _ ->
+        raise """
+        #{env_name} must be an https URL in production.
+        Current value: #{inspect(value)}
+        """
+    end
+  end
+
+  ensure_https_url.("FRONTEND_URL", frontend_base_url)
+  ensure_https_url.("STRIPE_SUCCESS_URL", stripe_success_url)
+  ensure_https_url.("STRIPE_CANCEL_URL", stripe_cancel_url)
+
+  if is_nil(stripe_webhook_secret) or stripe_webhook_secret == "" do
+    raise """
+    environment variable STRIPE_WEBHOOK_SECRET is required in production.
+    """
+  end
+end
 
 # Store webhook secret in application config for access in controllers
 config :clippster_server, :stripe,
   webhook_secret: stripe_webhook_secret,
-  success_url: System.get_env("STRIPE_SUCCESS_URL") || frontend_base_url <> "/stripe-success",
-  cancel_url: System.get_env("STRIPE_CANCEL_URL") || frontend_base_url <> "/stripe-cancel"
+  success_url: stripe_success_url,
+  cancel_url: stripe_cancel_url
+
+config :clippster_server, :allow_unverified_stripe_webhooks, config_env() != :prod
 
 # Resend email configuration (all environments)
 resend_api_key = System.get_env("RESEND_API_KEY")
@@ -106,8 +143,7 @@ config :clippster_server,
   social_token_encryption_key: System.get_env("SOCIAL_TOKEN_ENCRYPTION_KEY")
 
 # Twitter API configuration (twitterapi.io - read-only API for tweet analytics)
-config :clippster_server, :twitter,
-  api_key: System.get_env("TWITTER_API_IO_KEY")
+config :clippster_server, :twitter, api_key: System.get_env("TWITTER_API_IO_KEY")
 
 # X (Twitter) OAuth 2.0 configuration (official X API for posting)
 config :clippster_server, :twitter_oauth,
@@ -116,8 +152,7 @@ config :clippster_server, :twitter_oauth,
   redirect_uri: System.get_env("TWITTER_REDIRECT_URI")
 
 # Freesound API (sound effects search proxy)
-config :clippster_server, :freesound,
-  api_key: System.get_env("FREESOUND_API_KEY")
+config :clippster_server, :freesound, api_key: System.get_env("FREESOUND_API_KEY")
 
 # PulseKit error tracking and event monitoring
 pulsekit_key = System.get_env("PULSEKIT_CLIPPSTER_SERVER_KEY")

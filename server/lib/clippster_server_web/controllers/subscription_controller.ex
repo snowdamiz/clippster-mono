@@ -4,6 +4,7 @@ defmodule ClippsterServerWeb.SubscriptionController do
   alias ClippsterServer.Accounts
   alias ClippsterServer.PromoCodes
   alias ClippsterServer.Affiliates
+  alias ClippsterServerWeb.StripeReturn
 
   @doc """
   Get subscription status for the authenticated user.
@@ -130,11 +131,18 @@ defmodule ClippsterServerWeb.SubscriptionController do
       })
     else
       billing_interval = Map.get(params, "billing_interval", "monthly")
-      create_checkout_with_stripe(conn, tier, Map.get(params, "promo_code"), billing_interval)
+
+      create_checkout_with_stripe(
+        conn,
+        tier,
+        Map.get(params, "promo_code"),
+        billing_interval,
+        params
+      )
     end
   end
 
-  defp create_checkout_with_stripe(conn, tier, promo_code, billing_interval) do
+  defp create_checkout_with_stripe(conn, tier, promo_code, billing_interval, params) do
     require Logger
 
     with {:ok, user_id} <- get_user_id_from_token(conn),
@@ -186,13 +194,13 @@ defmodule ClippsterServerWeb.SubscriptionController do
           nil
       end
 
-      # Get Stripe price IDs from config
-      stripe_config = Application.get_env(:clippster_server, :stripe, [])
-      frontend_base_url =
-        Application.get_env(:clippster_server, :frontend_base_url, "http://localhost:1420")
+      success_url =
+        StripeReturn.success_url(conn, params)
+        |> StripeReturn.with_query(session_id: "{CHECKOUT_SESSION_ID}", type: "subscription")
 
-      success_url = stripe_config[:success_url] || "#{frontend_base_url}/stripe-success"
-      cancel_url = stripe_config[:cancel_url] || "#{frontend_base_url}/stripe-cancel"
+      cancel_url =
+        StripeReturn.cancel_url(conn, params)
+        |> StripeReturn.with_query(type: "subscription")
 
       Logger.debug(
         "Creating checkout for tier: #{tier}, user: #{user_id}, promo_code: #{inspect(promo_code)}"
@@ -230,9 +238,12 @@ defmodule ClippsterServerWeb.SubscriptionController do
           # Yearly = 11 months price, but grant 12 months of credits upfront
           yearly_price = tier_info.usd * 11
           yearly_credits = tier_info.monthly_credits * 12
-          {"year", trunc(yearly_price * 100), "#{yearly_credits} credits upfront (12 months)", yearly_credits}
+
+          {"year", trunc(yearly_price * 100), "#{yearly_credits} credits upfront (12 months)",
+           yearly_credits}
         else
-          {"month", trunc(tier_info.usd * 100), "#{tier_info.monthly_credits} credits per month", tier_info.monthly_credits}
+          {"month", trunc(tier_info.usd * 100), "#{tier_info.monthly_credits} credits per month",
+           tier_info.monthly_credits}
         end
 
       # Create Stripe Checkout session for subscription
@@ -244,7 +255,8 @@ defmodule ClippsterServerWeb.SubscriptionController do
             price_data: %{
               currency: "usd",
               product_data: %{
-                name: "#{tier_info.name} Subscription#{if billing_interval == "yearly", do: " (Annual)", else: ""}",
+                name:
+                  "#{tier_info.name} Subscription#{if billing_interval == "yearly", do: " (Annual)", else: ""}",
                 description: product_description
               },
               unit_amount: unit_amount_cents,
@@ -263,8 +275,8 @@ defmodule ClippsterServerWeb.SubscriptionController do
           billing_interval: billing_interval,
           type: "subscription"
         },
-        success_url: "#{success_url}?session_id={CHECKOUT_SESSION_ID}&type=subscription",
-        cancel_url: "#{cancel_url}?type=subscription"
+        success_url: success_url,
+        cancel_url: cancel_url
       }
 
       # Add promo code to Stripe session if valid
@@ -367,15 +379,16 @@ defmodule ClippsterServerWeb.SubscriptionController do
     require Logger
 
     with affiliate_id when not is_nil(affiliate_id) <- user.referred_by_affiliate_id,
-         %{status: "active", discount_enabled: true} = affiliate <- Affiliates.get_affiliate(affiliate_id),
+         %{status: "active", discount_enabled: true} = affiliate <-
+           Affiliates.get_affiliate(affiliate_id),
          pct when not is_nil(pct) <- affiliate.first_month_discount_pct,
          true <- Decimal.gt?(pct, Decimal.new("0")) do
-
       # Determine Stripe coupon duration based on affiliate discount_type
       {duration, duration_in_months} =
         case affiliate.discount_type do
           "recurring" ->
             recurring_pct = affiliate.recurring_discount_pct || Decimal.new("0")
+
             if Decimal.gt?(recurring_pct, Decimal.new("0")) do
               # Use recurring_discount_pct for ongoing discount
               {"forever", nil}
@@ -408,11 +421,17 @@ defmodule ClippsterServerWeb.SubscriptionController do
 
       case Stripe.Coupon.create(coupon_params) do
         {:ok, coupon} ->
-          Logger.info("[Affiliates] Applied #{pct_int}% referral discount coupon #{coupon.id} for user #{user.id} (affiliate #{affiliate_id})")
+          Logger.info(
+            "[Affiliates] Applied #{pct_int}% referral discount coupon #{coupon.id} for user #{user.id} (affiliate #{affiliate_id})"
+          )
+
           Map.put(session_params, :discounts, [%{coupon: coupon.id}])
 
         {:error, reason} ->
-          Logger.error("[Affiliates] Failed to create referral discount coupon: #{inspect(reason)}")
+          Logger.error(
+            "[Affiliates] Failed to create referral discount coupon: #{inspect(reason)}"
+          )
+
           session_params
       end
     else
@@ -435,7 +454,11 @@ defmodule ClippsterServerWeb.SubscriptionController do
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
       # Calculate base price (yearly = 11 months)
       base_usd = if billing_interval == "yearly", do: tier_info.usd * 11, else: tier_info.usd
-      credits_to_grant = if billing_interval == "yearly", do: tier_info.monthly_credits * 12, else: tier_info.monthly_credits
+
+      credits_to_grant =
+        if billing_interval == "yearly",
+          do: tier_info.monthly_credits * 12,
+          else: tier_info.monthly_credits
 
       # Apply promo code discount if provided and valid
       {final_usd, promo_info} =
@@ -512,11 +535,14 @@ defmodule ClippsterServerWeb.SubscriptionController do
   @doc """
   Confirm crypto payment for subscription.
   """
-  def confirm_crypto_payment(conn, %{
-        "tier" => tier,
-        "tx_signature" => tx_signature,
-        "from_address" => from_address
-      } = params) do
+  def confirm_crypto_payment(
+        conn,
+        %{
+          "tier" => tier,
+          "tx_signature" => tx_signature,
+          "from_address" => from_address
+        } = params
+      ) do
     alias ClippsterServer.Credits
 
     promo_code = Map.get(params, "promo_code")
@@ -624,7 +650,8 @@ defmodule ClippsterServerWeb.SubscriptionController do
           json(conn, %{
             success: true,
             type: "downgrade",
-            message: "Your plan will change to #{new_tier_info.name} at the end of your current billing period.",
+            message:
+              "Your plan will change to #{new_tier_info.name} at the end of your current billing period.",
             subscription: status
           })
 
@@ -632,7 +659,9 @@ defmodule ClippsterServerWeb.SubscriptionController do
           conn |> put_status(400) |> json(%{success: false, error: "Invalid subscription tier"})
 
         {:error, :no_active_subscription} ->
-          conn |> put_status(400) |> json(%{success: false, error: "No active subscription to change"})
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "No active subscription to change"})
 
         {:error, :same_tier} ->
           conn |> put_status(400) |> json(%{success: false, error: "Already on this tier"})
@@ -660,6 +689,7 @@ defmodule ClippsterServerWeb.SubscriptionController do
     with {:ok, user_id} <- get_user_id_from_token(conn) do
       {:ok, _user} = Subscriptions.cancel_pending_tier_change(user_id)
       status = Subscriptions.get_subscription_status(user_id)
+
       json(conn, %{success: true, message: "Pending plan change cancelled.", subscription: status})
     else
       {:error, :unauthorized} ->
@@ -770,6 +800,7 @@ defmodule ClippsterServerWeb.SubscriptionController do
         if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
           Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true})
         end
+
         Subscriptions.cancel_subscription(user_id)
       end
 
@@ -777,12 +808,14 @@ defmodule ClippsterServerWeb.SubscriptionController do
       case ClippsterServer.Accounts.deactivate_user(user_id) do
         {:ok, _user} ->
           json(conn, %{success: true, message: "Profile deactivated successfully"})
+
         {:error, reason} ->
           conn |> put_status(500) |> json(%{success: false, error: to_string(reason)})
       end
     else
       {:error, :unauthorized} ->
         conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
+
       {:error, :user_not_found} ->
         conn |> put_status(404) |> json(%{success: false, error: "User not found"})
     end
