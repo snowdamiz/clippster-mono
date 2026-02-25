@@ -54,6 +54,7 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
       :notes,
       :created_by_admin_id
     ])
+    |> parse_redeem_by(attrs)
     |> validate_required([
       :code,
       :percent_off,
@@ -67,6 +68,7 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
     |> validate_allowed_org_tiers()
     |> validate_allowed_credit_packs()
     |> validate_at_least_one_tier_or_pack()
+    |> validate_redeem_by_future()
     |> unique_constraint(:code)
     |> normalize_code()
   end
@@ -83,7 +85,9 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
       :is_active,
       :notes
     ])
+    |> parse_redeem_by(attrs)
     |> validate_duration_months()
+    |> validate_redeem_by_future()
   end
 
   defp normalize_code(changeset) do
@@ -184,6 +188,48 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
       )
     else
       changeset
+    end
+  end
+
+  defp parse_redeem_by(changeset, attrs) do
+    case Map.get(attrs, "redeem_by") || Map.get(attrs, :redeem_by) do
+      nil ->
+        changeset
+
+      "" ->
+        put_change(changeset, :redeem_by, nil)
+
+      value when is_binary(value) ->
+        # Parse datetime-local string (format: "2026-02-24T22:50")
+        # Treat it as UTC since datetime-local doesn't include timezone
+        case NaiveDateTime.from_iso8601(value) do
+          {:ok, naive_dt} ->
+            utc_dt = DateTime.from_naive!(naive_dt, "Etc/UTC")
+            put_change(changeset, :redeem_by, utc_dt)
+
+          {:error, _} ->
+            add_error(changeset, :redeem_by, "invalid datetime format")
+        end
+
+      %DateTime{} = dt ->
+        put_change(changeset, :redeem_by, dt)
+
+      _ ->
+        changeset
+    end
+  end
+
+  defp validate_redeem_by_future(changeset) do
+    case get_field(changeset, :redeem_by) do
+      nil ->
+        changeset
+
+      redeem_by ->
+        if DateTime.compare(redeem_by, DateTime.utc_now()) == :lt do
+          add_error(changeset, :redeem_by, "must be in the future")
+        else
+          changeset
+        end
     end
   end
 end

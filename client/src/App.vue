@@ -85,6 +85,12 @@
     const subscriptionStatus = (authStore.user as any)?.subscription?.status;
     const hasSelectedPlan = localStorage.getItem('has_selected_plan');
 
+    console.log('[App] Subscription gate check:', {
+      subscriptionStatus,
+      hasSelectedPlan,
+      userSubscription: (authStore.user as any)?.subscription,
+    });
+
     // Users with active or cancelled subscriptions always bypass the gate
     if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
       // Also set the flag so future checks are faster
@@ -98,11 +104,17 @@
     // 1. No plan has been selected AND
     // 2. Subscription is either expired or doesn't exist (none/undefined)
     if (!hasSelectedPlan) {
+      console.log('[App] No plan selected, showing subscription gate');
       return true;
     }
 
     // If plan was selected but subscription is now expired, show gate again
-    return subscriptionStatus === 'expired';
+    if (subscriptionStatus === 'expired') {
+      console.log('[App] Subscription expired, showing subscription gate');
+      return true;
+    }
+
+    return false;
   });
 
   // Sidebar should be disabled when subscription gate is active
@@ -163,10 +175,12 @@
   const routerKey = ref(0);
 
   // Watch for subscription gate and redirect to billing
+  // Also watch authStore.user to re-evaluate when user data loads
   watch(
-    requiresSubscriptionGate,
-    (needsGate) => {
+    [requiresSubscriptionGate, () => authStore.user],
+    ([needsGate]) => {
       if (needsGate && currentRoute.path !== '/billing') {
+        console.log('[App] Subscription gate active, redirecting to billing');
         router.push('/billing?subscription_required=true');
       }
     },
