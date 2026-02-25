@@ -22,7 +22,7 @@
 
       <!-- Progress (playback position) -->
       <div
-        class="absolute top-0 h-full bg-gradient-to-r from-violet-600 to-purple-500 rounded-full transition-all duration-100"
+        class="absolute top-0 h-full bg-gradient-to-r from-[var(--sidebar-accent)] to-[#0891b2] rounded-full transition-all duration-100"
         :style="{ width: `${progressPercentage}%` }"
       />
 

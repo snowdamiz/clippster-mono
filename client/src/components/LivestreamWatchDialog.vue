@@ -44,7 +44,7 @@
                       />
                       <div
                         v-else
-                        class="w-10 h-10 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white font-bold border-2 border-red-500"
+                        class="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--sidebar-accent)] to-[#0891b2] flex items-center justify-center text-white font-bold border-2 border-red-500"
                       >
                         {{ streamerInfo.displayName?.charAt(0)?.toUpperCase() || '?' }}
                       </div>
@@ -154,7 +154,7 @@
                 class="absolute inset-0 flex items-center justify-center bg-black/60 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
-                  <Loader2 class="w-12 h-12 text-violet-500 animate-spin" />
+                  <Loader2 class="w-12 h-12 text-[var(--sidebar-accent)] animate-spin" />
                   <span class="text-white text-sm font-medium">
                     {{ viewer.state.value.totalRecordedDuration < 12 ? 'Building buffer...' : 'Buffering...' }}
                   </span>
@@ -167,7 +167,7 @@
                 class="absolute inset-0 flex items-center justify-center bg-black/80 z-20"
               >
                 <div class="flex flex-col items-center gap-3">
-                  <Loader2 class="w-12 h-12 text-violet-500 animate-spin" />
+                  <Loader2 class="w-12 h-12 text-[var(--sidebar-accent)] animate-spin" />
                   <span class="text-white text-sm font-medium">Connecting to stream...</span>
                   <span class="text-zinc-400 text-xs">{{ props.displayName }}</span>
                 </div>
@@ -196,7 +196,7 @@
                   </span>
                   <button
                     @click="reconnect"
-                    class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors"
+                    class="px-4 py-2 bg-[var(--sidebar-accent)] hover:opacity-90 text-white rounded-lg transition-colors"
                   >
                     Retry
                   </button>
@@ -286,7 +286,7 @@
                       <!-- Clip Button -->
                       <button
                         @click="openClipModal"
-                        class="px-3 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2"
+                        class="px-3 py-2 bg-gradient-to-r from-[var(--sidebar-accent)] to-[#0891b2] hover:opacity-90 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2"
                         :disabled="
                           viewer.state.value.totalRecordedDuration < 5 ||
                           viewer.state.value.availableSegments.length === 0
@@ -1376,8 +1376,8 @@
     height: 4px;
     background: linear-gradient(
       to right,
-      #8b5cf6 0%,
-      #8b5cf6 var(--value, 50%),
+      var(--sidebar-accent) 0%,
+      var(--sidebar-accent) var(--value, 50%),
       #52525b var(--value, 50%),
       #52525b 100%
     );
