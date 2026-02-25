@@ -937,8 +937,7 @@
           redeem_by: formData.value.redeem_by || undefined,
           notes: formData.value.notes || undefined,
         };
-        
-        console.log('[PromoCodes] Creating promo with payload:', payload);
+
         response = await promoCodesApi.createPromoCode(payload);
       }
 
@@ -950,24 +949,12 @@
         closeCreateModal();
         await fetchPromoCodes();
       } else {
-        // Extract detailed error from response
-        const errorDetails = response.error || 'Failed to save discount code';
-        error.value = errorDetails;
-        
-        // Log full error for debugging
-        console.error('[PromoCodes] Server error:', response);
-        
-        showErrorToast('Failed to save', errorDetails);
+        error.value = response.error || 'Failed to save discount code';
+        showErrorToast('Failed to save', error.value);
       }
     } catch (e: any) {
-      // Extract error details from axios response
-      const errorMsg = e.response?.data?.error || e.response?.data?.details || e.message || 'An error occurred';
-      error.value = errorMsg;
-      
-      // Log full error for debugging
-      console.error('[PromoCodes] Request error:', e.response?.data || e);
-      
-      showErrorToast('Failed to save', errorMsg);
+      error.value = e.response?.data?.error || e.message || 'An error occurred';
+      showErrorToast('Failed to save', error.value);
     } finally {
       saving.value = false;
     }

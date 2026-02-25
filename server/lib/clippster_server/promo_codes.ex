@@ -332,9 +332,16 @@ defmodule ClippsterServer.PromoCodes do
   def create_stripe_promotion_code(%PromoCode{} = promo, coupon_id) do
     promo_params = %{
       coupon: coupon_id,
-      code: promo.code,
-      max_redemptions: promo.max_redemptions
+      code: promo.code
     }
+
+    # Only include max_redemptions if it has a value
+    promo_params =
+      if promo.max_redemptions do
+        Map.put(promo_params, :max_redemptions, promo.max_redemptions)
+      else
+        promo_params
+      end
 
     promo_params =
       if promo.redeem_by do
