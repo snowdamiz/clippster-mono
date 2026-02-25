@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { messagingSocket } from '@/services/messagingSocket'
+import { API_BASE } from '@/lib/apiBase'
 
 // ============================================================================
 // Types
@@ -21,7 +22,6 @@ export interface Announcement {
 // ============================================================================
 
 const SEEN_KEY = 'clippster_seen_announcements'
-const API_URL = import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'
 
 // ============================================================================
 // Helpers
@@ -66,7 +66,7 @@ export function useAnnouncements() {
 
   const fetchAndEnqueue = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/announcements/active`)
+      const res = await fetch(`${API_BASE}/announcements/active`)
       if (!res.ok) return
       const data = await res.json()
       const announcements: Announcement[] = data.announcements ?? []

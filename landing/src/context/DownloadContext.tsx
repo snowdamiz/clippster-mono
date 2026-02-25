@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect, useMemo, type ReactNode } from 'react'
+import { API_BASE } from '@/lib/apiBase'
 
 interface DownloadContextType {
   downloadsEnabled: boolean
@@ -12,7 +13,7 @@ interface DownloadContextType {
 
 const DownloadContext = createContext<DownloadContextType | undefined>(undefined)
 
-const API_URL = `${import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'}/api/beta/verify-code`
+const API_URL = `${API_BASE}/beta/verify-code`
 
 // Check if beta code exists in localStorage
 function checkInitialAccess(): boolean {

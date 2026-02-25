@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { useOrganization } from '@/hooks/useOrganization'
+import { API_BASE } from '@/lib/apiBase'
 import { Sparkles, CreditCard, Wallet, Loader2 } from 'lucide-react'
 
 interface Props {
@@ -38,8 +39,7 @@ export function BuyCreditsModal({ open, onClose }: Props) {
   const handleStripeCheckout = async () => {
     if (!selectedPack || !organizationId) return
     // Open Stripe checkout
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'
-    window.open(`${apiUrl}/api/payments/stripe/checkout?pack=${selectedPack.id}&org_id=${organizationId}&token=${localStorage.getItem('auth_token')}`, '_blank')
+    window.open(`${API_BASE}/payments/stripe/checkout?pack=${selectedPack.id}&org_id=${organizationId}&token=${localStorage.getItem('auth_token')}`, '_blank')
     onClose()
   }
 

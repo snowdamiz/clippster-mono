@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+import { API_BASE } from '@/lib/apiBase'
 
 interface OAuthResult {
   success: boolean
@@ -77,7 +76,7 @@ export function useOAuthPopup() {
       web_redirect_uri: webRedirectUri,
     })
 
-    const url = `${API_BASE}/api/auth/${platform}/start?${params.toString()}`
+    const url = `${API_BASE}/auth/${platform}/start?${params.toString()}`
 
     // Open popup centered on screen
     const width = 600

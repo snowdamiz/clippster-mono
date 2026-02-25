@@ -1,6 +1,7 @@
 import { Socket, Channel } from 'phoenix'
 import type { Message, Conversation } from './messagingApi'
 import { normalizeMessage, normalizeConversation } from './messagingApi'
+import { API_ORIGIN } from '@/lib/apiBase'
 
 // ============================================================================
 // Types
@@ -46,8 +47,7 @@ class MessagingSocket {
   > = new Map()
 
   private getSocketUrl(): string {
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'
-    const url = new URL(apiUrl)
+    const url = new URL(API_ORIGIN)
     const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${protocol}//${url.host}/messaging`
   }
