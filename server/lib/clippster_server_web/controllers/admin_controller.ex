@@ -697,7 +697,15 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
-  Extend a user's subscription.
+  Cancel a user's subscription.
+  Requires admin authentication.
+  """
+  def cancel_subscription(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Subscriptions.admin_cancel_subscription(user_id) do
+          {:ok, _user} ->
+            subscription_info = Subscriptions.get_subscription_status(user_id)
 
             json(conn, %{
               success: true,
@@ -724,9 +732,7 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
-  Get subscription history for a user.
-  Requires admin authentication.
-  """
+  Extend a user's subscription.
   def get_subscription_history(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
       {:ok, user_id} ->
