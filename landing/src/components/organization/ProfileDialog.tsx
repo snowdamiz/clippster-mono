@@ -229,8 +229,17 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
           }
         }
       } else if (platform === 'twitch') {
-        // Twitch requires OAuth, skip auto-fetch
-        // Users can manually add the avatar URL if needed
+        // Use server proxy to avoid CORS
+        const response = await fetch(`/api/twitch/channels/${platformId}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.profileImageUrl) {
+            updateLink(index, { 
+              profile_image_url: data.profileImageUrl, 
+              display_name: data.displayName || platformId 
+            })
+          }
+        }
       } else if (platform === 'pumpfun') {
         // Use server proxy for PumpFun metadata
         const response = await fetch(`/api/metadata/${platformId}`)
