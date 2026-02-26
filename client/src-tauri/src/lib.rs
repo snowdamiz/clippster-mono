@@ -1,33 +1,33 @@
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 // Modules
-mod storage;
-mod ffmpeg_utils;
-mod auth;
-mod stripe_callback;
-mod downloads;
-mod audio;
-mod clips;
-mod video_server;
 mod assets;
-mod ui_utils;
-mod pumpfun;
-mod kick;
-mod twitch;
-mod waveform;
+mod audio;
 mod audio_peaks;
-mod focal_detection;
-mod commands;
-mod sidecar;
-mod dvr;
-mod hls;
-mod video_editor_export;
-mod video;
-mod clip_extractor_commands;
-mod utils;
-mod font_commands;
-mod hls_proxy;
+mod auth;
 mod avatar_proxy;
+mod clip_extractor_commands;
+mod clips;
+mod commands;
+mod downloads;
+mod dvr;
+mod ffmpeg_utils;
+mod focal_detection;
+mod font_commands;
+mod hls;
+mod hls_proxy;
+mod kick;
+mod pumpfun;
+mod sidecar;
+mod storage;
+mod stripe_callback;
+mod twitch;
+mod ui_utils;
+mod utils;
+mod video;
+mod video_editor_export;
+mod video_server;
+mod waveform;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -37,7 +37,8 @@ use commands::*;
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
 
-static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> =
+    Lazy::new(|| Arc::new(Mutex::new(false)));
 
 /// Stores the localhost plugin port for production builds so child windows (PIP) can use the same origin
 #[allow(dead_code)]
@@ -47,12 +48,11 @@ static LOCALHOST_PORT: Lazy<Mutex<Option<u16>>> = Lazy::new(|| Mutex::new(None))
 #[tauri::command]
 async fn copy_file(source: String, destination: String) -> Result<(), String> {
     use std::fs;
-    
+
     println!("[Rust] Copying file from {} to {}", source, destination);
-    
-    fs::copy(&source, &destination)
-        .map_err(|e| format!("Failed to copy file: {}", e))?;
-    
+
+    fs::copy(&source, &destination).map_err(|e| format!("Failed to copy file: {}", e))?;
+
     println!("[Rust] File copied successfully");
     Ok(())
 }
@@ -61,12 +61,11 @@ async fn copy_file(source: String, destination: String) -> Result<(), String> {
 #[tauri::command]
 async fn read_video_file(file_path: String) -> Result<Vec<u8>, String> {
     use std::fs;
-    
+
     println!("[Rust] Reading video file: {}", file_path);
-    
-    let bytes = fs::read(&file_path)
-        .map_err(|e| format!("Failed to read video file: {}", e))?;
-    
+
+    let bytes = fs::read(&file_path).map_err(|e| format!("Failed to read video file: {}", e))?;
+
     println!("[Rust] Video file read successfully: {} bytes", bytes.len());
     Ok(bytes)
 }
@@ -91,7 +90,7 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     // In dev mode, WebviewUrl::App resolves to the Vite dev server (http://localhost:1420) which works fine.
     #[cfg(dev)]
     let pip_url = WebviewUrl::App("/pip-controls".into());
-    
+
     #[cfg(not(dev))]
     let pip_url = {
         let port = LOCALHOST_PORT.lock().unwrap();
@@ -102,7 +101,9 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                 WebviewUrl::External(url_str.parse().unwrap())
             }
             None => {
-                println!("[Rust] WARNING: No localhost port stored, falling back to WebviewUrl::App");
+                println!(
+                    "[Rust] WARNING: No localhost port stored, falling back to WebviewUrl::App"
+                );
                 WebviewUrl::App("/pip-controls".into())
             }
         }
@@ -110,23 +111,19 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
 
     // Create new always-on-top window - initial size is a reasonable default;
     // the frontend will detect the video's actual aspect ratio and resize accordingly.
-    let window = WebviewWindowBuilder::new(
-        &app,
-        "pip-controls",
-        pip_url
-    )
-    .title("Stream")
-    .inner_size(480.0, 270.0)
-    .min_inner_size(240.0, 135.0)
-    .resizable(true)
-    .decorations(false)
-    .transparent(true)
-    .always_on_top(true)
-    .visible_on_all_workspaces(true)
-    .skip_taskbar(true)
-    .visible(true)
-    .build()
-    .map_err(|e| format!("Failed to create PIP window: {}", e))?;
+    let window = WebviewWindowBuilder::new(&app, "pip-controls", pip_url)
+        .title("Stream")
+        .inner_size(480.0, 270.0)
+        .min_inner_size(240.0, 135.0)
+        .resizable(true)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .visible_on_all_workspaces(true)
+        .skip_taskbar(true)
+        .visible(true)
+        .build()
+        .map_err(|e| format!("Failed to create PIP window: {}", e))?;
 
     // Position in bottom-right corner
     if let Ok(Some(monitor)) = window.current_monitor() {
@@ -141,30 +138,30 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     {
         use windows::Win32::Foundation::HWND;
         use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowPos, GetWindowLongPtrW, SetWindowLongPtrW, IsWindow,
-            HWND_TOPMOST, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, SWP_NOACTIVATE, SWP_FRAMECHANGED,
-            WINDOW_EX_STYLE, GWL_EXSTYLE, WS_EX_TOPMOST, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE
+            GetWindowLongPtrW, IsWindow, SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE,
+            HWND_TOPMOST, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+            WINDOW_EX_STYLE, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
         };
-        
+
         if let Ok(hwnd) = window.hwnd() {
             let hwnd = HWND(hwnd.0 as *mut core::ffi::c_void);
-            
+
             unsafe {
                 // Step 1: Get current extended window styles
                 let current_ex_style = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-                
+
                 // Step 2: Add WS_EX_TOPMOST, WS_EX_LAYERED, WS_EX_TOOLWINDOW, and WS_EX_NOACTIVATE flags
                 // WS_EX_TOOLWINDOW prevents the window from appearing in the taskbar
                 // WS_EX_NOACTIVATE prevents the window from stealing focus when clicked,
                 // which is critical — stealing focus from an exclusive fullscreen game
                 // causes Windows to minimize the game
-                let new_ex_style = WINDOW_EX_STYLE(current_ex_style as u32) 
-                    | WS_EX_TOPMOST 
-                    | WS_EX_LAYERED 
+                let new_ex_style = WINDOW_EX_STYLE(current_ex_style as u32)
+                    | WS_EX_TOPMOST
+                    | WS_EX_LAYERED
                     | WS_EX_TOOLWINDOW
                     | WS_EX_NOACTIVATE;
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, new_ex_style.0 as isize);
-                
+
                 // Step 3: Apply HWND_TOPMOST with SWP_FRAMECHANGED to force style update
                 let _ = SetWindowPos(
                     hwnd,
@@ -175,22 +172,22 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                     0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 );
-                
+
                 // Note: Do NOT call BringWindowToTop — it steals focus from the
                 // foreground window (the game), causing exclusive fullscreen games to minimize.
                 // HWND_TOPMOST via SetWindowPos with SWP_NOACTIVATE is sufficient.
-                
+
                 // Step 4: Subclass the window to intercept WM_WINDOWPOSCHANGING for aspect ratio lock.
                 // WM_WINDOWPOSCHANGING is more reliable than WM_SIZING because it fires for ALL
                 // size changes (user drag, SetWindowPos calls, aero snap, etc.) and is processed
                 // before the window is actually resized. tao's own borderless resize handling
                 // uses WM_NCHITTEST which may interfere with WM_SIZING subclass ordering.
-                use windows::Win32::UI::Shell::{SetWindowSubclass, DefSubclassProc};
-                use windows::Win32::Foundation::{WPARAM, LPARAM, LRESULT};
-                
+                use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+                use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
+
                 const WM_WINDOWPOSCHANGING: u32 = 0x0046;
                 const SWP_NOSIZE_RAW: u32 = 0x0001;
-                
+
                 #[repr(C)]
                 struct WINDOWPOS_RAW {
                     hwnd: HWND,
@@ -201,11 +198,11 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                     cy: i32,
                     flags: u32,
                 }
-                
+
                 // dwRefData stores the aspect ratio as ratio_w << 16 | ratio_h
                 // 16:9 → ratio_w=16, ratio_h=9
                 let aspect_data: usize = (16 << 16) | 9;
-                
+
                 unsafe extern "system" fn pip_aspect_subclass(
                     hwnd: HWND,
                     umsg: u32,
@@ -216,41 +213,45 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
                 ) -> LRESULT {
                     if umsg == WM_WINDOWPOSCHANGING && lparam.0 != 0 {
                         let pos = &mut *(lparam.0 as *mut WINDOWPOS_RAW);
-                        
+
                         // Skip if size isn't changing
                         if (pos.flags & SWP_NOSIZE_RAW) != 0 {
                             return DefSubclassProc(hwnd, umsg, wparam, lparam);
                         }
-                        
-                        let ratio_w = (dwrefdata >> 16) as i32;    // 16
+
+                        let ratio_w = (dwrefdata >> 16) as i32; // 16
                         let ratio_h = (dwrefdata & 0xFFFF) as i32; // 9
-                        
+
                         // Minimum size
                         let min_w = 240;
                         let min_h = (min_w * ratio_h) / ratio_w; // 135
-                        
-                        if pos.cx < min_w { pos.cx = min_w; }
-                        if pos.cy < min_h { pos.cy = min_h; }
-                        
+
+                        if pos.cx < min_w {
+                            pos.cx = min_w;
+                        }
+                        if pos.cy < min_h {
+                            pos.cy = min_h;
+                        }
+
                         // Enforce 16:9: width is authoritative, adjust height to match.
                         // This means the window can ONLY be uniformly scaled — exactly
                         // like taking a 16:9 video and making it bigger or smaller.
                         let correct_height = (pos.cx * ratio_h) / ratio_w;
                         pos.cy = correct_height;
-                        
+
                         // Re-enforce minimum after correction
                         if pos.cy < min_h {
                             pos.cy = min_h;
                             pos.cx = (pos.cy * ratio_w) / ratio_h;
                         }
                     }
-                    
+
                     DefSubclassProc(hwnd, umsg, wparam, lparam)
                 }
-                
+
                 let _ = SetWindowSubclass(hwnd, Some(pip_aspect_subclass), 1, aspect_data);
             }
-            
+
             // Step 5: Spawn a background timer that periodically re-asserts HWND_TOPMOST.
             // Fullscreen games (both exclusive and borderless) can cause the DWM to demote
             // our topmost z-order when the game window gains focus. Professional overlay tools
@@ -260,16 +261,16 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
             std::thread::spawn(move || {
                 loop {
                     std::thread::sleep(std::time::Duration::from_millis(500));
-                    
+
                     unsafe {
                         let hwnd = HWND(hwnd_raw as *mut core::ffi::c_void);
-                        
+
                         // Stop the timer if the window has been destroyed
                         if !IsWindow(hwnd).as_bool() {
                             println!("[Rust] PIP topmost timer: window destroyed, stopping");
                             break;
                         }
-                        
+
                         // Re-assert HWND_TOPMOST without activating or moving the window
                         let _ = SetWindowPos(
                             hwnd,
@@ -289,8 +290,8 @@ async fn create_pip_control_window(app: tauri::AppHandle) -> Result<(), String> 
     // macOS-specific: Set window collection behavior to appear over fullscreen apps
     #[cfg(target_os = "macos")]
     {
-        use objc::{msg_send, sel, sel_impl};
         use objc::runtime::Object;
+        use objc::{msg_send, sel, sel_impl};
 
         if let Ok(ns_window) = window.ns_window() {
             unsafe {
@@ -1022,15 +1023,28 @@ commands::file_utils::generate_video_thumbnail,
 
 // Auth commands
             auth::open_wallet_auth_window,
+            auth::poll_auth_result,
+            auth::clear_auth_result,
             auth::open_wallet_payment_window,
+            auth::poll_payment_result,
+            auth::clear_payment_result,
             auth::open_google_auth_window,
+            auth::poll_google_auth_result,
+            auth::clear_google_auth_result,
+            auth::start_email_verification_listener,
+            auth::poll_email_verification_result,
+            auth::clear_email_verification_result,
             stripe_callback::open_stripe_payment_window,
             stripe_callback::poll_stripe_payment_result,
             stripe_callback::clear_stripe_payment_result,
             auth::open_instagram_auth_window,
             auth::start_user_instagram_oauth,
+            auth::poll_instagram_auth_result,
+            auth::clear_instagram_auth_result,
             auth::open_twitter_auth_window,
             auth::start_user_twitter_oauth,
+            auth::poll_twitter_auth_result,
+            auth::clear_twitter_auth_result,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,
@@ -1222,4 +1236,4 @@ remotion_export::stop_remotion_sidecar,
 .manage(remotion_export::SidecarState::new())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
-} 
+}

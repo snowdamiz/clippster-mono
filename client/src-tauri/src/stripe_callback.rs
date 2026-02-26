@@ -1,8 +1,11 @@
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
-use warp::Filter;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 use tauri::Emitter;
+use warp::Filter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StripePaymentResult {
@@ -12,7 +15,7 @@ pub struct StripePaymentResult {
     pub error: Option<String>,
 }
 
-pub static STRIPE_PAYMENT_RESULT: Lazy<Arc<Mutex<Option<StripePaymentResult>>>> = 
+pub static STRIPE_PAYMENT_RESULT: Lazy<Arc<Mutex<Option<StripePaymentResult>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static STRIPE_SERVER_PORT: u16 = 48277;
 
@@ -128,8 +131,13 @@ pub fn start_stripe_callback_server(app: tauri::AppHandle) {
 
         let routes = stripe_success.or(stripe_cancel).with(cors);
 
-        println!("Starting Stripe callback server on port {}", STRIPE_SERVER_PORT);
-        warp::serve(routes).run(([127, 0, 0, 1], STRIPE_SERVER_PORT)).await;
+        println!(
+            "Starting Stripe callback server on port {}",
+            STRIPE_SERVER_PORT
+        );
+        warp::serve(routes)
+            .run(([127, 0, 0, 1], STRIPE_SERVER_PORT))
+            .await;
     });
 }
 
