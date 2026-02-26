@@ -6,6 +6,9 @@
     :icon="FolderOpen"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Assets' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <template #actions>
       <button v-if="isAdmin" class="org-assets__action-btn" @click="openUploadDialog">
         <Upload class="org-assets__action-icon" />
@@ -478,6 +481,7 @@
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import {
     uploadOrganizationAsset,

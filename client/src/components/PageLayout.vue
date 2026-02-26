@@ -27,18 +27,31 @@
         </div>
         <div class="page-header__info">
           <div class="page-header__title-row">
-            <!-- Breadcrumbs -->
-            <nav v-if="breadcrumbs && breadcrumbs.length > 0" class="page-header__breadcrumbs">
-              <template v-for="(crumb, index) in breadcrumbs" :key="index">
-                <router-link v-if="crumb.path" :to="crumb.path" class="page-header__breadcrumb-link">
-                  {{ crumb.label }}
-                </router-link>
-                <span v-else class="page-header__breadcrumb-text">{{ crumb.label }}</span>
-                <ChevronRight v-if="index < breadcrumbs.length - 1" class="page-header__breadcrumb-separator" />
-              </template>
-            </nav>
-            <!-- Simple title (when no breadcrumbs) -->
-            <h1 v-else class="page-header__title">{{ title }}</h1>
+            <!-- Title slot for custom content -->
+            <slot name="title">
+              <!-- Breadcrumbs -->
+              <nav v-if="breadcrumbs && breadcrumbs.length > 0" class="page-header__breadcrumbs">
+                <template v-for="(crumb, index) in breadcrumbs" :key="index">
+                  <!-- First breadcrumb slot for custom content (e.g., OrganizationSelector) -->
+                  <slot v-if="index === 0" name="firstBreadcrumb">
+                    <router-link v-if="crumb.path" :to="crumb.path" class="page-header__breadcrumb-link">
+                      {{ crumb.label }}
+                    </router-link>
+                    <span v-else class="page-header__breadcrumb-text">{{ crumb.label }}</span>
+                  </slot>
+                  <!-- Regular breadcrumbs -->
+                  <template v-else>
+                    <router-link v-if="crumb.path" :to="crumb.path" class="page-header__breadcrumb-link">
+                      {{ crumb.label }}
+                    </router-link>
+                    <span v-else class="page-header__breadcrumb-text">{{ crumb.label }}</span>
+                  </template>
+                  <ChevronRight v-if="index < breadcrumbs.length - 1" class="page-header__breadcrumb-separator" />
+                </template>
+              </nav>
+              <!-- Simple title (when no breadcrumbs) -->
+              <h1 v-else class="page-header__title">{{ title }}</h1>
+            </slot>
             <slot name="badge"></slot>
           </div>
           <!-- <p class="page-header__description">{{ description }}</p> -->

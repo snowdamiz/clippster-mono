@@ -6,6 +6,9 @@
     :icon="Globe"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Social Accounts' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <div class="social-accounts">
       <!-- Page Heading -->
       <div class="social-accounts__heading">
@@ -424,6 +427,7 @@
     Loader2,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import SocialAccountAssignments from '@/components/organization/SocialAccountAssignments.vue';
   import OrgScheduledPostsList from '@/components/organization/OrgScheduledPostsList.vue';
   import { useOrganization } from '@/composables/useOrganization';

@@ -93,6 +93,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
   const [ratioPickerMode, setRatioPickerMode] = useState<'intro' | 'outro'>('intro')
   const [introRatioSettings, setIntroRatioSettings] = useState<string | null>(null)
   const [outroRatioSettings, setOutroRatioSettings] = useState<string | null>(null)
+  const [fetchingMetadata, setFetchingMetadata] = useState<number | null>(null)
 
   // Refs
   const introFileRef = useRef<HTMLInputElement>(null)
@@ -207,6 +208,47 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
     if (primary?.profile_image_url) return primary.profile_image_url
     const any = platformLinks.find(l => l.profile_image_url)
     return any?.profile_image_url || undefined
+  }
+
+  // Fetch platform metadata (avatar) when platform ID is entered
+  const fetchPlatformMetadata = async (index: number, platform: PlatformId, platformId: string) => {
+    if (!platformId.trim()) return
+    
+    setFetchingMetadata(index)
+    try {
+      if (platform === 'kick') {
+        // Use server proxy to avoid CORS
+        const response = await fetch(`/api/kick/channels/${platformId}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.profileImageUrl) {
+            updateLink(index, { 
+              profile_image_url: data.profileImageUrl, 
+              display_name: data.username || platformId 
+            })
+          }
+        }
+      } else if (platform === 'twitch') {
+        // Twitch requires OAuth, skip auto-fetch
+        // Users can manually add the avatar URL if needed
+      } else if (platform === 'pumpfun') {
+        // Use server proxy for PumpFun metadata
+        const response = await fetch(`/api/metadata/${platformId}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.metadata?.image) {
+            updateLink(index, { 
+              profile_image_url: data.metadata.image, 
+              display_name: data.metadata.name || platformId 
+            })
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[ProfileDialog] Failed to fetch platform metadata:', err)
+    } finally {
+      setFetchingMetadata(null)
+    }
   }
 
   // Upload handlers
@@ -541,9 +583,22 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                         <input
                           value={link.platform_id}
                           onChange={e => updateLink(index, { platform_id: e.target.value })}
+                          onBlur={e => {
+                            const value = e.target.value.trim()
+                            if (value && !link.profile_image_url) {
+                              fetchPlatformMetadata(index, link.platform, value)
+                            }
+                          }}
                           placeholder={link.platform === 'pumpfun' ? 'Enter mint ID or paste PumpFun URL' : 'Enter channel slug or paste URL'}
                           className="org-dialog__input org-dialog__input--sm"
+                          disabled={fetchingMetadata === index}
                         />
+                        {fetchingMetadata === index && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.75rem', color: '#6b7280' }}>
+                            <Loader2 size={12} className="org-dialog__spin" />
+                            <span>Fetching avatar...</span>
+                          </div>
+                        )}
                       </div>
                       <div className="org-dialog__field">
                         <label className="org-dialog__label org-dialog__label--sm">Display Name</label>

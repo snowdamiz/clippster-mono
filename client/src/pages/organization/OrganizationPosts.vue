@@ -6,6 +6,9 @@
     :icon="FileCheck"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Post Submissions' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <div class="org-posts">
       <PostSubmissionsList
         :organization-id="organizationId ?? ''"
@@ -21,6 +24,7 @@
   import { onMounted } from 'vue';
   import { FileCheck } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import PostSubmissionsList from '@/components/organization/PostSubmissionsList.vue';
   import { useOrganization } from '@/composables/useOrganization';
 

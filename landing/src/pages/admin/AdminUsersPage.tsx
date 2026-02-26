@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
+  ChevronUp,
   Copy,
   CreditCard,
   Handshake,
@@ -195,6 +196,8 @@ export function AdminUsersPage() {
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sortColumn, setSortColumn] = useState<'id' | 'account' | 'role' | 'subscription'>('id')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
   const [promotingUserId, setPromotingUserId] = useState<number | null>(null)
   const [showPromoteDialog, setShowPromoteDialog] = useState(false)
@@ -232,7 +235,47 @@ export function AdminUsersPage() {
   const [openUserActionMenuId, setOpenUserActionMenuId] = useState<number | null>(null)
   const userActionMenuRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
 
-  const rows = useMemo(() => users, [users])
+  const toggleSort = useCallback((column: 'id' | 'account' | 'role' | 'subscription') => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortColumn(column)
+      setSortDirection('asc')
+    }
+  }, [sortColumn, sortDirection])
+
+  const rows = useMemo(() => {
+    const sorted = [...users].sort((a, b) => {
+      let aValue: any
+      let bValue: any
+
+      switch (sortColumn) {
+        case 'id':
+          aValue = a.id
+          bValue = b.id
+          break
+        case 'account':
+          aValue = (a.email || a.wallet_address || '').toLowerCase()
+          bValue = (b.email || b.wallet_address || '').toLowerCase()
+          break
+        case 'role':
+          aValue = a.is_admin ? 3 : a.is_moderator ? 2 : 1
+          bValue = b.is_admin ? 3 : b.is_moderator ? 2 : 1
+          break
+        case 'subscription':
+          aValue = a.subscription?.tier_name || ''
+          bValue = b.subscription?.tier_name || ''
+          break
+        default:
+          return 0
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
+    return sorted
+  }, [users, sortColumn, sortDirection])
 
   const refreshUsers = useCallback(async () => {
     const data = await listAdminUsers()
@@ -676,10 +719,42 @@ export function AdminUsersPage() {
                   <table className="admin-users__table">
                     <thead className="admin-users__thead">
                       <tr>
-                        <th className="admin-users__th">ID</th>
-                        <th className="admin-users__th">Account</th>
-                        <th className="admin-users__th">Role</th>
-                        <th className="admin-users__th">Subscription</th>
+                        <th className="admin-users__th admin-users__th--sortable" onClick={() => toggleSort('id')}>
+                          <div className="admin-users__th-content">
+                            <span>ID</span>
+                            <span className="admin-users__sort-indicator">
+                              {sortColumn === 'id' && sortDirection === 'asc' && <ChevronUp size={14} />}
+                              {sortColumn === 'id' && sortDirection === 'desc' && <ChevronDown size={14} />}
+                            </span>
+                          </div>
+                        </th>
+                        <th className="admin-users__th admin-users__th--sortable" onClick={() => toggleSort('account')}>
+                          <div className="admin-users__th-content">
+                            <span>Account</span>
+                            <span className="admin-users__sort-indicator">
+                              {sortColumn === 'account' && sortDirection === 'asc' && <ChevronUp size={14} />}
+                              {sortColumn === 'account' && sortDirection === 'desc' && <ChevronDown size={14} />}
+                            </span>
+                          </div>
+                        </th>
+                        <th className="admin-users__th admin-users__th--sortable" onClick={() => toggleSort('role')}>
+                          <div className="admin-users__th-content">
+                            <span>Role</span>
+                            <span className="admin-users__sort-indicator">
+                              {sortColumn === 'role' && sortDirection === 'asc' && <ChevronUp size={14} />}
+                              {sortColumn === 'role' && sortDirection === 'desc' && <ChevronDown size={14} />}
+                            </span>
+                          </div>
+                        </th>
+                        <th className="admin-users__th admin-users__th--sortable" onClick={() => toggleSort('subscription')}>
+                          <div className="admin-users__th-content">
+                            <span>Subscription</span>
+                            <span className="admin-users__sort-indicator">
+                              {sortColumn === 'subscription' && sortDirection === 'asc' && <ChevronUp size={14} />}
+                              {sortColumn === 'subscription' && sortDirection === 'desc' && <ChevronDown size={14} />}
+                            </span>
+                          </div>
+                        </th>
                         <th className="admin-users__th">Credits</th>
                         <th className="admin-users__th">Created</th>
                         <th className="admin-users__th">Actions</th>

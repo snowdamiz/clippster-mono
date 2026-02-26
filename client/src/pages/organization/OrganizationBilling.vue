@@ -6,6 +6,9 @@
     :icon="Wallet"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Billing & Credits' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <template #actions>
       <Button v-if="isAdmin" size="sm" @click="showBuyCreditsModal = true" class="org-billing__buy-btn">
         <Plus class="org-billing__buy-btn-icon" />
@@ -830,6 +833,7 @@
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import BuyCreditsModal from '@/components/organization/BuyCreditsModal.vue';
   import SubscribeDialog from '@/components/SubscribeDialog.vue';
   import { useOrganization } from '@/composables/useOrganization';
