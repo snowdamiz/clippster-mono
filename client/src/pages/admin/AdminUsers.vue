@@ -141,10 +141,6 @@
                       <template v-else>
                         <span class="admin-users__no-account">No account info</span>
                       </template>
-                      <span v-if="user.created_by_organization_id" class="admin-users__org-badge" title="Created by Organization">
-                        <Users class="admin-users__org-badge-icon" />
-                        Org Account
-                      </span>
                     </div>
                   </td>
                   <td class="admin-users__td">
@@ -165,6 +161,10 @@
                         <Handshake class="admin-users__affiliate-badge-icon" />
                         Affiliate
                       </span>
+                      <span v-if="user.created_by_organization_id" class="admin-users__org-badge" title="Created by Organization">
+                        <Users class="admin-users__org-badge-icon" />
+                        Org Account
+                      </span>
                     </div>
                   </td>
                   <td class="admin-users__td">
@@ -179,6 +179,9 @@
                         <span v-if="user.subscription?.organization_id" class="admin-users__org-sub-indicator" title="Organization Subscription">
                           <Users :size="12" />
                         </span>
+                      </span>
+                      <span v-else-if="user.created_by_organization_id" class="admin-users__tier admin-users__tier--org">
+                        Organization Sub
                       </span>
                       <span v-else class="admin-users__tier admin-users__tier--none">None</span>
                       <div class="admin-users__sub-status">
@@ -1958,6 +1961,11 @@
   .admin-users__tier--none {
     background-color: rgba(39, 39, 42, 0.5);
     color: var(--sidebar-text-muted);
+  }
+
+  .admin-users__tier--org {
+    font-weight: 600;
+    color: #ffffff;
   }
 
   .admin-users__org-sub-indicator {
