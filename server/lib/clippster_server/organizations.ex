@@ -557,32 +557,44 @@ defmodule ClippsterServer.Organizations do
 
       is_member?(invitation.organization_id, user.id) ->
         # Already a member, just mark invitation as accepted
-        invitation
-        |> OrganizationInvitation.accept_changeset()
-        |> Repo.update()
+        case invitation
+             |> OrganizationInvitation.accept_changeset()
+             |> Repo.update() do
+          {:ok, updated_invitation} ->
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
 
       true ->
-        Repo.transaction(fn ->
-          # Add as member
-          {:ok, _member} = add_member(invitation.organization_id, user.id, invitation.role)
+        case Repo.transaction(fn ->
+               # Add as member
+               {:ok, _member} = add_member(invitation.organization_id, user.id, invitation.role)
 
-          # Initialize credit allocation
-          {:ok, _allocation} =
-            %MemberCreditAllocation{}
-            |> MemberCreditAllocation.changeset(%{
-              organization_id: invitation.organization_id,
-              user_id: user.id
-            })
-            |> Repo.insert()
+               # Initialize credit allocation
+               {:ok, _allocation} =
+                 %MemberCreditAllocation{}
+                 |> MemberCreditAllocation.changeset(%{
+                   organization_id: invitation.organization_id,
+                   user_id: user.id
+                 })
+                 |> Repo.insert()
 
-          # Mark invitation as accepted
-          {:ok, updated_invitation} =
-            invitation
-            |> OrganizationInvitation.accept_changeset()
-            |> Repo.update()
+               # Mark invitation as accepted
+               {:ok, updated_invitation} =
+                 invitation
+                 |> OrganizationInvitation.accept_changeset()
+                 |> Repo.update()
 
-          updated_invitation
-        end)
+               updated_invitation
+             end) do
+          {:ok, updated_invitation} ->
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
     end
   end
 

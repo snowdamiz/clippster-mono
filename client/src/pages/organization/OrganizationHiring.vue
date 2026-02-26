@@ -6,6 +6,9 @@
     :icon="Briefcase"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Hiring' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <template #actions>
       <button
         v-if="!loadingPost && !hiringPost"
@@ -506,6 +509,7 @@
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
   } from '@/components/ui/dialog';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import { useOrganization } from '@/composables/useOrganization';
   import { useToast } from '@/composables/useToast';

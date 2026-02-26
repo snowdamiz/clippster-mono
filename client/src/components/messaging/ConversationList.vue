@@ -54,6 +54,16 @@ function formatTime(dateString: string | null): string {
 function getUnreadCount(conversationId: number): number {
   return props.unreadCounts.get(conversationId) || 0;
 }
+
+function getConversationAvatar(conversation: Conversation): string | null {
+  if (conversation.type === 'direct') {
+    const otherParticipant = conversation.participants.find(
+      p => p.userId !== props.currentUserId
+    );
+    return otherParticipant?.user?.avatarUrl || null;
+  }
+  return null;
+}
 </script>
 
 <template>
@@ -70,16 +80,28 @@ function getUnreadCount(conversationId: number): number {
     >
       <!-- Avatar/Icon -->
       <div class="conversation-avatar" :class="conversation.type">
-        <svg v-if="getConversationIcon(conversation) === 'user'" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
-          <circle cx="12" cy="7" r="4"/>
-        </svg>
+        <!-- Direct conversation: show user avatar or initial -->
+        <template v-if="conversation.type === 'direct'">
+          <img 
+            v-if="getConversationAvatar(conversation)" 
+            :src="getConversationAvatar(conversation)!" 
+            :alt="getConversationName(conversation)"
+            class="avatar-image"
+          />
+          <span v-else class="avatar-initial">
+            {{ getConversationName(conversation).charAt(0).toUpperCase() }}
+          </span>
+        </template>
+        
+        <!-- Group conversation: show icon -->
         <svg v-else-if="getConversationIcon(conversation) === 'users'" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
           <circle cx="9" cy="7" r="4"/>
           <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
           <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
         </svg>
+        
+        <!-- Announcement: show megaphone icon -->
         <svg v-else-if="getConversationIcon(conversation) === 'megaphone'" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="m3 11 18-5v12L3 13v-2z"/>
           <path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>
@@ -176,6 +198,18 @@ function getUnreadCount(conversationId: number): number {
 .conversation-avatar.announcement {
   background: #dc2626;
   color: white;
+}
+
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.avatar-initial {
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .conversation-content {

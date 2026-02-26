@@ -10,10 +10,11 @@ defmodule ClippsterServer.Credits do
 
   # Credit packs for purchasing additional credits (separate from subscription)
   # 1 credit = 1 minute of video processing
+  # Pricing matches add-on structure without seats
   @credit_packs %{
-    "small" => %{hours: 240, usd: 10.00, name: "Small Pack"},
-    "medium" => %{hours: 600, usd: 19.99, name: "Medium Pack"},
-    "large" => %{hours: 1800, usd: 44.99, name: "Large Pack"}
+    "small" => %{hours: 10_000, usd: 100.00, name: "10k Credits"},
+    "medium" => %{hours: 20_000, usd: 200.00, name: "20k Credits"},
+    "large" => %{hours: 40_000, usd: 400.00, name: "40k Credits"}
   }
 
   @doc """

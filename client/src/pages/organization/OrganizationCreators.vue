@@ -6,6 +6,9 @@
     :icon="UserCircle"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Creator Profiles' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <template #actions>
       <div v-if="isAdmin" style="display: flex; gap: 0.5rem;">
         <button class="org-creators__action-btn org-creators__action-btn--global" @click="openProfileDialog(undefined, 'global')">
@@ -392,6 +395,7 @@
     X,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import ProfileDialog from '@/components/ProfileDialog.vue';
   import ProfileAssignmentDialog from '@/components/ProfileAssignmentDialog.vue';
   import {

@@ -213,6 +213,9 @@ defmodule ClippsterServerWeb.Router do
     get("/kick/channels/:channel_slug", KickController, :get_channel)
     get("/kick/channels/:channel_slug/videos", KickController, :get_clips)
 
+    # Twitch routes
+    get("/twitch/channels/:channel_name", TwitchController, :get_channel)
+
     # Organization invitation (public - for viewing invitation details)
     get("/invitations/:token", OrganizationController, :get_invitation)
 

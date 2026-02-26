@@ -972,9 +972,16 @@ defmodule ClippsterServer.Accounts do
   end
 
   @doc """
-  Permanently deletes a user from the database.
+  Deletes a user immediately.
   This should only be used for users without active subscriptions.
   For users with active subscriptions, use schedule_user_deletion instead.
+  
+  Handles cascading deletion of related records that have :restrict constraints:
+  - Transfers organization ownership or deletes organizations
+  - Deletes credit transactions
+  - Deletes user credits
+  - Deletes processing jobs
+  - Deletes organization credit transactions
   """
   def delete_user(user_id) do
     user = get_user(user_id)
@@ -982,7 +989,65 @@ defmodule ClippsterServer.Accounts do
     if is_nil(user) do
       {:error, :user_not_found}
     else
-      Repo.delete(user)
+      Repo.transaction(fn ->
+        # 1. Handle organizations owned by this user
+        # Transfer ownership to another admin or delete if no other admins
+        owned_orgs_query = from o in "organizations",
+          where: o.owner_id == ^user_id,
+          select: %{id: o.id}
+        
+        owned_orgs = Repo.all(owned_orgs_query)
+        
+        Enum.each(owned_orgs, fn org ->
+          # Try to find another admin to transfer ownership
+          new_owner_query = from m in "organization_members",
+            where: m.organization_id == ^org.id and m.role == "admin" and m.user_id != ^user_id,
+            select: %{user_id: m.user_id},
+            limit: 1
+          
+          case Repo.one(new_owner_query) do
+            nil ->
+              # No other admin, delete the organization (cascade will handle members, etc.)
+              Repo.delete_all(from o in "organizations", where: o.id == ^org.id)
+            new_owner ->
+              # Transfer ownership to another admin
+              Repo.update_all(
+                from(o in "organizations", where: o.id == ^org.id),
+                set: [owner_id: new_owner.user_id]
+              )
+          end
+        end)
+        
+        # 2. Delete organization credit transactions where user was the purchaser
+        Repo.delete_all(
+          from t in "organization_credit_transactions",
+          where: t.purchased_by_user_id == ^user_id
+        )
+        
+        # 3. Delete user's credit transactions
+        Repo.delete_all(
+          from t in "credit_transactions",
+          where: t.user_id == ^user_id
+        )
+        
+        # 4. Delete user's processing jobs
+        Repo.delete_all(
+          from j in "processing_jobs",
+          where: j.user_id == ^user_id
+        )
+        
+        # 5. Delete user's credits record
+        Repo.delete_all(
+          from c in "user_credits",
+          where: c.user_id == ^user_id
+        )
+        
+        # 6. Finally delete the user (other tables with :delete_all or :nilify_all will cascade automatically)
+        case Repo.delete(user) do
+          {:ok, deleted_user} -> deleted_user
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      end)
     end
   end
 

@@ -6,6 +6,9 @@
     :icon="Users"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Team Members' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <template #actions>
       <div v-if="isAdmin" class="org-members__actions-container">
         <!-- Seat limit warning -->
@@ -643,6 +646,7 @@
   import api from '@/services/api';
   import PageLayout from '@/components/PageLayout.vue';
   import InviteMemberDialog from '@/components/InviteMemberDialog.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import { useOrganization, type OrganizationMember, type OrganizationInvitation } from '@/composables/useOrganization';
 
   const {

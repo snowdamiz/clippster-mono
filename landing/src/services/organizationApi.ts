@@ -10,7 +10,12 @@ export async function uploadOrganizationLogo(orgId: number, file: File) {
 
 // Creator profiles
 export async function listOrganizationCreatorProfiles(orgId: number) {
-  return api.get<{ success: boolean; profiles: ServerOrganizationCreatorProfile[]; error?: string }>(`/organizations/${orgId}/creator-profiles`)
+  const response = await api.get<{ success: boolean; profiles: ServerOrganizationCreatorProfile[]; error?: string }>(`/organizations/${orgId}/creator-profiles`)
+  console.log('[organizationApi] listOrganizationCreatorProfiles response:', response)
+  if (response.profiles) {
+    console.log('[organizationApi] First profile:', response.profiles[0])
+  }
+  return response
 }
 
 export async function getOrganizationCreatorProfile(orgId: number, profileId: number) {
