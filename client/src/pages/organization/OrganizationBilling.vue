@@ -602,32 +602,34 @@
 
           <div class="org-billing__addons-grid">
             <div v-for="addon in availableAddons" :key="addon.id" class="org-billing__addon-card">
-              <div v-if="addon.requires_ai" class="org-billing__addon-corner-badge">
-                <Star class="org-billing__addon-corner-badge-icon" />
-                <span>Includes AI Credits</span>
+              <div class="org-billing__addon-content">
+                <div v-if="addon.requires_ai" class="org-billing__addon-corner-badge">
+                  <Star class="org-billing__addon-corner-badge-icon" />
+                  <span>Includes AI</span>
+                </div>
+                <h3 class="org-billing__addon-name">{{ addon.name }}</h3>
+                <div class="org-billing__addon-price">
+                  <span class="org-billing__addon-price-currency">$</span>
+                  <span class="org-billing__addon-price-amount">{{ addon.usd }}</span>
+                  <span class="org-billing__addon-price-period">/mo</span>
+                </div>
+                <ul class="org-billing__addon-features">
+                  <li class="org-billing__addon-feature">
+                    <Check class="org-billing__addon-feature-icon" />
+                    <span>{{ addon.seats }} seats</span>
+                  </li>
+                  <li v-if="addon.monthly_credits > 0" class="org-billing__addon-feature">
+                    <Check class="org-billing__addon-feature-icon" />
+                    <span>{{ addon.monthly_credits.toLocaleString() }} credits/month</span>
+                  </li>
+                </ul>
+                <Button
+                  @click="selectSubscription(addon, 'addon')"
+                  class="org-billing__addon-btn"
+                >
+                  Add to Plan
+                </Button>
               </div>
-              <div class="org-billing__addon-header">
-                <span class="org-billing__addon-name">{{ addon.name }}</span>
-              </div>
-              <div class="org-billing__addon-price">${{ addon.usd }}/mo</div>
-              <ul class="org-billing__addon-features">
-                <li class="org-billing__addon-feature">
-                  <Plus class="org-billing__addon-feature-icon" />
-                  <span>{{ addon.seats }} seats</span>
-                </li>
-                <li v-if="addon.monthly_credits > 0" class="org-billing__addon-feature">
-                  <Plus class="org-billing__addon-feature-icon" />
-                  <span>{{ addon.monthly_credits.toLocaleString() }} credits/mo</span>
-                </li>
-              </ul>
-              <Button
-                @click="selectSubscription(addon, 'addon')"
-                size="sm"
-                variant="outline"
-                class="org-billing__addon-btn"
-              >
-                Add to Plan
-              </Button>
             </div>
           </div>
         </div>
@@ -905,14 +907,8 @@
   const availableAddons = computed(() => {
     if (!subscription.value) return [];
     
-    // Filter addons based on current subscription
-    const hasAiPlan = subscription.value.tier === 'enterprise_ai';
-    
-    return addonTiers.value.filter((addon) => {
-      // If org has AI plan, show all addons
-      // If org has base plan, only show non-AI addons
-      return hasAiPlan || !addon.requires_ai;
-    });
+    // Show all add-ons sorted by seat count (smallest to largest)
+    return [...addonTiers.value].sort((a, b) => a.seats - b.seats);
   });
 
   function getMemberInitials(member: any): string {
@@ -2376,17 +2372,27 @@
 
   .org-billing__addon-card {
     position: relative;
-    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    border-radius: 12px;
     overflow: hidden;
-    transition: all 150ms ease;
+    transition: all 200ms ease;
   }
 
   .org-billing__addon-card:hover {
     border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+  }
+
+  .org-billing__addon-content {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    padding: 1.5rem;
   }
 
   .org-billing__addon-corner-badge {
@@ -2395,16 +2401,16 @@
     right: 0.75rem;
     display: flex;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.4rem 0.75rem;
+    gap: 0.25rem;
+    padding: 0.3rem 0.6rem;
     background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.8));
     color: var(--sidebar-bg);
     font-size: 0.625rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-radius: 5px;
-    box-shadow: 0 2px 6px rgba(6, 182, 212, 0.25);
+    letter-spacing: 0.03em;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(6, 182, 212, 0.3);
   }
 
   .org-billing__addon-corner-badge-icon {
@@ -2412,51 +2418,65 @@
     height: 11px;
   }
 
-  .org-billing__addon-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.75rem;
+  .org-billing__addon-name {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
   }
 
-  .org-billing__addon-name {
-    font-size: 0.9375rem;
+  .org-billing__addon-price {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 1.5rem;
+  }
+
+  .org-billing__addon-price-currency {
+    font-size: 1.25rem;
     font-weight: 600;
     color: var(--sidebar-text);
   }
 
-  .org-billing__addon-price {
-    font-size: 1.5rem;
+  .org-billing__addon-price-amount {
+    font-size: 2.5rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin-bottom: 1rem;
+    letter-spacing: -0.03em;
+  }
+
+  .org-billing__addon-price-period {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin-left: 0.25rem;
   }
 
   .org-billing__addon-features {
     list-style: none;
-    margin: 0 0 1rem;
+    margin: 0 0 1.5rem;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.75rem;
   }
 
   .org-billing__addon-feature {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.625rem;
     font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
   }
 
   .org-billing__addon-feature-icon {
-    width: 14px;
-    height: 14px;
+    width: 15px;
+    height: 15px;
     color: #34d399;
+    flex-shrink: 0;
   }
 
   .org-billing__addon-btn {
     width: 100%;
+    margin-top: auto;
   }
 
   /* ===== Modal Styles ===== */

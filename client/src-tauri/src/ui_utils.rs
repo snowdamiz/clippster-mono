@@ -18,8 +18,20 @@ pub fn get_platform() -> String {
 
 // Show the main window (used to hide window during loading)
 #[tauri::command]
-pub async fn show_main_window(window: tauri::Window) -> Result<(), String> {
-    window.show().map_err(|e| e.to_string())
+pub async fn show_main_window(app: tauri::AppHandle) -> Result<(), String> {
+    println!("[Rust] show_main_window called");
+    if let Some(window) = app.get_webview_window("main") {
+        println!("[Rust] Found main window, showing it");
+        window.show().map_err(|e| {
+            println!("[Rust] Failed to show window: {}", e);
+            e.to_string()
+        })?;
+        println!("[Rust] Window shown successfully");
+        Ok(())
+    } else {
+        println!("[Rust] ERROR: Main window not found!");
+        Err("Main window not found".to_string())
+    }
 }
 
 // Setup macOS titlebar with transparent background
