@@ -3,7 +3,8 @@ defmodule ClippsterServerWeb.MessagingJSON do
   JSON rendering for messaging resources.
   """
 
-  alias ClippsterServer.Messaging.{Conversation, ConversationParticipant, Message}
+  alias ClippsterServer.Messaging.{Conversation, ConversationParticipant, Message, MessageAttachment}
+  alias ClippsterServer.Storage
 
   def conversation(%Conversation{} = conversation) do
     %{
@@ -73,7 +74,35 @@ defmodule ClippsterServerWeb.MessagingJSON do
       deleted_at: message.deleted_at,
       inserted_at: message.inserted_at,
       sender: render_user(message.sender),
-      read_by: render_read_by(message.read_statuses)
+      read_by: render_read_by(message.read_statuses),
+      attachments: render_attachments(message.attachments)
+    }
+  end
+
+  def attachment(%MessageAttachment{} = attachment) do
+    %{
+      id: attachment.id,
+      attachment_type: attachment.attachment_type,
+      url: Storage.presigned_url!(attachment.url),
+      thumbnail_url: attachment.thumbnail_url && Storage.presigned_url!(attachment.thumbnail_url),
+      filename: attachment.filename,
+      mime_type: attachment.mime_type,
+      file_size: attachment.file_size,
+      width: attachment.width,
+      height: attachment.height
+    }
+  end
+
+  def attachment(attachment_map) when is_map(attachment_map) do
+    %{
+      attachment_type: attachment_map.attachment_type || attachment_map[:attachment_type],
+      url: attachment_map.url || attachment_map[:url],
+      thumbnail_url: attachment_map.thumbnail_url || attachment_map[:thumbnail_url],
+      filename: attachment_map.filename || attachment_map[:filename],
+      mime_type: attachment_map.mime_type || attachment_map[:mime_type],
+      file_size: attachment_map.file_size || attachment_map[:file_size],
+      width: attachment_map.width || attachment_map[:width],
+      height: attachment_map.height || attachment_map[:height]
     }
   end
 
@@ -99,6 +128,12 @@ defmodule ClippsterServerWeb.MessagingJSON do
   defp render_read_by(%Ecto.Association.NotLoaded{}), do: []
   defp render_read_by(read_statuses) do
     Enum.map(read_statuses, & &1.user_id)
+  end
+
+  defp render_attachments(nil), do: []
+  defp render_attachments(%Ecto.Association.NotLoaded{}), do: []
+  defp render_attachments(attachments) when is_list(attachments) do
+    Enum.map(attachments, &attachment/1)
   end
 
   def unread_counts(counts) do

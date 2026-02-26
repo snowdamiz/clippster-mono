@@ -83,6 +83,8 @@ defmodule ClippsterServer.MixProject do
       {:pulsekit, "~> 1.0"},
       # Retry logic for transient failures
       {:retry, "~> 0.19"},
+      # Image processing for message attachments
+      {:mogrify, "~> 0.9"},
       # Code quality analysis
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]

@@ -145,6 +145,7 @@ interface BaseTimelineElement {
 	animationIn?: import("./animations").ElementAnimation;
 	animationOut?: import("./animations").ElementAnimation;
 	animationLoop?: import("./animations").ElementAnimation;
+	orderIndex?: number; // Layer order within track (higher = renders on top), CapCut-style
 }
 
 export interface VideoElement extends BaseTimelineElement {

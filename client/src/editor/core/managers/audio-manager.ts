@@ -16,9 +16,11 @@ export class AudioManager {
 	private playbackStartTime = 0;
 	private playbackStartContextTime = 0;
 	private scheduleTimer: number | null = null;
-	private lookaheadSeconds = 2;
+	private lookaheadSeconds = 5;
 	private scheduleIntervalMs = 500;
 	private clips: AudioClipSource[] = [];
+	private clipLastBufferTime = new Map<string, number>();
+	private clipHealthCheckTimer: number | null = null;
 	private sinks = new Map<string, AudioBufferSink>();
 	private inputs = new Map<string, Input>();
 	private activeClipIds = new Set<string>();
@@ -56,6 +58,7 @@ export class AudioManager {
 		if (typeof window !== "undefined") {
 			window.removeEventListener("playback-seek", this.handleSeek);
 		}
+		this.stopHealthCheck();
 		this.disposeSinks();
 		if (this.audioContext) {
 			void this.audioContext.close();
@@ -101,7 +104,11 @@ export class AudioManager {
 		this.stopPlayback();
 		this.disposeSinks();
 
-		if (!this.editor.playback.getIsPlaying()) return;
+		if (!this.editor.playback.getIsPlaying()) {
+			// Preload audio buffers for clips on timeline
+			void this.preloadClips();
+			return;
+		}
 
 		void this.startPlayback({ time: this.editor.playback.getCurrentTime() });
 	};
@@ -167,6 +174,7 @@ export class AudioManager {
 			this.scheduleTimer = window.setInterval(() => {
 				this.scheduleUpcomingClips();
 			}, this.scheduleIntervalMs);
+			this.startHealthCheck();
 		}
 	}
 
@@ -198,12 +206,14 @@ export class AudioManager {
 			window.clearInterval(this.scheduleTimer);
 		}
 		this.scheduleTimer = null;
+		this.stopHealthCheck();
 
 		for (const iterator of this.clipIterators.values()) {
 			void iterator.return();
 		}
 		this.clipIterators.clear();
 		this.activeClipIds.clear();
+		this.clipLastBufferTime.clear();
 
 		for (const source of this.queuedSources) {
 			try {
@@ -317,6 +327,9 @@ export class AudioManager {
 				this.queuedSources.delete(node);
 			});
 
+			// Track last buffer time for health monitoring
+			this.clipLastBufferTime.set(clip.id, performance.now());
+
 			const aheadTime = timelineTime - this.getPlaybackTime();
 			if (aheadTime >= 1) {
 				await this.waitUntilCaughtUp({ timelineTime, targetAhead: 1 });
@@ -325,6 +338,7 @@ export class AudioManager {
 		}
 
 		this.clipIterators.delete(clip.id);
+		this.clipLastBufferTime.delete(clip.id);
 		// don't remove from activeClipIds - prevents scheduler from restarting this clip
 		// the set is cleared on stopPlayback anyway
 	}
@@ -470,6 +484,7 @@ export class AudioManager {
 		}
 		this.clipIterators.clear();
 		this.activeClipIds.clear();
+		this.clipLastBufferTime.clear();
 
 		for (const input of this.inputs.values()) {
 			input.dispose();
@@ -514,6 +529,92 @@ export class AudioManager {
 		} catch (error) {
 			console.warn(`[AudioManager] Failed to initialize audio sink for ${clip.file.name}:`, error);
 			return null;
+		}
+	}
+
+	/**
+	 * Preload audio buffers for clips on timeline (called when timeline changes)
+	 */
+	private async preloadClips(): Promise<void> {
+		const tracks = this.editor.timeline.getTracks();
+		const mediaAssets = this.editor.media.getAssets();
+		const clips = await collectAudioClips({ tracks, mediaAssets });
+
+		console.log(`[AudioManager] Preloading ${clips.length} audio clips`);
+
+		// Preload first 2 seconds of each clip
+		for (const clip of clips) {
+			if (clip.muted) continue;
+			try {
+				await this.getAudioSink({ clip });
+			} catch (err) {
+				console.warn(`[AudioManager] Failed to preload clip ${clip.id}:`, err);
+			}
+		}
+	}
+
+	/**
+	 * Start health check timer to detect stalled iterators
+	 */
+	private startHealthCheck(): void {
+		this.stopHealthCheck();
+		if (typeof window === "undefined") return;
+
+		this.clipHealthCheckTimer = window.setInterval(() => {
+			this.checkIteratorHealth();
+		}, 2000); // Check every 2 seconds
+	}
+
+	/**
+	 * Stop health check timer
+	 */
+	private stopHealthCheck(): void {
+		if (this.clipHealthCheckTimer && typeof window !== "undefined") {
+			window.clearInterval(this.clipHealthCheckTimer);
+		}
+		this.clipHealthCheckTimer = null;
+	}
+
+	/**
+	 * Check if any iterators have stalled (no buffers for 3+ seconds)
+	 */
+	private checkIteratorHealth(): void {
+		if (!this.editor.playback.getIsPlaying()) return;
+
+		const now = performance.now();
+		const currentTime = this.getPlaybackTime();
+		const stalledThresholdMs = 3000;
+
+		for (const clip of this.clips) {
+			if (clip.muted) continue;
+			if (!this.activeClipIds.has(clip.id)) continue;
+
+			// Check if clip should be playing now
+			const clipEnd = clip.startTime + clip.duration;
+			if (currentTime < clip.startTime || currentTime >= clipEnd) continue;
+
+			const lastBufferTime = this.clipLastBufferTime.get(clip.id);
+			if (!lastBufferTime) continue;
+
+			const timeSinceLastBuffer = now - lastBufferTime;
+			if (timeSinceLastBuffer > stalledThresholdMs) {
+				console.warn(
+					`[AudioManager] Iterator stalled for clip ${clip.id} (${clip.file.name}), restarting...`,
+				);
+
+				// Stop stalled iterator
+				const iterator = this.clipIterators.get(clip.id);
+				if (iterator) {
+					void iterator.return();
+					this.clipIterators.delete(clip.id);
+				}
+
+				// Restart from current position
+				this.activeClipIds.delete(clip.id);
+				this.clipLastBufferTime.delete(clip.id);
+
+				// Will be picked up by next scheduleUpcomingClips call
+			}
 		}
 	}
 }

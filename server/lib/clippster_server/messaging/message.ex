@@ -3,7 +3,7 @@ defmodule ClippsterServer.Messaging.Message do
   import Ecto.Changeset
 
   alias ClippsterServer.Accounts.User
-  alias ClippsterServer.Messaging.{Conversation, MessageReadStatus}
+  alias ClippsterServer.Messaging.{Conversation, MessageReadStatus, MessageAttachment}
 
   @message_types ~w(text system)
 
@@ -17,6 +17,7 @@ defmodule ClippsterServer.Messaging.Message do
     belongs_to :sender, User
 
     has_many :read_statuses, MessageReadStatus
+    has_many :attachments, MessageAttachment
 
     timestamps(type: :utc_datetime)
   end

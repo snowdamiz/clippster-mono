@@ -114,6 +114,22 @@ defmodule ClippsterServer.Storage do
   end
 
   @doc """
+  Generates a unique storage key for a message attachment.
+  Format: messaging/{org_id}/{conversation_id}/{timestamp}_{filename}
+  """
+  def generate_message_attachment_key(organization_id, conversation_id, filename, type \\ "full") do
+    timestamp = DateTime.utc_now() |> DateTime.to_unix()
+    sanitized_filename = sanitize_filename(filename)
+    
+    case type do
+      "thumbnail" ->
+        "messaging/#{organization_id}/#{conversation_id}/thumbnails/#{timestamp}_#{sanitized_filename}"
+      _ ->
+        "messaging/#{organization_id}/#{conversation_id}/#{timestamp}_#{sanitized_filename}"
+    end
+  end
+
+  @doc """
   Checks if R2 storage is properly configured.
   """
   def configured? do

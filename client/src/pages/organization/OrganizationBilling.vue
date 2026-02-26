@@ -135,6 +135,7 @@
                 <th>Allocated</th>
                 <th>Used</th>
                 <th>Remaining</th>
+                <th>Pool Fallback</th>
                 <th>Add Credits</th>
               </tr>
             </thead>
@@ -183,6 +184,21 @@
                     {{ formatAllocation(member.allocation?.hours_remaining) }}
                     <span class="org-billing__table-value-unit">min</span>
                   </span>
+                </td>
+                <td>
+                  <div class="org-billing__toggle-cell">
+                    <button
+                      class="org-billing__toggle"
+                      :class="{ 'org-billing__toggle--active': member.allocation?.allow_pool_fallback }"
+                      @click="handleTogglePoolFallback(member.user_id, !member.allocation?.allow_pool_fallback)"
+                      :title="member.allocation?.allow_pool_fallback ? 'Disable pool fallback' : 'Enable pool fallback'"
+                    >
+                      <span class="org-billing__toggle-slider"></span>
+                    </button>
+                    <span class="org-billing__toggle-label">
+                      {{ member.allocation?.allow_pool_fallback ? 'Enabled' : 'Disabled' }}
+                    </span>
+                  </div>
                 </td>
                 <td>
                   <div class="org-billing__allocate-form">
@@ -865,6 +881,7 @@
     loadSubscription,
     loadTransactions,
     allocateCredits,
+    togglePoolFallback,
     formatAllocation,
     formatTransactionDate,
     getPaymentMethodLabel,
@@ -927,6 +944,10 @@
     if (result.success) {
       allocations.value[userId] = 0;
     }
+  }
+
+  async function handleTogglePoolFallback(userId: number, allowFallback: boolean) {
+    await togglePoolFallback(userId, allowFallback);
   }
 
   function handleCreditsSuccess() {
@@ -1385,35 +1406,42 @@
   /* Column 1: Member - left aligned */
   .org-billing__table th:nth-child(1),
   .org-billing__table td:nth-child(1) {
-    width: 30%;
+    width: 25%;
     text-align: left;
   }
 
   /* Column 2: Allocated - right aligned */
   .org-billing__table th:nth-child(2),
   .org-billing__table td:nth-child(2) {
-    width: 13%;
+    width: 12%;
     text-align: right;
   }
 
   /* Column 3: Used - right aligned */
   .org-billing__table th:nth-child(3),
   .org-billing__table td:nth-child(3) {
-    width: 13%;
+    width: 12%;
     text-align: right;
   }
 
   /* Column 4: Remaining - right aligned */
   .org-billing__table th:nth-child(4),
   .org-billing__table td:nth-child(4) {
-    width: 13%;
+    width: 12%;
     text-align: right;
   }
 
-  /* Column 5: Add Credits - right aligned */
+  /* Column 5: Pool Fallback - center aligned */
   .org-billing__table th:nth-child(5),
   .org-billing__table td:nth-child(5) {
-    width: 31%;
+    width: 14%;
+    text-align: center;
+  }
+
+  /* Column 6: Add Credits - right aligned */
+  .org-billing__table th:nth-child(6),
+  .org-billing__table td:nth-child(6) {
+    width: 25%;
     text-align: right;
   }
 
@@ -1455,6 +1483,59 @@
     font-weight: 500;
     color: var(--sidebar-text-muted);
     margin-left: 0.25rem;
+  }
+
+  /* ===== Toggle Cell ===== */
+  .org-billing__toggle-cell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  .org-billing__toggle {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background-color: var(--sidebar-border);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 200ms ease;
+    padding: 0;
+  }
+
+  .org-billing__toggle:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .org-billing__toggle--active {
+    background-color: var(--sidebar-accent);
+  }
+
+  .org-billing__toggle--active:hover {
+    background-color: rgba(6, 182, 212, 0.8);
+  }
+
+  .org-billing__toggle-slider {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 200ms ease;
+  }
+
+  .org-billing__toggle--active .org-billing__toggle-slider {
+    transform: translateX(20px);
+  }
+
+  .org-billing__toggle-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
   }
 
   /* ===== Member Cell ===== */

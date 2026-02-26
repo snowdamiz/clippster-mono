@@ -648,7 +648,8 @@ defmodule ClippsterServerWeb.OrganizationController do
             hours_used: Decimal.to_string(allocation.hours_used),
             hours_remaining: Decimal.to_string(
               ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
-            )
+            ),
+            allow_pool_fallback: allocation.allow_pool_fallback
           }
         else
           nil
@@ -669,12 +670,17 @@ defmodule ClippsterServerWeb.OrganizationController do
 
     case Organizations.allocate_credits_to_member(org_id, member_id, hours, user) do
       {:ok, allocation} ->
+        # Get updated org pool balance
+        {:ok, org_credit} = Organizations.get_organization_credits(org_id)
+        
         json(conn, %{
           success: true,
           allocation: %{
             hours_allocated: Decimal.to_string(allocation.hours_allocated),
-            hours_used: Decimal.to_string(allocation.hours_used)
-          }
+            hours_used: Decimal.to_string(allocation.hours_used),
+            allow_pool_fallback: allocation.allow_pool_fallback
+          },
+          org_pool_remaining: Decimal.to_string(org_credit.hours_remaining)
         })
 
       {:error, :unauthorized} ->
@@ -701,6 +707,58 @@ defmodule ClippsterServerWeb.OrganizationController do
         conn
         |> put_status(400)
         |> json(%{success: false, error: "Failed to allocate credits"})
+    end
+  end
+
+  @doc """
+  Toggle allow_pool_fallback for a member.
+  Only admins can toggle this setting.
+  """
+  def toggle_pool_fallback(conn, %{"organization_id" => org_id, "user_id" => member_id, "allow_pool_fallback" => allow_fallback}) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_admin?(org_id, user.id) do
+      with true <- Organizations.is_member?(org_id, member_id),
+           allocation when not is_nil(allocation) <- Organizations.get_member_allocation(org_id, member_id) do
+      
+      case allocation
+           |> ClippsterServer.Organizations.MemberCreditAllocation.changeset(%{allow_pool_fallback: allow_fallback})
+           |> Repo.update() do
+        {:ok, updated_allocation} ->
+          json(conn, %{
+            success: true,
+            allocation: %{
+              hours_allocated: Decimal.to_string(updated_allocation.hours_allocated),
+              hours_used: Decimal.to_string(updated_allocation.hours_used),
+              allow_pool_fallback: updated_allocation.allow_pool_fallback
+            }
+          })
+
+        {:error, _changeset} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "Failed to update pool fallback setting"})
+      end
+    else
+      false ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "User is not a member of this organization"})
+
+      nil ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Member allocation not found"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Failed to update setting: #{inspect(reason)}"})
+      end
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Only admins can change this setting"})
     end
   end
 

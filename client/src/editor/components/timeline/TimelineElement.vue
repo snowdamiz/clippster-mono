@@ -282,8 +282,16 @@ const elementTooltip = computed(() => {
 			:style="{ borderColor: borderColor }"
 		>
 			<!-- Track name label (sits in the top blue bar, not over content) -->
-			<div class="pointer-events-none absolute top-0 left-1 right-0 z-30 h-[16px] flex items-center">
+			<div class="pointer-events-none absolute top-0 left-1 right-0 z-30 h-[16px] flex items-center justify-between">
 				<span class="truncate text-[10px] leading-none font-medium text-white/90">{{ element.name }}</span>
+				<!-- Layer indicator badge -->
+				<span
+					v-if="element.orderIndex !== undefined && element.orderIndex > 0"
+					class="ml-1 mr-1 flex-shrink-0 rounded bg-white/20 px-1 py-0.5 text-[8px] leading-none font-bold text-white/90"
+					:title="`Layer ${element.orderIndex}`"
+				>
+					L{{ element.orderIndex }}
+				</span>
 			</div>
 
 			<button

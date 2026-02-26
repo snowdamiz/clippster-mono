@@ -207,6 +207,7 @@ export function buildVideoElement({
 		hidden: false,
 		transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
 		opacity: 1,
+		orderIndex: 0,
 	};
 }
 
@@ -232,6 +233,7 @@ export function buildImageElement({
 		hidden: false,
 		transform: { scale: 1, position: { x: 0, y: 0 }, rotate: 0 },
 		opacity: 1,
+		orderIndex: 0,
 	};
 }
 
