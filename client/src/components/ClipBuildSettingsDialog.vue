@@ -729,6 +729,8 @@
       :clip-start-time="clipStartTime"
       :clip-end-time="clipEndTime"
       :watermark-settings="watermarkSettings"
+      :layout-overlays="vodPresetConfig?.layoutOverlays"
+      :overlay-preview-urls="overlayPreviewUrls"
       @confirm="onManualConfigConfirm"
     />
 
@@ -769,6 +771,7 @@
   import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
   import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
+  import { resolveOverlayImagePath } from '@/services/database/watermarks';
   import { useAuthStore } from '@/stores/auth';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
@@ -870,6 +873,9 @@
   const videoFrameUrl = ref<string | null>(null);
   const loadingVideoFrame = ref(false);
   const videoPath = ref<string | null>(null);
+
+  // Overlay preview state for ManualPOIEditor
+  const overlayPreviewUrls = ref<Record<string, string>>({});
 
   // Subtitle override state - stores per-ratio customizations
   const subtitleOverrides = ref<SubtitleOverrides>({});
@@ -1096,6 +1102,26 @@
             console.log('[ClipBuildSettingsDialog] Pre-selected creator default outro:', selectedOutro.value?.name);
           }
         }
+
+        // Load overlay previews for POI editor
+        const loadedPreviews: Record<string, string> = {};
+        if (props.vodPresetConfig?.layoutOverlays?.length) {
+          const { invoke } = await import('@tauri-apps/api/core');
+          for (const overlay of props.vodPresetConfig.layoutOverlays) {
+            try {
+              // Resolve the overlay image path (handles both local files and org-asset- prefixed IDs)
+              const resolvedPath = await resolveOverlayImagePath(overlay.imagePath, overlay.assetId);
+              if (resolvedPath) {
+                const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: resolvedPath });
+                loadedPreviews[overlay.id] = dataUrl;
+              }
+            } catch (err) {
+              console.warn('[ClipBuildSettingsDialog] Failed to load overlay preview:', overlay.id, err);
+            }
+          }
+        }
+        // Replace the entire ref to trigger prop reactivity in ManualPOIEditor
+        overlayPreviewUrls.value = loadedPreviews;
 
         // Load video frame for POI editor preview
         await loadVideoFrame();

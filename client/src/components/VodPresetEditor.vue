@@ -124,12 +124,23 @@
                     </span>
                   </div>
                   <button
+                    v-if="!hasCreatorProfile"
                     @click="addLayoutOverlay"
                     class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-colors"
                   >
                     <PlusIcon class="w-3.5 h-3.5" />
                     Add Overlay
                   </button>
+                </div>
+
+                <!-- Creator Profile Restriction Notice -->
+                <div v-if="hasCreatorProfile" class="px-3 py-2.5 bg-blue-500/10 border border-blue-500/20 rounded-lg mb-3">
+                  <div class="flex items-center gap-2">
+                    <InfoIcon class="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                    <span class="text-xs text-blue-300">
+                      Layout overlay settings are managed by the creator profile and cannot be changed here.
+                    </span>
+                  </div>
                 </div>
 
                 <!-- Overlay List -->
@@ -166,7 +177,7 @@
                     </div>
 
                     <!-- Controls -->
-                    <div class="flex items-center gap-1.5">
+                    <div v-if="!hasCreatorProfile" class="flex items-center gap-1.5">
                       <button
                         @click="openOverlayPositionPicker(idx)"
                         class="px-2 py-1 text-[10px] font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded transition-colors"
@@ -198,31 +209,18 @@
                 </div>
 
                 <!-- Creator Profile Restriction Notice -->
-                <div v-if="hasCreatorProfile" class="mb-3 px-3 py-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                <div v-if="hasCreatorProfile" class="px-3 py-2.5 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                   <div class="flex items-center gap-2">
                     <InfoIcon class="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
                     <span class="text-xs text-blue-300">
-                      This project has a creator profile attached. Watermark settings are managed by the creator profile.
+                      This project has a creator profile attached. Watermark settings are managed by the creator profile and cannot be changed here.
                     </span>
                   </div>
                 </div>
 
-                <!-- Watermark Mode Selection -->
-                <div class="flex gap-2">
+                <!-- Watermark Mode Selection (only shown when NO creator profile) -->
+                <div v-if="!hasCreatorProfile" class="flex gap-2">
                   <button
-                    v-if="hasCreatorProfile"
-                    @click="watermarkMode = 'creator'"
-                    class="flex-1 px-3 py-2.5 text-xs font-medium rounded-lg border transition-all text-center"
-                    :class="watermarkMode === 'creator'
-                      ? 'bg-pink-600/20 border-pink-500/50 text-pink-300'
-                      : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600'"
-                  >
-                    <UserIcon class="w-3.5 h-3.5 inline mr-1" />
-                    Creator Profile Watermark
-                  </button>
-
-                  <button
-                    v-if="!hasCreatorProfile"
                     @click="watermarkMode = 'custom'"
                     class="flex-1 px-3 py-2.5 text-xs font-medium rounded-lg border transition-all text-center"
                     :class="watermarkMode === 'custom'
@@ -234,7 +232,6 @@
                   </button>
 
                   <button
-                    v-if="!hasCreatorProfile"
                     @click="watermarkMode = 'none'"
                     class="flex-1 px-3 py-2.5 text-xs font-medium rounded-lg border transition-all text-center"
                     :class="watermarkMode === 'none'
@@ -246,7 +243,7 @@
                   </button>
                 </div>
 
-                <!-- Custom Watermark Settings (only when mode is 'custom') -->
+                <!-- Custom Watermark Settings (only when mode is 'custom' AND no creator profile) -->
                 <div v-if="watermarkMode === 'custom' && !hasCreatorProfile" class="mt-3 space-y-3">
                   <!-- Watermark Image Selection -->
                   <div class="p-3 bg-zinc-800/30 border border-zinc-700/30 rounded-lg">
@@ -379,7 +376,10 @@
     :video-path="videoPath"
     :clip-start-time="0"
     :clip-end-time="videoDuration"
+    :full-video-duration="videoDuration"
     :watermark-settings="null"
+    :layout-overlays="layoutOverlays"
+    :overlay-preview-urls="overlayPreviewsRef"
     @confirm="onFramingConfirmed"
   />
 
@@ -440,6 +440,8 @@
   <OverlayPositionPicker
     :show="showOverlayPositionPickerDialog"
     :overlay-image-path="activeOverlayForPosition?.imagePath || ''"
+    :overlay-image-url="activeOverlayForPosition ? overlayPreviews[activeOverlayForPosition.id] || '' : ''"
+    :overlay-asset-id="activeOverlayForPosition?.assetId"
     :overlay-label="activeOverlayForPosition?.label || ''"
     :settings="activeOverlayForPosition?.perRatioSettings || undefined"
     @close="showOverlayPositionPickerDialog = false"
@@ -471,7 +473,7 @@
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from './WatermarkPositionPicker.vue';
   import OverlayPositionPicker from './OverlayPositionPicker.vue';
-  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
+  import { getAllWatermarkImages, resolveOverlayImagePath, type WatermarkImage } from '@/services/database/watermarks';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import type {
     ManualRegion,
@@ -489,6 +491,7 @@
     createVodPreset,
     updateVodPreset as updateVodPresetDb,
   } from '@/services/database/vod-presets';
+  import { resolveApplicableProfiles } from '@/composables/useBrandingProfileSelection';
 
   interface Props {
     modelValue: boolean;
@@ -532,6 +535,9 @@
   const watermarkMode = ref<'creator' | 'custom' | 'none'>('none');
   const customWatermarkSettings = ref<WatermarkSettings | null>(null);
   const overlayPreviews = reactive<Record<string, string>>({});
+  // Ref-based copy to trigger prop reactivity in child components (ManualPOIEditor)
+  // reactive() mutations don't propagate as prop changes; ref does
+  const overlayPreviewsRef = ref<Record<string, string>>({});
 
   // Template state
   const selectedTemplateId = ref('');
@@ -560,6 +566,9 @@
   // Overlay position picker dialog state
   const showOverlayPositionPickerDialog = ref(false);
   const activeOverlayIndex = ref<number>(-1);
+
+  // Track if any profile (creator, org-streamer, or campaign) is being applied
+  const hasResolvedProfile = ref(false);
   const activeOverlayForPosition = computed(() => {
     if (activeOverlayIndex.value < 0 || activeOverlayIndex.value >= layoutOverlays.value.length) return null;
     return layoutOverlays.value[activeOverlayIndex.value];
@@ -601,7 +610,11 @@
     return [s['16:9'], s['9:16'], s['1:1'], s['4:5']].filter((v) => v !== null && v !== undefined).length;
   }
 
-  const hasCreatorProfile = computed(() => !!props.creatorProfileId);
+  const hasCreatorProfile = computed(() => {
+    const result = !!props.creatorProfileId || hasResolvedProfile.value;
+    console.log('[VodPresetEditor] hasCreatorProfile:', result, 'creatorProfileId:', props.creatorProfileId, 'hasResolvedProfile:', hasResolvedProfile.value);
+    return result;
+  });
   const hasExistingConfig = computed(() => !!props.initialConfig);
 
   const currentFramingConfig = computed((): ManualFramingConfig | null => {
@@ -673,6 +686,20 @@
       if (!result) return;
       const filePath = result as string;
 
+      // Auto-configure the overlay for the currently selected aspect ratio
+      const ratioKey = selectedAspectRatio.value as '16:9' | '9:16' | '1:1' | '4:5';
+      const defaultRatioPosition = {
+        x: 50,
+        y: 50,
+        width: 100,
+        height: 10,
+        opacity: 100,
+        rotation: 0,
+        scale: 20,
+        isFullFrameOverlay: false,
+        imagePath: filePath,
+      };
+
       const newOverlay: LayoutOverlay = {
         id: crypto.randomUUID(),
         imagePath: filePath,
@@ -683,6 +710,12 @@
         opacity: 100,
         rotation: 0,
         label: '',
+        perRatioSettings: {
+          '16:9': ratioKey === '16:9' ? defaultRatioPosition : null,
+          '9:16': ratioKey === '9:16' ? defaultRatioPosition : null,
+          '1:1': ratioKey === '1:1' ? defaultRatioPosition : null,
+          '4:5': ratioKey === '4:5' ? defaultRatioPosition : null,
+        },
       };
 
       layoutOverlays.value.push(newOverlay);
@@ -696,24 +729,39 @@
     const overlay = layoutOverlays.value[index];
     if (overlay) {
       delete overlayPreviews[overlay.id];
+      const copy = { ...overlayPreviewsRef.value };
+      delete copy[overlay.id];
+      overlayPreviewsRef.value = copy;
     }
     layoutOverlays.value.splice(index, 1);
   }
 
   async function loadOverlayPreview(overlay: LayoutOverlay) {
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: overlay.imagePath });
+      console.log('[VodPresetEditor] loadOverlayPreview:', overlay.id, 'imagePath:', overlay.imagePath, 'assetId:', overlay.assetId);
+      // Resolve the overlay image path (handles both local files and org-asset- prefixed IDs)
+      const resolvedPath = await resolveOverlayImagePath(overlay.imagePath, overlay.assetId);
+      console.log('[VodPresetEditor] resolvedPath:', resolvedPath);
+      if (!resolvedPath) {
+        console.warn('[VodPresetEditor] Could not resolve overlay image path for:', overlay.id, 'assetId:', overlay.assetId);
+        return;
+      }
+      const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: resolvedPath });
       overlayPreviews[overlay.id] = dataUrl;
+      // Sync to ref for ManualPOIEditor prop reactivity
+      overlayPreviewsRef.value = { ...overlayPreviewsRef.value, [overlay.id]: dataUrl };
+      console.log('[VodPresetEditor] Overlay preview loaded successfully for:', overlay.id, 'dataUrl length:', dataUrl?.length);
     } catch (error) {
       console.warn('[VodPresetEditor] Failed to load overlay preview:', error);
     }
   }
 
   async function loadOverlayPreviews() {
+    console.log('[VodPresetEditor] loadOverlayPreviews called, count:', layoutOverlays.value.length);
     for (const overlay of layoutOverlays.value) {
       await loadOverlayPreview(overlay);
     }
+    console.log('[VodPresetEditor] overlayPreviews after load:', Object.keys(overlayPreviews));
   }
 
   // ==========================================
@@ -915,6 +963,7 @@
     () => props.modelValue,
     async (isOpen) => {
       if (isOpen) {
+        console.log('[VodPresetEditor] Dialog opened with creatorProfileId:', props.creatorProfileId, 'hasCreatorProfile:', hasCreatorProfile.value);
         // Load from initial config or defaults
         if (props.initialConfig) {
           selectedAspectRatio.value = props.initialConfig.targetAspectRatio;
@@ -958,6 +1007,63 @@
           selectedTemplateId.value = '';
           selectedCustomWatermarkId.value = null;
           customWatermarkPositionSettings.value = null;
+
+          // Auto-pull creator profile settings (handles local + org-assigned + campaign profiles)
+          if (props.projectId) {
+            try {
+              const candidates = await resolveApplicableProfiles(props.projectId);
+              const profile = candidates.length > 0 ? candidates[0].profile : null;
+
+              if (profile) {
+                hasResolvedProfile.value = true;
+                console.log('[VodPresetEditor] Auto-pulling settings from profile:', profile.name, `(${candidates[0].source})`);
+
+                // Pull layout overlays
+                if (profile.layout_overlays) {
+                  try {
+                    const overlays = JSON.parse(profile.layout_overlays) as LayoutOverlay[];
+                    if (Array.isArray(overlays) && overlays.length > 0) {
+                      layoutOverlays.value = overlays;
+                      console.log('[VodPresetEditor] Loaded', overlays.length, 'overlay(s) from creator profile');
+                    }
+                  } catch (parseErr) {
+                    console.warn('[VodPresetEditor] Failed to parse creator profile overlays:', parseErr);
+                  }
+                }
+
+                // Pull watermark settings
+                if (profile.watermark_settings) {
+                  try {
+                    const wmSettings = JSON.parse(profile.watermark_settings) as WatermarkSettings;
+                    if (wmSettings) {
+                      watermarkMode.value = 'custom';
+                      customWatermarkSettings.value = wmSettings;
+                      if (wmSettings.watermarkId) {
+                        selectedCustomWatermarkId.value = wmSettings.watermarkId;
+                      }
+                      if (wmSettings.perRatioSettings) {
+                        const prs = wmSettings.perRatioSettings;
+                        customWatermarkPositionSettings.value = {
+                          '16:9': prs['16:9'] ? { watermarkId: prs['16:9'].watermarkId, position: prs['16:9'].position } : null,
+                          '9:16': prs['9:16'] ? { watermarkId: prs['9:16'].watermarkId, position: prs['9:16'].position } : null,
+                          '1:1': prs['1:1'] ? { watermarkId: prs['1:1'].watermarkId, position: prs['1:1'].position } : null,
+                          '4:5': prs['4:5'] ? { watermarkId: prs['4:5'].watermarkId, position: prs['4:5'].position } : null,
+                        };
+                      }
+                      console.log('[VodPresetEditor] Loaded watermark settings from creator profile');
+                    }
+                  } catch (parseErr) {
+                    console.warn('[VodPresetEditor] Failed to parse creator profile watermark settings:', parseErr);
+                  }
+                }
+              } else {
+                hasResolvedProfile.value = false;
+                console.log('[VodPresetEditor] No applicable creator profile found for project:', props.projectId);
+              }
+            } catch (err) {
+              console.warn('[VodPresetEditor] Failed to resolve creator profile:', err);
+            }
+          }
         }
 
         // Reset dropdown state
