@@ -18,6 +18,7 @@ import {
 import { WatermarkPositionPicker, type CreatorWatermarkSettings } from './WatermarkPositionPicker'
 import { OverlayPositionPicker, type PerRatioOverlaySettings } from './OverlayPositionPicker'
 import { IntroOutroRatioPicker, type RatioAssetMap } from './IntroOutroRatioPicker'
+import { API_BASE } from '@/lib/apiBase'
 
 type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube'
 
@@ -271,7 +272,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
     try {
       if (platform === 'kick') {
         const slug = extractKickSlug(platformId)
-        const response = await fetch(`/api/kick/channels/${slug}`)
+        const response = await fetch(`${API_BASE}/kick/channels/${slug}`)
         if (response.ok) {
           const data = await response.json()
           if (data.profileImageUrl) {
@@ -285,7 +286,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
         }
       } else if (platform === 'twitch') {
         const username = extractTwitchUsername(platformId)
-        const response = await fetch(`/api/twitch/channels/${username}`)
+        const response = await fetch(`${API_BASE}/twitch/channels/${username}`)
         if (response.ok) {
           const data = await response.json()
           if (data.profileImageUrl) {
@@ -299,7 +300,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
         }
       } else if (platform === 'pumpfun') {
         const mintId = extractPumpFunMintId(platformId)
-        const response = await fetch(`/api/metadata/${mintId}`)
+        const response = await fetch(`${API_BASE}/metadata/${mintId}`)
         if (response.ok) {
           const data = await response.json()
           if (data.success && data.metadata?.image) {
