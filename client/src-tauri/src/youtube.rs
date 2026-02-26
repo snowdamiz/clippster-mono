@@ -173,7 +173,7 @@ pub async fn check_youtube_livestream(channel: String) -> Result<String, String>
     Ok(serde_json::to_string(&status).unwrap())
 }
 
-/// Get list of VODs from a YouTube channel using yt-dlp
+/// Get list of live stream VODs from a YouTube channel using yt-dlp
 #[tauri::command]
 pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<String, String> {
     let channel_id = normalize_channel_input(&channel);
@@ -233,8 +233,18 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
             _ => continue,
         };
 
-        // upload_date is YYYYMMDD from yt-dlp
-        let upload_date = json["upload_date"].as_str().map(String::from);
+        // For live streams, prefer release_timestamp or timestamp over upload_date
+        // release_timestamp/timestamp = actual stream time, upload_date = when VOD was uploaded
+        let upload_date = if let Some(release_ts) = json["release_timestamp"].as_i64() {
+            // Unix timestamp in seconds
+            Some(release_ts.to_string())
+        } else if let Some(ts) = json["timestamp"].as_i64() {
+            // Unix timestamp in seconds
+            Some(ts.to_string())
+        } else {
+            // Fallback to upload_date (YYYYMMDD format)
+            json["upload_date"].as_str().map(String::from)
+        };
 
         let thumbnail_url = json["thumbnail"].as_str().map(String::from)
             .or_else(|| Some(format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", video_id)));
@@ -243,8 +253,8 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
             .map(String::from)
             .unwrap_or_else(|| format!("https://www.youtube.com/watch?v={}", video_id));
 
-        println!("[YouTube VODs] entry: id={} upload_date={:?} live_status={:?}",
-            video_id, upload_date, json["live_status"].as_str());
+        println!("[YouTube VODs] entry: id={} upload_date={:?} release_timestamp={:?} timestamp={:?} live_status={:?}",
+            video_id, json["upload_date"].as_str(), json["release_timestamp"].as_i64(), json["timestamp"].as_i64(), json["live_status"].as_str());
 
         let vod = YouTubeVod {
             video_id,
@@ -259,6 +269,96 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
     }
 
     Ok(serde_json::to_string(&vods).unwrap())
+}
+
+/// Get list of regular videos (not live streams) from a YouTube channel using yt-dlp
+#[tauri::command]
+pub async fn get_youtube_videos(channel: String, limit: Option<u32>) -> Result<String, String> {
+    let channel_id = normalize_channel_input(&channel);
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    
+    let limit_str = limit.unwrap_or(10).to_string();
+    let channel_url = if channel_id.starts_with('@') {
+        format!("https://www.youtube.com/{}/videos", channel_id)
+    } else {
+        format!("https://www.youtube.com/channel/{}/videos", channel_id)
+    };
+    
+    println!("[YouTube Videos] Fetching from: {}", channel_url);
+
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut cmd);
+
+    cmd.arg("--dump-json")
+        .arg("--skip-download")
+        .arg("--no-warnings")
+        .arg("--ignore-errors")
+        .arg("--extractor-args").arg("youtubetab:skip=webpage;youtube:player_skip=webpage,configs")
+        .arg("--playlist-end").arg(&limit_str)
+        .arg(&channel_url);
+
+    let output = cmd.output().await
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    println!("[YouTube Videos] stdout lines: {}", stdout.lines().count());
+    if !stderr.is_empty() {
+        println!("[YouTube Videos] stderr (first 300): {}", &stderr[..stderr.len().min(300)]);
+    }
+
+    if stdout.trim().is_empty() {
+        return Err(format!("yt-dlp returned no output. stderr: {}", &stderr[..stderr.len().min(500)]));
+    }
+
+    let mut videos = Vec::new();
+
+    for line in stdout.lines() {
+        let line = line.trim();
+        if line.is_empty() { continue; }
+        let json: serde_json::Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let video_id = match json["id"].as_str() {
+            Some(id) if !id.is_empty() => id.to_string(),
+            _ => continue,
+        };
+
+        // For videos, prefer release_timestamp or timestamp over upload_date
+        let upload_date = if let Some(release_ts) = json["release_timestamp"].as_i64() {
+            Some(release_ts.to_string())
+        } else if let Some(ts) = json["timestamp"].as_i64() {
+            Some(ts.to_string())
+        } else {
+            json["upload_date"].as_str().map(String::from)
+        };
+
+        let thumbnail_url = json["thumbnail"].as_str().map(String::from)
+            .or_else(|| Some(format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", video_id)));
+
+        let url = json["webpage_url"].as_str()
+            .map(String::from)
+            .unwrap_or_else(|| format!("https://www.youtube.com/watch?v={}", video_id));
+
+        println!("[YouTube Videos] entry: id={} upload_date={:?} release_timestamp={:?} timestamp={:?} live_status={:?}",
+            video_id, json["upload_date"].as_str(), json["release_timestamp"].as_i64(), json["timestamp"].as_i64(), json["live_status"].as_str());
+
+        let video = YouTubeVod {
+            video_id,
+            title: json["title"].as_str().map(String::from),
+            duration: json["duration"].as_f64(),
+            view_count: json["view_count"].as_i64(),
+            thumbnail_url,
+            upload_date,
+            url,
+        };
+        videos.push(video);
+    }
+
+    Ok(serde_json::to_string(&videos).unwrap())
 }
 
 /// Download a YouTube VOD using yt-dlp

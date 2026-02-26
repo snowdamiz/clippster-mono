@@ -98,7 +98,7 @@ export async function checkYouTubeLivestream(channel: string): Promise<YouTubeLi
 }
 
 /**
- * Get VODs for a YouTube channel
+ * Get VODs (past live streams) for a YouTube channel
  */
 export async function getYouTubeVods(channel: string, limit: number = 20): Promise<YouTubeVod[]> {
   try {
@@ -107,6 +107,20 @@ export async function getYouTubeVods(channel: string, limit: number = 20): Promi
     return JSON.parse(result);
   } catch (error: unknown) {
     console.error('[YouTube] Failed to get VODs:', error);
+    return [];
+  }
+}
+
+/**
+ * Get regular videos (not live streams) for a YouTube channel
+ */
+export async function getYouTubeVideos(channel: string, limit: number = 20): Promise<YouTubeVod[]> {
+  try {
+    const channelId = extractYouTubeChannel(channel) || channel.trim();
+    const result = await invoke<string>('get_youtube_videos', { channel: channelId, limit });
+    return JSON.parse(result);
+  } catch (error: unknown) {
+    console.error('[YouTube] Failed to get videos:', error);
     return [];
   }
 }

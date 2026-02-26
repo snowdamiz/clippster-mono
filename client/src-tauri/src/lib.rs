@@ -1089,6 +1089,7 @@ commands::file_utils::generate_video_thumbnail,
             // YouTube commands
             youtube::check_youtube_livestream,
             youtube::get_youtube_vods,
+            youtube::get_youtube_videos,
             youtube::download_youtube_vod,
             youtube::start_youtube_recording,
             youtube::stop_youtube_recording,

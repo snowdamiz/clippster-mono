@@ -345,7 +345,7 @@ export const usePlatformStore = defineStore('platform', {
     },
 
     // Universal search function that handles different platforms
-    async searchClips(input: string, limit: number = 20) {
+    async searchClips(input: string, limit: number = 20, youtubeTab?: 'streams' | 'videos') {
       const trimmedInput = input.trim();
       const config = platformConfigs[this.activePlatform];
 
@@ -409,7 +409,9 @@ export const usePlatformStore = defineStore('platform', {
               return { success: false, error: this.error };
             }
             this.currentSearchId = extractedId;
-            result = await this.getYouTubeClips(extractedId, limit);
+            const tabToUse = youtubeTab || 'streams';
+            console.log('[Platform Store] YouTube search - tab:', tabToUse);
+            result = await this.getYouTubeClips(extractedId, limit, tabToUse);
             break;
           }
 
@@ -583,7 +585,7 @@ export const usePlatformStore = defineStore('platform', {
     },
 
     // Helper to convert YouTube VODs to PlatformClip format
-    async getYouTubeClips(channelId: string, limit: number = 20): Promise<{
+    async getYouTubeClips(channelId: string, limit: number = 20, tab: 'streams' | 'videos' = 'streams'): Promise<{
       success: boolean;
       clips: PlatformClip[];
       hasMore: boolean;
@@ -591,8 +593,19 @@ export const usePlatformStore = defineStore('platform', {
       error?: string;
     }> {
       try {
-        const vods = await getYouTubeVods(channelId, limit);
-        const clips: PlatformClip[] = vods.map((vod: YouTubeVod) => {
+        console.log('[Platform Store] getYouTubeClips - channelId:', channelId, 'tab:', tab);
+        // Import getYouTubeVideos dynamically
+        const { getYouTubeVideos } = await import('@/services/youtube');
+        const vods = tab === 'videos' 
+          ? await getYouTubeVideos(channelId, limit)
+          : await getYouTubeVods(channelId, limit);
+        console.log('[Platform Store] Fetched', vods.length, tab === 'videos' ? 'videos' : 'streams');
+        const clips: PlatformClip[] = vods.map((vod: YouTubeVod, index: number) => {
+          // Log first item to debug date fields
+          if (index === 0) {
+            console.log('[Platform Store] First VOD data:', vod);
+          }
+          
           // yt-dlp flat-playlist returns timestamp as Unix epoch string (e.g. "1737014400")
           // or upload_date as "YYYYMMDD" — normalize both to ISO 8601
           let createdAt: string | undefined;
@@ -601,12 +614,21 @@ export const usePlatformStore = defineStore('platform', {
             if (/^\d{8}$/.test(raw)) {
               // YYYYMMDD → YYYY-MM-DD
               createdAt = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+              if (index === 0) {
+                console.log('[Platform Store] Parsed YYYYMMDD date:', raw, '→', createdAt);
+              }
             } else if (/^\d{9,13}$/.test(raw)) {
               // Unix epoch seconds or milliseconds → ISO string
               const ms = raw.length <= 10 ? Number(raw) * 1000 : Number(raw);
               createdAt = new Date(ms).toISOString();
+              if (index === 0) {
+                console.log('[Platform Store] Parsed epoch date:', raw, '→', createdAt);
+              }
             } else {
               createdAt = raw;
+              if (index === 0) {
+                console.log('[Platform Store] Using raw date:', raw);
+              }
             }
           }
           return {

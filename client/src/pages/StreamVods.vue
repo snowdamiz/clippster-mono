@@ -144,6 +144,24 @@
         class="streamvods__content"
         :class="{ 'streamvods__content--empty': platformStore.clips.length === 0 && !platformStore.loading }"
       >
+        <!-- YouTube Tabs -->
+        <div v-if="detectedPlatform === 'youtube' && (platformStore.clips.length > 0 || platformStore.loading)" class="streamvods__youtube-tabs">
+          <button
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': youtubeTab === 'streams' }]"
+            @click="switchYouTubeTab('streams')"
+            :disabled="platformStore.loading"
+          >
+            Live Streams
+          </button>
+          <button
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': youtubeTab === 'videos' }]"
+            @click="switchYouTubeTab('videos')"
+            :disabled="platformStore.loading"
+          >
+            Videos
+          </button>
+        </div>
+
         <!-- Page Heading -->
         <div v-if="platformStore.clips.length > 0 || platformStore.loading" class="streamvods__heading">
           <h1 class="streamvods__title">Stream VOD Library</h1>
@@ -510,6 +528,9 @@
   // Auto-detected platform from input
   const detectedPlatform = ref<PlatformId | null>(null);
   const currentPlatformConfig = computed(() => platformConfigs[detectedPlatform.value || platformStore.activePlatform]);
+  
+  // YouTube tab state (Live Streams vs Videos)
+  const youtubeTab = ref<'streams' | 'videos'>('streams');
 
   function detectPlatform() {
     const val = searchInput.value?.trim();
@@ -758,6 +779,36 @@
     handleSearch();
   }
 
+  // Switch YouTube tab and refetch content
+  async function switchYouTubeTab(tab: 'streams' | 'videos') {
+    if (youtubeTab.value === tab || platformStore.loading) return;
+    
+    console.log('[StreamVods] Switching YouTube tab to:', tab);
+    youtubeTab.value = tab;
+    
+    // Refetch with the new tab
+    const input = searchInput.value.trim();
+    if (input && detectedPlatform.value === 'youtube') {
+      // Ensure platform is set before searching
+      platformStore.setActivePlatform('youtube');
+      
+      try {
+        console.log('[StreamVods] Calling searchClips with tab:', youtubeTab.value);
+        const result = await platformStore.searchClips(input, 20, youtubeTab.value);
+        if (result.success) {
+          await loadDownloadedVodIds();
+          if (result.total === 0) {
+            showError('No Content Found', `No ${tab === 'streams' ? 'live streams' : 'videos'} found for this channel`);
+          }
+        } else {
+          showError('Search Failed', result.error || 'Failed to fetch content');
+        }
+      } catch (err) {
+        showError('Error', err instanceof Error ? err.message : 'An unexpected error occurred');
+      }
+    }
+  }
+
   async function handleSearch() {
     const input = searchInput.value.trim();
     if (!input) {
@@ -794,11 +845,16 @@
       return;
     }
 
+    // Reset YouTube tab to streams (default) when doing a new search
+    if (detectedPlatform.value === 'youtube') {
+      youtubeTab.value = 'streams';
+    }
+
     // Set the active platform in the store
     platformStore.setActivePlatform(detectedPlatform.value);
 
     try {
-      const result = await platformStore.searchClips(input, 20);
+      const result = await platformStore.searchClips(input, 20, detectedPlatform.value === 'youtube' ? youtubeTab.value : undefined);
       if (result.success) {
         // Reload downloaded VOD IDs after search to ensure we have latest data
         await loadDownloadedVodIds();
@@ -1102,6 +1158,50 @@
   .streamvods__content--empty {
     justify-content: center;
     align-items: center;
+  }
+
+  /* ===== YouTube Tabs ===== */
+  .streamvods__youtube-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    padding: 0.25rem;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    width: fit-content;
+  }
+
+  .streamvods__youtube-tab {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods__youtube-tab:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .streamvods__youtube-tab--active {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+  }
+
+  .streamvods__youtube-tab--active:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: white;
+  }
+
+  .streamvods__youtube-tab:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* ===== Page Heading ===== */
