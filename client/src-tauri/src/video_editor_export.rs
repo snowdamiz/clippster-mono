@@ -405,7 +405,9 @@ pub async fn export_video_editor_project(
 
         let probe_output = shell
 
-            .command("ffprobe")
+            .sidecar("ffmpeg")
+
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
 
             .args(&[
 
@@ -2113,7 +2115,9 @@ pub async fn export_video_editor_project(
 
     let output = shell
 
-        .command("ffmpeg")
+        .sidecar("ffmpeg")
+
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
 
         .args(&args)
 
@@ -2175,7 +2179,9 @@ pub async fn export_video_editor_project(
 
         let cover_output = shell
 
-            .command("ffmpeg")
+            .sidecar("ffmpeg")
+
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
 
             .args(&[
 
@@ -2327,7 +2333,9 @@ pub async fn export_video_editor_project_simple(
 
     let output = shell
 
-        .command("ffmpeg")
+        .sidecar("ffmpeg")
+
+        .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
 
         .args(&args)
 
