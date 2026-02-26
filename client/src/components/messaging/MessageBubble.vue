@@ -52,6 +52,17 @@ function formatDate(dateString: string): string {
     <template v-else>
       <!-- Sender info (for other's messages) -->
       <div v-if="!isOwnMessage && message.sender" class="sender-info">
+        <div class="sender-avatar">
+          <img 
+            v-if="message.sender.avatarUrl" 
+            :src="message.sender.avatarUrl" 
+            :alt="message.sender.displayName"
+            class="sender-avatar-image"
+          />
+          <span v-else class="sender-avatar-initial">
+            {{ message.sender.displayName.charAt(0).toUpperCase() }}
+          </span>
+        </div>
         <span class="sender-name">{{ message.sender.displayName }}</span>
       </div>
 
@@ -135,7 +146,34 @@ function formatDate(dateString: string): string {
 }
 
 .sender-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 4px;
+}
+
+.sender-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: var(--accent-color, #7c3aed);
+  color: white;
+}
+
+.sender-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.sender-avatar-initial {
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .sender-name {

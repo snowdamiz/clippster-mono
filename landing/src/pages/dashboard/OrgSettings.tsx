@@ -2,6 +2,8 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useOrganization } from '@/hooks/useOrganization'
+import { OrganizationSelector } from '@/components/dashboard/OrganizationSelector'
+import { useOrganizationSelector } from '@/hooks/useOrganizationSelector'
 import { Skeleton } from '@/components/ui/Skeleton'
 import {
   Settings,
@@ -44,6 +46,7 @@ const DEFAULT_RESTRICTIONS: Required<OrganizationRestrictionDefaults> = {
 }
 
 export function OrgSettings() {
+  const { hasMultipleOrgs } = useOrganizationSelector()
   const { loading, organization, isOwner, loadOrganization, updateOrganization, uploadLogo, deleteOrganization } =
     useOrganization()
   const navigate = useNavigate()
@@ -188,7 +191,8 @@ export function OrgSettings() {
   return (
     <PageLayout
       icon={Settings}
-      title="Organization Settings"
+      title={!hasMultipleOrgs ? "Organization Settings" : undefined}
+      titleComponent={hasMultipleOrgs ? <OrganizationSelector /> : undefined}
       description="Manage your organization profile and preferences"
       actions={
         hasChanges && (

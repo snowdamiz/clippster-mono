@@ -44,6 +44,7 @@ export const useMessagingStore = defineStore('messaging', () => {
   const currentOrgId = ref<number | null>(null);
   const isSocketConnected = ref(false);
   const isInitialized = ref(false);
+  const isGlobalMode = ref(false);
 
   // ============================================================================
   // Computed
@@ -82,7 +83,54 @@ export const useMessagingStore = defineStore('messaging', () => {
   // ============================================================================
 
   /**
-   * Initialize the messaging store for an organization.
+   * Initialize the messaging socket at app level (lightweight).
+   * Connects socket, sets up notification handlers, loads conversations + unread counts.
+   * Does NOT set isLoading (no loading spinner for background init).
+   */
+  async function initializeGlobal() {
+    const authStore = useAuthStore();
+    if (!authStore.user?.id || !authStore.token) {
+      console.warn('[MessagingStore] Cannot initializeGlobal: not authenticated');
+      return;
+    }
+
+    if (isGlobalMode.value && messagingSocket.isConnected()) {
+      return; // Already initialized globally
+    }
+
+    isGlobalMode.value = true;
+
+    try {
+      messagingSocket.setOnConnectionStateChange((connected) => {
+        isSocketConnected.value = connected;
+      });
+
+      await messagingSocket.connect(authStore.token, authStore.user.id);
+      isSocketConnected.value = true;
+
+      messagingSocket.setOnNewMessageNotification((notification) => {
+        handleNewMessageNotification(notification.conversationId, notification.message);
+      });
+
+      messagingSocket.setOnConversationCreated((conversation) => {
+        conversations.value.set(conversation.id, conversation);
+      });
+
+      messagingSocket.setOnMessageReadNotification((event) => {
+        handleReadReceipt(event.conversationId, event.userId);
+      });
+
+      // Load conversations and unread counts
+      await loadConversations();
+      totalUnread.value = await getTotalUnread();
+      isInitialized.value = true;
+    } catch (error) {
+      console.error('[MessagingStore] Failed to initializeGlobal:', error);
+    }
+  }
+
+  /**
+   * Initialize the messaging store for an organization (full page mode).
    */
   async function initialize(orgId?: number) {
     const authStore = useAuthStore();
@@ -99,7 +147,7 @@ export const useMessagingStore = defineStore('messaging', () => {
         isSocketConnected.value = connected;
       });
 
-      // Connect to WebSocket
+      // Connect to WebSocket (no-op if already connected via global init)
       await messagingSocket.connect(authStore.token, authStore.user.id);
       isSocketConnected.value = true;
 
@@ -237,12 +285,12 @@ export const useMessagingStore = defineStore('messaging', () => {
   /**
    * Send a message to the active conversation.
    */
-  async function sendMessage(content: string) {
+  async function sendMessage(content: string, attachmentData?: any[]) {
     if (!activeConversationId.value) return;
 
     try {
       // Use WebSocket for real-time delivery
-      const message = await messagingSocket.sendMessage(activeConversationId.value, content);
+      const message = await messagingSocket.sendMessage(activeConversationId.value, content, attachmentData);
       // Message will be added via the onNewMessage handler
       return message;
     } catch (error) {
@@ -510,12 +558,31 @@ export const useMessagingStore = defineStore('messaging', () => {
   }
 
   /**
-   * Cleanup and disconnect.
+   * Cleanup page-level state without disconnecting the global socket.
+   * Used by Messages.vue when navigating away.
    */
-  function cleanup() {
-    messagingSocket.setOnConnectionStateChange(null);
-    messagingSocket.disconnect();
-    isSocketConnected.value = false;
+  function cleanupPageOnly() {
+    // Leave active conversation channel
+    if (activeConversationId.value) {
+      messagingSocket.leaveConversation(activeConversationId.value);
+    }
+    activeConversationId.value = null;
+    currentOrgId.value = null;
+    isLoading.value = false;
+  }
+
+  /**
+   * Cleanup and disconnect (full teardown).
+   * Only disconnects socket if NOT in global mode, or if explicitly forced.
+   */
+  function cleanup(force = false) {
+    if (!isGlobalMode.value || force) {
+      messagingSocket.setOnConnectionStateChange(null);
+      messagingSocket.disconnect();
+      isSocketConnected.value = false;
+      isGlobalMode.value = false;
+      isInitialized.value = false;
+    }
     conversations.value.clear();
     messages.value.clear();
     unreadCounts.value.clear();
@@ -669,6 +736,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     activeTypingUsers,
 
     // Actions
+    initializeGlobal,
     initialize,
     addConversation,
     loadConversations,
@@ -691,6 +759,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     removeParticipant,
     deleteConversation,
     fetchTotalUnread,
+    cleanupPageOnly,
     cleanup,
   };
 });

@@ -746,6 +746,7 @@ defmodule ClippsterServerWeb.AuthController do
         avatar_url: user.avatar_url,
         wallet_address: user.wallet_address,
         is_admin: user.is_admin,
+        ai_editor_enabled: user.ai_editor_enabled,
         account_type: user.account_type,
         owned_organization_id: user.owned_organization_id,
         created_by_organization_id: user.created_by_organization_id,

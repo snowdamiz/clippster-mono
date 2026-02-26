@@ -30,7 +30,15 @@ export function BuyCreditsModal({ open, onClose }: Props) {
       setLoading(true)
       fetchPricing().then(result => {
         if (result.success && result.packs) {
-          setPacks(result.packs)
+          // Transform server pack map to array format
+          const packsArray = Object.entries(result.packs).map(([key, pack]: [string, any]) => ({
+            id: key,
+            name: pack.name || key,
+            credits: pack.hours,
+            price_usd: pack.usd,
+            price_sol: pack.sol_amount
+          }))
+          setPacks(packsArray)
         }
         setLoading(false)
       })
@@ -66,19 +74,27 @@ export function BuyCreditsModal({ open, onClose }: Props) {
         </div>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-4">
             {packs.map(pack => (
               <button
                 key={pack.id}
                 onClick={() => setSelectedPack(pack)}
-                className={`p-4 rounded-xl border text-left transition-all ${selectedPack?.id === pack.id ? 'border-cyan-500 bg-cyan-500/5' : 'border-zinc-800 hover:border-zinc-700 bg-zinc-900/50'}`}
+                className={`relative flex flex-col bg-zinc-900/50 border rounded-xl overflow-hidden transition-all duration-200 hover:border-white/10 hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)] hover:-translate-y-0.5 ${selectedPack?.id === pack.id ? 'border-cyan-500' : 'border-zinc-800'}`}
               >
-                <div className="text-sm font-semibold text-white">{pack.name}</div>
-                <div className="flex items-center gap-1 mt-1">
-                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                  <span className="text-xs text-cyan-400">{pack.credits.toLocaleString()} credits</span>
+                <div className="relative flex flex-col flex-1 p-6 text-left">
+                  <h3 className="text-lg font-bold text-white m-0 mb-2">{pack.name}</h3>
+                  <div className="flex items-baseline mb-6">
+                    <span className="text-xl font-semibold text-white">$</span>
+                    <span className="text-[2.5rem] font-bold text-white tracking-tight">{pack.price_usd}</span>
+                    <span className="text-sm text-zinc-500 ml-1">/pack</span>
+                  </div>
+                  <ul className="list-none m-0 p-0 flex flex-col gap-3">
+                    <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
+                      <Sparkles className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
+                      <span>{pack.credits.toLocaleString()} credits</span>
+                    </li>
+                  </ul>
                 </div>
-                <div className="text-lg font-bold text-white mt-2">${pack.price_usd}</div>
               </button>
             ))}
           </div>

@@ -73,7 +73,6 @@ const router = createRouter({
       path: '/ai-video',
       name: 'ai-video',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -559,6 +558,12 @@ export function getDefaultRoute(
 
 // Navigation guard for authentication, admin access, and feature flags
 router.beforeEach(async (to, _from, next) => {
+  console.log('[Router] beforeEach triggered:', {
+    to: to.path,
+    from: _from.path,
+    isAuthenticated: useAuthStore().isAuthenticated,
+  });
+  
   const authStore = useAuthStore();
   const ownedOrganizationId = authStore.user?.owned_organization_id;
 
@@ -601,7 +606,6 @@ router.beforeEach(async (to, _from, next) => {
           'clippers-directory': 'Browse Clippers',
           'messages-home': 'Access Messages',
           'prompts-home': 'Access Prompts',
-          'ai-video-home': 'Use AI Video Creator',
         };
         const routeName = typeof to.name === 'string' ? to.name : String(to.name);
         const context = routeLabels[routeName] || `Access ${routeName}`;
@@ -663,6 +667,7 @@ router.beforeEach(async (to, _from, next) => {
     return;
   }
 
+  console.log('[Router] Navigation allowed to:', to.path);
   next();
 });
 

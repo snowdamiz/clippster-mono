@@ -213,6 +213,9 @@ defmodule ClippsterServerWeb.Router do
     get("/kick/channels/:channel_slug", KickController, :get_channel)
     get("/kick/channels/:channel_slug/videos", KickController, :get_clips)
 
+    # Twitch routes
+    get("/twitch/channels/:channel_name", TwitchController, :get_channel)
+
     # Organization invitation (public - for viewing invitation details)
     get("/invitations/:token", OrganizationController, :get_invitation)
 
@@ -394,6 +397,12 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/credits/allocate",
       OrganizationController,
       :allocate_credits
+    )
+
+    post(
+      "/organizations/:organization_id/credits/toggle-pool-fallback",
+      OrganizationController,
+      :toggle_pool_fallback
     )
 
     get("/organizations/:organization_id/transactions", OrganizationController, :get_transactions)
@@ -723,6 +732,10 @@ defmodule ClippsterServerWeb.Router do
     delete("/conversations/:id/participants/:user_id", MessagingController, :remove_participant)
     post("/conversations/:id/leave", MessagingController, :leave_conversation)
     delete("/conversations/:id", MessagingController, :delete_conversation)
+    
+    # Message attachments
+    post("/conversations/:conversation_id/attachments", MessagingController, :upload_attachments)
+    get("/attachments/:id/download", MessagingController, :download_attachment)
 
     # User-level messaging endpoints
     get("/me/conversations", MessagingController, :list_all_conversations)
@@ -1136,6 +1149,10 @@ defmodule ClippsterServerWeb.Router do
     delete("/admin/users/:user_id/moderator", AdminController, :demote_moderator)
     post("/admin/users/:user_id/mod-discount", AdminController, :enable_mod_discount)
     delete("/admin/users/:user_id/mod-discount", AdminController, :disable_mod_discount)
+    
+    # AI editor access management
+    post("/admin/users/:user_id/ai-editor", AdminController, :enable_ai_editor)
+    delete("/admin/users/:user_id/ai-editor", AdminController, :disable_ai_editor)
 
     # User restrictions
     post("/admin/users/:user_id/restrict", AdminController, :restrict_user)

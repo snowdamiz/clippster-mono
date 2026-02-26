@@ -41,6 +41,22 @@ export interface Conversation {
   muted?: boolean
 }
 
+export interface MessageAttachment {
+  id: number
+  attachmentType: string
+  attachment_type?: string
+  url: string
+  thumbnailUrl: string | null
+  thumbnail_url?: string | null
+  filename: string
+  mimeType: string
+  mime_type?: string
+  fileSize: number
+  file_size?: number
+  width: number | null
+  height: number | null
+}
+
 export interface Message {
   id: number
   conversationId?: number
@@ -65,6 +81,7 @@ export interface Message {
   } | null
   readBy?: number[]
   read_by?: number[]
+  attachments?: MessageAttachment[]
 }
 
 export interface UnreadCounts {
@@ -108,6 +125,20 @@ export function normalizeConversation(c: any): Conversation {
   }
 }
 
+function normalizeAttachment(a: any): MessageAttachment {
+  return {
+    id: a.id,
+    attachmentType: a.attachmentType ?? a.attachment_type ?? 'image',
+    url: a.url,
+    thumbnailUrl: a.thumbnailUrl ?? a.thumbnail_url ?? null,
+    filename: a.filename,
+    mimeType: a.mimeType ?? a.mime_type,
+    fileSize: a.fileSize ?? a.file_size,
+    width: a.width ?? null,
+    height: a.height ?? null,
+  }
+}
+
 export function normalizeMessage(m: any): Message {
   return {
     id: m.id,
@@ -126,6 +157,7 @@ export function normalizeMessage(m: any): Message {
         }
       : null,
     readBy: m.readBy ?? m.read_by ?? [],
+    attachments: (m.attachments || []).map(normalizeAttachment),
   }
 }
 
@@ -264,4 +296,39 @@ export async function deleteConversation(conversationId: number): Promise<void> 
 export async function getTotalUnread(): Promise<number> {
   const response = await api.get<{ data: { unread_count: number } }>('/me/unread-count')
   return response.data?.unread_count ?? 0
+}
+
+// ============================================================================
+// Message Attachments
+// ============================================================================
+
+/**
+ * Upload message attachments for a conversation.
+ * Returns attachment data that can be sent with a message.
+ */
+export async function uploadMessageAttachments(conversationId: number, files: File[]): Promise<any[]> {
+  const formData = new FormData()
+  files.forEach((file) => {
+    formData.append('files', file)
+  })
+
+  const response = await api.post<{ attachments: any[] }>(
+    `/conversations/${conversationId}/attachments`,
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }
+  )
+
+  return response.attachments || []
+}
+
+/**
+ * Get download URL for an attachment.
+ */
+export function getAttachmentDownloadUrl(attachmentId: number): string {
+  const baseUrl = import.meta.env.VITE_API_URL || window.location.origin
+  return `${baseUrl}/attachments/${attachmentId}/download`
 }

@@ -11,6 +11,7 @@ defmodule ClippsterServer.Accounts.User do
     field :provider_id, :string
     field :is_admin, :boolean, default: false
     field :is_moderator, :boolean, default: false
+    field :ai_editor_enabled, :boolean, default: false
 
     # Email auth fields
     field :password, :string, virtual: true

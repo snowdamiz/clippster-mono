@@ -45,15 +45,19 @@
                       class="credits-dialog__pack"
                       :class="{ 'credits-dialog__pack--selected': selectedPackKey === key }"
                     >
-                      <div class="credits-dialog__pack-icon">
-                        <Zap :size="18" />
-                      </div>
-                      <div class="credits-dialog__pack-name">{{ key }}</div>
-                      <div class="credits-dialog__pack-value">{{ pack.hours }}</div>
-                      <div class="credits-dialog__pack-unit">minutes</div>
-                      <div class="credits-dialog__pack-divider"></div>
-                      <div class="credits-dialog__pack-price">
-                        ${{ pack.usd % 1 === 0 ? pack.usd : pack.usd.toFixed(2) }}
+                      <div class="credits-dialog__pack-content">
+                        <h3 class="credits-dialog__pack-name">{{ pack.name }}</h3>
+                        <div class="credits-dialog__pack-price">
+                          <span class="credits-dialog__pack-price-currency">$</span>
+                          <span class="credits-dialog__pack-price-amount">{{ pack.usd % 1 === 0 ? pack.usd : pack.usd.toFixed(2) }}</span>
+                          <span class="credits-dialog__pack-price-period">/pack</span>
+                        </div>
+                        <ul class="credits-dialog__pack-features">
+                          <li class="credits-dialog__pack-feature">
+                            <Check class="credits-dialog__pack-feature-icon" />
+                            <span>{{ pack.hours.toLocaleString() }} credits</span>
+                          </li>
+                        </ul>
                       </div>
                     </button>
                   </div>
@@ -326,6 +330,7 @@
     RefreshCcw,
     Sparkles,
     ShieldCheck,
+    Check,
   } from 'lucide-vue-next';
   import api from '@/services/api';
   import { useAuthStore } from '@/stores/auth';
@@ -347,7 +352,7 @@
 
   // State
   const loadingPricing = ref(false);
-  const creditPacks = ref<Record<string, { hours: number; usd: number; sol_amount?: number }>>({});
+  const creditPacks = ref<Record<string, { hours: number; usd: number; name: string; sol_amount?: number }>>({});
   const companyWallet = ref('');
   const solUsdRate = ref(0);
   const selectedPackKey = ref<string>('');
@@ -390,7 +395,7 @@
     }
   }
 
-  function selectPack(key: string, pack: { hours: number; usd: number; sol_amount?: number }) {
+  function selectPack(key: string, pack: { hours: number; usd: number; name: string; sol_amount?: number }) {
     selectedPackKey.value = key;
     selectedPack.value = {
       hours: pack.hours,
@@ -839,20 +844,18 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    padding: 1.25rem 0.875rem;
-    text-align: center;
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    border-radius: 12px;
     overflow: hidden;
     cursor: pointer;
     transition: all 200ms ease;
   }
 
   .credits-dialog__pack:hover {
-    border-color: rgba(6, 182, 212, 0.3);
+    border-color: rgba(255, 255, 255, 0.1);
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
   }
 
   .credits-dialog__pack--selected {
@@ -860,55 +863,68 @@
     box-shadow: 0 4px 20px rgba(6, 182, 212, 0.2);
   }
 
-  .credits-dialog__pack-icon {
-    width: 36px;
-    height: 36px;
+  .credits-dialog__pack-content {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 8px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    margin-bottom: 0.75rem;
+    flex-direction: column;
+    flex: 1;
+    padding: 1.5rem;
+    text-align: left;
   }
 
   .credits-dialog__pack-name {
-    font-size: 0.625rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.375rem;
-  }
-
-  .credits-dialog__pack-value {
-    font-size: 2.25rem;
+    font-size: 1.125rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    line-height: 1;
-    letter-spacing: -0.03em;
-    margin-bottom: 0.125rem;
-  }
-
-  .credits-dialog__pack-unit {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    margin-bottom: 0.75rem;
-  }
-
-  .credits-dialog__pack-divider {
-    width: 100%;
-    height: 1px;
-    background-color: var(--sidebar-border);
-    margin-bottom: 0.75rem;
+    margin: 0 0 0.5rem;
   }
 
   .credits-dialog__pack-price {
-    font-size: 1.125rem;
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 1.5rem;
+  }
+
+  .credits-dialog__pack-price-currency {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .credits-dialog__pack-price-amount {
+    font-size: 2.5rem;
     font-weight: 700;
-    color: var(--sidebar-accent);
-    letter-spacing: -0.01em;
+    color: var(--sidebar-text);
+    letter-spacing: -0.03em;
+  }
+
+  .credits-dialog__pack-price-period {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin-left: 0.25rem;
+  }
+
+  .credits-dialog__pack-features {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .credits-dialog__pack-feature {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .credits-dialog__pack-feature-icon {
+    width: 15px;
+    height: 15px;
+    color: #34d399;
+    flex-shrink: 0;
   }
 
   /* ===== Two-Column Grid ===== */
