@@ -335,6 +335,7 @@
     show: boolean;
     overlayImagePath: string;
     overlayImageUrl?: string; // Server URL for organization mode
+    overlayAssetId?: string | number | null; // Parent overlay's assetId for org-asset resolution
     overlayLabel?: string;
     settings?: PerRatioOverlaySettings | null;
     watermarkSettings?: any; // Watermark settings to render watermark in background
@@ -527,6 +528,37 @@
       propsImagePath: props.overlayImagePath,
       propsImageUrl: props.overlayImageUrl,
     });
+
+    // If no imagePath and no imageUrl, try resolving org-asset assetId to a local cached file
+    const assetIdStr = currentSettings.assetId != null ? String(currentSettings.assetId) : null;
+    if (!imageUrl && !imagePath && assetIdStr) {
+      try {
+        const { resolveOverlayImagePath } = await import('@/services/database/watermarks');
+        const resolved = await resolveOverlayImagePath(null, assetIdStr);
+        if (resolved) {
+          imagePath = resolved;
+          console.log('[OverlayPositionPicker] Resolved org asset to local path:', resolved);
+        }
+      } catch (err) {
+        console.warn('[OverlayPositionPicker] Failed to resolve org asset:', err);
+      }
+    }
+    // Also try parent overlay's assetId if no per-ratio overlay and no image yet
+    if (!imageUrl && !imagePath && !hasPerRatioOverlay) {
+      const parentAssetId = props.overlayAssetId != null ? String(props.overlayAssetId) : null;
+      if (parentAssetId) {
+        try {
+          const { resolveOverlayImagePath } = await import('@/services/database/watermarks');
+          const resolved = await resolveOverlayImagePath(null, parentAssetId);
+          if (resolved) {
+            imagePath = resolved;
+            console.log('[OverlayPositionPicker] Resolved parent org asset to local path:', resolved);
+          }
+        } catch (err) {
+          console.warn('[OverlayPositionPicker] Failed to resolve parent org asset:', err);
+        }
+      }
+    }
 
     if (!imageUrl && !imagePath) {
       console.log('[OverlayPositionPicker] No image URL or path provided');

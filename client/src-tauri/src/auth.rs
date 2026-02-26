@@ -13,15 +13,6 @@ pub struct AuthResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PaymentResult {
-    pub signature: String,
-    pub pack_key: String,
-    pub auth_token: String,
-    pub from_address: String,
-    pub pack_hours: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoogleAuthUser {
     pub id: i64,
     pub email: Option<String>,
@@ -64,41 +55,6 @@ pub struct GoogleAuthResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StripePaymentResult {
-    pub success: bool,
-    pub session_id: String,
-    pub pack_key: String,
-    pub pack_hours: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmailAuthUser {
-    pub id: i64,
-    pub email: Option<String>,
-    pub name: Option<String>,
-    pub is_admin: bool,
-    pub account_type: Option<String>,
-    pub owned_organization_id: Option<i64>,
-    pub created_by_organization_id: Option<i64>,
-    #[serde(default)]
-    pub ai_allowed: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmailVerificationResult {
-    pub success: bool,
-    #[serde(default)]
-    pub token: Option<String>,
-    #[serde(default)]
-    pub provider: Option<String>,
-    #[serde(default)]
-    pub user: Option<EmailAuthUser>,
-    #[serde(default)]
-    pub error: Option<String>,
-}
-
-/// Instagram OAuth result from the backend
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstagramAuthResult {
     pub success: bool,
     #[serde(default)]
@@ -121,7 +77,6 @@ pub struct InstagramAccount {
     pub connected_at: String,
 }
 
-/// Twitter OAuth result from the backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TwitterAuthResult {
     pub success: bool,
@@ -146,17 +101,11 @@ pub struct TwitterAccount {
 }
 
 pub static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
-pub static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static GOOGLE_AUTH_RESULT: Lazy<Arc<Mutex<Option<GoogleAuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
-pub static STRIPE_PAYMENT_RESULT: Lazy<Arc<Mutex<Option<StripePaymentResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
-pub static EMAIL_VERIFICATION_RESULT: Lazy<Arc<Mutex<Option<EmailVerificationResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static INSTAGRAM_AUTH_RESULT: Lazy<Arc<Mutex<Option<InstagramAuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static TWITTER_AUTH_RESULT: Lazy<Arc<Mutex<Option<TwitterAuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static AUTH_SERVER_PORT: u16 = 48274;
 pub static PAYMENT_SERVER_PORT: u16 = 48275;
-pub static GOOGLE_AUTH_SERVER_PORT: u16 = 54321;
-pub static STRIPE_SERVER_PORT: u16 = 48276;
-pub static EMAIL_VERIFICATION_SERVER_PORT: u16 = 54322;
 pub static INSTAGRAM_AUTH_SERVER_PORT: u16 = 54323;
 pub static TWITTER_AUTH_SERVER_PORT: u16 = 54324;
 

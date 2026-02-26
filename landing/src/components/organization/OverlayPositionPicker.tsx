@@ -26,11 +26,19 @@ export interface PerRatioOverlaySettings {
   '4:5': OverlayRatioPosition | null
 }
 
+interface OrgAsset {
+  id: number
+  url: string
+  asset_type?: string
+  [key: string]: any
+}
+
 interface Props {
   show: boolean
   overlayImageUrl: string
   overlayLabel?: string
   settings?: PerRatioOverlaySettings | null
+  orgAssets?: OrgAsset[]
   onClose: () => void
   onSave: (settings: PerRatioOverlaySettings) => void
 }
@@ -54,7 +62,7 @@ const presets = [
   { name: 'Bottom Right', x: 88, y: 92 },
 ]
 
-export function OverlayPositionPicker({ show, overlayImageUrl, overlayLabel = '', settings, onClose, onSave }: Props) {
+export function OverlayPositionPicker({ show, overlayImageUrl, overlayLabel = '', settings, orgAssets, onClose, onSave }: Props) {
   const previewContainerRef = useRef<HTMLDivElement>(null)
   const [currentAspectRatio, setCurrentAspectRatio] = useState<AspectRatioId>('16:9')
   const [isDragging, setIsDragging] = useState(false)
@@ -167,7 +175,18 @@ export function OverlayPositionPicker({ show, overlayImageUrl, overlayLabel = ''
     const hasPerRatioOverlay = currentSettings.imageUrl || currentSettings.assetId
 
     // Priority: per-ratio overlay > parent overlay
-    const imageUrl = hasPerRatioOverlay ? currentSettings.imageUrl : overlayImageUrl
+    let imageUrl = ''
+    if (hasPerRatioOverlay) {
+      // Per-ratio overlay: use imageUrl or resolve assetId from orgAssets
+      if (currentSettings.imageUrl) {
+        imageUrl = currentSettings.imageUrl
+      } else if (currentSettings.assetId && orgAssets?.length) {
+        const asset = orgAssets.find(a => a.id === currentSettings.assetId)
+        if (asset?.url) imageUrl = asset.url
+      }
+    } else {
+      imageUrl = overlayImageUrl
+    }
 
     if (!imageUrl) {
       setOverlayDataUrl(null)
