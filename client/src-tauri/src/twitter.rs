@@ -6,11 +6,11 @@ use std::{
 
 use once_cell::sync::Lazy;
 use serde::Serialize;
-use tokio::sync::oneshot;
 use tauri::Emitter;
-
+use tokio::sync::oneshot;
 use crate::storage;
 use tokio::io::AsyncBufReadExt;
+use base64::Engine;
 
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
@@ -381,6 +381,336 @@ pub fn get_active_twitter_recordings() -> Result<Vec<String>, String> {
     Ok(recordings.keys().cloned().collect())
 }
 
+/// Get metadata for a Twitter broadcast/space using yt-dlp
+#[tauri::command]
+pub async fn get_twitter_broadcast_info(url: String) -> Result<String, String> {
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    let normalized_url = normalize_twitter_url(&url);
+    
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut cmd);
+    
+    cmd.arg("--dump-json")
+        .arg("--skip-download")
+        .arg("--no-warnings")
+        .arg(&normalized_url);
+    
+    let output = cmd.output().await
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("yt-dlp failed: {}", stderr));
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    if stdout.trim().is_empty() {
+        return Err("No metadata returned from yt-dlp".to_string());
+    }
+    
+    // Return the JSON metadata
+    Ok(stdout.to_string())
+}
+
+/// Get duration for a Twitter broadcast using ffprobe on the m3u8 manifest
+#[tauri::command]
+pub async fn get_twitter_broadcast_duration(manifest_url: String) -> Result<f64, String> {
+    let ffprobe_path = resolve_ffprobe_binary()?;
+    
+    let mut cmd = tokio::process::Command::new(&ffprobe_path);
+    no_window(&mut cmd);
+    
+    cmd.arg("-v").arg("error")
+        .arg("-show_entries").arg("format=duration")
+        .arg("-of").arg("default=noprint_wrappers=1:nokey=1")
+        .arg(&manifest_url);
+    
+    let output = cmd.output().await
+        .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffprobe failed: {}", stderr));
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let duration_str = stdout.trim();
+    
+    if duration_str.is_empty() || duration_str == "N/A" {
+        return Err("Duration not available".to_string());
+    }
+    
+    duration_str.parse::<f64>()
+        .map_err(|e| format!("Failed to parse duration: {}", e))
+}
+
+/// Download Twitter broadcast thumbnail and return as data URL
+#[tauri::command]
+pub async fn download_twitter_thumbnail(thumbnail_url: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    
+    let response = client.get(&thumbnail_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download thumbnail: {}", e))?;
+    
+    if !response.status().is_success() {
+        return Err(format!("HTTP error: {}", response.status()));
+    }
+    
+    let content_type = response.headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+    
+    let bytes = response.bytes()
+        .await
+        .map_err(|e| format!("Failed to read thumbnail bytes: {}", e))?;
+    
+    let base64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", content_type, base64))
+}
+
+/// Download a Twitter broadcast using yt-dlp
+#[tauri::command]
+pub async fn download_twitter_vod(
+    app: tauri::AppHandle,
+    download_id: String,
+    title: String,
+    vod_url: String,
+    broadcast_id: String,
+) -> Result<(), String> {
+    use crate::downloads::{ACTIVE_DOWNLOADS, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA, DownloadMetadata, DownloadResult, DownloadProgress};
+    
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    let ffmpeg_path = resolve_ffmpeg_binary()?;
+    
+    // Check if download already exists
+    {
+        let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+        if downloads.contains_key(&download_id) {
+            println!("[Twitter] Download already in progress: {}", download_id);
+            return Err("Download already in progress".to_string());
+        }
+        downloads.insert(download_id.clone(), true);
+    }
+
+    // Resolve output path from storage
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+
+    let safe_title = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    let filename = format!("twitter_{}_{}_{}.mp4", broadcast_id, safe_title, timestamp);
+    let output_file = paths.videos.join(&filename);
+    
+    // Clean up when done
+    let cleanup_download = {
+        let download_id = download_id.clone();
+        let downloads = ACTIVE_DOWNLOADS.clone();
+        move || {
+            println!("[Twitter] Cleaning up download: {}", download_id);
+            let mut downloads = downloads.lock().unwrap();
+            downloads.remove(&download_id);
+        }
+    };
+    
+    let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+    
+    let download_id_clone = download_id.clone();
+    let app_clone = app.clone();
+    let output_file_str = output_file.to_string_lossy().to_string();
+
+    // Store download metadata
+    {
+        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+        metadata_map.insert(download_id.clone(), DownloadMetadata {
+            output_path: Some(output_file_str.clone()),
+            thumbnail_path: None,
+            started_at: std::time::SystemTime::now(),
+            process_id: None,
+        });
+    }
+    
+    // Fetch video duration for time-based progress
+    println!("[Twitter] Fetching video duration for {}", broadcast_id);
+    let total_duration = match get_twitter_broadcast_info(vod_url.clone()).await {
+        Ok(json_str) => {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                json.get("duration").and_then(|d| d.as_f64())
+            } else {
+                None
+            }
+        }
+        Err(e) => {
+            println!("[Twitter] Failed to fetch duration: {}", e);
+            None
+        }
+    };
+    
+    if let Some(dur) = total_duration {
+        println!("[Twitter] Video duration: {:.2}s", dur);
+    }
+    
+    // Send initial progress
+    let _ = app.emit("download-progress", DownloadProgress {
+        download_id: download_id.clone(),
+        progress: 0.0,
+        current_time: None,
+        total_time: total_duration,
+        status: "Starting download...".to_string(),
+    });
+    
+    tokio::spawn(async move {
+        let mut cmd = tokio::process::Command::new(&ytdlp_path);
+        no_window(&mut cmd);
+        
+        cmd.arg("--ffmpeg-location").arg(&ffmpeg_path)
+            .arg("-o").arg(&output_file_str)
+            .arg("--newline")
+            .arg(&vod_url)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        
+        let mut child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                cleanup_download();
+                let _ = app_clone.emit("download-error", DownloadResult {
+                    download_id: download_id_clone.clone(),
+                    success: false,
+                    file_path: None,
+                    thumbnail_path: None,
+                    duration: None,
+                    width: None,
+                    height: None,
+                    codec: None,
+                    file_size: None,
+                    error: Some(format!("Failed to spawn yt-dlp: {}", e)),
+                });
+                return;
+            }
+        };
+        
+        let stdout = child.stdout.take().expect("Failed to get stdout");
+        let stderr = child.stderr.take().expect("Failed to get stderr");
+        
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut stdout_reader = BufReader::new(stdout).lines();
+        let mut stderr_reader = BufReader::new(stderr).lines();
+        
+        loop {
+            tokio::select! {
+                _ = &mut cancel_rx => {
+                    println!("[Twitter] Download cancelled: {}", download_id_clone);
+                    let _ = child.kill().await;
+                    cleanup_download();
+                    let _ = app_clone.emit("download-error", DownloadResult {
+                        download_id: download_id_clone.clone(),
+                        success: false,
+                        file_path: None,
+                        thumbnail_path: None,
+                        duration: None,
+                        width: None,
+                        height: None,
+                        codec: None,
+                        file_size: None,
+                        error: Some("Download cancelled".to_string()),
+                    });
+                    return;
+                }
+                line = stdout_reader.next_line() => {
+                    match line {
+                        Ok(Some(line)) => {
+                            // Log all stdout for debugging
+                            println!("[Twitter] yt-dlp: {}", line);
+                            
+                            if line.contains("[download]") && line.contains("%") {
+                                if let Some(percent_str) = line.split_whitespace()
+                                    .find(|s| s.ends_with('%'))
+                                    .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
+                                {
+                                    // Calculate current time from percentage if we have total duration
+                                    let current_time = total_duration.map(|dur| (percent_str / 100.0) * dur);
+                                    
+                                    let _ = app_clone.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_clone.clone(),
+                                        progress: percent_str,
+                                        current_time,
+                                        total_time: total_duration,
+                                        status: format!("Downloading... {}%", percent_str as u32),
+                                    });
+                                }
+                            }
+                        }
+                        Ok(None) => break,
+                        Err(_) => break,
+                    }
+                }
+                line = stderr_reader.next_line() => {
+                    if let Ok(Some(line)) = line {
+                        println!("[Twitter] yt-dlp stderr: {}", line);
+                    }
+                }
+            }
+        }
+        
+        let status = child.wait().await;
+        cleanup_download();
+        
+        match status {
+            Ok(exit_status) if exit_status.success() => {
+                // Get video info
+                let video_path = std::path::Path::new(&output_file_str);
+                let video_info = crate::ffmpeg_utils::get_video_info(&app_clone, video_path).await.ok();
+                
+                let _ = app_clone.emit("download-complete", DownloadResult {
+                    download_id: download_id_clone,
+                    success: true,
+                    file_path: Some(output_file_str.clone()),
+                    thumbnail_path: None,
+                    duration: video_info.as_ref().and_then(|v| v.duration),
+                    width: video_info.as_ref().map(|v| v.width),
+                    height: video_info.as_ref().map(|v| v.height),
+                    codec: video_info.as_ref().map(|v| v.codec.clone()),
+                    file_size: std::fs::metadata(&output_file_str).ok().map(|m| m.len()),
+                    error: None,
+                });
+            }
+            _ => {
+                let _ = app_clone.emit("download-error", DownloadResult {
+                    download_id: download_id_clone,
+                    success: false,
+                    file_path: None,
+                    thumbnail_path: None,
+                    duration: None,
+                    width: None,
+                    height: None,
+                    codec: None,
+                    file_size: None,
+                    error: Some("Download failed".to_string()),
+                });
+            }
+        }
+    });
+    
+    Ok(())
+}
+
 // Helper functions
 
 /// Normalize Twitter/X URL to twitter.com format for yt-dlp compatibility
@@ -442,5 +772,27 @@ fn resolve_ffmpeg_binary() -> Result<PathBuf, String> {
         Ok(ffmpeg_path)
     } else {
         Err(format!("ffmpeg binary not found at: {}", ffmpeg_path.display()))
+    }
+}
+
+fn resolve_ffprobe_binary() -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    let binary_name = "ffprobe.exe";
+    
+    #[cfg(not(target_os = "windows"))]
+    let binary_name = "ffprobe";
+    
+    let exe_dir = std::env::current_exe()
+        .map_err(|e| format!("Failed to get executable directory: {}", e))?
+        .parent()
+        .ok_or("Failed to get parent directory")?
+        .to_path_buf();
+    
+    let ffprobe_path = exe_dir.join(binary_name);
+    
+    if ffprobe_path.exists() {
+        Ok(ffprobe_path)
+    } else {
+        Err(format!("ffprobe binary not found at: {}", ffprobe_path.display()))
     }
 }

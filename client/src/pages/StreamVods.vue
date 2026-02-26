@@ -104,6 +104,20 @@
               >
                 <img src="/youtube.svg" class="streamvods-search__platform-icon" />
               </div>
+              <div
+                v-else-if="detectedPlatform === 'rumble'"
+                class="streamvods-search__platform streamvods-search__platform--rumble"
+                key="rumble"
+              >
+                <img src="/rumble.svg" class="streamvods-search__platform-icon" />
+              </div>
+              <div
+                v-else-if="detectedPlatform === 'twitter'"
+                class="streamvods-search__platform streamvods-search__platform--twitter"
+                key="twitter"
+              >
+                <img src="/x.svg" class="streamvods-search__platform-icon" />
+              </div>
               <Search v-else class="streamvods-search__icon" key="search" />
             </transition>
             <input
@@ -233,7 +247,7 @@
                 <span v-if="detectedPlatform" class="vod-card__badge" :class="`vod-card__badge--${detectedPlatform}`">
                   <img :src="getPlatformIcon(detectedPlatform)" class="vod-card__badge-icon" />
                 </span>
-                <span class="vod-card__badge vod-card__badge--duration">
+                <span v-if="clip.duration !== undefined && clip.duration > 0" class="vod-card__badge vod-card__badge--duration">
                   <Clock class="vod-card__badge-icon-svg" />
                   {{ formatDuration(clip.duration) }}
                 </span>
@@ -255,6 +269,10 @@
               <div class="vod-card__bottom">
                 <h3 class="vod-card__name" :title="clip.title">{{ clip.title }}</h3>
                 <div class="vod-card__meta">
+                  <template v-if="clip.uploader">
+                    <span>{{ clip.uploader }}</span>
+                    <span class="vod-card__meta-dot"></span>
+                  </template>
                   <span>{{ clip.createdAt ? formatAbsoluteDate(clip.createdAt) : 'No timestamp' }}</span>
                   <template v-if="clip.createdAt">
                     <span class="vod-card__meta-dot"></span>
@@ -527,6 +545,19 @@
       return;
     }
 
+    // Check for Rumble
+    if (lowerVal.includes('rumble.com')) {
+      detectedPlatform.value = 'rumble';
+      return;
+    }
+
+    // Check for X/Twitter (requires exact broadcast/space URL)
+    if ((lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) && 
+        (lowerVal.includes('/i/broadcasts/') || lowerVal.includes('/i/spaces/'))) {
+      detectedPlatform.value = 'twitter';
+      return;
+    }
+
     // Check if it could be a Kick username (alphanumeric with underscores/hyphens, 3+ chars)
     // This is a fallback - if it's not a URL and not a mint ID, assume Kick username
     if (/^[a-zA-Z0-9_-]{3,}$/.test(val) && !extractMintId(val)) {
@@ -570,7 +601,7 @@
 
     if (queryPlatform && querySearch) {
       // Set the platform and search from query params
-      const validPlatforms = ['pumpfun', 'kick', 'twitch', 'youtube'] as const;
+      const validPlatforms = ['pumpfun', 'kick', 'twitch', 'youtube', 'rumble', 'twitter'] as const;
       if (validPlatforms.includes(queryPlatform as any)) {
         detectedPlatform.value = queryPlatform as PlatformId;
         searchInput.value = querySearch;
@@ -644,6 +675,7 @@
       twitch: '/twitch.svg',
       youtube: '/youtube.svg',
       rumble: '/rumble.svg',
+      twitter: '/x.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -655,6 +687,7 @@
       twitch: 'Twitch',
       youtube: 'YouTube',
       rumble: 'Rumble',
+      twitter: 'X (Twitter)',
     };
     return names[platform] || platform;
   }
@@ -746,7 +779,7 @@
     if (!detectedPlatform.value) {
       showError(
         'Unknown Platform',
-        'Could not detect the platform. Please enter a valid PumpFun link/mint ID, Kick link/username, or Twitch link/channel name.'
+        'Could not detect the platform. Please enter a valid link or username from PumpFun, Kick, Twitch, YouTube, Rumble, or X/Twitter (broadcast/space URLs only).'
       );
       return;
     }
@@ -967,13 +1000,18 @@
         clip.title,
         videoUrl,
         platformStore.currentSearchId,
-        segmentRange,
+        selectedTimeRange.value.startTime > 0 || selectedTimeRange.value.endTime < clip.duration!
+          ? {
+              startTime: selectedTimeRange.value.startTime,
+              endTime: selectedTimeRange.value.endTime,
+            }
+          : undefined,
         clip.clipId,
         clip.duration,
         {
-          autoSegment: shouldAutoSegment,
+          autoSegment: autoSegment.value,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble',
+          provider: detectedPlatform.value === 'kick' ? 'kick' : detectedPlatform.value === 'twitch' ? 'twitch' : detectedPlatform.value === 'youtube' ? 'youtube' : detectedPlatform.value === 'rumble' ? 'rumble' : detectedPlatform.value === 'twitter' ? 'twitter' : 'pumpfun',
           creatorWatermarkSettings,
         }
       );

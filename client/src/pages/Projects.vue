@@ -281,6 +281,20 @@
                       <img src="/kick.svg" class="project-card__platform-icon project-card__platform-icon--kick" />
                     </div>
                     <div
+                      v-else-if="getProjectPlatform(project) === 'Rumble'"
+                      class="project-card__platform project-card__platform--rumble"
+                      title="Rumble"
+                    >
+                      <img src="/rumble.svg" class="project-card__platform-icon" />
+                    </div>
+                    <div
+                      v-else-if="getProjectPlatform(project) === 'Twitter'"
+                      class="project-card__platform project-card__platform--twitter"
+                      title="Twitter"
+                    >
+                      <img src="/x.svg" class="project-card__platform-icon" />
+                    </div>
+                    <div
                       v-else-if="getProjectPlatform(project) === 'PumpFun'"
                       class="project-card__platform project-card__platform--pumpfun"
                       title="PumpFun"
@@ -1877,9 +1891,11 @@
     }
   }
 
-  function getProjectPlatform(project: Project): 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null {
+  function getProjectPlatform(project: Project): 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual' | null {
     // 0. Check explicit platform field
     if (project.platform) {
+      // Normalize YouTube to Youtube for consistency
+      if (project.platform === 'YouTube') return 'Youtube';
       return project.platform;
     }
 
@@ -1890,6 +1906,8 @@
       if (desc.includes('pumpfun')) return 'PumpFun';
       if (desc.includes('youtube')) return 'Youtube';
       if (desc.includes('twitch')) return 'Twitch';
+      if (desc.includes('rumble')) return 'Rumble';
+      if (desc.includes('twitter')) return 'Twitter';
     }
 
     // 2. Check videos
@@ -6092,6 +6110,14 @@
 
   .project-card__platform--kick {
     background-color: #53fc18;
+  }
+
+  .project-card__platform--rumble {
+    background-color: #85c742;
+  }
+
+  .project-card__platform--twitter {
+    background-color: #000000;
   }
 
   .project-card__platform--pumpfun {

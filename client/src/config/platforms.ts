@@ -1,4 +1,4 @@
-export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble';
+export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble' | 'twitter';
 
 export interface PlatformConfig {
   id: PlatformId;
@@ -19,6 +19,19 @@ export interface PlatformConfig {
 }
 
 export const platformConfigs: Record<PlatformId, PlatformConfig> = {
+  twitter: {
+    id: 'twitter',
+    name: 'X (Twitter)',
+    description: 'Download videos from X/Twitter broadcasts and spaces',
+    icon: '/x.svg',
+    searchPlaceholder: 'Exact broadcast or space URL',
+    searchLabel: 'Broadcast/Space URL',
+    emptyStateTitle: 'Enter Broadcast URL',
+    emptyStateDescription: 'Paste the exact URL of an X/Twitter broadcast or space to download.',
+    isComingSoon: false,
+    provider: 'twitter',
+    localStorageKey: 'twitter_recent_searches',
+  },
   rumble: {
     id: 'rumble',
     name: 'Rumble',

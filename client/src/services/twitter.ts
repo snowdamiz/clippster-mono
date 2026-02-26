@@ -145,3 +145,120 @@ export async function getTwitterSessionOutputDir(sessionId: string): Promise<str
 export async function getActiveTwitterRecordings(): Promise<string[]> {
   return invoke<string[]>('get_active_twitter_recordings');
 }
+
+/**
+ * Get Twitter user avatar as data URL (bypasses CORS by using Tauri backend)
+ */
+async function getTwitterUserAvatar(username: string): Promise<string | undefined> {
+  try {
+    // Use unavatar.io via Tauri to bypass CORS
+    const avatarUrl = `https://unavatar.io/twitter/${username}`;
+    const dataUrl = await invoke<string>('download_twitter_thumbnail', { 
+      thumbnailUrl: avatarUrl 
+    });
+    return dataUrl;
+  } catch (error) {
+    console.warn('[Twitter] Failed to fetch user avatar:', error);
+    return undefined;
+  }
+}
+
+/**
+ * Get metadata for a Twitter broadcast/space
+ */
+export async function getTwitterBroadcastInfo(url: string): Promise<{
+  title?: string;
+  duration?: number;
+  thumbnail?: string;
+  uploader?: string;
+  username?: string;
+  description?: string;
+  avatarUrl?: string;
+}> {
+  try {
+    const result = await invoke<string>('get_twitter_broadcast_info', { url });
+    const metadata = JSON.parse(result);
+    
+    console.log('[Twitter] Raw metadata from yt-dlp:', metadata);
+    
+    // Try multiple thumbnail fields
+    let thumbnailUrl = metadata.thumbnail || 
+                      metadata.thumbnails?.[0]?.url ||
+                      (Array.isArray(metadata.thumbnails) && metadata.thumbnails.length > 0 
+                        ? metadata.thumbnails[metadata.thumbnails.length - 1]?.url 
+                        : undefined);
+    
+    // Download thumbnail as data URL to avoid expiring JWT tokens
+    let thumbnail: string | undefined;
+    if (thumbnailUrl) {
+      try {
+        console.log('[Twitter] Downloading thumbnail:', thumbnailUrl);
+        thumbnail = await invoke<string>('download_twitter_thumbnail', { 
+          thumbnailUrl 
+        });
+        console.log('[Twitter] Thumbnail downloaded successfully');
+      } catch (error) {
+        console.warn('[Twitter] Failed to download thumbnail:', error);
+        thumbnail = undefined;
+      }
+    }
+    
+    // Extract username from uploader or channel
+    const uploader = metadata.uploader || metadata.channel || metadata.uploader_id;
+    const username = metadata.uploader_id || 
+                    (uploader ? `@${uploader.replace('@', '')}` : undefined);
+    
+    // Try to get duration from metadata first
+    let duration = metadata.duration;
+    if (typeof duration === 'string') {
+      duration = parseFloat(duration);
+    }
+    if (isNaN(duration) || duration === null || duration === undefined) {
+      duration = undefined;
+    }
+    
+    // If duration not in metadata, try to get it from the manifest URL using ffprobe
+    if (!duration && metadata.manifest_url) {
+      try {
+        console.log('[Twitter] Duration not in metadata, fetching from manifest:', metadata.manifest_url);
+        duration = await invoke<number>('get_twitter_broadcast_duration', { 
+          manifestUrl: metadata.manifest_url 
+        });
+        console.log('[Twitter] Duration from ffprobe:', duration);
+      } catch (error) {
+        console.warn('[Twitter] Failed to get duration from manifest:', error);
+      }
+    }
+    
+    // Try to fetch user avatar
+    let avatarUrl: string | undefined;
+    if (username) {
+      const cleanUsername = username.replace('@', '');
+      console.log('[Twitter] Fetching avatar for username:', cleanUsername);
+      avatarUrl = await getTwitterUserAvatar(cleanUsername);
+      console.log('[Twitter] Avatar URL:', avatarUrl);
+    }
+    
+    console.log('[Twitter] Parsed metadata:', {
+      title: metadata.title || metadata.fulltitle,
+      duration,
+      thumbnail,
+      uploader,
+      username,
+      avatarUrl,
+    });
+    
+    return {
+      title: metadata.title || metadata.fulltitle,
+      duration,
+      thumbnail,
+      uploader,
+      username,
+      description: metadata.description,
+      avatarUrl,
+    };
+  } catch (error) {
+    console.error('[Twitter] Failed to get broadcast info:', error);
+    return {};
+  }
+}

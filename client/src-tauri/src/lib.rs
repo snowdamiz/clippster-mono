@@ -18,7 +18,6 @@ mod hls;
 mod hls_proxy;
 mod kick;
 mod pumpfun;
-mod remotion_export;
 mod rumble;
 mod sidecar;
 mod storage;
@@ -838,8 +837,8 @@ pub fn run() {
                         },
                         tauri_plugin_sql::Migration {
                             version: 91,
-                            description: "add_track_index_to_sources",
-                            sql: include_str!("../migrations/091_add_track_index_to_sources.sql"),
+                            description: "add_source_start_time_to_audio_tracks",
+                            sql: include_str!("../migrations/091_add_source_start_time_to_audio_tracks.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                     ],
@@ -1109,6 +1108,10 @@ commands::file_utils::generate_video_thumbnail,
 
             // Twitter commands
             twitter::validate_twitter_url,
+            twitter::get_twitter_broadcast_info,
+            twitter::get_twitter_broadcast_duration,
+            twitter::download_twitter_thumbnail,
+            twitter::download_twitter_vod,
             twitter::start_twitter_recording,
             twitter::stop_twitter_recording,
             twitter::stop_all_twitter_recordings,
@@ -1271,12 +1274,12 @@ hls_proxy::check_hls_playlist_exists,
 avatar_proxy::fetch_avatar_image,
 
 // Remotion export commands
-remotion_export::start_remotion_export,
-remotion_export::cancel_remotion_export,
-remotion_export::stop_remotion_sidecar,
+commands::remotion_export::start_remotion_export,
+commands::remotion_export::cancel_remotion_export,
+commands::remotion_export::stop_remotion_sidecar,
 
 ])
-.manage(remotion_export::SidecarState::new())
+.manage(commands::remotion_export::SidecarState::new())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
 }

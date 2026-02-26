@@ -10,13 +10,14 @@ import { getKickClips, extractChannelSlug, checkKickLivestream } from '@/service
 import { getTwitchVods, extractChannelName, checkTwitchLivestream, type TwitchVod } from '@/services/twitch';
 import { getYouTubeVods, extractYouTubeChannel, type YouTubeVod } from '@/services/youtube';
 import { getRumbleVods, extractRumbleChannel, type RumbleVod } from '@/services/rumble';
+import { extractTwitterBroadcastId, validateTwitterUrl, getTwitterBroadcastInfo } from '@/services/twitter';
 
 // Unified clip type that works across platforms
 export interface PlatformClip {
   clipId: string;
   sessionId?: string;
   title: string;
-  duration: number;
+  duration?: number; // Optional - may not be available for all platforms (e.g., Twitter live broadcasts)
   thumbnailUrl?: string;
   playlistUrl?: string;
   mp4Url?: string;
@@ -26,6 +27,7 @@ export interface PlatformClip {
   createdAt?: string;
   isLive?: boolean;
   views?: number;
+  uploader?: string; // Channel name or username
 }
 
 export interface RecentSearch {
@@ -70,13 +72,14 @@ function loadRecentSearches(): RecentSearch[] {
 // Migrate old per-platform searches to unified format
 function migrateOldSearches(): RecentSearch[] {
   const allSearches: RecentSearch[] = [];
-  const platforms: PlatformId[] = ['pumpfun', 'kick', 'twitch', 'youtube', 'rumble'];
+  const platforms: PlatformId[] = ['pumpfun', 'kick', 'twitch', 'youtube', 'rumble', 'twitter'];
   const oldKeys: Record<PlatformId, string> = {
     pumpfun: 'pumpfun_recent_searches',
     kick: 'kick_recent_searches',
     twitch: 'twitch_recent_searches',
     youtube: 'youtube_recent_searches',
     rumble: 'rumble_recent_searches',
+    twitter: 'twitter_recent_searches',
   };
 
   for (const platform of platforms) {
@@ -422,6 +425,19 @@ export const usePlatformStore = defineStore('platform', {
             break;
           }
 
+          case 'twitter': {
+            // Twitter requires exact broadcast/space URL
+            const broadcastId = extractTwitterBroadcastId(trimmedInput);
+            if (!broadcastId) {
+              this.error = 'Invalid X/Twitter URL. Must be a broadcast (/i/broadcasts/) or space (/i/spaces/) URL.';
+              this.loading = false;
+              return { success: false, error: this.error };
+            }
+            this.currentSearchId = broadcastId;
+            result = await this.getTwitterClip(trimmedInput);
+            break;
+          }
+
           default:
             this.error = 'Platform not supported yet';
             this.loading = false;
@@ -443,7 +459,10 @@ export const usePlatformStore = defineStore('platform', {
           this.lastSearchTime = Date.now();
 
           // Save to recent searches with platform
-          this.addToRecentSearches(extractedId!, trimmedInput, this.activePlatform, undefined);
+          // Skip for Twitter - it's handled in getTwitterClip with full metadata
+          if (this.activePlatform !== 'twitter') {
+            this.addToRecentSearches(extractedId!, trimmedInput, this.activePlatform, undefined);
+          }
 
           // Fetch metadata for PumpFun, Kick, or Twitch searches
           if (this.activePlatform === 'pumpfun') {
@@ -615,6 +634,79 @@ export const usePlatformStore = defineStore('platform', {
           hasMore: false,
           total: 0,
           error: error instanceof Error ? error.message : 'Failed to fetch YouTube VODs',
+        };
+      }
+    },
+
+    // Helper to get a single Twitter broadcast/space as a clip
+    async getTwitterClip(url: string): Promise<{
+      success: boolean;
+      clips: PlatformClip[];
+      hasMore: boolean;
+      total: number;
+      error?: string;
+    }> {
+      try {
+        // Validate the URL
+        const validatedUrl = await validateTwitterUrl(url);
+        const broadcastId = extractTwitterBroadcastId(validatedUrl);
+        
+        if (!broadcastId) {
+          return {
+            success: false,
+            clips: [],
+            hasMore: false,
+            total: 0,
+            error: 'Invalid Twitter broadcast/space URL',
+          };
+        }
+
+        // Fetch metadata from yt-dlp
+        console.log('[Platform] Fetching Twitter metadata for:', validatedUrl);
+        const metadata = await getTwitterBroadcastInfo(validatedUrl);
+        console.log('[Platform] Twitter metadata received:', metadata);
+
+        // For Twitter, we return a single "clip" representing the broadcast/space
+        const clip: PlatformClip = {
+          clipId: broadcastId,
+          title: metadata.title || `X Broadcast ${broadcastId}`,
+          duration: metadata.duration, // Don't default to 0, keep undefined if not available
+          thumbnailUrl: metadata.thumbnail,
+          playlistUrl: validatedUrl,
+          mp4Url: validatedUrl,
+          clipType: 'COMPLETE' as const,
+          createdAt: new Date().toISOString(),
+          uploader: metadata.username || metadata.uploader,
+        };
+        
+        // Add to recent searches with avatar
+        // Store the full URL as both id and displayText so clicking works correctly
+        if (metadata.username) {
+          this.addToRecentSearches(
+            validatedUrl,
+            validatedUrl, // displayText is the URL for searching
+            'twitter',
+            metadata.username, // label is the username shown below avatar
+            {
+              name: metadata.title || `X Broadcast ${broadcastId}`, // name is the title shown in bold
+              imageUrl: metadata.avatarUrl,
+            }
+          );
+        }
+
+        return {
+          success: true,
+          clips: [clip],
+          hasMore: false,
+          total: 1,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          clips: [],
+          hasMore: false,
+          total: 0,
+          error: error instanceof Error ? error.message : 'Failed to fetch Twitter broadcast info',
         };
       }
     },

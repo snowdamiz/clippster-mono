@@ -703,7 +703,7 @@ defmodule ClippsterServerWeb.AdminController do
   def cancel_subscription(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
       {:ok, user_id} ->
-        case Subscriptions.admin_cancel_subscription(user_id) do
+        case Subscriptions.cancel_subscription(user_id) do
           {:ok, _user} ->
             subscription_info = Subscriptions.get_subscription_status(user_id)
 
