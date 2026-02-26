@@ -6,6 +6,9 @@
     :icon="Target"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Campaigns' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <template #actions>
       <button v-if="isAdmin" class="create-campaign-btn" @click="campaignsRef?.openCreateDialog()">
         <Plus class="create-campaign-btn__icon" />
@@ -22,6 +25,7 @@
   import { ref } from 'vue';
   import { Target, Plus } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import OrganizationCampaignsComponent from '@/components/organization/OrganizationCampaigns.vue';
   import { useOrganization } from '@/composables/useOrganization';
 

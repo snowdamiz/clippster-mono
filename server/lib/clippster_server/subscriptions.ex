@@ -371,7 +371,8 @@ defmodule ClippsterServer.Subscriptions do
       needs_subscription: needs_subscription?(user),
       days_remaining: calculate_days_remaining(user.subscription_end_date),
       pending_subscription_tier: pending,
-      pending_subscription_tier_name: if(pending_info, do: pending_info.name, else: nil)
+      pending_subscription_tier_name: if(pending_info, do: pending_info.name, else: nil),
+      organization_id: user.created_by_organization_id
     }
   end
 

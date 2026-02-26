@@ -6,6 +6,9 @@
     :icon="Settings"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Settings' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <template #actions>
       <button
         v-if="hasChanges"
@@ -461,6 +464,7 @@
     Upload,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import { useOrganization } from '@/composables/useOrganization';
 
   const { organization, isOwner, updateOrganization, deleteOrganization, uploadLogo } = useOrganization();

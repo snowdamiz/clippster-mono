@@ -81,6 +81,7 @@ defmodule ClippsterServerWeb.AdminController do
           is_moderator: user.is_moderator,
           is_affiliate: is_affiliate,
           affiliate_status: affiliate_status,
+          created_by_organization_id: user.created_by_organization_id,
           created_at: user.inserted_at,
           updated_at: user.updated_at,
           credits: credits_info,

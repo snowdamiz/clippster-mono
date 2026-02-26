@@ -3,14 +3,15 @@ import type { LucideIcon } from 'lucide-react'
 
 interface PageLayoutProps {
   icon?: LucideIcon
-  title: string
+  title?: string
+  titleComponent?: ReactNode
   description?: string
   badge?: ReactNode
   actions?: ReactNode
   children: ReactNode
 }
 
-export function PageLayout({ icon: Icon, title, badge, actions, children }: PageLayoutProps) {
+export function PageLayout({ icon: Icon, title, titleComponent, badge, actions, children }: PageLayoutProps) {
   return (
     <div className="flex flex-col w-full h-full">
       {/* Header Bar */}
@@ -23,9 +24,11 @@ export function PageLayout({ icon: Icon, title, badge, actions, children }: Page
           )}
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
-              <h1 className="text-[0.9rem] font-semibold text-white leading-tight tracking-[-0.01em] m-0">
-                {title}
-              </h1>
+              {titleComponent || (
+                <h1 className="text-[0.9rem] font-semibold text-white leading-tight tracking-[-0.01em] m-0">
+                  {title}
+                </h1>
+              )}
               {badge}
             </div>
           </div>
