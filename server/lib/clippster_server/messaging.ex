@@ -8,7 +8,7 @@ defmodule ClippsterServer.Messaging do
   import Ecto.Query, warn: false
   alias ClippsterServer.Repo
   alias ClippsterServer.Organizations
-  alias ClippsterServer.Messaging.{Conversation, ConversationParticipant, Message, MessageReadStatus}
+  alias ClippsterServer.Messaging.{Conversation, ConversationParticipant, Message, MessageReadStatus, MessageAttachment}
 
   # ============================================================================
   # Conversations
@@ -265,7 +265,7 @@ defmodule ClippsterServer.Messaging do
       |> where([m], m.conversation_id == ^conversation_id)
       |> order_by([m], desc: m.inserted_at)
       |> limit(^limit)
-      |> preload([:sender, :read_statuses])
+      |> preload([:sender, :read_statuses, :attachments])
 
     query =
       if before_id do
@@ -287,7 +287,7 @@ defmodule ClippsterServer.Messaging do
     |> order_by([m], desc: m.inserted_at)
     |> limit(^limit)
     |> offset(^offset)
-    |> preload([:sender, :read_statuses])
+    |> preload([:sender, :read_statuses, :attachments])
     |> Repo.all()
   end
 
@@ -1235,5 +1235,46 @@ defmodule ClippsterServer.Messaging do
     |> where([c, p1, p2], is_nil(p1.left_at) and is_nil(p2.left_at))
     |> limit(1)
     |> Repo.one()
+  end
+
+  # ============================================================================
+  # Message Attachments
+  # ============================================================================
+
+  @doc """
+  Creates a message attachment record.
+  """
+  def create_message_attachment(message_id, attrs) do
+    %MessageAttachment{message_id: message_id}
+    |> MessageAttachment.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Lists all attachments for a message.
+  """
+  def list_message_attachments(message_id) do
+    MessageAttachment
+    |> where([a], a.message_id == ^message_id)
+    |> order_by([a], asc: a.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets a single message attachment by ID.
+  """
+  def get_message_attachment(attachment_id) do
+    Repo.get(MessageAttachment, attachment_id)
+  end
+
+  @doc """
+  Preloads attachments for a list of messages.
+  """
+  def preload_attachments(messages) when is_list(messages) do
+    Repo.preload(messages, :attachments)
+  end
+
+  def preload_attachments(message) do
+    Repo.preload(message, :attachments)
   end
 end

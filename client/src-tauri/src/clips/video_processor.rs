@@ -3341,7 +3341,7 @@ pub async fn apply_layout_overlays_to_video(
     for (idx, overlay) in overlays.iter().enumerate() {
         // Resolve per-ratio settings (like watermarks do with per_ratio_configs)
         let (pos_x_pct, pos_y_pct, scale_val, alpha, is_full_frame) = if let Some(ref configs) = overlay.per_ratio_settings {
-            if let Some(config) = configs.get(aspect_ratio) {
+            if let Some(Some(config)) = configs.get(aspect_ratio) {
                 let s = if config.scale > 0.0 { config.scale } else if config.width > 0.0 { config.width } else if overlay.scale > 0.0 { overlay.scale } else { overlay.width };
                 (config.x, config.y, s, config.opacity / 100.0, config.is_full_frame_overlay.unwrap_or(false))
             } else {

@@ -5,8 +5,9 @@
   import { useAuthStore } from '@/stores/auth';
   import { formatConversationTime, formatTime } from '@/utils/dateTimeUtils';
   import api from '@/services/api';
-  import type { Conversation, Message } from '@/services/messagingApi';
-  import { checkSupportConversation, getOrCreateSupportConversation } from '@/services/messagingApi';
+  import type { Conversation, Message, MessageAttachment } from '@/services/messagingApi';
+  import { checkSupportConversation, getOrCreateSupportConversation, uploadMessageAttachments, getAttachmentDownloadUrl } from '@/services/messagingApi';
+  import { compressImages, validateImageFile, formatFileSize } from '@/utils/imageCompression';
   import PageLayout from '@/components/PageLayout.vue';
   import {
     MessageSquare,
@@ -27,6 +28,9 @@
     LogOut,
     MessagesSquare,
     Headset,
+    Paperclip,
+    Download,
+    Image as ImageIcon,
   } from 'lucide-vue-next';
 
   const messagingStore = useMessagingStore();
@@ -83,6 +87,23 @@
 
   const supportConversation = ref<Conversation | null>(null);
   const isLoadingSupportConversation = ref(false);
+
+  // Attachment state
+  const selectedAttachments = ref<File[]>([]);
+  const fileInputRef = ref<HTMLInputElement | null>(null);
+  const isUploadingAttachments = ref(false);
+  const showImageViewer = ref(false);
+  const viewerImageUrl = ref('');
+  const viewerImageFilename = ref('');
+
+  const attachmentPreviews = computed(() => {
+    return selectedAttachments.value.map(file => ({
+      file,
+      url: URL.createObjectURL(file),
+      name: file.name,
+      size: formatFileSize(file.size)
+    }));
+  });
 
   let typingTimeout: number | null = null;
 
@@ -200,7 +221,7 @@
   });
 
   onUnmounted(() => {
-    messagingStore.cleanup();
+    messagingStore.cleanupPageOnly();
   });
 
   watch(
@@ -346,16 +367,35 @@
 
   async function sendMessage() {
     const content = messageInput.value.trim();
-    if (!content) return;
+    const hasAttachments = selectedAttachments.value.length > 0;
+    
+    if (!content && !hasAttachments) return;
 
+    const originalContent = content;
+    const attachmentsToSend = [...selectedAttachments.value];
+    
     messageInput.value = '';
+    selectedAttachments.value = [];
 
     try {
-      await messagingStore.sendMessage(content);
+      let attachmentData: any[] = [];
+      
+      // Upload attachments if any
+      if (hasAttachments && messagingStore.activeConversationId) {
+        isUploadingAttachments.value = true;
+        const compressed = await compressImages(attachmentsToSend, 15);
+        const uploaded = await uploadMessageAttachments(messagingStore.activeConversationId, compressed);
+        attachmentData = uploaded;
+        isUploadingAttachments.value = false;
+      }
+      
+      await messagingStore.sendMessage(content || ' ', attachmentData);
       scrollToBottom();
     } catch (error) {
       console.error('Failed to send message:', error);
-      messageInput.value = content;
+      messageInput.value = originalContent;
+      selectedAttachments.value = attachmentsToSend;
+      isUploadingAttachments.value = false;
     }
   }
 
@@ -639,6 +679,95 @@
       },
     });
   }
+
+  // Attachment handling functions
+  async function handleAttachClick() {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: true,
+        filters: [
+          {
+            name: 'Images',
+            extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'],
+          },
+        ],
+      });
+
+      if (selected && Array.isArray(selected)) {
+        const files = await Promise.all(
+          selected.map(async (path) => {
+            const response = await fetch(`http://localhost:1420/${path}`);
+            const blob = await response.blob();
+            const filename = path.split(/[\\/]/).pop() || 'image.jpg';
+            return new File([blob], filename, { type: blob.type });
+          })
+        );
+        
+        const validFiles = files.filter(file => validateImageFile(file, 15));
+        selectedAttachments.value.push(...validFiles);
+      } else if (selected && typeof selected === 'string') {
+        const path: string = selected;
+        const response = await fetch(`http://localhost:1420/${path}`);
+        const blob = await response.blob();
+        const filename = path.split(/[\\/]/).pop() || 'image.jpg';
+        const file = new File([blob], filename, { type: blob.type });
+        
+        if (validateImageFile(file, 15)) {
+          selectedAttachments.value.push(file);
+        }
+      }
+    } catch (error) {
+      console.error('Error selecting files:', error);
+    }
+  }
+
+  function handleFileSelect(event: Event) {
+    const target = event.target as HTMLInputElement;
+    if (target.files) {
+      const files = Array.from(target.files).filter(file => validateImageFile(file, 15));
+      selectedAttachments.value.push(...files);
+      target.value = '';
+    }
+  }
+
+  async function handlePaste(event: ClipboardEvent) {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        event.preventDefault();
+        const file = item.getAsFile();
+        if (file && validateImageFile(file, 15)) {
+          selectedAttachments.value.push(file);
+        }
+      }
+    }
+  }
+
+  function removeAttachment(index: number) {
+    selectedAttachments.value.splice(index, 1);
+  }
+
+  function openImageViewer(url: string, filename: string) {
+    viewerImageUrl.value = url;
+    viewerImageFilename.value = filename;
+    showImageViewer.value = true;
+  }
+
+  function closeImageViewer() {
+    showImageViewer.value = false;
+    viewerImageUrl.value = '';
+    viewerImageFilename.value = '';
+  }
+
+  function downloadImage(url: string, filename: string) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+  }
 </script>
 
 <template>
@@ -908,54 +1037,98 @@
                     :class="{ 'message-row--sent': message.senderId === authStore.user?.id }"
                   >
                     <div
-                      class="message-bubble"
+                      class="message-col"
                       :class="{
-                        'message-bubble--sent': message.senderId === authStore.user?.id,
-                        'message-bubble--received': message.senderId !== authStore.user?.id,
-                        'message-bubble--deleted': !!message.deletedAt,
+                        'message-col--sent': message.senderId === authStore.user?.id,
+                        'message-col--received': message.senderId !== authStore.user?.id,
                       }"
                     >
                       <!-- Sender Name -->
-                      <div
+                      <span
                         v-if="message.senderId !== authStore.user?.id && message.sender"
                         class="message-bubble__sender"
                       >
                         {{ message.sender.displayName || 'Unknown' }}
-                      </div>
+                      </span>
 
-                      <!-- Edit Mode -->
-                      <template v-if="editingMessageId === message.id">
-                        <textarea
-                          v-model="editContent"
-                          @keydown.enter.exact.prevent="saveEdit"
-                          @keydown.escape="cancelEdit"
-                          class="message-bubble__edit-input"
-                          rows="2"
-                        ></textarea>
-                        <div class="message-bubble__edit-actions">
-                          <button @click="saveEdit" class="message-bubble__edit-btn message-bubble__edit-btn--save">
-                            Save
+                      <div
+                        class="message-bubble"
+                        :class="{
+                          'message-bubble--sent': message.senderId === authStore.user?.id,
+                          'message-bubble--received': message.senderId !== authStore.user?.id,
+                          'message-bubble--deleted': !!message.deletedAt,
+                        }"
+                      >
+                        <!-- Edit Mode -->
+                        <template v-if="editingMessageId === message.id">
+                          <textarea
+                            v-model="editContent"
+                            @keydown.enter.exact.prevent="saveEdit"
+                            @keydown.escape="cancelEdit"
+                            class="message-bubble__edit-input"
+                            rows="2"
+                          ></textarea>
+                          <div class="message-bubble__edit-actions">
+                            <button @click="saveEdit" class="message-bubble__edit-btn message-bubble__edit-btn--save">
+                              Save
+                            </button>
+                            <button @click="cancelEdit" class="message-bubble__edit-btn message-bubble__edit-btn--cancel">
+                              Cancel
+                            </button>
+                          </div>
+                        </template>
+
+                        <!-- Message Content -->
+                        <template v-else>
+                          <p v-if="message.deletedAt" class="message-bubble__deleted">Message deleted</p>
+                          <p v-else-if="message.content" class="message-bubble__content">{{ message.content }}</p>
+                          
+                          <!-- Message Attachments -->
+                          <div v-if="message.attachments && message.attachments.length > 0" class="message-bubble__attachments">
+                            <div
+                              v-for="attachment in message.attachments"
+                              :key="attachment.id"
+                              class="message-attachment"
+                              @click="openImageViewer(attachment.url, attachment.filename)"
+                            >
+                              <img
+                                :src="attachment.thumbnailUrl || attachment.url"
+                                :alt="attachment.filename"
+                                class="message-attachment__img"
+                              />
+                              <div class="message-attachment__overlay">
+                                <ImageIcon :size="24" />
+                              </div>
+                            </div>
+                          </div>
+                        </template>
+
+                        <!-- Message Actions -->
+                        <div
+                          v-if="
+                            message.senderId === authStore.user?.id &&
+                            !message.deletedAt &&
+                            editingMessageId !== message.id
+                          "
+                          class="message-bubble__actions"
+                        >
+                          <button @click="startEdit(message)" class="message-bubble__action" title="Edit">
+                            <Pencil class="message-bubble__action-icon" />
                           </button>
-                          <button @click="cancelEdit" class="message-bubble__edit-btn message-bubble__edit-btn--cancel">
-                            Cancel
+                          <button
+                            @click="deleteMessage(message.id)"
+                            class="message-bubble__action message-bubble__action--delete"
+                            title="Delete"
+                          >
+                            <Trash2 class="message-bubble__action-icon" />
                           </button>
                         </div>
-                      </template>
+                      </div>
 
-                      <!-- Message Content -->
-                      <template v-else>
-                        <p v-if="message.deletedAt" class="message-bubble__deleted">Message deleted</p>
-                        <p v-else class="message-bubble__content">{{ message.content }}</p>
-                      </template>
-
-                      <!-- Meta Info -->
-                      <div class="message-bubble__meta">
-                        <span class="message-bubble__time">
-                          {{ formatMessageTime(message.insertedAt) }}
-                        </span>
-                        <span v-if="message.editedAt && !message.deletedAt" class="message-bubble__edited">
-                          edited
-                        </span>
+                      <!-- Meta Info (outside bubble) -->
+                      <span class="message-bubble__meta">
+                        {{ formatMessageTime(message.insertedAt) }}
+                        <span v-if="message.editedAt && !message.deletedAt" class="message-bubble__edited">(edited)</span>
                         <span
                           v-if="message.senderId === authStore.user?.id && !message.deletedAt"
                           class="message-bubble__status"
@@ -965,28 +1138,7 @@
                         >
                           {{ message.readBy && message.readBy.length > 1 ? '• Read' : '• Sent' }}
                         </span>
-                      </div>
-
-                      <!-- Message Actions -->
-                      <div
-                        v-if="
-                          message.senderId === authStore.user?.id &&
-                          !message.deletedAt &&
-                          editingMessageId !== message.id
-                        "
-                        class="message-bubble__actions"
-                      >
-                        <button @click="startEdit(message)" class="message-bubble__action" title="Edit">
-                          <Pencil class="message-bubble__action-icon" />
-                        </button>
-                        <button
-                          @click="deleteMessage(message.id)"
-                          class="message-bubble__action message-bubble__action--delete"
-                          title="Delete"
-                        >
-                          <Trash2 class="message-bubble__action-icon" />
-                        </button>
-                      </div>
+                      </span>
                     </div>
                   </div>
 
@@ -1004,23 +1156,53 @@
                 </div>
 
                 <!-- Message Input -->
-                <div class="messages-chat__input-area">
-                  <textarea
-                    v-model="messageInput"
-                    placeholder="Write a message..."
-                    rows="1"
-                    @keydown="handleInputKeydown"
-                    @input="handleTyping"
-                    class="messages-chat__input"
-                  ></textarea>
-                  <button
-                    class="messages-chat__send-btn"
-                    :class="{ 'messages-chat__send-btn--disabled': !messageInput.trim() }"
-                    :disabled="!messageInput.trim()"
-                    @click="sendMessage"
-                  >
-                    <Send class="messages-chat__send-icon" />
-                  </button>
+                <div class="messages-chat__input-wrapper">
+                  <!-- Attachment Preview -->
+                  <div v-if="attachmentPreviews.length > 0" class="messages-chat__attachments-preview">
+                    <div
+                      v-for="(preview, index) in attachmentPreviews"
+                      :key="index"
+                      class="attachment-preview"
+                    >
+                      <img :src="preview.url" :alt="preview.name" class="attachment-preview__img" />
+                      <div class="attachment-preview__info">
+                        <span class="attachment-preview__name">{{ preview.name }}</span>
+                        <span class="attachment-preview__size">{{ preview.size }}</span>
+                      </div>
+                      <button @click="removeAttachment(index)" class="attachment-preview__remove">
+                        <X :size="16" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="messages-chat__input-area">
+                    <button
+                      @click="handleAttachClick"
+                      class="messages-chat__attach-btn"
+                      title="Attach image"
+                      :disabled="isUploadingAttachments"
+                    >
+                      <Paperclip class="messages-chat__attach-icon" />
+                    </button>
+                    <textarea
+                      v-model="messageInput"
+                      placeholder="Write a message..."
+                      rows="1"
+                      @keydown="handleInputKeydown"
+                      @input="handleTyping"
+                      @paste="handlePaste"
+                      class="messages-chat__input"
+                    ></textarea>
+                    <button
+                      class="messages-chat__send-btn"
+                      :class="{ 'messages-chat__send-btn--disabled': !messageInput.trim() && selectedAttachments.length === 0 }"
+                      :disabled="(!messageInput.trim() && selectedAttachments.length === 0) || isUploadingAttachments"
+                      @click="sendMessage"
+                    >
+                      <Loader2 v-if="isUploadingAttachments" class="messages-chat__send-icon messages-chat__send-icon--loading" />
+                      <Send v-else class="messages-chat__send-icon" />
+                    </button>
+                  </div>
                 </div>
               </template>
 
@@ -1263,6 +1445,25 @@
               </div>
             </div>
           </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Image Viewer Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showImageViewer" class="image-viewer__overlay" @click="closeImageViewer">
+          <div class="image-viewer__container" @click.stop>
+            <button @click="closeImageViewer" class="image-viewer__close">
+              <X :size="24" />
+            </button>
+            <button @click="downloadImage(viewerImageUrl, viewerImageFilename)" class="image-viewer__download">
+              <Download :size="20" />
+              Download
+            </button>
+            <img :src="viewerImageUrl" :alt="viewerImageFilename" class="image-viewer__image" />
+            <div class="image-viewer__filename">{{ viewerImageFilename }}</div>
+          </div>
         </div>
       </Transition>
     </Teleport>
@@ -1874,9 +2075,9 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.15);
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--sidebar-border, #1f1f23);
+    background-color: var(--sidebar-bg, #0a0a0b);
   }
 
   .messages-chat__header-left {
@@ -1886,33 +2087,34 @@
   }
 
   .messages-chat__avatar {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    font-size: 0.875rem;
+    font-size: 14px;
     font-weight: 600;
     color: white;
     flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .messages-chat__avatar--direct {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    background: var(--sidebar-accent, #0ea5e9);
   }
 
   .messages-chat__avatar--group {
-    background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+    background: #2563eb;
   }
 
   .messages-chat__avatar--announcement {
-    background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
+    background: #dc2626;
   }
 
   .messages-chat__avatar--support {
-    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
+    background: #16a34a;
   }
 
   .messages-chat__avatar-img {
@@ -1961,19 +2163,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
+    width: 32px;
+    height: 32px;
+    background: transparent;
+    color: var(--sidebar-text-muted, #71717a);
     border: none;
-    border-radius: 8px;
+    border-radius: 6px;
     cursor: pointer;
-    transition: all 150ms ease;
+    transition: background 0.15s, color 0.15s;
   }
 
   .messages-chat__action-btn:hover {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
+    background: var(--sidebar-hover, rgba(255, 255, 255, 0.05));
+    color: var(--sidebar-text, #fafafa);
   }
 
   .messages-chat__action-btn--muted {
@@ -1994,10 +2196,10 @@
   .messages-chat__messages {
     flex: 1;
     overflow-y: auto;
-    padding: 1.25rem;
+    padding: 12px;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 6px;
   }
 
   .messages-chat__messages::-webkit-scrollbar {
@@ -2037,93 +2239,95 @@
     justify-content: flex-end;
   }
 
+  /* Message Column (wraps bubble + meta) */
+  .message-col {
+    max-width: 80%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .message-col--sent {
+    align-items: flex-end;
+  }
+
+  .message-col--received {
+    align-items: flex-start;
+  }
+
   /* Message Bubble */
   .message-bubble {
     position: relative;
-    max-width: 70%;
-    padding: 0.75rem 1rem;
-    border-radius: 16px;
+    padding: 8px 12px;
+    border-radius: 14px;
   }
 
   .message-bubble--sent {
-    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
+    background: var(--sidebar-accent, #0ea5e9);
     color: white;
     border-bottom-right-radius: 4px;
   }
 
   .message-bubble--received {
-    background-color: var(--sidebar-hover);
+    background-color: rgba(255, 255, 255, 0.06);
     color: var(--sidebar-text);
     border-bottom-left-radius: 4px;
   }
 
   .message-bubble--deleted {
+    background-color: rgba(255, 255, 255, 0.06);
     opacity: 0.6;
   }
 
   .message-bubble__sender {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-accent);
-    margin-bottom: 0.375rem;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--sidebar-text-muted, #71717a);
+    margin-bottom: 2px;
   }
 
   .message-bubble__content {
-    font-size: 0.875rem;
-    line-height: 1.5;
+    font-size: 13px;
+    line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-word;
     margin: 0;
   }
 
   .message-bubble__deleted {
-    font-size: 0.875rem;
+    font-size: 13px;
     font-style: italic;
-    color: var(--sidebar-text-muted);
+    color: var(--sidebar-text-muted, #71717a);
     margin: 0;
   }
 
   .message-bubble__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    margin-top: 0.375rem;
+    font-size: 10px;
+    color: var(--sidebar-text-muted, #71717a);
+    margin-top: 2px;
+    padding: 0 2px;
   }
 
-  .message-bubble__time {
-    font-size: 0.625rem;
-    opacity: 0.7;
-  }
-
-  .message-bubble--sent .message-bubble__time,
-  .message-bubble--sent .message-bubble__edited {
-    color: white;
-    opacity: 1;
-    font-weight: 600;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  .message-col--sent .message-bubble__meta {
+    color: var(--sidebar-text-muted, #71717a);
   }
 
   .message-bubble__edited {
-    font-size: 0.625rem;
-    opacity: 0.7;
-  }
-
-  .message-bubble__edited::before {
-    content: '• ';
+    font-style: italic;
   }
 
   .message-bubble__status {
-    font-size: 0.625rem;
-    opacity: 1;
-    color: white;
-    font-weight: 600;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    margin-left: 2px;
+    opacity: 0.7;
+  }
+
+  .message-col--sent .message-bubble__status {
+    color: var(--sidebar-text-muted, #71717a);
   }
 
   .message-bubble__status--read {
     color: #fef08a;
     opacity: 1;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   /* Message Edit */
@@ -2197,19 +2401,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
+    width: 26px;
+    height: 26px;
+    background: transparent;
+    color: var(--sidebar-text-muted, #71717a);
     border: none;
     border-radius: 6px;
     cursor: pointer;
-    transition: all 150ms ease;
+    transition: background 0.15s, color 0.15s;
   }
 
   .message-bubble__action:hover {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
+    background: var(--sidebar-hover, rgba(255, 255, 255, 0.05));
+    color: var(--sidebar-text, #fafafa);
   }
 
   .message-bubble__action--delete:hover {
@@ -2253,62 +2457,62 @@
   .messages-chat__input-area {
     display: flex;
     align-items: flex-end;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.15);
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--sidebar-border, #1f1f23);
+    background-color: var(--sidebar-surface, #141416);
   }
 
   .messages-chat__input {
     flex: 1;
-    padding: 0.75rem 1rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid transparent;
-    border-radius: 12px;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
+    padding: 8px 12px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--sidebar-border, #1f1f23);
+    border-radius: 8px;
+    font-size: 13px;
+    font-family: inherit;
+    color: var(--sidebar-text, #fafafa);
     resize: none;
     max-height: 120px;
-    transition: all 150ms ease;
+    line-height: 1.4;
+    outline: none;
+    transition: border-color 150ms ease;
   }
 
   .messages-chat__input::placeholder {
-    color: var(--sidebar-text-muted);
+    color: var(--sidebar-text-muted, #71717a);
   }
 
   .messages-chat__input:hover {
-    border-color: var(--sidebar-border);
+    border-color: var(--sidebar-border, #1f1f23);
   }
 
   .messages-chat__input:focus {
     outline: none;
-    border-color: var(--sidebar-border);
-    background-color: var(--sidebar-surface);
+    border-color: var(--sidebar-accent, #0ea5e9);
   }
 
   .messages-chat__send-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
-    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
+    width: 38px;
+    height: 38px;
+    background: var(--sidebar-accent, #0ea5e9);
     color: white;
     border: none;
-    border-radius: 12px;
+    border-radius: 8px;
     cursor: pointer;
-    transition: all 150ms ease;
+    transition: background 150ms ease, opacity 150ms ease;
     flex-shrink: 0;
   }
 
   .messages-chat__send-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    background: #0284c7;
   }
 
   .messages-chat__send-btn--disabled {
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
+    opacity: 0.4;
     cursor: not-allowed;
   }
 
@@ -3155,5 +3359,248 @@
   .fade-enter-from,
   .fade-leave-to {
     opacity: 0;
+  }
+
+  /* ===== Attachment Styles ===== */
+  .messages-chat__input-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .messages-chat__attachments-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background-color: var(--sidebar-surface);
+    border-radius: 8px;
+  }
+
+  .attachment-preview {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 6px;
+    max-width: 250px;
+  }
+
+  .attachment-preview__img {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 4px;
+  }
+
+  .attachment-preview__info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .attachment-preview__name {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .attachment-preview__size {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .attachment-preview__remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .attachment-preview__remove:hover {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .messages-chat__attach-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--sidebar-text-muted, #71717a);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+
+  .messages-chat__attach-btn:hover:not(:disabled) {
+    background: var(--sidebar-hover, rgba(255, 255, 255, 0.05));
+    color: var(--sidebar-text, #fafafa);
+  }
+
+  .messages-chat__attach-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .messages-chat__attach-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .messages-chat__send-icon--loading {
+    animation: spin 0.8s linear infinite;
+  }
+
+  .message-bubble__attachments {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 200px));
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    width: fit-content;
+    max-width: 100%;
+  }
+  
+  /* When message has only attachments (no text), don't expand bubble */
+  .messages-chat__message-content:has(.message-bubble__attachments):not(:has(p:not(:empty))) {
+    width: fit-content;
+    max-width: min(500px, 70%);
+  }
+
+  .message-attachment {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+
+  .message-attachment:hover {
+    transform: scale(1.02);
+  }
+
+  .message-attachment__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .message-attachment__overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0);
+    color: white;
+    opacity: 0;
+    transition: all 0.15s ease;
+  }
+
+  .message-attachment:hover .message-attachment__overlay {
+    background-color: rgba(0, 0, 0, 0.4);
+    opacity: 1;
+  }
+
+  /* ===== Image Viewer Modal ===== */
+  .image-viewer__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 2rem;
+  }
+
+  .image-viewer__container {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    padding-top: 3.5rem;
+  }
+
+  .image-viewer__close {
+    position: absolute;
+    top: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    z-index: 10;
+  }
+
+  .image-viewer__close:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .image-viewer__download {
+    position: absolute;
+    top: 0;
+    right: 3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    z-index: 10;
+  }
+
+  .image-viewer__download:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .image-viewer__image {
+    max-width: 100%;
+    max-height: calc(90vh - 6rem);
+    object-fit: contain;
+    border-radius: 8px;
+  }
+
+  .image-viewer__filename {
+    color: white;
+    font-size: 0.875rem;
+    text-align: center;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

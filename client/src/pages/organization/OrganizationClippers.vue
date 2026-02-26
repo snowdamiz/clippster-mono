@@ -6,6 +6,9 @@
     :icon="Search"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Find Clippers' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <template #actions>
       <div class="view-toggle">
         <button
@@ -35,6 +38,7 @@
   import { ref } from 'vue';
   import { Search, Users, Trophy } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import OrganizationClippersComponent from '@/components/organization/OrganizationClippers.vue';
 
   const activeView = ref<'directory' | 'leaderboard'>('directory');

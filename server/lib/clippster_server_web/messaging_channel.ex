@@ -36,18 +36,30 @@ defmodule ClippsterServerWeb.MessagingChannel do
   """
   def handle_in(event, payload, socket)
 
-  def handle_in("new_message", %{"content" => content}, socket) do
+  def handle_in("new_message", payload, socket) do
     conversation_id = socket.assigns.conversation_id
     user_id = socket.assigns.user_id
+    content = Map.get(payload, "content", "")
+    attachment_data = Map.get(payload, "attachment_data", [])
 
     case Messaging.send_message(conversation_id, user_id, content) do
       {:ok, message} ->
-        broadcast!(socket, "new_message", MessagingJSON.message(message))
+        # Create attachment records if attachment data was provided
+        message_with_attachments = if Enum.empty?(attachment_data) do
+          message
+        else
+          Enum.each(attachment_data, fn attachment_attrs ->
+            Messaging.create_message_attachment(message.id, attachment_attrs)
+          end)
+          Messaging.preload_attachments(message)
+        end
+        
+        broadcast!(socket, "new_message", MessagingJSON.message(message_with_attachments))
         
         # Also broadcast to user channels for participants (for notifications)
         broadcast_to_participants(conversation_id, "new_message_notification", %{
           conversation_id: conversation_id,
-          message: MessagingJSON.message(message)
+          message: MessagingJSON.message(message_with_attachments)
         })
 
         # Support auto-reply: if this is the first user message in a support conversation,
@@ -68,7 +80,7 @@ defmodule ClippsterServerWeb.MessagingChannel do
           end
         end
         
-        {:reply, {:ok, MessagingJSON.message(message)}, socket}
+        {:reply, {:ok, MessagingJSON.message(message_with_attachments)}, socket}
 
       {:error, reason} ->
         {:reply, {:error, %{reason: reason}}, socket}

@@ -213,6 +213,9 @@ defmodule ClippsterServerWeb.Router do
     get("/kick/channels/:channel_slug", KickController, :get_channel)
     get("/kick/channels/:channel_slug/videos", KickController, :get_clips)
 
+    # Twitch routes
+    get("/twitch/channels/:channel_name", TwitchController, :get_channel)
+
     # Organization invitation (public - for viewing invitation details)
     get("/invitations/:token", OrganizationController, :get_invitation)
 
@@ -394,6 +397,12 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/credits/allocate",
       OrganizationController,
       :allocate_credits
+    )
+
+    post(
+      "/organizations/:organization_id/credits/toggle-pool-fallback",
+      OrganizationController,
+      :toggle_pool_fallback
     )
 
     get("/organizations/:organization_id/transactions", OrganizationController, :get_transactions)
@@ -723,6 +732,10 @@ defmodule ClippsterServerWeb.Router do
     delete("/conversations/:id/participants/:user_id", MessagingController, :remove_participant)
     post("/conversations/:id/leave", MessagingController, :leave_conversation)
     delete("/conversations/:id", MessagingController, :delete_conversation)
+    
+    # Message attachments
+    post("/conversations/:conversation_id/attachments", MessagingController, :upload_attachments)
+    get("/attachments/:id/download", MessagingController, :download_attachment)
 
     # User-level messaging endpoints
     get("/me/conversations", MessagingController, :list_all_conversations)

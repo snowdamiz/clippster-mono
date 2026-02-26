@@ -18,6 +18,7 @@ import {
 import { WatermarkPositionPicker, type CreatorWatermarkSettings } from './WatermarkPositionPicker'
 import { OverlayPositionPicker, type PerRatioOverlaySettings } from './OverlayPositionPicker'
 import { IntroOutroRatioPicker, type RatioAssetMap } from './IntroOutroRatioPicker'
+import { API_BASE } from '@/lib/apiBase'
 
 type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube'
 
@@ -93,6 +94,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
   const [ratioPickerMode, setRatioPickerMode] = useState<'intro' | 'outro'>('intro')
   const [introRatioSettings, setIntroRatioSettings] = useState<string | null>(null)
   const [outroRatioSettings, setOutroRatioSettings] = useState<string | null>(null)
+  const [fetchingMetadata, setFetchingMetadata] = useState<number | null>(null)
 
   // Refs
   const introFileRef = useRef<HTMLInputElement>(null)
@@ -207,6 +209,115 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
     if (primary?.profile_image_url) return primary.profile_image_url
     const any = platformLinks.find(l => l.profile_image_url)
     return any?.profile_image_url || undefined
+  }
+
+  // Extract channel slug from Kick URL or return as-is
+  const extractKickSlug = (input: string): string => {
+    const trimmed = input.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      try {
+        const url = new URL(trimmed)
+        if (url.hostname.includes('kick.com')) {
+          const parts = url.pathname.split('/').filter(p => p.length > 0)
+          return parts[0] || trimmed
+        }
+      } catch {
+        return trimmed
+      }
+    }
+    return trimmed
+  }
+
+  // Extract channel name from Twitch URL or return as-is
+  const extractTwitchUsername = (input: string): string => {
+    const trimmed = input.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      try {
+        const url = new URL(trimmed)
+        if (url.hostname.includes('twitch.tv')) {
+          const parts = url.pathname.split('/').filter(p => p.length > 0)
+          if (parts.length > 0 && parts[0] !== 'videos') {
+            return parts[0]
+          }
+        }
+      } catch {
+        return trimmed
+      }
+    }
+    return trimmed
+  }
+
+  // Extract mint ID from PumpFun URL or return as-is
+  const extractPumpFunMintId = (input: string): string => {
+    const trimmed = input.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      try {
+        const url = new URL(trimmed)
+        if (url.hostname.includes('pump.fun')) {
+          const parts = url.pathname.split('/').filter(p => p.length > 0)
+          return parts[parts.length - 1] || trimmed
+        }
+      } catch {
+        return trimmed
+      }
+    }
+    return trimmed
+  }
+
+  // Fetch platform metadata (avatar) when platform ID is entered
+  const fetchPlatformMetadata = async (index: number, platform: PlatformId, platformId: string) => {
+    if (!platformId.trim()) return
+    
+    setFetchingMetadata(index)
+    try {
+      if (platform === 'kick') {
+        const slug = extractKickSlug(platformId)
+        const response = await fetch(`${API_BASE}/kick/channels/${slug}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.profileImageUrl) {
+            updateLink(index, { 
+              profile_image_url: data.profileImageUrl, 
+              display_name: data.username || slug 
+            })
+          }
+        } else {
+          console.error('[ProfileDialog] Kick API error:', response.status, await response.text())
+        }
+      } else if (platform === 'twitch') {
+        const username = extractTwitchUsername(platformId)
+        const response = await fetch(`${API_BASE}/twitch/channels/${username}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.profileImageUrl) {
+            updateLink(index, { 
+              profile_image_url: data.profileImageUrl, 
+              display_name: data.displayName || username 
+            })
+          }
+        } else {
+          console.error('[ProfileDialog] Twitch API error:', response.status, await response.text())
+        }
+      } else if (platform === 'pumpfun') {
+        const mintId = extractPumpFunMintId(platformId)
+        const response = await fetch(`${API_BASE}/metadata/${mintId}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.metadata?.image) {
+            updateLink(index, { 
+              profile_image_url: data.metadata.image, 
+              display_name: data.metadata.name || mintId 
+            })
+          }
+        } else {
+          console.error('[ProfileDialog] PumpFun API error:', response.status, await response.text())
+        }
+      }
+    } catch (err) {
+      console.error('[ProfileDialog] Failed to fetch platform metadata:', err)
+    } finally {
+      setFetchingMetadata(null)
+    }
   }
 
   // Upload handlers
@@ -541,9 +652,22 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
                         <input
                           value={link.platform_id}
                           onChange={e => updateLink(index, { platform_id: e.target.value })}
+                          onBlur={e => {
+                            const value = e.target.value.trim()
+                            if (value && !link.profile_image_url) {
+                              fetchPlatformMetadata(index, link.platform, value)
+                            }
+                          }}
                           placeholder={link.platform === 'pumpfun' ? 'Enter mint ID or paste PumpFun URL' : 'Enter channel slug or paste URL'}
                           className="org-dialog__input org-dialog__input--sm"
+                          disabled={fetchingMetadata === index}
                         />
+                        {fetchingMetadata === index && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.25rem', fontSize: '0.75rem', color: '#6b7280' }}>
+                            <Loader2 size={12} className="org-dialog__spin" />
+                            <span>Fetching avatar...</span>
+                          </div>
+                        )}
                       </div>
                       <div className="org-dialog__field">
                         <label className="org-dialog__label org-dialog__label--sm">Display Name</label>

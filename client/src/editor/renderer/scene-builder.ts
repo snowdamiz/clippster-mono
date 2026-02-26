@@ -35,12 +35,19 @@ export function buildScene(params: BuildSceneParams) {
 		(track) => !("hidden" in track && track.hidden),
 	);
 
-	const orderedTracksTopToBottom = [
-		...visibleTracks.filter((track) => !isMainTrack(track)),
-		...visibleTracks.filter((track) => isMainTrack(track)),
-	];
+	// Render order (bottom to top):
+	// 1. Main video track (background)
+	// 2. Non-main video tracks (overlays like cam/game views)
+	// 3. Effect tracks
+	// 4. Text, sticker, and caption tracks (always on top so they're never hidden)
+	const isOverlayTrack = (track: TimelineTrack) =>
+		track.type === "text" || track.type === "caption" || track.type === "sticker";
 
-	const orderedTracksBottomToTop = orderedTracksTopToBottom.slice().reverse();
+	const orderedTracksBottomToTop = [
+		...visibleTracks.filter((track) => isMainTrack(track)),
+		...visibleTracks.filter((track) => !isMainTrack(track) && !isOverlayTrack(track)),
+		...visibleTracks.filter((track) => isOverlayTrack(track)),
+	];
 
 	// Build a lookup of transitions by targetElementId for quick access
 	const transitionByTarget = new Map<string, Transition>();
@@ -57,6 +64,10 @@ export function buildScene(params: BuildSceneParams) {
 			.filter((element) => !("hidden" in element && element.hidden))
 			.slice()
 			.sort((a, b) => {
+				// Sort by orderIndex first (layer order), then startTime, then id
+				const aOrder = a.orderIndex ?? 0;
+				const bOrder = b.orderIndex ?? 0;
+				if (aOrder !== bOrder) return aOrder - bOrder;
 				if (a.startTime !== b.startTime) return a.startTime - b.startTime;
 				return a.id.localeCompare(b.id);
 			});

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Copy, Loader2, RefreshCw, UserPlus, Users, ChevronDown, ChevronRight } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
-import { listWaitlist, inviteWaitlist, inviteWaitlistEntry, type WaitlistEntry, type WaitlistStats, type InviteConfig } from '@/services/adminApi'
+import { listWaitlist, inviteWaitlist, inviteWaitlistEntry, addWaitlistEntry, type WaitlistEntry, type WaitlistStats, type InviteConfig } from '@/services/adminApi'
 import { formatDateTime } from './adminFormat'
 
 export function AdminWaitlistPage() {
@@ -12,6 +12,9 @@ export function AdminWaitlistPage() {
   const [inviting, setInviting] = useState(false)
   const [showConfig, setShowConfig] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
+  const [showAddUserDialog, setShowAddUserDialog] = useState(false)
+  const [newUserEmail, setNewUserEmail] = useState('')
+  const [adding, setAdding] = useState(false)
   const [config, setConfig] = useState<InviteConfig>({
     percent_off: 30,
     duration_months: 1,
@@ -81,6 +84,22 @@ export function AdminWaitlistPage() {
       setError(err?.message || 'Failed to send invites')
     } finally {
       setInviting(false)
+    }
+  }
+
+  async function handleAddUser() {
+    if (!newUserEmail.trim()) return
+    setAdding(true)
+    setError(null)
+    try {
+      await addWaitlistEntry(newUserEmail.trim())
+      setShowAddUserDialog(false)
+      setNewUserEmail('')
+      await load()
+    } catch (err: any) {
+      setError(err?.message || 'Failed to add user to waitlist')
+    } finally {
+      setAdding(false)
     }
   }
 
@@ -179,11 +198,18 @@ export function AdminWaitlistPage() {
             <Users className="w-4 h-4" />
             {rows.length} email{rows.length === 1 ? '' : 's'}
           </div>
+          <button
+            onClick={() => setShowAddUserDialog(true)}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-700"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            Add User
+          </button>
           {stats.uninvited > 0 && (
             <button
               onClick={() => setShowConfirm(true)}
               disabled={inviting}
-              className="ml-auto inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50"
             >
               <UserPlus className="w-3.5 h-3.5" />
               Invite All Pending ({stats.uninvited})
@@ -199,6 +225,40 @@ export function AdminWaitlistPage() {
             </button>
           )}
         </div>
+
+        {showAddUserDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setShowAddUserDialog(false)}>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-md w-full mx-4" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-bold text-white mb-2">Add User to Waitlist</h3>
+              <p className="text-sm text-zinc-400 mb-4">Enter the email address to add to the waitlist</p>
+              <input
+                type="email"
+                value={newUserEmail}
+                onChange={(e) => setNewUserEmail(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddUser()}
+                placeholder="user@example.com"
+                className="w-full px-3 py-2 rounded-md bg-zinc-800 border border-zinc-700 text-white text-sm mb-4"
+                autoFocus
+              />
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowAddUserDialog(false)}
+                  disabled={adding}
+                  className="flex-1 px-4 py-2 rounded-md text-sm font-semibold text-zinc-300 border border-zinc-700 hover:bg-zinc-800 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddUser}
+                  disabled={!newUserEmail.trim() || adding}
+                  className="flex-1 px-4 py-2 rounded-md text-sm font-semibold text-white bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50"
+                >
+                  {adding ? 'Adding...' : 'Add User'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setShowConfirm(false)}>

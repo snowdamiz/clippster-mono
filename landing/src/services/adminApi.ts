@@ -884,6 +884,13 @@ export async function inviteWaitlistEntry(id: number, config: InviteConfig): Pro
   )
 }
 
+export async function addWaitlistEntry(email: string): Promise<void> {
+  assertSuccess(
+    await api.post<{ success: boolean; error?: string }>('/admin/waitlist/add', { email }),
+    'Failed to add user to waitlist',
+  )
+}
+
 export async function getAdminSettings(): Promise<{ settings: Record<string, string>; feature_flags: FeatureFlags }> {
   const res = assertSuccess(
     await api.get<{ success: boolean; settings?: Record<string, string>; feature_flags?: FeatureFlags; error?: string }>('/admin/settings'),
