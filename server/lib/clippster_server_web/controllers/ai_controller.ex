@@ -3,26 +3,16 @@ defmodule ClippsterServerWeb.AIController do
   alias ClippsterServer.AI.VideoComposer
   require Logger
 
-  # Tier hierarchy for access checks
-  @tier_hierarchy %{"starter" => 1, "creator" => 2, "pro" => 3}
-
-  defp meets_minimum_tier?(user, min_tier) do
-    # Admins and org-created users always have access
-    if user.is_admin or not is_nil(user.created_by_organization_id) do
-      true
-    else
-      user_tier = user.subscription_tier
-      min_level = Map.get(@tier_hierarchy, min_tier, 0)
-      user_level = Map.get(@tier_hierarchy, user_tier, 0)
-      user_level >= min_level
-    end
+  defp can_access_ai_editor?(user) do
+    # Admins always have access, or users explicitly enabled by admin
+    user.is_admin or user.ai_editor_enabled
   end
 
   # Non-streaming endpoint (backwards-compatible fallback)
   def generate_video(conn, params) do
     user = conn.assigns.current_user
 
-    if meets_minimum_tier?(user, "creator") do
+    if can_access_ai_editor?(user) do
       Logger.info("AI video generation request from user #{user.id}")
 
       with {:ok, composition} <- VideoComposer.generate(
@@ -49,7 +39,7 @@ defmodule ClippsterServerWeb.AIController do
     else
       conn
       |> put_status(:forbidden)
-      |> json(%{error: "AI Video Creator requires Creator plan or higher"})
+      |> json(%{error: "AI Video Creator access requires admin approval. Contact support to request access."})
     end
   end
 
@@ -57,7 +47,7 @@ defmodule ClippsterServerWeb.AIController do
   def generate_video_streamed(conn, params) do
     user = conn.assigns.current_user
 
-    if meets_minimum_tier?(user, "creator") do
+    if can_access_ai_editor?(user) do
       Logger.info("AI video generation (streamed) request from user #{user.id}")
 
       # Set up SSE connection
@@ -103,7 +93,7 @@ defmodule ClippsterServerWeb.AIController do
     else
       conn
       |> put_status(:forbidden)
-      |> json(%{error: "AI Video Creator requires Creator plan or higher"})
+      |> json(%{error: "AI Video Creator access requires admin approval. Contact support to request access."})
     end
   end
 

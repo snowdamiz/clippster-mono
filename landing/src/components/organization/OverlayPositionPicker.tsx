@@ -74,12 +74,6 @@ export function OverlayPositionPicker({ show, overlayImageUrl, overlayLabel = ''
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null)
   const [measuredHeight, setMeasuredHeight] = useState<number | null>(null)
   const [uploadingRatioOverlay, setUploadingRatioOverlay] = useState(false)
-  const [perRatioOverlayDataUrls, setPerRatioOverlayDataUrls] = useState<Record<AspectRatioId, string | null>>({
-    '16:9': null,
-    '9:16': null,
-    '1:1': null,
-    '4:5': null,
-  })
 
   const [enabledRatios, setEnabledRatios] = useState<Record<AspectRatioId, boolean>>({
     '16:9': true,
@@ -197,7 +191,6 @@ export function OverlayPositionPicker({ show, overlayImageUrl, overlayLabel = ''
 
     setLoadingOverlay(true)
     setOverlayDataUrl(imageUrl)
-    setPerRatioOverlayDataUrls(prev => ({ ...prev, [currentAspectRatio]: imageUrl }))
 
     const img = new Image()
     img.onload = () => {
