@@ -548,7 +548,37 @@ pub fn read_file_as_data_url(file_path: String) -> Result<String, String> {
         Some("webp") => "image/webp",
         Some("mp4") => "video/mp4",
         Some("mov") => "video/quicktime",
-        _ => "application/octet-stream",
+        Some("webm") => "video/webm",
+        _ => {
+            // No extension or unknown extension - detect by file signature (magic bytes)
+            if bytes.len() >= 12 {
+                // Check for MP4/MOV signature (ftyp box)
+                if &bytes[4..8] == b"ftyp" {
+                    // Check specific ftyp brands
+                    let brand = &bytes[8..12];
+                    if brand == b"isom" || brand == b"iso2" || brand == b"mp41" || brand == b"mp42" 
+                        || brand == b"avc1" || brand == b"M4V " || brand == b"M4A " {
+                        "video/mp4"
+                    } else if brand == b"qt  " {
+                        "video/quicktime"
+                    } else {
+                        "application/octet-stream"
+                    }
+                } else if &bytes[0..3] == b"\xFF\xD8\xFF" {
+                    "image/jpeg"
+                } else if &bytes[0..8] == b"\x89PNG\r\n\x1a\n" {
+                    "image/png"
+                } else if &bytes[0..6] == b"GIF87a" || &bytes[0..6] == b"GIF89a" {
+                    "image/gif"
+                } else if &bytes[0..4] == b"RIFF" && bytes.len() >= 12 && &bytes[8..12] == b"WEBP" {
+                    "image/webp"
+                } else {
+                    "application/octet-stream"
+                }
+            } else {
+                "application/octet-stream"
+            }
+        }
     };
     
     // Encode as base64

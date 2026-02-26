@@ -21,7 +21,7 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
     field :intro_outro_settings, :map
     field :intro_ratio_settings, :string
     field :outro_ratio_settings, :string
-    field :layout_overlays, :map
+    field :layout_overlays, {:array, :map}
     field :scope, :string, default: "streamer"
     field :disabled, :boolean, default: false
 
