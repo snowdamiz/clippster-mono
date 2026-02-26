@@ -398,14 +398,9 @@ export async function uploadMessageAttachments(conversationId: number, files: Fi
     formData.append('files', file);
   });
 
-  const response = await api.post<{ attachments: any[] }>(
+  const response = await api.post<{ success: boolean; attachments: any[] }>(
     `/conversations/${conversationId}/attachments`,
-    formData,
-    {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    }
+    formData
   );
 
   return response.data.attachments || [];

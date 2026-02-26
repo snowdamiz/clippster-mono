@@ -469,6 +469,9 @@ defmodule ClippsterServerWeb.MessagingController do
         |> json(%{error: "You are not a participant in this conversation"})
 
       {:ok, conversation} ->
+        # Debug: Log received params
+        IO.inspect(params, label: "Upload params")
+        
         # Get uploaded files (can be single or multiple)
         files = case params do
           %{"files" => files} when is_list(files) -> files
@@ -477,18 +480,30 @@ defmodule ClippsterServerWeb.MessagingController do
           _ -> []
         end
 
+        IO.inspect(files, label: "Parsed files")
+
         if Enum.empty?(files) do
           conn
           |> put_status(:bad_request)
           |> json(%{error: "No files provided"})
         else
-          # Process each file
-          results = Enum.map(files, fn %Plug.Upload{path: temp_path, filename: filename, content_type: content_type} ->
-            process_and_upload_attachment(conversation, filename, temp_path, content_type)
+          # Process each file - handle pattern match errors
+          results = Enum.map(files, fn file ->
+            case file do
+              %Plug.Upload{path: temp_path, filename: filename, content_type: content_type} ->
+                IO.inspect({temp_path, filename, content_type}, label: "Processing file")
+                result = process_and_upload_attachment(conversation, filename, temp_path, content_type)
+                IO.inspect(result, label: "Processing result")
+                result
+              other ->
+                IO.inspect(other, label: "Invalid file format")
+                {:error, "Invalid file format: expected Plug.Upload, got #{inspect(other)}"}
+            end
           end)
 
           # Check for errors
           errors = Enum.filter(results, fn {status, _} -> status == :error end)
+          IO.inspect(errors, label: "Errors found")
           
           if Enum.empty?(errors) do
             attachments = Enum.map(results, fn {:ok, attachment} -> attachment end)
@@ -538,29 +553,45 @@ defmodule ClippsterServerWeb.MessagingController do
   # ============================================================================
 
   defp process_and_upload_attachment(conversation, filename, temp_path, content_type) do
-    with {:ok, file_binary} <- File.read(temp_path),
-         true <- ImageProcessor.valid_image_type?(content_type),
-         {:ok, processed} <- ImageProcessor.process_image(file_binary, content_type),
-         org_id <- conversation.organization_id || 0,
-         full_key <- Storage.generate_message_attachment_key(org_id, conversation.id, filename, "full"),
-         thumb_key <- Storage.generate_message_attachment_key(org_id, conversation.id, filename, "thumbnail"),
-         {:ok, full_url} <- Storage.upload_file(processed.compressed, full_key, content_type: "image/jpeg"),
-         {:ok, thumb_url} <- Storage.upload_file(processed.thumbnail, thumb_key, content_type: "image/jpeg") do
-      
-      # Create attachment record (without message_id yet - will be set when message is sent)
-      {:ok, %{
-        url: full_url,
-        thumbnail_url: thumb_url,
-        filename: filename,
-        mime_type: "image/jpeg",
-        file_size: byte_size(processed.compressed),
-        width: processed.width,
-        height: processed.height,
-        attachment_type: "image"
-      }}
+    # Validate image type first
+    unless ImageProcessor.valid_image_type?(content_type) do
+      {:error, "Invalid image type: #{content_type}"}
     else
-      false -> {:error, "Invalid image type: #{content_type}"}
-      {:error, reason} -> {:error, "Failed to process image: #{inspect(reason)}"}
+      # Read file binary with better error handling
+      case File.read(temp_path) do
+        {:ok, file_binary} ->
+          # Process the image
+          case ImageProcessor.process_image(file_binary, content_type) do
+            {:ok, processed} ->
+              org_id = conversation.organization_id || 0
+              full_key = Storage.generate_message_attachment_key(org_id, conversation.id, filename, "full")
+              thumb_key = Storage.generate_message_attachment_key(org_id, conversation.id, filename, "thumbnail")
+              
+              # Upload to R2
+              with {:ok, full_url} <- Storage.upload_file(processed.compressed, full_key, content_type: "image/jpeg"),
+                   {:ok, thumb_url} <- Storage.upload_file(processed.thumbnail, thumb_key, content_type: "image/jpeg") do
+                
+                # Return attachment metadata
+                {:ok, %{
+                  url: full_url,
+                  thumbnail_url: thumb_url,
+                  filename: filename,
+                  mime_type: "image/jpeg",
+                  file_size: byte_size(processed.compressed),
+                  width: processed.width,
+                  height: processed.height,
+                  attachment_type: "image"
+                }}
+              else
+                {:error, reason} -> {:error, "Failed to upload to storage: #{inspect(reason)}"}
+              end
+            
+            {:error, reason} -> {:error, "Failed to process image: #{inspect(reason)}"}
+          end
+        
+        {:error, reason} -> 
+          {:error, "Failed to read uploaded file at #{temp_path}: #{inspect(reason)}"}
+      end
     end
   end
 
