@@ -1140,6 +1140,10 @@ commands::file_utils::generate_video_thumbnail,
             // Focal detection commands
             detect_focal_points,
 
+            // Video conversion commands
+            convert_video_to_mp4,
+            download_url_as_data_url,
+
             // UI Utils commands
             ui_utils::setup_macos_titlebar,
             ui_utils::get_platform,

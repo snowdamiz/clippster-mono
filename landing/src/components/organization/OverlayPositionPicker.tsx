@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { X, Move, Video, Monitor, Smartphone, Square, RectangleVertical } from 'lucide-react'
+import { X, Move, Video, Monitor, Smartphone, Square, RectangleVertical, Upload } from 'lucide-react'
 import { MediaPreview } from '@/components/ui/MediaPreview'
 
 type AspectRatioId = '16:9' | '9:16' | '1:1' | '4:5'
@@ -14,6 +14,9 @@ export interface OverlayRatioPosition {
   rotation: number
   scale: number
   isFullFrameOverlay?: boolean
+  imagePath?: string
+  imageUrl?: string
+  assetId?: number | null
 }
 
 export interface PerRatioOverlaySettings {
@@ -62,6 +65,13 @@ export function OverlayPositionPicker({ show, overlayImageUrl, overlayLabel = ''
   const [loadingOverlay, setLoadingOverlay] = useState(false)
   const [measuredWidth, setMeasuredWidth] = useState<number | null>(null)
   const [measuredHeight, setMeasuredHeight] = useState<number | null>(null)
+  const [uploadingRatioOverlay, setUploadingRatioOverlay] = useState(false)
+  const [perRatioOverlayDataUrls, setPerRatioOverlayDataUrls] = useState<Record<AspectRatioId, string | null>>({
+    '16:9': null,
+    '9:16': null,
+    '1:1': null,
+    '4:5': null,
+  })
 
   const [enabledRatios, setEnabledRatios] = useState<Record<AspectRatioId, boolean>>({
     '16:9': true,
@@ -151,11 +161,24 @@ export function OverlayPositionPicker({ show, overlayImageUrl, overlayLabel = ''
   }, [currentSettings, currentAspectRatio, fullFrameOverlayRatios, isFullFrameOverlay])
 
   // Load overlay image
-  useEffect(() => {
-    if (!show || !overlayImageUrl) return
+  const loadOverlayImage = () => {
+    // Check if current aspect ratio has its own overlay
+    const currentSettings = localSettings[currentAspectRatio]
+    const hasPerRatioOverlay = currentSettings.imageUrl || currentSettings.assetId
+
+    // Priority: per-ratio overlay > parent overlay
+    const imageUrl = hasPerRatioOverlay ? currentSettings.imageUrl : overlayImageUrl
+
+    if (!imageUrl) {
+      setOverlayDataUrl(null)
+      setMeasuredWidth(null)
+      setMeasuredHeight(null)
+      return
+    }
 
     setLoadingOverlay(true)
-    setOverlayDataUrl(overlayImageUrl)
+    setOverlayDataUrl(imageUrl)
+    setPerRatioOverlayDataUrls(prev => ({ ...prev, [currentAspectRatio]: imageUrl }))
 
     const img = new Image()
     img.onload = () => {
@@ -168,8 +191,14 @@ export function OverlayPositionPicker({ show, overlayImageUrl, overlayLabel = ''
       setMeasuredHeight(null)
       setLoadingOverlay(false)
     }
-    img.src = overlayImageUrl
-  }, [show, overlayImageUrl])
+    img.src = imageUrl
+  }
+
+  useEffect(() => {
+    if (show) {
+      loadOverlayImage()
+    }
+  }, [show, overlayImageUrl, currentAspectRatio])
 
   // Initialize settings
   useEffect(() => {
@@ -381,12 +410,52 @@ export function OverlayPositionPicker({ show, overlayImageUrl, overlayLabel = ''
     }
   }, [resizeState, currentAspectRatio, currentSettings])
 
+  const uploadOverlayForCurrentRatio = async () => {
+    if (uploadingRatioOverlay) return
+    setUploadingRatioOverlay(true)
+    try {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm'
+      input.onchange = async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0]
+        if (!file) return
+
+        // For now, create a data URL for preview (org mode would upload to server)
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          const dataUrl = e.target?.result as string
+          setLocalSettings(prev => ({
+            ...prev,
+            [currentAspectRatio]: {
+              ...prev[currentAspectRatio],
+              imageUrl: dataUrl,
+              assetId: null,
+            }
+          }))
+          if (!enabledRatios[currentAspectRatio]) {
+            setEnabledRatios(prev => ({ ...prev, [currentAspectRatio]: true }))
+          }
+          loadOverlayImage()
+          setUploadingRatioOverlay(false)
+        }
+        reader.readAsDataURL(file)
+      }
+      input.click()
+    } catch (err) {
+      console.error('[OverlayPositionPicker] Failed to upload overlay:', err)
+      setUploadingRatioOverlay(false)
+    }
+  }
+
   const handleSave = () => {
     const buildRatioSettings = (ratio: AspectRatioId): OverlayRatioPosition | null => {
       if (!enabledRatios[ratio]) return null
       return {
         ...localSettings[ratio],
         isFullFrameOverlay: fullFrameOverlayRatios[ratio] || isFullFrameOverlay,
+        imageUrl: localSettings[ratio].imageUrl,
+        assetId: localSettings[ratio].assetId,
       }
     }
 
@@ -447,6 +516,17 @@ export function OverlayPositionPicker({ show, overlayImageUrl, overlayLabel = ''
                 )}
               </button>
             ))}
+
+            {/* Upload Overlay Button */}
+            <button
+              onClick={uploadOverlayForCurrentRatio}
+              disabled={uploadingRatioOverlay}
+              className="px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 bg-[var(--sidebar-hover)] text-[var(--sidebar-text)] hover:bg-[var(--sidebar-active)] border border-[var(--sidebar-border)] disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Upload overlay for this aspect ratio"
+            >
+              <Upload className="w-3 h-3" />
+              {uploadingRatioOverlay ? 'Uploading...' : 'Upload'}
+            </button>
 
             {/* Enable Toggle */}
             <div className="ml-auto flex items-center gap-2">
