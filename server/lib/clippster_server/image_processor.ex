@@ -1,54 +1,28 @@
 defmodule ClippsterServer.ImageProcessor do
   @moduledoc """
-  Handles image processing operations including compression, thumbnail generation,
-  and dimension extraction using Mogrify.
+  Handles image processing operations including dimension extraction.
+  Note: Client-side already handles compression, so we just pass through the binary.
   """
-
-  @thumbnail_size 200
-  @jpeg_quality 85
 
   @doc """
   Compresses an image to JPEG format with specified quality.
+  Since the client already compresses images, we just return the binary as-is.
   Returns {:ok, binary} or {:error, reason}.
   """
-  def compress_image(image_binary, opts \\ []) do
-    quality = Keyword.get(opts, :quality, @jpeg_quality)
-
-    try do
-      result =
-        Mogrify.open(image_binary)
-        |> Mogrify.format("jpg")
-        |> Mogrify.quality(to_string(quality))
-        |> Mogrify.auto_orient()
-        |> Mogrify.save(in_place: true)
-
-      {:ok, File.read!(result.path)}
-    rescue
-      error -> {:error, "Failed to compress image: #{inspect(error)}"}
-    end
+  def compress_image(image_binary, _opts \\ []) do
+    # Client already compresses images before upload, so just pass through
+    {:ok, image_binary}
   end
 
   @doc """
   Generates a thumbnail from an image.
-  Creates a 200x200 thumbnail maintaining aspect ratio with center crop.
+  Since the client already handles thumbnails, we just return the original image.
   Returns {:ok, binary} or {:error, reason}.
   """
-  def generate_thumbnail(image_binary, opts \\ []) do
-    size = Keyword.get(opts, :size, @thumbnail_size)
-
-    try do
-      result =
-        Mogrify.open(image_binary)
-        |> Mogrify.format("jpg")
-        |> Mogrify.resize_to_fill("#{size}x#{size}")
-        |> Mogrify.quality(to_string(@jpeg_quality))
-        |> Mogrify.auto_orient()
-        |> Mogrify.save(in_place: true)
-
-      {:ok, File.read!(result.path)}
-    rescue
-      error -> {:error, "Failed to generate thumbnail: #{inspect(error)}"}
-    end
+  def generate_thumbnail(image_binary, _opts \\ []) do
+    # For now, just use the original image as thumbnail
+    # Client can handle thumbnail generation on display
+    {:ok, image_binary}
   end
 
   @doc """
@@ -56,17 +30,12 @@ defmodule ClippsterServer.ImageProcessor do
   Returns {:ok, {width, height}} or {:error, reason}.
   """
   def get_image_dimensions(image_binary) do
-    try do
-      image = Mogrify.open(image_binary) |> Mogrify.verbose()
+    case ExImageInfo.info(image_binary) do
+      {_format, width, height, _variant} ->
+        {:ok, {width, height}}
       
-      case {image.width, image.height} do
-        {nil, _} -> {:error, "Could not determine image width"}
-        {_, nil} -> {:error, "Could not determine image height"}
-        {width, height} ->
-          {:ok, {String.to_integer(width), String.to_integer(height)}}
-      end
-    rescue
-      error -> {:error, "Failed to get image dimensions: #{inspect(error)}"}
+      nil -> 
+        {:error, "Failed to get image dimensions: invalid or unsupported image format"}
     end
   end
 

@@ -12,6 +12,7 @@
   import SubscriptionGate from '@/components/SubscriptionGate.vue';
   import BrandingProfileSelector from '@/components/BrandingProfileSelector.vue';
   import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
+  import FloatingChat from '@/components/chat/FloatingChat.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
   import {
     initDatabase,
@@ -30,6 +31,7 @@
   import { useAppUpdater } from '@/composables/useAppUpdater';
   import { useToast } from '@/composables/useToast';
   import { useActivityTracker } from '@/composables/useActivityTracker';
+  import { useMessagingStore } from '@/stores/messaging';
   import { useUserPreferencesStore } from '@/stores/userPreferences';
   import { initGlobalLiveStatusPolling, stopGlobalLiveStatusPolling } from '@/composables/useLivestreamMonitoring';
   import { invoke } from '@tauri-apps/api/core';
@@ -44,6 +46,7 @@
   const livestreamStore = useLivestreamStore();
   const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
   const { state: updateState, checkForUpdates } = useAppUpdater();
+  const messagingStore = useMessagingStore();
   const { success } = useToast();
 
   // Track user activity to update last_active_at
@@ -250,6 +253,8 @@
       try {
         const appWindow = getCurrentWindow();
         const size = await appWindow.innerSize();
+        // Don't persist minimized/collapsed window sizes
+        if (size.width < 800 || size.height < 600) return;
         await invoke('save_window_size', {
           width: size.width,
           height: size.height,
@@ -324,11 +329,14 @@
 
   // Separate function for app initialization (called after update check passes)
   async function initializeApp() {
+    console.log('[App] initializeApp started, current path:', window.location.pathname);
+    
     // Check if this is the PIP window - it only needs minimal initialization
     const isPipWindow = window.location.pathname === '/pip-controls';
 
     if (isPipWindow) {
       // PIP window only needs to show content, no DB/auth/etc
+      console.log('[App] PIP window detected, skipping full init');
       isLoading.value = false;
       return;
     }
@@ -351,6 +359,11 @@
       // Auth path: check auth, then start tracker + fetch announcements if authenticated
       (async () => {
         await authStore.checkAuth();
+        console.log('[App] Auth check complete:', {
+          isAuthenticated: authStore.isAuthenticated,
+          userId: authStore.user?.id,
+          accountType: authStore.user?.account_type,
+        });
         if (authStore.isAuthenticated) {
           console.log('[App] User authenticated, starting activity tracker');
           startTracking();
@@ -363,6 +376,8 @@
           // Announcements don't need to block startup - fire and forget
           fetchAndEnqueue().catch((e) => console.error('[App] Failed to fetch announcements:', e));
           subscribeToChannel(authStore.user?.account_type ?? 'personal');
+          // Initialize global messaging socket for floating chat
+          messagingStore.initializeGlobal().catch((e) => console.error('[App] Failed to init global messaging:', e));
         }
       })().catch((error) => {
         console.error('[App] Failed to check authentication:', error);
@@ -400,8 +415,21 @@
       console.error('[App] Failed to initialize clip build event handler:', error);
     }
 
+    // Wait for router to be ready before hiding loading screen
+    // This ensures the route is fully resolved and the component will mount
+    console.log('[App] Waiting for router to be ready...');
+    await router.isReady();
+    console.log('[App] Router ready, current route:', router.currentRoute.value.path);
+    console.log('[App] Router current route details:', {
+      path: router.currentRoute.value.path,
+      name: router.currentRoute.value.name,
+      matched: router.currentRoute.value.matched.length,
+    });
+
     // Hide loading screen - app is usable now
+    console.log('[App] Hiding loading screen, showing main app');
     isLoading.value = false;
+    console.log('[App] isLoading set to false, app should be visible now');
 
     // Live status polling runs in the background AFTER the app is visible.
     // It makes N external API calls and should never block the loading screen.
@@ -484,6 +512,9 @@
 
       <!-- Global Announcement Dialog -->
       <AnnouncementDialog />
+
+      <!-- Floating Chat Widget (Messenger-style popout) -->
+      <FloatingChat />
 
       <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
       <LivestreamWatchDialog

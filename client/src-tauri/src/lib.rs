@@ -924,9 +924,16 @@ pub fn run() {
 
             // Load saved window size or use defaults
             let (width, height) = match ui_utils::load_window_size(app.handle().clone()) {
-                Ok(Some(size)) => {
+                Ok(Some(size)) if size.width >= 800.0 && size.height >= 600.0 => {
                     println!("[Rust] Restoring window size: {}x{}", size.width, size.height);
                     (size.width, size.height)
+                }
+                Ok(Some(size)) => {
+                    println!(
+                        "[Rust] Ignoring invalid saved window size: {}x{}, using defaults",
+                        size.width, size.height
+                    );
+                    (DEFAULT_MAIN_WINDOW_WIDTH, DEFAULT_MAIN_WINDOW_HEIGHT)
                 }
                 _ => {
                     println!(
