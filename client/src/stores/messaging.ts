@@ -237,12 +237,12 @@ export const useMessagingStore = defineStore('messaging', () => {
   /**
    * Send a message to the active conversation.
    */
-  async function sendMessage(content: string) {
+  async function sendMessage(content: string, attachmentData?: any[]) {
     if (!activeConversationId.value) return;
 
     try {
       // Use WebSocket for real-time delivery
-      const message = await messagingSocket.sendMessage(activeConversationId.value, content);
+      const message = await messagingSocket.sendMessage(activeConversationId.value, content, attachmentData);
       // Message will be added via the onNewMessage handler
       return message;
     } catch (error) {

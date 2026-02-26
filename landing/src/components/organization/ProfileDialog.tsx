@@ -210,6 +210,59 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
     return any?.profile_image_url || undefined
   }
 
+  // Extract channel slug from Kick URL or return as-is
+  const extractKickSlug = (input: string): string => {
+    const trimmed = input.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      try {
+        const url = new URL(trimmed)
+        if (url.hostname.includes('kick.com')) {
+          const parts = url.pathname.split('/').filter(p => p.length > 0)
+          return parts[0] || trimmed
+        }
+      } catch {
+        return trimmed
+      }
+    }
+    return trimmed
+  }
+
+  // Extract channel name from Twitch URL or return as-is
+  const extractTwitchUsername = (input: string): string => {
+    const trimmed = input.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      try {
+        const url = new URL(trimmed)
+        if (url.hostname.includes('twitch.tv')) {
+          const parts = url.pathname.split('/').filter(p => p.length > 0)
+          if (parts.length > 0 && parts[0] !== 'videos') {
+            return parts[0]
+          }
+        }
+      } catch {
+        return trimmed
+      }
+    }
+    return trimmed
+  }
+
+  // Extract mint ID from PumpFun URL or return as-is
+  const extractPumpFunMintId = (input: string): string => {
+    const trimmed = input.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      try {
+        const url = new URL(trimmed)
+        if (url.hostname.includes('pump.fun')) {
+          const parts = url.pathname.split('/').filter(p => p.length > 0)
+          return parts[parts.length - 1] || trimmed
+        }
+      } catch {
+        return trimmed
+      }
+    }
+    return trimmed
+  }
+
   // Fetch platform metadata (avatar) when platform ID is entered
   const fetchPlatformMetadata = async (index: number, platform: PlatformId, platformId: string) => {
     if (!platformId.trim()) return
@@ -217,40 +270,46 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
     setFetchingMetadata(index)
     try {
       if (platform === 'kick') {
-        // Use server proxy to avoid CORS
-        const response = await fetch(`/api/kick/channels/${platformId}`)
+        const slug = extractKickSlug(platformId)
+        const response = await fetch(`/api/kick/channels/${slug}`)
         if (response.ok) {
           const data = await response.json()
           if (data.profileImageUrl) {
             updateLink(index, { 
               profile_image_url: data.profileImageUrl, 
-              display_name: data.username || platformId 
+              display_name: data.username || slug 
             })
           }
+        } else {
+          console.error('[ProfileDialog] Kick API error:', response.status, await response.text())
         }
       } else if (platform === 'twitch') {
-        // Use server proxy to avoid CORS
-        const response = await fetch(`/api/twitch/channels/${platformId}`)
+        const username = extractTwitchUsername(platformId)
+        const response = await fetch(`/api/twitch/channels/${username}`)
         if (response.ok) {
           const data = await response.json()
           if (data.profileImageUrl) {
             updateLink(index, { 
               profile_image_url: data.profileImageUrl, 
-              display_name: data.displayName || platformId 
+              display_name: data.displayName || username 
             })
           }
+        } else {
+          console.error('[ProfileDialog] Twitch API error:', response.status, await response.text())
         }
       } else if (platform === 'pumpfun') {
-        // Use server proxy for PumpFun metadata
-        const response = await fetch(`/api/metadata/${platformId}`)
+        const mintId = extractPumpFunMintId(platformId)
+        const response = await fetch(`/api/metadata/${mintId}`)
         if (response.ok) {
           const data = await response.json()
           if (data.success && data.metadata?.image) {
             updateLink(index, { 
               profile_image_url: data.metadata.image, 
-              display_name: data.metadata.name || platformId 
+              display_name: data.metadata.name || mintId 
             })
           }
+        } else {
+          console.error('[ProfileDialog] PumpFun API error:', response.status, await response.text())
         }
       }
     } catch (err) {

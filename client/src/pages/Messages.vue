@@ -5,8 +5,9 @@
   import { useAuthStore } from '@/stores/auth';
   import { formatConversationTime, formatTime } from '@/utils/dateTimeUtils';
   import api from '@/services/api';
-  import type { Conversation, Message } from '@/services/messagingApi';
-  import { checkSupportConversation, getOrCreateSupportConversation } from '@/services/messagingApi';
+  import type { Conversation, Message, MessageAttachment } from '@/services/messagingApi';
+  import { checkSupportConversation, getOrCreateSupportConversation, uploadMessageAttachments, getAttachmentDownloadUrl } from '@/services/messagingApi';
+  import { compressImages, validateImageFile, formatFileSize } from '@/utils/imageCompression';
   import PageLayout from '@/components/PageLayout.vue';
   import {
     MessageSquare,
@@ -28,6 +29,9 @@
     LogOut,
     MessagesSquare,
     Headset,
+    Paperclip,
+    Download,
+    Image as ImageIcon,
   } from 'lucide-vue-next';
 
   const messagingStore = useMessagingStore();
@@ -85,6 +89,23 @@
   const supportConversation = ref<Conversation | null>(null);
   const isLoadingSupportConversation = ref(false);
   const isStartingSupport = ref(false);
+
+  // Attachment state
+  const selectedAttachments = ref<File[]>([]);
+  const fileInputRef = ref<HTMLInputElement | null>(null);
+  const isUploadingAttachments = ref(false);
+  const showImageViewer = ref(false);
+  const viewerImageUrl = ref('');
+  const viewerImageFilename = ref('');
+
+  const attachmentPreviews = computed(() => {
+    return selectedAttachments.value.map(file => ({
+      file,
+      url: URL.createObjectURL(file),
+      name: file.name,
+      size: formatFileSize(file.size)
+    }));
+  });
 
   let typingTimeout: number | null = null;
 
@@ -348,16 +369,35 @@
 
   async function sendMessage() {
     const content = messageInput.value.trim();
-    if (!content) return;
+    const hasAttachments = selectedAttachments.value.length > 0;
+    
+    if (!content && !hasAttachments) return;
 
+    const originalContent = content;
+    const attachmentsToSend = [...selectedAttachments.value];
+    
     messageInput.value = '';
+    selectedAttachments.value = [];
 
     try {
-      await messagingStore.sendMessage(content);
+      let attachmentData: any[] = [];
+      
+      // Upload attachments if any
+      if (hasAttachments && messagingStore.activeConversationId) {
+        isUploadingAttachments.value = true;
+        const compressed = await compressImages(attachmentsToSend, 15);
+        const uploaded = await uploadMessageAttachments(messagingStore.activeConversationId, compressed);
+        attachmentData = uploaded;
+        isUploadingAttachments.value = false;
+      }
+      
+      await messagingStore.sendMessage(content || ' ', attachmentData);
       scrollToBottom();
     } catch (error) {
       console.error('Failed to send message:', error);
-      messageInput.value = content;
+      messageInput.value = originalContent;
+      selectedAttachments.value = attachmentsToSend;
+      isUploadingAttachments.value = false;
     }
   }
 
@@ -642,6 +682,95 @@
         }
       },
     });
+  }
+
+  // Attachment handling functions
+  async function handleAttachClick() {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: true,
+        filters: [
+          {
+            name: 'Images',
+            extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'],
+          },
+        ],
+      });
+
+      if (selected && Array.isArray(selected)) {
+        const files = await Promise.all(
+          selected.map(async (path) => {
+            const response = await fetch(`http://localhost:1420/${path}`);
+            const blob = await response.blob();
+            const filename = path.split(/[\\/]/).pop() || 'image.jpg';
+            return new File([blob], filename, { type: blob.type });
+          })
+        );
+        
+        const validFiles = files.filter(file => validateImageFile(file, 15));
+        selectedAttachments.value.push(...validFiles);
+      } else if (selected && typeof selected === 'string') {
+        const path: string = selected;
+        const response = await fetch(`http://localhost:1420/${path}`);
+        const blob = await response.blob();
+        const filename = path.split(/[\\/]/).pop() || 'image.jpg';
+        const file = new File([blob], filename, { type: blob.type });
+        
+        if (validateImageFile(file, 15)) {
+          selectedAttachments.value.push(file);
+        }
+      }
+    } catch (error) {
+      console.error('Error selecting files:', error);
+    }
+  }
+
+  function handleFileSelect(event: Event) {
+    const target = event.target as HTMLInputElement;
+    if (target.files) {
+      const files = Array.from(target.files).filter(file => validateImageFile(file, 15));
+      selectedAttachments.value.push(...files);
+      target.value = '';
+    }
+  }
+
+  async function handlePaste(event: ClipboardEvent) {
+    const items = event.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        event.preventDefault();
+        const file = item.getAsFile();
+        if (file && validateImageFile(file, 15)) {
+          selectedAttachments.value.push(file);
+        }
+      }
+    }
+  }
+
+  function removeAttachment(index: number) {
+    selectedAttachments.value.splice(index, 1);
+  }
+
+  function openImageViewer(url: string, filename: string) {
+    viewerImageUrl.value = url;
+    viewerImageFilename.value = filename;
+    showImageViewer.value = true;
+  }
+
+  function closeImageViewer() {
+    showImageViewer.value = false;
+    viewerImageUrl.value = '';
+    viewerImageFilename.value = '';
+  }
+
+  function downloadImage(url: string, filename: string) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
   }
 </script>
 
@@ -949,7 +1078,26 @@
                       <!-- Message Content -->
                       <template v-else>
                         <p v-if="message.deletedAt" class="message-bubble__deleted">Message deleted</p>
-                        <p v-else class="message-bubble__content">{{ message.content }}</p>
+                        <p v-else-if="message.content" class="message-bubble__content">{{ message.content }}</p>
+                        
+                        <!-- Message Attachments -->
+                        <div v-if="message.attachments && message.attachments.length > 0" class="message-bubble__attachments">
+                          <div
+                            v-for="attachment in message.attachments"
+                            :key="attachment.id"
+                            class="message-attachment"
+                            @click="openImageViewer(attachment.url, attachment.filename)"
+                          >
+                            <img
+                              :src="attachment.thumbnailUrl || attachment.url"
+                              :alt="attachment.filename"
+                              class="message-attachment__img"
+                            />
+                            <div class="message-attachment__overlay">
+                              <ImageIcon :size="24" />
+                            </div>
+                          </div>
+                        </div>
                       </template>
 
                       <!-- Meta Info -->
@@ -1008,23 +1156,53 @@
                 </div>
 
                 <!-- Message Input -->
-                <div class="messages-chat__input-area">
-                  <textarea
-                    v-model="messageInput"
-                    placeholder="Write a message..."
-                    rows="1"
-                    @keydown="handleInputKeydown"
-                    @input="handleTyping"
-                    class="messages-chat__input"
-                  ></textarea>
-                  <button
-                    class="messages-chat__send-btn"
-                    :class="{ 'messages-chat__send-btn--disabled': !messageInput.trim() }"
-                    :disabled="!messageInput.trim()"
-                    @click="sendMessage"
-                  >
-                    <Send class="messages-chat__send-icon" />
-                  </button>
+                <div class="messages-chat__input-wrapper">
+                  <!-- Attachment Preview -->
+                  <div v-if="attachmentPreviews.length > 0" class="messages-chat__attachments-preview">
+                    <div
+                      v-for="(preview, index) in attachmentPreviews"
+                      :key="index"
+                      class="attachment-preview"
+                    >
+                      <img :src="preview.url" :alt="preview.name" class="attachment-preview__img" />
+                      <div class="attachment-preview__info">
+                        <span class="attachment-preview__name">{{ preview.name }}</span>
+                        <span class="attachment-preview__size">{{ preview.size }}</span>
+                      </div>
+                      <button @click="removeAttachment(index)" class="attachment-preview__remove">
+                        <X :size="16" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="messages-chat__input-area">
+                    <button
+                      @click="handleAttachClick"
+                      class="messages-chat__attach-btn"
+                      title="Attach image"
+                      :disabled="isUploadingAttachments"
+                    >
+                      <Paperclip class="messages-chat__attach-icon" />
+                    </button>
+                    <textarea
+                      v-model="messageInput"
+                      placeholder="Write a message..."
+                      rows="1"
+                      @keydown="handleInputKeydown"
+                      @input="handleTyping"
+                      @paste="handlePaste"
+                      class="messages-chat__input"
+                    ></textarea>
+                    <button
+                      class="messages-chat__send-btn"
+                      :class="{ 'messages-chat__send-btn--disabled': !messageInput.trim() && selectedAttachments.length === 0 }"
+                      :disabled="(!messageInput.trim() && selectedAttachments.length === 0) || isUploadingAttachments"
+                      @click="sendMessage"
+                    >
+                      <Loader2 v-if="isUploadingAttachments" class="messages-chat__send-icon messages-chat__send-icon--loading" />
+                      <Send v-else class="messages-chat__send-icon" />
+                    </button>
+                  </div>
                 </div>
               </template>
 
@@ -1267,6 +1445,25 @@
               </div>
             </div>
           </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <!-- Image Viewer Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div v-if="showImageViewer" class="image-viewer__overlay" @click="closeImageViewer">
+          <div class="image-viewer__container" @click.stop>
+            <button @click="closeImageViewer" class="image-viewer__close">
+              <X :size="24" />
+            </button>
+            <button @click="downloadImage(viewerImageUrl, viewerImageFilename)" class="image-viewer__download">
+              <Download :size="20" />
+              Download
+            </button>
+            <img :src="viewerImageUrl" :alt="viewerImageFilename" class="image-viewer__image" />
+            <div class="image-viewer__filename">{{ viewerImageFilename }}</div>
+          </div>
         </div>
       </Transition>
     </Teleport>
@@ -3159,5 +3356,236 @@
   .fade-enter-from,
   .fade-leave-to {
     opacity: 0;
+  }
+
+  /* ===== Attachment Styles ===== */
+  .messages-chat__input-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .messages-chat__attachments-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background-color: var(--sidebar-surface);
+    border-radius: 8px;
+  }
+
+  .attachment-preview {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 6px;
+    max-width: 250px;
+  }
+
+  .attachment-preview__img {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 4px;
+  }
+
+  .attachment-preview__info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .attachment-preview__name {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .attachment-preview__size {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .attachment-preview__remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .attachment-preview__remove:hover {
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+  }
+
+  .messages-chat__attach-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .messages-chat__attach-btn:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .messages-chat__attach-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .messages-chat__attach-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .messages-chat__send-icon--loading {
+    animation: spin 0.8s linear infinite;
+  }
+
+  .message-bubble__attachments {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .message-attachment {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+  }
+
+  .message-attachment:hover {
+    transform: scale(1.02);
+  }
+
+  .message-attachment__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .message-attachment__overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0);
+    color: white;
+    opacity: 0;
+    transition: all 0.15s ease;
+  }
+
+  .message-attachment:hover .message-attachment__overlay {
+    background-color: rgba(0, 0, 0, 0.4);
+    opacity: 1;
+  }
+
+  /* ===== Image Viewer Modal ===== */
+  .image-viewer__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 2rem;
+  }
+
+  .image-viewer__container {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .image-viewer__close {
+    position: absolute;
+    top: -3rem;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+
+  .image-viewer__close:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .image-viewer__download {
+    position: absolute;
+    top: -3rem;
+    right: 3rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background-color: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+
+  .image-viewer__download:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .image-viewer__image {
+    max-width: 100%;
+    max-height: calc(90vh - 4rem);
+    object-fit: contain;
+    border-radius: 8px;
+  }
+
+  .image-viewer__filename {
+    color: white;
+    font-size: 0.875rem;
+    text-align: center;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

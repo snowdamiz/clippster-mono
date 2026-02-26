@@ -399,6 +399,12 @@ defmodule ClippsterServerWeb.Router do
       :allocate_credits
     )
 
+    post(
+      "/organizations/:organization_id/credits/toggle-pool-fallback",
+      OrganizationController,
+      :toggle_pool_fallback
+    )
+
     get("/organizations/:organization_id/transactions", OrganizationController, :get_transactions)
 
     # Organization restriction settings
@@ -726,6 +732,10 @@ defmodule ClippsterServerWeb.Router do
     delete("/conversations/:id/participants/:user_id", MessagingController, :remove_participant)
     post("/conversations/:id/leave", MessagingController, :leave_conversation)
     delete("/conversations/:id", MessagingController, :delete_conversation)
+    
+    # Message attachments
+    post("/conversations/:conversation_id/attachments", MessagingController, :upload_attachments)
+    get("/attachments/:id/download", MessagingController, :download_attachment)
 
     # User-level messaging endpoints
     get("/me/conversations", MessagingController, :list_all_conversations)

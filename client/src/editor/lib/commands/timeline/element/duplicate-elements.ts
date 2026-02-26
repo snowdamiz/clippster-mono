@@ -2,10 +2,6 @@ import { Command } from "../../../../lib/commands/base-command";
 import type { TimelineElement, TimelineTrack } from "../../../../types/timeline";
 import { generateUUID } from "../../../../utils/id";
 import { EditorCore } from "../../../../core";
-import {
-	buildEmptyTrack,
-	getHighestInsertIndexForTrack,
-} from "../../../../lib/timeline/track-utils";
 
 interface DuplicateElementsParams {
 	elements: { trackId: string; elementId: string }[];
@@ -30,7 +26,7 @@ export class DuplicateElementsCommand extends Command {
 
 		const updatedTracks = [...this.savedState];
 
-		for (const track of this.savedState) {
+		for (const track of updatedTracks) {
 			const elementsToDuplicate = this.elements.filter(
 				(el) => el.trackId === track.id,
 			);
@@ -42,43 +38,37 @@ export class DuplicateElementsCommand extends Command {
 			const elementIdsToDuplicate = new Set(
 				elementsToDuplicate.map((element) => element.elementId),
 			);
-			const newTrackElements: TimelineElement[] = [];
 
-			const newTrackId = generateUUID();
-			const newTrackBase = buildEmptyTrack({
-				id: newTrackId,
-				type: track.type,
-			});
+			// Find highest orderIndex in track
+			const maxOrderIndex = track.elements.reduce(
+				(max, el) => Math.max(max, el.orderIndex ?? 0),
+				0,
+			);
 
+			// Duplicate elements on same track with incremented orderIndex
 			for (const element of track.elements) {
 				if (!elementIdsToDuplicate.has(element.id)) {
 					continue;
 				}
 
 				const newId = generateUUID();
+				const newOrderIndex = (element.orderIndex ?? 0) + maxOrderIndex + 1;
+
 				this.duplicatedElements.push({
-					trackId: newTrackId,
+					trackId: track.id,
 					elementId: newId,
 				});
-				newTrackElements.push(
-					buildDuplicateElement({
-						element,
-						id: newId,
-						startTime: element.startTime,
-					}),
-				);
+
+				const duplicatedElement = buildDuplicateElement({
+					element,
+					id: newId,
+					startTime: element.startTime,
+					orderIndex: newOrderIndex,
+				});
+				
+				// TypeScript: track.elements is typed as specific element array, cast to match
+				(track.elements as TimelineElement[]).push(duplicatedElement);
 			}
-
-			const newTrack = {
-				...newTrackBase,
-				elements: newTrackElements,
-			} as TimelineTrack;
-
-			const insertIndex = getHighestInsertIndexForTrack({
-				tracks: updatedTracks,
-				trackType: track.type,
-			});
-			updatedTracks.splice(insertIndex, 0, newTrack);
 		}
 
 		editor.timeline.updateTracks(updatedTracks);
@@ -105,10 +95,12 @@ function buildDuplicateElement({
 	element,
 	id,
 	startTime,
+	orderIndex,
 }: {
 	element: TimelineElement;
 	id: string;
 	startTime: number;
+	orderIndex: number;
 }): TimelineElement {
-	return { ...element, id, name: `${element.name} (copy)`, startTime };
+	return { ...element, id, name: `${element.name} (copy)`, startTime, orderIndex };
 }

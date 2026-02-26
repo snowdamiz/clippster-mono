@@ -1022,49 +1022,51 @@ defmodule ClippsterServer.Organizations do
 
   @doc """
   Deducts credits from a member's org allocation.
-  If allow_pool_fallback is true and member allocation is insufficient,
-  will try to deduct from org pool directly.
+  If member has allow_pool_fallback enabled and allocation is insufficient,
+  will deduct from org pool and track usage on member.
   """
-  def deduct_member_credits(organization_id, user_id, hours, allow_pool_fallback \\ false) do
+  def deduct_member_credits(organization_id, user_id, hours) do
     allocation = get_member_allocation(organization_id, user_id)
 
     case MemberCreditAllocation.deduct_hours_changeset(allocation, hours) do
       {:ok, changeset} ->
         changeset |> Repo.update()
 
-      {:error, :insufficient_allocation} when allow_pool_fallback ->
-        # Try to deduct from org pool directly but still track user usage
-        case Repo.get(OrganizationCredit, organization_id) do
-          nil ->
-            {:error, :insufficient_credits}
-
-          org_credit ->
-            hours_decimal = Decimal.new(to_string(hours))
-            # Check org pool has enough
-            if Decimal.compare(org_credit.hours_remaining, hours_decimal) == :lt do
+      {:error, :insufficient_allocation} ->
+        # Check if this member has pool fallback enabled
+        if allocation && allocation.allow_pool_fallback do
+          # Try to deduct from org pool directly but still track user usage
+          case Repo.get(OrganizationCredit, organization_id) do
+            nil ->
               {:error, :insufficient_credits}
-            else
-              # Deduct from org pool AND track the usage for this user
-              Repo.transaction(fn ->
-                {:ok, _updated_credit} =
-                  org_credit
-                  |> OrganizationCredit.deduct_hours_changeset(hours)
-                  |> Repo.update()
 
-                # Get or create allocation for tracking usage (even if no hours allocated)
-                member_allocation = get_or_create_member_allocation(organization_id, user_id)
+            org_credit ->
+              hours_decimal = Decimal.new(to_string(hours))
+              # Check org pool has enough
+              if Decimal.compare(org_credit.hours_remaining, hours_decimal) == :lt do
+                {:error, :insufficient_credits}
+              else
+                # Deduct from org pool AND track the usage for this user
+                Repo.transaction(fn ->
+                  {:ok, _updated_credit} =
+                    org_credit
+                    |> OrganizationCredit.deduct_hours_changeset(hours)
+                    |> Repo.update()
 
-                # Track the usage (this may result in negative remaining, but that's ok for tracking)
-                new_used = Decimal.add(member_allocation.hours_used, hours_decimal)
+                  # Track the usage (this may result in negative remaining, but that's ok for tracking)
+                  new_used = Decimal.add(allocation.hours_used, hours_decimal)
 
-                {:ok, updated_allocation} =
-                  member_allocation
-                  |> Ecto.Changeset.change(hours_used: new_used)
-                  |> Repo.update()
+                  {:ok, updated_allocation} =
+                    allocation
+                    |> Ecto.Changeset.change(hours_used: new_used)
+                    |> Repo.update()
 
-                updated_allocation
-              end)
+                  updated_allocation
+                end)
+              end
             end
+        else
+          {:error, :insufficient_credits}
         end
 
       {:error, reason} ->

@@ -151,6 +151,26 @@ export const ACTIONS = {
 		category: "editing",
 		defaultShortcuts: ["ctrl+alt+v"],
 	},
+	"bring-to-front": {
+		description: "Bring element to front layer",
+		category: "editing",
+		defaultShortcuts: ["ctrl+shift+]"],
+	},
+	"bring-forward": {
+		description: "Bring element forward one layer",
+		category: "editing",
+		defaultShortcuts: ["ctrl+]"],
+	},
+	"send-backward": {
+		description: "Send element backward one layer",
+		category: "editing",
+		defaultShortcuts: ["ctrl+["],
+	},
+	"send-to-back": {
+		description: "Send element to back layer",
+		category: "editing",
+		defaultShortcuts: ["ctrl+shift+["],
+	},
 	undo: {
 		description: "Undo",
 		category: "history",

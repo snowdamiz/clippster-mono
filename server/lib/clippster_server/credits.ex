@@ -296,7 +296,7 @@ defmodule ClippsterServer.Credits do
       {:error, :not_a_member}
     else
       # Try to deduct from member's org allocation
-      case Organizations.deduct_member_credits(organization_id, user_id, hours, true) do
+      case Organizations.deduct_member_credits(organization_id, user_id, hours) do
         {:ok, _allocation} ->
           {:ok, %{source: :organization, org_id: organization_id}}
 
