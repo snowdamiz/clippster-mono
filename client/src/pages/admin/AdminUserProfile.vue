@@ -132,6 +132,21 @@
                 </div>
               </div>
 
+              <!-- AI Editor Access Group -->
+              <div class="action-group">
+                <div class="action-group__label">AI Editor Access</div>
+                <div class="action-group__buttons">
+                  <button @click="enableAiEditor" v-if="!user.ai_editor_enabled" class="action-btn action-btn--outline">
+                    <Sparkles :size="18" />
+                    <span>Enable AI Editor</span>
+                  </button>
+                  <button @click="disableAiEditor" v-if="user.ai_editor_enabled" class="action-btn action-btn--outline">
+                    <Sparkles :size="18" />
+                    <span>Disable AI Editor</span>
+                  </button>
+                </div>
+              </div>
+
               <!-- Billing Group -->
               <div class="action-group">
                 <div class="action-group__label">Billing & Discounts</div>
@@ -225,12 +240,12 @@
                 <div class="info-list">
                   <div class="info-list-item">
                     <div class="info-list-item__label">Tier</div>
-                    <div class="info-list-item__value">{{ user.subscription?.tier || 'Free' }}</div>
+                    <div class="info-list-item__value">{{ formatTier(user.subscription?.tier) }}</div>
                   </div>
                   <div class="info-list-item">
                     <div class="info-list-item__label">Status</div>
                     <span :class="['status-badge', `status-badge--${user.subscription?.status || 'none'}`]">
-                      {{ user.subscription?.status || 'none' }}
+                      {{ formatStatus(user.subscription?.status) }}
                     </span>
                   </div>
                   <div class="info-list-item">
@@ -279,7 +294,7 @@
                   </div>
                   <div class="info-list-item">
                     <div class="info-list-item__label">Provider</div>
-                    <div class="info-list-item__value">{{ user.provider || 'N/A' }}</div>
+                    <div class="info-list-item__value">{{ formatProvider(user.provider) }}</div>
                   </div>
                   <div v-if="user.created_at" class="info-list-item">
                     <div class="info-list-item__label">Created</div>
@@ -292,6 +307,8 @@
                 </div>
               </div>
             </div>
+
+            <!-- Organizations Card -->
           </aside>
         </div>
       </div>
@@ -504,21 +521,27 @@ import {
   User,
   Shield,
   Ban,
+  CheckCircle,
   Crown,
-  CreditCard,
-  Coins,
-  Percent,
+  Loader2,
+  AlertTriangle,
   Settings,
   UserPlus,
   UserMinus,
-  CheckCircle,
+  Percent,
   Gift,
   Trash2,
-  Loader2,
-  AlertTriangle,
-  Info,
+  DollarSign,
+  Calendar,
+  Mail,
+  ExternalLink,
   X,
   Key,
+  Sparkles,
+  CreditCard,
+  Coins,
+  Info,
+  BarChart,
 } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import PageLayout from '@/components/PageLayout.vue';
@@ -587,6 +610,27 @@ const formatFullDate = (dateString: string) => {
   return formatDateTime(dateString);
 };
 
+const formatTier = (tier: string | undefined) => {
+  if (!tier) return 'Free';
+  // Capitalize first letter
+  return tier.charAt(0).toUpperCase() + tier.slice(1);
+};
+
+const formatStatus = (status: string | undefined) => {
+  if (!status) return 'None';
+  // Replace underscores with spaces and capitalize each word
+  return status
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
+
+const formatProvider = (provider: string | undefined) => {
+  if (!provider) return 'N/A';
+  // Capitalize first letter
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
+};
+
 const loadUserProfile = async () => {
   loading.value = true;
   error.value = null;
@@ -652,6 +696,30 @@ const disableModDiscount = async () => {
     }
   } catch (err: any) {
     toastError(err.response?.data?.error || 'Failed to disable discount');
+  }
+};
+
+const enableAiEditor = async () => {
+  try {
+    const response = await api.post(`/admin/users/${userId.value}/ai-editor`);
+    if (response.data.success) {
+      toast('AI editor access enabled');
+      await loadUserProfile();
+    }
+  } catch (err: any) {
+    toastError(err.response?.data?.error || 'Failed to enable AI editor');
+  }
+};
+
+const disableAiEditor = async () => {
+  try {
+    const response = await api.delete(`/admin/users/${userId.value}/ai-editor`);
+    if (response.data.success) {
+      toast('AI editor access disabled');
+      await loadUserProfile();
+    }
+  } catch (err: any) {
+    toastError(err.response?.data?.error || 'Failed to disable AI editor');
   }
 };
 
@@ -1378,6 +1446,34 @@ onMounted(() => {
   font-family: 'Courier New', monospace;
   font-size: 0.75rem;
   color: var(--sidebar-accent);
+}
+
+.platform-breakdown {
+  margin-top: 0.5rem;
+  margin-left: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.platform-stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.platform-name {
+  color: var(--sidebar-text-muted);
+  font-weight: 500;
+}
+
+.platform-count {
+  color: var(--sidebar-text);
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
 }
 
 /* ===== Admin Dialog (matches ClipDetectionConfirmDialog) ===== */

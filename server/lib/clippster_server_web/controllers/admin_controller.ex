@@ -1561,6 +1561,58 @@ defmodule ClippsterServerWeb.AdminController do
     end
   end
 
+  @doc """
+  Enables AI editor access for a user.
+  """
+  def enable_ai_editor(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.enable_ai_editor(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "AI editor access enabled",
+              user: %{id: user.id, ai_editor_enabled: user.ai_editor_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Disables AI editor access for a user.
+  """
+  def disable_ai_editor(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.disable_ai_editor(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "AI editor access disabled",
+              user: %{id: user.id, ai_editor_enabled: user.ai_editor_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
   # ============================================
   # User Restrictions
   # ============================================

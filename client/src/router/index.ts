@@ -73,7 +73,6 @@ const router = createRouter({
       path: '/ai-video',
       name: 'ai-video',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -601,7 +600,6 @@ router.beforeEach(async (to, _from, next) => {
           'clippers-directory': 'Browse Clippers',
           'messages-home': 'Access Messages',
           'prompts-home': 'Access Prompts',
-          'ai-video-home': 'Use AI Video Creator',
         };
         const routeName = typeof to.name === 'string' ? to.name : String(to.name);
         const context = routeLabels[routeName] || `Access ${routeName}`;

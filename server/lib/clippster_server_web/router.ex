@@ -1136,6 +1136,10 @@ defmodule ClippsterServerWeb.Router do
     delete("/admin/users/:user_id/moderator", AdminController, :demote_moderator)
     post("/admin/users/:user_id/mod-discount", AdminController, :enable_mod_discount)
     delete("/admin/users/:user_id/mod-discount", AdminController, :disable_mod_discount)
+    
+    # AI editor access management
+    post("/admin/users/:user_id/ai-editor", AdminController, :enable_ai_editor)
+    delete("/admin/users/:user_id/ai-editor", AdminController, :disable_ai_editor)
 
     # User restrictions
     post("/admin/users/:user_id/restrict", AdminController, :restrict_user)
