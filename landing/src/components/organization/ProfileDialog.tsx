@@ -306,6 +306,28 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
     setShowOverlayPositionPicker(false)
   }
 
+  // Clean overlay data for server - strip local-only fields
+  const cleanOverlaysForServer = (overlays: LayoutOverlay[]): LayoutOverlay[] => {
+    return overlays.map(overlay => {
+      const { imagePath, imageUrl, ...rest } = overlay as any
+      const cleaned: any = { ...rest }
+      // Strip imagePath/imageUrl from perRatioSettings too
+      if (cleaned.perRatioSettings && typeof cleaned.perRatioSettings === 'object') {
+        const cleanedPRS: any = {}
+        for (const [ratio, config] of Object.entries(cleaned.perRatioSettings)) {
+          if (config && typeof config === 'object') {
+            const { imagePath: _ip, imageUrl: _iu, ...ratioRest } = config as any
+            cleanedPRS[ratio] = ratioRest
+          } else {
+            cleanedPRS[ratio] = config
+          }
+        }
+        cleaned.perRatioSettings = cleanedPRS
+      }
+      return cleaned
+    })
+  }
+
   // Submit
   const handleSubmit = async () => {
     if (!name.trim() || !organizationId) return
@@ -323,7 +345,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
           outro_id: outroId,
           watermark_id: watermarkId,
           watermark_settings: watermarkSettings,
-          layout_overlays: layoutOverlays.length > 0 ? layoutOverlays : null,
+          layout_overlays: layoutOverlays.length > 0 ? cleanOverlaysForServer(layoutOverlays) : null,
           intro_ratio_settings: introRatioSettings,
           outro_ratio_settings: outroRatioSettings,
           scope,
@@ -362,7 +384,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
           outro_id: outroId,
           watermark_id: watermarkId,
           watermark_settings: watermarkSettings || undefined,
-          layout_overlays: layoutOverlays.length > 0 ? layoutOverlays : undefined,
+          layout_overlays: layoutOverlays.length > 0 ? cleanOverlaysForServer(layoutOverlays) : undefined,
           intro_ratio_settings: introRatioSettings || undefined,
           outro_ratio_settings: outroRatioSettings || undefined,
           scope,
@@ -844,6 +866,7 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
           overlayImageUrl={layoutOverlays[activeOverlayIndex]?.imageUrl || ''}
           overlayLabel={layoutOverlays[activeOverlayIndex]?.label}
           settings={layoutOverlays[activeOverlayIndex]?.perRatioSettings as PerRatioOverlaySettings | undefined}
+          orgAssets={assets}
           onClose={() => setShowOverlayPositionPicker(false)}
           onSave={handleOverlayPositionSave}
         />

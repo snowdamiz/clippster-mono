@@ -76,6 +76,7 @@
                     :video-time="absoluteVideoTime"
                     :is-playing="isPlaying"
                     :watermark-preview="resolvedWatermark"
+                    :overlay-previews="resolvedOverlays"
                     @update-region="updateRegion"
                     @select-region="selectRegion"
                   />
@@ -102,16 +103,21 @@
                   </span>
 
                   <!-- Progress bar -->
-                  <div class="flex-1 relative group">
-                    <div class="h-1.5 bg-zinc-700 rounded-full overflow-hidden cursor-pointer" @click="onSeekClick">
+                  <div class="flex-1 relative group cursor-pointer" ref="progressBarRef" @mousedown="onSeekStart">
+                    <div class="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
                       <div
-                        class="h-full bg-gradient-to-r from-blue-500 to-violet-500 transition-all duration-100"
+                        class="h-full bg-gradient-to-r from-blue-500 to-violet-500"
+                        :class="{ 'transition-all duration-100': !isSeeking }"
                         :style="{ width: `${(currentTime / clipDuration) * 100}%` }"
                       />
                     </div>
                     <!-- Seek handle -->
                     <div
-                      class="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                      class="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md transition-opacity pointer-events-none"
+                      :class="{ 
+                        'opacity-100': isSeeking || currentTime === 0, 
+                        'opacity-0 group-hover:opacity-100': !isSeeking && currentTime !== 0 
+                      }"
                       :style="{ left: `calc(${(currentTime / clipDuration) * 100}% - 6px)` }"
                     />
                   </div>
@@ -204,7 +210,7 @@
   import Hls from 'hls.js';
   import POISourcePanel from './POISourcePanel.vue';
   import POITargetPanel from './POITargetPanel.vue';
-  import type { ManualRegion, ManualFramingConfig, WatermarkSettings } from '@/types';
+  import type { ManualRegion, ManualFramingConfig, WatermarkSettings, LayoutOverlay } from '@/types';
   import { utf8ToBase64 } from '@/utils/encoding';
 
   interface WatermarkPreview {
@@ -213,6 +219,17 @@
     y: number;
     scale: number;
     opacity: number;
+  }
+
+  interface OverlayPreviewData {
+    id: string;
+    dataUrl: string;
+    x: number;
+    y: number;
+    scale: number;
+    opacity: number;
+    isFullFrame: boolean;
+    label?: string;
   }
 
   interface Props {
@@ -224,14 +241,21 @@
     videoPath?: string | null;
     clipStartTime?: number;
     clipEndTime?: number;
+    // Optional full video duration (for VOD pre-edit use case)
+    fullVideoDuration?: number;
     // Optional watermark preview for the target aspect ratio
     watermarkSettings?: WatermarkSettings | null;
+    // Optional layout overlays to display in target preview
+    layoutOverlays?: LayoutOverlay[];
+    // Pre-resolved overlay preview data URLs (keyed by overlay id)
+    overlayPreviewUrls?: Record<string, string>;
   }
 
   const props = withDefaults(defineProps<Props>(), {
     sourceAspectRatio: '16:9',
     clipStartTime: 0,
     clipEndTime: 0,
+    fullVideoDuration: 0,
     watermarkSettings: null,
   });
 
@@ -250,6 +274,12 @@
   const videoUrl = ref<string | null>(null);
   const videoLoading = ref(false);
   const videoError = ref<string | null>(null);
+  const isSeeking = ref(false);
+  const progressBarRef = ref<HTMLElement | null>(null);
+
+  // Store seek listeners for cleanup
+  let seekMoveListener: ((e: MouseEvent) => void) | null = null;
+  let seekUpListener: (() => void) | null = null;
 
   // HLS.js instance for proper MPEG-TS (.ts) file playback with A/V sync
   let hlsInstance: Hls | null = null;
@@ -276,6 +306,7 @@
 
   onUnmounted(() => {
     cleanupHls();
+    cleanupSeekListeners();
   });
 
   // Computed clip duration
@@ -283,7 +314,8 @@
     if (props.clipEndTime && props.clipStartTime) {
       return props.clipEndTime - props.clipStartTime;
     }
-    return 0;
+    // Fallback to full video duration for VOD pre-edit use case
+    return props.fullVideoDuration || 0;
   });
 
   // Format time as MM:SS
@@ -360,12 +392,95 @@
     };
   });
 
-  // Handle seek bar click
-  function onSeekClick(event: MouseEvent) {
-    const target = event.currentTarget as HTMLElement;
-    const rect = target.getBoundingClientRect();
-    const position = (event.clientX - rect.left) / rect.width;
-    currentTime.value = Math.max(0, Math.min(clipDuration.value, position * clipDuration.value));
+  // Resolve overlay data for the target aspect ratio
+  const resolvedOverlays = computed((): OverlayPreviewData[] => {
+    if (!props.layoutOverlays?.length) {
+      console.log('[ManualPOIEditor] resolvedOverlays: no layoutOverlays');
+      return [];
+    }
+
+    const ratioKey = props.targetAspectRatio as '16:9' | '9:16' | '1:1' | '4:5';
+    const urlKeys = props.overlayPreviewUrls ? Object.keys(props.overlayPreviewUrls) : [];
+    console.log('[ManualPOIEditor] resolvedOverlays evaluating:', {
+      overlayCount: props.layoutOverlays.length,
+      overlayIds: props.layoutOverlays.map(o => o.id),
+      previewUrlKeys: urlKeys,
+      previewUrlLengths: urlKeys.map(k => props.overlayPreviewUrls?.[k]?.length || 0),
+      ratioKey,
+    });
+
+    return props.layoutOverlays
+      .map((overlay) => {
+        const dataUrl = props.overlayPreviewUrls?.[overlay.id];
+        if (!dataUrl) {
+          console.log('[ManualPOIEditor] No dataUrl for overlay:', overlay.id);
+          return null;
+        }
+        console.log('[ManualPOIEditor] Found dataUrl for overlay:', overlay.id, 'length:', dataUrl.length);
+
+        // Check per-ratio settings first
+        const perRatio = overlay.perRatioSettings?.[ratioKey];
+        const settings = perRatio || overlay;
+
+        return {
+          id: overlay.id,
+          dataUrl,
+          x: settings.x ?? 50,
+          y: settings.y ?? 50,
+          scale: (perRatio as any)?.scale ?? 100,
+          opacity: settings.opacity ?? 100,
+          isFullFrame: (settings as any).isFullFrameOverlay ?? false,
+          label: overlay.label,
+        } as OverlayPreviewData;
+      })
+      .filter((o): o is OverlayPreviewData => o !== null);
+  });
+
+  // Clean up any existing seek listeners
+  function cleanupSeekListeners() {
+    if (seekMoveListener) {
+      window.removeEventListener('mousemove', seekMoveListener);
+      seekMoveListener = null;
+    }
+    if (seekUpListener) {
+      window.removeEventListener('mouseup', seekUpListener);
+      seekUpListener = null;
+    }
+  }
+
+  // Handle seek drag start
+  function onSeekStart(event: MouseEvent) {
+    if (!progressBarRef.value) return;
+    event.preventDefault();
+    
+    // Clean up any existing listeners first
+    cleanupSeekListeners();
+    
+    const wasPlaying = isPlaying.value;
+    isPlaying.value = false; // Pause during seek
+    isSeeking.value = true;
+
+    seekMoveListener = (e: MouseEvent) => {
+      if (!progressBarRef.value) return;
+      const rect = progressBarRef.value.getBoundingClientRect();
+      const position = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      currentTime.value = position * clipDuration.value;
+    };
+
+    seekUpListener = () => {
+      isSeeking.value = false;
+      if (wasPlaying) {
+        isPlaying.value = true; // Resume if it was playing
+      }
+      cleanupSeekListeners();
+    };
+
+    // Initial seek position
+    seekMoveListener(event);
+
+    // Add listeners to window for better drag tracking
+    window.addEventListener('mousemove', seekMoveListener);
+    window.addEventListener('mouseup', seekUpListener);
   }
 
   // Initialize from initial config when dialog opens

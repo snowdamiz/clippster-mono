@@ -14,15 +14,6 @@ pub struct AuthResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PaymentResult {
-    pub signature: String,
-    pub pack_key: String,
-    pub auth_token: String,
-    pub from_address: String,
-    pub pack_hours: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GoogleAuthUser {
     pub id: i64,
     pub email: Option<String>,
@@ -72,41 +63,6 @@ pub struct GoogleAuthResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StripePaymentResult {
-    pub success: bool,
-    pub session_id: String,
-    pub pack_key: String,
-    pub pack_hours: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmailAuthUser {
-    pub id: i64,
-    pub email: Option<String>,
-    pub name: Option<String>,
-    pub is_admin: bool,
-    pub account_type: Option<String>,
-    pub owned_organization_id: Option<i64>,
-    pub created_by_organization_id: Option<i64>,
-    #[serde(default)]
-    pub ai_allowed: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmailVerificationResult {
-    pub success: bool,
-    #[serde(default)]
-    pub token: Option<String>,
-    #[serde(default)]
-    pub provider: Option<String>,
-    #[serde(default)]
-    pub user: Option<EmailAuthUser>,
-    #[serde(default)]
-    pub error: Option<String>,
-}
-
-/// Instagram OAuth result from the backend
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InstagramAuthResult {
     pub success: bool,
     #[serde(default)]
@@ -129,7 +85,6 @@ pub struct InstagramAccount {
     pub connected_at: String,
 }
 
-/// Twitter OAuth result from the backend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TwitterAuthResult {
     pub success: bool,
