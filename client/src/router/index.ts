@@ -558,6 +558,12 @@ export function getDefaultRoute(
 
 // Navigation guard for authentication, admin access, and feature flags
 router.beforeEach(async (to, _from, next) => {
+  console.log('[Router] beforeEach triggered:', {
+    to: to.path,
+    from: _from.path,
+    isAuthenticated: useAuthStore().isAuthenticated,
+  });
+  
   const authStore = useAuthStore();
   const ownedOrganizationId = authStore.user?.owned_organization_id;
 
@@ -661,6 +667,7 @@ router.beforeEach(async (to, _from, next) => {
     return;
   }
 
+  console.log('[Router] Navigation allowed to:', to.path);
   next();
 });
 
