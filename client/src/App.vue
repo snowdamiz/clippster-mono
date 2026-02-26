@@ -418,13 +418,25 @@
     // Wait for router to be ready before hiding loading screen
     // This ensures the route is fully resolved and the component will mount
     console.log('[App] Waiting for router to be ready...');
-    await router.isReady();
-    console.log('[App] Router ready, current route:', router.currentRoute.value.path);
-    console.log('[App] Router current route details:', {
-      path: router.currentRoute.value.path,
-      name: router.currentRoute.value.name,
-      matched: router.currentRoute.value.matched.length,
-    });
+    
+    // Add timeout to prevent infinite loading if router hangs
+    const routerReadyPromise = router.isReady();
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Router initialization timeout')), 10000)
+    );
+    
+    try {
+      await Promise.race([routerReadyPromise, timeoutPromise]);
+      console.log('[App] Router ready, current route:', router.currentRoute.value.path);
+      console.log('[App] Router current route details:', {
+        path: router.currentRoute.value.path,
+        name: router.currentRoute.value.name,
+        matched: router.currentRoute.value.matched.length,
+      });
+    } catch (error) {
+      console.error('[App] Router initialization failed or timed out:', error);
+      console.log('[App] Proceeding anyway to show app...');
+    }
 
     // Hide loading screen - app is usable now
     console.log('[App] Hiding loading screen, showing main app');

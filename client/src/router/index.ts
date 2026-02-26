@@ -631,11 +631,17 @@ router.beforeEach(async (to, _from, next) => {
     if (orgId && !isBillingPage) {
       // Check subscription status from cached org data or fetch
       try {
-        const { data } = await import('@/services/api').then((m) =>
+        // Add timeout to prevent router hang if API call stalls
+        const apiPromise = import('@/services/api').then((m) =>
           m.default.get(`/organizations/${orgId}/subscription`)
         );
-        if (data.success && data.subscription) {
-          const status = data.subscription.status;
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Subscription check timeout')), 5000)
+        );
+        
+        const response = await Promise.race([apiPromise, timeoutPromise]) as any;
+        if (response?.data?.success && response.data.subscription) {
+          const status = response.data.subscription.status;
           if (status === 'none' || status === 'expired') {
             next({
               path: `/organization/${orgId}/billing`,
@@ -644,8 +650,9 @@ router.beforeEach(async (to, _from, next) => {
             return;
           }
         }
-      } catch {
+      } catch (error) {
         // If we can't check, allow through (don't block on network errors)
+        console.warn('[Router] Org subscription check failed:', error);
       }
     }
   }
