@@ -101,6 +101,23 @@ export function OrgBilling() {
     loadOrganization()
   }, [loadOrganization])
 
+  // Auto-refresh after Stripe checkout success
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const sessionId = params.get('session_id')
+    
+    if (sessionId) {
+      // Remove session_id from URL without reload
+      const url = new URL(window.location.href)
+      url.searchParams.delete('session_id')
+      window.history.replaceState({}, '', url.toString())
+      
+      // Refresh organization data to show updated subscription/credits
+      loadOrganization()
+      toast.success('Payment successful! Your account has been updated.')
+    }
+  }, [])
+
   useEffect(() => {
     if (organizationId) {
       api

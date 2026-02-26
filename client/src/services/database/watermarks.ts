@@ -189,21 +189,29 @@ export async function resolveLayoutOverlaysForBuild(
  */
 export async function resolveOverlayImagePath(
   imagePath: string | null | undefined,
-  assetId: string | null | undefined,
+  assetId: string | number | null | undefined,
 ): Promise<string | null> {
-  // If imagePath is a valid local path, use it directly
-  if (imagePath && imagePath.length > 0) {
+  // If imagePath is a valid local file path (not a URL), use it directly
+  if (imagePath && imagePath.length > 0 && !imagePath.startsWith('http://') && !imagePath.startsWith('https://') && !imagePath.startsWith('blob:')) {
     return imagePath;
   }
 
-  // If we have an org-asset- prefixed ID, resolve via the org asset system (like watermarks)
-  if (assetId && typeof assetId === 'string' && assetId.startsWith('org-asset-')) {
-    const serverId = parseInt(assetId.replace('org-asset-', ''), 10);
-    if (isNaN(serverId)) return null;
+  // Normalize assetId to string for org-asset- prefix check
+  const assetIdStr = assetId != null ? String(assetId) : null;
 
+  // If we have an org-asset- prefixed ID, resolve via the org asset system (like watermarks)
+  // Also handle raw numeric IDs by prefixing them
+  let orgServerId: number | null = null;
+  if (assetIdStr && assetIdStr.startsWith('org-asset-')) {
+    orgServerId = parseInt(assetIdStr.replace('org-asset-', ''), 10);
+  } else if (assetIdStr && /^\d+$/.test(assetIdStr)) {
+    orgServerId = parseInt(assetIdStr, 10);
+  }
+
+  if (orgServerId != null && !isNaN(orgServerId)) {
     try {
       // Check local cache first
-      const localAsset = await getImageAssetByServerId(serverId);
+      const localAsset = await getImageAssetByServerId(orgServerId);
       if (localAsset) {
         return localAsset.file_path;
       }
@@ -212,7 +220,7 @@ export async function resolveOverlayImagePath(
       const serverResponse = await getUserOrganizationAssets();
       if (serverResponse.success && serverResponse.assets) {
         const serverAsset = serverResponse.assets.find(
-          (a) => a.id === serverId && (a.asset_type === 'overlay' || a.asset_type === 'image')
+          (a) => a.id === orgServerId && (a.asset_type === 'overlay' || a.asset_type === 'image')
         );
         if (serverAsset && serverAsset.url) {
           const downloadResult = await ensureAssetDownloaded(serverAsset);

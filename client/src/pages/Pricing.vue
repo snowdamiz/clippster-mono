@@ -543,6 +543,7 @@
 
       const response = await api.post('/payments/stripe/create-session', {
         pack_type: selectedPack.value.key,
+        return_context: 'desktop',
       });
 
       if (!response.data.success) {

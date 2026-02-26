@@ -226,21 +226,19 @@
                       <!-- Mode Toggle -->
                       <div class="build-dialog__framing-grid">
                         <button
-                          @click="framingMode = 'auto'"
-                          class="build-dialog__framing-mode"
-                          :class="{ 'build-dialog__framing-mode--active': framingMode === 'auto' }"
+                          disabled
+                          class="build-dialog__framing-mode build-dialog__framing-mode--disabled"
                         >
                           <div class="build-dialog__framing-mode-header">
                             <div
                               class="build-dialog__framing-mode-icon"
-                              :class="{ 'build-dialog__framing-mode-icon--active': framingMode === 'auto' }"
                             >
                               <SparklesIcon class="build-dialog__framing-icon" />
                             </div>
                             <span class="build-dialog__framing-mode-label">Auto</span>
                           </div>
                           <p class="build-dialog__framing-mode-desc">
-                            AI automatically detects speakers and content regions
+                            Coming soon - Use manual configuration
                           </p>
                         </button>
 
@@ -731,6 +729,8 @@
       :clip-start-time="clipStartTime"
       :clip-end-time="clipEndTime"
       :watermark-settings="watermarkSettings"
+      :layout-overlays="vodPresetConfig?.layoutOverlays"
+      :overlay-preview-urls="overlayPreviewUrls"
       @confirm="onManualConfigConfirm"
     />
 
@@ -771,6 +771,7 @@
   import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
   import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
+  import { resolveOverlayImagePath } from '@/services/database/watermarks';
   import { useAuthStore } from '@/stores/auth';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
@@ -864,14 +865,17 @@
   const showIntroDropdown = ref(false);
   const showOutroDropdown = ref(false);
 
-  // Framing mode state
-  const framingMode = ref<'auto' | 'manual'>('auto');
+  // Framing mode state (forced to manual since auto is not implemented)
+  const framingMode = ref<'auto' | 'manual'>('manual');
   const manualFramingConfigs = ref<import('@/types').ManualFramingConfigs>({});
   const showManualPOIEditor = ref(false);
   const editingAspectRatio = ref<string>('9:16');
   const videoFrameUrl = ref<string | null>(null);
   const loadingVideoFrame = ref(false);
   const videoPath = ref<string | null>(null);
+
+  // Overlay preview state for ManualPOIEditor
+  const overlayPreviewUrls = ref<Record<string, string>>({});
 
   // Subtitle override state - stores per-ratio customizations
   const subtitleOverrides = ref<SubtitleOverrides>({});
@@ -1052,7 +1056,7 @@
           framingMode.value = 'manual';
           console.log('[ClipBuildSettingsDialog] Initialized framing mode from VOD preset: manual');
         } else {
-          framingMode.value = 'auto';
+          framingMode.value = 'manual';
         }
 
         if (props.initialFramingConfigs && Object.keys(props.initialFramingConfigs).length > 0) {
@@ -1098,6 +1102,26 @@
             console.log('[ClipBuildSettingsDialog] Pre-selected creator default outro:', selectedOutro.value?.name);
           }
         }
+
+        // Load overlay previews for POI editor
+        const loadedPreviews: Record<string, string> = {};
+        if (props.vodPresetConfig?.layoutOverlays?.length) {
+          const { invoke } = await import('@tauri-apps/api/core');
+          for (const overlay of props.vodPresetConfig.layoutOverlays) {
+            try {
+              // Resolve the overlay image path (handles both local files and org-asset- prefixed IDs)
+              const resolvedPath = await resolveOverlayImagePath(overlay.imagePath, overlay.assetId);
+              if (resolvedPath) {
+                const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: resolvedPath });
+                loadedPreviews[overlay.id] = dataUrl;
+              }
+            } catch (err) {
+              console.warn('[ClipBuildSettingsDialog] Failed to load overlay preview:', overlay.id, err);
+            }
+          }
+        }
+        // Replace the entire ref to trigger prop reactivity in ManualPOIEditor
+        overlayPreviewUrls.value = loadedPreviews;
 
         // Load video frame for POI editor preview
         await loadVideoFrame();
@@ -1966,6 +1990,12 @@
   .build-dialog__framing-mode--active {
     border-color: var(--sidebar-accent);
     background-color: rgba(6, 182, 212, 0.1);
+  }
+
+  .build-dialog__framing-mode--disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
   }
 
   .build-dialog__framing-mode-header {

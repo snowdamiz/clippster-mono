@@ -117,6 +117,13 @@
         </div>
         <div class="admin-waitlist__header-actions">
           <button 
+            class="admin-waitlist__add-user-btn" 
+            @click="showAddUserDialog = true"
+          >
+            <UserPlus class="admin-waitlist__add-user-icon" />
+            Add User
+          </button>
+          <button 
             v-if="waitlistStats.uninvited > 0" 
             class="admin-waitlist__invite-all-btn" 
             @click="showBulkConfirm = true"
@@ -132,6 +139,27 @@
           <span class="admin-waitlist__count">
             {{ waitlistEntries.length }} email{{ waitlistEntries.length !== 1 ? 's' : '' }}
           </span>
+        </div>
+      </div>
+
+      <!-- Add User Dialog -->
+      <div v-if="showAddUserDialog" class="admin-waitlist__confirm-overlay" @click="showAddUserDialog = false">
+        <div class="admin-waitlist__confirm-dialog" @click.stop>
+          <h3>Add User to Waitlist</h3>
+          <p>Enter the email address to add to the waitlist</p>
+          <div class="admin-waitlist__add-user-form">
+            <input 
+              v-model="newUserEmail" 
+              type="email" 
+              placeholder="user@example.com"
+              class="admin-waitlist__add-user-input"
+              @keyup.enter="addUserToWaitlist"
+            />
+          </div>
+          <div class="admin-waitlist__confirm-actions">
+            <button @click="showAddUserDialog = false" class="admin-waitlist__confirm-cancel">Cancel</button>
+            <button @click="addUserToWaitlist" class="admin-waitlist__confirm-submit" :disabled="!newUserEmail || adding">Add User</button>
+          </div>
         </div>
       </div>
 
@@ -275,8 +303,11 @@
   const loading = ref(false);
   const error = ref<string | null>(null);
   const inviting = ref(false);
+  const adding = ref(false);
   const showInviteConfig = ref(false);
   const showBulkConfirm = ref(false);
+  const showAddUserDialog = ref(false);
+  const newUserEmail = ref('');
   const inviteConfig = ref({
     percent_off: 30,
     duration_months: 1,
@@ -355,6 +386,27 @@
       error.value = err instanceof Error ? err.message : 'Unknown error occurred';
     } finally {
       inviting.value = false;
+    }
+  };
+
+  const addUserToWaitlist = async () => {
+    if (!newUserEmail.value) return;
+    
+    adding.value = true;
+    error.value = null;
+    try {
+      const response = await api.post('/admin/waitlist', { email: newUserEmail.value });
+      if (response.data.success) {
+        showAddUserDialog.value = false;
+        newUserEmail.value = '';
+        await fetchWaitlist();
+      } else {
+        error.value = response.data.error || 'Failed to add user to waitlist';
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      adding.value = false;
     }
   };
 
@@ -1054,5 +1106,56 @@
     width: 12px;
     height: 12px;
     margin-right: 0.375rem;
+  }
+
+  /* Add User Button */
+  .admin-waitlist__add-user-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .admin-waitlist__add-user-btn:hover {
+    opacity: 0.9;
+  }
+
+  .admin-waitlist__add-user-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Add User Form */
+  .admin-waitlist__add-user-form {
+    margin-bottom: 1rem;
+  }
+
+  .admin-waitlist__add-user-input {
+    width: 100%;
+    padding: 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    font-size: 0.875rem;
+    transition: all 150ms ease;
+  }
+
+  .admin-waitlist__add-user-input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    background-color: rgba(39, 39, 42, 0.8);
+  }
+
+  .admin-waitlist__add-user-input::placeholder {
+    color: var(--sidebar-text-muted);
   }
 </style>

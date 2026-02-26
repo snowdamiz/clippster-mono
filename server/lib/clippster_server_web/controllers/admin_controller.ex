@@ -1460,6 +1460,58 @@ defmodule ClippsterServerWeb.AdminController do
     end
   end
 
+  @doc """
+  Enables AI editor access for a user.
+  """
+  def enable_ai_editor(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.enable_ai_editor(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "AI editor access enabled",
+              user: %{id: user.id, ai_editor_enabled: user.ai_editor_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Disables AI editor access for a user.
+  """
+  def disable_ai_editor(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.disable_ai_editor(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "AI editor access disabled",
+              user: %{id: user.id, ai_editor_enabled: user.ai_editor_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
   # ============================================
   # User Restrictions
   # ============================================
@@ -1956,6 +2008,32 @@ defmodule ClippsterServerWeb.AdminController do
   # ============================================================================
 
   @doc """
+  Manually adds a user to the waitlist (admin only).
+  """
+  def add_to_waitlist(conn, %{"email" => email}) do
+    case ClippsterServer.Waitlist.admin_create_entry(%{email: email}) do
+      {:ok, entry} ->
+        json(conn, %{
+          success: true,
+          entry: %{
+            id: entry.id,
+            email: entry.email,
+            inserted_at: entry.inserted_at
+          }
+        })
+
+      {:error, changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{
+          success: false,
+          error: "Failed to add user to waitlist",
+          details: format_changeset_errors(changeset)
+        })
+    end
+  end
+
+  @doc """
   Invites all uninvited waitlist entries.
   """
   def invite_waitlist(conn, params) do
@@ -2027,6 +2105,106 @@ defmodule ClippsterServerWeb.AdminController do
         |> put_status(:bad_request)
         |> json(%{success: false, error: "Invalid entry ID"})
     end
+  end
+
+  @doc """
+  Diagnostic endpoint to check org membership state.
+  GET /admin/diagnostic/org-membership?org_id=2&email=noah@yeet.com
+  """
+  def diagnose_org_membership(conn, params) do
+    alias ClippsterServer.Repo
+    alias ClippsterServer.Organizations.{Organization, OrganizationMember}
+    import Ecto.Query
+
+    org_id = params["org_id"]
+    email = params["email"]
+
+    result = %{}
+
+    # 1. Check if org exists
+    org = if org_id, do: Repo.get(Organization, org_id), else: nil
+    result = Map.put(result, :org_exists, org != nil)
+    result = if org do
+      Map.merge(result, %{
+        org_name: org.name,
+        org_owner_id: org.owner_id,
+        org_subscription_status: org.subscription_status,
+        org_setup_completed: org.setup_completed
+      })
+    else
+      result
+    end
+
+    # 2. Check if user exists
+    user = if email, do: Accounts.get_user_by_email(email), else: nil
+    result = Map.put(result, :user_exists, user != nil)
+    result = if user do
+      Map.merge(result, %{
+        user_id: user.id,
+        user_email: user.email,
+        user_account_type: user.account_type,
+        user_owned_organization_id: user.owned_organization_id,
+        user_created_by_organization_id: user.created_by_organization_id,
+        user_email_verified_at: user.email_verified_at
+      })
+    else
+      result
+    end
+
+    # 3. Check membership directly via raw SQL
+    result = if org && user do
+      members = OrganizationMember
+        |> where([m], m.organization_id == ^org.id)
+        |> Repo.all()
+        |> Enum.map(fn m -> %{id: m.id, user_id: m.user_id, role: m.role, org_id: m.organization_id} end)
+
+      specific_member = OrganizationMember
+        |> where([m], m.organization_id == ^org.id and m.user_id == ^user.id)
+        |> Repo.one()
+
+      Map.merge(result, %{
+        all_members_for_org: members,
+        specific_member_found: specific_member != nil,
+        specific_member: if(specific_member, do: %{id: specific_member.id, role: specific_member.role, user_id: specific_member.user_id}, else: nil),
+        owner_id_matches_user_id: org.owner_id == user.id
+      })
+    else
+      result
+    end
+
+    # 4. Try the backfill
+    result = if org && user && org.owner_id == user.id do
+      IO.puts("[DIAGNOSTIC] Attempting backfill for org=#{org.id}, user=#{user.id}")
+      backfill_result = try do
+        %OrganizationMember{}
+        |> OrganizationMember.create_changeset(%{
+          organization_id: org.id,
+          user_id: user.id,
+          role: "owner"
+        })
+        |> Repo.insert(
+          on_conflict: [set: [role: "owner"]],
+          conflict_target: [:organization_id, :user_id]
+        )
+      rescue
+        e -> {:error, Exception.message(e)}
+      end
+
+      case backfill_result do
+        {:ok, member} ->
+          Map.put(result, :backfill_result, %{success: true, member_id: member.id, role: member.role})
+        {:error, %Ecto.Changeset{} = cs} ->
+          Map.put(result, :backfill_result, %{success: false, errors: inspect(cs.errors), valid: cs.valid?})
+        {:error, msg} when is_binary(msg) ->
+          Map.put(result, :backfill_result, %{success: false, error: msg})
+        other ->
+          Map.put(result, :backfill_result, %{success: false, error: inspect(other)})
+      end
+    else
+      Map.put(result, :backfill_result, "skipped - not owner or missing data")
+    end
+
+    json(conn, %{success: true, diagnostic: result})
   end
 
   defp format_invite_errors(errors) do

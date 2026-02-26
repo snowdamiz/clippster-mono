@@ -771,17 +771,18 @@ pub async fn download_pumpfun_vod_segment(
         // Get video dimensions, codec info, and actual duration from file
         println!("[Rust] Getting detailed segment video info...");
         let video_info = get_video_info(&app_clone, &video_path).await.ok();
-        let (width, height, codec, actual_duration) = if let Some(ref info) = video_info {
-            println!("[Rust] Segment video info - width: {}, height: {}, codec: {}, duration: {:?}", info.width, info.height, info.codec, info.duration);
+        let (width, height, codec, probed_duration) = if let Some(ref info) = video_info {
+            println!("[Rust] Segment video info - width: {}, height: {}, codec: {}, probed duration: {:?}", info.width, info.height, info.codec, info.duration);
             (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
         } else {
             println!("[Rust] Could not get detailed segment video info");
             (None, None, None, None)
         };
 
-        // Use actual duration from file if available, otherwise fall back to calculated segment duration
-        let final_duration = actual_duration.unwrap_or(segment_duration);
-        println!("[Rust] Final segment duration: {} (actual: {:?}, calculated: {})", final_duration, actual_duration, segment_duration);
+        // For segment downloads, always use the calculated segment_duration (end_time - start_time)
+        // The FFmpeg probe often returns the original VOD duration instead of the actual segment duration
+        let final_duration = segment_duration;
+        println!("[Rust] Final segment duration: {} (probed: {:?}, using calculated: {})", final_duration, probed_duration, segment_duration);
 
         println!("[Rust] Segment download task completed successfully");
         Ok(DownloadResult {
@@ -1528,17 +1529,18 @@ pub async fn download_kick_vod_segment(
         // Get video dimensions, codec info, and actual duration from file
         println!("[Rust] Getting detailed segment video info...");
         let video_info = get_video_info(&app_clone, &video_path).await.ok();
-        let (width, height, codec, actual_duration) = if let Some(ref info) = video_info {
-            println!("[Rust] Segment video info - width: {}, height: {}, codec: {}, duration: {:?}", info.width, info.height, info.codec, info.duration);
+        let (width, height, codec, probed_duration) = if let Some(ref info) = video_info {
+            println!("[Rust] Segment video info - width: {}, height: {}, codec: {}, probed duration: {:?}", info.width, info.height, info.codec, info.duration);
             (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
         } else {
             println!("[Rust] Could not get detailed segment video info");
             (None, None, None, None)
         };
 
-        // Use actual duration from file if available, otherwise fall back to calculated segment duration
-        let final_duration = actual_duration.unwrap_or(segment_duration);
-        println!("[Rust] Final segment duration: {} (actual: {:?}, calculated: {})", final_duration, actual_duration, segment_duration);
+        // For segment downloads, always use the calculated segment_duration (end_time - start_time)
+        // The FFmpeg probe often returns the original VOD duration instead of the actual segment duration
+        let final_duration = segment_duration;
+        println!("[Rust] Final segment duration: {} (probed: {:?}, using calculated: {})", final_duration, probed_duration, segment_duration);
 
         println!("[Rust] Segment download task completed successfully");
         Ok(DownloadResult {

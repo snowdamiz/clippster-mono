@@ -1,7 +1,7 @@
 <template>
   <div class="streamvods">
     <PageLayout
-      title="Stream VODs"
+      title="Search VODs"
       description="Download VODs from your favorite streaming platforms"
       :show-header="true"
       :icon="Video"

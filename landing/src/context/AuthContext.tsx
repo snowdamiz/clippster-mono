@@ -1,7 +1,6 @@
 import { createContext, useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { AuthUser, AuthContextType, AuthResult } from '@/types/auth'
-
-const API_BASE = import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'
+import { API_BASE } from '@/lib/apiBase'
 
 export const AuthContext = createContext<AuthContextType | null>(null)
 
@@ -36,7 +35,7 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<any> {
     headers['Content-Type'] = 'application/json'
   }
 
-  const response = await fetch(`${API_BASE}/api${path}`, { ...options, headers })
+  const response = await fetch(`${API_BASE}${path}`, { ...options, headers })
   return response.json()
 }
 
@@ -222,7 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true)
     setError(null)
     const origin = encodeURIComponent(window.location.origin)
-    window.location.href = `${API_BASE}/api/auth/google?web=true&origin=${origin}`
+    window.location.href = `${API_BASE}/auth/google?web=true&origin=${origin}`
     // Page navigates away — return a pending promise (never resolves)
     return new Promise<AuthResult>(() => {})
   }, [])
@@ -484,7 +483,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const getInvitationDetails = useCallback(async (inviteToken: string) => {
     try {
-      const response = await fetch(`${API_BASE}/api/invitations/${inviteToken}`)
+      const response = await fetch(`${API_BASE}/invitations/${inviteToken}`)
       const data = await response.json()
       return data.success ? data : { success: false, error: data.error }
     } catch (err: any) {

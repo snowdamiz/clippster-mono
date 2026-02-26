@@ -659,7 +659,13 @@ export function useLivestreamViewer() {
         console.log('[LiveViewer] Found existing Kick persistent session (5-min segments):', existingPersistentSession.sessionId);
         console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
         
+        // Generate unique session ID, ensuring it doesn't conflict with existing session
         sessionId = `kick-view-${channelSlug}-${Date.now()}`;
+        if (sessionId === existingPersistentSession.sessionId) {
+          // Extremely rare edge case: add random suffix to ensure uniqueness
+          sessionId = `${sessionId}-${Math.random().toString(36).substring(2, 9)}`;
+          console.log('[LiveViewer] Session ID collision detected, using unique ID:', sessionId);
+        }
         state.value.tempSessionId = sessionId;
         state.value.isTempRecording = true;
         
@@ -837,7 +843,13 @@ export function useLivestreamViewer() {
         console.log('[LiveViewer] Found existing Twitch persistent session (5-min segments):', existingPersistentSession.sessionId);
         console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
         
+        // Generate unique session ID, ensuring it doesn't conflict with existing session
         sessionId = `twitch-view-${channelName}-${Date.now()}`;
+        if (sessionId === existingPersistentSession.sessionId) {
+          // Extremely rare edge case: add random suffix to ensure uniqueness
+          sessionId = `${sessionId}-${Math.random().toString(36).substring(2, 9)}`;
+          console.log('[LiveViewer] Session ID collision detected, using unique ID:', sessionId);
+        }
         state.value.tempSessionId = sessionId;
         state.value.isTempRecording = true;
         

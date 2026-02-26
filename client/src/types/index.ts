@@ -1839,6 +1839,8 @@ export interface OverlayRatioPosition {
   rotation: number;            // degrees
   scale: number;               // 0-100 percentage scale (like watermark)
   isFullFrameOverlay?: boolean; // When true, position at 0,0 with 100% scale
+  imagePath?: string;          // Per-ratio overlay image path (overrides parent imagePath)
+  assetId?: number | null;     // Per-ratio overlay asset ID (overrides parent assetId)
 }
 
 // Per-aspect-ratio overlay configuration (null = disabled for that ratio)

@@ -1,6 +1,6 @@
 <script setup lang="ts">
   import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
-  import { useRoute } from 'vue-router';
+  import { useRoute, useRouter } from 'vue-router';
   import Toast from '@/components/Toast.vue';
   import AppCloseDialog from '@/components/AppCloseDialog.vue';
   import TitleBar from '@/components/TitleBar.vue';
@@ -13,7 +13,14 @@
   import BrandingProfileSelector from '@/components/BrandingProfileSelector.vue';
   import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
-  import { initDatabase, seedDefaultPrompt, seedGamingPrompt, seedGamblingPrompt, seedBreakingNewsPrompt, ensureOrganizationAssetColumns } from '@/services/database';
+  import {
+    initDatabase,
+    seedDefaultPrompt,
+    seedGamingPrompt,
+    seedGamblingPrompt,
+    seedBreakingNewsPrompt,
+    ensureOrganizationAssetColumns,
+  } from '@/services/database';
   import { healSchema } from '@/services/database/schema-healing';
   import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
@@ -38,7 +45,7 @@
   const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
   const { state: updateState, checkForUpdates } = useAppUpdater();
   const { success } = useToast();
-  
+
   // Track user activity to update last_active_at
   // Will be initialized after authentication check completes
   const { startTracking } = useActivityTracker();
@@ -52,6 +59,7 @@
   const isLoading = ref(true);
   const titleBarPlatformOverride = ref('auto');
   const showAuthModal = ref(false);
+  const router = useRouter();
 
   // Check if this is the PIP window (no title bar needed)
   const isPipWindow = computed(() => window.location.pathname === '/pip-controls');
@@ -59,6 +67,58 @@
   // Check if this is the full-screen editor page (no scroll, minimal chrome)
   const currentRoute = useRoute();
   const isEditorPage = computed(() => currentRoute.path === '/editor');
+
+  // Authentication Gate: Block all app interaction until user authenticates
+  const requiresAuthGate = computed(() => {
+    return !authStore.isAuthenticated && !isPipWindow.value;
+  });
+
+  // Subscription Gate: Force plan selection for authenticated users
+  const requiresSubscriptionGate = computed(() => {
+    if (!authStore.isAuthenticated) return false;
+    if (isPipWindow.value) return false;
+    if (authStore.user?.is_admin) return false;
+    if (authStore.user?.account_type === 'organization' || authStore.user?.owned_organization_id) return false;
+    if (authStore.user?.created_by_organization_id) return false;
+    if (currentRoute.path === '/billing') return false;
+
+    const subscriptionStatus = (authStore.user as any)?.subscription?.status;
+    const hasSelectedPlan = localStorage.getItem('has_selected_plan');
+
+    console.log('[App] Subscription gate check:', {
+      subscriptionStatus,
+      hasSelectedPlan,
+      userSubscription: (authStore.user as any)?.subscription,
+    });
+
+    // Users with active or cancelled subscriptions always bypass the gate
+    if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
+      // Also set the flag so future checks are faster
+      if (!hasSelectedPlan) {
+        localStorage.setItem('has_selected_plan', 'true');
+      }
+      return false;
+    }
+
+    // Show gate only if:
+    // 1. No plan has been selected AND
+    // 2. Subscription is either expired or doesn't exist (none/undefined)
+    if (!hasSelectedPlan) {
+      console.log('[App] No plan selected, showing subscription gate');
+      return true;
+    }
+
+    // If plan was selected but subscription is now expired, show gate again
+    if (subscriptionStatus === 'expired') {
+      console.log('[App] Subscription expired, showing subscription gate');
+      return true;
+    }
+
+    return false;
+  });
+
+  // Sidebar should be disabled when subscription gate is active
+  const sidebarDisabled = computed(() => requiresSubscriptionGate.value);
 
   // Show beta activation dialog when:
   // - User is authenticated
@@ -96,8 +156,9 @@
     );
   }
 
-  // Handle streamer went live event
+  // Handle streamer went live event (skip toast on Live page — status already visible)
   const handleStreamerWentLive = (event: CustomEvent) => {
+    if (currentRoute.path.startsWith('/live-clip')) return;
     const { displayName } = event.detail;
     success(`${displayName} is now live!`, undefined, 7000, 'livestream');
   };
@@ -113,6 +174,29 @@
   // Key for router-view to force re-render on auth changes
   const routerKey = ref(0);
 
+  // Watch for subscription gate and redirect to billing
+  // Also watch authStore.user to re-evaluate when user data loads
+  watch(
+    [requiresSubscriptionGate, () => authStore.user],
+    ([needsGate]) => {
+      if (needsGate && currentRoute.path !== '/billing') {
+        console.log('[App] Subscription gate active, redirecting to billing');
+        router.push('/billing?subscription_required=true');
+      }
+    },
+    { immediate: true }
+  );
+
+  // Clear plan selection flag on logout
+  watch(
+    () => authStore.isAuthenticated,
+    (isAuth) => {
+      if (!isAuth) {
+        localStorage.removeItem('has_selected_plan');
+      }
+    }
+  );
+
   // Auth event listener function
   const handleAuthRequired = () => {
     console.log('[App] Auth required, showing auth modal');
@@ -122,7 +206,7 @@
   // Handle auth state changes (login/logout) by refreshing the router view
   const handleAuthStateChanged = async (event: CustomEvent) => {
     console.log('[App] Auth state changed, refreshing data. User ID:', event.detail?.userId);
-    
+
     if (event.detail?.userId && authStore.isAuthenticated) {
       console.log('[App] User logged in, starting activity tracker');
       startTracking();
@@ -133,8 +217,10 @@
     } else if (!event.detail?.userId) {
       // User logged out — clear announcement queue and leave channel
       unsubscribe();
+      // Clear plan selection flag
+      localStorage.removeItem('has_selected_plan');
     }
-    
+
     // Increment key to force Vue to re-mount all route components
     routerKey.value++;
   };
@@ -159,14 +245,14 @@
     if (resizeTimeout !== null) {
       clearTimeout(resizeTimeout);
     }
-    
+
     resizeTimeout = window.setTimeout(async () => {
       try {
         const appWindow = getCurrentWindow();
         const size = await appWindow.innerSize();
-        await invoke('save_window_size', { 
-          width: size.width, 
-          height: size.height 
+        await invoke('save_window_size', {
+          width: size.width,
+          height: size.height,
         });
       } catch (error) {
         console.error('[App] Failed to save window size:', error);
@@ -203,7 +289,7 @@
     // Set up window resize listener to save size
     const appWindow = getCurrentWindow();
     const unlistenResize = await appWindow.onResized(handleWindowResize);
-    
+
     // Store unlisten function for cleanup
     (window as any).__unlistenWindowResize = unlistenResize;
 
@@ -270,9 +356,9 @@
           startTracking();
           // Load preferences from local cache immediately (server sync happens via event)
           if (authStore.user?.id) {
-            preferencesStore.loadFromLocal(String(authStore.user.id)).catch((e) =>
-              console.error('[App] Failed to load local preferences:', e)
-            );
+            preferencesStore
+              .loadFromLocal(String(authStore.user.id))
+              .catch((e) => console.error('[App] Failed to load local preferences:', e));
           }
           // Announcements don't need to block startup - fire and forget
           fetchAndEnqueue().catch((e) => console.error('[App] Failed to fetch announcements:', e));
@@ -363,18 +449,24 @@
 
   <!-- Main app (hidden while loading or updating) -->
   <div v-else class="app-container">
+    <!-- Mandatory Authentication Gate (blocks all interaction until authenticated) -->
+    <AuthModal v-if="requiresAuthGate" :model-value="true" :mandatory="true" />
+
     <!-- Custom titlebar (hidden for PIP window) -->
     <TitleBar v-if="!isPipWindow" :dark-mode="true" :platform-override="titleBarPlatformOverride" />
 
     <!-- Main content area with scrolling -->
-    <div class="main-content dashboard-container" :class="{ 'pip-content': isPipWindow, 'editor-content': isEditorPage }">
+    <div
+      class="main-content dashboard-container"
+      :class="{ 'pip-content': isPipWindow, 'editor-content': isEditorPage }"
+    >
       <!-- Toast notifications provider -->
       <Toast />
       <!-- Router view for page content (key changes on auth to force refresh) -->
-      <router-view :key="routerKey" />
+      <router-view :key="routerKey" :sidebar-disabled="sidebarDisabled" />
       <!-- Global app close confirmation dialog -->
       <AppCloseDialog />
-      <!-- Authentication Modal -->
+      <!-- Authentication Modal (optional, for manual trigger) -->
       <AuthModal v-model="showAuthModal" />
 
       <!-- Beta Activation Dialog -->

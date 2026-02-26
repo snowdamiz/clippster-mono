@@ -39,11 +39,27 @@
           <div class="absolute h-full border-l border-white/5" style="left: 66.66%" />
         </div>
 
+        <!-- Layout overlay previews (behind region content) -->
+        <template v-if="overlayPreviews?.length">
+          <div
+            v-for="overlay in overlayPreviews"
+            :key="overlay.id"
+            class="absolute pointer-events-none z-[1]"
+            :style="getOverlayStyle(overlay)"
+          >
+            <MediaPreview
+              :src="overlay.dataUrl"
+              class-name="w-full h-full object-contain"
+              :style="{ opacity: overlay.opacity / 100 }"
+            />
+          </div>
+        </template>
+
         <!-- Region previews (showing source content in output position) -->
         <div
           v-for="region in regions"
           :key="region.id"
-          class="absolute overflow-hidden"
+          class="absolute overflow-hidden z-[5]"
           :style="getRegionPreviewStyle(region)"
         >
           <!-- Video crop preview -->
@@ -134,6 +150,7 @@
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
   import POIRegion from './POIRegion.vue';
+  import MediaPreview from '@/components/MediaPreview.vue';
   import type { ManualRegion, ManualRegionRect } from '@/types';
 
   interface WatermarkPreview {
@@ -142,6 +159,17 @@
     y: number;
     scale: number;
     opacity: number;
+  }
+
+  interface OverlayPreview {
+    id: string;
+    dataUrl: string;
+    x: number;
+    y: number;
+    scale: number;
+    opacity: number;
+    isFullFrame: boolean;
+    label?: string;
   }
 
   interface Props {
@@ -155,6 +183,8 @@
     isPlaying?: boolean;
     // Optional watermark preview overlay
     watermarkPreview?: WatermarkPreview | null;
+    // Optional layout overlay previews
+    overlayPreviews?: OverlayPreview[];
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -254,6 +284,25 @@
       transform: 'translate(-50%, -50%)',
     };
   });
+
+  // Calculate overlay preview style
+  function getOverlayStyle(overlay: OverlayPreview) {
+    if (overlay.isFullFrame) {
+      return {
+        left: '0%',
+        top: '0%',
+        width: '100%',
+        height: '100%',
+      };
+    }
+    return {
+      left: `${overlay.x}%`,
+      top: `${overlay.y}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${overlay.scale}%`,
+      height: 'auto',
+    };
+  }
 
   // Calculate container style to maintain target aspect ratio
   const containerStyle = computed(() => {

@@ -111,6 +111,11 @@ const unlistenFunctions: UnlistenFn[] = [];
 const { handleSegmentReady } = useLivestreamSegmentProcessing();
 const { success: showSuccess } = useToast();
 
+/** Returns true if the user is currently on the Live Streams page */
+function isOnLivePage(): boolean {
+  return window.location.pathname.startsWith('/live-clip');
+}
+
 function updateActiveSessionsMap(mutator: (map: ActiveSessionsMap) => void) {
   const next = new Map(activeSessions.value);
   mutator(next);
@@ -1445,6 +1450,28 @@ export function useLivestreamMonitoring() {
       const segmentDuration = requestedDuration > 0 ? requestedDuration : 5;
       const isInfiniteSegment = options.segmentDurationMinutes === 0;
 
+      // CRITICAL: Add to activeSessions IMMEDIATELY after getting sessionInfo
+      // This prevents race conditions where viewer checks for existing sessions
+      // before they're tracked, which would cause both to use the same session ID
+      activeSessions.value.set(streamer.id, {
+        sessionId: sessionInfo.sessionId,
+        streamerId: streamer.id,
+        mintId: streamer.mintId,
+        startedAt: Date.now(),
+        streamStartTime: status.streamStartTimestamp || Date.now(),
+        totalSegments: 0,
+        processedSegments: 0,
+        isRecording: true,
+        projectId: sessionInfo.projectId,
+        displayName: streamer.displayName,
+        platform: streamer.platform,
+        profileImageUrl: streamer.profileImageUrl,
+        detectClips: options.detectClips,
+        segmentDurationMinutes: segmentDuration,
+        promptId: options.promptId,
+        promptContent: options.promptContent,
+      });
+
       // Start platform-specific recording
       if (streamer.platform === 'Kick') {
         await startKickRecording(
@@ -1593,26 +1620,6 @@ export function useLivestreamMonitoring() {
         });
       }
 
-      // Update activeSessions immediately so UI shows LIVE status
-      activeSessions.value.set(streamer.id, {
-        sessionId: sessionInfo.sessionId,
-        streamerId: streamer.id,
-        mintId: streamer.mintId,
-        startedAt: Date.now(),
-        streamStartTime: status.streamStartTimestamp || Date.now(),
-        totalSegments: 0,
-        processedSegments: 0,
-        isRecording: true,
-        projectId: sessionInfo.projectId,
-        displayName: streamer.displayName,
-        platform: streamer.platform,
-        profileImageUrl: streamer.profileImageUrl,
-        detectClips: options.detectClips,
-        segmentDurationMinutes: segmentDuration,
-        promptId: options.promptId,
-        promptContent: options.promptContent,
-      });
-
       // Add log
       addActivityLog({
         streamerId: streamer.id,
@@ -1624,12 +1631,14 @@ export function useLivestreamMonitoring() {
         profileImageUrl: streamer.profileImageUrl,
       });
 
-      showSuccess(
-        `${streamer.displayName} is live`,
-        options.detectClips ? 'Auto-detect recording started.' : 'Recording started.',
-        undefined,
-        'livestream'
-      );
+      if (!isOnLivePage()) {
+        showSuccess(
+          `${streamer.displayName} is live`,
+          options.detectClips ? 'Auto-detect recording started.' : 'Recording started.',
+          undefined,
+          'livestream'
+        );
+      }
 
       // Initial segment start log (use streamerId-1 as key)
       const id = addActivityLog({
@@ -1730,8 +1739,10 @@ export function useLivestreamMonitoring() {
           // Stream is live and no DVR recording - start one
           console.log(`[LiveMonitor] Auto DVR: Starting DVR for live streamer ${streamer.displayName}`);
           
-          // Show toast notification that streamer went live
-          showSuccess(`${streamer.displayName} is now live!`, undefined, 7000, 'livestream');
+          // Show toast notification that streamer went live (skip on Live page)
+          if (!isOnLivePage()) {
+            showSuccess(`${streamer.displayName} is now live!`, undefined, 7000, 'livestream');
+          }
           
           const started = await startDvrRecordingForStreamer(streamer);
           if (started) {
@@ -1870,7 +1881,8 @@ export async function initGlobalLiveStatusPolling(): Promise<void> {
 
           // Show toast if went live (offline → online transition)
           // BUT skip toasts on initial poll to avoid spam when app first opens
-          if (!wasLive && status.isLive && !isInitialPoll) {
+          // Also skip on Live page where live status is already visible
+          if (!wasLive && status.isLive && !isInitialPoll && !isOnLivePage()) {
             showSuccess(`${record.display_name} is now live!`, undefined, 7000, 'livestream');
 
             // Dispatch global event

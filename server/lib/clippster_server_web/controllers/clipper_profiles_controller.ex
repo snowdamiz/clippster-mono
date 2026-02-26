@@ -547,7 +547,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
         conn |> put_status(:not_found) |> json(%{success: false, error: "Profile not found"})
 
       profile ->
-        if profile.is_public do
+        if ClipperProfiles.public_directory_profile?(profile) do
           json(conn, %{success: true, profile: serialize_public_profile(profile)})
         else
           conn |> put_status(:not_found) |> json(%{success: false, error: "Profile not found"})

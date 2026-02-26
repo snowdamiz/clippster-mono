@@ -1,6 +1,6 @@
 <template>
   <div class="dashboard-container flex h-full">
-    <DashboardSidebar @show-auth-modal="showAuthModal = true" />
+    <DashboardSidebar :disabled="sidebarDisabled" @show-auth-modal="showAuthModal = true" />
     <!-- Main content area with left margin to account for fixed sidebar -->
     <main
       class="flex-1 flex flex-col transition-[margin-left] duration-200 ease-out dashboard-container"
@@ -29,6 +29,28 @@
   const authStore = useAuthStore();
   const { isCollapsed } = useSidebarState();
   const showAuthModal = ref(false);
+  const isOrgOnlyAccount = computed(
+    () => authStore.user?.account_type === 'organization' || !!authStore.user?.owned_organization_id
+  );
+
+  // Compute sidebar disabled state based on subscription gate
+  const sidebarDisabled = computed(() => {
+    if (!authStore.isAuthenticated) return false;
+    if (authStore.user?.is_admin) return false;
+    if (isOrgOnlyAccount.value) return false;
+    if (authStore.user?.created_by_organization_id) return false;
+
+    const hasSelectedPlan = localStorage.getItem('has_selected_plan');
+    const subscriptionStatus = (authStore.user as any)?.subscription_status;
+
+    // Users with active or cancelled subscriptions bypass the gate
+    if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
+      return false;
+    }
+
+    // Disable sidebar if no plan selected OR subscription expired
+    return !hasSelectedPlan || subscriptionStatus === 'expired';
+  });
 
   // Check if user needs to select account type
   const needsAccountTypeSelection = computed(() => {

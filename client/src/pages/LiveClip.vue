@@ -54,7 +54,7 @@
         <!-- Page Heading (hidden in empty state) -->
         <div v-if="streamers.length > 0" class="liveclip__heading">
           <h1 class="liveclip__title">Live Stream Monitor</h1>
-          <p class="liveclip__subtitle">Track streams and detect clips in real-time with AI-powered analysis</p>
+          <p class="liveclip__subtitle">Watch and track Live streams and detect clips in real-time with AI-powered analysis</p>
         </div>
 
         <!-- Main Grid -->
@@ -640,20 +640,8 @@
             last_check_timestamp: Date.now(),
           });
           
-          // Dispatch event if streamer just went live (offline → live transition)
-          // Note: Toast notification is handled by global polling system to avoid duplicates
-          if (!wasLive && status.isLive) {
-            window.dispatchEvent(
-              new CustomEvent('streamer-went-live', {
-                detail: {
-                  streamerId: streamer.id,
-                  displayName: streamer.displayName,
-                  platform: streamer.platform,
-                  mintId: streamer.mintId,
-                },
-              })
-            );
-          }
+          // Note: No "went live" toast on the Live page — status is already visible in the UI.
+          // The global monitoring composable handles toasts for other pages.
         }
       } catch (error) {
         console.error('[LiveClip] Failed to check live status for', streamer.mintId, error);
@@ -704,19 +692,8 @@
       }
       await updateMonitoredStreamer(streamer.id, dbUpdates);
       
-      // Dispatch global event if streamer just went live (offline → live transition)
-      if (!wasLive && status.isLive) {
-        window.dispatchEvent(
-          new CustomEvent('streamer-went-live', {
-            detail: {
-              streamerId: streamer.id,
-              displayName: streamer.displayName,
-              platform: streamer.platform,
-              mintId: streamer.mintId,
-            },
-          })
-        );
-      }
+      // Note: No "went live" toast on the Live page — status is already visible in the UI.
+      // The global monitoring composable handles toasts for other pages.
     } catch (error) {
       console.error('[LiveClip] Failed to check live status for', streamer.mintId, error);
       if (showSpinner) {

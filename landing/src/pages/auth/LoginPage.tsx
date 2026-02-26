@@ -77,14 +77,21 @@ export function LoginPage() {
   const location = useLocation()
 
   const getRedirectPath = (u: { owned_organization_id?: number | null } | null) => {
+    // Always use the user's actual org — never use stale location.state.from
+    // which may belong to a different user's expired session
+    if (u?.owned_organization_id) return `/dashboard/org/${u.owned_organization_id}`
     const from = (location.state as any)?.from
     if (from) return from
-    if (u?.owned_organization_id) return `/dashboard/org/${u.owned_organization_id}`
     return '/dashboard'
   }
 
+  // Only auto-redirect if user navigated here while already authenticated
+  // (e.g. typing /login in URL bar). Do NOT redirect based on stale
+  // localStorage state — the handleEmailLogin handler will redirect after
+  // a fresh login completes.
+  const [wasAuthOnMount] = useState(() => isAuthenticated)
   useEffect(() => {
-    if (isAuthenticated && user) {
+    if (wasAuthOnMount && isAuthenticated && user) {
       navigate(getRedirectPath(user), { replace: true })
     }
   }, [isAuthenticated, user]) // eslint-disable-line react-hooks/exhaustive-deps

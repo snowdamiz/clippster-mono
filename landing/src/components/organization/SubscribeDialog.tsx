@@ -55,13 +55,21 @@ export function SubscribeDialog({ open, onClose, plan, type, organizationId, org
         type === 'addon'
           ? `/organizations/${organizationId}/subscription/addons/checkout`
           : `/organizations/${organizationId}/subscription/checkout`
-      const result = await api.post<any>(endpoint, {
-        tier: plan.id,
+
+      const payload = {
+        ...(type === 'addon' ? { addon_tier: plan.id } : { tier: plan.id }),
         payment_method: 'stripe',
-        promo_code: promoResult?.valid ? promoCode : undefined
+        promo_code: promoResult?.valid ? promoCode : undefined,
+      }
+
+      const result = await api.post<any>(endpoint, {
+        ...payload,
       })
-      if (result.checkout_url) {
-        window.open(result.checkout_url, '_blank')
+
+      const checkoutUrl = result.checkout_url || result.url
+
+      if (checkoutUrl) {
+        window.open(checkoutUrl, '_blank')
         onSuccess()
       } else if (result.success) {
         onSuccess()

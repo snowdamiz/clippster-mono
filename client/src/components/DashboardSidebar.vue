@@ -4,9 +4,12 @@
     :class="{
       'sidebar--native': isNativeEnvironment,
       'w-60': !isCollapsed,
-      'w-12': isCollapsed
+      'w-12': isCollapsed,
+      'sidebar--disabled': disabled,
     }"
   >
+    <!-- Disabled Overlay -->
+    <div v-if="disabled" class="sidebar-disabled-overlay"></div>
     <!-- Bug Report Dialog -->
     <BugReportDialog
       :show="showBugReportDialog"
@@ -24,10 +27,7 @@
           <template v-for="(group, groupIndex) in sortedNavigationGroups" :key="group.key">
             <div v-if="getVisibleGroupItems(group.items).length > 0" class="flex flex-col gap-1">
               <!-- Collapsed divider between groups -->
-              <div
-                v-if="isCollapsed && groupIndex > 0"
-                class="sidebar-collapsed-divider mx-1.5 my-1"
-              />
+              <div v-if="isCollapsed && groupIndex > 0" class="sidebar-collapsed-divider mx-1.5 my-1" />
 
               <!-- Group Label (hidden when collapsed) -->
               <div
@@ -46,14 +46,16 @@
                     class="flex items-center w-full py-2 rounded-md text-[var(--sidebar-text-muted)] bg-transparent border-[none] no-underline text-sm opacity-40 cursor-not-allowed select-none"
                     :class="{
                       'justify-center px-0': isCollapsed,
-                      'gap-3 px-3': !isCollapsed
+                      'gap-3 px-3': !isCollapsed,
                     }"
-                    :title="isCollapsed ? (item.badge || item.name) : undefined"
+                    :title="isCollapsed ? item.badge || item.name : undefined"
                   >
                     <div class="relative flex items-center justify-center shrink-0">
                       <component :is="item.icon as Component" class="w-[18px] h-[18px]" />
                     </div>
-                    <span v-if="!isCollapsed" class="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">{{ item.name }}</span>
+                    <span v-if="!isCollapsed" class="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">
+                      {{ item.name }}
+                    </span>
                     <span
                       v-if="item.badge && !isCollapsed"
                       class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] whitespace-nowrap"
@@ -69,7 +71,7 @@
                     :class="{
                       'sidebar-nav-item--active': isActive(item.path),
                       'justify-center px-0': isCollapsed,
-                      'gap-3 px-3': !isCollapsed
+                      'gap-3 px-3': !isCollapsed,
                     }"
                     :title="isCollapsed ? item.name : undefined"
                   >
@@ -105,7 +107,9 @@
                         {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
                       </span>
                     </div>
-                    <span v-if="!isCollapsed" class="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">{{ item.name }}</span>
+                    <span v-if="!isCollapsed" class="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">
+                      {{ item.name }}
+                    </span>
                     <!-- Unread badge for Messages (right side when expanded) -->
                     <span
                       v-if="item.name === 'Messages' && totalUnreadMessages > 0 && !isCollapsed"
@@ -147,17 +151,11 @@
               :class="isCollapsed ? 'justify-center p-1.5 w-full' : 'gap-2 w-full py-2 px-2'"
               :title="isCollapsed ? formattedAddress : undefined"
             >
-              <div class="shrink-0 flex items-center justify-center rounded-[20px] overflow-hidden"
-                   :class="[
-                     displayAvatar ? '' : 'bg-[var(--sidebar-accent)]',
-                     isCollapsed ? 'w-6 h-6' : 'w-7 h-7'
-                   ]">
-                <img
-                  v-if="displayAvatar"
-                  :src="displayAvatar"
-                  :alt="displayName"
-                  class="w-full h-full object-cover"
-                />
+              <div
+                class="shrink-0 flex items-center justify-center rounded-[20px] overflow-hidden"
+                :class="[displayAvatar ? '' : 'bg-[var(--sidebar-accent)]', isCollapsed ? 'w-6 h-6' : 'w-7 h-7']"
+              >
+                <img v-if="displayAvatar" :src="displayAvatar" :alt="displayName" class="w-full h-full object-cover" />
                 <span v-else class="text-xs font-extrabold text-[#0a0a0b] uppercase">{{ userInitials }}</span>
               </div>
               <span
@@ -178,7 +176,7 @@
               <DropdownMenuItem
                 v-if="isAIAllowed"
                 class="sidebar-dropdown__item sidebar-dropdown__credits"
-                @click="router.push('/billing')"
+                @click="goToCredits"
               >
                 <Zap class="w-4 h-4 mr-2 text-sidebar-accent" />
                 <span class="sidebar-dropdown__credits-label">Credits</span>
@@ -242,6 +240,10 @@
   import { ref, computed, onMounted, onUnmounted, watch, type Component } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
+
+  const props = defineProps<{
+    disabled?: boolean;
+  }>();
   import { useMessagingStore } from '@/stores/messaging';
   import { usePermissionsStore } from '@/stores/permissions';
   import { useLiveStatusStore } from '@/stores/liveStatus';
@@ -263,7 +265,30 @@
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu';
   import api from '@/services/api';
-  import { Zap, UserCircle, ChevronRight, LogOut, Settings, Bug } from 'lucide-vue-next';
+  import {
+    Zap,
+    UserCircle,
+    ChevronRight,
+    LogOut,
+    Settings,
+    Bug,
+    LayoutGrid,
+    Users,
+    Megaphone,
+    Scissors,
+    Share2,
+    Globe,
+    FileText,
+    FolderOpen,
+    Receipt,
+    Briefcase,
+  } from 'lucide-vue-next';
+
+  interface SidebarNavigationGroup {
+    key: string;
+    label: string;
+    items: NavigationItem[];
+  }
 
   // ===== Composables & Stores =====
   const route = useRoute();
@@ -299,10 +324,77 @@
   const liveCount = computed(() => liveStatusStore.liveCount);
   const liveCreatorsCount = computed(() => liveStatusStore.liveCreatorsCount);
 
-  const sortedNavigationGroups = computed(() => getSortedNavigationGroups());
-
   const isOrgAccountOwner = computed(() => {
-    return authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
+    return !!authStore.user?.owned_organization_id;
+  });
+
+  const orgSidebarOrganizationId = computed(() => {
+    const routeOrgId = route.params.id;
+    if (typeof routeOrgId === 'string' && routeOrgId.length > 0) {
+      return routeOrgId;
+    }
+    if (authStore.user?.owned_organization_id) {
+      return String(authStore.user.owned_organization_id);
+    }
+    return '';
+  });
+
+  const useOrganizationSidebar = computed(() => {
+    return !authStore.user?.is_admin && isOrgAccountOwner.value && !!orgSidebarOrganizationId.value;
+  });
+
+  const orgNavigationGroups = computed<SidebarNavigationGroup[]>(() => {
+    const orgId = orgSidebarOrganizationId.value;
+    if (!orgId) return [];
+
+    const basePath = `/organization/${orgId}`;
+
+    return [
+      {
+        key: 'team',
+        label: 'Team',
+        items: [
+          { name: 'Hub', path: basePath, icon: LayoutGrid, group: 'browse' },
+          { name: 'Members', path: `${basePath}/members`, icon: Users, group: 'browse' },
+          { name: 'Creators', path: `${basePath}/creators`, icon: UserCircle, group: 'browse' },
+        ],
+      },
+      {
+        key: 'content',
+        label: 'Content',
+        items: [
+          {
+            name: 'Campaigns',
+            path: `${basePath}/campaigns`,
+            icon: Megaphone,
+            group: 'create',
+            disabled: true,
+            badge: 'Coming Soon',
+          },
+          { name: 'Clippers', path: `${basePath}/clippers`, icon: Scissors, group: 'create' },
+          { name: 'Shared Clips', path: `${basePath}/shared`, icon: Share2, group: 'create' },
+          { name: 'Social Accounts', path: `${basePath}/social`, icon: Globe, group: 'create' },
+          { name: 'Posts', path: `${basePath}/posts`, icon: FileText, group: 'create' },
+          { name: 'Hiring', path: `${basePath}/hiring`, icon: Briefcase, group: 'create' },
+        ],
+      },
+      {
+        key: 'management',
+        label: 'Management',
+        items: [
+          { name: 'Assets', path: `${basePath}/assets`, icon: FolderOpen, group: 'manage' },
+          { name: 'Billing', path: `${basePath}/billing`, icon: Receipt, group: 'manage' },
+          { name: 'Settings', path: `${basePath}/settings`, icon: Settings, group: 'manage' },
+        ],
+      },
+    ];
+  });
+
+  const sortedNavigationGroups = computed<SidebarNavigationGroup[]>(() => {
+    if (useOrganizationSidebar.value && orgNavigationGroups.value.length > 0) {
+      return orgNavigationGroups.value;
+    }
+    return getSortedNavigationGroups();
   });
 
   const formattedAddress = computed(() => {
@@ -324,15 +416,13 @@
     return formattedAddress.value;
   });
 
-  const sourceAvatarUrl = computed(() =>
-    clipperProfile.value?.avatar_url || authStore.user?.avatar_url || null
-  );
+  const sourceAvatarUrl = computed(() => clipperProfile.value?.avatar_url || authStore.user?.avatar_url || null);
 
   const { resolvedUrl: displayAvatar } = useAvatarProxy(() => sourceAvatarUrl.value);
 
   const userInitials = computed(() => {
     if (!authStore.isAuthenticated) return '';
-    
+
     // Use clipper profile display name if available
     if (clipperProfile.value?.display_name) {
       const name = clipperProfile.value.display_name;
@@ -342,7 +432,7 @@
       }
       return name.slice(0, 2).toUpperCase();
     }
-    
+
     // Use user name if available
     if (authStore.user?.name) {
       const name = authStore.user.name;
@@ -352,7 +442,7 @@
       }
       return name.slice(0, 2).toUpperCase();
     }
-    
+
     // Fallback to email or wallet
     const email = authStore.email;
     if (email) {
@@ -371,6 +461,10 @@
 
   // ===== Navigation Filtering =====
   function getVisibleGroupItems(items: NavigationItem[]): NavigationItem[] {
+    if (useOrganizationSidebar.value) {
+      return items.filter((item) => item.name !== 'Admin' && item.name !== 'Bug Report');
+    }
+
     return items.filter((item) => {
       // Hide Admin and Bug Report from navigation - they're now in the profile dropdown
       if (item.name === 'Admin' || item.name === 'Bug Report') {
@@ -414,14 +508,35 @@
         return false;
       }
       return true;
+    }).map((item) => {
+      // Dynamically disable AI Video Creator for non-authorized users
+      if (item.path === '/ai-video') {
+        const user = authStore.user as any;
+        const hasAccess = user?.is_admin || user?.ai_editor_enabled;
+        return {
+          ...item,
+          disabled: !hasAccess,
+          badge: hasAccess ? item.badge : 'Coming Soon',
+        };
+      }
+      return item;
     });
   }
 
   function isActive(path: string): boolean {
     if (path === '/organizations') {
+      if (useOrganizationSidebar.value) {
+        return route.path === '/organizations';
+      }
       return route.path.startsWith('/organizations') || route.path.startsWith('/organization/');
     }
-    return route.path.startsWith(path);
+
+    const orgHubPath = orgSidebarOrganizationId.value ? `/organization/${orgSidebarOrganizationId.value}` : '';
+    if (path === orgHubPath) {
+      return route.path === orgHubPath || route.path === `${orgHubPath}/`;
+    }
+
+    return route.path === path || route.path.startsWith(`${path}/`);
   }
 
   // ===== Event Handlers =====
@@ -436,6 +551,14 @@
 
   function handleBugReportSubmitted() {
     console.log('Bug report submitted successfully');
+  }
+
+  function goToCredits() {
+    if (useOrganizationSidebar.value && orgSidebarOrganizationId.value) {
+      router.push(`/organization/${orgSidebarOrganizationId.value}/billing`);
+      return;
+    }
+    router.push('/billing');
   }
 
   // ===== Data Fetching =====
@@ -459,7 +582,7 @@
       clipperProfile.value = null;
       return;
     }
-    
+
     loadingClipperProfile.value = true;
     try {
       const result = await getMyClipperProfile();
@@ -521,7 +644,6 @@
     { immediate: true }
   );
 
-
   // ===== Lifecycle =====
   onMounted(() => {
     isNativeEnvironment.value = typeof window !== 'undefined' && '__TAURI__' in window;
@@ -529,7 +651,7 @@
     balanceRefreshInterval = setInterval(fetchBalance, 30000);
     window.addEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
     initFeatureFlags();
-    
+
     // Fetch user restrictions
     if (authStore.isAuthenticated) {
       permissionsStore.fetchRestrictions();
@@ -559,7 +681,7 @@
       unreadRefreshInterval = null;
     }
     window.removeEventListener('auth-state-changed', handleAuthStateChanged as EventListener);
-    
+
     // Stop polling for live status
     liveStatusStore.stopPolling();
   });
@@ -744,5 +866,20 @@
     border-top-color: var(--sidebar-accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
+  }
+
+  /* Disabled state */
+  .sidebar--disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .sidebar-disabled-overlay {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.3);
+    z-index: 50;
+    pointer-events: all;
+    cursor: not-allowed;
   }
 </style>

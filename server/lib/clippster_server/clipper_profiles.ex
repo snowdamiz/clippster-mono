@@ -94,11 +94,18 @@ defmodule ClippsterServer.ClipperProfiles do
   """
   def list_public_profiles(filters \\ %{}) do
     ClipperProfile
-    |> where([p], p.is_public == true)
+    |> visible_in_public_directory()
     |> apply_filters(filters)
     |> order_by([p], [desc: p.is_verified, desc: p.total_campaigns_completed])
     |> Repo.all()
     |> Repo.preload([:user, :channel_links, :portfolio_clips, :badges, endorsements: [:organization]])
+  end
+
+  @doc """
+  Returns true when a profile is public and has the required fields for directory visibility.
+  """
+  def public_directory_profile?(%ClipperProfile{} = profile) do
+    profile.is_public == true and present_string?(profile.display_name) and present_string?(profile.slug)
   end
 
   defp apply_filters(query, filters) do
@@ -146,6 +153,16 @@ defmodule ClippsterServer.ClipperProfiles do
   defp filter_by_verified(query, nil), do: query
   defp filter_by_verified(query, true), do: where(query, [p], p.is_verified == true)
   defp filter_by_verified(query, _), do: query
+
+  defp visible_in_public_directory(query) do
+    query
+    |> where([p], p.is_public == true)
+    |> where([p], fragment("char_length(trim(coalesce(?, ''))) > 0", p.display_name))
+    |> where([p], fragment("char_length(trim(coalesce(?, ''))) > 0", p.slug))
+  end
+
+  defp present_string?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present_string?(_), do: false
 
   @doc """
   Increments profile stats.

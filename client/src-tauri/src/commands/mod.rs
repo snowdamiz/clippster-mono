@@ -8,6 +8,7 @@
 //! - file_utils: File utility commands
 //! - remotion_export: Remotion export commands
 //! - download_audio: Download audio commands
+//! - convert_video: Video conversion commands
 
 pub mod system;
 pub mod download_management;
@@ -16,6 +17,7 @@ pub mod focal_detection_commands;
 pub mod file_utils;
 pub mod remotion_export;
 pub mod download_audio;
+pub mod convert_video;
 
 // Re-export all commands for convenient importing
 pub use system::*;
@@ -23,4 +25,5 @@ pub use download_management::*;
 pub use file_operations::*;
 pub use focal_detection_commands::*;
 pub use download_audio::*;
+pub use convert_video::*;
 // file_utils and remotion_export are used directly via module path in lib.rs

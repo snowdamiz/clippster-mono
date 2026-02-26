@@ -22,14 +22,15 @@ export function VerifyEmailPage() {
 
   const navigate = useNavigate()
 
+  const [wasAuthOnMount] = useState(() => isAuthenticated)
   useEffect(() => {
-    if (isAuthenticated && user) {
+    if (wasAuthOnMount && isAuthenticated && user) {
       const dest = user.owned_organization_id
         ? `/dashboard/org/${user.owned_organization_id}`
         : '/dashboard'
       navigate(dest, { replace: true })
     }
-  }, [isAuthenticated, user, navigate])
+  }, [isAuthenticated, user, navigate]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!pendingVerificationEmail) {

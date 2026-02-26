@@ -52,7 +52,7 @@ jobs:
       - name: Install and build frontend
         working-directory: client
         env:
-          VITE_API_URL: https://clippster-server.fly.dev
+          VITE_API_URL: https://clippster-server.fly.dev/api
         run: |
           yarn install
           yarn build:ci

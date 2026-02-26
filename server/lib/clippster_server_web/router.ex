@@ -7,7 +7,14 @@ defmodule ClippsterServerWeb.Router do
     plug(CORSPlug,
       origin: &__MODULE__.cors_origins/0,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      headers: [
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "X-Client-Platform"
+      ],
       max_age: 86400,
       credentials: true
     )
@@ -19,7 +26,14 @@ defmodule ClippsterServerWeb.Router do
     plug(CORSPlug,
       origin: &__MODULE__.cors_origins/0,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      headers: [
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "X-Client-Platform"
+      ],
       max_age: 86400,
       credentials: true
     )
@@ -34,7 +48,14 @@ defmodule ClippsterServerWeb.Router do
     plug(CORSPlug,
       origin: &__MODULE__.cors_origins/0,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      headers: [
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "X-Client-Platform"
+      ],
       max_age: 86400,
       credentials: true
     )
@@ -49,7 +70,14 @@ defmodule ClippsterServerWeb.Router do
     plug(CORSPlug,
       origin: &__MODULE__.cors_origins/0,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      headers: [
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "X-Client-Platform"
+      ],
       max_age: 86400,
       credentials: true
     )
@@ -64,12 +92,23 @@ defmodule ClippsterServerWeb.Router do
     plug(CORSPlug,
       origin: &__MODULE__.cors_origins/0,
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-      headers: ["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+      headers: [
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "X-Client-Platform"
+      ],
       max_age: 86400,
       credentials: true
     )
 
     plug(ClippsterServerWeb.RateLimit, max_requests: 10, window_seconds: 3600)
+  end
+
+  pipeline :public_html do
+    plug(:accepts, ["html"])
   end
 
   # Define CORS origins - must be specific origins (not "*") when Authorization header is used
@@ -99,6 +138,14 @@ defmodule ClippsterServerWeb.Router do
 
     # Beta code verification (rate limited to prevent brute force)
     post("/beta/verify-code", BetaController, :verify_code)
+  end
+
+  # Stripe browser callback pages (hosted by the API server for production redirects)
+  scope "/", ClippsterServerWeb do
+    pipe_through(:public_html)
+
+    get("/stripe-success", StripeRedirectController, :success)
+    get("/stripe-cancel", StripeRedirectController, :cancel)
   end
 
   scope "/api", ClippsterServerWeb do
@@ -144,7 +191,7 @@ defmodule ClippsterServerWeb.Router do
     post("/auth/email/resend-verification", EmailAuthController, :resend_verification)
     post("/auth/email/forgot-password", EmailAuthController, :forgot_password)
     post("/auth/email/reset-password", EmailAuthController, :reset_password)
-    
+
     # Email change verification (public route)
     get("/account/verify-email-change/:token", AccountController, :verify_email_change)
 
@@ -396,14 +443,45 @@ defmodule ClippsterServerWeb.Router do
     # Organization subscriptions
     get("/organizations/:id/subscription", OrganizationSubscriptionController, :show)
     get("/organizations/:id/subscription/tiers", OrganizationSubscriptionController, :tiers)
-    post("/organizations/:id/subscription/promo/validate", OrganizationSubscriptionController, :validate_promo)
-    post("/organizations/:id/subscription/checkout", OrganizationSubscriptionController, :checkout)
-    post("/organizations/:id/subscription/addons/checkout", OrganizationSubscriptionController, :addon_checkout)
+
+    post(
+      "/organizations/:id/subscription/promo/validate",
+      OrganizationSubscriptionController,
+      :validate_promo
+    )
+
+    post(
+      "/organizations/:id/subscription/checkout",
+      OrganizationSubscriptionController,
+      :checkout
+    )
+
+    post(
+      "/organizations/:id/subscription/addons/checkout",
+      OrganizationSubscriptionController,
+      :addon_checkout
+    )
+
     post("/organizations/:id/subscription/cancel", OrganizationSubscriptionController, :cancel)
     put("/organizations/:id/subscription/tier", OrganizationSubscriptionController, :change_tier)
-    get("/organizations/:id/subscription/proration-preview", OrganizationSubscriptionController, :proration_preview)
-    post("/organizations/:id/subscription/crypto-quote", OrganizationSubscriptionController, :crypto_quote)
-    post("/organizations/:id/subscription/crypto-confirm", OrganizationSubscriptionController, :crypto_confirm)
+
+    get(
+      "/organizations/:id/subscription/proration-preview",
+      OrganizationSubscriptionController,
+      :proration_preview
+    )
+
+    post(
+      "/organizations/:id/subscription/crypto-quote",
+      OrganizationSubscriptionController,
+      :crypto_quote
+    )
+
+    post(
+      "/organizations/:id/subscription/crypto-confirm",
+      OrganizationSubscriptionController,
+      :crypto_confirm
+    )
 
     # Organization assets
     get("/organizations/:organization_id/assets", OrganizationAssetController, :index)
@@ -818,8 +896,19 @@ defmodule ClippsterServerWeb.Router do
     get("/clippers", ClipperProfilesController, :index)
     get("/clippers/leaderboard", ClipperProfilesController, :leaderboard)
     get("/clippers/:slug", ClipperProfilesController, :show)
-    get("/clippers/:slug/portfolio-clips/:clip_id/presigned-url", ClipperProfilesController, :public_portfolio_clip_presigned_url)
-    get("/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url", ClipperProfilesController, :public_portfolio_clip_thumbnail_presigned_url)
+
+    get(
+      "/clippers/:slug/portfolio-clips/:clip_id/presigned-url",
+      ClipperProfilesController,
+      :public_portfolio_clip_presigned_url
+    )
+
+    get(
+      "/clippers/:slug/portfolio-clips/:clip_id/thumbnail-presigned-url",
+      ClipperProfilesController,
+      :public_portfolio_clip_thumbnail_presigned_url
+    )
+
     post("/clippers/:slug/endorsements", ClipperProfilesController, :create_endorsement)
 
     # ============================================================================
@@ -836,7 +925,12 @@ defmodule ClippsterServerWeb.Router do
     get("/organizations/:organization_id/hiring-post", HiringController, :show_org_post)
     post("/organizations/:organization_id/hiring-post", HiringController, :save_org_post)
     delete("/organizations/:organization_id/hiring-post", HiringController, :delete_org_post)
-    get("/organizations/:organization_id/hiring-post/applications", HiringController, :list_applications)
+
+    get(
+      "/organizations/:organization_id/hiring-post/applications",
+      HiringController,
+      :list_applications
+    )
 
     post(
       "/organizations/:organization_id/hiring-post/applications/:app_id/accept",
@@ -972,7 +1066,7 @@ defmodule ClippsterServerWeb.Router do
     get("/affiliate/referrals", AffiliateController, :my_referrals)
     get("/affiliate/payouts", AffiliateController, :my_payouts)
     put("/affiliate/settings", AffiliateController, :update_settings)
-    
+
     # Support conversation routes (any authenticated user)
     get("/support/conversation/check", SupportController, :check)
     get("/support/conversation", SupportController, :get_or_create)
@@ -993,21 +1087,33 @@ defmodule ClippsterServerWeb.Router do
     # Customer service (support conversations)
     get("/admin/support/unread-count", SupportController, :unread_count)
     get("/admin/support/conversations", SupportController, :list_all)
-    get("/admin/support/conversations/:id/messages", SupportController, :get_conversation_messages)
+
+    get(
+      "/admin/support/conversations/:id/messages",
+      SupportController,
+      :get_conversation_messages
+    )
+
     post("/admin/support/conversations/:id/messages", SupportController, :respond)
     post("/admin/support/conversations/:id/archive", SupportController, :archive)
     post("/admin/support/conversations/:id/read", SupportController, :mark_read)
-    
+
     # Staff internal messaging
     get("/staff/conversations", StaffController, :list_conversations)
     post("/staff/conversations/direct", StaffController, :create_direct)
     post("/staff/conversations/group", StaffController, :create_group)
     get("/staff/conversations/:id/messages", StaffController, :get_messages)
     post("/staff/conversations/:id/messages", StaffController, :send_message)
-    
+
     # Mod-accessible admin routes
     get("/admin/organization-applications", OrganizationApplicationController, :index)
-    put("/admin/organization-applications/:id/approve", OrganizationApplicationController, :approve)
+
+    put(
+      "/admin/organization-applications/:id/approve",
+      OrganizationApplicationController,
+      :approve
+    )
+
     put("/admin/organization-applications/:id/reject", OrganizationApplicationController, :reject)
     get("/admin/bug-reports", BugReportsController, :index)
     put("/admin/bug-reports/:id", BugReportsController, :update)
@@ -1024,24 +1130,28 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/users/:user_id/promote", AdminController, :promote_user)
     put("/admin/users/:user_id/credits", AdminController, :update_user_credits)
     post("/admin/users/:user_id/reset-password", AdminController, :reset_user_password)
-    
+
     # Moderator management
     post("/admin/users/:user_id/moderator", AdminController, :promote_to_moderator)
     delete("/admin/users/:user_id/moderator", AdminController, :demote_moderator)
     post("/admin/users/:user_id/mod-discount", AdminController, :enable_mod_discount)
     delete("/admin/users/:user_id/mod-discount", AdminController, :disable_mod_discount)
     
+    # AI editor access management
+    post("/admin/users/:user_id/ai-editor", AdminController, :enable_ai_editor)
+    delete("/admin/users/:user_id/ai-editor", AdminController, :disable_ai_editor)
+
     # User restrictions
     post("/admin/users/:user_id/restrict", AdminController, :restrict_user)
     delete("/admin/users/:user_id/restrict", AdminController, :unrestrict_user)
-    
+
     # User discounts
     post("/admin/users/:user_id/discount", AdminController, :apply_user_discount)
     post("/admin/users/:user_id/free-month", AdminController, :grant_free_month)
-    
+
     # User deletion
     delete("/admin/users/:user_id", AdminController, :delete_user)
-    
+
     # Moderator action logs
     get("/admin/mod-logs", AdminController, :list_mod_logs)
     get("/admin/mod-logs/:mod_id", AdminController, :get_mod_logs_for_user)
@@ -1062,9 +1172,25 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin org subscription management
     post("/admin/organizations/create-account", AdminController, :create_org_account)
-    post("/admin/organizations/:organization_id/subscription", AdminController, :grant_org_subscription)
-    put("/admin/organizations/:organization_id/subscription", AdminController, :update_org_subscription)
-    post("/admin/organizations/:organization_id/subscription/cancel", AdminController, :cancel_org_subscription)
+
+    post(
+      "/admin/organizations/:organization_id/subscription",
+      AdminController,
+      :grant_org_subscription
+    )
+
+    put(
+      "/admin/organizations/:organization_id/subscription",
+      AdminController,
+      :update_org_subscription
+    )
+
+    post(
+      "/admin/organizations/:organization_id/subscription/cancel",
+      AdminController,
+      :cancel_org_subscription
+    )
+
     put("/admin/organizations/:organization_id/seats", AdminController, :set_org_seats)
     delete("/admin/organizations/:id", AdminController, :delete_organization)
 
@@ -1074,6 +1200,9 @@ defmodule ClippsterServerWeb.Router do
     # Admin settings management
     get("/admin/settings", AdminController, :get_settings)
     put("/admin/settings/:key", AdminController, :update_setting)
+
+    # Admin diagnostic
+    get("/admin/diagnostic/org-membership", AdminController, :diagnose_org_membership)
 
     # Admin free tier branding
     get("/admin/free-tier-branding", AdminController, :get_free_tier_branding)
@@ -1095,6 +1224,7 @@ defmodule ClippsterServerWeb.Router do
 
     # Admin waitlist management
     get("/admin/waitlist", WaitlistController, :index)
+    post("/admin/waitlist", AdminController, :add_to_waitlist)
     post("/admin/waitlist/invite", AdminController, :invite_waitlist)
     post("/admin/waitlist/:id/invite", AdminController, :invite_waitlist_entry)
 

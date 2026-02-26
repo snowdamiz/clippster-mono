@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { useOrganization } from '@/hooks/useOrganization'
+import { api } from '@/lib/api'
 import { Sparkles, CreditCard, Wallet, Loader2 } from 'lucide-react'
 
 interface Props {
@@ -21,6 +22,7 @@ export function BuyCreditsModal({ open, onClose }: Props) {
   const [packs, setPacks] = useState<Pack[]>([])
   const [selectedPack, setSelectedPack] = useState<Pack | null>(null)
   const [loading, setLoading] = useState(false)
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
   const { fetchPricing, organizationId } = useOrganization()
 
   useEffect(() => {
@@ -37,10 +39,23 @@ export function BuyCreditsModal({ open, onClose }: Props) {
 
   const handleStripeCheckout = async () => {
     if (!selectedPack || !organizationId) return
-    // Open Stripe checkout
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'
-    window.open(`${apiUrl}/api/payments/stripe/checkout?pack=${selectedPack.id}&org_id=${organizationId}&token=${localStorage.getItem('auth_token')}`, '_blank')
-    onClose()
+
+    setCheckoutLoading(true)
+    try {
+      const result = await api.post<any>(
+        `/organizations/${organizationId}/payments/stripe/create-session`,
+        { pack_type: selectedPack.id }
+      )
+
+      const checkoutUrl = result.url || result.checkout_url
+
+      if (checkoutUrl) {
+        window.open(checkoutUrl, '_blank')
+        onClose()
+      }
+    } finally {
+      setCheckoutLoading(false)
+    }
   }
 
   return (
@@ -86,7 +101,7 @@ export function BuyCreditsModal({ open, onClose }: Props) {
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <Button onClick={handleStripeCheckout} className="w-full">
+                <Button onClick={handleStripeCheckout} loading={checkoutLoading} className="w-full">
                   <CreditCard className="w-4 h-4" /> Pay with Card
                 </Button>
                 <Button variant="secondary" className="w-full" onClick={onClose}>

@@ -59,6 +59,21 @@
         </div>
 
         <div v-else class="billing__content">
+          <!-- Subscription Gate Banner -->
+          <div v-if="isSubscriptionGateMode" class="billing__gate-banner">
+            <div class="billing__gate-banner-content">
+              <AlertCircle class="billing__gate-banner-icon" />
+              <div class="billing__gate-banner-text">
+                <h3 class="billing__gate-banner-title">
+                  {{ isExpiredSubscription ? 'Your subscription has expired' : 'Welcome to Clippster!' }}
+                </h3>
+                <p class="billing__gate-banner-description">
+                  {{ isExpiredSubscription ? 'Please renew your subscription or continue with the free tier to regain access.' : 'Choose a plan to get started with Clippster.' }}
+                </p>
+              </div>
+            </div>
+          </div>
+
           <!-- Page Heading -->
           <div class="billing__heading">
             <h1 class="billing__title">Billing</h1>
@@ -239,14 +254,6 @@
               </div>
             </div>
 
-            <!-- Continue with Free button for new users -->
-            <div v-if="isNewUserFlow && !hasActiveSubscription" class="billing-plans__free-cta">
-              <button class="billing-plans__free-btn" @click="continueWithFree">
-                Continue with Free Plan
-              </button>
-              <p class="billing-plans__free-hint">60 one-time credits · 5 clip builds/day · Admin watermark applied</p>
-            </div>
-
             <div class="billing-plans__grid">
               <!-- Loading skeleton tiers -->
               <template v-if="loadingTiers">
@@ -353,12 +360,14 @@
                     <button
                       class="billing-tier__btn"
                       :class="{
-                        'billing-tier__btn--free': !hasActiveSubscription,
+                        'billing-tier__btn--free': !hasActiveSubscription && !isSubscriptionGateMode,
+                        'billing-tier__btn--continue-free': isSubscriptionGateMode || isNewUserFlow,
                       }"
-                      :disabled="!hasActiveSubscription || pendingDowngradeToFree"
-                      @click="confirmDowngradeToFree"
+                      :disabled="(!hasActiveSubscription && !isSubscriptionGateMode && !isNewUserFlow) || pendingDowngradeToFree"
+                      @click="isSubscriptionGateMode || isNewUserFlow ? continueWithFree() : confirmDowngradeToFree()"
                     >
-                      <span v-if="!hasActiveSubscription">Current Plan</span>
+                      <span v-if="isSubscriptionGateMode || isNewUserFlow">Continue with Free Plan</span>
+                      <span v-else-if="!hasActiveSubscription">Current Plan</span>
                       <span v-else-if="pendingDowngradeToFree">Downgrading at period end</span>
                       <span v-else>Switch Plan</span>
                     </button>
@@ -784,7 +793,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useAuthStore } from '@/stores/auth';
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import { useToast } from '@/composables/useToast';
@@ -831,6 +840,12 @@
 
   // New user flow detection
   const isNewUserFlow = computed(() => route.query.new_user === 'true');
+
+  // Subscription gate mode detection
+  const isSubscriptionGateMode = computed(() => route.query.subscription_required === 'true');
+
+  // Expired subscription detection
+  const isExpiredSubscription = computed(() => subscriptionStatus.value?.status === 'expired');
 
   // Subscription data
   const subscriptionTiers = ref<any[]>([]);
@@ -942,6 +957,13 @@
 
   onMounted(async () => {
     await loadAllData();
+    
+    // Listen for auth state changes and refetch data
+    window.addEventListener('auth-state-changed', loadAllData);
+  });
+
+  onUnmounted(() => {
+    window.removeEventListener('auth-state-changed', loadAllData);
   });
 
   async function loadAllData() {
@@ -1141,6 +1163,8 @@
   /** Continue with free tier — mark plan selected and go to default route */
   function continueWithFree() {
     localStorage.setItem('has_selected_plan', 'true');
+    // Trigger auth state refresh to update gates
+    window.dispatchEvent(new CustomEvent('auth-state-changed', { detail: { userId: authStore.user?.id } }));
     const targetRoute = getDefaultRoute(authStore.user);
     router.push(targetRoute);
   }
@@ -2152,6 +2176,19 @@
     transform: none;
   }
 
+  .billing-tier__btn--continue-free {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--sidebar-text);
+    cursor: pointer;
+  }
+
+  .billing-tier__btn--continue-free:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+  }
+
   /* ===== Payment History ===== */
   .billing-history {
     display: flex;
@@ -2967,6 +3004,47 @@
   .billing-modal__input::placeholder {
     color: var(--sidebar-text-muted);
     opacity: 0.5;
+  }
+
+  /* ===== Subscription Gate Banner ===== */
+  .billing__gate-banner {
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.25rem;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.1) 0%, rgba(245, 158, 11, 0.1) 100%);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 12px;
+  }
+
+  .billing__gate-banner-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+  }
+
+  .billing__gate-banner-icon {
+    width: 20px;
+    height: 20px;
+    color: #f59e0b;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .billing__gate-banner-text {
+    flex: 1;
+  }
+
+  .billing__gate-banner-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.25rem 0;
+  }
+
+  .billing__gate-banner-description {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
   }
 
   /* ===== Modal Icon Variants ===== */

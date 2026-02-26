@@ -55,13 +55,13 @@ export const navigationItems: NavigationItem[] = [
     restrictedHidden: true,
   },
   {
-    name: 'Live',
+    name: 'Live Streams',
     path: '/live-clip',
     icon: Radio,
     group: 'browse',
   },
   {
-    name: 'Stream VODs',
+    name: 'Search VODs',
     path: '/vods',
     icon: Video,
     group: 'browse',
@@ -84,7 +84,7 @@ export const navigationItems: NavigationItem[] = [
 
   // Create group - content creation tools
   {
-    name: 'Projects',
+    name: 'VOD Library',
     path: '/projects',
     icon: Folder,
     group: 'create',
@@ -102,7 +102,7 @@ export const navigationItems: NavigationItem[] = [
     group: 'create',
   },
   {
-    name: 'AI Video',
+    name: 'AI Video Creator',
     path: '/ai-video',
     icon: Wand2,
     group: 'create',
