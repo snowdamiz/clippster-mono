@@ -508,6 +508,18 @@
         return false;
       }
       return true;
+    }).map((item) => {
+      // Dynamically disable AI Video Creator for non-authorized users
+      if (item.path === '/ai-video') {
+        const user = authStore.user as any;
+        const hasAccess = user?.is_admin || user?.ai_editor_enabled;
+        return {
+          ...item,
+          disabled: !hasAccess,
+          badge: hasAccess ? item.badge : 'Coming Soon',
+        };
+      }
+      return item;
     });
   }
 
