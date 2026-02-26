@@ -32,6 +32,18 @@ export interface Conversation {
   status?: string;
 }
 
+export interface MessageAttachment {
+  id: number;
+  attachmentType: string;
+  url: string;
+  thumbnailUrl: string | null;
+  filename: string;
+  mimeType: string;
+  fileSize: number;
+  width: number | null;
+  height: number | null;
+}
+
 export interface Message {
   id: number;
   conversationId: number;
@@ -47,6 +59,7 @@ export interface Message {
     avatarUrl: string | null;
   } | null;
   readBy: number[];
+  attachments?: MessageAttachment[];
 }
 
 export interface UnreadCounts {
@@ -88,6 +101,20 @@ export function normalizeConversation(c: any): Conversation {
   };
 }
 
+function normalizeAttachment(a: any): MessageAttachment {
+  return {
+    id: a.id,
+    attachmentType: a.attachmentType ?? a.attachment_type ?? 'image',
+    url: a.url,
+    thumbnailUrl: a.thumbnailUrl ?? a.thumbnail_url ?? null,
+    filename: a.filename,
+    mimeType: a.mimeType ?? a.mime_type,
+    fileSize: a.fileSize ?? a.file_size,
+    width: a.width ?? null,
+    height: a.height ?? null,
+  };
+}
+
 export function normalizeMessage(m: any): Message {
   return {
     id: m.id,
@@ -104,6 +131,7 @@ export function normalizeMessage(m: any): Message {
       avatarUrl: m.sender.avatarUrl ?? m.sender.avatar_url ?? null,
     } : null,
     readBy: m.readBy ?? m.read_by ?? [],
+    attachments: (m.attachments || []).map(normalizeAttachment),
   };
 }
 
@@ -354,4 +382,38 @@ export async function getSupportMessages(limit = 50, offset = 0): Promise<Messag
     params: { limit, offset }
   });
   return (response.data.messages || []).map(normalizeMessage);
+}
+
+// ============================================================================
+// Message Attachments
+// ============================================================================
+
+/**
+ * Upload message attachments for a conversation.
+ * Returns attachment data that can be sent with a message.
+ */
+export async function uploadMessageAttachments(conversationId: number, files: File[]): Promise<any[]> {
+  const formData = new FormData();
+  files.forEach((file) => {
+    formData.append('files', file);
+  });
+
+  const response = await api.post<{ attachments: any[] }>(
+    `/conversations/${conversationId}/attachments`,
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }
+  );
+
+  return response.data.attachments || [];
+}
+
+/**
+ * Get download URL for an attachment.
+ */
+export function getAttachmentDownloadUrl(attachmentId: number): string {
+  return `${api.defaults.baseURL}/attachments/${attachmentId}/download`;
 }

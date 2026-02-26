@@ -1171,7 +1171,7 @@
     updatingCreditsUserId.value = userToEditCredits.value.id;
     creditError.value = null;
     try {
-      const response = await fetch(`${API_BASE}/api/admin/users/${userToEditCredits.value.id}/credits`, {
+      const response = await fetch(`${API_BASE}/admin/users/${userToEditCredits.value.id}/credits`, {
         method: 'PUT',
         headers: {
           Authorization: `Bearer ${authStore.token}`,

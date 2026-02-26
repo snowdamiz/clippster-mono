@@ -2,6 +2,7 @@ defmodule ClippsterServerWeb.MessagingController do
   use ClippsterServerWeb, :controller
 
   alias ClippsterServer.Messaging
+  alias ClippsterServer.{Storage, ImageProcessor}
   alias ClippsterServerWeb.MessagingJSON
 
   action_fallback ClippsterServerWeb.FallbackController
@@ -452,9 +453,116 @@ defmodule ClippsterServerWeb.MessagingController do
     end
   end
 
+  @doc """
+  Upload attachments for a conversation.
+  Accepts multiple image files, processes them (compress + thumbnail), uploads to R2.
+  """
+  def upload_attachments(conn, %{"conversation_id" => conversation_id} = params) do
+    user_id = conn.assigns.current_user.id
+    conversation_id = if is_binary(conversation_id), do: String.to_integer(conversation_id), else: conversation_id
+
+    # Verify user is a participant in the conversation
+    case Messaging.get_conversation_for_user(conversation_id, user_id) do
+      {:error, _} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{error: "You are not a participant in this conversation"})
+
+      {:ok, conversation} ->
+        # Get uploaded files (can be single or multiple)
+        files = case params do
+          %{"files" => files} when is_list(files) -> files
+          %{"files" => file} -> [file]
+          %{"file" => file} -> [file]
+          _ -> []
+        end
+
+        if Enum.empty?(files) do
+          conn
+          |> put_status(:bad_request)
+          |> json(%{error: "No files provided"})
+        else
+          # Process each file
+          results = Enum.map(files, fn %Plug.Upload{path: temp_path, filename: filename, content_type: content_type} ->
+            process_and_upload_attachment(conversation, filename, temp_path, content_type)
+          end)
+
+          # Check for errors
+          errors = Enum.filter(results, fn {status, _} -> status == :error end)
+          
+          if Enum.empty?(errors) do
+            attachments = Enum.map(results, fn {:ok, attachment} -> attachment end)
+            json(conn, %{
+              success: true,
+              attachments: Enum.map(attachments, &MessagingJSON.attachment/1)
+            })
+          else
+            error_messages = Enum.map(errors, fn {:error, msg} -> msg end)
+            conn
+            |> put_status(:unprocessable_entity)
+            |> json(%{error: "Failed to process some files", details: error_messages})
+          end
+        end
+    end
+  end
+
+  @doc """
+  Download a message attachment.
+  Returns a presigned URL redirect.
+  """
+  def download_attachment(conn, %{"id" => attachment_id}) do
+    attachment_id = if is_binary(attachment_id), do: String.to_integer(attachment_id), else: attachment_id
+
+    case Messaging.get_message_attachment(attachment_id) do
+      nil ->
+        conn
+        |> put_status(:not_found)
+        |> json(%{error: "Attachment not found"})
+
+      attachment ->
+        # Generate presigned URL for download
+        case Storage.presigned_url(attachment.url, expires_in: 3600) do
+          {:ok, presigned_url} ->
+            redirect(conn, external: presigned_url)
+
+          {:error, _} ->
+            conn
+            |> put_status(:internal_server_error)
+            |> json(%{error: "Failed to generate download URL"})
+        end
+    end
+  end
+
   # ============================================================================
   # Private helpers
   # ============================================================================
+
+  defp process_and_upload_attachment(conversation, filename, temp_path, content_type) do
+    with {:ok, file_binary} <- File.read(temp_path),
+         true <- ImageProcessor.valid_image_type?(content_type),
+         {:ok, processed} <- ImageProcessor.process_image(file_binary, content_type),
+         org_id <- conversation.organization_id || 0,
+         full_key <- Storage.generate_message_attachment_key(org_id, conversation.id, filename, "full"),
+         thumb_key <- Storage.generate_message_attachment_key(org_id, conversation.id, filename, "thumbnail"),
+         {:ok, full_url} <- Storage.upload_file(processed.compressed, full_key, content_type: "image/jpeg"),
+         {:ok, thumb_url} <- Storage.upload_file(processed.thumbnail, thumb_key, content_type: "image/jpeg") do
+      
+      # Create attachment record (without message_id yet - will be set when message is sent)
+      {:ok, %{
+        url: full_url,
+        thumbnail_url: thumb_url,
+        filename: filename,
+        mime_type: "image/jpeg",
+        file_size: byte_size(processed.compressed),
+        width: processed.width,
+        height: processed.height,
+        attachment_type: "image"
+      }}
+    else
+      false -> {:error, "Invalid image type: #{content_type}"}
+      {:error, reason} -> {:error, "Failed to process image: #{inspect(reason)}"}
+    end
+  end
 
   defp broadcast_conversation_created(conversation) do
     Enum.each(conversation.participants, fn participant ->

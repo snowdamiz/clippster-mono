@@ -6,6 +6,7 @@ defmodule ClippsterServer.Organizations.MemberCreditAllocation do
   schema "member_credit_allocations" do
     field :hours_allocated, :decimal, default: Decimal.new("0")
     field :hours_used, :decimal, default: Decimal.new("0")
+    field :allow_pool_fallback, :boolean, default: false
 
     belongs_to :organization, ClippsterServer.Organizations.Organization, primary_key: true
     belongs_to :user, ClippsterServer.Accounts.User, primary_key: true
@@ -16,7 +17,7 @@ defmodule ClippsterServer.Organizations.MemberCreditAllocation do
   @doc false
   def changeset(allocation, attrs) do
     allocation
-    |> cast(attrs, [:organization_id, :user_id, :hours_allocated, :hours_used])
+    |> cast(attrs, [:organization_id, :user_id, :hours_allocated, :hours_used, :allow_pool_fallback])
     |> validate_required([:organization_id, :user_id])
     |> validate_number(:hours_allocated, greater_than_or_equal_to: 0)
     |> validate_number(:hours_used, greater_than_or_equal_to: 0)

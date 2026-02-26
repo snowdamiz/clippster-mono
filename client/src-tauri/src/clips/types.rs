@@ -1171,7 +1171,7 @@ pub struct LayoutOverlaySettings {
     pub label: Option<String>,
     /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
     #[serde(default)]
-    pub per_ratio_settings: Option<std::collections::HashMap<String, OverlayRatioConfig>>,
+    pub per_ratio_settings: Option<std::collections::HashMap<String, Option<OverlayRatioConfig>>>,
 }
 
 fn default_overlay_scale() -> f64 {
