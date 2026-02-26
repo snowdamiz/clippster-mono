@@ -106,6 +106,9 @@ pub static INSTAGRAM_AUTH_RESULT: Lazy<Arc<Mutex<Option<InstagramAuthResult>>>> 
 pub static TWITTER_AUTH_RESULT: Lazy<Arc<Mutex<Option<TwitterAuthResult>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static AUTH_SERVER_PORT: u16 = 48274;
 pub static PAYMENT_SERVER_PORT: u16 = 48275;
+pub static GOOGLE_AUTH_SERVER_PORT: u16 = 54321;
+pub static STRIPE_SERVER_PORT: u16 = 48277;
+pub static EMAIL_VERIFICATION_SERVER_PORT: u16 = 54322;
 pub static INSTAGRAM_AUTH_SERVER_PORT: u16 = 54323;
 pub static TWITTER_AUTH_SERVER_PORT: u16 = 54324;
 
