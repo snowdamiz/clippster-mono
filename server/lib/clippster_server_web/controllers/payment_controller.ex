@@ -6,9 +6,15 @@ defmodule ClippsterServerWeb.PaymentController do
   # Handle OPTIONS requests for CORS preflight
   def options(conn, _params) do
     conn
-    |> put_resp_header("access-control-allow-origin", get_req_header(conn, "origin") |> List.first() || "*")
+    |> put_resp_header(
+      "access-control-allow-origin",
+      get_req_header(conn, "origin") |> List.first() || "*"
+    )
     |> put_resp_header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS")
-    |> put_resp_header("access-control-allow-headers", "Authorization, Content-Type, Accept, Origin, X-Requested-With")
+    |> put_resp_header(
+      "access-control-allow-headers",
+      "Authorization, Content-Type, Accept, Origin, X-Requested-With, X-Client-Platform"
+    )
     |> put_resp_header("access-control-max-age", "86400")
     |> send_resp(200, "")
   end
@@ -81,31 +87,34 @@ defmodule ClippsterServerWeb.PaymentController do
           {:ok, personal_balance} = Credits.get_user_balance(user_id)
 
           # Get subscription status (with fallback for users without subscription fields)
-          subscription_status = try do
-            Subscriptions.get_subscription_status(user_id)
-          rescue
-            e ->
-              IO.puts("[PaymentController] Error getting subscription status: #{inspect(e)}")
-              # Return a default subscription status
-              %{
-                status: "none",
-                tier: nil,
-                tier_name: nil,
-                start_date: nil,
-                end_date: nil,
-                renewal_method: nil,
-                needs_subscription: true,
-                days_remaining: 0
-              }
-          end
+          subscription_status =
+            try do
+              Subscriptions.get_subscription_status(user_id)
+            rescue
+              e ->
+                IO.puts("[PaymentController] Error getting subscription status: #{inspect(e)}")
+                # Return a default subscription status
+                %{
+                  status: "none",
+                  tier: nil,
+                  tier_name: nil,
+                  start_date: nil,
+                  end_date: nil,
+                  renewal_method: nil,
+                  needs_subscription: true,
+                  days_remaining: 0
+                }
+            end
 
           # Get organization allocations
           org_allocations = get_organization_allocations(user_id)
 
           # Calculate total available
-          org_total = Enum.reduce(org_allocations, 0.0, fn alloc, acc ->
-            acc + alloc.hours_remaining
-          end)
+          org_total =
+            Enum.reduce(org_allocations, 0.0, fn alloc, acc ->
+              acc + alloc.hours_remaining
+            end)
+
           total_available = Decimal.to_float(personal_balance.hours_remaining) + org_total
 
           json(conn, %{
@@ -121,7 +130,11 @@ defmodule ClippsterServerWeb.PaymentController do
         rescue
           e ->
             IO.puts("[PaymentController] Error in get_balance: #{inspect(e)}")
-            IO.puts("[PaymentController] Stacktrace: #{Exception.format_stacktrace(__STACKTRACE__)}")
+
+            IO.puts(
+              "[PaymentController] Stacktrace: #{Exception.format_stacktrace(__STACKTRACE__)}"
+            )
+
             conn
             |> put_status(500)
             |> json(%{success: false, error: "Internal server error: #{inspect(e)}"})
@@ -148,18 +161,20 @@ defmodule ClippsterServerWeb.PaymentController do
     with {:ok, user_id} <- get_user_id_from_token(conn) do
       transactions = Credits.list_user_transactions(user_id)
 
-      formatted_transactions = Enum.map(transactions, fn tx ->
-        %{
-          id: tx.id,
-          pack_type: tx.pack_type,
-          hours_purchased: if(tx.hours_purchased, do: Decimal.to_float(tx.hours_purchased), else: 0),
-          amount_usd: if(tx.amount_usd, do: Decimal.to_float(tx.amount_usd), else: 0),
-          amount_sol: if(tx.amount_sol, do: Decimal.to_float(tx.amount_sol), else: 0),
-          payment_method: tx.payment_method || "solana",
-          status: tx.status,
-          created_at: tx.inserted_at
-        }
-      end)
+      formatted_transactions =
+        Enum.map(transactions, fn tx ->
+          %{
+            id: tx.id,
+            pack_type: tx.pack_type,
+            hours_purchased:
+              if(tx.hours_purchased, do: Decimal.to_float(tx.hours_purchased), else: 0),
+            amount_usd: if(tx.amount_usd, do: Decimal.to_float(tx.amount_usd), else: 0),
+            amount_sol: if(tx.amount_sol, do: Decimal.to_float(tx.amount_sol), else: 0),
+            payment_method: tx.payment_method || "solana",
+            status: tx.status,
+            created_at: tx.inserted_at
+          }
+        end)
 
       json(conn, %{
         success: true,
@@ -188,7 +203,8 @@ defmodule ClippsterServerWeb.PaymentController do
           role: role,
           hours_allocated: Decimal.to_float(allocation.hours_allocated),
           hours_used: Decimal.to_float(allocation.hours_used),
-          hours_remaining: Decimal.to_float(Organizations.MemberCreditAllocation.remaining_hours(allocation))
+          hours_remaining:
+            Decimal.to_float(Organizations.MemberCreditAllocation.remaining_hours(allocation))
         }
       else
         %{
@@ -212,7 +228,6 @@ defmodule ClippsterServerWeb.PaymentController do
     with {:ok, _user_id} <- get_user_id_from_token(conn),
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
-
       # Server calculates exact SOL amount
       sol_amount = pack_info.usd / sol_usd_rate
       company_wallet = Credits.get_company_wallet_address()
@@ -267,7 +282,6 @@ defmodule ClippsterServerWeb.PaymentController do
          {:ok, _user} <- get_user(user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
-
       # SERVER calculates expected SOL amount - cannot be manipulated by frontend
       expected_sol_amount = pack_info.usd / sol_usd_rate
 
@@ -275,7 +289,15 @@ defmodule ClippsterServerWeb.PaymentController do
       # This is the wallet that actually signed and sent the transaction via Phantom
       case verify_transaction(tx_signature, from_address, expected_sol_amount) do
         {:ok, :verified} ->
-          process_confirmed_payment(conn, tx_signature, pack_type, pack_info, expected_sol_amount, sol_usd_rate, user_id)
+          process_confirmed_payment(
+            conn,
+            tx_signature,
+            pack_type,
+            pack_info,
+            expected_sol_amount,
+            sol_usd_rate,
+            user_id
+          )
 
         {:error, reason} ->
           conn
@@ -306,10 +328,16 @@ defmodule ClippsterServerWeb.PaymentController do
   end
 
   # Fallback for requests without from_address (backward compatibility)
-  def confirm_payment(conn, %{"tx_signature" => _tx_signature, "pack_type" => _pack_type} = _params) do
+  def confirm_payment(
+        conn,
+        %{"tx_signature" => _tx_signature, "pack_type" => _pack_type} = _params
+      ) do
     conn
     |> put_status(400)
-    |> json(%{success: false, error: "Missing required field: from_address. Please update your client."})
+    |> json(%{
+      success: false,
+      error: "Missing required field: from_address. Please update your client."
+    })
   end
 
   # ============================================================================
@@ -332,27 +360,30 @@ defmodule ClippsterServerWeb.PaymentController do
          true <- Organizations.is_admin?(org.id, user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
-
       # Calculate base price
       base_usd = pack_info.usd
 
       # Apply promo code discount if provided and valid
-      {final_usd, promo_info} = if promo_code do
-        case PromoCodes.validate_org_promo(promo_code, pack_type, org.id, :credit_pack) do
-          {:ok, promo} ->
-            discount = promo.percent_off / 100
-            discounted_usd = base_usd * (1 - discount)
-            {discounted_usd, %{
-              code: promo.code,
-              percent_off: promo.percent_off,
-              original_usd: base_usd
-            }}
-          {:error, _reason} ->
-            {base_usd, nil}
+      {final_usd, promo_info} =
+        if promo_code do
+          case PromoCodes.validate_org_promo(promo_code, pack_type, org.id, :credit_pack) do
+            {:ok, promo} ->
+              discount = promo.percent_off / 100
+              discounted_usd = base_usd * (1 - discount)
+
+              {discounted_usd,
+               %{
+                 code: promo.code,
+                 percent_off: promo.percent_off,
+                 original_usd: base_usd
+               }}
+
+            {:error, _reason} ->
+              {base_usd, nil}
+          end
+        else
+          {base_usd, nil}
         end
-      else
-        {base_usd, nil}
-      end
 
       # Server calculates exact SOL amount
       sol_amount = final_usd / sol_usd_rate
@@ -373,11 +404,12 @@ defmodule ClippsterServerWeb.PaymentController do
       }
 
       # Add promo info if applied
-      quote = if promo_info do
-        Map.put(quote, :promo_applied, promo_info)
-      else
-        quote
-      end
+      quote =
+        if promo_info do
+          Map.put(quote, :promo_applied, promo_info)
+        else
+          quote
+        end
 
       json(conn, %{
         success: true,
@@ -416,12 +448,15 @@ defmodule ClippsterServerWeb.PaymentController do
   SERVER validates all pricing - frontend values are ignored.
   Optionally accepts promo_code parameter.
   """
-  def confirm_org_payment(conn, %{
-        "organization_id" => org_id,
-        "tx_signature" => tx_signature,
-        "pack_type" => pack_type,
-        "from_address" => from_address
-      } = params) do
+  def confirm_org_payment(
+        conn,
+        %{
+          "organization_id" => org_id,
+          "tx_signature" => tx_signature,
+          "pack_type" => pack_type,
+          "from_address" => from_address
+        } = params
+      ) do
     alias ClippsterServer.Organizations
     alias ClippsterServer.PromoCodes
 
@@ -432,20 +467,21 @@ defmodule ClippsterServerWeb.PaymentController do
          true <- Organizations.is_admin?(org.id, user_id),
          {:ok, pack_info} <- validate_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
-
       # Validate promo code if provided and calculate final price
-      {expected_usd, validated_promo} = if promo_code do
-        case PromoCodes.validate_org_promo(promo_code, pack_type, org.id, :credit_pack) do
-          {:ok, promo} ->
-            discount = promo.percent_off / 100
-            discounted_usd = pack_info.usd * (1 - discount)
-            {discounted_usd, promo}
-          {:error, _reason} ->
-            {pack_info.usd, nil}
+      {expected_usd, validated_promo} =
+        if promo_code do
+          case PromoCodes.validate_org_promo(promo_code, pack_type, org.id, :credit_pack) do
+            {:ok, promo} ->
+              discount = promo.percent_off / 100
+              discounted_usd = pack_info.usd * (1 - discount)
+              {discounted_usd, promo}
+
+            {:error, _reason} ->
+              {pack_info.usd, nil}
+          end
+        else
+          {pack_info.usd, nil}
         end
-      else
-        {pack_info.usd, nil}
-      end
 
       # SERVER calculates expected SOL amount - cannot be manipulated by frontend
       expected_sol_amount = expected_usd / sol_usd_rate
@@ -453,7 +489,17 @@ defmodule ClippsterServerWeb.PaymentController do
       # Verify the on-chain transaction
       case verify_transaction(tx_signature, from_address, expected_sol_amount) do
         {:ok, :verified} ->
-          process_confirmed_org_payment_with_promo(conn, org, pack_type, pack_info, tx_signature, expected_sol_amount, sol_usd_rate, user_id, validated_promo)
+          process_confirmed_org_payment_with_promo(
+            conn,
+            org,
+            pack_type,
+            pack_info,
+            tx_signature,
+            expected_sol_amount,
+            sol_usd_rate,
+            user_id,
+            validated_promo
+          )
 
         {:error, reason} ->
           conn
@@ -488,22 +534,32 @@ defmodule ClippsterServerWeb.PaymentController do
     end
   end
 
-  defp process_confirmed_org_payment_with_promo(conn, org, pack_type, pack_info, tx_signature, sol_amount, sol_usd_rate, user_id, validated_promo) do
+  defp process_confirmed_org_payment_with_promo(
+         conn,
+         org,
+         pack_type,
+         pack_info,
+         tx_signature,
+         sol_amount,
+         sol_usd_rate,
+         user_id,
+         validated_promo
+       ) do
     alias ClippsterServer.Organizations
     alias ClippsterServer.PromoCodes
 
     # Record the transaction and add credits to organization pool
     case Organizations.create_org_credit_transaction_and_add_credits(
-      org.id,
-      user_id,
-      pack_type,
-      pack_info.hours,
-      pack_info.usd,
-      sol_amount,
-      sol_usd_rate,
-      tx_signature,
-      "solana"
-    ) do
+           org.id,
+           user_id,
+           pack_type,
+           pack_info.hours,
+           pack_info.usd,
+           sol_amount,
+           sol_usd_rate,
+           tx_signature,
+           "solana"
+         ) do
       {:ok, %{org_credit: org_credit, transaction: transaction}} ->
         # Record promo code redemption if validated
         if validated_promo do
@@ -527,6 +583,7 @@ defmodule ClippsterServerWeb.PaymentController do
       {:error, :already_processed} ->
         # Transaction already exists, return success but no new credits
         {:ok, org_credit} = Organizations.get_organization_credits(org.id)
+
         json(conn, %{
           success: true,
           message: "Transaction already processed",
@@ -547,13 +604,22 @@ defmodule ClippsterServerWeb.PaymentController do
     alias ClippsterServer.Organizations
 
     org_id = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
+
     case Organizations.get_organization(org_id) do
       nil -> {:error, :organization_not_found}
       org -> {:ok, org}
     end
   end
 
-  defp process_confirmed_payment(conn, tx_signature, pack_type, pack_info, sol_amount, sol_usd_rate, user_id) do
+  defp process_confirmed_payment(
+         conn,
+         tx_signature,
+         pack_type,
+         pack_info,
+         sol_amount,
+         sol_usd_rate,
+         user_id
+       ) do
     # Check if transaction already exists
     case Credits.get_transaction_by_signature(tx_signature) do
       nil ->
@@ -589,19 +655,28 @@ defmodule ClippsterServerWeb.PaymentController do
               {:error, reason} ->
                 conn
                 |> put_status(500)
-                |> json(%{success: false, error: "Failed to confirm transaction", details: to_string(reason)})
+                |> json(%{
+                  success: false,
+                  error: "Failed to confirm transaction",
+                  details: to_string(reason)
+                })
             end
 
           {:error, changeset} ->
             conn
             |> put_status(400)
-            |> json(%{success: false, error: "Failed to create transaction", details: format_changeset_errors(changeset)})
+            |> json(%{
+              success: false,
+              error: "Failed to create transaction",
+              details: format_changeset_errors(changeset)
+            })
         end
 
       existing_transaction ->
         # Transaction already processed
         if existing_transaction.status == "confirmed" do
           {:ok, balance} = Credits.get_user_balance(user_id)
+
           json(conn, %{
             success: true,
             message: "Transaction already confirmed",
@@ -613,7 +688,10 @@ defmodule ClippsterServerWeb.PaymentController do
         else
           conn
           |> put_status(400)
-          |> json(%{success: false, error: "Transaction already exists with status: #{existing_transaction.status}"})
+          |> json(%{
+            success: false,
+            error: "Transaction already exists with status: #{existing_transaction.status}"
+          })
         end
     end
   end
@@ -699,7 +777,9 @@ defmodule ClippsterServerWeb.PaymentController do
     IO.puts("Expected SOL: #{expected_sol_amount}")
 
     # Write payload to temp file
-    temp_file = Path.join(System.tmp_dir!(), "payment_verify_#{:erlang.unique_integer([:positive])}.json")
+    temp_file =
+      Path.join(System.tmp_dir!(), "payment_verify_#{:erlang.unique_integer([:positive])}.json")
+
     File.write!(temp_file, payload)
 
     # Call the Node.js verification script

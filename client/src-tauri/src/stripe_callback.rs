@@ -14,7 +14,7 @@ pub struct StripePaymentResult {
 
 pub static STRIPE_PAYMENT_RESULT: Lazy<Arc<Mutex<Option<StripePaymentResult>>>> = 
     Lazy::new(|| Arc::new(Mutex::new(None)));
-pub static STRIPE_SERVER_PORT: u16 = 48276;
+pub static STRIPE_SERVER_PORT: u16 = 48277;
 
 pub fn start_stripe_callback_server(app: tauri::AppHandle) {
     static SERVER_STARTED: AtomicBool = AtomicBool::new(false);

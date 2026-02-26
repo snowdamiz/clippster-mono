@@ -17,6 +17,12 @@ const getBaseUrl = () => {
   return url;
 };
 
+const isDesktopRuntime = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const candidate = window as unknown as Record<string, unknown>;
+  return '__TAURI_INTERNALS__' in candidate || '__TAURI__' in candidate;
+};
+
 const api: AxiosInstance = axios.create({
   baseURL: getBaseUrl(),
   timeout: 300000, // 5 minutes timeout for long-running AI operations
@@ -34,6 +40,11 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    if (isDesktopRuntime()) {
+      config.headers['X-Client-Platform'] = 'desktop';
+    }
+
     // Let the browser set Content-Type for FormData (needs multipart boundary)
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];
