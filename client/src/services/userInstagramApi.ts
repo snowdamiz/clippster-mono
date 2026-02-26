@@ -123,7 +123,7 @@ export async function startUserInstagramOAuth(
 
   try {
     // Start OAuth - Tauri will open browser and handle callback
-    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+    const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
     await invoke('start_user_instagram_oauth', { apiBase, authToken });
 
     // Listen for the result
