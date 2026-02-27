@@ -366,11 +366,6 @@ defmodule ClippsterServerWeb.AuthController do
 
       state_data = Phoenix.Token.sign(conn, @google_state_salt, state_payload)
 
-      IO.puts("\n=== Redirecting to Google OAuth ===")
-      IO.puts("Callback URL: #{callback_url}")
-      IO.puts("Google Auth URL: #{google_auth_url}")
-      IO.puts("Web mode: #{web_mode}")
-
       google_auth_url =
         "https://accounts.google.com/o/oauth2/v2/auth?" <>
           URI.encode_query(%{
@@ -382,6 +377,11 @@ defmodule ClippsterServerWeb.AuthController do
             "access_type" => "offline",
             "prompt" => "consent"
           })
+
+      IO.puts("\n=== Redirecting to Google OAuth ===")
+      IO.puts("Callback URL: #{callback_url}")
+      IO.puts("Google Auth URL: #{google_auth_url}")
+      IO.puts("Web mode: #{web_mode}")
 
       redirect(conn, external: google_auth_url)
     end
