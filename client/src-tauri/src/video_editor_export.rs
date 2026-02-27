@@ -705,6 +705,8 @@ pub async fn export_video_editor_project(
 
         // This produces letterboxing/pillarboxing when video AR differs from canvas AR
 
+        // CRITICAL: pad must use canvas dimensions (width x height) to ensure concat gets uniform inputs
+
         if (scale - 1.0).abs() > 0.001 {
 
             let sw = (width as f64 * scale) as i32;
@@ -713,11 +715,17 @@ pub async fn export_video_editor_project(
 
             transform_filters.push(format!("scale={}:{}:force_original_aspect_ratio=decrease", sw, sh));
 
-            transform_filters.push(format!("pad={}:{}:(ow-iw)/2:(oh-ih)/2:black", sw, sh));
+            // Pad to EXACT canvas size (not sw x sh) - critical for concat
+
+            transform_filters.push(format!("pad={}:{}:(ow-iw)/2:(oh-ih)/2:black", width, height));
 
         } else {
 
+            // Scale to fit within canvas, preserving aspect ratio
+
             transform_filters.push(format!("scale={}:{}:force_original_aspect_ratio=decrease", width, height));
+
+            // Pad to EXACT canvas size (critical for concat - all inputs must be same resolution)
 
             transform_filters.push(format!("pad={}:{}:(ow-iw)/2:(oh-ih)/2:black", width, height));
 
