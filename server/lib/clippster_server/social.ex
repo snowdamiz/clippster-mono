@@ -66,6 +66,30 @@ defmodule ClippsterServer.Social do
   end
 
   @doc """
+  Gets a social account by its Post for Me account ID.
+  """
+  def get_social_account_by_pfm_id(pfm_account_id) when is_binary(pfm_account_id) do
+    SocialAccount
+    |> where([a], a.pfm_account_id == ^pfm_account_id)
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  def get_social_account_by_pfm_id(_), do: nil
+
+  @doc """
+  Gets a post submission by its Post for Me post ID.
+  """
+  def get_post_by_pfm_id(pfm_post_id) when is_binary(pfm_post_id) do
+    PostSubmission
+    |> where([p], p.pfm_post_id == ^pfm_post_id)
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  def get_post_by_pfm_id(_), do: nil
+
+  @doc """
   Creates a new social account connection.
   Admin only.
   """
@@ -139,6 +163,24 @@ defmodule ClippsterServer.Social do
     else
       {:error, :unauthorized}
     end
+  end
+
+  @doc """
+  Updates the PFM post ID on a post submission for webhook tracking.
+  """
+  def update_post_pfm_id(%PostSubmission{} = post, pfm_post_id) do
+    post
+    |> Ecto.Changeset.change(pfm_post_id: pfm_post_id)
+    |> Repo.update()
+  end
+
+  @doc """
+  Updates a post submission with arbitrary attributes (status, etc.).
+  """
+  def update_post_submission(%PostSubmission{} = post, attrs) when is_map(attrs) do
+    post
+    |> Ecto.Changeset.change(attrs)
+    |> Repo.update()
   end
 
   @doc """

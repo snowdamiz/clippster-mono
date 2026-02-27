@@ -24,6 +24,8 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
     field :profile_url, :string
     field :follower_count, :integer
     field :is_verified, :boolean, default: false
+    field :pfm_account_id, :string
+    field :account_type, :string  # "personal" or "business" (for Instagram)
 
     # Virtual fields for token handling
     field :access_token, :string, virtual: true
@@ -51,7 +53,9 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
       :token_expires_at,
       :profile_url,
       :follower_count,
-      :is_verified
+      :is_verified,
+      :pfm_account_id,
+      :account_type
     ])
     |> validate_required([:user_id, :platform])
     |> validate_inclusion(:platform, @platforms)
@@ -81,7 +85,9 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
       :profile_url,
       :follower_count,
       :is_verified,
-      :is_active
+      :is_active,
+      :pfm_account_id,
+      :account_type
     ])
     |> validate_length(:username, max: 100)
     |> validate_length(:display_name, max: 200)

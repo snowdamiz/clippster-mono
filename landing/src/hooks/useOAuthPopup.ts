@@ -55,28 +55,13 @@ export function useOAuthPopup() {
     return () => window.removeEventListener('message', handleMessage)
   }, [])
 
-  const openOAuth = useCallback((
-    platform: 'instagram' | 'twitter',
-    organizationId: string | number,
-    authToken: string,
-    onResult: (result: OAuthResult) => void
-  ) => {
+  const openPopup = useCallback((url: string, name: string, onResult: (result: OAuthResult) => void) => {
     // Close any existing popup
     if (popupRef.current && !popupRef.current.closed) {
       popupRef.current.close()
     }
 
     callbackRef.current = onResult
-
-    const webRedirectUri = `${window.location.origin}/oauth/callback`
-
-    const params = new URLSearchParams({
-      organization_id: String(organizationId),
-      auth_token: authToken,
-      web_redirect_uri: webRedirectUri,
-    })
-
-    const url = `${API_BASE}/auth/${platform}/start?${params.toString()}`
 
     // Open popup centered on screen
     const width = 600
@@ -86,7 +71,7 @@ export function useOAuthPopup() {
 
     popupRef.current = window.open(
       url,
-      `oauth-${platform}`,
+      name,
       `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes`
     )
 
@@ -94,7 +79,6 @@ export function useOAuthPopup() {
     const pollTimer = setInterval(() => {
       if (popupRef.current?.closed) {
         clearInterval(pollTimer)
-        // If callback hasn't been called yet, treat as cancelled
         if (callbackRef.current) {
           callbackRef.current({ success: false, error: 'Authentication window was closed' })
           callbackRef.current = null
@@ -103,7 +87,61 @@ export function useOAuthPopup() {
     }, 500)
   }, [])
 
-  return { openOAuth }
+  const openOAuth = useCallback((
+    platform: 'instagram' | 'twitter',
+    organizationId: string | number,
+    authToken: string,
+    onResult: (result: OAuthResult) => void
+  ) => {
+    const webRedirectUri = `${window.location.origin}/oauth/callback`
+    const params = new URLSearchParams({
+      organization_id: String(organizationId),
+      auth_token: authToken,
+      web_redirect_uri: webRedirectUri,
+    })
+    const url = `${API_BASE}/auth/${platform}/start?${params.toString()}`
+    openPopup(url, `oauth-${platform}`, onResult)
+  }, [openPopup])
+
+  /**
+   * Open PFM OAuth for org-level accounts (Instagram Business, TikTok, YouTube)
+   */
+  const openPfmOAuth = useCallback((
+    platform: 'instagram_business' | 'tiktok' | 'youtube',
+    organizationId: string | number,
+    authToken: string,
+    onResult: (result: OAuthResult) => void
+  ) => {
+    const webRedirectUri = `${window.location.origin}/oauth/callback`
+    const params = new URLSearchParams({
+      platform,
+      organization_id: String(organizationId),
+      auth_token: authToken,
+      web_redirect_uri: webRedirectUri,
+    })
+    const url = `${API_BASE}/auth/postforme/start?${params.toString()}`
+    openPopup(url, `oauth-pfm-${platform}`, onResult)
+  }, [openPopup])
+
+  /**
+   * Open PFM OAuth for user-level accounts (no org)
+   */
+  const openPfmUserOAuth = useCallback((
+    platform: 'instagram_business' | 'tiktok' | 'youtube',
+    authToken: string,
+    onResult: (result: OAuthResult) => void
+  ) => {
+    const webRedirectUri = `${window.location.origin}/oauth/callback`
+    const params = new URLSearchParams({
+      platform,
+      auth_token: authToken,
+      web_redirect_uri: webRedirectUri,
+    })
+    const url = `${API_BASE}/auth/postforme/start?${params.toString()}`
+    openPopup(url, `oauth-pfm-${platform}`, onResult)
+  }, [openPopup])
+
+  return { openOAuth, openPfmOAuth, openPfmUserOAuth }
 }
 
 export type { OAuthResult }

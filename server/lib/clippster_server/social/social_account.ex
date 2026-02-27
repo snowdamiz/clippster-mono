@@ -23,6 +23,8 @@ defmodule ClippsterServer.Social.SocialAccount do
     field :connected_at, :utc_datetime
     field :is_active, :boolean, default: true
     field :facebook_page_id, :string  # For Instagram Business accounts via Facebook Page
+    field :pfm_account_id, :string  # Post for Me social account ID
+    field :account_type, :string  # "personal" or "business" (for Instagram)
 
     # Virtual fields for token handling
     field :access_token, :string, virtual: true
@@ -51,7 +53,9 @@ defmodule ClippsterServer.Social.SocialAccount do
       :access_token,
       :refresh_token,
       :token_expires_at,
-      :facebook_page_id
+      :facebook_page_id,
+      :pfm_account_id,
+      :account_type
     ])
     |> validate_required([:organization_id, :platform, :platform_user_id, :username])
     |> validate_inclusion(:platform, @platforms)
@@ -76,7 +80,9 @@ defmodule ClippsterServer.Social.SocialAccount do
       :access_token,
       :refresh_token,
       :token_expires_at,
-      :is_active
+      :is_active,
+      :pfm_account_id,
+      :account_type
     ])
     |> encrypt_tokens()
   end

@@ -42,6 +42,7 @@ const OrgPosts = lazy(() => import('./pages/dashboard/OrgPosts').then(m => ({ de
 const OrgHiring = lazy(() => import('./pages/dashboard/OrgHiring').then(m => ({ default: m.OrgHiring })))
 const OrgMessages = lazy(() => import('./pages/dashboard/OrgMessages').then(m => ({ default: m.OrgMessages })))
 const OrgSubscriptionRequired = lazy(() => import('./pages/dashboard/OrgSubscriptionRequired').then(m => ({ default: m.OrgSubscriptionRequired })))
+const UserSocial = lazy(() => import('./pages/dashboard/UserSocial').then(m => ({ default: m.UserSocial })))
 const AdminLayout = lazy(() => import('./layouts/AdminLayout').then(m => ({ default: m.AdminLayout })))
 const AdminHubPage = lazy(() => import('./pages/admin/AdminHubPage').then(m => ({ default: m.AdminHubPage })))
 const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })))
@@ -130,6 +131,14 @@ createRoot(document.getElementById('root')!).render(
                   element={
                     <ProtectedRoute>
                       <DashboardIndex />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dashboard/social"
+                  element={
+                    <ProtectedRoute>
+                      <UserSocial />
                     </ProtectedRoute>
                   }
                 />

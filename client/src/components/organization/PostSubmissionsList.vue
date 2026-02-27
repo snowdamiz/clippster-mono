@@ -355,6 +355,8 @@
               >
                 <Instagram v-if="post.platform === 'instagram'" class="post-submissions__platform-badge-icon" />
                 <span v-else-if="post.platform === 'twitter' || post.platform === 'x'" class="post-submissions__platform-badge-icon post-submissions__x-icon">𝕏</span>
+                <TikTokLogo v-else-if="post.platform === 'tiktok'" class="post-submissions__platform-badge-icon" />
+                <Youtube v-else-if="post.platform === 'youtube'" class="post-submissions__platform-badge-icon" />
                 <FileVideo v-else class="post-submissions__platform-badge-icon" />
               </div>
             </div>
@@ -569,6 +571,7 @@
   } from '@/components/ui/dropdown-menu';
   import {
     Instagram,
+    Youtube,
     FileVideo,
     RefreshCw,
     ExternalLink,
@@ -588,6 +591,7 @@
     Loader2,
     ChevronDown,
   } from 'lucide-vue-next';
+  import TikTokLogo from '@/components/icons/TikTokLogo.vue';
   import { useToast } from '@/composables/useToast';
   import {
     listPostSubmissions,

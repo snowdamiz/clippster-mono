@@ -143,6 +143,33 @@ pub struct TwitterAccount {
     pub connected_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostForMeAuthResult {
+    pub success: bool,
+    #[serde(default)]
+    pub account: Option<PostForMeAccount>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostForMeAccount {
+    pub id: i64,
+    pub platform: String,
+    pub platform_user_id: String,
+    pub username: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub profile_image_url: Option<String>,
+    pub is_active: bool,
+    pub connected_at: String,
+    #[serde(default)]
+    pub pfm_account_id: Option<String>,
+    #[serde(default)]
+    pub account_type: Option<String>,
+}
+
 pub static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> =
@@ -155,12 +182,15 @@ pub static INSTAGRAM_AUTH_RESULT: Lazy<Arc<Mutex<Option<InstagramAuthResult>>>> 
     Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static TWITTER_AUTH_RESULT: Lazy<Arc<Mutex<Option<TwitterAuthResult>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
+pub static POSTFORME_AUTH_RESULT: Lazy<Arc<Mutex<Option<PostForMeAuthResult>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static AUTH_SERVER_PORT: u16 = 48274;
 pub static PAYMENT_SERVER_PORT: u16 = 48275;
 pub static GOOGLE_AUTH_SERVER_PORT: u16 = 54321;
 pub static EMAIL_VERIFICATION_SERVER_PORT: u16 = 54322;
 pub static INSTAGRAM_AUTH_SERVER_PORT: u16 = 54323;
 pub static TWITTER_AUTH_SERVER_PORT: u16 = 54324;
+pub static POSTFORME_AUTH_SERVER_PORT: u16 = 54325;
 
 const WALLET_AUTH_HTML: &str = include_str!("../../public/wallet-auth.html");
 const WALLET_PAYMENT_HTML: &str = include_str!("../../public/wallet-payment.html");
@@ -1008,5 +1038,177 @@ pub async fn poll_twitter_auth_result() -> Result<Option<TwitterAuthResult>, Str
 #[tauri::command]
 pub async fn clear_twitter_auth_result() -> Result<(), String> {
     *TWITTER_AUTH_RESULT.lock().unwrap() = None;
+    Ok(())
+}
+
+// ============================================================================
+// Post for Me OAuth (Instagram, TikTok, YouTube) - Organization Level
+// ============================================================================
+
+#[tauri::command]
+pub async fn open_postforme_auth_window(
+    app: tauri::AppHandle,
+    platform: String,
+    api_base: String,
+    organization_id: String,
+    auth_token: String,
+) -> Result<(), String> {
+    // Clear any previous auth result
+    *POSTFORME_AUTH_RESULT.lock().unwrap() = None;
+
+    // Start local callback server
+    start_postforme_callback_server(app.clone());
+
+    // Build the PFM OAuth initiation URL
+    let auth_url = format!(
+        "{}?platform={}&organization_id={}&callback_port={}&auth_token={}",
+        build_api_url(&api_base, "/auth/postforme/start"),
+        urlencoding::encode(&platform),
+        urlencoding::encode(&organization_id),
+        POSTFORME_AUTH_SERVER_PORT,
+        urlencoding::encode(&auth_token)
+    );
+
+    tauri_plugin_opener::open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+// ============================================================================
+// Post for Me OAuth - User Level (no organization)
+// ============================================================================
+
+#[tauri::command]
+pub async fn open_postforme_user_auth_window(
+    app: tauri::AppHandle,
+    platform: String,
+    api_base: String,
+    auth_token: String,
+) -> Result<(), String> {
+    // Clear any previous auth result
+    *POSTFORME_AUTH_RESULT.lock().unwrap() = None;
+
+    // Start local callback server
+    start_postforme_callback_server(app.clone());
+
+    // Build the PFM OAuth initiation URL (no organization_id)
+    let auth_url = format!(
+        "{}?platform={}&callback_port={}&auth_token={}",
+        build_api_url(&api_base, "/auth/postforme/start"),
+        urlencoding::encode(&platform),
+        POSTFORME_AUTH_SERVER_PORT,
+        urlencoding::encode(&auth_token)
+    );
+
+    tauri_plugin_opener::open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
+pub fn start_postforme_callback_server(app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
+        return; // Server already running
+    }
+
+    tokio::spawn(async move {
+        let pfm_auth_result = POSTFORME_AUTH_RESULT.clone();
+        let app_handle = app.clone();
+
+        let postforme_callback = warp::path("postforme-callback")
+            .and(warp::get())
+            .and(warp::query::<HashMap<String, String>>())
+            .map(move |params: HashMap<String, String>| {
+                let success = parse_bool(params.get("success"), false);
+                let error = parse_optional_string(&params, "error");
+
+                let account = if success {
+                    Some(PostForMeAccount {
+                        id: parse_i64(params.get("account_id"), 0),
+                        platform: parse_optional_string(&params, "platform")
+                            .unwrap_or_else(|| "instagram".to_string()),
+                        platform_user_id: parse_optional_string(&params, "platform_user_id")
+                            .unwrap_or_default(),
+                        username: parse_optional_string(&params, "username").unwrap_or_default(),
+                        display_name: parse_optional_string(&params, "display_name"),
+                        profile_image_url: parse_optional_string(&params, "profile_image_url"),
+                        is_active: true,
+                        connected_at: parse_optional_string(&params, "connected_at")
+                            .unwrap_or_default(),
+                        pfm_account_id: parse_optional_string(&params, "pfm_account_id"),
+                        account_type: parse_optional_string(&params, "account_type"),
+                    })
+                } else {
+                    None
+                };
+
+                let result = PostForMeAuthResult {
+                    success,
+                    account,
+                    error: error.clone(),
+                };
+
+                println!("[PostForMe Auth] Callback received: success={}", result.success);
+
+                *pfm_auth_result.lock().unwrap() = Some(result.clone());
+                let _ = app_handle.emit("postforme-auth-complete", result.clone());
+
+                let platform_name = parse_optional_string(&params, "platform")
+                    .unwrap_or_else(|| "Account".to_string());
+                let title_platform = match platform_name.as_str() {
+                    "instagram" => "Instagram",
+                    "tiktok" => "TikTok",
+                    "youtube" => "YouTube",
+                    _ => "Account",
+                };
+
+                let (title, message, color) = if result.success {
+                    (
+                        format!("{} Connected", title_platform),
+                        "You can close this tab and return to the app.".to_string(),
+                        "#22c55e",
+                    )
+                } else {
+                    (
+                        format!("{} Connection Failed", title_platform),
+                        result
+                            .error
+                            .unwrap_or_else(|| "Authentication failed. You can close this tab.".to_string()),
+                        "#ef4444",
+                    )
+                };
+
+                warp::reply::html(oauth_result_html(&title, &message, color))
+            });
+
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "OPTIONS"])
+            .allow_headers(vec!["Content-Type"]);
+
+        println!(
+            "Starting Post for Me auth callback server on port {}",
+            POSTFORME_AUTH_SERVER_PORT
+        );
+
+        warp::serve(postforme_callback.with(cors))
+            .run(([127, 0, 0, 1], POSTFORME_AUTH_SERVER_PORT))
+            .await;
+    });
+}
+
+#[tauri::command]
+pub async fn poll_postforme_auth_result() -> Result<Option<PostForMeAuthResult>, String> {
+    let result = POSTFORME_AUTH_RESULT.lock().unwrap().clone();
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn clear_postforme_auth_result() -> Result<(), String> {
+    *POSTFORME_AUTH_RESULT.lock().unwrap() = None;
     Ok(())
 }

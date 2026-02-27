@@ -49,6 +49,9 @@ defmodule ClippsterServer.Social.PostSubmission do
     field :attempts, :integer, default: 0
     field :max_attempts, :integer, default: 3
 
+    # Post for Me integration
+    field :pfm_post_id, :string
+
     # Owner type and source
     field :owner_type, :string, default: "org"
     field :clip_id, :string
@@ -83,7 +86,8 @@ defmodule ClippsterServer.Social.PostSubmission do
       :thumbnail_url,
       :clip_id,
       :owner_type,
-      :scheduled_at
+      :scheduled_at,
+      :pfm_post_id
     ])
     |> validate_required([:submitted_by_user_id, :platform, :media_url])
     |> validate_inclusion(:platform, @platforms)
@@ -119,7 +123,8 @@ defmodule ClippsterServer.Social.PostSubmission do
       :thumbnail_url,
       :clip_id,
       :owner_type,
-      :scheduled_at
+      :scheduled_at,
+      :pfm_post_id
     ])
     |> validate_required([:submitted_by_user_id, :platform, :media_url, :scheduled_at])
     |> validate_inclusion(:platform, @platforms)

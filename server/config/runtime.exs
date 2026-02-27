@@ -151,6 +151,21 @@ config :clippster_server, :twitter_oauth,
   client_secret: System.get_env("TWITTER_CLIENT_SECRET"),
   redirect_uri: System.get_env("TWITTER_REDIRECT_URI")
 
+# Post for Me API configuration (Instagram, TikTok, YouTube posting & analytics)
+pfm_callback_url =
+  System.get_env("POST_FOR_ME_CALLBACK_URL") ||
+    if config_env() == :prod do
+      "https://#{System.get_env("PHX_HOST") || "api.clippster.app"}/api/auth/postforme/callback"
+    else
+      "http://localhost:4000/api/auth/postforme/callback"
+    end
+
+config :clippster_server, :post_for_me,
+  api_key: System.get_env("POST_FOR_ME_API_KEY"),
+  webhook_secret: System.get_env("POST_FOR_ME_WEBHOOK_SECRET"),
+  base_url: System.get_env("POST_FOR_ME_BASE_URL") || "https://api.postforme.dev",
+  callback_url: pfm_callback_url
+
 # Freesound API (sound effects search proxy)
 config :clippster_server, :freesound, api_key: System.get_env("FREESOUND_API_KEY")
 

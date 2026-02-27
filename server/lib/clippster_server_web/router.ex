@@ -184,6 +184,13 @@ defmodule ClippsterServerWeb.Router do
     get("/auth/user-twitter/start", UserTwitterAuthController, :start_oauth)
     get("/auth/user-twitter/callback", UserTwitterAuthController, :oauth_callback)
 
+    # Post for Me OAuth routes (Instagram, TikTok, YouTube - org and user level)
+    get("/auth/postforme/start", PostForMeAuthController, :start_oauth)
+    get("/auth/postforme/callback", PostForMeAuthController, :oauth_callback)
+
+    # Post for Me webhook (public, verified by secret header)
+    post("/postforme/webhook", PostForMeWebhookController, :handle)
+
     # Email authentication routes
     post("/auth/email/register", EmailAuthController, :register)
     post("/auth/email/verify-otp", EmailAuthController, :verify_otp)
@@ -792,6 +799,26 @@ defmodule ClippsterServerWeb.Router do
     get("/user/posts/analytics", UserPostsController, :analytics_summary)
     get("/user/posts/:id", UserPostsController, :show)
     post("/user/posts/:id/sync", UserPostsController, :sync_analytics)
+
+    # ============================================================================
+    # Post for Me (Instagram, TikTok, YouTube) - Authenticated Proxy
+    # ============================================================================
+
+    # PFM accounts
+    get("/postforme/accounts", PostForMeController, :list_accounts)
+    post("/postforme/accounts/:id/disconnect", PostForMeController, :disconnect)
+
+    # PFM media upload
+    post("/postforme/media/upload-url", PostForMeController, :create_upload_url)
+
+    # PFM posts
+    post("/postforme/posts", PostForMeController, :create_post)
+    get("/postforme/posts", PostForMeController, :list_posts)
+    get("/postforme/posts/:id", PostForMeController, :get_post)
+
+    # PFM analytics
+    get("/postforme/accounts/:id/feed", PostForMeController, :get_feed)
+    get("/postforme/post-results", PostForMeController, :get_post_results)
 
     # ============================================================================
     # Social Media Scheduling

@@ -37,6 +37,8 @@ export interface SocialAccount {
   is_active: boolean;
   connected_at: string;
   token_expires_at: string | null;
+  pfm_account_id: string | null;
+  account_type: string | null;
   inserted_at: string;
   updated_at: string;
   assignments?: SocialAccountAssignment[];
@@ -701,6 +703,13 @@ import {
   type TwitterAuthResult,
 } from '@/lib/twitter-auth';
 
+import {
+  startPfmOAuth,
+  onPfmAuthComplete as onTauriPfmAuthComplete,
+  type PfmAuthResult,
+  type PfmPlatform,
+} from '@/lib/postforme-auth';
+
 /**
  * Get the API base URL
  */
@@ -814,6 +823,62 @@ export function onTwitterAuthComplete(
   }
 
   return onTauriTwitterAuthComplete((result: TwitterAuthResult) => {
+    callback({
+      success: result.success,
+      account: result.account as SocialAccount | undefined,
+      error: result.error,
+    });
+  });
+}
+
+// ============================================
+// Post for Me Connection (Instagram, TikTok, YouTube) via Tauri OAuth
+// ============================================
+
+/**
+ * Start Post for Me OAuth flow for an organization account.
+ * Supports Instagram, TikTok, and YouTube.
+ * Returns a cleanup function.
+ */
+export async function startPfmOAuthPopup(
+  platform: PfmPlatform,
+  organizationId: string | number,
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): Promise<() => void> {
+  if (!isTauri()) {
+    throw new Error('Post for Me OAuth is only supported in the Tauri desktop app');
+  }
+
+  const apiBase = getApiBase();
+  const authToken = getAuthToken();
+
+  if (!authToken) {
+    throw new Error('You must be logged in to connect social accounts');
+  }
+
+  return startPfmOAuth(platform, organizationId, apiBase, authToken, (result: PfmAuthResult) => {
+    if (onResult) {
+      onResult({
+        success: result.success,
+        account: result.account as SocialAccount | undefined,
+        error: result.error,
+      });
+    }
+  });
+}
+
+/**
+ * Listen for Post for Me OAuth completion events.
+ * Returns cleanup function to remove listener.
+ */
+export function onPfmAuthComplete(
+  callback: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): () => void {
+  if (!isTauri()) {
+    return () => {};
+  }
+
+  return onTauriPfmAuthComplete((result: PfmAuthResult) => {
     callback({
       success: result.success,
       account: result.account as SocialAccount | undefined,

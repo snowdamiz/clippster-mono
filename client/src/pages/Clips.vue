@@ -701,6 +701,34 @@
       @published="onPublished"
     />
 
+    <!-- Dialog 3c: TikTok Publish -->
+    <TikTokPublishDialog
+      :open="showTikTokPublishDialog"
+      :organization-id="selectedOrganization?.id"
+      :organization-name="selectedOrganization?.name"
+      :media-url="publishMediaUrl"
+      :thumbnail-url="publishThumbnailUrl"
+      :media-type="'video'"
+      :is-admin="isAdminOfSelectedOrg"
+      :creator-profiles="publishCreatorProfiles"
+      @close="onPublishDialogClose"
+      @published="onPublished"
+    />
+
+    <!-- Dialog 3d: YouTube Publish -->
+    <YouTubePublishDialog
+      :open="showYouTubePublishDialog"
+      :organization-id="selectedOrganization?.id"
+      :organization-name="selectedOrganization?.name"
+      :media-url="publishMediaUrl"
+      :thumbnail-url="publishThumbnailUrl"
+      :media-type="'video'"
+      :is-admin="isAdminOfSelectedOrg"
+      :creator-profiles="publishCreatorProfiles"
+      @close="onPublishDialogClose"
+      @published="onPublished"
+    />
+
     <!-- Uploading Media Overlay -->
     <Teleport to="body">
       <Transition name="fade">
@@ -952,6 +980,8 @@
   import PublishDestinationDialog from '@/components/PublishDestinationDialog.vue';
   import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
   import TwitterPublishDialog from '@/components/TwitterPublishDialog.vue';
+  import TikTokPublishDialog from '@/components/TikTokPublishDialog.vue';
+  import YouTubePublishDialog from '@/components/YouTubePublishDialog.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
@@ -1058,7 +1088,9 @@
   const showOrgSelectDialog = ref(false);
   const showPublishDialog = ref(false);
   const showTwitterPublishDialog = ref(false);
-  const selectedPlatform = ref<'instagram' | 'twitter'>('instagram');
+  const showTikTokPublishDialog = ref(false);
+  const showYouTubePublishDialog = ref(false);
+  const selectedPlatform = ref<'instagram' | 'twitter' | 'tiktok' | 'youtube'>('instagram');
   const publishingBuild = ref<{ build: ClipBuild; filePath: string; thumbnailUrl: string | null } | null>(null);
   const selectedOrganization = ref<{ id: string | number; name: string; role: string } | null>(null);
   const publishMediaUrl = ref('');
@@ -2640,7 +2672,7 @@
   /**
    * Handle platform selection from Dialog 1. Step 2: Show destination dialog.
    */
-  function onPlatformSelected(platform: 'instagram' | 'twitter') {
+  function onPlatformSelected(platform: 'instagram' | 'twitter' | 'tiktok' | 'youtube') {
     selectedPlatform.value = platform;
     showPlatformSelectDialog.value = false;
     showOrgSelectDialog.value = true;
@@ -2707,11 +2739,7 @@
       publishThumbnailUrl.value = uploadResult.thumbnail_url || thumbnailUrl || '';
       publishCreatorProfiles.value = [];
 
-      if (selectedPlatform.value === 'twitter') {
-        showTwitterPublishDialog.value = true;
-      } else {
-        showPublishDialog.value = true;
-      }
+      openPlatformPublishDialog();
     } catch (error) {
       console.error('Failed to prepare for publishing:', error);
       showErrorToast('Upload Failed', error instanceof Error ? error.message : 'Failed to upload video');
@@ -2768,11 +2796,7 @@
         publishCreatorProfiles.value = [];
       }
 
-      if (selectedPlatform.value === 'twitter') {
-        showTwitterPublishDialog.value = true;
-      } else {
-        showPublishDialog.value = true;
-      }
+      openPlatformPublishDialog();
     } catch (error) {
       console.error('Failed to prepare for publishing:', error);
       showErrorToast('Upload Failed', error instanceof Error ? error.message : 'Failed to upload video');
@@ -2782,11 +2806,33 @@
   }
 
   /**
+   * Open the correct platform-specific publish dialog based on selectedPlatform.
+   */
+  function openPlatformPublishDialog() {
+    switch (selectedPlatform.value) {
+      case 'twitter':
+        showTwitterPublishDialog.value = true;
+        break;
+      case 'tiktok':
+        showTikTokPublishDialog.value = true;
+        break;
+      case 'youtube':
+        showYouTubePublishDialog.value = true;
+        break;
+      default:
+        showPublishDialog.value = true;
+        break;
+    }
+  }
+
+  /**
    * Handle publish dialog close
    */
   function onPublishDialogClose() {
     showPublishDialog.value = false;
     showTwitterPublishDialog.value = false;
+    showTikTokPublishDialog.value = false;
+    showYouTubePublishDialog.value = false;
     publishingBuild.value = null;
     publishMediaUrl.value = '';
     publishThumbnailUrl.value = '';

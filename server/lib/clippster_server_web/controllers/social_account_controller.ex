@@ -339,6 +339,8 @@ defmodule ClippsterServerWeb.SocialAccountController do
       is_active: account.is_active,
       connected_at: account.connected_at,
       token_expires_at: account.token_expires_at,
+      pfm_account_id: account.pfm_account_id,
+      account_type: account.account_type,
       inserted_at: account.inserted_at,
       updated_at: account.updated_at
     }

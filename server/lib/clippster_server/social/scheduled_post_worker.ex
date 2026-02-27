@@ -395,7 +395,54 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     end
   end
 
-  # Default platform publish: single-step flow (Instagram and others)
+  # Post for Me platforms: Instagram, TikTok, YouTube
+  defp do_publish(%PostSubmission{platform: platform} = post, account, _access_token)
+       when platform in ["instagram", "tiktok", "youtube"] do
+    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to #{platform} via Post for Me")
+
+    pfm_account_id = get_pfm_account_id(account)
+
+    unless pfm_account_id do
+      handle_publish_failure(post, "No Post for Me account ID found for #{platform} account", :permanent)
+    else
+      alias ClippsterServer.Social.Platforms.PostForMe, as: PFM
+
+      publish_opts = %{
+        pfm_account_id: pfm_account_id,
+        caption: post.caption || "",
+        platform: platform,
+        media_type: post.media_type || "video"
+      }
+
+      case PFM.do_publish(pfm_account_id, post.media_url, post.caption || "", platform, publish_opts) do
+        {:ok, result} ->
+          # Store PFM post ID on the submission for webhook tracking
+          if result[:pfm_post_id] do
+            Social.update_post_pfm_id(post, result.pfm_post_id)
+          end
+
+          # If PFM returns "processing", the webhook will confirm later
+          case result[:pfm_status] do
+            status when status in ["processing", "pending", "queued"] ->
+              Logger.info("[ScheduledPostWorker] PFM post #{result.pfm_post_id} is #{status}, waiting for webhook")
+              # Mark as publishing - webhook will update to published
+              handle_publish_success(post, %{
+                post_id: result.pfm_post_id,
+                post_url: result[:post_url] || ""
+              })
+
+            _ ->
+              handle_publish_success(post, result)
+          end
+
+        {:error, reason} ->
+          error_type = classify_error(inspect(reason))
+          handle_publish_failure(post, inspect(reason), error_type)
+      end
+    end
+  end
+
+  # Default platform publish: fallback single-step flow
   defp do_publish(%PostSubmission{} = post, account, access_token) do
     Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to #{post.platform}")
 
@@ -418,6 +465,10 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   defp get_platform_user_id(%SocialAccount{platform_user_id: id}), do: id
   defp get_platform_user_id(%ClipperSocialAccount{platform_user_id: id}), do: id
   defp get_platform_user_id(_), do: nil
+
+  defp get_pfm_account_id(%SocialAccount{pfm_account_id: id}), do: id
+  defp get_pfm_account_id(%ClipperSocialAccount{pfm_account_id: id}), do: id
+  defp get_pfm_account_id(_), do: nil
 
   defp get_account_id(%PostSubmission{} = post) do
     post.organization_social_account_id || post.user_social_account_id
