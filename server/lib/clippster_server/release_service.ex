@@ -134,7 +134,9 @@ defmodule ClippsterServer.ReleaseService do
     downloads =
       Enum.map(@platform_assets, fn {platform_key, %{suffix: suffix, label: label}} ->
         filename = "Clippster_#{version}#{suffix}"
-        download_url = "https://github.com/#{@github_repo}/releases/download/v#{version}/#{filename}"
+
+        download_url =
+          "https://github.com/#{@github_repo}/releases/download/v#{version}/#{filename}"
 
         %{
           platform: platform_key,

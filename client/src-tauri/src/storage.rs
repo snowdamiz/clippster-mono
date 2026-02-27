@@ -14,14 +14,17 @@ pub fn set_current_user_id(user_id: Option<i64>) -> Result<(), String> {
     let mut current = CURRENT_USER_ID.lock().unwrap();
     let old_user_id = *current;
     *current = user_id;
-    
+
     // Clear the cached storage paths when user changes
     if old_user_id != user_id {
         let mut cache = STORAGE_PATHS.lock().unwrap();
         *cache = None;
-        println!("[Storage] User ID changed from {:?} to {:?}, clearing storage cache", old_user_id, user_id);
+        println!(
+            "[Storage] User ID changed from {:?} to {:?}, clearing storage cache",
+            old_user_id, user_id
+        );
     }
-    
+
     println!("[Storage] Current user ID set to: {:?}", user_id);
     Ok(())
 }
@@ -70,7 +73,7 @@ pub fn get_app_storage_dir() -> Result<PathBuf, String> {
 /// If no user is logged in, returns app-level path (for backwards compatibility).
 pub fn get_storage_base_dir() -> Result<PathBuf, String> {
     let app_dir = get_app_storage_dir()?;
-    
+
     // Check if we have a current user
     if let Some(user_id) = get_current_user_id() {
         // User-specific storage: Clippster/users/{user_id}/
@@ -86,15 +89,14 @@ pub fn get_storage_base_dir() -> Result<PathBuf, String> {
 pub fn delete_video_file(file_path: String, thumbnail_path: Option<String>) -> Result<(), String> {
     use std::fs;
     use std::path::Path;
-    
+
     let video_path = Path::new(&file_path);
-    
+
     // Delete the video file if it exists
     if video_path.exists() {
-        fs::remove_file(video_path)
-            .map_err(|e| format!("Failed to delete video file: {}", e))?;
+        fs::remove_file(video_path).map_err(|e| format!("Failed to delete video file: {}", e))?;
     }
-    
+
     // Delete the thumbnail file if it exists
     if let Some(thumb_path) = thumbnail_path {
         let thumbnail = Path::new(&thumb_path);
@@ -103,21 +105,24 @@ pub fn delete_video_file(file_path: String, thumbnail_path: Option<String>) -> R
             let _ = fs::remove_file(thumbnail);
         }
     }
-    
+
     Ok(())
 }
 
 /// Comprehensive cleanup of all files associated with a raw video
 /// Deletes: video file, thumbnail, audio cache, waveform cache
 #[tauri::command]
-pub fn delete_raw_video_files(file_path: String, thumbnail_path: Option<String>) -> Result<(), String> {
+pub fn delete_raw_video_files(
+    file_path: String,
+    thumbnail_path: Option<String>,
+) -> Result<(), String> {
     use std::fs;
     use std::path::Path;
-    
+
     println!("[Storage] Comprehensive cleanup for video: {}", file_path);
-    
+
     let video_path = Path::new(&file_path);
-    
+
     // 1. Delete the video file if it exists
     if video_path.exists() {
         match fs::remove_file(video_path) {
@@ -128,7 +133,7 @@ pub fn delete_raw_video_files(file_path: String, thumbnail_path: Option<String>)
             }
         }
     }
-    
+
     // 2. Delete the thumbnail file if it exists
     if let Some(thumb_path) = thumbnail_path {
         let thumbnail = Path::new(&thumb_path);
@@ -139,20 +144,24 @@ pub fn delete_raw_video_files(file_path: String, thumbnail_path: Option<String>)
             }
         }
     }
-    
+
     // 3. Delete waveform cache file
     // Generate hash for the video path to find cache files
     let video_path_hash = crate::waveform::generate_video_path_hash(&file_path);
-    
-    if let Ok(waveform_cache_path) = crate::waveform::get_waveform_cache_file_path(&video_path_hash) {
+
+    if let Ok(waveform_cache_path) = crate::waveform::get_waveform_cache_file_path(&video_path_hash)
+    {
         if waveform_cache_path.exists() {
             match fs::remove_file(&waveform_cache_path) {
-                Ok(_) => println!("[Storage] Deleted waveform cache: {:?}", waveform_cache_path),
+                Ok(_) => println!(
+                    "[Storage] Deleted waveform cache: {:?}",
+                    waveform_cache_path
+                ),
                 Err(e) => println!("[Storage] Warning: Failed to delete waveform cache: {}", e),
             }
         }
     }
-    
+
     // 4. Delete audio cache file
     if let Ok(audio_cache_path) = crate::waveform::get_audio_cache_file_path(&video_path_hash) {
         if audio_cache_path.exists() {
@@ -162,8 +171,11 @@ pub fn delete_raw_video_files(file_path: String, thumbnail_path: Option<String>)
             }
         }
     }
-    
-    println!("[Storage] Comprehensive cleanup completed for: {}", file_path);
+
+    println!(
+        "[Storage] Comprehensive cleanup completed for: {}",
+        file_path
+    );
     Ok(())
 }
 
@@ -172,30 +184,29 @@ pub fn delete_raw_video_files(file_path: String, thumbnail_path: Option<String>)
 #[tauri::command]
 pub fn delete_proxy_files(source_id: String) -> Result<(), String> {
     use std::fs;
-    
+
     println!("[Storage] Deleting proxy files for source: {}", source_id);
-    
-    let paths = init_storage_dirs()
-        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+
+    let paths = init_storage_dirs().map_err(|e| format!("Failed to get storage paths: {}", e))?;
     let proxy_dir = paths.temp.join("proxies");
-    
+
     if !proxy_dir.exists() {
         println!("[Storage] Proxy directory does not exist, nothing to delete");
         return Ok(());
     }
-    
+
     // Read all files in the proxy directory
-    let entries = fs::read_dir(&proxy_dir)
-        .map_err(|e| format!("Failed to read proxy directory: {}", e))?;
-    
+    let entries =
+        fs::read_dir(&proxy_dir).map_err(|e| format!("Failed to read proxy directory: {}", e))?;
+
     let mut deleted_count = 0;
-    
+
     // Delete all files that match the pattern proxy_{source_id}_*
     for entry in entries {
         if let Ok(entry) = entry {
             let file_name = entry.file_name();
             let file_name_str = file_name.to_string_lossy();
-            
+
             // Match pattern: proxy_{source_id}_*
             let prefix = format!("proxy_{}_", source_id);
             if file_name_str.starts_with(&prefix) {
@@ -205,14 +216,20 @@ pub fn delete_proxy_files(source_id: String) -> Result<(), String> {
                         deleted_count += 1;
                     }
                     Err(e) => {
-                        println!("[Storage] Warning: Failed to delete proxy file {}: {}", file_name_str, e);
+                        println!(
+                            "[Storage] Warning: Failed to delete proxy file {}: {}",
+                            file_name_str, e
+                        );
                     }
                 }
             }
         }
     }
-    
-    println!("[Storage] Deleted {} proxy file(s) for source: {}", deleted_count, source_id);
+
+    println!(
+        "[Storage] Deleted {} proxy file(s) for source: {}",
+        deleted_count, source_id
+    );
     Ok(())
 }
 
@@ -306,26 +323,41 @@ pub fn get_livestream_recordings_dir() -> Result<PathBuf, String> {
 #[tauri::command]
 pub fn delete_livestream_recording(session_id: String) -> Result<(), String> {
     use std::fs;
-    
-    println!("[Storage] Deleting livestream recording for session: {}", session_id);
-    
+
+    println!(
+        "[Storage] Deleting livestream recording for session: {}",
+        session_id
+    );
+
     let recordings_dir = get_livestream_recordings_dir()?;
     let session_dir = recordings_dir.join(&session_id);
-    
+
     if !session_dir.exists() {
-        println!("[Storage] Session directory does not exist: {:?}", session_dir);
+        println!(
+            "[Storage] Session directory does not exist: {:?}",
+            session_dir
+        );
         return Ok(());
     }
-    
+
     // Remove the entire session directory recursively
     match fs::remove_dir_all(&session_dir) {
         Ok(_) => {
-            println!("[Storage] Deleted livestream recording directory: {:?}", session_dir);
+            println!(
+                "[Storage] Deleted livestream recording directory: {:?}",
+                session_dir
+            );
             Ok(())
         }
         Err(e) => {
-            println!("[Storage] Warning: Failed to delete livestream recording directory: {}", e);
-            Err(format!("Failed to delete livestream recording directory: {}", e))
+            println!(
+                "[Storage] Warning: Failed to delete livestream recording directory: {}",
+                e
+            );
+            Err(format!(
+                "Failed to delete livestream recording directory: {}",
+                e
+            ))
         }
     }
 }
@@ -351,7 +383,7 @@ pub struct StoragePaths {
 #[tauri::command]
 pub fn get_storage_paths() -> Result<StoragePathsResponse, String> {
     let paths = init_storage_dirs()?;
-    
+
     Ok(StoragePathsResponse {
         base: paths.base.to_string_lossy().to_string(),
         clips: paths.clips.to_string_lossy().to_string(),
@@ -394,26 +426,29 @@ pub struct CopyVideoResponse {
 
 /// Tauri command to generate a thumbnail from a video
 #[tauri::command]
-pub async fn generate_thumbnail(app: tauri::AppHandle, video_path: String) -> Result<String, String> {
+pub async fn generate_thumbnail(
+    app: tauri::AppHandle,
+    video_path: String,
+) -> Result<String, String> {
     use std::path::Path;
     use tauri_plugin_shell::ShellExt;
-    
+
     let video = Path::new(&video_path);
-    
+
     // Validate video file exists
     if !video.exists() {
         return Err("Video file does not exist".to_string());
     }
-    
+
     // Get storage paths
     let paths = init_storage_dirs()?;
-    
+
     // Generate thumbnail filename based on video filename and parent dir (session ID) to avoid collisions
     let video_stem = video
         .file_stem()
         .and_then(|s| s.to_str())
         .ok_or("Failed to get video filename")?;
-    
+
     // Get parent dir name (session ID) for uniqueness
     let parent_dir = video
         .parent()
@@ -423,30 +458,36 @@ pub async fn generate_thumbnail(app: tauri::AppHandle, video_path: String) -> Re
 
     let thumbnail_filename = format!("{}_{}_thumb.jpg", parent_dir, video_stem);
     let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
-    
+
     // Use ffmpeg sidecar to generate thumbnail at 1 second mark
-    let output = app.shell()
+    let output = app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-nostdin",
-            "-hwaccel", "auto",
-            "-ss", "00:00:01",
-            "-i", &video_path,
-            "-vframes", "1",
-            "-vf", "scale=320:-1",
+            "-hwaccel",
+            "auto",
+            "-ss",
+            "00:00:01",
+            "-i",
+            &video_path,
+            "-vframes",
+            "1",
+            "-vf",
+            "scale=320:-1",
             "-y",
             thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
         ])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("ffmpeg failed: {}", stderr));
     }
-    
+
     Ok(thumbnail_path.to_string_lossy().to_string())
 }
 
@@ -461,17 +502,17 @@ pub async fn generate_thumbnail_at_timestamp(
 ) -> Result<String, String> {
     use std::path::Path;
     use tauri_plugin_shell::ShellExt;
-    
+
     let video = Path::new(&video_path);
-    
+
     // Validate video file exists
     if !video.exists() {
         return Err("Video file does not exist".to_string());
     }
-    
+
     // Get storage paths
     let paths = init_storage_dirs()?;
-    
+
     // Generate thumbnail filename
     let thumbnail_filename = if let Some(name) = output_filename {
         format!("{}.jpg", name)
@@ -480,48 +521,57 @@ pub async fn generate_thumbnail_at_timestamp(
             .file_stem()
             .and_then(|s| s.to_str())
             .ok_or("Failed to get video filename")?;
-            
+
         // Get parent dir name (session ID) for uniqueness
         let parent_dir = video
             .parent()
             .and_then(|p| p.file_name())
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
-            
-        format!("{}_{}_{:.2}_thumb.jpg", parent_dir, video_stem, timestamp_seconds)
+
+        format!(
+            "{}_{}_{:.2}_thumb.jpg",
+            parent_dir, video_stem, timestamp_seconds
+        )
     };
-    
+
     let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
-    
+
     // Format timestamp for ffmpeg (HH:MM:SS.mmm format)
     let hours = (timestamp_seconds / 3600.0).floor() as i32;
     let minutes = ((timestamp_seconds % 3600.0) / 60.0).floor() as i32;
     let seconds = timestamp_seconds % 60.0;
     let timestamp_str = format!("{:02}:{:02}:{:06.3}", hours, minutes, seconds);
-    
+
     // Use ffmpeg sidecar to generate thumbnail at specified timestamp
-    let output = app.shell()
+    let output = app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-nostdin",
-            "-hwaccel", "auto",
-            "-ss", &timestamp_str,
-            "-i", &video_path,
-            "-vframes", "1",
-            "-vf", "scale=320:-1",
+            "-hwaccel",
+            "auto",
+            "-ss",
+            &timestamp_str,
+            "-i",
+            &video_path,
+            "-vframes",
+            "1",
+            "-vf",
+            "scale=320:-1",
             "-y",
             thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
         ])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("ffmpeg failed: {}", stderr));
     }
-    
+
     Ok(thumbnail_path.to_string_lossy().to_string())
 }
 
@@ -530,16 +580,15 @@ pub async fn generate_thumbnail_at_timestamp(
 pub fn read_file_as_data_url(file_path: String) -> Result<String, String> {
     use std::fs;
     use std::path::Path;
-    
+
     let path = Path::new(&file_path);
-    
+
     if !path.exists() {
         return Err("File does not exist".to_string());
     }
-    
-    let bytes = fs::read(path)
-        .map_err(|e| format!("Failed to read file: {}", e))?;
-    
+
+    let bytes = fs::read(path).map_err(|e| format!("Failed to read file: {}", e))?;
+
     // Determine MIME type based on extension
     let mime_type = match path.extension().and_then(|e| e.to_str()) {
         Some("jpg") | Some("jpeg") => "image/jpeg",
@@ -556,8 +605,14 @@ pub fn read_file_as_data_url(file_path: String) -> Result<String, String> {
                 if &bytes[4..8] == b"ftyp" {
                     // Check specific ftyp brands
                     let brand = &bytes[8..12];
-                    if brand == b"isom" || brand == b"iso2" || brand == b"mp41" || brand == b"mp42" 
-                        || brand == b"avc1" || brand == b"M4V " || brand == b"M4A " {
+                    if brand == b"isom"
+                        || brand == b"iso2"
+                        || brand == b"mp41"
+                        || brand == b"mp42"
+                        || brand == b"avc1"
+                        || brand == b"M4V "
+                        || brand == b"M4A "
+                    {
                         "video/mp4"
                     } else if brand == b"qt  " {
                         "video/quicktime"
@@ -580,10 +635,10 @@ pub fn read_file_as_data_url(file_path: String) -> Result<String, String> {
             }
         }
     };
-    
+
     // Encode as base64
     let base64 = base64_encode(&bytes);
-    
+
     Ok(format!("data:{};base64,{}", mime_type, base64))
 }
 
@@ -591,24 +646,32 @@ pub fn read_file_as_data_url(file_path: String) -> Result<String, String> {
 fn base64_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::new();
-    
+
     for chunk in data.chunks(3) {
         let mut buf = [0u8; 3];
         for (i, &byte) in chunk.iter().enumerate() {
             buf[i] = byte;
         }
-        
+
         let b1 = (buf[0] >> 2) as usize;
         let b2 = (((buf[0] & 0x03) << 4) | (buf[1] >> 4)) as usize;
         let b3 = (((buf[1] & 0x0f) << 2) | (buf[2] >> 6)) as usize;
         let b4 = (buf[2] & 0x3f) as usize;
-        
+
         result.push(CHARS[b1] as char);
         result.push(CHARS[b2] as char);
-        result.push(if chunk.len() > 1 { CHARS[b3] as char } else { '=' });
-        result.push(if chunk.len() > 2 { CHARS[b4] as char } else { '=' });
+        result.push(if chunk.len() > 1 {
+            CHARS[b3] as char
+        } else {
+            '='
+        });
+        result.push(if chunk.len() > 2 {
+            CHARS[b4] as char
+        } else {
+            '='
+        });
     }
-    
+
     result
 }
 
@@ -617,43 +680,42 @@ fn base64_encode(data: &[u8]) -> String {
 pub fn copy_video_to_storage(source_path: String) -> Result<CopyVideoResponse, String> {
     use std::fs;
     use std::path::Path;
-    
+
     let source = Path::new(&source_path);
-    
+
     // Validate source file exists
     if !source.exists() {
         return Err("Source file does not exist".to_string());
     }
-    
+
     // Get original filename
     let original_filename = source
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or("Failed to get filename")?;
-    
+
     // Get file extension
     let extension = source
         .extension()
         .and_then(|e| e.to_str())
         .ok_or("File has no extension")?;
-    
+
     // Generate unique filename using timestamp and random component
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| format!("Failed to get timestamp: {}", e))?
         .as_secs();
-    
+
     let random_suffix: u32 = rand::random();
     let filename = format!("video_{}_{}.{}", timestamp, random_suffix, extension);
-    
+
     // Get storage paths
     let paths = init_storage_dirs()?;
     let destination = paths.videos.join(&filename);
-    
+
     // Copy the file
-    fs::copy(source, &destination)
-        .map_err(|e| format!("Failed to copy file: {}", e))?;
-    
+    fs::copy(source, &destination).map_err(|e| format!("Failed to copy file: {}", e))?;
+
     // Return the destination path and original filename
     Ok(CopyVideoResponse {
         destination_path: destination.to_string_lossy().to_string(),
@@ -671,7 +733,11 @@ pub struct CopyAssetResponse {
 
 /// Tauri command to copy an intro/outro asset file to storage
 #[tauri::command]
-pub async fn copy_asset_to_storage(source_path: String, asset_type: String, _app: tauri::AppHandle) -> Result<CopyAssetResponse, String> {
+pub async fn copy_asset_to_storage(
+    source_path: String,
+    asset_type: String,
+    _app: tauri::AppHandle,
+) -> Result<CopyAssetResponse, String> {
     use std::fs;
     use std::path::Path;
 
@@ -701,7 +767,10 @@ pub async fn copy_asset_to_storage(source_path: String, asset_type: String, _app
         .as_secs();
 
     let random_suffix: u32 = rand::random();
-    let filename = format!("{}_{}_{}.{}", asset_type, timestamp, random_suffix, extension);
+    let filename = format!(
+        "{}_{}_{}.{}",
+        asset_type, timestamp, random_suffix, extension
+    );
 
     // Get storage paths - use unified assets folder
     let paths = init_storage_dirs()?;
@@ -714,8 +783,7 @@ pub async fn copy_asset_to_storage(source_path: String, asset_type: String, _app
     let destination = assets_dir.join(&filename);
 
     // Copy the file
-    fs::copy(source, &destination)
-        .map_err(|e| format!("Failed to copy file: {}", e))?;
+    fs::copy(source, &destination).map_err(|e| format!("Failed to copy file: {}", e))?;
 
     // Return the destination path and original filename (thumbnail will be generated asynchronously)
     Ok(CopyAssetResponse {
@@ -747,8 +815,7 @@ pub fn delete_asset_file(file_path: String, _asset_type: String) -> Result<(), S
     }
 
     // Delete the file
-    fs::remove_file(path)
-        .map_err(|e| format!("Failed to delete file: {}", e))?;
+    fs::remove_file(path).map_err(|e| format!("Failed to delete file: {}", e))?;
 
     Ok(())
 }
@@ -762,8 +829,7 @@ pub fn save_temp_file(file_name: String, bytes: Vec<u8>) -> Result<String, Strin
     let temp_path = paths.temp.join(&file_name);
 
     // Write bytes to temp file
-    fs::write(&temp_path, bytes)
-        .map_err(|e| format!("Failed to write temp file: {}", e))?;
+    fs::write(&temp_path, bytes).map_err(|e| format!("Failed to write temp file: {}", e))?;
 
     Ok(temp_path.to_string_lossy().to_string())
 }
@@ -789,10 +855,7 @@ pub fn save_editor_media_file(
     fs::write(&file_path, bytes)
         .map_err(|e| format!("Failed to write editor media file: {}", e))?;
 
-    println!(
-        "[Storage] Saved editor media file: {}",
-        file_path.display()
-    );
+    println!("[Storage] Saved editor media file: {}", file_path.display());
 
     Ok(file_path.to_string_lossy().to_string())
 }
@@ -800,8 +863,8 @@ pub fn save_editor_media_file(
 /// Tauri command to get video duration using FFmpeg
 #[tauri::command]
 pub async fn get_video_duration(app: tauri::AppHandle, video_path: String) -> Result<f64, String> {
-    use tauri_plugin_shell::ShellExt;
     use std::path::Path;
+    use tauri_plugin_shell::ShellExt;
 
     let path = Path::new(&video_path);
 
@@ -811,14 +874,11 @@ pub async fn get_video_duration(app: tauri::AppHandle, video_path: String) -> Re
     }
 
     // Use FFmpeg to get duration
-    let output = app.shell().sidecar("ffmpeg")
+    let output = app
+        .shell()
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
-        .args([
-            "-nostdin",
-            "-i", &video_path,
-            "-f", "null",
-            "-",
-        ])
+        .args(["-nostdin", "-i", &video_path, "-f", "null", "-"])
         .output()
         .await
         .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
@@ -863,9 +923,12 @@ pub struct VideoMetadata {
 
 /// Tauri command to get video metadata (duration, width, height) using FFmpeg
 #[tauri::command]
-pub async fn get_video_metadata(app: tauri::AppHandle, video_path: String) -> Result<VideoMetadata, String> {
-    use tauri_plugin_shell::ShellExt;
+pub async fn get_video_metadata(
+    app: tauri::AppHandle,
+    video_path: String,
+) -> Result<VideoMetadata, String> {
     use std::path::Path;
+    use tauri_plugin_shell::ShellExt;
 
     let path = Path::new(&video_path);
     if !path.exists() {
@@ -873,7 +936,9 @@ pub async fn get_video_metadata(app: tauri::AppHandle, video_path: String) -> Re
     }
 
     // Just read metadata without processing the video - this is instant
-    let output = app.shell().sidecar("ffmpeg")
+    let output = app
+        .shell()
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
         .args(["-nostdin", "-i", &video_path])
         .output()
@@ -881,7 +946,7 @@ pub async fn get_video_metadata(app: tauri::AppHandle, video_path: String) -> Re
         .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     let mut duration: Option<f64> = None;
     let mut width: Option<u32> = None;
     let mut height: Option<u32> = None;
@@ -939,16 +1004,21 @@ pub struct AudioMetadata {
 
 /// Tauri command to get audio metadata using FFmpeg
 #[tauri::command]
-pub async fn get_audio_metadata(app: tauri::AppHandle, audio_path: String) -> Result<AudioMetadata, String> {
-    use tauri_plugin_shell::ShellExt;
+pub async fn get_audio_metadata(
+    app: tauri::AppHandle,
+    audio_path: String,
+) -> Result<AudioMetadata, String> {
     use std::path::Path;
+    use tauri_plugin_shell::ShellExt;
 
     let path = Path::new(&audio_path);
     if !path.exists() {
         return Err("Audio file does not exist".to_string());
     }
 
-    let output = app.shell().sidecar("ffmpeg")
+    let output = app
+        .shell()
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
         .args(["-nostdin", "-i", &audio_path, "-f", "null", "-"])
         .output()
@@ -956,7 +1026,7 @@ pub async fn get_audio_metadata(app: tauri::AppHandle, audio_path: String) -> Re
         .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     let mut duration: Option<f64> = None;
     let mut sample_rate: Option<u32> = None;
     let mut channels: Option<u32> = None;
@@ -993,7 +1063,7 @@ pub async fn get_audio_metadata(app: tauri::AppHandle, audio_path: String) -> Re
                     }
                 }
             }
-            
+
             // Parse channels
             if line.contains("stereo") {
                 channels = Some(2);
@@ -1021,16 +1091,21 @@ pub struct ImageMetadata {
 
 /// Tauri command to get image metadata (width, height) using FFmpeg
 #[tauri::command]
-pub async fn get_image_metadata(app: tauri::AppHandle, image_path: String) -> Result<ImageMetadata, String> {
-    use tauri_plugin_shell::ShellExt;
+pub async fn get_image_metadata(
+    app: tauri::AppHandle,
+    image_path: String,
+) -> Result<ImageMetadata, String> {
     use std::path::Path;
+    use tauri_plugin_shell::ShellExt;
 
     let path = Path::new(&image_path);
     if !path.exists() {
         return Err("Image file does not exist".to_string());
     }
 
-    let output = app.shell().sidecar("ffmpeg")
+    let output = app
+        .shell()
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to create ffmpeg sidecar: {}", e))?
         .args(["-nostdin", "-i", &image_path, "-f", "null", "-"])
         .output()
@@ -1038,7 +1113,7 @@ pub async fn get_image_metadata(app: tauri::AppHandle, image_path: String) -> Re
         .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     let mut width: Option<u32> = None;
     let mut height: Option<u32> = None;
 
@@ -1067,7 +1142,10 @@ pub async fn get_image_metadata(app: tauri::AppHandle, image_path: String) -> Re
 /// Tauri command to copy a clip file to a user-specified destination
 /// This is used when the user wants to "download" (export) a clip to a custom location
 #[tauri::command]
-pub async fn copy_clip_to_destination(source_path: String, destination_path: String) -> Result<String, String> {
+pub async fn copy_clip_to_destination(
+    source_path: String,
+    destination_path: String,
+) -> Result<String, String> {
     use std::fs;
     use std::path::Path;
 
@@ -1088,11 +1166,13 @@ pub async fn copy_clip_to_destination(source_path: String, destination_path: Str
     }
 
     // Copy the file (don't move, just copy)
-    fs::copy(source, destination)
-        .map_err(|e| format!("Failed to copy clip: {}", e))?;
+    fs::copy(source, destination).map_err(|e| format!("Failed to copy clip: {}", e))?;
 
-    println!("[Rust] Copied clip from {} to {}", source_path, destination_path);
-    
+    println!(
+        "[Rust] Copied clip from {} to {}",
+        source_path, destination_path
+    );
+
     Ok(destination.to_string_lossy().to_string())
 }
 
@@ -1108,7 +1188,10 @@ pub struct CopyWatermarkResponse {
 
 /// Tauri command to copy a watermark image file to storage
 #[tauri::command]
-pub async fn copy_watermark_to_storage(source_path: String, app: tauri::AppHandle) -> Result<CopyWatermarkResponse, String> {
+pub async fn copy_watermark_to_storage(
+    source_path: String,
+    app: tauri::AppHandle,
+) -> Result<CopyWatermarkResponse, String> {
     use std::fs;
     use std::path::Path;
     use tauri_plugin_shell::ShellExt;
@@ -1136,13 +1219,14 @@ pub async fn copy_watermark_to_storage(source_path: String, app: tauri::AppHandl
     // Validate it's an image file
     let valid_extensions = ["png", "jpg", "jpeg", "webp", "gif"];
     if !valid_extensions.contains(&extension.as_str()) {
-        return Err(format!("Invalid image format. Supported: {}", valid_extensions.join(", ")));
+        return Err(format!(
+            "Invalid image format. Supported: {}",
+            valid_extensions.join(", ")
+        ));
     }
 
     // Get file size
-    let file_size = fs::metadata(source)
-        .map(|m| m.len())
-        .ok();
+    let file_size = fs::metadata(source).map(|m| m.len()).ok();
 
     // Generate unique filename using timestamp and random component
     let timestamp = std::time::SystemTime::now()
@@ -1158,8 +1242,7 @@ pub async fn copy_watermark_to_storage(source_path: String, app: tauri::AppHandl
     let destination = paths.watermarks.join(&filename);
 
     // Copy the file
-    fs::copy(source, &destination)
-        .map_err(|e| format!("Failed to copy file: {}", e))?;
+    fs::copy(source, &destination).map_err(|e| format!("Failed to copy file: {}", e))?;
 
     // Try to get image dimensions using FFmpeg
     // This is optional - if it fails, we just won't have dimensions
@@ -1167,20 +1250,17 @@ pub async fn copy_watermark_to_storage(source_path: String, app: tauri::AppHandl
     let mut height: Option<u32> = None;
 
     // Use ffmpeg to get image info (reads from stderr)
-    if let Ok(output) = app.shell()
+    if let Ok(output) = app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", destination.to_str().unwrap_or(""),
-            "-f", "null",
-            "-",
-        ])
+        .args(["-i", destination.to_str().unwrap_or(""), "-f", "null", "-"])
         .output()
         .await
     {
         // FFmpeg outputs info to stderr
         let stderr = String::from_utf8_lossy(&output.stderr);
-        
+
         // Parse dimensions from output like "Stream #0:0: Video: png, rgba, 1920x1080"
         // or "Stream #0:0(und): Video: mjpeg, yuvj420p, 1920x1080"
         for line in stderr.lines() {
@@ -1195,7 +1275,11 @@ pub async fn copy_watermark_to_storage(source_path: String, app: tauri::AppHandl
                         if dim_parts.len() == 2 {
                             if let (Ok(w), Ok(h)) = (
                                 dim_parts[0].trim().parse::<u32>(),
-                                dim_parts[1].split(|c: char| !c.is_numeric()).next().unwrap_or("").parse::<u32>()
+                                dim_parts[1]
+                                    .split(|c: char| !c.is_numeric())
+                                    .next()
+                                    .unwrap_or("")
+                                    .parse::<u32>(),
                             ) {
                                 if w > 0 && h > 0 && w < 100000 && h < 100000 {
                                     width = Some(w);
@@ -1213,7 +1297,10 @@ pub async fn copy_watermark_to_storage(source_path: String, app: tauri::AppHandl
         }
     }
 
-    println!("[Rust] Watermark copied to storage: {}", destination.display());
+    println!(
+        "[Rust] Watermark copied to storage: {}",
+        destination.display()
+    );
     if let (Some(w), Some(h)) = (width, height) {
         println!("[Rust] Watermark dimensions: {}x{}", w, h);
     } else {
@@ -1250,8 +1337,7 @@ pub fn delete_watermark_file(file_path: String) -> Result<(), String> {
     }
 
     // Delete the file
-    fs::remove_file(path)
-        .map_err(|e| format!("Failed to delete file: {}", e))?;
+    fs::remove_file(path).map_err(|e| format!("Failed to delete file: {}", e))?;
 
     println!("[Rust] Watermark deleted: {}", file_path);
     Ok(())
@@ -1270,7 +1356,10 @@ pub struct CopyImageResponse {
 
 /// Tauri command to copy an image file to storage
 #[tauri::command]
-pub async fn copy_image_to_storage(source_path: String, app: tauri::AppHandle) -> Result<CopyImageResponse, String> {
+pub async fn copy_image_to_storage(
+    source_path: String,
+    app: tauri::AppHandle,
+) -> Result<CopyImageResponse, String> {
     use std::fs;
     use std::path::Path;
     use tauri_plugin_shell::ShellExt;
@@ -1298,7 +1387,10 @@ pub async fn copy_image_to_storage(source_path: String, app: tauri::AppHandle) -
     // Validate it's an image file
     let valid_extensions = ["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif"];
     if !valid_extensions.contains(&extension.as_str()) {
-        return Err(format!("Invalid image format. Supported: {}", valid_extensions.join(", ")));
+        return Err(format!(
+            "Invalid image format. Supported: {}",
+            valid_extensions.join(", ")
+        ));
     }
 
     // Determine MIME type
@@ -1313,9 +1405,7 @@ pub async fn copy_image_to_storage(source_path: String, app: tauri::AppHandle) -
     };
 
     // Get file size
-    let file_size = fs::metadata(source)
-        .map(|m| m.len())
-        .ok();
+    let file_size = fs::metadata(source).map(|m| m.len()).ok();
 
     // Generate unique filename using timestamp and random component
     let timestamp = std::time::SystemTime::now()
@@ -1331,28 +1421,24 @@ pub async fn copy_image_to_storage(source_path: String, app: tauri::AppHandle) -
     let destination = paths.images.join(&filename);
 
     // Copy the file
-    fs::copy(source, &destination)
-        .map_err(|e| format!("Failed to copy file: {}", e))?;
+    fs::copy(source, &destination).map_err(|e| format!("Failed to copy file: {}", e))?;
 
     // Try to get image dimensions using FFmpeg
     let mut width: Option<u32> = None;
     let mut height: Option<u32> = None;
 
     // Use ffmpeg to get image info (reads from stderr)
-    if let Ok(output) = app.shell()
+    if let Ok(output) = app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", destination.to_str().unwrap_or(""),
-            "-f", "null",
-            "-",
-        ])
+        .args(["-i", destination.to_str().unwrap_or(""), "-f", "null", "-"])
         .output()
         .await
     {
         // FFmpeg outputs info to stderr
         let stderr = String::from_utf8_lossy(&output.stderr);
-        
+
         // Parse dimensions from output like "Stream #0:0: Video: png, rgba, 1920x1080"
         for line in stderr.lines() {
             if line.contains("Stream") && line.contains("Video:") {
@@ -1365,7 +1451,11 @@ pub async fn copy_image_to_storage(source_path: String, app: tauri::AppHandle) -
                         if dim_parts.len() == 2 {
                             if let (Ok(w), Ok(h)) = (
                                 dim_parts[0].trim().parse::<u32>(),
-                                dim_parts[1].split(|c: char| !c.is_numeric()).next().unwrap_or("").parse::<u32>()
+                                dim_parts[1]
+                                    .split(|c: char| !c.is_numeric())
+                                    .next()
+                                    .unwrap_or("")
+                                    .parse::<u32>(),
                             ) {
                                 if w > 0 && h > 0 && w < 100000 && h < 100000 {
                                     width = Some(w);
@@ -1423,8 +1513,7 @@ pub fn delete_image_file(file_path: String) -> Result<(), String> {
     }
 
     // Delete the file
-    fs::remove_file(path)
-        .map_err(|e| format!("Failed to delete file: {}", e))?;
+    fs::remove_file(path).map_err(|e| format!("Failed to delete file: {}", e))?;
 
     println!("[Rust] Image deleted: {}", file_path);
     Ok(())
@@ -1444,21 +1533,21 @@ pub struct CopyFontResponse {
 pub async fn copy_font_to_storage(source_path: String) -> Result<CopyFontResponse, String> {
     use std::fs;
     use std::path::Path;
-    
+
     let source = Path::new(&source_path);
-    
+
     // Validate the source file exists
     if !source.exists() {
         return Err(format!("Source file does not exist: {}", source_path));
     }
-    
+
     // Get the file extension and validate it's a font file
     let extension = source
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_lowercase())
         .ok_or("Could not determine file extension")?;
-    
+
     let valid_extensions = ["ttf", "otf", "woff", "woff2"];
     if !valid_extensions.contains(&extension.as_str()) {
         return Err(format!(
@@ -1466,35 +1555,38 @@ pub async fn copy_font_to_storage(source_path: String) -> Result<CopyFontRespons
             extension
         ));
     }
-    
+
     // Get the original filename
     let _original_filename = source
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or("Could not determine filename")?
         .to_string();
-    
+
     // Extract font name from filename (remove extension)
     let font_name = source
         .file_stem()
         .and_then(|n| n.to_str())
         .ok_or("Could not determine font name")?
         .to_string();
-    
+
     // Get storage paths
     let paths = init_storage_dirs()?;
-    
+
     // Generate unique filename to avoid conflicts
     let unique_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
     let dest_filename = format!("{}_{}.{}", font_name, unique_id, extension);
     let dest_path = paths.fonts.join(&dest_filename);
-    
+
     // Copy the file
-    fs::copy(source, &dest_path)
-        .map_err(|e| format!("Failed to copy font file: {}", e))?;
-    
-    println!("[Rust] Font copied: {} -> {}", source_path, dest_path.display());
-    
+    fs::copy(source, &dest_path).map_err(|e| format!("Failed to copy font file: {}", e))?;
+
+    println!(
+        "[Rust] Font copied: {} -> {}",
+        source_path,
+        dest_path.display()
+    );
+
     Ok(CopyFontResponse {
         file_path: dest_path.to_string_lossy().to_string(),
         file_name: dest_filename,
@@ -1508,15 +1600,14 @@ pub async fn copy_font_to_storage(source_path: String) -> Result<CopyFontRespons
 pub fn delete_font_file(file_path: String) -> Result<(), String> {
     use std::fs;
     use std::path::Path;
-    
+
     let path = Path::new(&file_path);
-    
+
     if path.exists() {
-        fs::remove_file(path)
-            .map_err(|e| format!("Failed to delete font file: {}", e))?;
+        fs::remove_file(path).map_err(|e| format!("Failed to delete font file: {}", e))?;
         println!("[Rust] Font deleted: {}", file_path);
     }
-    
+
     Ok(())
 }
 
@@ -1533,7 +1624,10 @@ pub struct CopyAudioResponse {
 
 /// Tauri command to copy an audio file to storage
 #[tauri::command]
-pub async fn copy_audio_to_storage(source_path: String, app: tauri::AppHandle) -> Result<CopyAudioResponse, String> {
+pub async fn copy_audio_to_storage(
+    source_path: String,
+    app: tauri::AppHandle,
+) -> Result<CopyAudioResponse, String> {
     use std::fs;
     use std::path::Path;
     use tauri_plugin_shell::ShellExt;
@@ -1561,13 +1655,14 @@ pub async fn copy_audio_to_storage(source_path: String, app: tauri::AppHandle) -
     // Validate it's an audio file
     let valid_extensions = ["mp3", "wav", "flac", "aac", "m4a", "ogg", "wma"];
     if !valid_extensions.contains(&extension.as_str()) {
-        return Err(format!("Invalid audio format. Supported: {}", valid_extensions.join(", ")));
+        return Err(format!(
+            "Invalid audio format. Supported: {}",
+            valid_extensions.join(", ")
+        ));
     }
 
     // Get file size
-    let file_size = fs::metadata(source)
-        .map(|m| m.len())
-        .ok();
+    let file_size = fs::metadata(source).map(|m| m.len()).ok();
 
     // Generate unique filename using timestamp and random component
     let timestamp = std::time::SystemTime::now()
@@ -1583,8 +1678,7 @@ pub async fn copy_audio_to_storage(source_path: String, app: tauri::AppHandle) -
     let destination = paths.audio.join(&filename);
 
     // Copy the file
-    fs::copy(source, &destination)
-        .map_err(|e| format!("Failed to copy file: {}", e))?;
+    fs::copy(source, &destination).map_err(|e| format!("Failed to copy file: {}", e))?;
 
     // Try to get audio metadata using FFmpeg
     let mut duration: Option<f64> = None;
@@ -1592,20 +1686,17 @@ pub async fn copy_audio_to_storage(source_path: String, app: tauri::AppHandle) -
     let mut channels: Option<u32> = None;
 
     // Use ffprobe/ffmpeg to get audio info
-    if let Ok(output) = app.shell()
+    if let Ok(output) = app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", destination.to_str().unwrap_or(""),
-            "-f", "null",
-            "-",
-        ])
+        .args(["-i", destination.to_str().unwrap_or(""), "-f", "null", "-"])
         .output()
         .await
     {
         // FFmpeg outputs info to stderr
         let stderr = String::from_utf8_lossy(&output.stderr);
-        
+
         // Parse duration from output like "Duration: 00:03:45.12"
         for line in stderr.lines() {
             if line.contains("Duration:") {
@@ -1626,7 +1717,7 @@ pub async fn copy_audio_to_storage(source_path: String, app: tauri::AppHandle) -
                     }
                 }
             }
-            
+
             // Parse sample rate and channels from lines like "Stream #0:0: Audio: mp3, 44100 Hz, stereo"
             if line.contains("Stream") && line.contains("Audio:") {
                 // Look for sample rate (e.g., "44100 Hz")
@@ -1639,7 +1730,7 @@ pub async fn copy_audio_to_storage(source_path: String, app: tauri::AppHandle) -
                         }
                     }
                 }
-                
+
                 // Parse channels from "mono", "stereo", or "5.1" etc.
                 if line.contains("mono") {
                     channels = Some(1);
@@ -1695,8 +1786,7 @@ pub fn delete_audio_file(file_path: String) -> Result<(), String> {
     }
 
     // Delete the file
-    fs::remove_file(path)
-        .map_err(|e| format!("Failed to delete file: {}", e))?;
+    fs::remove_file(path).map_err(|e| format!("Failed to delete file: {}", e))?;
 
     println!("[Rust] Audio deleted: {}", file_path);
     Ok(())
@@ -1734,13 +1824,13 @@ pub fn save_org_asset_file(
 
     // Sanitize filename
     let safe_filename = sanitize_filename(&filename);
-    
+
     // Generate unique filename with timestamp to avoid collisions
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    
+
     let final_filename = format!("{}_{}", timestamp, safe_filename);
     let destination_path = org_dir.join(&final_filename);
 
@@ -1810,13 +1900,13 @@ pub async fn download_org_asset_from_url(
 
     // Sanitize filename
     let safe_filename = sanitize_filename(&filename);
-    
+
     // Generate unique filename with timestamp to avoid collisions
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
-    
+
     let final_filename = format!("{}_{}", timestamp, safe_filename);
     let destination_path = org_dir.join(&final_filename);
 

@@ -30,7 +30,18 @@ defmodule ClippsterServer.Messaging.Conversation do
   @doc false
   def changeset(conversation, attrs) do
     conversation
-    |> cast(attrs, [:type, :name, :last_message_at, :last_message_preview, :organization_id, :created_by_user_id, :status, :archived_at, :archived_by_user_id, :scheduled_deletion_at])
+    |> cast(attrs, [
+      :type,
+      :name,
+      :last_message_at,
+      :last_message_preview,
+      :organization_id,
+      :created_by_user_id,
+      :status,
+      :archived_at,
+      :archived_by_user_id,
+      :scheduled_deletion_at
+    ])
     |> validate_required([:type])
     |> validate_inclusion(:type, @conversation_types)
     |> validate_name_for_group()

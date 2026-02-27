@@ -73,7 +73,8 @@ defmodule ClippsterServer.Repo.Migrations.CreateOrganizations do
 
     # Modify users table - add account_type and owned_organization_id
     alter table(:users) do
-      add :account_type, :string  # "personal" | "organization" | null (pending selection)
+      # "personal" | "organization" | null (pending selection)
+      add :account_type, :string
       add :owned_organization_id, references(:organizations, on_delete: :nilify_all)
     end
 
@@ -81,4 +82,3 @@ defmodule ClippsterServer.Repo.Migrations.CreateOrganizations do
     create index(:users, [:owned_organization_id])
   end
 end
-

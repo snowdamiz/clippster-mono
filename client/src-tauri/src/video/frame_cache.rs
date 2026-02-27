@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn test_frame_cache_basic() {
         let cache = FrameCache::new(2);
-        
+
         let key1 = FrameCacheKey::new("video1".to_string(), 1.0);
         let frame1 = CachedFrame {
             width: 1920,
@@ -102,7 +102,7 @@ mod tests {
             rgb_data: Arc::new(vec![0u8; 1920 * 1080 * 3]),
             timestamp: 1.0,
         };
-        
+
         cache.put(key1.clone(), frame1.clone());
         assert!(cache.get(&key1).is_some());
         assert_eq!(cache.len(), 1);
@@ -111,22 +111,22 @@ mod tests {
     #[test]
     fn test_frame_cache_lru_eviction() {
         let cache = FrameCache::new(2);
-        
+
         let key1 = FrameCacheKey::new("video1".to_string(), 1.0);
         let key2 = FrameCacheKey::new("video1".to_string(), 2.0);
         let key3 = FrameCacheKey::new("video1".to_string(), 3.0);
-        
+
         let frame = CachedFrame {
             width: 1920,
             height: 1080,
             rgb_data: Arc::new(vec![0u8; 100]),
             timestamp: 1.0,
         };
-        
+
         cache.put(key1.clone(), frame.clone());
         cache.put(key2.clone(), frame.clone());
         cache.put(key3.clone(), frame.clone());
-        
+
         assert!(cache.get(&key1).is_none());
         assert!(cache.get(&key2).is_some());
         assert!(cache.get(&key3).is_some());

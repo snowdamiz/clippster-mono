@@ -115,4 +115,3 @@ defmodule ClippsterServer.Organizations.OrganizationCreditTransaction do
     |> foreign_key_constraint(:purchased_by_user_id)
   end
 end
-

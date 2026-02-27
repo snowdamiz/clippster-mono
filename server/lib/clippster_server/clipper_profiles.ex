@@ -5,6 +5,7 @@ defmodule ClippsterServer.ClipperProfiles do
 
   import Ecto.Query
   alias ClippsterServer.Repo
+
   alias ClippsterServer.ClipperProfiles.{
     ClipperProfile,
     ClipperChannelLink,
@@ -44,8 +45,17 @@ defmodule ClippsterServer.ClipperProfiles do
   def get_profile_by_slug(slug) do
     Repo.get_by(ClipperProfile, slug: slug)
     |> case do
-      nil -> nil
-      profile -> Repo.preload(profile, [:user, :channel_links, :portfolio_clips, :badges, endorsements: [:organization, :endorsed_by_user]])
+      nil ->
+        nil
+
+      profile ->
+        Repo.preload(profile, [
+          :user,
+          :channel_links,
+          :portfolio_clips,
+          :badges,
+          endorsements: [:organization, :endorsed_by_user]
+        ])
     end
   end
 
@@ -84,16 +94,23 @@ defmodule ClippsterServer.ClipperProfiles do
     ClipperProfile
     |> visible_in_public_directory()
     |> apply_filters(filters)
-    |> order_by([p], [desc: p.is_verified, desc: p.total_campaigns_completed])
+    |> order_by([p], desc: p.is_verified, desc: p.total_campaigns_completed)
     |> Repo.all()
-    |> Repo.preload([:user, :channel_links, :portfolio_clips, :badges, endorsements: [:organization]])
+    |> Repo.preload([
+      :user,
+      :channel_links,
+      :portfolio_clips,
+      :badges,
+      endorsements: [:organization]
+    ])
   end
 
   @doc """
   Returns true when a profile is public and has the required fields for directory visibility.
   """
   def public_directory_profile?(%ClipperProfile{} = profile) do
-    profile.is_public == true and present_string?(profile.display_name) and present_string?(profile.slug)
+    profile.is_public == true and present_string?(profile.display_name) and
+      present_string?(profile.slug)
   end
 
   defp apply_filters(query, filters) do
@@ -112,28 +129,34 @@ defmodule ClippsterServer.ClipperProfiles do
   defp filter_by_looking_for_work(query, _), do: query
 
   defp filter_by_experience_level(query, nil), do: query
-  defp filter_by_experience_level(query, level), do: where(query, [p], p.experience_level == ^level)
+
+  defp filter_by_experience_level(query, level),
+    do: where(query, [p], p.experience_level == ^level)
 
   defp filter_by_specialty_tags(query, nil), do: query
   defp filter_by_specialty_tags(query, []), do: query
+
   defp filter_by_specialty_tags(query, tags) when is_list(tags) do
     where(query, [p], fragment("? && ?", p.specialty_tags, ^tags))
   end
 
   defp filter_by_content_style_tags(query, nil), do: query
   defp filter_by_content_style_tags(query, []), do: query
+
   defp filter_by_content_style_tags(query, tags) when is_list(tags) do
     where(query, [p], fragment("? && ?", p.content_style_tags, ^tags))
   end
 
   defp filter_by_preferred_platforms(query, nil), do: query
   defp filter_by_preferred_platforms(query, []), do: query
+
   defp filter_by_preferred_platforms(query, platforms) when is_list(platforms) do
     where(query, [p], fragment("? && ?", p.preferred_platforms, ^platforms))
   end
 
   defp filter_by_languages(query, nil), do: query
   defp filter_by_languages(query, []), do: query
+
   defp filter_by_languages(query, languages) when is_list(languages) do
     where(query, [p], fragment("? && ?", p.languages, ^languages))
   end
@@ -155,7 +178,8 @@ defmodule ClippsterServer.ClipperProfiles do
   @doc """
   Increments profile stats.
   """
-  def increment_stats(%ClipperProfile{} = profile, field, amount \\ 1) when field in [:total_campaigns_completed, :total_clips_delivered, :total_endorsements] do
+  def increment_stats(%ClipperProfile{} = profile, field, amount \\ 1)
+      when field in [:total_campaigns_completed, :total_clips_delivered, :total_endorsements] do
     current_value = Map.get(profile, field) || 0
     update_profile(profile, %{field => current_value + amount})
   end
@@ -295,8 +319,11 @@ defmodule ClippsterServer.ClipperProfiles do
         if profile = get_profile(profile_id) do
           increment_stats(profile, :total_endorsements)
         end
+
         {:ok, endorsement}
-      error -> error
+
+      error ->
+        error
     end
   end
 
@@ -328,7 +355,8 @@ defmodule ClippsterServer.ClipperProfiles do
     alias ClippsterServer.Campaigns.Campaign
 
     from(p in CampaignParticipant,
-      join: c in Campaign, on: c.id == p.campaign_id,
+      join: c in Campaign,
+      on: c.id == p.campaign_id,
       where: c.organization_id == ^organization_id,
       where: p.user_id == ^clipper_user_id,
       where: p.status == "approved"
@@ -383,6 +411,7 @@ defmodule ClippsterServer.ClipperProfiles do
 
     # Rising star: new clipper (< 3 months) with 5+ campaigns
     profile_age_days = DateTime.diff(DateTime.utc_now(), profile.inserted_at, :day)
+
     if profile_age_days < 90 and profile.total_campaigns_completed >= 5 do
       award_badge(profile.id, "rising_star")
     end
@@ -402,7 +431,9 @@ defmodule ClippsterServer.ClipperProfiles do
 
     # Get the most recent period
     case get_latest_period(period_type) do
-      nil -> []
+      nil ->
+        []
+
       {period_start, _period_end} ->
         ClipperLeaderboardEntry
         |> where([e], e.period_type == ^period_type)
@@ -428,7 +459,9 @@ defmodule ClippsterServer.ClipperProfiles do
   """
   def get_clipper_rank(profile_id, period_type) do
     case get_latest_period(period_type) do
-      nil -> {:error, :no_leaderboard}
+      nil ->
+        {:error, :no_leaderboard}
+
       {period_start, _} ->
         case ClipperLeaderboardEntry
              |> where([e], e.clipper_profile_id == ^profile_id)
@@ -447,7 +480,10 @@ defmodule ClippsterServer.ClipperProfiles do
   def create_leaderboard_entry(attrs) do
     %ClipperLeaderboardEntry{}
     |> ClipperLeaderboardEntry.create_changeset(attrs)
-    |> Repo.insert(on_conflict: :replace_all, conflict_target: [:clipper_profile_id, :period_type, :period_start])
+    |> Repo.insert(
+      on_conflict: :replace_all,
+      conflict_target: [:clipper_profile_id, :period_type, :period_start]
+    )
   end
 
   @doc """

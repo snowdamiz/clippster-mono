@@ -106,12 +106,30 @@ defmodule ClippsterServer.Social.TwitterApiClient do
 
       _ ->
         # Proceed with request
-        do_request_with_retry(method, url, body, headers, http_opts, endpoint, social_account_id, start_time)
+        do_request_with_retry(
+          method,
+          url,
+          body,
+          headers,
+          http_opts,
+          endpoint,
+          social_account_id,
+          start_time
+        )
     end
   end
 
   # Perform request with exponential backoff retry
-  defp do_request_with_retry(method, url, body, headers, http_opts, endpoint, social_account_id, start_time) do
+  defp do_request_with_retry(
+         method,
+         url,
+         body,
+         headers,
+         http_opts,
+         endpoint,
+         social_account_id,
+         start_time
+       ) do
     retry with: exponential_backoff() |> randomize() |> cap(60_000) |> expiry(300_000) do
       case HTTPoison.request(method, url, body, headers, http_opts) do
         {:ok, response} ->
@@ -154,10 +172,12 @@ defmodule ClippsterServer.Social.TwitterApiClient do
       429 ->
         # Check for Retry-After header
         retry_after = get_retry_after(headers)
+
         if retry_after > 0 do
           Logger.info("[TwitterApiClient] Rate limited, waiting #{retry_after}ms before retry")
           Process.sleep(retry_after)
         end
+
         raise RetryableError, status_code: 429, response_body: body
 
       status when status in [500, 502, 503, 504] ->
@@ -176,13 +196,17 @@ defmodule ClippsterServer.Social.TwitterApiClient do
   # Pre-flight rate limit check if endpoint and account provided
   defp maybe_check_quota(nil, _), do: :ok
   defp maybe_check_quota(_, nil), do: :ok
+
   defp maybe_check_quota(endpoint, social_account_id) do
     case TwitterRateLimiter.check_quota(endpoint, social_account_id) do
       :ok ->
         :ok
 
       {:warning, remaining, _reset_at} ->
-        Logger.warning("[TwitterApiClient] Low quota for #{endpoint}: #{remaining} requests remaining")
+        Logger.warning(
+          "[TwitterApiClient] Low quota for #{endpoint}: #{remaining} requests remaining"
+        )
+
         :ok
 
       {:error, :rate_limited, reset_at} = error ->
@@ -252,7 +276,9 @@ defmodule ClippsterServer.Social.TwitterApiClient do
       |> maybe_merge_map(:rate_limit, rate_limit_metadata)
       |> Map.merge(error_info)
 
-    event_type = if match?({:error, _}, result), do: "x_api_call.error", else: "x_api_call.success"
+    event_type =
+      if match?({:error, _}, result), do: "x_api_call.error", else: "x_api_call.success"
+
     level = if match?({:error, _}, result), do: :error, else: :info
 
     pulse_capture(%{

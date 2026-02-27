@@ -6,13 +6,20 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
   import Ecto.Changeset
 
   alias ClippsterServer.Accounts.User
+  alias ClippsterServer.Social.ProviderMode
   alias ClippsterServer.Social.TokenEncryption
 
-  @platforms ~w(tiktok instagram x youtube)
+  @known_platforms ~w(
+    instagram facebook x twitter tiktok tiktok_business youtube linkedin threads pinterest bluesky
+  )
 
   schema "clipper_social_accounts" do
     field :platform, :string
     field :platform_user_id, :string
+    field :provider, :string
+    field :provider_platform, :string
+    field :provider_account_id, :string
+    field :provider_payload, :map
     field :username, :string
     field :display_name, :string
     field :profile_image_url, :string
@@ -43,6 +50,10 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
       :user_id,
       :platform,
       :platform_user_id,
+      :provider,
+      :provider_platform,
+      :provider_account_id,
+      :provider_payload,
       :username,
       :display_name,
       :profile_image_url,
@@ -54,7 +65,7 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
       :is_verified
     ])
     |> validate_required([:user_id, :platform])
-    |> validate_inclusion(:platform, @platforms)
+    |> normalize_platform()
     |> validate_length(:username, max: 100)
     |> validate_length(:display_name, max: 200)
     |> put_connected_at()
@@ -63,6 +74,10 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
     |> unique_constraint([:user_id, :platform, :platform_user_id],
       name: :clipper_social_accounts_unique,
       message: "account already connected"
+    )
+    |> unique_constraint([:user_id, :provider, :provider_account_id],
+      name: :clipper_social_accounts_provider_unique,
+      message: "provider account already connected"
     )
   end
 
@@ -75,6 +90,11 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
       :username,
       :display_name,
       :profile_image_url,
+      :platform,
+      :provider,
+      :provider_platform,
+      :provider_account_id,
+      :provider_payload,
       :access_token,
       :refresh_token,
       :token_expires_at,
@@ -83,6 +103,7 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
       :is_verified,
       :is_active
     ])
+    |> normalize_platform()
     |> validate_length(:username, max: 100)
     |> validate_length(:display_name, max: 200)
     |> encrypt_tokens()
@@ -116,6 +137,7 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
   Checks if the token is expired or will expire soon (within 1 day).
   """
   def token_needs_refresh?(%__MODULE__{token_expires_at: nil}), do: false
+
   def token_needs_refresh?(%__MODULE__{token_expires_at: expires_at}) do
     # Refresh if token expires within 1 day
     refresh_threshold = DateTime.utc_now() |> DateTime.add(1, :day)
@@ -130,14 +152,17 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
     |> change(is_active: false)
   end
 
-  def platforms, do: @platforms
+  def platforms, do: @known_platforms
 
   # Private functions
 
   defp put_connected_at(changeset) do
     case get_field(changeset, :connected_at) do
-      nil -> put_change(changeset, :connected_at, DateTime.utc_now() |> DateTime.truncate(:second))
-      _ -> changeset
+      nil ->
+        put_change(changeset, :connected_at, DateTime.utc_now() |> DateTime.truncate(:second))
+
+      _ ->
+        changeset
     end
   end
 
@@ -147,11 +172,18 @@ defmodule ClippsterServer.Campaigns.ClipperSocialAccount do
     |> maybe_encrypt_token(:refresh_token, :refresh_token_encrypted)
   end
 
+  defp normalize_platform(changeset) do
+    update_change(changeset, :platform, &ProviderMode.normalize_platform/1)
+  end
+
   defp maybe_encrypt_token(changeset, source_field, target_field) do
     case get_change(changeset, source_field) do
-      nil -> changeset
+      nil ->
+        changeset
+
       token ->
         encrypted = TokenEncryption.encrypt(token)
+
         changeset
         |> put_change(target_field, encrypted)
         |> delete_change(source_field)

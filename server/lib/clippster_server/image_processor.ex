@@ -33,8 +33,8 @@ defmodule ClippsterServer.ImageProcessor do
     case ExImageInfo.info(image_binary) do
       {_format, width, height, _variant} ->
         {:ok, {width, height}}
-      
-      nil -> 
+
+      nil ->
         {:error, "Failed to get image dimensions: invalid or unsupported image format"}
     end
   end
@@ -61,12 +61,13 @@ defmodule ClippsterServer.ImageProcessor do
          {:ok, {width, height}} <- get_image_dimensions(image_binary),
          {:ok, compressed} <- compress_image(image_binary),
          {:ok, thumbnail} <- generate_thumbnail(image_binary) do
-      {:ok, %{
-        compressed: compressed,
-        thumbnail: thumbnail,
-        width: width,
-        height: height
-      }}
+      {:ok,
+       %{
+         compressed: compressed,
+         thumbnail: thumbnail,
+         width: width,
+         height: height
+       }}
     else
       false -> {:error, "Invalid image type"}
       {:error, reason} -> {:error, reason}

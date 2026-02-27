@@ -34,15 +34,16 @@ defmodule ClippsterServerWeb.AIChatController do
     sessions = ChatSessions.list_user_sessions(user.id, limit: 10)
 
     json(conn, %{
-      sessions: Enum.map(sessions, fn s ->
-        %{
-          id: s.id,
-          name: s.name,
-          status: s.status,
-          updated_at: s.updated_at,
-          inserted_at: s.inserted_at
-        }
-      end)
+      sessions:
+        Enum.map(sessions, fn s ->
+          %{
+            id: s.id,
+            name: s.name,
+            status: s.status,
+            updated_at: s.updated_at,
+            inserted_at: s.inserted_at
+          }
+        end)
     })
   end
 
@@ -59,8 +60,13 @@ defmodule ClippsterServerWeb.AIChatController do
 
       session ->
         case ChatSessions.delete_session(session) do
-          {:ok, _} -> json(conn, %{ok: true})
-          {:error, _} -> conn |> put_status(:internal_server_error) |> json(%{error: "Failed to delete session"})
+          {:ok, _} ->
+            json(conn, %{ok: true})
+
+          {:error, _} ->
+            conn
+            |> put_status(:internal_server_error)
+            |> json(%{error: "Failed to delete session"})
         end
     end
   end

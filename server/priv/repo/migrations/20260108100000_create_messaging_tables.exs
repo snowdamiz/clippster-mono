@@ -3,8 +3,10 @@ defmodule ClippsterServer.Repo.Migrations.CreateMessagingTables do
 
   def change do
     create table(:conversations) do
-      add :type, :string, null: false  # "direct", "group", "announcement"
-      add :name, :string               # For group chats (null for direct)
+      # "direct", "group", "announcement"
+      add :type, :string, null: false
+      # For group chats (null for direct)
+      add :name, :string
       add :last_message_at, :utc_datetime
       add :last_message_preview, :string
 
@@ -19,7 +21,8 @@ defmodule ClippsterServer.Repo.Migrations.CreateMessagingTables do
     create index(:conversations, [:type])
 
     create table(:conversation_participants) do
-      add :role, :string, default: "member", null: false  # "admin", "member"
+      # "admin", "member"
+      add :role, :string, default: "member", null: false
       add :joined_at, :utc_datetime
       add :left_at, :utc_datetime
       add :last_read_at, :utc_datetime
@@ -36,7 +39,8 @@ defmodule ClippsterServer.Repo.Migrations.CreateMessagingTables do
 
     create table(:messages) do
       add :content, :text, null: false
-      add :message_type, :string, default: "text", null: false  # "text", "system"
+      # "text", "system"
+      add :message_type, :string, default: "text", null: false
       add :edited_at, :utc_datetime
       add :deleted_at, :utc_datetime
 

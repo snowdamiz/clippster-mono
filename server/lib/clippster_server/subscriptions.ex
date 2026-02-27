@@ -56,7 +56,13 @@ defmodule ClippsterServer.Subscriptions do
   Creates a new subscription for a user via Stripe.
   Grants the tier's monthly credits and activates subscription.
   """
-  def create_stripe_subscription(user_id, tier, stripe_subscription_id, stripe_customer_id \\ nil, billing_interval \\ "monthly") do
+  def create_stripe_subscription(
+        user_id,
+        tier,
+        stripe_subscription_id,
+        stripe_customer_id \\ nil,
+        billing_interval \\ "monthly"
+      ) do
     tier_info = get_tier_info(tier)
 
     unless tier_info do
@@ -70,11 +76,16 @@ defmodule ClippsterServer.Subscriptions do
         end_date = DateTime.add(start_date, subscription_days, :day)
 
         # Yearly subscribers get 12 months of credits upfront; monthly gets 1 month
-        credits_to_grant = if billing_interval == "yearly", do: tier_info.monthly_credits * 12, else: tier_info.monthly_credits
+        credits_to_grant =
+          if billing_interval == "yearly",
+            do: tier_info.monthly_credits * 12,
+            else: tier_info.monthly_credits
+
         amount_usd = if billing_interval == "yearly", do: tier_info.usd * 11, else: tier_info.usd
 
         # Update user subscription fields
-        {:ok, updated_user} = user
+        {:ok, updated_user} =
+          user
           |> User.subscription_changeset(%{
             subscription_status: "active",
             subscription_tier: tier,
@@ -87,7 +98,8 @@ defmodule ClippsterServer.Subscriptions do
           |> Repo.update()
 
         # Create subscription history record
-        {:ok, subscription} = %Subscription{}
+        {:ok, subscription} =
+          %Subscription{}
           |> Subscription.create_changeset(%{
             user_id: user_id,
             status: "active",
@@ -105,7 +117,9 @@ defmodule ClippsterServer.Subscriptions do
         # Grant credits
         {:ok, _} = Credits.add_credits(user_id, credits_to_grant)
 
-        IO.puts("[Subscriptions] Created #{tier} (#{billing_interval}) subscription for user #{user_id}, granted #{credits_to_grant} credits")
+        IO.puts(
+          "[Subscriptions] Created #{tier} (#{billing_interval}) subscription for user #{user_id}, granted #{credits_to_grant} credits"
+        )
 
         %{user: updated_user, subscription: subscription}
       end)
@@ -130,11 +144,16 @@ defmodule ClippsterServer.Subscriptions do
         end_date = DateTime.add(start_date, subscription_days, :day)
 
         # Yearly subscribers get 12 months of credits upfront; monthly gets 1 month
-        credits_to_grant = if billing_interval == "yearly", do: tier_info.monthly_credits * 12, else: tier_info.monthly_credits
+        credits_to_grant =
+          if billing_interval == "yearly",
+            do: tier_info.monthly_credits * 12,
+            else: tier_info.monthly_credits
+
         amount_usd = if billing_interval == "yearly", do: tier_info.usd * 11, else: tier_info.usd
 
         # Update user subscription fields
-        {:ok, updated_user} = user
+        {:ok, updated_user} =
+          user
           |> User.subscription_changeset(%{
             subscription_status: "active",
             subscription_tier: tier,
@@ -145,7 +164,8 @@ defmodule ClippsterServer.Subscriptions do
           |> Repo.update()
 
         # Create subscription history record
-        {:ok, subscription} = %Subscription{}
+        {:ok, subscription} =
+          %Subscription{}
           |> Subscription.create_changeset(%{
             user_id: user_id,
             status: "active",
@@ -163,7 +183,9 @@ defmodule ClippsterServer.Subscriptions do
         # Grant credits
         {:ok, _} = Credits.add_credits(user_id, credits_to_grant)
 
-        IO.puts("[Subscriptions] Created #{tier} (#{billing_interval}) crypto subscription for user #{user_id}, granted #{credits_to_grant} credits")
+        IO.puts(
+          "[Subscriptions] Created #{tier} (#{billing_interval}) crypto subscription for user #{user_id}, granted #{credits_to_grant} credits"
+        )
 
         %{user: updated_user, subscription: subscription}
       end)
@@ -190,13 +212,16 @@ defmodule ClippsterServer.Subscriptions do
 
       # Calculate new end date
       current_end = user.subscription_end_date || DateTime.utc_now()
-      new_start = if DateTime.compare(DateTime.utc_now(), current_end) == :gt do
-        # Subscription was expired, start fresh
-        DateTime.utc_now() |> DateTime.truncate(:second)
-      else
-        # Still active, use current end as new start
-        current_end
-      end
+
+      new_start =
+        if DateTime.compare(DateTime.utc_now(), current_end) == :gt do
+          # Subscription was expired, start fresh
+          DateTime.utc_now() |> DateTime.truncate(:second)
+        else
+          # Still active, use current end as new start
+          current_end
+        end
+
       new_end = DateTime.add(new_start, @subscription_days, :day)
 
       # Decrement admin discount counter and clear when exhausted
@@ -207,7 +232,10 @@ defmodule ClippsterServer.Subscriptions do
 
           n when n <= 1 ->
             # Last discounted month just renewed — clear all discount fields
-            IO.puts("[Subscriptions] Admin discount exhausted for user #{user_id}, clearing discount fields")
+            IO.puts(
+              "[Subscriptions] Admin discount exhausted for user #{user_id}, clearing discount fields"
+            )
+
             %{
               admin_discount_months_remaining: nil,
               admin_discount_percent: nil,
@@ -220,15 +248,22 @@ defmodule ClippsterServer.Subscriptions do
         end
 
       # Update user subscription
-      {:ok, updated_user} = user
-        |> User.subscription_changeset(Map.merge(%{
-          subscription_status: "active",
-          subscription_end_date: new_end
-        }, discount_updates))
+      {:ok, updated_user} =
+        user
+        |> User.subscription_changeset(
+          Map.merge(
+            %{
+              subscription_status: "active",
+              subscription_end_date: new_end
+            },
+            discount_updates
+          )
+        )
         |> Repo.update()
 
       # Create subscription history record
-      {:ok, subscription} = %Subscription{}
+      {:ok, subscription} =
+        %Subscription{}
         |> Subscription.create_changeset(%{
           user_id: user_id,
           status: "active",
@@ -246,7 +281,9 @@ defmodule ClippsterServer.Subscriptions do
       # Grant monthly credits
       {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
 
-      IO.puts("[Subscriptions] Renewed #{tier} subscription for user #{user_id}, granted #{tier_info.monthly_credits} credits")
+      IO.puts(
+        "[Subscriptions] Renewed #{tier} subscription for user #{user_id}, granted #{tier_info.monthly_credits} credits"
+      )
 
       %{user: updated_user, subscription: subscription}
     end)
@@ -268,7 +305,8 @@ defmodule ClippsterServer.Subscriptions do
       end
 
       # Update user status to cancelled
-      {:ok, updated_user} = user
+      {:ok, updated_user} =
+        user
         |> User.subscription_changeset(%{
           subscription_status: "cancelled"
         })
@@ -280,7 +318,9 @@ defmodule ClippsterServer.Subscriptions do
       |> where([s], s.status == "active")
       |> Repo.update_all(set: [status: "cancelled"])
 
-      IO.puts("[Subscriptions] Cancelled subscription for user #{user_id}, access until #{user.subscription_end_date}")
+      IO.puts(
+        "[Subscriptions] Cancelled subscription for user #{user_id}, access until #{user.subscription_end_date}"
+      )
 
       updated_user
     end)
@@ -294,7 +334,8 @@ defmodule ClippsterServer.Subscriptions do
       user = Repo.get!(User, user_id)
 
       # Update user status to expired
-      {:ok, updated_user} = user
+      {:ok, updated_user} =
+        user
         |> User.subscription_changeset(%{
           subscription_status: "expired"
         })
@@ -377,6 +418,7 @@ defmodule ClippsterServer.Subscriptions do
   end
 
   defp calculate_days_remaining(nil), do: 0
+
   defp calculate_days_remaining(end_date) do
     diff = DateTime.diff(end_date, DateTime.utc_now(), :day)
     max(0, diff)
@@ -390,13 +432,16 @@ defmodule ClippsterServer.Subscriptions do
 
     cond do
       # User not found
-      is_nil(user) -> false
+      is_nil(user) ->
+        false
 
       # Admins always have access
-      user.is_admin -> true
+      user.is_admin ->
+        true
 
       # Org-created users don't need personal subscription
-      not is_nil(user.created_by_organization_id) -> true
+      not is_nil(user.created_by_organization_id) ->
+        true
 
       # Check subscription status and expiry
       user.subscription_status in ["active", "cancelled"] ->
@@ -407,7 +452,8 @@ defmodule ClippsterServer.Subscriptions do
         end
 
       # No valid subscription
-      true -> false
+      true ->
+        false
     end
   end
 
@@ -506,12 +552,15 @@ defmodule ClippsterServer.Subscriptions do
     user = Repo.get!(User, user_id)
 
     case user.pending_subscription_tier do
-      nil -> {:ok, user}
+      nil ->
+        {:ok, user}
+
       pending_tier ->
         tier_info = get_tier_info(pending_tier)
 
         if tier_info do
-          {:ok, updated_user} = user
+          {:ok, updated_user} =
+            user
             |> User.subscription_changeset(%{
               subscription_tier: pending_tier,
               pending_subscription_tier: nil
@@ -521,13 +570,18 @@ defmodule ClippsterServer.Subscriptions do
           # Grant the new tier's credits
           {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
 
-          IO.puts("[Subscriptions] Applied pending downgrade for user #{user_id}: #{user.subscription_tier} -> #{pending_tier}")
+          IO.puts(
+            "[Subscriptions] Applied pending downgrade for user #{user_id}: #{user.subscription_tier} -> #{pending_tier}"
+          )
+
           {:ok, %{type: "downgrade_applied", user: updated_user}}
         else
           # Invalid pending tier, clear it
-          {:ok, updated_user} = user
+          {:ok, updated_user} =
+            user
             |> User.subscription_changeset(%{pending_subscription_tier: nil})
             |> Repo.update()
+
           {:ok, %{type: "cleared_invalid", user: updated_user}}
         end
     end
@@ -539,7 +593,8 @@ defmodule ClippsterServer.Subscriptions do
   def cancel_pending_tier_change(user_id) do
     user = Repo.get!(User, user_id)
 
-    {:ok, updated_user} = user
+    {:ok, updated_user} =
+      user
       |> User.subscription_changeset(%{pending_subscription_tier: nil})
       |> Repo.update()
 
@@ -580,7 +635,8 @@ defmodule ClippsterServer.Subscriptions do
             case Stripe.Subscription.update(user.stripe_subscription_id, update_params) do
               {:ok, _updated_sub} ->
                 # Update DB immediately for upgrades
-                {:ok, updated_user} = user
+                {:ok, updated_user} =
+                  user
                   |> User.subscription_changeset(%{
                     subscription_tier: new_tier,
                     pending_subscription_tier: nil
@@ -589,12 +645,19 @@ defmodule ClippsterServer.Subscriptions do
 
                 # Grant the difference in credits immediately
                 current_tier_info = get_tier_info(user.subscription_tier)
-                credit_diff = new_tier_info.monthly_credits - (current_tier_info && current_tier_info.monthly_credits || 0)
+
+                credit_diff =
+                  new_tier_info.monthly_credits -
+                    ((current_tier_info && current_tier_info.monthly_credits) || 0)
+
                 if credit_diff > 0 do
                   {:ok, _} = Credits.add_credits(user.id, credit_diff)
                 end
 
-                IO.puts("[Subscriptions] Upgraded user #{user.id}: #{user.subscription_tier} -> #{new_tier} (prorated)")
+                IO.puts(
+                  "[Subscriptions] Upgraded user #{user.id}: #{user.subscription_tier} -> #{new_tier} (prorated)"
+                )
+
                 {:ok, %{type: "upgrade", user: updated_user}}
 
               {:error, %Stripe.Error{message: message}} ->
@@ -610,7 +673,8 @@ defmodule ClippsterServer.Subscriptions do
       end
     else
       # Non-Stripe subscription (admin/crypto) — just update tier directly
-      {:ok, updated_user} = user
+      {:ok, updated_user} =
+        user
         |> User.subscription_changeset(%{
           subscription_tier: new_tier,
           pending_subscription_tier: nil
@@ -657,13 +721,17 @@ defmodule ClippsterServer.Subscriptions do
             case Stripe.Subscription.update(user.stripe_subscription_id, update_params) do
               {:ok, _updated_sub} ->
                 # Don't change tier yet — store as pending
-                {:ok, updated_user} = user
+                {:ok, updated_user} =
+                  user
                   |> User.subscription_changeset(%{
                     pending_subscription_tier: new_tier
                   })
                   |> Repo.update()
 
-                IO.puts("[Subscriptions] Scheduled downgrade for user #{user.id}: #{user.subscription_tier} -> #{new_tier} at period end")
+                IO.puts(
+                  "[Subscriptions] Scheduled downgrade for user #{user.id}: #{user.subscription_tier} -> #{new_tier} at period end"
+                )
+
                 {:ok, %{type: "downgrade", user: updated_user}}
 
               {:error, %Stripe.Error{message: message}} ->
@@ -679,7 +747,8 @@ defmodule ClippsterServer.Subscriptions do
       end
     else
       # Non-Stripe subscription — set pending, will be applied at renewal
-      {:ok, updated_user} = user
+      {:ok, updated_user} =
+        user
         |> User.subscription_changeset(%{
           pending_subscription_tier: new_tier
         })
@@ -711,7 +780,8 @@ defmodule ClippsterServer.Subscriptions do
         end_date = DateTime.add(start_date, days, :day)
 
         # Update user subscription fields
-        {:ok, updated_user} = user
+        {:ok, updated_user} =
+          user
           |> User.subscription_changeset(%{
             subscription_status: "active",
             subscription_tier: tier,
@@ -722,7 +792,8 @@ defmodule ClippsterServer.Subscriptions do
           |> Repo.update()
 
         # Create subscription history record
-        {:ok, subscription} = %Subscription{}
+        {:ok, subscription} =
+          %Subscription{}
           |> Subscription.create_changeset(%{
             user_id: user_id,
             status: "active",
@@ -730,7 +801,11 @@ defmodule ClippsterServer.Subscriptions do
             start_date: start_date,
             end_date: end_date,
             hours_included: Decimal.new("0"),
-            credits_granted: if(grant_credits, do: Decimal.new(to_string(tier_info.monthly_credits)), else: Decimal.new("0")),
+            credits_granted:
+              if(grant_credits,
+                do: Decimal.new(to_string(tier_info.monthly_credits)),
+                else: Decimal.new("0")
+              ),
             payment_method: "admin",
             amount_usd: Decimal.new("0")
           })
@@ -741,7 +816,9 @@ defmodule ClippsterServer.Subscriptions do
           {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
         end
 
-        IO.puts("[Subscriptions] Admin granted #{tier} subscription to user #{user_id} for #{days} days")
+        IO.puts(
+          "[Subscriptions] Admin granted #{tier} subscription to user #{user_id} for #{days} days"
+        )
 
         %{user: updated_user, subscription: subscription}
       end)
@@ -763,6 +840,7 @@ defmodule ClippsterServer.Subscriptions do
       end
 
       tier_info = get_tier_info(tier)
+
       unless tier_info do
         Repo.rollback(:invalid_tier)
       end
@@ -772,7 +850,8 @@ defmodule ClippsterServer.Subscriptions do
       new_end = DateTime.add(current_end, days, :day)
 
       # Update user subscription end date
-      {:ok, updated_user} = user
+      {:ok, updated_user} =
+        user
         |> User.subscription_changeset(%{
           subscription_status: "active",
           subscription_end_date: new_end
@@ -780,7 +859,8 @@ defmodule ClippsterServer.Subscriptions do
         |> Repo.update()
 
       # Create subscription history record for extension
-      {:ok, subscription} = %Subscription{}
+      {:ok, subscription} =
+        %Subscription{}
         |> Subscription.create_changeset(%{
           user_id: user_id,
           status: "active",
@@ -788,7 +868,11 @@ defmodule ClippsterServer.Subscriptions do
           start_date: current_end,
           end_date: new_end,
           hours_included: Decimal.new("0"),
-          credits_granted: if(grant_credits, do: Decimal.new(to_string(tier_info.monthly_credits)), else: Decimal.new("0")),
+          credits_granted:
+            if(grant_credits,
+              do: Decimal.new(to_string(tier_info.monthly_credits)),
+              else: Decimal.new("0")
+            ),
           payment_method: "admin",
           amount_usd: Decimal.new("0")
         })
@@ -820,11 +904,15 @@ defmodule ClippsterServer.Subscriptions do
         user = Repo.get!(User, user_id)
 
         # Determine start and end dates
-        start_date = user.subscription_start_date || DateTime.utc_now() |> DateTime.truncate(:second)
-        end_date = user.subscription_end_date || DateTime.add(start_date, @subscription_days, :day)
+        start_date =
+          user.subscription_start_date || DateTime.utc_now() |> DateTime.truncate(:second)
+
+        end_date =
+          user.subscription_end_date || DateTime.add(start_date, @subscription_days, :day)
 
         # Update user's tier and ensure subscription is active
-        {:ok, updated_user} = user
+        {:ok, updated_user} =
+          user
           |> User.subscription_changeset(%{
             subscription_tier: new_tier,
             subscription_status: "active",
@@ -839,7 +927,8 @@ defmodule ClippsterServer.Subscriptions do
           {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
 
           # Create subscription history record for tier change
-          {:ok, subscription} = %Subscription{}
+          {:ok, subscription} =
+            %Subscription{}
             |> Subscription.create_changeset(%{
               user_id: user_id,
               status: "active",
@@ -856,7 +945,8 @@ defmodule ClippsterServer.Subscriptions do
           %{user: updated_user, subscription: subscription}
         else
           # Create subscription history record even without credits
-          {:ok, subscription} = %Subscription{}
+          {:ok, subscription} =
+            %Subscription{}
             |> Subscription.create_changeset(%{
               user_id: user_id,
               status: "active",

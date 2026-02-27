@@ -1,62 +1,68 @@
+use super::types::{AspectRatio, SubtitleSettings, TextOverlaySettings, WordInfo};
 use std::io::Write;
-use super::types::{SubtitleSettings, WordInfo, AspectRatio, TextOverlaySettings};
 
 // Helper to embed fonts directly in ASS file
 pub fn embed_fonts_in_ass(
     file: &mut std::fs::File,
     fonts_dir: &std::path::Path,
-    settings: &SubtitleSettings
+    settings: &SubtitleSettings,
 ) -> Result<(), String> {
     use std::io::Read;
-    
+
     // Determine which font files we need based on font family and weight
     let font_files_to_embed = get_required_font_files(settings);
-    
+
     // ASS fonts section uses UUencoded format
     writeln!(file, "[Fonts]").unwrap();
-    
+
     for font_filename in font_files_to_embed {
         let font_path = fonts_dir.join(&font_filename);
-        
+
         if !font_path.exists() {
-            println!("[Rust] Warning: Font file not found: {} - FFmpeg will use system fallback", font_path.display());
+            println!(
+                "[Rust] Warning: Font file not found: {} - FFmpeg will use system fallback",
+                font_path.display()
+            );
             continue;
         }
-        
+
         println!("[Rust] Embedding font: {}", font_filename);
-        
+
         // Read font file
         let mut font_file = std::fs::File::open(&font_path)
             .map_err(|e| format!("Failed to open font file {}: {}", font_filename, e))?;
-        
+
         let mut font_data = Vec::new();
-        font_file.read_to_end(&mut font_data)
+        font_file
+            .read_to_end(&mut font_data)
             .map_err(|e| format!("Failed to read font file {}: {}", font_filename, e))?;
-        
+
         println!("[Rust] Font file size: {} bytes", font_data.len());
-        
+
         // Encode as UUencoded (ASS standard for embedded fonts)
         let encoded = uuencode_data(&font_data);
-        
+
         // Write font header - use filename WITHOUT extension (ASS format requirement)
-        let font_name_without_ext = font_filename.trim_end_matches(".ttf").trim_end_matches(".otf");
+        let font_name_without_ext = font_filename
+            .trim_end_matches(".ttf")
+            .trim_end_matches(".otf");
         writeln!(file, "fontname: {}", font_name_without_ext).unwrap();
-        
+
         // Write encoded data
         for line in encoded {
             writeln!(file, "{}", line).unwrap();
         }
-        
+
         writeln!(file).unwrap();
     }
-    
+
     Ok(())
 }
 
 // Helper to get required font files for embedding
 fn get_required_font_files(settings: &SubtitleSettings) -> Vec<String> {
     let mut files = Vec::new();
-    
+
     // Determine font file based on family and weight
     let weight_suffix = if settings.font_weight >= 700 {
         "Bold"
@@ -71,7 +77,7 @@ fn get_required_font_files(settings: &SubtitleSettings) -> Vec<String> {
     } else {
         "Regular"
     };
-    
+
     // Build font filename
     let font_file = match settings.font_family.as_str() {
         "Open Sans" => {
@@ -81,11 +87,11 @@ fn get_required_font_files(settings: &SubtitleSettings) -> Vec<String> {
             } else {
                 format!("OpenSans-{}.ttf", weight_suffix)
             }
-        },
+        }
         "Bebas Neue" => {
             // Bebas Neue only has Regular weight
             "BebasNeue-Regular.ttf".to_string()
-        },
+        }
         _ => {
             // Standard format: FontName-Weight.ttf
             if weight_suffix == "Regular" {
@@ -95,7 +101,7 @@ fn get_required_font_files(settings: &SubtitleSettings) -> Vec<String> {
             }
         }
     };
-    
+
     files.push(font_file);
     files
 }
@@ -103,30 +109,31 @@ fn get_required_font_files(settings: &SubtitleSettings) -> Vec<String> {
 // UUencode data for ASS font embedding (ASS uses UUencoding, not base64)
 fn uuencode_data(data: &[u8]) -> Vec<String> {
     let mut lines = Vec::new();
-    
-    for chunk in data.chunks(45) { // UUencode uses 45 bytes per line (60 chars output)
+
+    for chunk in data.chunks(45) {
+        // UUencode uses 45 bytes per line (60 chars output)
         let mut line = String::new();
-        
+
         // Length character: 45 bytes = 'M' in UUencode
         let len_char = (chunk.len() as u8 + 32) as char;
         line.push(len_char);
-        
+
         // Encode the chunk
         for group in chunk.chunks(3) {
             let mut buf = [0u8; 3];
             for (i, &byte) in group.iter().enumerate() {
                 buf[i] = byte;
             }
-            
+
             // UUencode: split 3 bytes into 4 6-bit values, add 32 to each
             let b1 = ((buf[0] >> 2) & 0x3f) + 32;
             let b2 = ((((buf[0] & 0x03) << 4) | ((buf[1] >> 4) & 0x0f)) & 0x3f) + 32;
             let b3 = ((((buf[1] & 0x0f) << 2) | ((buf[2] >> 6) & 0x03)) & 0x3f) + 32;
             let b4 = (buf[2] & 0x3f) + 32;
-            
+
             line.push(b1 as char);
             line.push(b2 as char);
-            
+
             if group.len() > 1 {
                 line.push(b3 as char);
             }
@@ -134,10 +141,10 @@ fn uuencode_data(data: &[u8]) -> Vec<String> {
                 line.push(b4 as char);
             }
         }
-        
+
         lines.push(line);
     }
-    
+
     lines
 }
 
@@ -153,7 +160,7 @@ pub fn generate_ass_file(
     video_width: u32,
     video_height: u32,
     fonts_dir: Option<&std::path::Path>,
-    time_offset: f64  // Offset to add to all subtitle times (e.g., intro duration)
+    time_offset: f64, // Offset to add to all subtitle times (e.g., intro duration)
 ) -> Result<(), String> {
     let mut file = std::fs::File::create(output_path)
         .map_err(|e| format!("Failed to create subtitle file: {}", e))?;
@@ -170,10 +177,13 @@ pub fn generate_ass_file(
     writeln!(file, "WrapStyle: 1").unwrap(); // Word wrapping
     writeln!(file, "ScaledBorderAndShadow: yes").unwrap();
     writeln!(file).unwrap();
-    
+
     // Embed fonts if available
     if let Some(fonts_path) = fonts_dir {
-        println!("[Rust] Attempting to embed fonts from: {}", fonts_path.display());
+        println!(
+            "[Rust] Attempting to embed fonts from: {}",
+            fonts_path.display()
+        );
         if fonts_path.exists() {
             println!("[Rust] Fonts directory exists, embedding...");
             embed_fonts_in_ass(&mut file, fonts_path, settings)?;
@@ -183,7 +193,7 @@ pub fn generate_ass_file(
     } else {
         println!("[Rust] WARNING: No fonts directory provided, fonts will not be embedded.");
     }
-    
+
     writeln!(file).unwrap();
 
     // Generate Style
@@ -211,9 +221,17 @@ pub fn generate_ass_file(
     let border2_color = convert_color(&settings.border2_color);
     let _back_color = convert_color(&settings.background_color);
 
-    println!("[Rust] Subtitle colors - Text: {}, Border1: {}, Border2: {}, Background: {}", 
-        settings.text_color, settings.border1_color, settings.border2_color, settings.background_color);
-    println!("[Rust] ASS colors - Primary: {}, Border1: {}, Border2: {}", primary_color, border1_color, border2_color);
+    println!(
+        "[Rust] Subtitle colors - Text: {}, Border1: {}, Border2: {}, Background: {}",
+        settings.text_color,
+        settings.border1_color,
+        settings.border2_color,
+        settings.background_color
+    );
+    println!(
+        "[Rust] ASS colors - Primary: {}, Border1: {}, Border2: {}",
+        primary_color, border1_color, border2_color
+    );
     println!("[Rust] Using font: {}", settings.font_family);
 
     // Calculate aspect ratio scaling (matches VideoPlayer.vue logic)
@@ -243,77 +261,83 @@ pub fn generate_ass_file(
     let adjusted_border2_width = settings.border2_width * font_size_scale * 0.8;
     // ASS Shadow parameter is an offset depth, calculate from shadow offset X/Y
     // Use the magnitude of the offset vector for proper shadow distance
-    let shadow_offset_magnitude = ((settings.shadow_offset_x.powi(2) + settings.shadow_offset_y.powi(2)).sqrt()) * font_size_scale;
+    let shadow_offset_magnitude =
+        ((settings.shadow_offset_x.powi(2) + settings.shadow_offset_y.powi(2)).sqrt())
+            * font_size_scale;
     let adjusted_shadow = shadow_offset_magnitude;
     let adjusted_letter_spacing = settings.letter_spacing * font_size_scale;
 
-    println!("[Rust] Font size: {} -> {} (scale: {})", settings.font_size, adjusted_font_size, font_size_scale);
+    println!(
+        "[Rust] Font size: {} -> {} (scale: {})",
+        settings.font_size, adjusted_font_size, font_size_scale
+    );
 
     // Calculate margins and positioning to match VideoPlayer.vue
     // Vue uses a container with width=maxWidth% centered on screen
     // And positions it using top=positionPercentage% and translate(-50%, -50%)
-    
+
     let adjusted_padding = settings.padding * font_size_scale;
     let box_width_px = play_res_x as f64 * (settings.max_width as f64 / 100.0);
-    
+
     // Calculate margins to constrain text to box_width - 2*padding
     // The box is centered on screen, so margins are symmetric
     let side_margin = (play_res_x as f64 - box_width_px) / 2.0;
     let margin_l = (side_margin + adjusted_padding as f64).round() as i32;
     let margin_r = (side_margin + adjusted_padding as f64).round() as i32;
-    
+
     // Calculate target position for \pos(x,y)
     // X: Center of screen + Offset (percentage of box width)
     let shift_x_px = box_width_px * (settings.text_offset_x as f64 / 100.0);
     let target_x = (play_res_x as f64 / 2.0) + shift_x_px;
-    
+
     // Y: Position% of screen + Offset (percentage of height)
     // We approximate height as 2 lines + padding for the offset calculation
     let approx_height = (adjusted_font_size as f64 * 2.0) + (adjusted_padding as f64 * 2.0);
     let shift_y_px = approx_height * (settings.text_offset_y as f64 / 100.0);
-    
+
     // Apply a vertical correction to raise the subtitles slightly
     // The font scaling (1.5x) pushes the bottom edge down, so we compensate by moving the center up
     // We use a factor of the font size as a heuristic for the correction
     let vertical_correction = (adjusted_font_size as f64) * 0.3;
-    
-    let target_y = (play_res_y as f64 * (settings.position_percentage as f64 / 100.0)) + shift_y_px - vertical_correction;
-    
+
+    let target_y = (play_res_y as f64 * (settings.position_percentage as f64 / 100.0)) + shift_y_px
+        - vertical_correction;
+
     // Use Alignment 5 (Middle Center) to match Vue's translate(-50%, -50%)
     let alignment = 5;
     let margin_v = 10; // Not used for positioning with \pos, but required by Style
-    
+
     let pos_tag = format!("{{\\pos({:.0},{:.0})}}", target_x, target_y);
 
-    // For embedded fonts, we need to reference the actual font family name 
+    // For embedded fonts, we need to reference the actual font family name
     // and use \fw tags for specific weights, as standard ASS only supports Bold/Italic.
     // This avoids issues where libass fails to match a constructed name like "Montserrat-Bold"
     // if the internal family name is just "Montserrat".
-    
+
     // We'll use the base family name in the Style
     let font_name_for_style = settings.font_family.clone();
-    
+
     // But we still need to embed the specific font file corresponding to the weight.
     // (This is handled by get_required_font_files and embed_fonts_in_ass)
 
     // Standard ASS Bold flag (only for generic bold, specific weights handled via \fw)
     let bold = if settings.font_weight >= 700 { -1 } else { 0 };
-    
+
     println!("[Rust] Font name for ASS: {}", font_name_for_style);
 
     // Generate two styles for layered borders
     // Layer ordering: shadow (bottom) > border2 (middle) > border1 (top) > text
-    
+
     // Style 1: Border2Layer (bottom layer with larger outline = border1 + border2)
     // ASS Style format:
-    // Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, 
-    // Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, 
+    // Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour,
+    // Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle,
     // BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
     let total_border_width = adjusted_border1_width + adjusted_border2_width;
-    
+
     // Use shadow_color for BackColour (which controls Shadow color in BorderStyle=1)
     let shadow_color_ass = convert_color(&settings.shadow_color);
-    
+
     // Calculate word spacing separator
     // Frontend uses flex gap which replaces the space character.
     // In ASS, we use a space character, so we need to adjust its spacing to match the desired gap.
@@ -323,29 +347,37 @@ pub fn generate_ass_file(
     let space_glyph_width = adjusted_font_size * 0.25;
     let target_word_gap = settings.word_spacing * adjusted_font_size;
     let space_char_spacing = (target_word_gap - space_glyph_width).max(0.0);
-    
-    // Separator: Set spacing for space char, then space char, then reset spacing for next word
-    let word_separator = format!("{{\\fsp{:.1}}} {{\\fsp{:.1}}}", space_char_spacing, adjusted_letter_spacing);
 
-    writeln!(file, "Style: Border2Layer,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},{},{},{},1",
+    // Separator: Set spacing for space char, then space char, then reset spacing for next word
+    let word_separator = format!(
+        "{{\\fsp{:.1}}} {{\\fsp{:.1}}}",
+        space_char_spacing, adjusted_letter_spacing
+    );
+
+    writeln!(
+        file,
+        "Style: Border2Layer,{},{},{},{},{},{},{},0,0,0,100,100,{},0,1,{},{},{},{},{},{},1",
         font_name_for_style,
         adjusted_font_size,
         primary_color,
-        primary_color, // SecondaryColour
-        border2_color, // OutlineColour (border2 color)
+        primary_color,    // SecondaryColour
+        border2_color,    // OutlineColour (border2 color)
         shadow_color_ass, // BackColour (Shadow color)
         bold,
         adjusted_letter_spacing,
         total_border_width, // Outline (total width)
-        adjusted_shadow, // Shadow (drop shadow)
+        adjusted_shadow,    // Shadow (drop shadow)
         alignment,
         margin_l,
         margin_r,
         margin_v
-    ).unwrap();
+    )
+    .unwrap();
 
     // Style 2: Border1Layer (top layer with smaller outline = border1 only)
-    writeln!(file, "Style: Border1Layer,{},{},{},{},{},&H00000000,{},0,0,0,100,100,{},0,1,{},{},{},{},{},{},1",
+    writeln!(
+        file,
+        "Style: Border1Layer,{},{},{},{},{},&H00000000,{},0,0,0,100,100,{},0,1,{},{},{},{},{},{},1",
         font_name_for_style,
         adjusted_font_size,
         primary_color,
@@ -354,16 +386,21 @@ pub fn generate_ass_file(
         bold,
         adjusted_letter_spacing,
         adjusted_border1_width, // Outline (border1 only)
-        0.0, // No shadow on top layer
+        0.0,                    // No shadow on top layer
         alignment,
         margin_l,
         margin_r,
         margin_v
-    ).unwrap();
+    )
+    .unwrap();
 
     writeln!(file).unwrap();
     writeln!(file, "[Events]").unwrap();
-    writeln!(file, "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text").unwrap();
+    writeln!(
+        file,
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+    )
+    .unwrap();
 
     // 1. Flatten words relative to clip timeline
     #[derive(Clone, Debug)]
@@ -388,7 +425,7 @@ pub fn generate_ass_file(
                 // Calculate relative timing and add the time offset (e.g., intro duration)
                 let start_rel = word.start - clip_seg_start + current_clip_time + time_offset;
                 let end_rel = word.end - clip_seg_start + current_clip_time + time_offset;
-                
+
                 clip_timeline_words.push(ClipWord {
                     word: word.word.clone(),
                     start: start_rel,
@@ -400,7 +437,11 @@ pub fn generate_ass_file(
     }
 
     // Sort by start time just in case
-    clip_timeline_words.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+    clip_timeline_words.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     if clip_timeline_words.is_empty() {
         return Ok(());
@@ -411,26 +452,28 @@ pub fn generate_ass_file(
 
     // 3. Generate events for each chunk
     let chunk_count = clip_timeline_words.len().div_ceil(max_words);
-    
+
     for i in 0..chunk_count {
         let start_idx = i * max_words;
         let end_idx = std::cmp::min(start_idx + max_words, clip_timeline_words.len());
         let chunk = &clip_timeline_words[start_idx..end_idx];
-        
-        if chunk.is_empty() { continue; }
+
+        if chunk.is_empty() {
+            continue;
+        }
 
         let chunk_visible_start = if i == 0 {
-            time_offset  // Start at the time offset (after intro)
+            time_offset // Start at the time offset (after intro)
         } else {
             clip_timeline_words[start_idx - 1].end
         };
-        
+
         let chunk_visible_end = chunk.last().unwrap().end;
-        
+
         // Now we need to generate events for each "state" within this chunk visibility.
         // States are defined by the word boundaries within the chunk.
         // Transitions happen at: word.start, word.end.
-        
+
         // We have a timeline of points: chunk_visible_start, w0.start, w0.end, w1.start, w1.end... chunk_visible_end.
         // Sort and deduplicate these points.
         let mut points = Vec::new();
@@ -442,19 +485,23 @@ pub fn generate_ass_file(
         points.push(chunk_visible_end);
         points.sort_by(|a, b| a.partial_cmp(b).unwrap());
         points.dedup();
-        
+
         // Iterate intervals
-        for j in 0..points.len()-1 {
+        for j in 0..points.len() - 1 {
             let t_start = points[j];
-            let t_end = points[j+1];
-            
-            if t_end - t_start < 0.01 { continue; } // Skip tiny intervals
-            
+            let t_end = points[j + 1];
+
+            if t_end - t_start < 0.01 {
+                continue;
+            } // Skip tiny intervals
+
             // Determine active word in this interval
             // A word is active if t_mid is inside [word.start, word.end]
             let t_mid = (t_start + t_end) / 2.0;
-            let active_word_idx = chunk.iter().position(|w| t_mid >= w.start && t_mid <= w.end);
-            
+            let active_word_idx = chunk
+                .iter()
+                .position(|w| t_mid >= w.start && t_mid <= w.end);
+
             // Format time to H:MM:SS.cc
             let format_time = |t: f64| -> String {
                 let t = t.max(0.0);
@@ -464,48 +511,58 @@ pub fn generate_ass_file(
                 let centis = ((t % 1.0) * 100.0).round() as u32;
                 format!("{}:{:02}:{:02}.{:02}", hours, mins, secs, centis)
             };
-            
+
             // Strategy: Render text in four layers for dual borders + animation
             // Layer 0: Border2Layer base text (shadow + outer border)
             // Layer 1: Border2Layer active word animation (shadow + outer border, scaled)
             // Layer 2: Border1Layer base text (inner border)
             // Layer 3: Border1Layer active word animation (inner border, scaled)
-            
+
             // Layer 0: Border2Layer base text with all words at normal size
             // Use \fw tag to ensure correct font weight
             let weight_tag = format!("{{\\fw{}}}", settings.font_weight);
-            let base_text = chunk.iter().map(|w| format!("{}{}", weight_tag, w.word)).collect::<Vec<_>>().join(&word_separator);
-            
-            writeln!(file, "Dialogue: 0,{},{},Border2Layer,,0,0,0,,{}{}",
+            let base_text = chunk
+                .iter()
+                .map(|w| format!("{}{}", weight_tag, w.word))
+                .collect::<Vec<_>>()
+                .join(&word_separator);
+
+            writeln!(
+                file,
+                "Dialogue: 0,{},{},Border2Layer,,0,0,0,,{}{}",
                 format_time(t_start),
                 format_time(t_end),
                 pos_tag,
                 base_text
-            ).unwrap();
-            
+            )
+            .unwrap();
+
             // Layer 2: Border1Layer base text with all words at normal size
-            writeln!(file, "Dialogue: 2,{},{},Border1Layer,,0,0,0,,{}{}",
+            writeln!(
+                file,
+                "Dialogue: 2,{},{},Border1Layer,,0,0,0,,{}{}",
                 format_time(t_start),
                 format_time(t_end),
                 pos_tag,
                 base_text
-            ).unwrap();
-            
+            )
+            .unwrap();
+
             // Layers 1 & 3: If there's an active word, render it scaled on top (for both border layers)
             if let Some(active_idx) = active_word_idx {
                 let active_word = &chunk[active_idx];
                 let word_duration = active_word.end - active_word.start;
                 let anim_duration_ms = calculate_animation_duration(word_duration);
-                
+
                 // Calculate when this word starts within the current interval
                 let word_start_in_interval = if active_word.start > t_start {
                     ((active_word.start - t_start) * 1000.0) as u32
                 } else {
                     0
                 };
-                
+
                 let scale_up_end = word_start_in_interval + anim_duration_ms;
-                
+
                 // Build text with spaces to position the active word correctly
                 // Use invisible characters (zero-width) for other words to maintain spacing
                 let mut positioned_text_parts = Vec::new();
@@ -514,35 +571,39 @@ pub fn generate_ass_file(
                         // Active word with animation
                         positioned_text_parts.push(format!(
                             "{}{{\\r\\t({},{},\\fscx115\\fscy115)}}{}{{\\fscx100\\fscy100}}",
-                            weight_tag,
-                            word_start_in_interval,
-                            scale_up_end,
-                            word.word
+                            weight_tag, word_start_in_interval, scale_up_end, word.word
                         ));
                     } else {
                         // Use {\alpha&HFF&} to make word invisible (maintains spacing)
                         // Still include weight tag to maintain spacing metrics
-                        positioned_text_parts.push(format!("{}{{\\alpha&HFF&}}{}", weight_tag, word.word));
+                        positioned_text_parts
+                            .push(format!("{}{{\\alpha&HFF&}}{}", weight_tag, word.word));
                     }
                 }
-                
+
                 let overlay_text = positioned_text_parts.join(&word_separator);
-                
+
                 // Layer 1: Border2Layer active word (shadow + outer border)
-                writeln!(file, "Dialogue: 1,{},{},Border2Layer,,0,0,0,,{}{}",
+                writeln!(
+                    file,
+                    "Dialogue: 1,{},{},Border2Layer,,0,0,0,,{}{}",
                     format_time(t_start),
                     format_time(t_end),
                     pos_tag,
                     overlay_text
-                ).unwrap();
-                
+                )
+                .unwrap();
+
                 // Layer 3: Border1Layer active word (inner border)
-                writeln!(file, "Dialogue: 3,{},{},Border1Layer,,0,0,0,,{}{}",
+                writeln!(
+                    file,
+                    "Dialogue: 3,{},{},Border1Layer,,0,0,0,,{}{}",
                     format_time(t_start),
                     format_time(t_end),
                     pos_tag,
                     overlay_text
-                ).unwrap();
+                )
+                .unwrap();
             }
         }
     }
@@ -553,27 +614,27 @@ pub fn generate_ass_file(
 // Calculate animation duration for a word (matches VideoPlayer.vue logic)
 pub fn calculate_animation_duration(word_duration: f64) -> u32 {
     // Returns duration in milliseconds
-    
+
     // For very short words (under 50ms), use instant transition
     if word_duration < 0.05 {
         return 0;
     }
-    
+
     // For short words (50-100ms), use 30% of duration for responsive animation
     if word_duration < 0.1 {
         return ((word_duration * 0.3) * 1000.0) as u32;
     }
-    
+
     // For medium words (100-200ms), use 35% of duration
     if word_duration < 0.2 {
         return ((word_duration * 0.35) * 1000.0) as u32;
     }
-    
+
     // For normal words (200-400ms), use 40% of duration
     if word_duration < 0.4 {
         return ((word_duration * 0.4) * 1000.0) as u32;
     }
-    
+
     // For longer words (400ms+), use 45% but cap at 200ms to prevent overly slow animations
     let calculated_duration = word_duration * 0.45;
     let capped_duration = calculated_duration.min(0.2);
@@ -627,12 +688,24 @@ pub fn generate_text_overlay_ass_file(
                     font_size: first_overlay.style.font_size,
                     font_weight: first_overlay.style.font_weight,
                     text_color: first_overlay.style.color.clone(),
-                    background_color: first_overlay.style.background_color.clone().unwrap_or_default(),
+                    background_color: first_overlay
+                        .style
+                        .background_color
+                        .clone()
+                        .unwrap_or_default(),
                     background_enabled: first_overlay.style.background_enabled,
                     border1_width: first_overlay.style.border1_width,
-                    border1_color: first_overlay.style.border1_color.clone().unwrap_or_default(),
+                    border1_color: first_overlay
+                        .style
+                        .border1_color
+                        .clone()
+                        .unwrap_or_default(),
                     border2_width: first_overlay.style.border2_width,
-                    border2_color: first_overlay.style.border2_color.clone().unwrap_or_default(),
+                    border2_color: first_overlay
+                        .style
+                        .border2_color
+                        .clone()
+                        .unwrap_or_default(),
                     shadow_offset_x: first_overlay.style.shadow_offset_x,
                     shadow_offset_y: first_overlay.style.shadow_offset_y,
                     shadow_blur: first_overlay.style.shadow_blur,
@@ -643,7 +716,11 @@ pub fn generate_text_overlay_ass_file(
                     animation_style: "none".to_string(),
                     line_height: first_overlay.style.line_height,
                     letter_spacing: first_overlay.style.letter_spacing,
-                    text_align: first_overlay.style.text_align.clone().unwrap_or_else(|| "center".to_string()),
+                    text_align: first_overlay
+                        .style
+                        .text_align
+                        .clone()
+                        .unwrap_or_else(|| "center".to_string()),
                     text_offset_x: first_overlay.style.text_offset_x,
                     text_offset_y: first_overlay.style.text_offset_y,
                     padding: first_overlay.style.padding,
@@ -676,20 +753,25 @@ pub fn generate_text_overlay_ass_file(
 
     // Font sizes in text overlays are defined relative to a 1080p reference height.
     // The frontend scales: displayedFontSize = configuredFontSize * (containerHeight / 1080)
-    // 
+    //
     // However, there's a difference in how fonts are rendered in the browser vs. FFmpeg/ASS.
     // We need to apply the same 1.5x correction factor used by subtitles to match the preview.
     // This accounts for DPI/scaling differences between browser rendering and ASS rendering.
     let font_correction_factor = 1.5;
-    
-    println!("[Rust] Text overlay generation for {}: play_res_x={}, play_res_y={}, font_correction={}", 
-        aspect_ratio, play_res_x, play_res_y, font_correction_factor);
+
+    println!(
+        "[Rust] Text overlay generation for {}: play_res_x={}, play_res_y={}, font_correction={}",
+        aspect_ratio, play_res_x, play_res_y, font_correction_factor
+    );
 
     // Generate a unique style for each overlay (using per-ratio config if available)
     for (idx, overlay) in text_overlays.iter().enumerate() {
         // Get style for current aspect ratio (fallback to default)
         let style = if let Some(ref configs) = overlay.per_ratio_configs {
-            configs.get(aspect_ratio).map(|c| &c.style).unwrap_or(&overlay.style)
+            configs
+                .get(aspect_ratio)
+                .map(|c| &c.style)
+                .unwrap_or(&overlay.style)
         } else {
             &overlay.style
         };
@@ -709,33 +791,36 @@ pub fn generate_text_overlay_ass_file(
         };
 
         let bold = if style.font_weight >= 700 { 1 } else { 0 };
-        
+
         // Apply the font correction factor to match browser rendering
         // Font sizes are defined at 1080p reference, scaled by 1.5x for ASS rendering
         let font_size = (style.font_size * font_correction_factor).round() as u32;
-        
+
         // For outline, ASS extends outward only (vs CSS text-stroke which is centered)
         // So we use 0.5 factor to match visual appearance, plus the font correction
-        let outline_width = if style.border1_width > 0.0 { 
-            (style.border1_width * font_correction_factor * 0.5).max(0.5) 
-        } else { 
-            0.0 
+        let outline_width = if style.border1_width > 0.0 {
+            (style.border1_width * font_correction_factor * 0.5).max(0.5)
+        } else {
+            0.0
         };
-        
-        let shadow_depth = if style.shadow_enabled { 
-            let shadow_magnitude = (style.shadow_offset_x.powi(2) + style.shadow_offset_y.powi(2)).sqrt();
+
+        let shadow_depth = if style.shadow_enabled {
+            let shadow_magnitude =
+                (style.shadow_offset_x.powi(2) + style.shadow_offset_y.powi(2)).sqrt();
             (shadow_magnitude * font_correction_factor).max(1.0)
-        } else { 
-            0.0 
+        } else {
+            0.0
         };
-        
+
         let letter_spacing = (style.letter_spacing * font_correction_factor).round() as i32;
 
         // Alignment: ASS uses numpad-style alignment (5 = center middle)
         let alignment = 5; // Center middle (we position with \pos)
-        
-        println!("[Rust] Text overlay {}: font_size={} (raw {} * {:.1}), outline={:.1}, shadow={:.1}", 
-            idx, font_size, style.font_size, font_correction_factor, outline_width, shadow_depth);
+
+        println!(
+            "[Rust] Text overlay {}: font_size={} (raw {} * {:.1}), outline={:.1}, shadow={:.1}",
+            idx, font_size, style.font_size, font_correction_factor, outline_width, shadow_depth
+        );
 
         writeln!(
             file,
@@ -752,14 +837,19 @@ pub fn generate_text_overlay_ass_file(
             outline_width,
             shadow_depth as u32,
             alignment,
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     writeln!(file).unwrap();
 
     // Generate Events (dialogue lines)
     writeln!(file, "[Events]").unwrap();
-    writeln!(file, "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text").unwrap();
+    writeln!(
+        file,
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"
+    )
+    .unwrap();
 
     // Format time helper
     let format_time = |secs: f64| -> String {
@@ -797,15 +887,28 @@ pub fn generate_text_overlay_ass_file(
         // Add animation effects if specified
         let anim_tag = match overlay.animation.as_str() {
             "fade" => "{\\fad(300,300)}".to_string(),
-            "slide-up" => format!("{{\\move({},{},{},{},0,300)}}", pos_x, pos_y + 50, pos_x, pos_y),
-            "slide-down" => format!("{{\\move({},{},{},{},0,300)}}", pos_x, pos_y - 50, pos_x, pos_y),
+            "slide-up" => format!(
+                "{{\\move({},{},{},{},0,300)}}",
+                pos_x,
+                pos_y + 50,
+                pos_x,
+                pos_y
+            ),
+            "slide-down" => format!(
+                "{{\\move({},{},{},{},0,300)}}",
+                pos_x,
+                pos_y - 50,
+                pos_x,
+                pos_y
+            ),
             "zoom" => "{\\t(0,300,\\fscx120\\fscy120)\\t(300,600,\\fscx100\\fscy100)}".to_string(),
             "pop" => "{\\t(0,150,\\fscx130\\fscy130)\\t(150,300,\\fscx100\\fscy100)}".to_string(),
             _ => String::new(),
         };
 
         // Escape text for ASS (replace newlines, special chars)
-        let text = overlay.text
+        let text = overlay
+            .text
             .replace("\\", "\\\\")
             .replace("{", "\\{")
             .replace("}", "\\}");
@@ -819,11 +922,15 @@ pub fn generate_text_overlay_ass_file(
             pos_tag,
             anim_tag,
             text
-        ).unwrap();
+        )
+        .unwrap();
     }
 
-    println!("[Rust] Generated text overlay ASS file with {} overlays: {}", 
-        text_overlays.len(), output_path.display());
+    println!(
+        "[Rust] Generated text overlay ASS file with {} overlays: {}",
+        text_overlays.len(),
+        output_path.display()
+    );
 
     Ok(())
 }
@@ -884,7 +991,10 @@ pub fn merge_text_overlays_into_ass(
     for (idx, overlay) in text_overlays.iter().enumerate() {
         // Get style for current aspect ratio (fallback to default)
         let style = if let Some(ref configs) = overlay.per_ratio_configs {
-            configs.get(aspect_ratio).map(|c| &c.style).unwrap_or(&overlay.style)
+            configs
+                .get(aspect_ratio)
+                .map(|c| &c.style)
+                .unwrap_or(&overlay.style)
         } else {
             &overlay.style
         };
@@ -899,20 +1009,21 @@ pub fn merge_text_overlays_into_ass(
         };
 
         let bold = if style.font_weight >= 700 { 1 } else { 0 };
-        
+
         // Apply 1.5x correction factor to match browser rendering (same as generate_text_overlay_ass_file)
         let font_correction_factor = 1.5_f32;
-        
-        let outline_width = if style.border1_width > 0.0 { 
-            (style.border1_width * font_correction_factor * 0.5).max(0.5) 
-        } else { 
-            0.0 
+
+        let outline_width = if style.border1_width > 0.0 {
+            (style.border1_width * font_correction_factor * 0.5).max(0.5)
+        } else {
+            0.0
         };
-        let shadow_depth = if style.shadow_enabled { 
-            let shadow_magnitude = (style.shadow_offset_x.powi(2) + style.shadow_offset_y.powi(2)).sqrt();
+        let shadow_depth = if style.shadow_enabled {
+            let shadow_magnitude =
+                (style.shadow_offset_x.powi(2) + style.shadow_offset_y.powi(2)).sqrt();
             (shadow_magnitude * font_correction_factor).max(1.0)
-        } else { 
-            0.0 
+        } else {
+            0.0
         };
 
         let font_size = (style.font_size * font_correction_factor).round() as u32;
@@ -959,14 +1070,27 @@ pub fn merge_text_overlays_into_ass(
 
         let anim_tag = match overlay.animation.as_str() {
             "fade" => "{\\fad(300,300)}".to_string(),
-            "slide-up" => format!("{{\\move({},{},{},{},0,300)}}", pos_x, pos_y + 50, pos_x, pos_y),
-            "slide-down" => format!("{{\\move({},{},{},{},0,300)}}", pos_x, pos_y - 50, pos_x, pos_y),
+            "slide-up" => format!(
+                "{{\\move({},{},{},{},0,300)}}",
+                pos_x,
+                pos_y + 50,
+                pos_x,
+                pos_y
+            ),
+            "slide-down" => format!(
+                "{{\\move({},{},{},{},0,300)}}",
+                pos_x,
+                pos_y - 50,
+                pos_x,
+                pos_y
+            ),
             "zoom" => "{\\t(0,300,\\fscx120\\fscy120)\\t(300,600,\\fscx100\\fscy100)}".to_string(),
             "pop" => "{\\t(0,150,\\fscx130\\fscy130)\\t(150,300,\\fscx100\\fscy100)}".to_string(),
             _ => String::new(),
         };
 
-        let text = overlay.text
+        let text = overlay
+            .text
             .replace("\\", "\\\\")
             .replace("{", "\\{")
             .replace("}", "\\}");
@@ -986,19 +1110,30 @@ pub fn merge_text_overlays_into_ass(
     let modified_content = if let Some(events_pos) = existing_content.find("[Events]") {
         // Insert styles before [Events]
         let (before_events, events_and_after) = existing_content.split_at(events_pos);
-        format!("{}\n{}\n{}{}", before_events.trim_end(), new_styles, events_and_after, new_events)
+        format!(
+            "{}\n{}\n{}{}",
+            before_events.trim_end(),
+            new_styles,
+            events_and_after,
+            new_events
+        )
     } else {
         // Just append everything at the end
-        format!("{}\n[V4+ Styles]\n{}\n[Events]\n{}", existing_content, new_styles, new_events)
+        format!(
+            "{}\n[V4+ Styles]\n{}\n[Events]\n{}",
+            existing_content, new_styles, new_events
+        )
     };
 
     // Write back
     std::fs::write(subtitle_ass_path, modified_content)
         .map_err(|e| format!("Failed to write merged ASS file: {}", e))?;
 
-    println!("[Rust] Merged {} text overlays into ASS file: {}", 
-        text_overlays.len(), subtitle_ass_path.display());
+    println!(
+        "[Rust] Merged {} text overlays into ASS file: {}",
+        text_overlays.len(),
+        subtitle_ass_path.display()
+    );
 
     Ok(())
 }
-

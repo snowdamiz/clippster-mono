@@ -613,6 +613,8 @@ defmodule ClippsterServerWeb.Router do
 
     # Instagram OAuth - exchange code for tokens (admin only)
     post("/auth/instagram/exchange", InstagramAuthController, :exchange_code)
+    post("/social/connect-url", SocialAccountController, :connect_url)
+    post("/social/complete-connect", SocialAccountController, :complete_connect)
 
     # Organization social accounts
     get("/organizations/:organization_id/social-accounts", SocialAccountController, :index)
@@ -733,7 +735,7 @@ defmodule ClippsterServerWeb.Router do
     delete("/conversations/:id/participants/:user_id", MessagingController, :remove_participant)
     post("/conversations/:id/leave", MessagingController, :leave_conversation)
     delete("/conversations/:id", MessagingController, :delete_conversation)
-    
+
     # Message attachments
     post("/conversations/:conversation_id/attachments", MessagingController, :upload_attachments)
     get("/attachments/:id/download", MessagingController, :download_attachment)
@@ -773,6 +775,8 @@ defmodule ClippsterServerWeb.Router do
     post("/user/social-accounts", ClipperProfileController, :create_social_account)
     put("/user/social-accounts/:id", ClipperProfileController, :update_social_account)
     delete("/user/social-accounts/:id", ClipperProfileController, :delete_social_account)
+    post("/user/social/connect-url", ClipperProfileController, :connect_url)
+    post("/user/social/complete-connect", ClipperProfileController, :complete_connect)
 
     # Clipper payment methods (for campaigns)
     get("/user/payment-methods", ClipperProfileController, :list_payment_methods)
@@ -1150,7 +1154,7 @@ defmodule ClippsterServerWeb.Router do
     delete("/admin/users/:user_id/moderator", AdminController, :demote_moderator)
     post("/admin/users/:user_id/mod-discount", AdminController, :enable_mod_discount)
     delete("/admin/users/:user_id/mod-discount", AdminController, :disable_mod_discount)
-    
+
     # AI editor access management
     post("/admin/users/:user_id/ai-editor", AdminController, :enable_ai_editor)
     delete("/admin/users/:user_id/ai-editor", AdminController, :disable_ai_editor)

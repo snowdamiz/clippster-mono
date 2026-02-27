@@ -76,7 +76,11 @@ defmodule ClippsterServerWeb.CampaignController do
               json(conn, %{
                 success: true,
                 participant: serialize_participant(participant),
-                message: if(campaign.join_type == "open", do: "Joined campaign", else: "Application submitted")
+                message:
+                  if(campaign.join_type == "open",
+                    do: "Joined campaign",
+                    else: "Application submitted"
+                  )
               })
 
             {:error, :campaign_not_active} ->
@@ -113,10 +117,11 @@ defmodule ClippsterServerWeb.CampaignController do
 
     json(conn, %{
       success: true,
-      campaigns: Enum.map(participants, fn p ->
-        serialize_campaign(p.campaign)
-        |> Map.put(:joined_at, p.inserted_at)
-      end)
+      campaigns:
+        Enum.map(participants, fn p ->
+          serialize_campaign(p.campaign)
+          |> Map.put(:joined_at, p.inserted_at)
+        end)
     })
   end
 
@@ -131,10 +136,11 @@ defmodule ClippsterServerWeb.CampaignController do
 
     json(conn, %{
       success: true,
-      campaigns: Enum.map(participants, fn p ->
-        serialize_campaign(p.campaign)
-        |> Map.put(:joined_at, p.inserted_at)
-      end)
+      campaigns:
+        Enum.map(participants, fn p ->
+          serialize_campaign(p.campaign)
+          |> Map.put(:joined_at, p.inserted_at)
+        end)
     })
   end
 
@@ -313,12 +319,27 @@ defmodule ClippsterServerWeb.CampaignController do
 
     with campaign when not is_nil(campaign) <- Campaigns.get_campaign(id),
          true <- campaign.organization_id == String.to_integer(org_id) do
-      attrs = params
-        |> Map.take(["title", "description", "cover_image_url", "creator_profile_id",
-                     "budget", "cpm", "min_views_for_payment", "join_type",
-                     "allowed_platforms", "payment_methods", "status",
-                     "global_watermarks", "global_intro_id", "global_outro_id",
-                     "require_watermark", "require_intro", "require_outro"])
+      attrs =
+        params
+        |> Map.take([
+          "title",
+          "description",
+          "cover_image_url",
+          "creator_profile_id",
+          "budget",
+          "cpm",
+          "min_views_for_payment",
+          "join_type",
+          "allowed_platforms",
+          "payment_methods",
+          "status",
+          "global_watermarks",
+          "global_intro_id",
+          "global_outro_id",
+          "require_watermark",
+          "require_intro",
+          "require_outro"
+        ])
         |> maybe_add_dates(params)
         |> maybe_strip_cover_image_url()
 
@@ -472,9 +493,10 @@ defmodule ClippsterServerWeb.CampaignController do
 
       json(conn, %{
         success: true,
-        creator_profiles: Enum.map(campaign_profiles, fn ccp ->
-          serialize_creator_profile(ccp.creator_profile)
-        end)
+        creator_profiles:
+          Enum.map(campaign_profiles, fn ccp ->
+            serialize_creator_profile(ccp.creator_profile)
+          end)
       })
     else
       conn
@@ -486,7 +508,11 @@ defmodule ClippsterServerWeb.CampaignController do
   @doc """
   Add a creator profile to a campaign.
   """
-  def add_creator_profile(conn, %{"organization_id" => _org_id, "id" => campaign_id, "creator_profile_id" => profile_id}) do
+  def add_creator_profile(conn, %{
+        "organization_id" => _org_id,
+        "id" => campaign_id,
+        "creator_profile_id" => profile_id
+      }) do
     user = conn.assigns.current_user
 
     case Campaigns.get_campaign(campaign_id) do
@@ -516,7 +542,11 @@ defmodule ClippsterServerWeb.CampaignController do
   @doc """
   Remove a creator profile from a campaign.
   """
-  def remove_creator_profile(conn, %{"organization_id" => _org_id, "id" => campaign_id, "creator_profile_id" => profile_id}) do
+  def remove_creator_profile(conn, %{
+        "organization_id" => _org_id,
+        "id" => campaign_id,
+        "creator_profile_id" => profile_id
+      }) do
     user = conn.assigns.current_user
 
     case Campaigns.get_campaign(campaign_id) do
@@ -541,7 +571,11 @@ defmodule ClippsterServerWeb.CampaignController do
   @doc """
   Set all creator profiles for a campaign (replaces existing).
   """
-  def set_creator_profiles(conn, %{"organization_id" => _org_id, "id" => campaign_id, "creator_profile_ids" => profile_ids}) do
+  def set_creator_profiles(conn, %{
+        "organization_id" => _org_id,
+        "id" => campaign_id,
+        "creator_profile_ids" => profile_ids
+      }) do
     user = conn.assigns.current_user
 
     case Campaigns.get_campaign(campaign_id) do
@@ -586,6 +620,7 @@ defmodule ClippsterServerWeb.CampaignController do
         e ->
           require Logger
           Logger.error("Failed to list participants: #{inspect(e)}")
+
           conn
           |> put_status(500)
           |> json(%{success: false, error: "Failed to load participants: #{inspect(e)}"})
@@ -600,7 +635,11 @@ defmodule ClippsterServerWeb.CampaignController do
   @doc """
   Approve a participant.
   """
-  def approve_participant(conn, %{"organization_id" => _org_id, "id" => _campaign_id, "participant_id" => participant_id}) do
+  def approve_participant(conn, %{
+        "organization_id" => _org_id,
+        "id" => _campaign_id,
+        "participant_id" => participant_id
+      }) do
     user = conn.assigns.current_user
 
     case Campaigns.get_participant(participant_id) do
@@ -625,7 +664,11 @@ defmodule ClippsterServerWeb.CampaignController do
   @doc """
   Reject a participant.
   """
-  def reject_participant(conn, %{"organization_id" => _org_id, "id" => _campaign_id, "participant_id" => participant_id}) do
+  def reject_participant(conn, %{
+        "organization_id" => _org_id,
+        "id" => _campaign_id,
+        "participant_id" => participant_id
+      }) do
     user = conn.assigns.current_user
 
     case Campaigns.get_participant(participant_id) do
@@ -650,7 +693,11 @@ defmodule ClippsterServerWeb.CampaignController do
   @doc """
   Remove a participant.
   """
-  def remove_participant(conn, %{"organization_id" => _org_id, "id" => _campaign_id, "participant_id" => participant_id}) do
+  def remove_participant(conn, %{
+        "organization_id" => _org_id,
+        "id" => _campaign_id,
+        "participant_id" => participant_id
+      }) do
     user = conn.assigns.current_user
 
     case Campaigns.get_participant(participant_id) do
@@ -684,15 +731,18 @@ defmodule ClippsterServerWeb.CampaignController do
     user = conn.assigns.current_user
 
     if Organizations.is_member?(org_id, user.id) do
-      opts = [
-        status: Map.get(params, "status"),
-        platform: Map.get(params, "platform"),
-        campaign_id: Map.get(params, "campaign_id"),
-        limit: (Map.get(params, "limit") || "100") |> String.to_integer(),
-        offset: (Map.get(params, "offset") || "0") |> String.to_integer()
-      ] |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      opts =
+        [
+          status: Map.get(params, "status"),
+          platform: Map.get(params, "platform"),
+          campaign_id: Map.get(params, "campaign_id"),
+          limit: (Map.get(params, "limit") || "100") |> String.to_integer(),
+          offset: (Map.get(params, "offset") || "0") |> String.to_integer()
+        ]
+        |> Enum.reject(fn {_, v} -> is_nil(v) end)
 
-      {:ok, %{submissions: submissions, total: total}} = Campaigns.list_organization_submissions(org_id, opts)
+      {:ok, %{submissions: submissions, total: total}} =
+        Campaigns.list_organization_submissions(org_id, opts)
 
       json(conn, %{
         success: true,
@@ -755,7 +805,10 @@ defmodule ClippsterServerWeb.CampaignController do
   @doc """
   Reject a submission.
   """
-  def reject_submission(conn, %{"organization_id" => _org_id, "submission_id" => submission_id} = params) do
+  def reject_submission(
+        conn,
+        %{"organization_id" => _org_id, "submission_id" => submission_id} = params
+      ) do
     user = conn.assigns.current_user
     reason = Map.get(params, "reason", "No reason provided")
 
@@ -786,7 +839,10 @@ defmodule ClippsterServerWeb.CampaignController do
   @doc """
   Update view count for a submission.
   """
-  def update_views(conn, %{"organization_id" => org_id, "submission_id" => submission_id} = params) do
+  def update_views(
+        conn,
+        %{"organization_id" => org_id, "submission_id" => submission_id} = params
+      ) do
     user = conn.assigns.current_user
     view_count = Map.get(params, "view_count", 0)
 
@@ -822,7 +878,10 @@ defmodule ClippsterServerWeb.CampaignController do
   @doc """
   Create a payment for a submission.
   """
-  def create_payment(conn, %{"organization_id" => _org_id, "submission_id" => submission_id} = params) do
+  def create_payment(
+        conn,
+        %{"organization_id" => _org_id, "submission_id" => submission_id} = params
+      ) do
     user = conn.assigns.current_user
     amount = Map.get(params, "amount")
 
@@ -928,19 +987,45 @@ defmodule ClippsterServerWeb.CampaignController do
       require_outro: campaign.require_outro,
       inserted_at: campaign.inserted_at,
       updated_at: campaign.updated_at,
-      organization: if(Ecto.assoc_loaded?(campaign.organization), do: %{
-        id: campaign.organization.id,
-        name: campaign.organization.name,
-        logo_url: maybe_presign_url(campaign.organization.logo_url)
-      }, else: nil),
-      creator_profile: if(campaign.creator_profile_id && Ecto.assoc_loaded?(campaign.creator_profile) && campaign.creator_profile, do: %{
-        id: campaign.creator_profile.id,
-        name: campaign.creator_profile.name,
-        profile_image_url: maybe_presign_url(campaign.creator_profile.profile_image_url)
-      }, else: nil),
-      global_intro: if(campaign.global_intro_id && Ecto.assoc_loaded?(campaign.global_intro) && campaign.global_intro, do: serialize_asset(campaign.global_intro), else: nil),
-      global_outro: if(campaign.global_outro_id && Ecto.assoc_loaded?(campaign.global_outro) && campaign.global_outro, do: serialize_asset(campaign.global_outro), else: nil),
-      creator_profiles: if(Ecto.assoc_loaded?(campaign.creator_profiles), do: Enum.map(campaign.creator_profiles, &serialize_creator_profile/1), else: [])
+      organization:
+        if(Ecto.assoc_loaded?(campaign.organization),
+          do: %{
+            id: campaign.organization.id,
+            name: campaign.organization.name,
+            logo_url: maybe_presign_url(campaign.organization.logo_url)
+          },
+          else: nil
+        ),
+      creator_profile:
+        if(
+          campaign.creator_profile_id && Ecto.assoc_loaded?(campaign.creator_profile) &&
+            campaign.creator_profile,
+          do: %{
+            id: campaign.creator_profile.id,
+            name: campaign.creator_profile.name,
+            profile_image_url: maybe_presign_url(campaign.creator_profile.profile_image_url)
+          },
+          else: nil
+        ),
+      global_intro:
+        if(
+          campaign.global_intro_id && Ecto.assoc_loaded?(campaign.global_intro) &&
+            campaign.global_intro,
+          do: serialize_asset(campaign.global_intro),
+          else: nil
+        ),
+      global_outro:
+        if(
+          campaign.global_outro_id && Ecto.assoc_loaded?(campaign.global_outro) &&
+            campaign.global_outro,
+          do: serialize_asset(campaign.global_outro),
+          else: nil
+        ),
+      creator_profiles:
+        if(Ecto.assoc_loaded?(campaign.creator_profiles),
+          do: Enum.map(campaign.creator_profiles, &serialize_creator_profile/1),
+          else: []
+        )
     }
   end
 
@@ -950,12 +1035,14 @@ defmodule ClippsterServerWeb.CampaignController do
   end
 
   defp serialize_participant(nil), do: nil
+
   defp serialize_participant(participant) do
-    clipper_profile = if Ecto.assoc_loaded?(participant.user) do
-      ClippsterServer.ClipperProfiles.get_profile_by_user_id(participant.user_id)
-    else
-      nil
-    end
+    clipper_profile =
+      if Ecto.assoc_loaded?(participant.user) do
+        ClippsterServer.ClipperProfiles.get_profile_by_user_id(participant.user_id)
+      else
+        nil
+      end
 
     %{
       id: participant.id,
@@ -965,24 +1052,30 @@ defmodule ClippsterServerWeb.CampaignController do
       application_note: participant.application_note,
       approved_at: participant.approved_at,
       inserted_at: participant.inserted_at,
-      user: if(Ecto.assoc_loaded?(participant.user), do: %{
-        id: participant.user.id,
-        email: participant.user.email,
-        display_name: participant.user.name
-      }, else: nil),
+      user:
+        if(Ecto.assoc_loaded?(participant.user),
+          do: %{
+            id: participant.user.id,
+            email: participant.user.email,
+            display_name: participant.user.name
+          },
+          else: nil
+        ),
       clipper_profile: serialize_clipper_profile_summary(clipper_profile)
     }
   end
 
   defp serialize_clipper_profile_summary(nil), do: nil
+
   defp serialize_clipper_profile_summary(profile) do
-    badges = if Ecto.assoc_loaded?(profile.badges) do
-      Enum.map(profile.badges || [], fn badge ->
-        %{badge_type: badge.badge_type, earned_at: badge.earned_at}
-      end)
-    else
-      []
-    end
+    badges =
+      if Ecto.assoc_loaded?(profile.badges) do
+        Enum.map(profile.badges || [], fn badge ->
+          %{badge_type: badge.badge_type, earned_at: badge.earned_at}
+        end)
+      else
+        []
+      end
 
     %{
       id: profile.id,
@@ -1003,6 +1096,7 @@ defmodule ClippsterServerWeb.CampaignController do
   end
 
   defp serialize_participation(nil), do: nil
+
   defp serialize_participation(participant) do
     %{
       status: participant.status,
@@ -1013,20 +1107,25 @@ defmodule ClippsterServerWeb.CampaignController do
 
   defp serialize_submission(submission) do
     # Get creator profile from campaign (single or first from many)
-    creator_profile = if Ecto.assoc_loaded?(submission.campaign) do
-      cond do
-        # Single creator profile on campaign
-        Ecto.assoc_loaded?(submission.campaign.creator_profile) and submission.campaign.creator_profile ->
-          submission.campaign.creator_profile
-        # Multiple creator profiles - use first one
-        Ecto.assoc_loaded?(submission.campaign.creator_profiles) and length(submission.campaign.creator_profiles) > 0 ->
-          hd(submission.campaign.creator_profiles)
-        true ->
-          nil
+    creator_profile =
+      if Ecto.assoc_loaded?(submission.campaign) do
+        cond do
+          # Single creator profile on campaign
+          Ecto.assoc_loaded?(submission.campaign.creator_profile) and
+              submission.campaign.creator_profile ->
+            submission.campaign.creator_profile
+
+          # Multiple creator profiles - use first one
+          Ecto.assoc_loaded?(submission.campaign.creator_profiles) and
+              length(submission.campaign.creator_profiles) > 0 ->
+            hd(submission.campaign.creator_profiles)
+
+          true ->
+            nil
+        end
+      else
+        nil
       end
-    else
-      nil
-    end
 
     %{
       id: submission.id,
@@ -1052,20 +1151,32 @@ defmodule ClippsterServerWeb.CampaignController do
       author_profile_image: submission.author_profile_image,
       caption: submission.caption,
       media_type: submission.media_type,
-      user: if(Ecto.assoc_loaded?(submission.user), do: %{
-        id: submission.user.id,
-        email: submission.user.email,
-        display_name: submission.user.name
-      }, else: nil),
-      campaign: if(Ecto.assoc_loaded?(submission.campaign), do: %{
-        id: submission.campaign.id,
-        title: submission.campaign.title
-      }, else: nil),
-      creator_profile: if(creator_profile, do: %{
-        id: creator_profile.id,
-        name: creator_profile.name,
-        profile_image_url: creator_profile.profile_image_url
-      }, else: nil)
+      user:
+        if(Ecto.assoc_loaded?(submission.user),
+          do: %{
+            id: submission.user.id,
+            email: submission.user.email,
+            display_name: submission.user.name
+          },
+          else: nil
+        ),
+      campaign:
+        if(Ecto.assoc_loaded?(submission.campaign),
+          do: %{
+            id: submission.campaign.id,
+            title: submission.campaign.title
+          },
+          else: nil
+        ),
+      creator_profile:
+        if(creator_profile,
+          do: %{
+            id: creator_profile.id,
+            name: creator_profile.name,
+            profile_image_url: creator_profile.profile_image_url
+          },
+          else: nil
+        )
     }
   end
 
@@ -1081,17 +1192,23 @@ defmodule ClippsterServerWeb.CampaignController do
       external_transaction_id: payment.external_transaction_id,
       paid_at: payment.paid_at,
       inserted_at: payment.inserted_at,
-      campaign: if(Ecto.assoc_loaded?(payment.campaign), do: %{
-        id: payment.campaign.id,
-        title: payment.campaign.title
-      }, else: nil)
+      campaign:
+        if(Ecto.assoc_loaded?(payment.campaign),
+          do: %{
+            id: payment.campaign.id,
+            title: payment.campaign.title
+          },
+          else: nil
+        )
     }
   end
 
   defp serialize_creator_profile(nil), do: nil
+
   defp serialize_creator_profile(profile) do
     # Get profile image from platform links if not set directly on profile
-    platform_links = if Ecto.assoc_loaded?(profile.platform_links), do: profile.platform_links, else: []
+    platform_links =
+      if Ecto.assoc_loaded?(profile.platform_links), do: profile.platform_links, else: []
 
     # Find first platform link with a profile image
     platform_image = Enum.find_value(platform_links, fn link -> link.profile_image_url end)
@@ -1102,9 +1219,21 @@ defmodule ClippsterServerWeb.CampaignController do
       description: profile.description,
       profile_image_url: maybe_presign_url(profile.profile_image_url || platform_image),
       watermark_settings: profile.watermark_settings,
-      intro: if(Ecto.assoc_loaded?(profile.intro) && profile.intro, do: serialize_asset(profile.intro), else: nil),
-      outro: if(Ecto.assoc_loaded?(profile.outro) && profile.outro, do: serialize_asset(profile.outro), else: nil),
-      watermark: if(Ecto.assoc_loaded?(profile.watermark) && profile.watermark, do: serialize_asset(profile.watermark), else: nil),
+      intro:
+        if(Ecto.assoc_loaded?(profile.intro) && profile.intro,
+          do: serialize_asset(profile.intro),
+          else: nil
+        ),
+      outro:
+        if(Ecto.assoc_loaded?(profile.outro) && profile.outro,
+          do: serialize_asset(profile.outro),
+          else: nil
+        ),
+      watermark:
+        if(Ecto.assoc_loaded?(profile.watermark) && profile.watermark,
+          do: serialize_asset(profile.watermark),
+          else: nil
+        ),
       platform_links: Enum.map(platform_links, &serialize_platform_link/1)
     }
   end
@@ -1121,6 +1250,7 @@ defmodule ClippsterServerWeb.CampaignController do
   end
 
   defp serialize_asset(nil), do: nil
+
   defp serialize_asset(asset) do
     %{
       id: asset.id,
@@ -1152,12 +1282,14 @@ defmodule ClippsterServerWeb.CampaignController do
   defp format_errors(error), do: inspect(error)
 
   defp parse_datetime(nil), do: nil
+
   defp parse_datetime(datetime_string) when is_binary(datetime_string) do
     case DateTime.from_iso8601(datetime_string) do
       {:ok, datetime, _} -> datetime
       _ -> nil
     end
   end
+
   defp parse_datetime(_), do: nil
 
   defp maybe_add_dates(attrs, params) do
@@ -1183,6 +1315,7 @@ defmodule ClippsterServerWeb.CampaignController do
 
   # Strip query parameters from a URL (removes presigning params before storing)
   defp strip_query_params(nil), do: nil
+
   defp strip_query_params(url) when is_binary(url) do
     case URI.parse(url) do
       %URI{query: nil} -> url
@@ -1196,6 +1329,7 @@ defmodule ClippsterServerWeb.CampaignController do
 
   # Presign a URL only if it's from R2 storage (not external URLs)
   defp maybe_presign_url(nil), do: nil
+
   defp maybe_presign_url(url) when is_binary(url) do
     if is_r2_storage_url?(url) do
       Storage.presigned_url!(url)
@@ -1207,10 +1341,12 @@ defmodule ClippsterServerWeb.CampaignController do
   # Check if a URL is from R2 storage
   defp is_r2_storage_url?(url) do
     base = Storage.public_url_base()
+
     cond do
       base && String.starts_with?(url, base) -> true
       String.contains?(url, ".r2.cloudflarestorage.com/") -> true
-      String.starts_with?(url, "org-assets/") -> true  # Storage key format
+      # Storage key format
+      String.starts_with?(url, "org-assets/") -> true
       true -> false
     end
   end

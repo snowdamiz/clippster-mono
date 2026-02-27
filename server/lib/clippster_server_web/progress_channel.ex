@@ -22,12 +22,19 @@ defmodule ClippsterServerWeb.ProgressChannel do
       timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
     }
 
-    IO.puts("[ProgressChannel] Broadcasting progress for project #{project_id}: #{stage} - #{progress}% - #{message || "No message"}")
+    IO.puts(
+      "[ProgressChannel] Broadcasting progress for project #{project_id}: #{stage} - #{progress}% - #{message || "No message"}"
+    )
 
-    case ClippsterServerWeb.Endpoint.broadcast("progress:#{project_id}", "progress_update", payload) do
+    case ClippsterServerWeb.Endpoint.broadcast(
+           "progress:#{project_id}",
+           "progress_update",
+           payload
+         ) do
       :ok ->
         IO.puts("[ProgressChannel] ✅ Successfully broadcasted progress update")
         :ok
+
       {:error, reason} ->
         IO.puts("[ProgressChannel] ❌ Failed to broadcast progress: #{inspect(reason)}")
         {:error, reason}

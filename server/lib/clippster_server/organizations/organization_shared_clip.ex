@@ -24,7 +24,8 @@ defmodule ClippsterServer.Organizations.OrganizationSharedClip do
     belongs_to :organization, ClippsterServer.Organizations.Organization
     belongs_to :uploaded_by, ClippsterServer.Accounts.User, foreign_key: :uploaded_by_user_id
 
-    has_many :recipients, ClippsterServer.Organizations.SharedClipRecipient, foreign_key: :shared_clip_id
+    has_many :recipients, ClippsterServer.Organizations.SharedClipRecipient,
+      foreign_key: :shared_clip_id
 
     timestamps(type: :utc_datetime)
   end
@@ -79,10 +80,13 @@ defmodule ClippsterServer.Organizations.OrganizationSharedClip do
   defp put_expiration(changeset) do
     case get_field(changeset, :expires_at) do
       nil ->
-        expires_at = DateTime.utc_now()
+        expires_at =
+          DateTime.utc_now()
           |> DateTime.add(@expiration_days * 24 * 60 * 60, :second)
           |> DateTime.truncate(:second)
+
         put_change(changeset, :expires_at, expires_at)
+
       _ ->
         changeset
     end

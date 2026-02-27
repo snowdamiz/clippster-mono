@@ -1,6 +1,6 @@
+use crate::storage;
 use serde::{Deserialize, Serialize};
 use tauri::Emitter;
-use crate::storage;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetUploadResult {
@@ -19,7 +19,7 @@ pub async fn upload_asset_async(
     upload_id: String,
     asset_type: String,
     source_path: String,
-    original_filename: String
+    original_filename: String,
 ) -> Result<(), String> {
     println!("[Rust] upload_asset_async called with:");
     println!("[Rust]   upload_id: {}", upload_id);
@@ -28,7 +28,11 @@ pub async fn upload_asset_async(
     println!("[Rust]   original_filename: {}", original_filename);
 
     // Extract the actual upload_id (everything before the colon)
-    let actual_upload_id = upload_id.split(':').next().unwrap_or(&upload_id).to_string();
+    let actual_upload_id = upload_id
+        .split(':')
+        .next()
+        .unwrap_or(&upload_id)
+        .to_string();
 
     let app_clone = app.clone();
     let upload_id_for_task = actual_upload_id.clone();
@@ -36,13 +40,21 @@ pub async fn upload_asset_async(
 
     let result = tokio::spawn(async move {
         let upload_id_for_event = upload_id_for_result.clone();
-        println!("[Rust] Async asset upload task started for: {}", upload_id_for_task);
+        println!(
+            "[Rust] Async asset upload task started for: {}",
+            upload_id_for_task
+        );
 
         // Copy asset to storage
-        let copy_result = storage::copy_asset_to_storage(source_path, asset_type.clone(), app_clone.clone()).await;
+        let copy_result =
+            storage::copy_asset_to_storage(source_path, asset_type.clone(), app_clone.clone())
+                .await;
         let (destination_path, thumbnail_path) = match copy_result {
             Ok(result) => {
-                println!("[Rust] Asset copied to storage: {}", result.destination_path);
+                println!(
+                    "[Rust] Asset copied to storage: {}",
+                    result.destination_path
+                );
                 (result.destination_path, result.thumbnail_path)
             }
             Err(e) => {
@@ -61,16 +73,17 @@ pub async fn upload_asset_async(
         };
 
         // Get video duration
-        let duration = match storage::get_video_duration(app_clone.clone(), destination_path.clone()).await {
-            Ok(d) => {
-                println!("[Rust] Asset duration: {:?}", d);
-                Some(d)
-            }
-            Err(e) => {
-                println!("[Rust] Failed to get asset duration: {}", e);
-                None
-            }
-        };
+        let duration =
+            match storage::get_video_duration(app_clone.clone(), destination_path.clone()).await {
+                Ok(d) => {
+                    println!("[Rust] Asset duration: {:?}", d);
+                    Some(d)
+                }
+                Err(e) => {
+                    println!("[Rust] Failed to get asset duration: {}", e);
+                    None
+                }
+            };
 
         // Generate thumbnail if we don't have one
         let final_thumbnail_path = if thumbnail_path.is_none() {
@@ -104,7 +117,8 @@ pub async fn upload_asset_async(
         println!("[Rust] Asset upload completion event sent successfully");
 
         Ok(())
-    }).await;
+    })
+    .await;
 
     match result {
         Ok(_) => {

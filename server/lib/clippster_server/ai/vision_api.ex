@@ -36,10 +36,10 @@ defmodule ClippsterServer.AI.VisionAPI do
 
       _ ->
         IO.puts("[VisionAPI] Detecting faces in image...")
-        
+
         request_body = build_face_detection_request(image_base64)
         url = "#{@google_vision_url}?key=#{api_key}"
-        
+
         execute_request_with_retry(url, request_body, 0)
     end
   end
@@ -65,10 +65,10 @@ defmodule ClippsterServer.AI.VisionAPI do
 
       _ ->
         IO.puts("[VisionAPI] Detecting faces in #{length(images)} images (batch)...")
-        
+
         request_body = build_batch_face_detection_request(images)
         url = "#{@google_vision_url}?key=#{api_key}"
-        
+
         execute_batch_request_with_retry(url, request_body, 0)
     end
   end
@@ -87,6 +87,7 @@ defmodule ClippsterServer.AI.VisionAPI do
   """
   def parse_face_annotations(nil), do: []
   def parse_face_annotations([]), do: []
+
   def parse_face_annotations(face_annotations) when is_list(face_annotations) do
     Enum.map(face_annotations, &parse_single_face/1)
   end
@@ -113,19 +114,20 @@ defmodule ClippsterServer.AI.VisionAPI do
 
   # Build request body for batch face detection
   defp build_batch_face_detection_request(images) do
-    requests = Enum.map(images, fn {image_base64, _metadata} ->
-      %{
-        image: %{
-          content: image_base64
-        },
-        features: [
-          %{
-            type: "FACE_DETECTION",
-            maxResults: 10
-          }
-        ]
-      }
-    end)
+    requests =
+      Enum.map(images, fn {image_base64, _metadata} ->
+        %{
+          image: %{
+            content: image_base64
+          },
+          features: [
+            %{
+              type: "FACE_DETECTION",
+              maxResults: 10
+            }
+          ]
+        }
+      end)
 
     %{requests: requests}
     |> Jason.encode!()
@@ -148,21 +150,31 @@ defmodule ClippsterServer.AI.VisionAPI do
       {:ok, %Finch.Response{status: 429, body: response_body}} ->
         if attempt < @max_retries do
           delay = calculate_backoff_delay(attempt)
-          IO.puts("[VisionAPI] Rate limited (429), retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})...")
+
+          IO.puts(
+            "[VisionAPI] Rate limited (429), retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})..."
+          )
+
           Process.sleep(delay)
           execute_request_with_retry(url, body, attempt + 1)
         else
           {:error, "Vision API rate limited after #{@max_retries} retries: #{response_body}"}
         end
 
-      {:ok, %Finch.Response{status: status_code, body: response_body}} when status_code in [500, 502, 503, 504] ->
+      {:ok, %Finch.Response{status: status_code, body: response_body}}
+      when status_code in [500, 502, 503, 504] ->
         if attempt < @max_retries do
           delay = calculate_backoff_delay(attempt)
-          IO.puts("[VisionAPI] Server error #{status_code}, retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})...")
+
+          IO.puts(
+            "[VisionAPI] Server error #{status_code}, retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})..."
+          )
+
           Process.sleep(delay)
           execute_request_with_retry(url, body, attempt + 1)
         else
-          {:error, "Vision API error after #{@max_retries} retries (#{status_code}): #{response_body}"}
+          {:error,
+           "Vision API error after #{@max_retries} retries (#{status_code}): #{response_body}"}
         end
 
       {:ok, %Finch.Response{status: status_code, body: response_body}} ->
@@ -173,7 +185,11 @@ defmodule ClippsterServer.AI.VisionAPI do
       {:error, reason} ->
         if retryable_error?(reason) and attempt < @max_retries do
           delay = calculate_backoff_delay(attempt)
-          IO.puts("[VisionAPI] Transient error, retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})...")
+
+          IO.puts(
+            "[VisionAPI] Transient error, retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})..."
+          )
+
           Process.sleep(delay)
           execute_request_with_retry(url, body, attempt + 1)
         else
@@ -198,7 +214,8 @@ defmodule ClippsterServer.AI.VisionAPI do
 
       {:ok, %Finch.Response{status: 429, body: response_body}} ->
         if attempt < @max_retries do
-          delay = calculate_backoff_delay(attempt) * 2  # Longer delay for batch requests
+          # Longer delay for batch requests
+          delay = calculate_backoff_delay(attempt) * 2
           IO.puts("[VisionAPI] Rate limited (429), retrying in #{delay}ms...")
           Process.sleep(delay)
           execute_batch_request_with_retry(url, body, attempt + 1)
@@ -206,7 +223,8 @@ defmodule ClippsterServer.AI.VisionAPI do
           {:error, "Vision API rate limited after #{@max_retries} retries: #{response_body}"}
         end
 
-      {:ok, %Finch.Response{status: status_code, body: response_body}} when status_code in [500, 502, 503, 504] ->
+      {:ok, %Finch.Response{status: status_code, body: response_body}}
+      when status_code in [500, 502, 503, 504] ->
         if attempt < @max_retries do
           delay = calculate_backoff_delay(attempt)
           IO.puts("[VisionAPI] Server error #{status_code}, retrying...")
@@ -257,16 +275,20 @@ defmodule ClippsterServer.AI.VisionAPI do
   defp parse_batch_response(response_body) do
     case Jason.decode(response_body) do
       {:ok, %{"responses" => responses}} when is_list(responses) ->
-        results = Enum.map(responses, fn response ->
-          case response do
-            %{"faceAnnotations" => face_annotations} ->
-              parse_face_annotations(face_annotations)
-            %{"error" => _error} ->
-              []
-            %{} ->
-              []
-          end
-        end)
+        results =
+          Enum.map(responses, fn response ->
+            case response do
+              %{"faceAnnotations" => face_annotations} ->
+                parse_face_annotations(face_annotations)
+
+              %{"error" => _error} ->
+                []
+
+              %{} ->
+                []
+            end
+          end)
+
         {:ok, results}
 
       {:ok, %{"error" => error}} ->
@@ -315,9 +337,10 @@ defmodule ClippsterServer.AI.VisionAPI do
   defp calculate_bbox_from_vertices([]) do
     %{x: 0.0, y: 0.0, width: 0.0, height: 0.0}
   end
+
   defp calculate_bbox_from_vertices(vertices) do
-    xs = Enum.map(vertices, &(Map.get(&1, "x", 0)))
-    ys = Enum.map(vertices, &(Map.get(&1, "y", 0)))
+    xs = Enum.map(vertices, &Map.get(&1, "x", 0))
+    ys = Enum.map(vertices, &Map.get(&1, "y", 0))
 
     min_x = Enum.min(xs, fn -> 0 end)
     max_x = Enum.max(xs, fn -> 0 end)
@@ -334,25 +357,29 @@ defmodule ClippsterServer.AI.VisionAPI do
 
   # Parse facial landmarks
   defp parse_landmarks([]), do: %{}
+
   defp parse_landmarks(landmarks) do
     landmarks
     |> Enum.map(fn landmark ->
       type = Map.get(landmark, "type", "UNKNOWN")
       position = Map.get(landmark, "position", %{})
-      {type, %{
-        x: Map.get(position, "x", 0),
-        y: Map.get(position, "y", 0),
-        z: Map.get(position, "z", 0)
-      }}
+
+      {type,
+       %{
+         x: Map.get(position, "x", 0),
+         y: Map.get(position, "y", 0),
+         z: Map.get(position, "z", 0)
+       }}
     end)
     |> Map.new()
   end
 
   # Check if error is retryable
   defp retryable_error?(%Mint.TransportError{reason: reason})
-    when reason in [:closed, :timeout, :econnrefused, :econnreset] do
+       when reason in [:closed, :timeout, :econnrefused, :econnreset] do
     true
   end
+
   defp retryable_error?(%Mint.TransportError{reason: {:tls_alert, _}}), do: true
   defp retryable_error?(%Finch.Error{reason: :pool_timeout}), do: true
   defp retryable_error?(_), do: false
@@ -378,15 +405,17 @@ defmodule ClippsterServer.AI.VisionAPI do
   def normalize_face_bboxes(faces, width, height) when width > 0 and height > 0 do
     Enum.map(faces, fn face ->
       bbox = face.bbox
+
       normalized_bbox = %{
         x: bbox.x / width,
         y: bbox.y / height,
         width: bbox.width / width,
         height: bbox.height / height
       }
+
       Map.put(face, :bbox, normalized_bbox)
     end)
   end
+
   def normalize_face_bboxes(faces, _, _), do: faces
 end
-

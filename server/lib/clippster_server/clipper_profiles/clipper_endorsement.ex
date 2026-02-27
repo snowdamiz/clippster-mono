@@ -27,7 +27,14 @@ defmodule ClippsterServer.ClipperProfiles.ClipperEndorsement do
   """
   def create_changeset(endorsement, attrs) do
     endorsement
-    |> cast(attrs, [:clipper_profile_id, :organization_id, :endorsed_by_user_id, :campaign_id, :content, :rating])
+    |> cast(attrs, [
+      :clipper_profile_id,
+      :organization_id,
+      :endorsed_by_user_id,
+      :campaign_id,
+      :content,
+      :rating
+    ])
     |> validate_required([:clipper_profile_id, :organization_id])
     |> validate_length(:content, max: 300)
     |> validate_inclusion(:rating, 1..5)

@@ -13,6 +13,7 @@ defmodule ClippsterServerWeb.RateLimit do
     case :ets.whereis(@table_name) do
       :undefined ->
         :ets.new(@table_name, [:set, :public, :named_table])
+
       _ ->
         :ok
     end
@@ -27,7 +28,7 @@ defmodule ClippsterServerWeb.RateLimit do
   def call(conn, opts) do
     # Ensure table exists (ETS tables are lost on app restart)
     ensure_table_exists()
-    
+
     identifier = get_identifier(conn, opts.identifier)
     key = {identifier, :beta_verify}
     now = System.system_time(:second)
@@ -78,6 +79,7 @@ defmodule ClippsterServerWeb.RateLimit do
     case :ets.whereis(@table_name) do
       :undefined ->
         :ets.new(@table_name, [:set, :public, :named_table])
+
       _ ->
         :ok
     end

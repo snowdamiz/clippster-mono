@@ -1,7 +1,7 @@
 defmodule ClippsterServer.Social.TokenRefreshWorker do
   @moduledoc """
   GenServer worker that periodically refreshes OAuth tokens before they expire.
-  
+
   Instagram long-lived tokens last 60 days and can be refreshed within the last
   day before expiry to extend them for another 60 days.
   """
@@ -49,11 +49,12 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
       Process.send_after(self(), :refresh, :timer.minutes(5))
     end
 
-    interval_display = if interval >= 3_600_000 do
-      "#{div(interval, 3_600_000)} hours"
-    else
-      "#{div(interval, 60_000)} minutes"
-    end
+    interval_display =
+      if interval >= 3_600_000 do
+        "#{div(interval, 3_600_000)} hours"
+      else
+        "#{div(interval, 60_000)} minutes"
+      end
 
     Logger.info("[TokenRefreshWorker] Started with interval: #{interval_display}")
 
@@ -72,21 +73,23 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
       case Social.get_social_account(account_id) do
         nil ->
           Logger.warning("[TokenRefreshWorker] Account not found: #{account_id}")
+
         account ->
           refresh_account_tokens(account)
       end
     end)
+
     {:noreply, state}
   end
 
   @impl true
   def handle_info(:refresh, state) do
     Logger.info("[TokenRefreshWorker] Checking for tokens that need refresh")
-    
+
     Task.start(fn ->
       accounts = Social.get_accounts_needing_refresh()
       Logger.info("[TokenRefreshWorker] Found #{length(accounts)} accounts needing refresh")
-      
+
       Enum.each(accounts, fn account ->
         refresh_account_tokens(account)
         # Small delay between refreshes to avoid rate limits
@@ -115,6 +118,7 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
       nil ->
         # No refresh token available, use access token (Instagram pattern)
         SocialAccount.get_access_token(account)
+
       _encrypted ->
         # Refresh token exists, try to decrypt it
         case SocialAccount.get_refresh_token(account) do
@@ -126,7 +130,9 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
   end
 
   defp refresh_account_tokens(%SocialAccount{} = account) do
-    Logger.info("[TokenRefreshWorker] Refreshing tokens for account #{account.id} (#{account.platform})")
+    Logger.info(
+      "[TokenRefreshWorker] Refreshing tokens for account #{account.id} (#{account.platform})"
+    )
 
     # Some platforms (Instagram) refresh using access_token
     # Others (Twitter/X) refresh using refresh_token
@@ -134,15 +140,15 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
 
     with {:ok, platform_module} <- Platform.get_platform_module(account.platform),
          {:ok, new_tokens} <- platform_module.refresh_tokens(token_for_refresh) do
-      
       # Calculate new expiry
-      expires_at = if new_tokens[:expires_in] do
-        DateTime.utc_now()
-        |> DateTime.add(new_tokens[:expires_in], :second)
-        |> DateTime.truncate(:second)
-      else
-        nil
-      end
+      expires_at =
+        if new_tokens[:expires_in] do
+          DateTime.utc_now()
+          |> DateTime.add(new_tokens[:expires_in], :second)
+          |> DateTime.truncate(:second)
+        else
+          nil
+        end
 
       attrs = %{
         access_token: new_tokens[:access_token],
@@ -150,11 +156,12 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
       }
 
       # Add refresh token if provided
-      attrs = if new_tokens[:refresh_token] do
-        Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
-      else
-        attrs
-      end
+      attrs =
+        if new_tokens[:refresh_token] do
+          Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
+        else
+          attrs
+        end
 
       case Social.refresh_social_account_tokens(account, attrs) do
         {:ok, _updated} ->
@@ -162,7 +169,10 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
           :ok
 
         {:error, reason} ->
-          Logger.error("[TokenRefreshWorker] Failed to update account #{account.id}: #{inspect(reason)}")
+          Logger.error(
+            "[TokenRefreshWorker] Failed to update account #{account.id}: #{inspect(reason)}"
+          )
+
           {:error, reason}
       end
     else
@@ -171,7 +181,10 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
         {:error, :not_implemented}
 
       {:error, reason} ->
-        Logger.error("[TokenRefreshWorker] Failed to refresh account #{account.id}: #{inspect(reason)}")
+        Logger.error(
+          "[TokenRefreshWorker] Failed to refresh account #{account.id}: #{inspect(reason)}"
+        )
+
         {:error, reason}
     end
   end

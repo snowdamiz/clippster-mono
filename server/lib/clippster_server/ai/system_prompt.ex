@@ -108,7 +108,7 @@ defmodule ClippsterServer.AI.SystemPrompt do
     ]
   }
   ```
-  
+
   **MULTI-SPEAKER AWARENESS:**
   - The transcript contains labeled speakers (e.g., SPEAKER_00, SPEAKER_01, etc.).
   - Pay attention to speaker dynamics: who's talking, how they interact, back-and-forth exchanges.

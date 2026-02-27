@@ -8,9 +8,9 @@ use once_cell::sync::Lazy;
 use serde::Deserialize;
 use tokio::sync::oneshot;
 
+use crate::storage;
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
-use crate::storage;
 
 #[derive(Debug, Deserialize)]
 struct RecorderEvent {
@@ -80,26 +80,31 @@ static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
 
 fn resolve_service_script(app: &tauri::AppHandle, script_name: &str) -> Result<String, String> {
     use tauri::path::BaseDirectory;
-    
+
     // Try resolving via Tauri resource API first (Production & Correct Dev)
-    if let Ok(path) = app.path().resolve(format!("pumpfun-service/{}", script_name), BaseDirectory::Resource) {
+    if let Ok(path) = app.path().resolve(
+        format!("pumpfun-service/{}", script_name),
+        BaseDirectory::Resource,
+    ) {
         if path.exists() {
             return Ok(path.to_string_lossy().to_string());
         }
     }
 
     // Fallback: Try locating relative to executable (Old Dev Logic)
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?;
-    
-    let exe_dir = exe_path
-        .parent()
-        .ok_or("Failed to get parent directory")?;
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
+
+    let exe_dir = exe_path.parent().ok_or("Failed to get parent directory")?;
 
     // Try various dev paths
     let candidate_paths = vec![
         exe_dir.join("pumpfun-service").join(script_name),
-        exe_dir.parent().and_then(|p| p.parent()).map(|p| p.join("pumpfun-service").join(script_name)).unwrap_or(PathBuf::from("")),
+        exe_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("pumpfun-service").join(script_name))
+            .unwrap_or(PathBuf::from("")),
         PathBuf::from("pumpfun-service").join(script_name),
     ];
 
@@ -113,18 +118,24 @@ fn resolve_service_script(app: &tauri::AppHandle, script_name: &str) -> Result<S
 }
 
 #[tauri::command]
-pub async fn get_pumpfun_clips(app: tauri::AppHandle, mint_id: String, limit: Option<u32>) -> Result<String, String> {
+pub async fn get_pumpfun_clips(
+    app: tauri::AppHandle,
+    mint_id: String,
+    limit: Option<u32>,
+) -> Result<String, String> {
     let limit_str = limit.unwrap_or(20).to_string();
     let script_path = resolve_service_script(&app, "fetch-clips.mjs")?;
 
-    let output = app.shell()
+    let output = app
+        .shell()
         .sidecar("node")
-        .map_err(|e| format!("Failed to create node sidecar: {}. Make sure Node.js is installed or bundled.", e))?
-        .args([
-            &script_path,
-            &mint_id,
-            &limit_str
-        ])
+        .map_err(|e| {
+            format!(
+                "Failed to create node sidecar: {}. Make sure Node.js is installed or bundled.",
+                e
+            )
+        })?
+        .args([&script_path, &mint_id, &limit_str])
         .output()
         .await
         .map_err(|e| format!("Failed to execute Node.js script: {}", e))?;
@@ -220,12 +231,15 @@ pub async fn start_livestream_recording(
     // Check if this specific session is already recording
     // Allow multiple sessions per mint (e.g., temp viewer + persistent auto-detect)
     if ACTIVE_RECORDINGS.lock().unwrap().contains_key(&session_id) {
-        println!("[PumpFun] Session {} already recording, skipping duplicate start", session_id);
+        println!(
+            "[PumpFun] Session {} already recording, skipping duplicate start",
+            session_id
+        );
         return Ok(());
     }
 
-    let storage_paths = storage::init_storage_dirs()
-        .map_err(|e| format!("Failed to initialize storage: {}", e))?;
+    let storage_paths =
+        storage::init_storage_dirs().map_err(|e| format!("Failed to initialize storage: {}", e))?;
 
     let output_dir = storage_paths
         .videos
@@ -289,7 +303,7 @@ pub async fn stop_all_recordings() {
         if let Some(tx) = entry.stop_tx {
             let _ = tx.send(());
         }
-        // We can't easily await the tasks here because they are spawned, 
+        // We can't easily await the tasks here because they are spawned,
         // but sending the signal should trigger the cleanup in the task.
     }
 }
@@ -313,15 +327,17 @@ pub async fn stop_livestream_recording(mint_id: String) -> Result<(), String> {
             .filter(|(_, entry)| entry.mint_id == mint_id)
             .map(|(session_id, _)| session_id.clone())
             .collect();
-        
+
         session_ids
             .into_iter()
             .filter_map(|session_id| {
-                recordings.remove(&session_id).map(|entry| (session_id, entry))
+                recordings
+                    .remove(&session_id)
+                    .map(|entry| (session_id, entry))
             })
             .collect()
     }; // Lock is dropped here
-    
+
     // Stop each session (no lock held during await)
     for (session_id, entry) in entries {
         if let Some(tx) = entry.stop_tx {
@@ -331,7 +347,7 @@ pub async fn stop_livestream_recording(mint_id: String) -> Result<(), String> {
             eprintln!("[Recorder] Join error for session {}: {}", session_id, err);
         }
     }
-    
+
     Ok(())
 }
 
@@ -351,7 +367,8 @@ async fn run_recorder_process(
     let segment_duration_str = segment_duration_minutes.to_string();
 
     // Spawn Node sidecar
-    let (mut rx, mut child) = app.shell()
+    let (mut rx, mut child) = app
+        .shell()
         .sidecar("node")
         .map_err(|e| format!("Failed to create node sidecar: {}", e))?
         .args([
@@ -364,10 +381,15 @@ async fn run_recorder_process(
         .spawn()
         .map_err(|e| format!("Failed to spawn recorder sidecar: {}", e))?;
 
-    println!("[Recorder] Started Node sidecar with PID: {:?}", child.pid());
+    println!(
+        "[Recorder] Started Node sidecar with PID: {:?}",
+        child.pid()
+    );
 
     let mut stopping = false;
-    let mut kill_timer = Box::pin(tokio::time::sleep(tokio::time::Duration::from_secs(3600 * 24)));
+    let mut kill_timer = Box::pin(tokio::time::sleep(tokio::time::Duration::from_secs(
+        3600 * 24,
+    )));
 
     loop {
         tokio::select! {
@@ -413,7 +435,7 @@ async fn run_recorder_process(
             // Handle stop signal
             _ = &mut stop_rx, if !stopping => {
                 println!("[Recorder] Stop signal received, sending graceful STOP command...");
-                
+
                 // Try to write to stdin
                 if let Err(e) = child.write(b"STOP\n") {
                     eprintln!("[Recorder] Failed to write to stdin: {}, falling back to kill", e);
@@ -422,7 +444,7 @@ async fn run_recorder_process(
                     }
                     break;
                 }
-                
+
                 stopping = true;
                 // Set kill timer to 30 seconds to allow for graceful shutdown (ffmpeg flush + cleanup)
                 kill_timer = Box::pin(tokio::time::sleep(tokio::time::Duration::from_secs(30)));
@@ -477,16 +499,18 @@ fn handle_recorder_line(
             }
             "waiting_for_stream" => {
                 // Emit a log event to inform frontend that we're waiting for stream to go live
-                let poll_count = event.extra.get("pollCount")
+                let poll_count = event
+                    .extra
+                    .get("pollCount")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
-                
+
                 let message = if poll_count <= 1 {
                     "Waiting for stream to go live...".to_string()
                 } else {
                     format!("Waiting for stream to go live... (check #{})", poll_count)
                 };
-                
+
                 let payload = RecorderLogPayload {
                     streamer_id: streamer_id.to_string(),
                     mint_id: mint_id.to_string(),
@@ -504,7 +528,7 @@ fn handle_recorder_line(
                         Err(_) => String::new(),
                     }
                 };
-                
+
                 let message = if let Some(msg) = &event.message {
                     format!("{}{}", msg, context)
                 } else {

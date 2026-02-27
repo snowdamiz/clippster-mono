@@ -31,8 +31,16 @@ defmodule ClippsterServer.ClipperProfiles.ClipperLeaderboardEntry do
   def create_changeset(entry, attrs) do
     entry
     |> cast(attrs, [
-      :clipper_profile_id, :period_type, :period_start, :period_end,
-      :rank, :clips_delivered, :campaigns_active, :endorsements_received, :total_views, :score
+      :clipper_profile_id,
+      :period_type,
+      :period_start,
+      :period_end,
+      :rank,
+      :clips_delivered,
+      :campaigns_active,
+      :endorsements_received,
+      :total_views,
+      :score
     ])
     |> validate_required([:clipper_profile_id, :period_type, :period_start, :period_end])
     |> validate_inclusion(:period_type, @period_types)
@@ -45,7 +53,7 @@ defmodule ClippsterServer.ClipperProfiles.ClipperLeaderboardEntry do
   Score = (clips_delivered * 10) + (endorsements_received * 50) + (campaigns_active * 25)
   """
   def calculate_score(clips_delivered, endorsements_received, campaigns_active) do
-    (clips_delivered * 10) + (endorsements_received * 50) + (campaigns_active * 25)
+    clips_delivered * 10 + endorsements_received * 50 + campaigns_active * 25
   end
 
   def period_types, do: @period_types

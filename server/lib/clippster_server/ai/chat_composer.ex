@@ -294,7 +294,7 @@ defmodule ClippsterServer.AI.ChatComposer do
 
     # Build rich context like discovery chat
     context = build_chat_context(session)
-    
+
     composition_context =
       if session.composition do
         "\n\n## CURRENT COMPOSITION\n#{Jason.encode!(session.composition, pretty: true)}"

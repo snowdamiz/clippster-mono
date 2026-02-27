@@ -404,7 +404,8 @@ defmodule ClippsterServer.PromoCodes do
         }
 
         with {:ok, coupon} <- Stripe.Coupon.create(coupon_params),
-             {:ok, promo_code} <- create_stripe_promo_with_metadata(code, coupon.id, waitlist_entry_id, admin_id) do
+             {:ok, promo_code} <-
+               create_stripe_promo_with_metadata(code, coupon.id, waitlist_entry_id, admin_id) do
           {:ok, %{code: code, stripe_promo_id: promo_code.id}}
         else
           {:error, %Stripe.Error{message: message}} -> {:error, message}
@@ -498,7 +499,9 @@ defmodule ClippsterServer.PromoCodes do
   defp user_already_redeemed?(promo_code_id, user_id) do
     Repo.exists?(
       from(r in PromoRedemption,
-        where: r.promo_code_id == ^promo_code_id and r.user_id == ^user_id and is_nil(r.organization_id)
+        where:
+          r.promo_code_id == ^promo_code_id and r.user_id == ^user_id and
+            is_nil(r.organization_id)
       )
     )
   end

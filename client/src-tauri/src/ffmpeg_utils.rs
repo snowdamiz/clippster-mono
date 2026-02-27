@@ -60,7 +60,7 @@ pub fn parse_ffmpeg_time(time_str: &str) -> Option<f64> {
     } else {
         (false, time_str)
     };
-    
+
     // Parse format HH:MM:SS.ms or HH:MM:SS
     let parts: Vec<&str> = time_str.split(':').collect();
     if parts.len() != 3 {
@@ -72,7 +72,7 @@ pub fn parse_ffmpeg_time(time_str: &str) -> Option<f64> {
     let seconds: f64 = parts[2].parse().ok()?;
 
     let total = hours * 3600.0 + minutes * 60.0 + seconds;
-    
+
     if is_negative {
         Some(-total)
     } else {
@@ -90,15 +90,17 @@ pub fn parse_video_info_from_ffmpeg_output(output: &str) -> Result<VideoInfo, St
 
     // Resolution appears directly in the stream line as e.g. "1920x1080"
     // NOT inside parentheses (those contain codec profile like "(High)")
-    let res_re = Regex::new(r"\b(\d{3,5})x(\d{3,5})\b")
-        .map_err(|e| format!("Regex error: {}", e))?;
+    let res_re =
+        Regex::new(r"\b(\d{3,5})x(\d{3,5})\b").map_err(|e| format!("Regex error: {}", e))?;
 
     for line in output.lines() {
         if line.contains("Video:") {
             // Extract codec (first token after "Video: ", strip trailing comma/paren)
             if let Some(codec_start) = line.find("Video: ") {
                 let codec_part = &line[codec_start + 7..];
-                if let Some(end) = codec_part.find(|c: char| c.is_whitespace() || c == ',' || c == '(') {
+                if let Some(end) =
+                    codec_part.find(|c: char| c.is_whitespace() || c == ',' || c == '(')
+                {
                     let candidate = codec_part[..end].trim().to_string();
                     if !candidate.is_empty() {
                         codec = Some(candidate);
@@ -126,7 +128,12 @@ pub fn parse_video_info_from_ffmpeg_output(output: &str) -> Result<VideoInfo, St
     let duration = extract_duration_from_ffmpeg_output(output);
 
     match (width, height, codec) {
-        (Some(w), Some(h), Some(c)) => Ok(VideoInfo { width: w, height: h, codec: c, duration }),
+        (Some(w), Some(h), Some(c)) => Ok(VideoInfo {
+            width: w,
+            height: h,
+            codec: c,
+            duration,
+        }),
         _ => Err("Could not parse video info".to_string()),
     }
 }
@@ -140,16 +147,30 @@ pub fn parse_duration_from_ffmpeg_output(stderr: &str) -> Result<f64, String> {
         .map_err(|e| format!("Failed to create regex: {}", e))?;
 
     if let Some(captures) = re.captures(stderr) {
-        let hours: f64 = captures.get(1).unwrap().as_str().parse()
+        let hours: f64 = captures
+            .get(1)
+            .unwrap()
+            .as_str()
+            .parse()
             .map_err(|e| format!("Failed to parse hours: {}", e))?;
-        let minutes: f64 = captures.get(2).unwrap().as_str().parse()
+        let minutes: f64 = captures
+            .get(2)
+            .unwrap()
+            .as_str()
+            .parse()
             .map_err(|e| format!("Failed to parse minutes: {}", e))?;
-        let seconds: f64 = captures.get(3).unwrap().as_str().parse()
+        let seconds: f64 = captures
+            .get(3)
+            .unwrap()
+            .as_str()
+            .parse()
             .map_err(|e| format!("Failed to parse seconds: {}", e))?;
 
         let total_seconds = hours * 3600.0 + minutes * 60.0 + seconds;
-        println!("[Rust] Parsed duration: {}h {}m {:.2}s = {:.2} seconds",
-                hours, minutes, seconds, total_seconds);
+        println!(
+            "[Rust] Parsed duration: {}h {}m {:.2}s = {:.2} seconds",
+            hours, minutes, seconds, total_seconds
+        );
 
         Ok(total_seconds)
     } else {
@@ -158,15 +179,17 @@ pub fn parse_duration_from_ffmpeg_output(stderr: &str) -> Result<f64, String> {
 }
 
 /// Get video duration using FFmpeg
-pub async fn get_video_duration_sync(app: &tauri::AppHandle, video_path: &str) -> Result<f64, String> {
+pub async fn get_video_duration_sync(
+    app: &tauri::AppHandle,
+    video_path: &str,
+) -> Result<f64, String> {
     use tauri_plugin_shell::ShellExt;
 
     let shell = app.shell();
-    let output = shell.sidecar("ffmpeg")
+    let output = shell
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", video_path,
-        ])
+        .args(["-i", video_path])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
@@ -179,15 +202,17 @@ pub async fn get_video_duration_sync(app: &tauri::AppHandle, video_path: &str) -
 }
 
 /// Get video information using FFmpeg
-pub async fn get_video_info(app: &tauri::AppHandle, video_path: &std::path::Path) -> Result<VideoInfo, String> {
+pub async fn get_video_info(
+    app: &tauri::AppHandle,
+    video_path: &std::path::Path,
+) -> Result<VideoInfo, String> {
     use tauri_plugin_shell::ShellExt;
 
-    let output = app.shell()
+    let output = app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", video_path.to_str().ok_or("Invalid video path")?,
-        ])
+        .args(["-i", video_path.to_str().ok_or("Invalid video path")?])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg info: {}", e))?;
@@ -203,15 +228,13 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle) -> Option<String> {
     println!("[Rust] Detecting hardware encoders...");
 
     let output = match app.shell().sidecar("ffmpeg") {
-        Ok(ffmpeg) => {
-            match ffmpeg.args(["-encoders"]).output().await {
-                Ok(out) => out,
-                Err(e) => {
-                    println!("[Rust] Failed to run ffmpeg -encoders: {}", e);
-                    return None;
-                }
+        Ok(ffmpeg) => match ffmpeg.args(["-encoders"]).output().await {
+            Ok(out) => out,
+            Err(e) => {
+                println!("[Rust] Failed to run ffmpeg -encoders: {}", e);
+                return None;
             }
-        }
+        },
         Err(e) => {
             println!("[Rust] Failed to get ffmpeg sidecar: {}", e);
             return None;
@@ -277,13 +300,13 @@ pub struct VideoSourceSegment {
 }
 
 /// Build FFmpeg filter complex string for crossfade transitions between sources
-/// 
+///
 /// # Arguments
 /// * `sources` - Vector of source segments in timeline order
 /// * `transitions` - Vector of crossfade transitions between sources
 /// * `output_width` - Target output width
 /// * `output_height` - Target output height
-/// 
+///
 /// # Returns
 /// Tuple of (filter_complex_string, output_stream_name)
 #[allow(dead_code)]
@@ -318,7 +341,7 @@ pub fn build_crossfade_filter_complex(
 
     // Apply crossfades sequentially
     let mut last_stream = "[v0]".to_string();
-    
+
     for (i, transition) in transitions.iter().enumerate() {
         let next_stream = format!("[v{}]", transition.source_b_index);
         let output_stream = if i == transitions.len() - 1 {
@@ -349,11 +372,11 @@ pub fn build_crossfade_filter_complex(
 }
 
 /// Build FFmpeg audio crossfade filter for smooth audio transitions
-/// 
+///
 /// # Arguments
 /// * `sources_count` - Number of audio streams
 /// * `transitions` - Vector of crossfade transitions
-/// 
+///
 /// # Returns
 /// Tuple of (audio_filter_string, output_stream_name)
 #[allow(dead_code)]
@@ -388,10 +411,7 @@ pub fn build_audio_crossfade_filter(
 
         filter_parts.push(format!(
             "{}{}acrossfade=d={:.3}:c1=tri:c2=tri{}",
-            last_stream,
-            next_stream,
-            transition.duration,
-            output_stream
+            last_stream, next_stream, transition.duration, output_stream
         ));
 
         last_stream = output_stream.clone();
@@ -401,10 +421,10 @@ pub fn build_audio_crossfade_filter(
 }
 
 /// Detect transitions between overlapping source segments
-/// 
+///
 /// # Arguments
 /// * `sources` - Vector of source segments, should be sorted by timeline_start
-/// 
+///
 /// # Returns
 /// Vector of detected crossfade transitions
 #[allow(dead_code)]

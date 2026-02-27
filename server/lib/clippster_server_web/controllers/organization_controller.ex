@@ -48,10 +48,11 @@ defmodule ClippsterServerWeb.OrganizationController do
 
     json(conn, %{
       success: true,
-      organizations: Enum.map(organizations, fn %{organization: org, role: role} ->
-        serialize_organization(org)
-        |> Map.put(:role, role)
-      end)
+      organizations:
+        Enum.map(organizations, fn %{organization: org, role: role} ->
+          serialize_organization(org)
+          |> Map.put(:role, role)
+        end)
     })
   end
 
@@ -95,7 +96,8 @@ defmodule ClippsterServerWeb.OrganizationController do
         |> json(%{success: false, error: "Organization not found"})
 
       organization ->
-        attrs = Map.take(params, ["name", "description", "logo_url", "settings", "restriction_defaults"])
+        attrs =
+          Map.take(params, ["name", "description", "logo_url", "settings", "restriction_defaults"])
 
         case Organizations.update_organization(organization, attrs, user) do
           {:ok, updated_org} ->
@@ -151,7 +153,6 @@ defmodule ClippsterServerWeb.OrganizationController do
     with organization when not is_nil(organization) <- Organizations.get_organization(id),
          true <- Organizations.is_admin?(organization.id, user.id),
          %Plug.Upload{path: temp_path, filename: filename} <- params["file"] do
-
       # Read file contents
       {:ok, file_binary} = File.read(temp_path)
 
@@ -215,10 +216,11 @@ defmodule ClippsterServerWeb.OrganizationController do
       members = Organizations.list_members(org_id)
 
       # Include allocation info for each member
-      members_with_allocations = Enum.map(members, fn member ->
-        allocation = Organizations.get_member_allocation(org_id, member.user_id)
-        serialize_member_with_allocation(member, allocation)
-      end)
+      members_with_allocations =
+        Enum.map(members, fn member ->
+          allocation = Organizations.get_member_allocation(org_id, member.user_id)
+          serialize_member_with_allocation(member, allocation)
+        end)
 
       json(conn, %{
         success: true,
@@ -234,7 +236,11 @@ defmodule ClippsterServerWeb.OrganizationController do
   @doc """
   Update a member's role.
   """
-  def update_member(conn, %{"organization_id" => org_id, "user_id" => member_user_id, "role" => role}) do
+  def update_member(conn, %{
+        "organization_id" => org_id,
+        "user_id" => member_user_id,
+        "role" => role
+      }) do
     user = conn.assigns.current_user
 
     case Organizations.update_member_role(org_id, member_user_id, role, user) do
@@ -293,7 +299,10 @@ defmodule ClippsterServerWeb.OrganizationController do
   @doc """
   Update a member's account details (admin only).
   """
-  def update_member_account(conn, %{"organization_id" => org_id, "user_id" => member_user_id} = params) do
+  def update_member_account(
+        conn,
+        %{"organization_id" => org_id, "user_id" => member_user_id} = params
+      ) do
     user = conn.assigns.current_user
 
     # Only admins can update member accounts
@@ -312,54 +321,56 @@ defmodule ClippsterServerWeb.OrganizationController do
         member ->
           # Verify this user was created by this organization
           org_id_int = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
+
           unless member.user.created_by_organization_id == org_id_int do
             conn
             |> put_status(403)
             |> json(%{success: false, error: "Can only edit users created by this organization"})
           else
-          # Build update attrs
-          attrs = %{}
-          attrs = if params["name"], do: Map.put(attrs, :name, params["name"]), else: attrs
-          attrs = if params["email"], do: Map.put(attrs, :email, params["email"]), else: attrs
+            # Build update attrs
+            attrs = %{}
+            attrs = if params["name"], do: Map.put(attrs, :name, params["name"]), else: attrs
+            attrs = if params["email"], do: Map.put(attrs, :email, params["email"]), else: attrs
 
-          # Handle password separately
-          result = if params["password"] && String.length(params["password"]) >= 8 do
-            # Update with new password
-            member.user
-            |> Accounts.User.password_changeset(%{password: params["password"]})
-            |> then(fn changeset ->
-              # Also apply name/email changes
-              Ecto.Changeset.cast(changeset, attrs, [:name, :email])
-            end)
-            |> Repo.update()
-          else
-            # Update without password
-            if map_size(attrs) > 0 do
-              member.user
-              |> Ecto.Changeset.cast(%{}, [])
-              |> Ecto.Changeset.cast(attrs, [:name, :email])
-              |> Repo.update()
-            else
-              {:ok, member.user}
+            # Handle password separately
+            result =
+              if params["password"] && String.length(params["password"]) >= 8 do
+                # Update with new password
+                member.user
+                |> Accounts.User.password_changeset(%{password: params["password"]})
+                |> then(fn changeset ->
+                  # Also apply name/email changes
+                  Ecto.Changeset.cast(changeset, attrs, [:name, :email])
+                end)
+                |> Repo.update()
+              else
+                # Update without password
+                if map_size(attrs) > 0 do
+                  member.user
+                  |> Ecto.Changeset.cast(%{}, [])
+                  |> Ecto.Changeset.cast(attrs, [:name, :email])
+                  |> Repo.update()
+                else
+                  {:ok, member.user}
+                end
+              end
+
+            case result do
+              {:ok, updated_user} ->
+                json(conn, %{
+                  success: true,
+                  user: %{
+                    id: updated_user.id,
+                    email: updated_user.email,
+                    name: updated_user.name
+                  }
+                })
+
+              {:error, changeset} ->
+                conn
+                |> put_status(422)
+                |> json(%{success: false, error: format_errors(changeset)})
             end
-          end
-
-          case result do
-            {:ok, updated_user} ->
-              json(conn, %{
-                success: true,
-                user: %{
-                  id: updated_user.id,
-                  email: updated_user.email,
-                  name: updated_user.name
-                }
-              })
-
-            {:error, changeset} ->
-              conn
-              |> put_status(422)
-              |> json(%{success: false, error: format_errors(changeset)})
-          end
           end
       end
     end
@@ -402,12 +413,19 @@ defmodule ClippsterServerWeb.OrganizationController do
       {:error, :invitation_pending} ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: "An invitation has already been sent to this email address"})
+        |> json(%{
+          success: false,
+          error: "An invitation has already been sent to this email address"
+        })
 
       {:error, :user_not_found} ->
         conn
         |> put_status(404)
-        |> json(%{success: false, error: "No account found with this email address. The user must create an account before they can be invited to an organization."})
+        |> json(%{
+          success: false,
+          error:
+            "No account found with this email address. The user must create an account before they can be invited to an organization."
+        })
 
       {:error, changeset} ->
         conn
@@ -512,7 +530,9 @@ defmodule ClippsterServerWeb.OrganizationController do
             organization_name: invitation.organization.name,
             organization_logo: invitation.organization.logo_url,
             role: invitation.role,
-            inviter_name: invitation.invited_by_user && (invitation.invited_by_user.name || invitation.invited_by_user.email),
+            inviter_name:
+              invitation.invited_by_user &&
+                (invitation.invited_by_user.name || invitation.invited_by_user.email),
             expires_at: invitation.expires_at
           }
         })
@@ -557,7 +577,10 @@ defmodule ClippsterServerWeb.OrganizationController do
   @doc """
   Create a new member account directly (admin creates account for user).
   """
-  def create_member_account(conn, %{"organization_id" => org_id, "email" => email, "password" => password} = params) do
+  def create_member_account(
+        conn,
+        %{"organization_id" => org_id, "email" => email, "password" => password} = params
+      ) do
     user = conn.assigns.current_user
     role = Map.get(params, "role", "member")
     name = Map.get(params, "name")
@@ -642,18 +665,20 @@ defmodule ClippsterServerWeb.OrganizationController do
           hours_remaining: Decimal.to_string(credits.hours_remaining),
           hours_used: Decimal.to_string(credits.hours_used)
         },
-        my_allocation: if allocation do
-          %{
-            hours_allocated: Decimal.to_string(allocation.hours_allocated),
-            hours_used: Decimal.to_string(allocation.hours_used),
-            hours_remaining: Decimal.to_string(
-              ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
-            ),
-            allow_pool_fallback: allocation.allow_pool_fallback
-          }
-        else
-          nil
-        end
+        my_allocation:
+          if allocation do
+            %{
+              hours_allocated: Decimal.to_string(allocation.hours_allocated),
+              hours_used: Decimal.to_string(allocation.hours_used),
+              hours_remaining:
+                Decimal.to_string(
+                  ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
+                ),
+              allow_pool_fallback: allocation.allow_pool_fallback
+            }
+          else
+            nil
+          end
       })
     else
       conn
@@ -665,14 +690,18 @@ defmodule ClippsterServerWeb.OrganizationController do
   @doc """
   Allocate credits from org pool to a member.
   """
-  def allocate_credits(conn, %{"organization_id" => org_id, "user_id" => member_id, "hours" => hours}) do
+  def allocate_credits(conn, %{
+        "organization_id" => org_id,
+        "user_id" => member_id,
+        "hours" => hours
+      }) do
     user = conn.assigns.current_user
 
     case Organizations.allocate_credits_to_member(org_id, member_id, hours, user) do
       {:ok, allocation} ->
         # Get updated org pool balance
         {:ok, org_credit} = Organizations.get_organization_credits(org_id)
-        
+
         json(conn, %{
           success: true,
           allocation: %{
@@ -714,46 +743,52 @@ defmodule ClippsterServerWeb.OrganizationController do
   Toggle allow_pool_fallback for a member.
   Only admins can toggle this setting.
   """
-  def toggle_pool_fallback(conn, %{"organization_id" => org_id, "user_id" => member_id, "allow_pool_fallback" => allow_fallback}) do
+  def toggle_pool_fallback(conn, %{
+        "organization_id" => org_id,
+        "user_id" => member_id,
+        "allow_pool_fallback" => allow_fallback
+      }) do
     user = conn.assigns.current_user
 
     if Organizations.is_admin?(org_id, user.id) do
       with true <- Organizations.is_member?(org_id, member_id),
-           allocation when not is_nil(allocation) <- Organizations.get_member_allocation(org_id, member_id) do
-      
-      case allocation
-           |> ClippsterServer.Organizations.MemberCreditAllocation.changeset(%{allow_pool_fallback: allow_fallback})
-           |> Repo.update() do
-        {:ok, updated_allocation} ->
-          json(conn, %{
-            success: true,
-            allocation: %{
-              hours_allocated: Decimal.to_string(updated_allocation.hours_allocated),
-              hours_used: Decimal.to_string(updated_allocation.hours_used),
-              allow_pool_fallback: updated_allocation.allow_pool_fallback
-            }
-          })
+           allocation when not is_nil(allocation) <-
+             Organizations.get_member_allocation(org_id, member_id) do
+        case allocation
+             |> ClippsterServer.Organizations.MemberCreditAllocation.changeset(%{
+               allow_pool_fallback: allow_fallback
+             })
+             |> Repo.update() do
+          {:ok, updated_allocation} ->
+            json(conn, %{
+              success: true,
+              allocation: %{
+                hours_allocated: Decimal.to_string(updated_allocation.hours_allocated),
+                hours_used: Decimal.to_string(updated_allocation.hours_used),
+                allow_pool_fallback: updated_allocation.allow_pool_fallback
+              }
+            })
 
-        {:error, _changeset} ->
+          {:error, _changeset} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "Failed to update pool fallback setting"})
+        end
+      else
+        false ->
           conn
           |> put_status(400)
-          |> json(%{success: false, error: "Failed to update pool fallback setting"})
-      end
-    else
-      false ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: "User is not a member of this organization"})
+          |> json(%{success: false, error: "User is not a member of this organization"})
 
-      nil ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: "Member allocation not found"})
+        nil ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "Member allocation not found"})
 
-      {:error, reason} ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: "Failed to update setting: #{inspect(reason)}"})
+        {:error, reason} ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "Failed to update setting: #{inspect(reason)}"})
       end
     else
       conn
@@ -796,19 +831,21 @@ defmodule ClippsterServerWeb.OrganizationController do
       pack_type: transaction.pack_type,
       hours_purchased: Decimal.to_string(transaction.hours_purchased),
       amount_usd: Decimal.to_string(transaction.amount_usd),
-      amount_sol: if(transaction.amount_sol, do: Decimal.to_string(transaction.amount_sol), else: nil),
+      amount_sol:
+        if(transaction.amount_sol, do: Decimal.to_string(transaction.amount_sol), else: nil),
       payment_method: transaction.payment_method,
       status: transaction.status,
       purchased_at: DateTime.to_iso8601(transaction.inserted_at),
-      purchased_by: if transaction.purchased_by do
-        %{
-          id: transaction.purchased_by.id,
-          name: transaction.purchased_by.name,
-          email: transaction.purchased_by.email
-        }
-      else
-        nil
-      end
+      purchased_by:
+        if transaction.purchased_by do
+          %{
+            id: transaction.purchased_by.id,
+            name: transaction.purchased_by.name,
+            email: transaction.purchased_by.email
+          }
+        else
+          nil
+        end
     }
   end
 
@@ -818,6 +855,7 @@ defmodule ClippsterServerWeb.OrganizationController do
       :error -> default
     end
   end
+
   defp parse_int(value, _default) when is_integer(value), do: value
   defp parse_int(_, default), do: default
 
@@ -857,37 +895,40 @@ defmodule ClippsterServerWeb.OrganizationController do
       joined_at: member.joined_at,
       is_restricted: member.is_restricted || false,
       restriction_overrides: member.restriction_overrides,
-      user: if member.user do
-        %{
-          id: member.user.id,
-          email: member.user.email,
-          name: member.user.name,
-          avatar_url: member.user.avatar_url,
-          created_by_organization_id: member.user.created_by_organization_id
-        }
-      else
-        nil
-      end
+      user:
+        if member.user do
+          %{
+            id: member.user.id,
+            email: member.user.email,
+            name: member.user.name,
+            avatar_url: member.user.avatar_url,
+            created_by_organization_id: member.user.created_by_organization_id
+          }
+        else
+          nil
+        end
     }
   end
 
   defp serialize_member_with_allocation(member, allocation) do
     base = serialize_member(member)
 
-    allocation_data = if allocation do
-      remaining = Organizations.MemberCreditAllocation.remaining_hours(allocation)
-      %{
-        hours_allocated: Decimal.to_string(allocation.hours_allocated),
-        hours_used: Decimal.to_string(allocation.hours_used),
-        hours_remaining: Decimal.to_string(remaining)
-      }
-    else
-      %{
-        hours_allocated: "0",
-        hours_used: "0",
-        hours_remaining: "0"
-      }
-    end
+    allocation_data =
+      if allocation do
+        remaining = Organizations.MemberCreditAllocation.remaining_hours(allocation)
+
+        %{
+          hours_allocated: Decimal.to_string(allocation.hours_allocated),
+          hours_used: Decimal.to_string(allocation.hours_used),
+          hours_remaining: Decimal.to_string(remaining)
+        }
+      else
+        %{
+          hours_allocated: "0",
+          hours_used: "0",
+          hours_remaining: "0"
+        }
+      end
 
     Map.put(base, :allocation, allocation_data)
   end
@@ -923,6 +964,7 @@ defmodule ClippsterServerWeb.OrganizationController do
 
   # Presign a URL only if it's from R2 storage (not external URLs)
   defp maybe_presign_url(nil), do: nil
+
   defp maybe_presign_url(url) when is_binary(url) do
     if is_r2_storage_url?(url) do
       Storage.presigned_url!(url)
@@ -934,6 +976,7 @@ defmodule ClippsterServerWeb.OrganizationController do
   # Check if a URL is from R2 storage
   defp is_r2_storage_url?(url) do
     base = Storage.public_url_base()
+
     cond do
       base && String.starts_with?(url, base) -> true
       String.contains?(url, ".r2.cloudflarestorage.com/") -> true

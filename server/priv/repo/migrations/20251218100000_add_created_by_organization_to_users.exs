@@ -11,4 +11,3 @@ defmodule ClippsterServer.Repo.Migrations.AddCreatedByOrganizationToUsers do
     create index(:users, [:created_by_organization_id])
   end
 end
-

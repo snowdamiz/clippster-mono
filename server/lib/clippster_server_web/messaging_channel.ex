@@ -45,17 +45,19 @@ defmodule ClippsterServerWeb.MessagingChannel do
     case Messaging.send_message(conversation_id, user_id, content) do
       {:ok, message} ->
         # Create attachment records if attachment data was provided
-        message_with_attachments = if Enum.empty?(attachment_data) do
-          message
-        else
-          Enum.each(attachment_data, fn attachment_attrs ->
-            Messaging.create_message_attachment(message.id, attachment_attrs)
-          end)
-          Messaging.preload_attachments(message)
-        end
-        
+        message_with_attachments =
+          if Enum.empty?(attachment_data) do
+            message
+          else
+            Enum.each(attachment_data, fn attachment_attrs ->
+              Messaging.create_message_attachment(message.id, attachment_attrs)
+            end)
+
+            Messaging.preload_attachments(message)
+          end
+
         broadcast!(socket, "new_message", MessagingJSON.message(message_with_attachments))
-        
+
         # Also broadcast to user channels for participants (for notifications)
         broadcast_to_participants(conversation_id, "new_message_notification", %{
           conversation_id: conversation_id,
@@ -79,7 +81,7 @@ defmodule ClippsterServerWeb.MessagingChannel do
               :ok
           end
         end
-        
+
         {:reply, {:ok, MessagingJSON.message(message_with_attachments)}, socket}
 
       {:error, reason} ->
@@ -132,11 +134,13 @@ defmodule ClippsterServerWeb.MessagingChannel do
           user_id: user_id,
           conversation_id: conversation_id
         })
+
         # Also broadcast to all participant user channels (for users not in the conversation)
         broadcast_to_participants(conversation_id, "message_read_notification", %{
           user_id: user_id,
           conversation_id: conversation_id
         })
+
         {:noreply, socket}
 
       {:error, _reason} ->

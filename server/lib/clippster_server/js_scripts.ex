@@ -36,8 +36,9 @@ defmodule ClippsterServer.JsScripts do
   """
   def node_modules_path do
     # In releases, node_modules is at the app root
-    release_path = Path.join([Application.app_dir(:clippster_server), "..", "..", "node_modules"])
-    |> Path.expand()
+    release_path =
+      Path.join([Application.app_dir(:clippster_server), "..", "..", "node_modules"])
+      |> Path.expand()
 
     if File.exists?(release_path) do
       release_path
@@ -78,15 +79,16 @@ defmodule ClippsterServer.JsScripts do
   end
 
   defp find_node_windows_fallback do
-    paths = [
-      System.get_env("ProgramFiles"),
-      System.get_env("ProgramFiles(x86)"),
-      "C:\\Program Files",
-      "C:\\Program Files (x86)"
-    ]
-    |> Enum.reject(&is_nil/1)
-    |> Enum.map(&(&1 <> "\\nodejs\\node.exe"))
-    |> Enum.find(&File.exists?/1)
+    paths =
+      [
+        System.get_env("ProgramFiles"),
+        System.get_env("ProgramFiles(x86)"),
+        "C:\\Program Files",
+        "C:\\Program Files (x86)"
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.map(&(&1 <> "\\nodejs\\node.exe"))
+      |> Enum.find(&File.exists?/1)
 
     paths || "node"
   end
