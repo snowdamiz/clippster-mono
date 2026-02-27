@@ -89,7 +89,14 @@ function handleBack() {
 	</div>
 
 	<!-- Editor -->
-	<div v-else class="h-screen w-screen overflow-hidden">
+	<div v-else class="opencut-editor h-screen w-screen overflow-hidden">
 		<EditorLayout />
 	</div>
 </template>
+
+<style scoped>
+/* Hide global FloatingChat since ChatFab is in the EditorHeader */
+.opencut-editor :deep(.floating-chat) {
+	display: none;
+}
+</style>
