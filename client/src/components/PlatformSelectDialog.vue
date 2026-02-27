@@ -92,14 +92,12 @@
   import { ref, computed, watch } from 'vue';
   import { Instagram, Share2, ChevronRight, X } from 'lucide-vue-next';
   import XLogo from '@/components/icons/XLogo.vue';
-  import TikTokLogo from '@/components/icons/TikTokLogo.vue';
-  import YouTubeLogo from '@/components/icons/YouTubeLogo.vue';
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts } from '@/services/userInstagramApi';
   import { listUserTwitterAccounts } from '@/services/userTwitterApi';
   import { listSocialAccounts } from '@/services/socialAccountsApi';
 
-  type PlatformId = 'instagram' | 'twitter' | 'tiktok' | 'youtube';
+  type PlatformId = 'instagram' | 'twitter';
 
   interface PlatformOption {
     id: PlatformId;
@@ -122,8 +120,6 @@
   const loading = ref(false);
   const instagramCount = ref(0);
   const twitterCount = ref(0);
-  const tiktokCount = ref(0);
-  const youtubeCount = ref(0);
 
   const availablePlatforms = computed((): PlatformOption[] => {
     const platforms: PlatformOption[] = [];
@@ -135,26 +131,6 @@
         description: 'Publish as Reel',
         icon: Instagram,
         accountCount: instagramCount.value,
-      });
-    }
-
-    if (tiktokCount.value > 0) {
-      platforms.push({
-        id: 'tiktok',
-        name: 'TikTok',
-        description: 'Publish as Video',
-        icon: TikTokLogo,
-        accountCount: tiktokCount.value,
-      });
-    }
-
-    if (youtubeCount.value > 0) {
-      platforms.push({
-        id: 'youtube',
-        name: 'YouTube',
-        description: 'Upload as Short or Video',
-        icon: YouTubeLogo,
-        accountCount: youtubeCount.value,
       });
     }
 
@@ -185,8 +161,6 @@
     loading.value = true;
     instagramCount.value = 0;
     twitterCount.value = 0;
-    tiktokCount.value = 0;
-    youtubeCount.value = 0;
 
     try {
       // Load personal accounts
@@ -209,8 +183,6 @@
       // Load org social accounts to count platform availability
       let orgIg = 0;
       let orgTw = 0;
-      let orgTk = 0;
-      let orgYt = 0;
 
       if (orgResult.success && orgResult.organizations) {
         const orgAccountPromises = orgResult.organizations.map((org: any) =>
@@ -223,8 +195,6 @@
             for (const account of result.accounts) {
               if (account.platform === 'instagram') orgIg++;
               if (account.platform === 'twitter' || account.platform === 'x') orgTw++;
-              if (account.platform === 'tiktok') orgTk++;
-              if (account.platform === 'youtube') orgYt++;
             }
           }
         }
@@ -232,8 +202,6 @@
 
       instagramCount.value = personalIg + orgIg;
       twitterCount.value = personalTw + orgTw;
-      tiktokCount.value = orgTk;
-      youtubeCount.value = orgYt;
     } catch (error) {
       console.error('Failed to load platform availability:', error);
     } finally {
@@ -405,18 +373,6 @@
   .plat-dialog__platform-icon--twitter {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     border-color: rgba(255, 255, 255, 0.15);
-    color: white;
-  }
-
-  .plat-dialog__platform-icon--tiktok {
-    background: linear-gradient(135deg, #010101 0%, #25f4ee 50%, #fe2c55 100%);
-    border-color: rgba(37, 244, 238, 0.3);
-    color: white;
-  }
-
-  .plat-dialog__platform-icon--youtube {
-    background: linear-gradient(135deg, #cc0000 0%, #ff0000 100%);
-    border-color: rgba(255, 0, 0, 0.3);
     color: white;
   }
 

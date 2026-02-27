@@ -204,7 +204,6 @@
   import { useToast } from '@/composables/useToast';
   import { getMyAssignedAccounts, listSocialAccounts, publishPost, type SocialAccount } from '@/services/socialAccountsApi';
   import { listUserInstagramAccounts, publishToUserInstagram, type UserInstagramAccount } from '@/services/userInstagramApi';
-  import { createPost as createPfmPost } from '@/services/postForMeApi';
   import { schedulePost } from '@/services/schedulingApi';
   import api from '@/services/api';
 
@@ -365,38 +364,14 @@
         }
       } else {
         if (selectedAccountType.value === 'org' && props.organizationId) {
-          // Check if this is a PFM-connected account
-          const account = orgAccounts.value.find(a => a.id === selectedAccountId.value) as any;
-          const pfmAccountId = account?.pfm_account_id;
-
-          if (pfmAccountId) {
-            // Publish via Post for Me API
-            response = await createPfmPost({
-              social_account_ids: [pfmAccountId],
-              media_url: props.mediaUrl,
-              text: caption.value,
-              platform: 'instagram',
-              media_type: props.mediaType || 'reel',
-              thumbnail_url: props.thumbnailUrl,
-              organization_id: props.organizationId,
-              social_account_id: selectedAccountId.value,
-              creator_profile_id: selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined,
-              campaign_id: props.campaignId,
-              instagram_config: {
-                placement: (props.mediaType === 'image' ? 'timeline' : 'reels') as any,
-              },
-            });
-          } else {
-            // Legacy direct publish
-            response = await publishPost(props.organizationId, {
-              social_account_id: selectedAccountId.value,
-              creator_profile_id: selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined,
-              media_url: props.mediaUrl,
-              caption: caption.value,
-              media_type: props.mediaType || 'reel',
-              thumbnail_url: props.thumbnailUrl,
-            });
-          }
+          response = await publishPost(props.organizationId, {
+            social_account_id: selectedAccountId.value,
+            creator_profile_id: selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined,
+            media_url: props.mediaUrl,
+            caption: caption.value,
+            media_type: props.mediaType || 'reel',
+            thumbnail_url: props.thumbnailUrl,
+          });
         } else {
           response = await publishToUserInstagram({
             account_id: selectedAccountId.value,

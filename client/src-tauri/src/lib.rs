@@ -1052,10 +1052,6 @@ commands::file_utils::generate_video_thumbnail,
             auth::start_user_twitter_oauth,
             auth::poll_twitter_auth_result,
             auth::clear_twitter_auth_result,
-            auth::open_postforme_auth_window,
-            auth::open_postforme_user_auth_window,
-            auth::poll_postforme_auth_result,
-            auth::clear_postforme_auth_result,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,

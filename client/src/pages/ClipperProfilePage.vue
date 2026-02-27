@@ -1255,14 +1255,15 @@
     createPaymentMethod,
     updatePaymentMethod,
     deletePaymentMethod,
-    listSocialAccounts as listAllSocialAccounts,
     type ClipperPaymentMethod,
     getPaymentMethodDisplayName,
     maskPaymentDetails,
     PAYMENT_METHOD_TYPES,
   } from '@/services/clipperProfileApi';
   import {
+    listUserInstagramAccounts,
     disconnectUserInstagramAccount,
+    startUserInstagramOAuth,
     isTokenExpiringSoon,
     getUserAnalyticsSummary,
     listUserPosts,
@@ -1272,10 +1273,11 @@
   } from '@/services/userInstagramApi';
   import {
     startUserTwitterOAuth,
+    listUserTwitterAccounts,
+    disconnectUserTwitterAccount,
     isTwitterTokenExpiringSoon,
     type UserTwitterAccount,
   } from '@/services/userTwitterApi';
-  import { startPfmUserOAuthPopup, type PfmPlatform } from '@/services/postForMeApi';
   import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
   import {
     listPublicHiringPosts, applyToHiringPost, listMyHiringApplications,
@@ -1629,9 +1631,9 @@
   const publishMediaUrl = ref('');
   const publishThumbnailUrl = ref('');
 
+  const connectingInstagram = ref(false);
   const connectingTwitter = ref(false);
-  const connectingPfm = ref(false);
-  const connectingPlatform = computed(() => connectingTwitter.value || connectingPfm.value);
+  const connectingPlatform = computed(() => connectingInstagram.value || connectingTwitter.value);
   const selectedPlatform = ref<string | null>(null);
   const selectedAccountForPosts = ref<UserInstagramAccount | null>(null);
   const editingPaymentMethod = ref<ClipperPaymentMethod | null>(null);
@@ -1640,8 +1642,8 @@
   const deleteType = ref<'social account' | 'payment method'>('social account');
   const deleteTarget = ref<UserInstagramAccount | UserTwitterAccount | ClipperPaymentMethod | null>(null);
 
+  let cleanupInstagramAuth: (() => void) | null = null;
   let cleanupTwitterAuth: (() => void) | null = null;
-  let cleanupPfmAuth: (() => void) | null = null;
 
   const XLogo = markRaw({
     render() {
@@ -1657,14 +1659,14 @@
       name: 'Instagram',
       icon: markRaw(Instagram),
       iconClass: 'platform-card__icon--instagram',
-      available: true,
+      available: false,
     },
     {
       id: 'tiktok',
       name: 'TikTok',
       icon: markRaw(Music2),
       iconClass: 'platform-card__icon--tiktok',
-      available: true,
+      available: false,
     },
     {
       id: 'x',
@@ -1678,7 +1680,7 @@
       name: 'YouTube Shorts',
       icon: markRaw(Youtube),
       iconClass: 'platform-card__icon--youtube',
-      available: true,
+      available: false,
     },
   ];
 
@@ -1759,10 +1761,14 @@
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
     try {
-      const response = await listAllSocialAccounts();
-      if (response.success) {
-        socialAccounts.value = response.social_accounts || [];
-      }
+      const [igResponse, twResponse] = await Promise.all([
+        listUserInstagramAccounts(),
+        listUserTwitterAccounts(),
+      ]);
+      const accounts: any[] = [];
+      if (igResponse.success) accounts.push(...igResponse.accounts);
+      if (twResponse.success) accounts.push(...twResponse.accounts);
+      socialAccounts.value = accounts;
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to load social accounts' });
     } finally {
@@ -1773,7 +1779,27 @@
   const connectPlatform = async (platformId: string) => {
     selectedPlatform.value = platformId;
 
-    if (platformId === 'x') {
+    if (platformId === 'instagram') {
+      connectingInstagram.value = true;
+      try {
+        cleanupInstagramAuth = await startUserInstagramOAuth((result) => {
+          if (result.success && result.account) {
+            toast({ title: 'Success', description: `Instagram account @${result.account.username} connected` });
+            loadSocialAccounts();
+            showPlatformSelectionDialog.value = false;
+          } else if (result.error) {
+            toast({ title: 'Error', description: result.error });
+          }
+          connectingInstagram.value = false;
+          selectedPlatform.value = null;
+        });
+      } catch (error) {
+        console.error('Failed to connect Instagram:', error);
+        toast({ title: 'Error', description: 'Failed to connect Instagram' });
+        connectingInstagram.value = false;
+        selectedPlatform.value = null;
+      }
+    } else if (platformId === 'x') {
       connectingTwitter.value = true;
       try {
         cleanupTwitterAuth = await startUserTwitterOAuth((result) => {
@@ -1791,28 +1817,6 @@
         console.error('Failed to connect X:', error);
         toast({ title: 'Error', description: 'Failed to connect X' });
         connectingTwitter.value = false;
-        selectedPlatform.value = null;
-      }
-    } else if (platformId === 'instagram' || platformId === 'tiktok' || platformId === 'youtube') {
-      connectingPfm.value = true;
-      const pfmPlatform: PfmPlatform = platformId === 'instagram' ? 'instagram_business' : platformId as PfmPlatform;
-      const label = platformId.charAt(0).toUpperCase() + platformId.slice(1);
-      try {
-        cleanupPfmAuth = await startPfmUserOAuthPopup(pfmPlatform, (result) => {
-          if (result.success && result.account) {
-            toast({ title: 'Success', description: `${label} account connected` });
-            loadSocialAccounts();
-            showPlatformSelectionDialog.value = false;
-          } else if (result.error) {
-            toast({ title: 'Error', description: result.error });
-          }
-          connectingPfm.value = false;
-          selectedPlatform.value = null;
-        });
-      } catch (error) {
-        console.error(`Failed to connect ${platformId}:`, error);
-        toast({ title: 'Error', description: `Failed to connect ${label}` });
-        connectingPfm.value = false;
         selectedPlatform.value = null;
       }
     } else {
@@ -1931,8 +1935,9 @@
       let response;
       if (deleteType.value === 'social account') {
         const account = deleteTarget.value as any;
-        // All platforms use the same DELETE /user/social-accounts/:id endpoint
-        response = await disconnectUserInstagramAccount(account.id);
+        response = (account.platform === 'x' || account.platform === 'twitter')
+          ? await disconnectUserTwitterAccount(account.id)
+          : await disconnectUserInstagramAccount(account.id);
       } else {
         response = await deletePaymentMethod((deleteTarget.value as ClipperPaymentMethod).id);
       }
@@ -2017,11 +2022,8 @@
   });
 
   onUnmounted(() => {
-    if (cleanupTwitterAuth) {
-      cleanupTwitterAuth();
-    }
-    if (cleanupPfmAuth) {
-      cleanupPfmAuth();
+    if (cleanupInstagramAuth) {
+      cleanupInstagramAuth();
     }
   });
 </script>

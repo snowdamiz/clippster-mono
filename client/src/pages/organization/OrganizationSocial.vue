@@ -29,31 +29,24 @@
         </div>
 
         <div class="social-accounts__actions-panel">
-          <div class="social-accounts__platform-connect">
+          <div class="social-accounts__platform-connect social-accounts__platform-connect--disabled">
             <div class="social-accounts__platform-info">
               <div class="social-accounts__platform-badge social-accounts__platform-badge--instagram">
                 <Instagram />
               </div>
               <div class="social-accounts__platform-details">
-                <h3 class="social-accounts__platform-name">Instagram</h3>
+                <h3 class="social-accounts__platform-name">
+                  Instagram
+                  <span class="social-accounts__coming-soon">Coming Soon</span>
+                </h3>
                 <p class="social-accounts__platform-desc">
                   Connect your Instagram Business or Creator account to publish Reels directly
                 </p>
               </div>
             </div>
-            <button
-              v-if="isAdmin"
-              class="social-accounts__connect-btn"
-              @click="connectPfmPlatform('instagram_business')"
-              :disabled="connectingPlatform !== null"
-            >
-              <Loader2 v-if="connectingPlatform === 'instagram_business'" class="social-accounts__connect-spinner" />
-              <Plus v-else class="social-accounts__connect-icon" />
-              {{ connectingPlatform === 'instagram_business' ? 'Connecting...' : 'Connect Account' }}
-            </button>
           </div>
 
-          <div class="social-accounts__platform-connect">
+          <div class="social-accounts__platform-connect social-accounts__platform-connect--disabled">
             <div class="social-accounts__platform-info">
               <div class="social-accounts__platform-badge social-accounts__platform-badge--tiktok">
                 <svg viewBox="0 0 24 24" class="social-accounts__platform-svg social-accounts__platform-svg--tiktok">
@@ -70,42 +63,28 @@
                 </svg>
               </div>
               <div class="social-accounts__platform-details">
-                <h3 class="social-accounts__platform-name">TikTok</h3>
+                <h3 class="social-accounts__platform-name">
+                  TikTok
+                  <span class="social-accounts__coming-soon">Coming Soon</span>
+                </h3>
                 <p class="social-accounts__platform-desc">Share your clips directly to TikTok</p>
               </div>
             </div>
-            <button
-              v-if="isAdmin"
-              class="social-accounts__connect-btn"
-              @click="connectPfmPlatform('tiktok')"
-              :disabled="connectingPlatform !== null"
-            >
-              <Loader2 v-if="connectingPlatform === 'tiktok'" class="social-accounts__connect-spinner" />
-              <Plus v-else class="social-accounts__connect-icon" />
-              {{ connectingPlatform === 'tiktok' ? 'Connecting...' : 'Connect Account' }}
-            </button>
           </div>
 
-          <div class="social-accounts__platform-connect">
+          <div class="social-accounts__platform-connect social-accounts__platform-connect--disabled">
             <div class="social-accounts__platform-info">
               <div class="social-accounts__platform-badge social-accounts__platform-badge--youtube">
                 <Youtube />
               </div>
               <div class="social-accounts__platform-details">
-                <h3 class="social-accounts__platform-name">YouTube</h3>
-                <p class="social-accounts__platform-desc">Upload clips as YouTube Shorts or Videos</p>
+                <h3 class="social-accounts__platform-name">
+                  YouTube Shorts
+                  <span class="social-accounts__coming-soon">Coming Soon</span>
+                </h3>
+                <p class="social-accounts__platform-desc">Upload clips as YouTube Shorts automatically</p>
               </div>
             </div>
-            <button
-              v-if="isAdmin"
-              class="social-accounts__connect-btn"
-              @click="connectPfmPlatform('youtube')"
-              :disabled="connectingPlatform !== null"
-            >
-              <Loader2 v-if="connectingPlatform === 'youtube'" class="social-accounts__connect-spinner" />
-              <Plus v-else class="social-accounts__connect-icon" />
-              {{ connectingPlatform === 'youtube' ? 'Connecting...' : 'Connect Account' }}
-            </button>
           </div>
 
           <div class="social-accounts__platform-connect">
@@ -457,7 +436,6 @@
     listSocialAccounts,
     startInstagramOAuthPopup,
     startTwitterOAuthPopup,
-    startPfmOAuthPopup,
     updateSocialAccount,
     deleteSocialAccount,
     refreshAccountToken,
@@ -469,7 +447,6 @@
 
   const loading = ref(true);
   const connecting = ref(false);
-  const connectingPlatform = ref<string | null>(null);
   const accounts = ref<SocialAccount[]>([]);
   const selectedAccount = ref<SocialAccount | null>(null);
   const showAssignmentsDialog = ref(false);
@@ -545,14 +522,13 @@
 
   async function handleAuthResult(result: { success: boolean; account?: any; error?: string }) {
     if (result.success && result.account) {
-      showToast(`Account @${result.account.username || result.account.display_name || ''} connected successfully`, 'success');
+      showToast(`Instagram account @${result.account.username} connected successfully`, 'success');
       await loadAccounts();
       loadOrganization();
     } else if (result.error) {
       showToast(result.error, 'error');
     }
     connecting.value = false;
-    connectingPlatform.value = null;
   }
 
   async function loadAccounts() {
@@ -588,32 +564,12 @@
   async function connectTwitter() {
     if (!organizationId.value) return;
     connecting.value = true;
-    connectingPlatform.value = 'twitter';
     try {
       cleanupAuthListener = await startTwitterOAuthPopup(organizationId.value, handleAuthResult);
     } catch (error) {
       console.error('Failed to connect X:', error);
       showToast(error instanceof Error ? error.message : 'Failed to connect X.', 'error');
       connecting.value = false;
-      connectingPlatform.value = null;
-    }
-  }
-
-  async function connectPfmPlatform(platform: string) {
-    if (!organizationId.value) return;
-    connecting.value = true;
-    connectingPlatform.value = platform;
-    try {
-      cleanupAuthListener = await startPfmOAuthPopup(
-        platform as any,
-        organizationId.value,
-        handleAuthResult
-      );
-    } catch (error) {
-      console.error(`Failed to connect ${platform}:`, error);
-      showToast(error instanceof Error ? error.message : `Failed to connect ${platform}.`, 'error');
-      connecting.value = false;
-      connectingPlatform.value = null;
     }
   }
 

@@ -643,7 +643,6 @@ defmodule ClippsterServerWeb.SchedulingController do
       Task.start(fn ->
         sync_org_posts_analytics(org_id)
         sync_org_external_posts_analytics(org_id)
-        sync_org_pfm_posts_analytics(org_id)
       end)
 
       json(conn, %{success: true, message: "Analytics sync started"})
@@ -742,65 +741,6 @@ defmodule ClippsterServerWeb.SchedulingController do
             _ -> :ok
           end
         end
-      _ -> :ok
-    end
-  end
-
-  defp sync_org_pfm_posts_analytics(org_id) do
-    alias ClippsterServer.Social.PostForMe.Posts, as: PfmPosts
-
-    # Get all posts that were published via Post for Me (have pfm_post_id)
-    case Social.list_post_submissions(org_id, limit: 500) do
-      {:ok, %{posts: posts}} ->
-        pfm_posts = Enum.filter(posts, fn post -> post.pfm_post_id != nil end)
-
-        for post <- pfm_posts do
-          try do
-            case PfmPosts.get_post(post.pfm_post_id) do
-              {:ok, pfm_data} ->
-                # Extract results from PFM post data
-                results = pfm_data["results"] || []
-                # Aggregate metrics from all results (one per platform account)
-                analytics = Enum.reduce(results, %{}, fn result, acc ->
-                  metrics = result["metrics"] || %{}
-                  %{
-                    view_count: (acc[:view_count] || 0) + (metrics["views"] || metrics["view_count"] || 0),
-                    like_count: (acc[:like_count] || 0) + (metrics["likes"] || metrics["like_count"] || 0),
-                    comment_count: (acc[:comment_count] || 0) + (metrics["comments"] || metrics["comment_count"] || 0),
-                    save_count: (acc[:save_count] || 0) + (metrics["saves"] || metrics["save_count"] || 0),
-                    reach_count: (acc[:reach_count] || 0) + (metrics["reach"] || metrics["reach_count"] || 0),
-                    impressions_count: (acc[:impressions_count] || 0) + (metrics["impressions"] || metrics["impressions_count"] || 0)
-                  }
-                end)
-
-                # Update status from PFM if changed
-                pfm_status = pfm_data["status"]
-                local_status = case pfm_status do
-                  "published" -> "published"
-                  "failed" -> "failed"
-                  "processing" -> "publishing"
-                  "scheduled" -> "scheduled"
-                  _ -> nil
-                end
-
-                if local_status && local_status != post.status do
-                  Social.update_post_submission(post, %{status: local_status})
-                end
-
-                # Sync analytics if we have any metrics
-                if map_size(analytics) > 0 do
-                  Social.sync_post_analytics(post, analytics)
-                end
-
-              {:error, reason} ->
-                Logger.warning("[PFM Sync] Failed to fetch PFM post #{post.pfm_post_id}: #{inspect(reason)}")
-            end
-          rescue
-            e ->
-              Logger.error("[PFM Sync] Error syncing post #{post.id}: #{Exception.message(e)}")
-          end
-        end
-
       _ -> :ok
     end
   end

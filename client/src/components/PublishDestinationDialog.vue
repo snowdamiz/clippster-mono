@@ -150,8 +150,6 @@
   import { ref, computed, watch } from 'vue';
   import { Instagram, Building, ChevronRight, X, User } from 'lucide-vue-next';
   import XLogo from '@/components/icons/XLogo.vue';
-  import TikTokLogo from '@/components/icons/TikTokLogo.vue';
-  import YouTubeLogo from '@/components/icons/YouTubeLogo.vue';
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
   import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
@@ -165,7 +163,7 @@
 
   const props = defineProps<{
     open: boolean;
-    platform?: 'instagram' | 'twitter' | 'tiktok' | 'youtube';
+    platform?: 'instagram' | 'twitter';
   }>();
 
   const emit = defineEmits<{
@@ -180,24 +178,8 @@
   const personalAccounts = ref<(UserInstagramAccount | UserTwitterAccount)[]>([]);
 
   const activePlatform = computed(() => props.platform || 'instagram');
-  const platformIcon = computed(() => {
-    switch (activePlatform.value) {
-      case 'twitter': return XLogo;
-      case 'tiktok': return TikTokLogo;
-      case 'youtube': return YouTubeLogo;
-      default: return Instagram;
-    }
-  });
-  const platformLabel = computed(() => {
-    switch (activePlatform.value) {
-      case 'twitter': return 'X (Twitter)';
-      case 'tiktok': return 'TikTok';
-      case 'youtube': return 'YouTube';
-      default: return 'Instagram';
-    }
-  });
-  // TikTok and YouTube are org-only (PFM), no personal accounts
-  const isPfmOnlyPlatform = computed(() => ['tiktok', 'youtube'].includes(activePlatform.value));
+  const platformIcon = computed(() => activePlatform.value === 'twitter' ? XLogo : Instagram);
+  const platformLabel = computed(() => activePlatform.value === 'twitter' ? 'X (Twitter)' : 'Instagram');
 
   // Load both organizations and personal accounts when dialog opens
   watch(
@@ -222,10 +204,7 @@
       }
 
       // Load personal accounts based on platform
-      // TikTok and YouTube are org-only via PFM, no personal accounts
-      if (isPfmOnlyPlatform.value) {
-        personalAccounts.value = [];
-      } else if (activePlatform.value === 'twitter') {
+      if (activePlatform.value === 'twitter') {
         const accountsResult = await listUserTwitterAccounts();
         if (accountsResult.success) {
           personalAccounts.value = accountsResult.accounts.filter((a) => a.is_active);
@@ -478,24 +457,6 @@
   }
 
   .dest-dialog__avatar--twitter svg {
-    color: white;
-  }
-
-  .dest-dialog__avatar--tiktok {
-    background: linear-gradient(135deg, #010101 0%, #25f4ee 50%, #fe2c55 100%);
-    border-color: rgba(37, 244, 238, 0.3);
-  }
-
-  .dest-dialog__avatar--tiktok svg {
-    color: white;
-  }
-
-  .dest-dialog__avatar--youtube {
-    background: linear-gradient(135deg, #cc0000 0%, #ff0000 100%);
-    border-color: rgba(255, 0, 0, 0.3);
-  }
-
-  .dest-dialog__avatar--youtube svg {
     color: white;
   }
 
