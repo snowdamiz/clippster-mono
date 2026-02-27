@@ -27,8 +27,8 @@ const { togglePopover, hasNewMessagePulse, isPopoverOpen } = useChatPopout();
 <style scoped>
 .chat-fab {
   position: relative;
-  width: 52px;
-  height: 52px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: none;
   background: var(--sidebar-accent, #0ea5e9);
@@ -67,25 +67,25 @@ const { togglePopover, hasNewMessagePulse, isPopoverOpen } = useChatPopout();
 }
 
 .chat-fab__icon {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
 }
 
 .chat-fab__badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
+  top: -3px;
+  right: -3px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   background: #ef4444;
   color: white;
-  border-radius: 10px;
+  border-radius: 9px;
   border: 2px solid #0a0a0b;
   line-height: 1;
 }

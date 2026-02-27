@@ -275,7 +275,7 @@ defmodule ClippsterServerWeb.StripeController do
   defp handle_event(%{type: "checkout.session.completed", data: %{object: session}}) do
     IO.puts("[Stripe Webhook] Processing checkout.session.completed")
 
-    metadata = session["metadata"] || session.metadata || %{}
+    metadata = safe_get(session, "metadata") || %{}
     user_id = get_metadata_value(metadata, "user_id")
     organization_id = get_metadata_value(metadata, "organization_id")
     pack_type = get_metadata_value(metadata, "pack_type")
@@ -287,11 +287,11 @@ defmodule ClippsterServerWeb.StripeController do
     addon_tier = get_metadata_value(metadata, "addon_tier")
     promo_code_id = get_metadata_value(metadata, "promo_code_id")
 
-    session_id = session["id"] || session.id
-    payment_intent = session["payment_intent"] || Map.get(session, :payment_intent)
-    stripe_subscription_id = session["subscription"] || Map.get(session, :subscription)
-    stripe_customer_id = session["customer"] || Map.get(session, :customer)
-    amount_total = session["amount_total"] || Map.get(session, :amount_total)
+    session_id = safe_get(session, "id")
+    payment_intent = safe_get(session, "payment_intent")
+    stripe_subscription_id = safe_get(session, "subscription")
+    stripe_customer_id = safe_get(session, "customer")
+    amount_total = safe_get(session, "amount_total")
 
     IO.puts(
       "[Stripe Webhook] User ID: #{user_id}, Org ID: #{organization_id}, Type: #{payment_type}, Sub Type: #{subscription_type}, Tier: #{subscription_tier}, Addon: #{addon_tier}, Pack: #{pack_type}, Hours: #{hours}"
@@ -368,9 +368,9 @@ defmodule ClippsterServerWeb.StripeController do
   defp handle_event(%{type: "customer.subscription.created", data: %{object: subscription}}) do
     IO.puts("[Stripe Webhook] Processing customer.subscription.created")
 
-    stripe_subscription_id = subscription["id"] || Map.get(subscription, :id)
-    stripe_customer_id = subscription["customer"] || Map.get(subscription, :customer)
-    metadata = subscription["metadata"] || Map.get(subscription, :metadata) || %{}
+    stripe_subscription_id = safe_get(subscription, "id")
+    stripe_customer_id = safe_get(subscription, "customer")
+    metadata = safe_get(subscription, "metadata") || %{}
 
     user_id = get_metadata_value(metadata, "user_id")
     subscription_tier = get_metadata_value(metadata, "subscription_tier")
@@ -401,8 +401,8 @@ defmodule ClippsterServerWeb.StripeController do
   defp handle_event(%{type: "invoice.payment_succeeded", data: %{object: invoice}}) do
     IO.puts("[Stripe Webhook] Processing invoice.payment_succeeded")
 
-    stripe_subscription_id = invoice["subscription"] || Map.get(invoice, :subscription)
-    billing_reason = invoice["billing_reason"] || Map.get(invoice, :billing_reason)
+    stripe_subscription_id = safe_get(invoice, "subscription")
+    billing_reason = safe_get(invoice, "billing_reason")
 
     # Only process renewal invoices, not initial subscription
     if stripe_subscription_id && billing_reason in ["subscription_cycle", "subscription_update"] do
@@ -443,7 +443,7 @@ defmodule ClippsterServerWeb.StripeController do
               end
 
               # Record affiliate recurring commission
-              amount_total = invoice["amount_paid"] || Map.get(invoice, :amount_paid) || 0
+              amount_total = safe_get(invoice, "amount_paid") || 0
               amount_usd = Decimal.div(Decimal.new(amount_total), Decimal.new(100))
 
               case Affiliates.record_recurring_commission(user.id, amount_usd) do
@@ -469,7 +469,7 @@ defmodule ClippsterServerWeb.StripeController do
   defp handle_event(%{type: "invoice.payment_failed", data: %{object: invoice}}) do
     IO.puts("[Stripe Webhook] Processing invoice.payment_failed")
 
-    stripe_subscription_id = invoice["subscription"] || Map.get(invoice, :subscription)
+    stripe_subscription_id = safe_get(invoice, "subscription")
 
     if stripe_subscription_id do
       # Try user subscription first
@@ -520,7 +520,7 @@ defmodule ClippsterServerWeb.StripeController do
   defp handle_event(%{type: "customer.subscription.deleted", data: %{object: subscription}}) do
     IO.puts("[Stripe Webhook] Processing customer.subscription.deleted")
 
-    stripe_subscription_id = subscription["id"] || Map.get(subscription, :id)
+    stripe_subscription_id = safe_get(subscription, "id")
 
     # Try user subscription first
     case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
@@ -581,11 +581,9 @@ defmodule ClippsterServerWeb.StripeController do
   defp handle_event(%{type: "customer.subscription.updated", data: %{object: subscription}}) do
     IO.puts("[Stripe Webhook] Processing customer.subscription.updated")
 
-    stripe_subscription_id = subscription["id"] || Map.get(subscription, :id)
-    status = subscription["status"] || Map.get(subscription, :status)
-
-    cancel_at_period_end =
-      subscription["cancel_at_period_end"] || Map.get(subscription, :cancel_at_period_end)
+    stripe_subscription_id = safe_get(subscription, "id")
+    status = safe_get(subscription, "status")
+    cancel_at_period_end = safe_get(subscription, "cancel_at_period_end")
 
     case Subscriptions.get_user_by_stripe_subscription(stripe_subscription_id) do
       nil ->
@@ -958,6 +956,29 @@ defmodule ClippsterServerWeb.StripeController do
   defp get_subscription_amount("creator"), do: Decimal.new("54.99")
   defp get_subscription_amount("pro"), do: Decimal.new("204.99")
   defp get_subscription_amount(_), do: Decimal.new("0")
+
+  # Safely access a field from either a Stripe struct (dot notation) or a plain map (bracket access).
+  # Stripe structs do NOT implement the Access behaviour, so obj["key"] crashes.
+  defp safe_get(obj, key) when is_struct(obj) do
+    atom_key = if is_binary(key), do: String.to_existing_atom(key), else: key
+    Map.get(obj, atom_key)
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp safe_get(obj, key) when is_map(obj) do
+    case Map.get(obj, key) do
+      nil when is_binary(key) ->
+        try do
+          Map.get(obj, String.to_existing_atom(key))
+        rescue
+          ArgumentError -> nil
+        end
+      val -> val
+    end
+  end
+
+  defp safe_get(_, _), do: nil
 
   defp get_metadata_value(metadata, key) when is_map(metadata) do
     # Handle both string and atom keys

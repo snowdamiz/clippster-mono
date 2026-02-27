@@ -340,10 +340,12 @@ defmodule ClippsterServerWeb.AuthController do
       # Build Google OAuth authorization URL
       scope = "email profile"
 
-      # Encode web=true and referral_code into state if present
+      # Encode web=true, invite mode, and referral_code into state if present
       web_mode = params["web"] == "true"
+      invite_mode = params["redirect_mode"] == "invite"
       web_origin = params["origin"]
       referral_code = sanitize_referral_code(params["referral_code"])
+      invite_token = params["invite_token"]
 
       target_origin =
         if web_mode do
@@ -359,6 +361,8 @@ defmodule ClippsterServerWeb.AuthController do
         %{"web" => web_mode}
         |> maybe_put_state_value("origin", target_origin)
         |> maybe_put_state_value("referral_code", referral_code)
+        |> maybe_put_state_value("invite", if(invite_mode, do: true, else: nil))
+        |> maybe_put_state_value("invite_token", invite_token)
 
       state_data = Phoenix.Token.sign(conn, @google_state_salt, state_payload)
 
@@ -548,6 +552,7 @@ defmodule ClippsterServerWeb.AuthController do
     case Phoenix.Token.verify(conn, @google_state_salt, state, max_age: @oauth_state_max_age) do
       {:ok, payload} when is_map(payload) ->
         web_mode = Map.get(payload, "web", false) == true
+        invite_mode = Map.get(payload, "invite", false) == true
 
         origin =
           if web_mode do
@@ -562,8 +567,10 @@ defmodule ClippsterServerWeb.AuthController do
         {:ok,
          %{
            web: web_mode,
+           invite: invite_mode,
            origin: origin,
-           referral_code: sanitize_referral_code(Map.get(payload, "referral_code"))
+           referral_code: sanitize_referral_code(Map.get(payload, "referral_code")),
+           invite_token: Map.get(payload, "invite_token")
          }}
 
       {:ok, _other} ->
@@ -572,6 +579,29 @@ defmodule ClippsterServerWeb.AuthController do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp send_auth_success_html(conn, token, _user, %{invite: true}, _is_new_user) do
+    # Invite mode: render a small HTML page that posts the JWT token back to the opener window
+    html = """
+    <!DOCTYPE html>
+    <html><head><title>Signing in...</title></head>
+    <body style="background:#0a0a0b;color:#f4f4f5;font-family:sans-serif;display:grid;place-items:center;min-height:100vh;">
+      <p>Signing you in...</p>
+      <script>
+        if (window.opener) {
+          window.opener.postMessage({ type: 'google-auth-success', token: '#{token}' }, '*');
+          window.close();
+        } else {
+          document.body.innerHTML = '<p>Authentication successful. You can close this window and return to the invite page.</p>';
+        }
+      </script>
+    </body></html>
+    """
+
+    conn
+    |> put_resp_content_type("text/html")
+    |> send_resp(200, html)
   end
 
   defp send_auth_success_html(conn, token, user, %{web: true} = web_opts, is_new_user) do
@@ -639,6 +669,24 @@ defmodule ClippsterServerWeb.AuthController do
       })
 
     redirect(conn, external: "http://localhost:54321/google-callback?#{params}")
+  end
+
+  defp send_auth_error_html(conn, error_message, %{invite: true}) do
+    # Invite mode: show error in popup
+    html = """
+    <!DOCTYPE html>
+    <html><head><title>Authentication Error</title></head>
+    <body style="background:#0a0a0b;color:#f4f4f5;font-family:sans-serif;display:grid;place-items:center;min-height:100vh;">
+      <div style="text-align:center;">
+        <p style="color:#ef4444;">Authentication failed: #{error_message}</p>
+        <p><a href="#" onclick="window.close()" style="color:#06b6d4;">Close this window and try again</a></p>
+      </div>
+    </body></html>
+    """
+
+    conn
+    |> put_resp_content_type("text/html")
+    |> send_resp(200, html)
   end
 
   defp send_auth_error_html(conn, error_message, %{web: true} = web_opts) do
