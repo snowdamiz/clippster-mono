@@ -489,12 +489,12 @@
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
   import { extractYouTubeChannel } from '@/services/youtube';
   import { extractRumbleChannel } from '@/services/rumble';
-  import { extractTwitterUsername } from '@/services/twitter';
+  import { extractTwitterUsername, extractTwitterBroadcastId } from '@/services/twitter';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
 
-  type Platform = 'Youtube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter' | 'PumpFun';
+  type Platform = 'Youtube' | 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter' | 'PumpFun';
 
   interface PendingMetadataFetch {
     streamerId: string;
@@ -1097,6 +1097,23 @@
 
     // Handle Twitter
     if (detectedPlatform.value === 'Twitter') {
+      // First check if it's a broadcast/space URL
+      const broadcastId = extractTwitterBroadcastId(inputValue.value);
+      if (broadcastId) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Twitter',
+          message: `Adding Twitter broadcast "${broadcastId.slice(0, 8)}..."...`,
+          status: 'loading',
+        });
+
+        // For broadcasts, use the full URL as the mintId (needed for yt-dlp)
+        await confirmAddStreamer(inputValue.value.trim(), broadcastId.slice(0, 16), undefined, 'twitter');
+        return;
+      }
+      
+      // Otherwise try to extract username
       const username = extractTwitterUsername(inputValue.value);
       if (username) {
         addActivityLog({

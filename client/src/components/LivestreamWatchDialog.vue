@@ -399,7 +399,7 @@
     displayName: string;
     profileImageUrl?: string;
     /** Platform for the stream (PumpFun, Kick, etc.) */
-    platform?: 'PumpFun' | 'Kick' | 'Twitch' | 'Youtube';
+    platform?: 'PumpFun' | 'Kick' | 'Twitch' | 'Youtube' | 'YouTube' | 'Rumble' | 'Twitter';
     /** External PIP mode state from global store */
     isPipModeExternal?: boolean;
   }

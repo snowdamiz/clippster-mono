@@ -698,10 +698,58 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
+  Change a user's subscription tier.
+  Requires admin authentication.
+  """
+  def change_subscription_tier(conn, %{"user_id" => user_id_string} = params) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        tier = Map.get(params, "tier")
+        grant_credits = Map.get(params, "grant_credits", "false")
+
+        case validate_tier(tier) do
+          :ok ->
+            grant_credits_bool = parse_boolean(grant_credits)
+
+            case Subscriptions.admin_change_tier(user_id, tier, grant_credits_bool) do
+              {:ok, _result} ->
+                subscription_info = Subscriptions.get_subscription_status(user_id)
+
+                json(conn, %{
+                  success: true,
+                  message: "Successfully changed subscription tier to #{tier}",
+                  subscription: subscription_info
+                })
+
+              {:error, :invalid_tier} ->
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: "Invalid subscription tier"})
+
+              {:error, reason} ->
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed to change tier: #{inspect(reason)}"})
+            end
+
+          {:error, reason} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: reason})
+        end
+
+      {:error, _} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
   Cancel a user's subscription.
   Requires admin authentication.
   """
-  def cancel_subscription(conn, %{"user_id" => user_id_string}) do
+  def cancel_user_subscription(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
       {:ok, user_id} ->
         case Subscriptions.cancel_subscription(user_id) do
@@ -733,7 +781,9 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
-  Extend a user's subscription.
+  Get subscription history for a user.
+  Requires admin authentication.
+  """
   def get_subscription_history(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
       {:ok, user_id} ->

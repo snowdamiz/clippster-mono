@@ -1418,6 +1418,8 @@
       kick: '/kick.svg',
       twitch: '/twitch.svg',
       youtube: '/youtube.svg',
+      rumble: '/rumble.svg',
+      twitter: '/x.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -1428,6 +1430,8 @@
       kick: 'brightness(0) saturate(100%) invert(83%) sepia(47%) saturate(1113%) hue-rotate(57deg) brightness(106%) contrast(98%)',
       twitch: 'brightness(0) saturate(100%) invert(37%) sepia(98%) saturate(1932%) hue-rotate(249deg) brightness(93%) contrast(109%)',
       youtube: 'brightness(0) saturate(100%) invert(22%) sepia(99%) saturate(3013%) hue-rotate(352deg) brightness(95%) contrast(91%)',
+      rumble: 'brightness(0) saturate(100%) invert(83%) sepia(47%) saturate(1113%) hue-rotate(57deg) brightness(106%) contrast(98%)',
+      twitter: 'brightness(0) invert(100%)',
     };
     return filters[platform] || 'none';
   }

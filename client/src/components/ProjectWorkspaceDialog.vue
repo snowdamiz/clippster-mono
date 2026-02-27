@@ -2253,20 +2253,24 @@
   watch(
     () => props.project?.id,
     (newProjectId, oldProjectId) => {
+      if (newProjectId) {
+        setProgressProjectId(newProjectId.toString());
+      } else {
+        setProgressProjectId(null);
+      }
+
       // When switching projects, restore state from global tracking if available
       if (newProjectId && newProjectId !== oldProjectId) {
         const detectionState = getDetectionState(newProjectId);
         if (detectionState && detectionState.isActive) {
-          // Restore active detection state for this project - connect socket
+          // Restore active detection state for this project
           clipGenerationInProgress.value = true;
           frontendProgress.value = detectionState.progress;
           frontendStage.value = detectionState.stage;
           frontendMessage.value = detectionState.message;
           frontendError.value = detectionState.error;
-          setProgressProjectId(newProjectId.toString());
         } else {
-          // No active detection - disconnect socket and start with clean slate
-          setProgressProjectId(null);
+          // No active detection - start with clean slate
           clipGenerationInProgress.value = false;
           frontendProgress.value = 0;
           frontendStage.value = '';
@@ -2274,8 +2278,6 @@
           frontendError.value = '';
           resetProgress();
         }
-      } else if (!newProjectId) {
-        setProgressProjectId(null);
       }
     }
   );

@@ -553,7 +553,7 @@ export interface CreatorProfile {
 export interface CreatorPlatformLink {
   id: string;
   creator_profile_id: string;
-  platform: 'pumpfun' | 'kick' | 'twitch' | 'youtube';
+  platform: 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble' | 'twitter';
   platform_id: string;
   display_name: string | null;
   profile_image_url: string | null;

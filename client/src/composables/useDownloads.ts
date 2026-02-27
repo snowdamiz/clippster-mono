@@ -536,9 +536,24 @@ export function useDownloads() {
           ? JSON.stringify(options.creatorWatermarkSettings)
           : undefined;
 
+        if (existingProjects.length > 0) {
+          // Found an existing parent project owned by current user
+          parentProjectId = existingProjects[0].id;
+        } else {
+          // Create a new parent project
+          const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : provider === 'twitch' ? `Channel: ${mintId}` : provider === 'youtube' ? `Channel: ${mintId}` : provider === 'rumble' ? `Channel: ${mintId}` : provider === 'twitter' ? `Broadcast: ${mintId}` : `Mint: ${mintId}`;
+          const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : provider === 'youtube' ? 'YouTube' : provider === 'rumble' ? 'Rumble' : provider === 'twitter' ? 'Twitter' : 'PumpFun';
+          parentProjectId = await createProject(
+            title,
+            `Manual downloads from ${providerLabel} (${sourceLabel})`,
+            undefined,
+            providerLabel,
+            watermarkSettingsJson
+          );
+        }
 
         // Create the child project for this specific segment
-        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : provider === 'youtube' ? 'YouTube' : provider === 'rumble' ? 'Rumble' : 'PumpFun';
+        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : provider === 'youtube' ? 'YouTube' : provider === 'rumble' ? 'Rumble' : provider === 'twitter' ? 'Twitter' : 'PumpFun';
         projectId = await createProject(
           finalTitle,
           `Segment ${segmentNumber} of ${title}`,

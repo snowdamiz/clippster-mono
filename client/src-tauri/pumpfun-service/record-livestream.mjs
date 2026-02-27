@@ -120,6 +120,10 @@ const FFMPEG_BINARIES = {
 };
 
 function resolveFfmpegBinary() {
+  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) {
+    return process.env.FFMPEG_PATH;
+  }
+
   const execDir = path.dirname(process.execPath);
   const isWindows = process.platform === 'win32';
   const bareName = isWindows ? 'ffmpeg.exe' : 'ffmpeg';

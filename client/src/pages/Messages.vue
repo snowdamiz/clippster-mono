@@ -22,6 +22,7 @@
     Check,
     Pencil,
     Trash2,
+    Loader2,
     Megaphone,
     MoreVertical,
     UserMinus,
@@ -87,6 +88,7 @@
 
   const supportConversation = ref<Conversation | null>(null);
   const isLoadingSupportConversation = ref(false);
+  const isStartingSupport = ref(false);
 
   // Attachment state
   const selectedAttachments = ref<File[]>([]);
@@ -656,7 +658,9 @@
     try {
       await selectSupportConversation();
     } catch (error) {
-      console.error('Failed to open support conversation:', error);
+      console.error('Failed to open support chat:', error);
+    } finally {
+      isStartingSupport.value = false;
     }
   }
 

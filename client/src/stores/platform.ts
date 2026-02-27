@@ -451,7 +451,7 @@ export const usePlatformStore = defineStore('platform', {
           let filteredClips = result.clips;
           if (config.filterMinDuration) {
             filteredClips = result.clips.filter(
-              (clip) => clip.duration >= config.filterMinDuration!
+              (clip) => (clip.duration ?? 0) >= config.filterMinDuration!
             );
           }
 

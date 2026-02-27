@@ -1182,9 +1182,9 @@
       }
       let response;
       if (editingChannelLink.value) {
-        response = await updateChannelLink(editingChannelLink.value.id, normalizedForm);
+        response = await updateChannelLink(editingChannelLink.value.id, channelLinkForm);
       } else {
-        response = await createChannelLink(normalizedForm);
+        response = await createChannelLink(channelLinkForm);
       }
       if (response.success) {
         showChannelLinkForm.value = false;
