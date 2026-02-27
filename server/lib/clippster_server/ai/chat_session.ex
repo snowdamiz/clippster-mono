@@ -27,9 +27,19 @@ defmodule ClippsterServer.AI.ChatSession do
   def changeset(session, attrs) do
     session
     |> cast(attrs, [
-      :name, :status, :media_items, :composition, :refinement_round,
-      :refinement_messages_used, :max_refinement_rounds, :max_messages_per_round,
-      :style_context, :reference_analysis, :media_analysis, :reference_url, :user_id
+      :name,
+      :status,
+      :media_items,
+      :composition,
+      :refinement_round,
+      :refinement_messages_used,
+      :max_refinement_rounds,
+      :max_messages_per_round,
+      :style_context,
+      :reference_analysis,
+      :media_analysis,
+      :reference_url,
+      :user_id
     ])
     |> validate_required([:user_id, :status])
     |> validate_inclusion(:status, @valid_statuses)

@@ -36,7 +36,9 @@ defmodule ClippsterServer.Repo.Migrations.CreateClippingCampaigns do
       add :application_note, :text
       add :approved_at, :utc_datetime
       add :approved_by_user_id, references(:users, on_delete: :nilify_all)
-      add :profile_assignment_id, references(:organization_profile_assignments, on_delete: :nilify_all)
+
+      add :profile_assignment_id,
+          references(:organization_profile_assignments, on_delete: :nilify_all)
 
       timestamps(type: :utc_datetime)
     end
@@ -66,8 +68,10 @@ defmodule ClippsterServer.Repo.Migrations.CreateClippingCampaigns do
 
     create index(:clipper_social_accounts, [:user_id])
     create index(:clipper_social_accounts, [:platform])
+
     create unique_index(:clipper_social_accounts, [:user_id, :platform, :platform_user_id],
-      name: :clipper_social_accounts_unique)
+             name: :clipper_social_accounts_unique
+           )
 
     # Create clipper_payment_methods table
     create table(:clipper_payment_methods) do

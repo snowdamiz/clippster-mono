@@ -5,7 +5,8 @@ defmodule ClippsterServer.Messaging.MessageAttachment do
   alias ClippsterServer.Messaging.Message
 
   @attachment_types ~w(image)
-  @max_file_size 15_728_640  # 15MB in bytes
+  # 15MB in bytes
+  @max_file_size 15_728_640
 
   schema "message_attachments" do
     field :attachment_type, :string

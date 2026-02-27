@@ -8,11 +8,14 @@ pub async fn extract_clip_segment(
     end_time: f64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let duration = end_time - start_time;
-    
-    println!("[FFmpeg] Extracting segment: {}s - {}s (duration: {}s)", start_time, end_time, duration);
-    
+
+    println!(
+        "[FFmpeg] Extracting segment: {}s - {}s (duration: {}s)",
+        start_time, end_time, duration
+    );
+
     let output = AsyncCommand::new("ffmpeg")
-        .arg("-y")  // Overwrite output file
+        .arg("-y") // Overwrite output file
         .arg("-ss")
         .arg(start_time.to_string())
         .arg("-i")
@@ -28,12 +31,12 @@ pub async fn extract_clip_segment(
         .arg(output_path)
         .output()
         .await?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("FFmpeg failed: {}", stderr).into());
     }
-    
+
     Ok(())
 }
 
@@ -44,9 +47,9 @@ pub async fn generate_thumbnail_at_time(
     time: f64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("[FFmpeg] Generating thumbnail at {}s", time);
-    
+
     let output = AsyncCommand::new("ffmpeg")
-        .arg("-y")  // Overwrite output file
+        .arg("-y") // Overwrite output file
         .arg("-ss")
         .arg(time.to_string())
         .arg("-i")
@@ -60,12 +63,12 @@ pub async fn generate_thumbnail_at_time(
         .arg(output_path)
         .output()
         .await?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("FFmpeg thumbnail failed: {}", stderr).into());
     }
-    
+
     Ok(())
 }
 
@@ -75,16 +78,16 @@ pub async fn extract_waveform_data(
     output_path: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("[FFmpeg] Extracting waveform data");
-    
+
     // First extract audio as WAV
     let temp_audio_path = format!("{}.wav", output_path);
-    
+
     // Extract audio
     let output = AsyncCommand::new("ffmpeg")
         .arg("-y")
         .arg("-i")
         .arg(input_path)
-        .arg("-vn")  // No video
+        .arg("-vn") // No video
         .arg("-acodec")
         .arg("pcm_s16le")
         .arg("-ar")
@@ -94,22 +97,22 @@ pub async fn extract_waveform_data(
         .arg(&temp_audio_path)
         .output()
         .await?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("FFmpeg audio extraction failed: {}", stderr).into());
     }
-    
+
     // Generate waveform data points
     let waveform_data = generate_waveform_points(&temp_audio_path).await?;
-    
+
     // Save as JSON
     let json_data = serde_json::to_string_pretty(&waveform_data)?;
     std::fs::write(output_path, json_data)?;
-    
+
     // Clean up temp audio file
     let _ = std::fs::remove_file(&temp_audio_path);
-    
+
     Ok(())
 }
 
@@ -119,7 +122,7 @@ async fn generate_waveform_points(
 ) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
     // For now, generate a simple waveform using FFmpeg's volumedetect
     // In a more sophisticated implementation, we could use a proper audio analysis library
-    
+
     let output = AsyncCommand::new("ffmpeg")
         .arg("-i")
         .arg(audio_path)
@@ -130,9 +133,9 @@ async fn generate_waveform_points(
         .arg("-")
         .output()
         .await?;
-    
+
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     // Parse mean_volume from FFmpeg output
     let mean_volume = stderr
         .lines()
@@ -141,11 +144,11 @@ async fn generate_waveform_points(
         .and_then(|vol| vol.trim().split_whitespace().next())
         .and_then(|vol| vol.parse::<f64>().ok())
         .unwrap_or(-20.0) as f32;
-    
+
     // Generate simple waveform data (100 points)
     let num_points = 100;
     let mut waveform = Vec::with_capacity(num_points);
-    
+
     for i in 0..num_points {
         // Create a simple waveform pattern based on the mean volume
         let t = i as f32 / num_points as f32;
@@ -153,6 +156,6 @@ async fn generate_waveform_points(
         let value = amplitude * (t * std::f32::consts::PI * 2.0).sin().abs();
         waveform.push(value.clamp(0.0, 1.0));
     }
-    
+
     Ok(waveform)
 }

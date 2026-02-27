@@ -57,6 +57,7 @@ defmodule ClippsterServer.Accounts do
   def get_user_by_email(email) when is_binary(email) do
     Repo.get_by(User, email: email)
   end
+
   def get_user_by_email(_), do: nil
 
   @doc """
@@ -76,7 +77,9 @@ defmodule ClippsterServer.Accounts do
           {:ok, user} -> {:ok, user, true}
           error -> error
         end
-      user -> {:ok, user, false}
+
+      user ->
+        {:ok, user, false}
     end
   end
 
@@ -90,7 +93,8 @@ defmodule ClippsterServer.Accounts do
 
     Repo.transaction(fn ->
       # Create the user
-      user = %User{}
+      user =
+        %User{}
         |> User.changeset(%{
           wallet_address: wallet_address,
           is_admin: is_first_user
@@ -111,8 +115,11 @@ defmodule ClippsterServer.Accounts do
           wallet_address: user.wallet_address,
           is_admin: user.is_admin
         })
+
         {:ok, user}
-      {:error, reason} -> {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -126,6 +133,7 @@ defmodule ClippsterServer.Accounts do
       nil ->
         # Check if user exists with this email but different OAuth provider
         email = Map.get(oauth_info, :email)
+
         case email && get_user_by_email(email) do
           nil ->
             # No existing user, create new one
@@ -133,6 +141,7 @@ defmodule ClippsterServer.Accounts do
               {:ok, user} -> {:ok, user, true}
               error -> error
             end
+
           existing_user ->
             # User exists with this email, link the new OAuth provider
             case link_oauth_provider(existing_user, provider, provider_id, oauth_info) do
@@ -140,6 +149,7 @@ defmodule ClippsterServer.Accounts do
               error -> error
             end
         end
+
       user ->
         case update_oauth_info(user, oauth_info) do
           {:ok, user} -> {:ok, user, false}
@@ -163,7 +173,8 @@ defmodule ClippsterServer.Accounts do
         is_admin: is_first_user
       }
 
-      user = %User{}
+      user =
+        %User{}
         |> User.oauth_changeset(user_attrs)
         |> Repo.insert!()
 
@@ -182,8 +193,11 @@ defmodule ClippsterServer.Accounts do
           email: user.email,
           is_admin: user.is_admin
         })
+
         {:ok, user}
-      {:error, reason} -> {:error, reason}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -281,7 +295,9 @@ defmodule ClippsterServer.Accounts do
 
       user ->
         user
-        |> Ecto.Changeset.change(%{last_active_at: DateTime.utc_now() |> DateTime.truncate(:second)})
+        |> Ecto.Changeset.change(%{
+          last_active_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        })
         |> Repo.update()
     end
   end
@@ -310,21 +326,22 @@ defmodule ClippsterServer.Accounts do
         {:error, :not_found}
 
       user ->
-        {:ok, %{
-          time_format_preference: user.time_format_preference || "12hr",
-          toast_enabled: user.toast_enabled,
-          toast_duration: user.toast_duration || 5000,
-          toast_position: user.toast_position || "bottom-right",
-          toast_sound_enabled: user.toast_sound_enabled,
-          toast_background_enabled: user.toast_background_enabled,
-          notify_livestream: user.notify_livestream,
-          notify_clips: user.notify_clips,
-          notify_downloads: user.notify_downloads,
-          notify_projects: user.notify_projects,
-          notify_social: user.notify_social,
-          notify_organization: user.notify_organization,
-          notify_system: user.notify_system
-        }}
+        {:ok,
+         %{
+           time_format_preference: user.time_format_preference || "12hr",
+           toast_enabled: user.toast_enabled,
+           toast_duration: user.toast_duration || 5000,
+           toast_position: user.toast_position || "bottom-right",
+           toast_sound_enabled: user.toast_sound_enabled,
+           toast_background_enabled: user.toast_background_enabled,
+           notify_livestream: user.notify_livestream,
+           notify_clips: user.notify_clips,
+           notify_downloads: user.notify_downloads,
+           notify_projects: user.notify_projects,
+           notify_social: user.notify_social,
+           notify_organization: user.notify_organization,
+           notify_system: user.notify_system
+         }}
     end
   end
 
@@ -975,7 +992,7 @@ defmodule ClippsterServer.Accounts do
   Deletes a user immediately.
   This should only be used for users without active subscriptions.
   For users with active subscriptions, use schedule_user_deletion instead.
-  
+
   Handles cascading deletion of related records that have :restrict constraints:
   - Transfers organization ownership or deletes organizations
   - Deletes credit transactions
@@ -992,23 +1009,26 @@ defmodule ClippsterServer.Accounts do
       Repo.transaction(fn ->
         # 1. Handle organizations owned by this user
         # Transfer ownership to another admin or delete if no other admins
-        owned_orgs_query = from o in "organizations",
-          where: o.owner_id == ^user_id,
-          select: %{id: o.id}
-        
+        owned_orgs_query =
+          from o in "organizations",
+            where: o.owner_id == ^user_id,
+            select: %{id: o.id}
+
         owned_orgs = Repo.all(owned_orgs_query)
-        
+
         Enum.each(owned_orgs, fn org ->
           # Try to find another admin to transfer ownership
-          new_owner_query = from m in "organization_members",
-            where: m.organization_id == ^org.id and m.role == "admin" and m.user_id != ^user_id,
-            select: %{user_id: m.user_id},
-            limit: 1
-          
+          new_owner_query =
+            from m in "organization_members",
+              where: m.organization_id == ^org.id and m.role == "admin" and m.user_id != ^user_id,
+              select: %{user_id: m.user_id},
+              limit: 1
+
           case Repo.one(new_owner_query) do
             nil ->
               # No other admin, delete the organization (cascade will handle members, etc.)
               Repo.delete_all(from o in "organizations", where: o.id == ^org.id)
+
             new_owner ->
               # Transfer ownership to another admin
               Repo.update_all(
@@ -1017,31 +1037,31 @@ defmodule ClippsterServer.Accounts do
               )
           end
         end)
-        
+
         # 2. Delete organization credit transactions where user was the purchaser
         Repo.delete_all(
           from t in "organization_credit_transactions",
-          where: t.purchased_by_user_id == ^user_id
+            where: t.purchased_by_user_id == ^user_id
         )
-        
+
         # 3. Delete user's credit transactions
         Repo.delete_all(
           from t in "credit_transactions",
-          where: t.user_id == ^user_id
+            where: t.user_id == ^user_id
         )
-        
+
         # 4. Delete user's processing jobs
         Repo.delete_all(
           from j in "processing_jobs",
-          where: j.user_id == ^user_id
+            where: j.user_id == ^user_id
         )
-        
+
         # 5. Delete user's credits record
         Repo.delete_all(
           from c in "user_credits",
-          where: c.user_id == ^user_id
+            where: c.user_id == ^user_id
         )
-        
+
         # 6. Finally delete the user (other tables with :delete_all or :nilify_all will cascade automatically)
         case Repo.delete(user) do
           {:ok, deleted_user} -> deleted_user
@@ -1099,7 +1119,7 @@ defmodule ClippsterServer.Accounts do
         duration_in_months: months,
         name: "Admin Discount - #{percent_off}% for #{months} months"
       }
-      
+
       case Stripe.Coupon.create(coupon_params) do
         {:ok, coupon} ->
           # Apply coupon to subscription
@@ -1107,7 +1127,9 @@ defmodule ClippsterServer.Accounts do
             {:ok, _subscription} -> {:ok, coupon.id}
             {:error, reason} -> {:error, reason}
           end
-        {:error, reason} -> {:error, reason}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     rescue
       e -> {:error, e}
@@ -1125,14 +1147,15 @@ defmodule ClippsterServer.Accounts do
       {:error, :user_not_found}
     else
       # If user has active Stripe subscription, create and apply 10% recurring coupon
-      coupon_id = if user.stripe_subscription_id do
-        case create_and_apply_mod_discount(user) do
-          {:ok, coupon_id} -> coupon_id
-          {:error, _reason} -> nil
+      coupon_id =
+        if user.stripe_subscription_id do
+          case create_and_apply_mod_discount(user) do
+            {:ok, coupon_id} -> coupon_id
+            {:error, _reason} -> nil
+          end
+        else
+          nil
         end
-      else
-        nil
-      end
 
       user
       |> User.mod_discount_changeset(%{
@@ -1151,7 +1174,7 @@ defmodule ClippsterServer.Accounts do
         duration: "forever",
         name: "Moderator Discount - 10%"
       }
-      
+
       case Stripe.Coupon.create(coupon_params) do
         {:ok, coupon} ->
           # Apply coupon to subscription
@@ -1159,7 +1182,9 @@ defmodule ClippsterServer.Accounts do
             {:ok, _subscription} -> {:ok, coupon.id}
             {:error, reason} -> {:error, reason}
           end
-        {:error, reason} -> {:error, reason}
+
+        {:error, reason} ->
+          {:error, reason}
       end
     rescue
       e -> {:error, e}

@@ -62,7 +62,8 @@ defmodule ClippsterServer.AdminMessaging do
     {:ok, emails}
   end
 
-  defp resolve_recipients("individual", target_email) when is_binary(target_email) and target_email != "" do
+  defp resolve_recipients("individual", target_email)
+       when is_binary(target_email) and target_email != "" do
     {:ok, [target_email]}
   end
 

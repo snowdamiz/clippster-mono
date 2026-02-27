@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use tauri::AppHandle;
 use std::io::{BufReader, Read};
+use tauri::AppHandle;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioPeak {
@@ -39,27 +39,37 @@ pub async fn detect_audio_peaks(
     let shell = app.shell();
 
     // Create unique temporary raw audio file path
-    let temp_raw_path = paths.videos.join(format!("temp_peaks_{}.raw",
+    let temp_raw_path = paths.videos.join(format!(
+        "temp_peaks_{}.raw",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| format!("Failed to get timestamp: {}", e))?
             .as_secs()
     ));
 
-    println!("[Rust] Extracting audio to raw PCM: {}", temp_raw_path.display());
+    println!(
+        "[Rust] Extracting audio to raw PCM: {}",
+        temp_raw_path.display()
+    );
 
     // Extract audio to raw 16-bit PCM mono at low sample rate
-    let extract_output = shell.sidecar("ffmpeg")
+    let extract_output = shell
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
             "-nostdin",
-            "-i", &local_path,
-            "-vn",                    // No video
-            "-acodec", "pcm_s16le",   // 16-bit PCM little-endian
-            "-ar", &SAMPLE_RATE.to_string(),
-            "-ac", "1",               // Mono
-            "-f", "s16le",            // Raw format
-            "-y",                     // Overwrite output
+            "-i",
+            &local_path,
+            "-vn", // No video
+            "-acodec",
+            "pcm_s16le", // 16-bit PCM little-endian
+            "-ar",
+            &SAMPLE_RATE.to_string(),
+            "-ac",
+            "1", // Mono
+            "-f",
+            "s16le", // Raw format
+            "-y",    // Overwrite output
             temp_raw_path.to_str().ok_or("Invalid temporary path")?,
         ])
         .output()
@@ -76,13 +86,15 @@ pub async fn detect_audio_peaks(
     // Read the raw audio file
     let file = std::fs::File::open(&temp_raw_path)
         .map_err(|e| format!("Failed to open temp audio file: {}", e))?;
-    let file_size = file.metadata()
+    let file_size = file
+        .metadata()
         .map_err(|e| format!("Failed to get file metadata: {}", e))?
         .len() as usize;
-    
+
     let mut reader = BufReader::new(file);
     let mut buffer = vec![0u8; file_size];
-    reader.read_exact(&mut buffer)
+    reader
+        .read_exact(&mut buffer)
         .map_err(|e| format!("Failed to read audio data: {}", e))?;
 
     // Clean up temp file
@@ -94,8 +106,11 @@ pub async fn detect_audio_peaks(
         .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
         .collect();
 
-    println!("[Rust] Read {} audio samples ({:.2}s of audio)", 
-             samples.len(), samples.len() as f64 / SAMPLE_RATE as f64);
+    println!(
+        "[Rust] Read {} audio samples ({:.2}s of audio)",
+        samples.len(),
+        samples.len() as f64 / SAMPLE_RATE as f64
+    );
 
     if samples.is_empty() {
         println!("[Rust] WARNING: No audio samples found in video.");
@@ -105,21 +120,19 @@ pub async fn detect_audio_peaks(
     // Calculate RMS for each window
     let mut volume_samples: Vec<(f64, f64)> = Vec::new(); // (time, normalized_rms)
     let num_windows = samples.len() / WINDOW_SIZE;
-    
+
     for i in 0..num_windows {
         let start = i * WINDOW_SIZE;
         let end = start + WINDOW_SIZE;
         let window = &samples[start..end];
-        
+
         // Calculate RMS
-        let sum_squares: f64 = window.iter()
-            .map(|&s| (s as f64).powi(2))
-            .sum();
+        let sum_squares: f64 = window.iter().map(|&s| (s as f64).powi(2)).sum();
         let rms = (sum_squares / WINDOW_SIZE as f64).sqrt();
-        
+
         // Normalize to 0-1 range (i16 max is 32767)
         let normalized_rms = rms / 32767.0;
-        
+
         let time = (start as f64) / SAMPLE_RATE as f64;
         volume_samples.push((time, normalized_rms));
     }
@@ -136,7 +149,10 @@ pub async fn detect_audio_peaks(
     let mean_rms = rms_values.iter().sum::<f64>() / rms_values.len() as f64;
     let max_rms = rms_values.iter().cloned().fold(0.0_f64, f64::max);
 
-    println!("[Rust] Volume stats - Mean RMS: {:.4}, Max RMS: {:.4}", mean_rms, max_rms);
+    println!(
+        "[Rust] Volume stats - Mean RMS: {:.4}, Max RMS: {:.4}",
+        mean_rms, max_rms
+    );
 
     // Find peaks: segments where RMS is significantly above mean
     let mut peaks: Vec<AudioPeak> = Vec::new();
@@ -146,7 +162,11 @@ pub async fn detect_audio_peaks(
     // Use the provided threshold as a multiplier (e.g., 0.3 means 30% above mean)
     let peak_threshold = mean_rms + (max_rms - mean_rms) * threshold;
 
-    println!("[Rust] Peak threshold: {:.4} (mean + {}% of range)", peak_threshold, (threshold * 100.0) as i32);
+    println!(
+        "[Rust] Peak threshold: {:.4} (mean + {}% of range)",
+        peak_threshold,
+        (threshold * 100.0) as i32
+    );
 
     for (time, rms) in &volume_samples {
         if *rms > peak_threshold && (*time - last_peak_time) >= min_interval {
@@ -154,10 +174,15 @@ pub async fn detect_audio_peaks(
             let normalized_loudness = (*rms - mean_rms) / (max_rms - mean_rms).max(0.001);
             let amplitude = normalized_loudness.min(1.0).max(0.5);
 
-            peaks.push(AudioPeak { time: *time, amplitude });
+            peaks.push(AudioPeak {
+                time: *time,
+                amplitude,
+            });
             last_peak_time = *time;
-            println!("[Rust] Peak at {:.2}s: RMS={:.4}, amplitude={:.2}", 
-                     time, rms, amplitude);
+            println!(
+                "[Rust] Peak at {:.2}s: RMS={:.4}, amplitude={:.2}",
+                time, rms, amplitude
+            );
         }
     }
 
@@ -173,7 +198,10 @@ pub async fn detect_audio_peaks(
                 let normalized_loudness = (*rms - mean_rms) / (max_rms - mean_rms).max(0.001);
                 let amplitude = normalized_loudness.min(1.0).max(0.5);
 
-                peaks.push(AudioPeak { time: *time, amplitude });
+                peaks.push(AudioPeak {
+                    time: *time,
+                    amplitude,
+                });
                 last_peak_time = *time;
             }
         }

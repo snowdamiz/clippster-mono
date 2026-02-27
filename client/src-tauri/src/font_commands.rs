@@ -51,8 +51,7 @@ pub async fn read_bundled_font(
 
     if let Some(dev_path) = dev_path {
         if dev_path.exists() {
-            return std::fs::read(&dev_path)
-                .map_err(|e| format!("Failed to read dev font: {}", e));
+            return std::fs::read(&dev_path).map_err(|e| format!("Failed to read dev font: {}", e));
         }
     }
 
@@ -81,8 +80,7 @@ pub async fn copy_font_to_app_data(
         .map_err(|e| format!("Failed to create custom fonts dir: {}", e))?;
 
     let dest = fonts_dir.join(&file_name);
-    std::fs::copy(&source, &dest)
-        .map_err(|e| format!("Failed to copy font: {}", e))?;
+    std::fs::copy(&source, &dest).map_err(|e| format!("Failed to copy font: {}", e))?;
 
     Ok(dest.to_string_lossy().to_string())
 }
@@ -155,11 +153,7 @@ pub async fn resolve_font_path(
     }
 
     // Check bundled fonts
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .unwrap_or_default()
-        .join("fonts");
+    let resource_dir = app.path().resource_dir().unwrap_or_default().join("fonts");
 
     if resource_dir.exists() {
         if let Ok(entries) = std::fs::read_dir(&resource_dir) {
@@ -211,7 +205,11 @@ pub async fn resolve_font_path(
                 let family_lower = family_lower.replace(' ', "");
                 for entry in entries.flatten() {
                     let name = entry.file_name().to_string_lossy().to_lowercase();
-                    if name.contains(&family_lower) && (name.ends_with(".ttf") || name.ends_with(".otf") || name.ends_with(".ttc")) {
+                    if name.contains(&family_lower)
+                        && (name.ends_with(".ttf")
+                            || name.ends_with(".otf")
+                            || name.ends_with(".ttc"))
+                    {
                         return Ok(entry.path().to_string_lossy().to_string());
                     }
                 }
@@ -225,16 +223,24 @@ pub async fn resolve_font_path(
         let font_dirs = vec![
             PathBuf::from("/System/Library/Fonts"),
             PathBuf::from("/Library/Fonts"),
-            dirs::home_dir().map(|h| h.join("Library/Fonts")).unwrap_or_default(),
+            dirs::home_dir()
+                .map(|h| h.join("Library/Fonts"))
+                .unwrap_or_default(),
         ];
 
         let family_lower = font_family.to_lowercase().replace(' ', "");
         for dir in font_dirs {
-            if !dir.exists() { continue; }
+            if !dir.exists() {
+                continue;
+            }
             if let Ok(entries) = std::fs::read_dir(&dir) {
                 for entry in entries.flatten() {
                     let name = entry.file_name().to_string_lossy().to_lowercase();
-                    if name.contains(&family_lower) && (name.ends_with(".ttf") || name.ends_with(".otf") || name.ends_with(".ttc")) {
+                    if name.contains(&family_lower)
+                        && (name.ends_with(".ttf")
+                            || name.ends_with(".otf")
+                            || name.ends_with(".ttc"))
+                    {
                         return Ok(entry.path().to_string_lossy().to_string());
                     }
                 }

@@ -25,11 +25,14 @@ defmodule ClippsterServer.AI.FramingStrategy do
   """
   def generate_strategy(video_path, start_time, end_time, target_aspect_ratio, opts \\ []) do
     IO.puts("[FramingStrategy] Generating strategy for #{video_path}")
-    IO.puts("[FramingStrategy] Time range: #{start_time}s - #{end_time}s, Target: #{target_aspect_ratio}")
 
-    with {:ok, detection_result} <- SpeakerDetection.analyze_video_segment(video_path, start_time, end_time, opts),
+    IO.puts(
+      "[FramingStrategy] Time range: #{start_time}s - #{end_time}s, Target: #{target_aspect_ratio}"
+    )
+
+    with {:ok, detection_result} <-
+           SpeakerDetection.analyze_video_segment(video_path, start_time, end_time, opts),
          layout_analysis <- LayoutAnalyzer.analyze(detection_result) do
-      
       strategy = build_strategy(detection_result, layout_analysis, target_aspect_ratio, opts)
       {:ok, strategy}
     end
@@ -80,36 +83,50 @@ defmodule ClippsterServer.AI.FramingStrategy do
     IO.puts("[FramingStrategy] Building split screen strategy")
     IO.puts("  Speakers: #{length(speakers)}")
     IO.puts("  Content regions: #{length(layout_analysis.content_regions)}")
-    
+
     # Determine split ratio (default 50/50, can be adjusted)
     split_ratio = determine_split_ratio(speakers, layout_analysis)
-    IO.puts("  Split ratio: #{Float.round(split_ratio, 3)} (top: #{Float.round(split_ratio * 100, 1)}%, bottom: #{Float.round((1.0 - split_ratio) * 100, 1)}%)")
-    
+
+    IO.puts(
+      "  Split ratio: #{Float.round(split_ratio, 3)} (top: #{Float.round(split_ratio * 100, 1)}%, bottom: #{Float.round((1.0 - split_ratio) * 100, 1)}%)"
+    )
+
     # Get primary speaker for bottom region
     primary_speaker = List.first(speakers)
-    
+
     if primary_speaker do
-      IO.puts("  Primary speaker centroid: (#{Float.round(primary_speaker.centroid.x, 3)}, #{Float.round(primary_speaker.centroid.y, 3)})")
+      IO.puts(
+        "  Primary speaker centroid: (#{Float.round(primary_speaker.centroid.x, 3)}, #{Float.round(primary_speaker.centroid.y, 3)})"
+      )
     end
-    
+
     # Get content region for top
-    content_region = List.first(layout_analysis.content_regions) || 
-      %{bbox: %{x: 0.0, y: 0.0, width: 1.0, height: 0.5}}
-    
-    IO.puts("  Content region bbox: (#{Float.round(content_region.bbox.x, 3)}, #{Float.round(content_region.bbox.y, 3)}, #{Float.round(content_region.bbox.width, 3)}, #{Float.round(content_region.bbox.height, 3)})")
+    content_region =
+      List.first(layout_analysis.content_regions) ||
+        %{bbox: %{x: 0.0, y: 0.0, width: 1.0, height: 0.5}}
+
+    IO.puts(
+      "  Content region bbox: (#{Float.round(content_region.bbox.x, 3)}, #{Float.round(content_region.bbox.y, 3)}, #{Float.round(content_region.bbox.width, 3)}, #{Float.round(content_region.bbox.height, 3)})"
+    )
 
     # Calculate crop regions for each split
-    {bottom_crop, top_crop} = calculate_split_crops(
-      primary_speaker,
-      content_region,
-      video_dims,
-      target_w,
-      target_h,
-      split_ratio
+    {bottom_crop, top_crop} =
+      calculate_split_crops(
+        primary_speaker,
+        content_region,
+        video_dims,
+        target_w,
+        target_h,
+        split_ratio
+      )
+
+    IO.puts(
+      "  Top crop: (#{Float.round(top_crop.x, 3)}, #{Float.round(top_crop.y, 3)}, #{Float.round(top_crop.width, 3)}, #{Float.round(top_crop.height, 3)})"
     )
-    
-    IO.puts("  Top crop: (#{Float.round(top_crop.x, 3)}, #{Float.round(top_crop.y, 3)}, #{Float.round(top_crop.width, 3)}, #{Float.round(top_crop.height, 3)})")
-    IO.puts("  Bottom crop: (#{Float.round(bottom_crop.x, 3)}, #{Float.round(bottom_crop.y, 3)}, #{Float.round(bottom_crop.width, 3)}, #{Float.round(bottom_crop.height, 3)})")
+
+    IO.puts(
+      "  Bottom crop: (#{Float.round(bottom_crop.x, 3)}, #{Float.round(bottom_crop.y, 3)}, #{Float.round(bottom_crop.width, 3)}, #{Float.round(bottom_crop.height, 3)})"
+    )
 
     %{
       mode: :split_screen,
@@ -141,109 +158,117 @@ defmodule ClippsterServer.AI.FramingStrategy do
       mode: :dynamic_pan,
       keyframes: keyframes,
       crop_dimensions: crop_dims,
-      interpolation: :linear,  # Can be :ease_in_out for smoother motion
+      # Can be :ease_in_out for smoother motion
+      interpolation: :linear,
       ffmpeg_filter: build_dynamic_pan_filter(keyframes, crop_dims, video_dims)
     }
   end
 
   @doc """
   Builds a static crop strategy centered on speakers.
-  
+
   For 1:1, 4:5, and other aspect ratios, this uses face-centered cropping
   with constraint-based sizing to ensure the speaker is properly centered.
   """
   def build_static_strategy(speakers, video_dims, target_w, target_h) do
     IO.puts("[FramingStrategy] Building static strategy for #{target_w}:#{target_h}")
-    
+
     target_aspect = target_w / target_h
     source_aspect = video_dims.width / video_dims.height
-    
+
     # Get primary speaker
     primary_speaker = List.first(speakers)
-    
-    {crop_region, crop_center} = if primary_speaker do
-      # Use face-centered, constraint-based cropping for consistent results
-      face_bbox = primary_speaker.average_bbox
-      face_center_x = face_bbox.x + face_bbox.width / 2
-      face_center_y = face_bbox.y + face_bbox.height / 2
-      
-      IO.puts("  Speaker detected at (#{Float.round(face_center_x, 4)}, #{Float.round(face_center_y, 4)})")
-      
-      # Calculate the maximum crop size that can be centered on the face
-      max_centered_w = 2.0 * min(face_center_x, 1.0 - face_center_x)
-      max_centered_h = 2.0 * min(face_center_y, 1.0 - face_center_y)
-      
-      # Calculate the natural crop dimensions for the target aspect ratio
-      natural_crop = calculate_portrait_crop_dimensions(video_dims, target_w, target_h)
-      
-      # Constrain the crop to what can be centered on the face
-      constrained_w = min(natural_crop.width, max_centered_w)
-      constrained_h = min(natural_crop.height, max_centered_h)
-      
-      # Re-adjust to maintain aspect ratio
-      # For static crops, we need to match the target aspect ratio exactly
-      adjusted_aspect = constrained_w / constrained_h
-      
-      {final_w, final_h} = if adjusted_aspect > target_aspect / source_aspect do
-        # Width is limiting - calculate height from width
-        h = constrained_w * source_aspect / target_aspect
-        {constrained_w, h}
+
+    {crop_region, crop_center} =
+      if primary_speaker do
+        # Use face-centered, constraint-based cropping for consistent results
+        face_bbox = primary_speaker.average_bbox
+        face_center_x = face_bbox.x + face_bbox.width / 2
+        face_center_y = face_bbox.y + face_bbox.height / 2
+
+        IO.puts(
+          "  Speaker detected at (#{Float.round(face_center_x, 4)}, #{Float.round(face_center_y, 4)})"
+        )
+
+        # Calculate the maximum crop size that can be centered on the face
+        max_centered_w = 2.0 * min(face_center_x, 1.0 - face_center_x)
+        max_centered_h = 2.0 * min(face_center_y, 1.0 - face_center_y)
+
+        # Calculate the natural crop dimensions for the target aspect ratio
+        natural_crop = calculate_portrait_crop_dimensions(video_dims, target_w, target_h)
+
+        # Constrain the crop to what can be centered on the face
+        constrained_w = min(natural_crop.width, max_centered_w)
+        constrained_h = min(natural_crop.height, max_centered_h)
+
+        # Re-adjust to maintain aspect ratio
+        # For static crops, we need to match the target aspect ratio exactly
+        adjusted_aspect = constrained_w / constrained_h
+
+        {final_w, final_h} =
+          if adjusted_aspect > target_aspect / source_aspect do
+            # Width is limiting - calculate height from width
+            h = constrained_w * source_aspect / target_aspect
+            {constrained_w, h}
+          else
+            # Height is limiting - calculate width from height
+            w = constrained_h * target_aspect / source_aspect
+            {w, constrained_h}
+          end
+
+        # Ensure we don't exceed natural dimensions
+        final_w = min(final_w, natural_crop.width)
+        final_h = min(final_h, natural_crop.height)
+
+        # Ensure minimum size (use at least 30% of natural crop for reasonable zoom)
+        final_w = max(final_w, natural_crop.width * 0.3)
+        final_h = max(final_h, natural_crop.height * 0.3)
+
+        # Re-verify aspect ratio after min/max constraints
+        # Use natural crop dimensions if constraints made it impossible to center
+        {final_w, final_h} =
+          if final_w / 2 > face_center_x or final_w / 2 > 1.0 - face_center_x or
+               final_h / 2 > face_center_y or final_h / 2 > 1.0 - face_center_y do
+            # Can't center this size on face - use natural crop with clamped position
+            IO.puts("  Using natural crop (face too close to edge for constraint)")
+            {natural_crop.width, natural_crop.height}
+          else
+            {final_w, final_h}
+          end
+
+        # Calculate crop position centered on face
+        crop_x = clamp(face_center_x - final_w / 2, 0.0, 1.0 - final_w)
+        crop_y = clamp(face_center_y - final_h / 2, 0.0, 1.0 - final_h)
+
+        IO.puts(
+          "  Crop: #{Float.round(final_w, 4)} x #{Float.round(final_h, 4)} at (#{Float.round(crop_x, 4)}, #{Float.round(crop_y, 4)})"
+        )
+
+        region = %{
+          x: crop_x,
+          y: crop_y,
+          width: final_w,
+          height: final_h
+        }
+
+        {region, %{x: face_center_x, y: face_center_y}}
       else
-        # Height is limiting - calculate width from height
-        w = constrained_h * target_aspect / source_aspect
-        {w, constrained_h}
+        # No speaker - use center crop
+        IO.puts("  No speaker detected - using center crop")
+        crop_dims = calculate_portrait_crop_dimensions(video_dims, target_w, target_h)
+
+        crop_x = clamp(0.5 - crop_dims.width / 2, 0.0, 1.0 - crop_dims.width)
+        crop_y = clamp(0.5 - crop_dims.height / 2, 0.0, 1.0 - crop_dims.height)
+
+        region = %{
+          x: crop_x,
+          y: crop_y,
+          width: crop_dims.width,
+          height: crop_dims.height
+        }
+
+        {region, %{x: 0.5, y: 0.5}}
       end
-      
-      # Ensure we don't exceed natural dimensions
-      final_w = min(final_w, natural_crop.width)
-      final_h = min(final_h, natural_crop.height)
-      
-      # Ensure minimum size (use at least 30% of natural crop for reasonable zoom)
-      final_w = max(final_w, natural_crop.width * 0.3)
-      final_h = max(final_h, natural_crop.height * 0.3)
-      
-      # Re-verify aspect ratio after min/max constraints
-      # Use natural crop dimensions if constraints made it impossible to center
-      {final_w, final_h} = if final_w / 2 > face_center_x or final_w / 2 > (1.0 - face_center_x) or
-                              final_h / 2 > face_center_y or final_h / 2 > (1.0 - face_center_y) do
-        # Can't center this size on face - use natural crop with clamped position
-        IO.puts("  Using natural crop (face too close to edge for constraint)")
-        {natural_crop.width, natural_crop.height}
-      else
-        {final_w, final_h}
-      end
-      
-      # Calculate crop position centered on face
-      crop_x = clamp(face_center_x - final_w / 2, 0.0, 1.0 - final_w)
-      crop_y = clamp(face_center_y - final_h / 2, 0.0, 1.0 - final_h)
-      
-      IO.puts("  Crop: #{Float.round(final_w, 4)} x #{Float.round(final_h, 4)} at (#{Float.round(crop_x, 4)}, #{Float.round(crop_y, 4)})")
-      
-      region = %{
-        x: crop_x,
-        y: crop_y,
-        width: final_w,
-        height: final_h
-      }
-      
-      {region, %{x: face_center_x, y: face_center_y}}
-    else
-      # No speaker - use center crop
-      IO.puts("  No speaker detected - using center crop")
-      crop_dims = calculate_portrait_crop_dimensions(video_dims, target_w, target_h)
-      
-      crop_x = clamp(0.5 - crop_dims.width / 2, 0.0, 1.0 - crop_dims.width)
-      crop_y = clamp(0.5 - crop_dims.height / 2, 0.0, 1.0 - crop_dims.height)
-      
-      region = %{
-        x: crop_x,
-        y: crop_y,
-        width: crop_dims.width,
-        height: crop_dims.height
-      }
-      
-      {region, %{x: 0.5, y: 0.5}}
-    end
 
     %{
       mode: :static,
@@ -258,31 +283,40 @@ defmodule ClippsterServer.AI.FramingStrategy do
     case String.split(ratio_string, ":") do
       [w, h] ->
         {String.to_integer(w), String.to_integer(h)}
+
       _ ->
-        {9, 16}  # Default to portrait
+        # Default to portrait
+        {9, 16}
     end
   end
 
   # Determine optimal split ratio based on speaker size and content importance
   defp determine_split_ratio(speakers, layout_analysis) do
-    speaker_coverage = case List.first(speakers) do
-      nil -> 0.0
-      speaker -> speaker.average_bbox.width * speaker.average_bbox.height
-    end
+    speaker_coverage =
+      case List.first(speakers) do
+        nil -> 0.0
+        speaker -> speaker.average_bbox.width * speaker.average_bbox.height
+      end
 
-    content_area = case List.first(layout_analysis.content_regions) do
-      nil -> 0.0
-      region -> region.bbox.width * region.bbox.height
-    end
+    content_area =
+      case List.first(layout_analysis.content_regions) do
+        nil -> 0.0
+        region -> region.bbox.width * region.bbox.height
+      end
 
     # Adjust ratio based on relative sizes
     cond do
       content_area > speaker_coverage * 2 ->
-        0.6  # 60% content, 40% speaker
+        # 60% content, 40% speaker
+        0.6
+
       speaker_coverage > content_area * 2 ->
-        0.4  # 40% content, 60% speaker
+        # 40% content, 60% speaker
+        0.4
+
       true ->
-        0.5  # Equal split
+        # Equal split
+        0.5
     end
   end
 
@@ -293,80 +327,93 @@ defmodule ClippsterServer.AI.FramingStrategy do
   # the actual crop dimensions based on the split's aspect ratio.
   defp calculate_split_crops(speaker, content_region, video_dims, target_w, target_h, split_ratio) do
     # Calculate the output dimensions for reference
-    output_w = target_w * 120  # e.g., 1080
-    output_h = target_h * 120  # e.g., 1920
-    
+    # e.g., 1080
+    output_w = target_w * 120
+    # e.g., 1920
+    output_h = target_h * 120
+
     # Calculate the aspect ratio for each split region
     top_output_h = round(output_h * split_ratio)
     bottom_output_h = output_h - top_output_h
-    
+
     # Each split has its own aspect ratio
     top_split_aspect = output_w / top_output_h
     bottom_split_aspect = output_w / bottom_output_h
-    
+
     # Calculate crop dimensions for each split using its own aspect ratio
     source_aspect = video_dims.width / video_dims.height
-    
+
     # Top region crop dimensions (based on top_split_aspect)
-    {top_crop_w_norm, top_crop_h_norm} = if top_split_aspect > source_aspect do
-      # Use full width, calculate height
-      {1.0, source_aspect / top_split_aspect}
-    else
-      # Use full height, calculate width  
-      {top_split_aspect / source_aspect, 1.0}
-    end
-    
+    {top_crop_w_norm, top_crop_h_norm} =
+      if top_split_aspect > source_aspect do
+        # Use full width, calculate height
+        {1.0, source_aspect / top_split_aspect}
+      else
+        # Use full height, calculate width  
+        {top_split_aspect / source_aspect, 1.0}
+      end
+
     # Intelligently determine top region center based on content region
     # If content region is detected, use its center; otherwise use screen center
-    {top_center_x, top_center_y} = if content_region && content_region.bbox do
-      # Use content region center, but intelligently adjust based on region type
-      content_center_x = content_region.bbox.x + content_region.bbox.width / 2
-      content_center_y = content_region.bbox.y + content_region.bbox.height / 2
-      
-      # If content region is a specific quadrant, prefer center of screen for better framing
-      # Otherwise use the detected center
-      case content_region.quadrant do
-        nil ->
-          # No specific quadrant - use detected center
-          {content_center_x, content_center_y}
-        _quadrant ->
-          # Quadrant detected - blend between quadrant center and screen center
-          # This prevents off-center crops for quadrant-based detections
-          quadrant_center_x = case content_region.quadrant do
-            :top_left -> 0.25
-            :top_right -> 0.75
-            :bottom_left -> 0.25
-            :bottom_right -> 0.75
-            _ -> 0.5
-          end
-          quadrant_center_y = case content_region.quadrant do
-            :top_left -> 0.25
-            :top_right -> 0.25
-            :bottom_left -> 0.75
-            :bottom_right -> 0.75
-            _ -> 0.5
-          end
-          
-          # Blend: 70% screen center, 30% quadrant center (prefer centered framing)
-          {0.7 * 0.5 + 0.3 * quadrant_center_x, 0.7 * 0.35 + 0.3 * quadrant_center_y}
+    {top_center_x, top_center_y} =
+      if content_region && content_region.bbox do
+        # Use content region center, but intelligently adjust based on region type
+        content_center_x = content_region.bbox.x + content_region.bbox.width / 2
+        content_center_y = content_region.bbox.y + content_region.bbox.height / 2
+
+        # If content region is a specific quadrant, prefer center of screen for better framing
+        # Otherwise use the detected center
+        case content_region.quadrant do
+          nil ->
+            # No specific quadrant - use detected center
+            {content_center_x, content_center_y}
+
+          _quadrant ->
+            # Quadrant detected - blend between quadrant center and screen center
+            # This prevents off-center crops for quadrant-based detections
+            quadrant_center_x =
+              case content_region.quadrant do
+                :top_left -> 0.25
+                :top_right -> 0.75
+                :bottom_left -> 0.25
+                :bottom_right -> 0.75
+                _ -> 0.5
+              end
+
+            quadrant_center_y =
+              case content_region.quadrant do
+                :top_left -> 0.25
+                :top_right -> 0.25
+                :bottom_left -> 0.75
+                :bottom_right -> 0.75
+                _ -> 0.5
+              end
+
+            # Blend: 70% screen center, 30% quadrant center (prefer centered framing)
+            {0.7 * 0.5 + 0.3 * quadrant_center_x, 0.7 * 0.35 + 0.3 * quadrant_center_y}
+        end
+      else
+        # No content region - center on screen (default for presentations, screen shares, etc.)
+        # Slightly above center for better framing
+        {0.5, 0.4}
       end
-    else
-      # No content region - center on screen (default for presentations, screen shares, etc.)
-      {0.5, 0.4}  # Slightly above center for better framing
-    end
-    
-    IO.puts("  Top crop center: (#{Float.round(top_center_x, 3)}, #{Float.round(top_center_y, 3)})")
-    
+
+    IO.puts(
+      "  Top crop center: (#{Float.round(top_center_x, 3)}, #{Float.round(top_center_y, 3)})"
+    )
+
     # Calculate top crop position (centered on content area)
     # Use full available area - no zoom constraint
     top_x = clamp(top_center_x - top_crop_w_norm / 2, 0.0, 1.0 - top_crop_w_norm)
     top_y = clamp(top_center_y - top_crop_h_norm / 2, 0.0, 1.0 - top_crop_h_norm)
-    
+
     top_crop = %{
       x: top_x,
       y: top_y,
-      width: top_crop_w_norm,  # Full width - no zoom constraint
-      height: top_crop_h_norm,  # Full height - no zoom constraint
+      # Full width - no zoom constraint
+      width: top_crop_w_norm,
+      # Full height - no zoom constraint
+      height: top_crop_h_norm,
       output_height_ratio: split_ratio
     }
 
@@ -374,127 +421,155 @@ defmodule ClippsterServer.AI.FramingStrategy do
     if speaker do
       IO.puts("  Speaker position category: #{inspect(speaker.position_category)}")
     end
-    
+
     # For split-screen, ALWAYS use tight face-centered cropping when there's a speaker
     # This ensures the speaker fills the bottom section regardless of their position
     # The constraint-based approach naturally handles any position
-    {calculated_crop_w, calculated_crop_h, window_center} = if speaker do
-      # Bottom section output dimensions (in pixels)
-      bottom_output_w_px = output_w
-      bottom_output_h_px = bottom_output_h
-      
-      # Face bbox in source video (normalized 0-1)
-      face_bbox = speaker.average_bbox
-      face_w_norm = face_bbox.width
-      face_h_norm = face_bbox.height
-      face_x_norm = face_bbox.x
-      face_y_norm = face_bbox.y
-      face_center_x = face_x_norm + face_w_norm / 2
-      face_center_y = face_y_norm + face_h_norm / 2
-      
-      # Calculate crop size to make the facecam FILL the bottom section
-      # Key insight: We want the face/facecam to be CENTERED and LARGE in the output
-      # The crop MUST be centered on the face - if the face is near an edge,
-      # we need to make the crop smaller so it can still be centered
-      
-      bottom_aspect = bottom_output_w_px / bottom_output_h_px
-      
-      # Calculate the MAXIMUM crop size that can be centered on the face
-      # For a face at position cx, the max width centered on it is 2 * min(cx, 1-cx)
-      max_centered_w = 2.0 * min(face_center_x, 1.0 - face_center_x)
-      max_centered_h = 2.0 * min(face_center_y, 1.0 - face_center_y)
-      
-      # Calculate desired padding around face
-      # Use face size as reference - typically want 2-3x face size for good framing
-      padding_h = face_w_norm * 1.2  # Horizontal padding on each side
-      padding_v_top = face_h_norm * 0.6  # Less padding above face
-      padding_v_bottom = face_h_norm * 2.0  # More padding below for body
-      
-      # Calculate ideal crop area centered on face with padding
-      ideal_padded_w = face_w_norm + padding_h * 2
-      ideal_padded_h = face_h_norm + padding_v_top + padding_v_bottom
-      
-      # Adjust to maintain bottom_split_aspect ratio
-      {ideal_crop_w, ideal_crop_h} = if bottom_aspect > (ideal_padded_w / ideal_padded_h) do
-        # Need wider crop to match aspect ratio
-        {ideal_padded_h * bottom_aspect, ideal_padded_h}
+    {calculated_crop_w, calculated_crop_h, window_center} =
+      if speaker do
+        # Bottom section output dimensions (in pixels)
+        bottom_output_w_px = output_w
+        bottom_output_h_px = bottom_output_h
+
+        # Face bbox in source video (normalized 0-1)
+        face_bbox = speaker.average_bbox
+        face_w_norm = face_bbox.width
+        face_h_norm = face_bbox.height
+        face_x_norm = face_bbox.x
+        face_y_norm = face_bbox.y
+        face_center_x = face_x_norm + face_w_norm / 2
+        face_center_y = face_y_norm + face_h_norm / 2
+
+        # Calculate crop size to make the facecam FILL the bottom section
+        # Key insight: We want the face/facecam to be CENTERED and LARGE in the output
+        # The crop MUST be centered on the face - if the face is near an edge,
+        # we need to make the crop smaller so it can still be centered
+
+        bottom_aspect = bottom_output_w_px / bottom_output_h_px
+
+        # Calculate the MAXIMUM crop size that can be centered on the face
+        # For a face at position cx, the max width centered on it is 2 * min(cx, 1-cx)
+        max_centered_w = 2.0 * min(face_center_x, 1.0 - face_center_x)
+        max_centered_h = 2.0 * min(face_center_y, 1.0 - face_center_y)
+
+        # Calculate desired padding around face
+        # Use face size as reference - typically want 2-3x face size for good framing
+        # Horizontal padding on each side
+        padding_h = face_w_norm * 1.2
+        # Less padding above face
+        padding_v_top = face_h_norm * 0.6
+        # More padding below for body
+        padding_v_bottom = face_h_norm * 2.0
+
+        # Calculate ideal crop area centered on face with padding
+        ideal_padded_w = face_w_norm + padding_h * 2
+        ideal_padded_h = face_h_norm + padding_v_top + padding_v_bottom
+
+        # Adjust to maintain bottom_split_aspect ratio
+        {ideal_crop_w, ideal_crop_h} =
+          if bottom_aspect > ideal_padded_w / ideal_padded_h do
+            # Need wider crop to match aspect ratio
+            {ideal_padded_h * bottom_aspect, ideal_padded_h}
+          else
+            # Need taller crop to match aspect ratio
+            {ideal_padded_w, ideal_padded_w / bottom_aspect}
+          end
+
+        # CRITICAL: Constrain crop size to what can be CENTERED on the face
+        # This ensures the face will be perfectly centered in the output
+        # Use the SMALLER of: ideal size OR maximum centerable size
+        constrained_w = min(ideal_crop_w, max_centered_w)
+        constrained_h = min(ideal_crop_h, max_centered_h)
+
+        # Re-adjust to maintain aspect ratio after constraining
+        # Choose the dimension that results in the TIGHTER crop (more zoom)
+        {final_crop_w, final_crop_h} =
+          if bottom_aspect > constrained_w / constrained_h do
+            # Width is the limiting factor
+            {constrained_w, constrained_w / bottom_aspect}
+          else
+            # Height is the limiting factor
+            {constrained_h * bottom_aspect, constrained_h}
+          end
+
+        # Ensure minimum crop size to avoid over-zooming on very small faces
+        min_crop_w = 0.12
+        min_crop_h = min_crop_w / bottom_aspect
+        final_crop_w = max(final_crop_w, min_crop_w)
+        final_crop_h = max(final_crop_h, min_crop_h)
+
+        # The crop is EXACTLY centered on the face - no offset needed
+        # Since we constrained the size, this position will always be valid
+        crop_center_x = face_center_x
+        crop_center_y = face_center_y
+
+        IO.puts("  Facecam framing (face-centered, constrained for true centering):")
+
+        IO.puts(
+          "    Face bbox: (#{Float.round(face_x_norm, 4)}, #{Float.round(face_y_norm, 4)}, #{Float.round(face_w_norm, 4)}, #{Float.round(face_h_norm, 4)})"
+        )
+
+        IO.puts(
+          "    Face center: (#{Float.round(face_center_x, 4)}, #{Float.round(face_center_y, 4)})"
+        )
+
+        IO.puts(
+          "    Max centerable: #{Float.round(max_centered_w, 4)} x #{Float.round(max_centered_h, 4)}"
+        )
+
+        IO.puts(
+          "    Ideal padded: #{Float.round(ideal_crop_w, 4)} x #{Float.round(ideal_crop_h, 4)}"
+        )
+
+        IO.puts(
+          "    Final crop: #{Float.round(final_crop_w, 4)} x #{Float.round(final_crop_h, 4)}"
+        )
+
+        IO.puts(
+          "    Crop center: (#{Float.round(crop_center_x, 4)}, #{Float.round(crop_center_y, 4)})"
+        )
+
+        {final_crop_w, final_crop_h, %{x: crop_center_x, y: crop_center_y}}
       else
-        # Need taller crop to match aspect ratio
-        {ideal_padded_w, ideal_padded_w / bottom_aspect}
+        # No speaker detected - use center crop as fallback
+        IO.puts("  No speaker detected - using center crop fallback")
+
+        # Default to center of frame with moderate crop size
+        crop_w = 0.5
+        crop_h = crop_w / bottom_split_aspect
+
+        {crop_w, crop_h, %{x: 0.5, y: 0.5}}
       end
-      
-      # CRITICAL: Constrain crop size to what can be CENTERED on the face
-      # This ensures the face will be perfectly centered in the output
-      # Use the SMALLER of: ideal size OR maximum centerable size
-      constrained_w = min(ideal_crop_w, max_centered_w)
-      constrained_h = min(ideal_crop_h, max_centered_h)
-      
-      # Re-adjust to maintain aspect ratio after constraining
-      # Choose the dimension that results in the TIGHTER crop (more zoom)
-      {final_crop_w, final_crop_h} = if bottom_aspect > (constrained_w / constrained_h) do
-        # Width is the limiting factor
-        {constrained_w, constrained_w / bottom_aspect}
-      else
-        # Height is the limiting factor
-        {constrained_h * bottom_aspect, constrained_h}
-      end
-      
-      # Ensure minimum crop size to avoid over-zooming on very small faces
-      min_crop_w = 0.12
-      min_crop_h = min_crop_w / bottom_aspect
-      final_crop_w = max(final_crop_w, min_crop_w)
-      final_crop_h = max(final_crop_h, min_crop_h)
-      
-      # The crop is EXACTLY centered on the face - no offset needed
-      # Since we constrained the size, this position will always be valid
-      crop_center_x = face_center_x
-      crop_center_y = face_center_y
-      
-      IO.puts("  Facecam framing (face-centered, constrained for true centering):")
-      IO.puts("    Face bbox: (#{Float.round(face_x_norm, 4)}, #{Float.round(face_y_norm, 4)}, #{Float.round(face_w_norm, 4)}, #{Float.round(face_h_norm, 4)})")
-      IO.puts("    Face center: (#{Float.round(face_center_x, 4)}, #{Float.round(face_center_y, 4)})")
-      IO.puts("    Max centerable: #{Float.round(max_centered_w, 4)} x #{Float.round(max_centered_h, 4)}")
-      IO.puts("    Ideal padded: #{Float.round(ideal_crop_w, 4)} x #{Float.round(ideal_crop_h, 4)}")
-      IO.puts("    Final crop: #{Float.round(final_crop_w, 4)} x #{Float.round(final_crop_h, 4)}")
-      IO.puts("    Crop center: (#{Float.round(crop_center_x, 4)}, #{Float.round(crop_center_y, 4)})")
-      
-      {final_crop_w, final_crop_h, %{x: crop_center_x, y: crop_center_y}}
-    else
-      # No speaker detected - use center crop as fallback
-      IO.puts("  No speaker detected - using center crop fallback")
-      
-      # Default to center of frame with moderate crop size
-      crop_w = 0.5
-      crop_h = crop_w / bottom_split_aspect
-      
-      {crop_w, crop_h, %{x: 0.5, y: 0.5}}
-    end
-    
+
     bottom_crop_w_norm = calculated_crop_w
     bottom_crop_h_norm = calculated_crop_h
-    
-    IO.puts("  Final bottom crop size: #{Float.round(bottom_crop_w_norm, 4)} x #{Float.round(bottom_crop_h_norm, 4)}")
+
+    IO.puts(
+      "  Final bottom crop size: #{Float.round(bottom_crop_w_norm, 4)} x #{Float.round(bottom_crop_h_norm, 4)}"
+    )
 
     # Calculate bottom crop position centered on the face/speaker
     # For corner facecams, the crop size is constrained to ensure true centering
     crop_center = window_center
     ideal_x = crop_center.x - bottom_crop_w_norm / 2
     ideal_y = crop_center.y - bottom_crop_h_norm / 2
-    
+
     # Clamp to ensure crop stays within frame bounds
     # But try to maintain the center as much as possible
     bottom_x = clamp(ideal_x, 0.0, 1.0 - bottom_crop_w_norm)
     bottom_y = clamp(ideal_y, 0.0, 1.0 - bottom_crop_h_norm)
-    
+
     # If clamping moved the crop, log it for debugging
     if abs(ideal_x - bottom_x) > 0.01 or abs(ideal_y - bottom_y) > 0.01 do
       IO.puts("  Crop position adjusted due to bounds:")
       IO.puts("    Ideal: (#{Float.round(ideal_x, 4)}, #{Float.round(ideal_y, 4)})")
       IO.puts("    Actual: (#{Float.round(bottom_x, 4)}, #{Float.round(bottom_y, 4)})")
     end
-    
-    IO.puts("  Final bottom crop position: (#{Float.round(bottom_x, 4)}, #{Float.round(bottom_y, 4)})")
-    
+
+    IO.puts(
+      "  Final bottom crop position: (#{Float.round(bottom_x, 4)}, #{Float.round(bottom_y, 4)})"
+    )
+
     bottom_crop = %{
       x: bottom_x,
       y: bottom_y,
@@ -515,22 +590,26 @@ defmodule ClippsterServer.AI.FramingStrategy do
     |> Enum.filter(fn frame -> frame.face_count > 0 end)
     |> Enum.map(fn frame ->
       # Get the face closest to the primary speaker (if tracking is lost)
-      best_face = if primary_speaker do
-        frame.faces
-        |> Enum.min_by(fn face ->
-          dx = face.bbox.x + face.bbox.width / 2 - primary_speaker.centroid.x
-          dy = face.bbox.y + face.bbox.height / 2 - primary_speaker.centroid.y
-          dx * dx + dy * dy
-        end, fn -> nil end)
-      else
-        List.first(frame.faces)
-      end
+      best_face =
+        if primary_speaker do
+          frame.faces
+          |> Enum.min_by(
+            fn face ->
+              dx = face.bbox.x + face.bbox.width / 2 - primary_speaker.centroid.x
+              dy = face.bbox.y + face.bbox.height / 2 - primary_speaker.centroid.y
+              dx * dx + dy * dy
+            end,
+            fn -> nil end
+          )
+        else
+          List.first(frame.faces)
+        end
 
       if best_face do
         # Calculate crop position to center on face
         face_center_x = best_face.bbox.x + best_face.bbox.width / 2
         face_center_y = best_face.bbox.y + best_face.bbox.height / 2
-        
+
         crop_x = clamp(face_center_x - crop_dims.width / 2, 0.0, 1.0 - crop_dims.width)
         crop_y = clamp(face_center_y - crop_dims.height / 2, 0.0, 1.0 - crop_dims.height)
 
@@ -543,7 +622,8 @@ defmodule ClippsterServer.AI.FramingStrategy do
       else
         %{
           timestamp: frame.timestamp,
-          crop_x: 0.5 - crop_dims.width / 2,  # Center
+          # Center
+          crop_x: 0.5 - crop_dims.width / 2,
           crop_y: 0.5 - crop_dims.height / 2,
           face_detected: false
         }
@@ -554,21 +634,22 @@ defmodule ClippsterServer.AI.FramingStrategy do
 
   # Smooth keyframes to avoid jittery motion
   defp smooth_keyframes(keyframes) when length(keyframes) < 3, do: keyframes
+
   defp smooth_keyframes(keyframes) do
     # Apply simple moving average for smoothing
     window_size = 3
-    
+
     keyframes
     |> Enum.with_index()
     |> Enum.map(fn {kf, idx} ->
       start_idx = max(0, idx - div(window_size, 2))
       end_idx = min(length(keyframes) - 1, idx + div(window_size, 2))
-      
+
       window = Enum.slice(keyframes, start_idx..end_idx)
-      
+
       avg_x = Enum.sum(Enum.map(window, & &1.crop_x)) / length(window)
       avg_y = Enum.sum(Enum.map(window, & &1.crop_y)) / length(window)
-      
+
       %{kf | crop_x: Float.round(avg_x, 4), crop_y: Float.round(avg_y, 4)}
     end)
   end
@@ -580,12 +661,14 @@ defmodule ClippsterServer.AI.FramingStrategy do
 
     if target_aspect < source_aspect do
       # Target is more portrait than source - crop width
-      crop_height = 1.0  # Use full height
+      # Use full height
+      crop_height = 1.0
       crop_width = crop_height * target_aspect / source_aspect
       %{width: crop_width, height: crop_height}
     else
       # Target is more landscape than source - crop height
-      crop_width = 1.0  # Use full width
+      # Use full width
+      crop_width = 1.0
       crop_height = crop_width * source_aspect / target_aspect
       %{width: crop_width, height: crop_height}
     end
@@ -596,8 +679,10 @@ defmodule ClippsterServer.AI.FramingStrategy do
   # This filter string is provided for reference/debugging but may not be used directly.
   defp build_split_screen_filter(top_crop, bottom_crop, target_w, target_h) do
     # Calculate output dimensions
-    output_w = target_w * 120  # Scale to reasonable size (e.g., 1080)
-    output_h = target_h * 120  # e.g., 1920 for 9:16
+    # Scale to reasonable size (e.g., 1080)
+    output_w = target_w * 120
+    # e.g., 1920 for 9:16
+    output_h = target_h * 120
 
     top_h = round(output_h * top_crop.output_height_ratio)
     bottom_h = output_h - top_h
@@ -616,8 +701,10 @@ defmodule ClippsterServer.AI.FramingStrategy do
   defp build_dynamic_pan_filter(keyframes, crop_dims, video_dims) do
     # Generate expression for X position interpolation
     x_expr = build_interpolation_expression(keyframes, :crop_x, video_dims.width, crop_dims.width)
-    y_expr = build_interpolation_expression(keyframes, :crop_y, video_dims.height, crop_dims.height)
-    
+
+    y_expr =
+      build_interpolation_expression(keyframes, :crop_y, video_dims.height, crop_dims.height)
+
     crop_w = round(video_dims.width * crop_dims.width)
     crop_h = round(video_dims.height * crop_dims.height)
 
@@ -630,19 +717,22 @@ defmodule ClippsterServer.AI.FramingStrategy do
     center = round(video_dim * (0.5 - crop_dim / 2))
     "#{center}"
   end
-  defp build_interpolation_expression(keyframes, field, video_dim, _crop_dim) when length(keyframes) == 1 do
+
+  defp build_interpolation_expression(keyframes, field, video_dim, _crop_dim)
+       when length(keyframes) == 1 do
     kf = hd(keyframes)
     pos = round(video_dim * Map.get(kf, field))
     "#{pos}"
   end
+
   defp build_interpolation_expression(keyframes, field, video_dim, _crop_dim) do
     # Build piecewise linear interpolation using FFmpeg expressions
     # Uses 't' (time in seconds) for interpolation
-    
+
     # Simplify: use linear interpolation between first and last
     first_kf = hd(keyframes)
     last_kf = List.last(keyframes)
-    
+
     start_pos = round(video_dim * Map.get(first_kf, field))
     end_pos = round(video_dim * Map.get(last_kf, field))
     duration = last_kf.timestamp - first_kf.timestamp
@@ -667,8 +757,10 @@ defmodule ClippsterServer.AI.FramingStrategy do
     crop_h = round(video_dims.height * crop_region.height)
 
     # Target output dimensions
-    output_w = target_w * 120  # e.g., 1080 for 9:16
-    output_h = target_h * 120  # e.g., 1920 for 9:16
+    # e.g., 1080 for 9:16
+    output_w = target_w * 120
+    # e.g., 1920 for 9:16
+    output_h = target_h * 120
 
     "crop=#{crop_w}:#{crop_h}:#{crop_x}:#{crop_y},scale=#{output_w}:#{output_h}"
   end
@@ -699,10 +791,11 @@ defmodule ClippsterServer.AI.FramingStrategy do
     end)
     |> Map.new()
   end
+
   defp convert_atoms_to_strings(list) when is_list(list) do
     Enum.map(list, &convert_atoms_to_strings/1)
   end
+
   defp convert_atoms_to_strings(atom) when is_atom(atom), do: Atom.to_string(atom)
   defp convert_atoms_to_strings(other), do: other
 end
-

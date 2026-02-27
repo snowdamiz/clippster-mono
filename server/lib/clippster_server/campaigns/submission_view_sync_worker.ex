@@ -76,7 +76,9 @@ defmodule ClippsterServer.Campaigns.SubmissionViewSyncWorker do
       }
     }
 
-    Logger.info("[SubmissionViewSyncWorker] Started with interval: #{div(interval, 60_000)} minutes")
+    Logger.info(
+      "[SubmissionViewSyncWorker] Started with interval: #{div(interval, 60_000)} minutes"
+    )
 
     {:ok, state}
   end
@@ -98,10 +100,12 @@ defmodule ClippsterServer.Campaigns.SubmissionViewSyncWorker do
       case Campaigns.get_submission(submission_id) do
         nil ->
           Logger.warning("[SubmissionViewSyncWorker] Submission not found: #{submission_id}")
+
         submission ->
           sync_single_submission(submission)
       end
     end)
+
     {:noreply, state}
   end
 
@@ -143,7 +147,9 @@ defmodule ClippsterServer.Campaigns.SubmissionViewSyncWorker do
       no_account: state.stats.no_account + result.no_account
     }
 
-    Logger.info("[SubmissionViewSyncWorker] Sync complete - synced: #{result.synced}, errors: #{result.errors}, no_account: #{result.no_account}")
+    Logger.info(
+      "[SubmissionViewSyncWorker] Sync complete - synced: #{result.synced}, errors: #{result.errors}, no_account: #{result.no_account}"
+    )
 
     {:noreply, %{state | syncing: false, stats: new_stats}}
   end
@@ -163,15 +169,16 @@ defmodule ClippsterServer.Campaigns.SubmissionViewSyncWorker do
     Logger.info("[SubmissionViewSyncWorker] Found #{length(submissions)} submissions to sync")
 
     # Sync each submission with rate limiting
-    results = Enum.reduce(submissions, %{synced: 0, errors: 0, no_account: 0}, fn submission, acc ->
-      Process.sleep(@rate_limit_delay)
+    results =
+      Enum.reduce(submissions, %{synced: 0, errors: 0, no_account: 0}, fn submission, acc ->
+        Process.sleep(@rate_limit_delay)
 
-      case sync_single_submission(submission) do
-        :ok -> %{acc | synced: acc.synced + 1}
-        {:error, :no_account} -> %{acc | no_account: acc.no_account + 1}
-        {:error, _reason} -> %{acc | errors: acc.errors + 1}
-      end
-    end)
+        case sync_single_submission(submission) do
+          :ok -> %{acc | synced: acc.synced + 1}
+          {:error, :no_account} -> %{acc | no_account: acc.no_account + 1}
+          {:error, _reason} -> %{acc | errors: acc.errors + 1}
+        end
+      end)
 
     results
   end
@@ -185,7 +192,7 @@ defmodule ClippsterServer.Campaigns.SubmissionViewSyncWorker do
     |> where([s], s.status in ["verified", "paid"])
     |> where([s], s.inserted_at >= ^cutoff_date)
     |> where([s], not is_nil(s.platform_post_id))
-    |> order_by([s], [desc: s.views_last_updated_at])
+    |> order_by([s], desc: s.views_last_updated_at)
     |> limit(^@batch_size)
     |> ClippsterServer.Repo.all()
     |> ClippsterServer.Repo.preload(:social_account)
@@ -198,7 +205,10 @@ defmodule ClippsterServer.Campaigns.SubmissionViewSyncWorker do
         {:error, :no_post_id}
 
       is_nil(submission.social_account) ->
-        Logger.debug("[SubmissionViewSyncWorker] No linked social account for submission #{submission.id}")
+        Logger.debug(
+          "[SubmissionViewSyncWorker] No linked social account for submission #{submission.id}"
+        )
+
         {:error, :no_account}
 
       true ->
@@ -209,25 +219,38 @@ defmodule ClippsterServer.Campaigns.SubmissionViewSyncWorker do
   defp fetch_and_update_views(submission) do
     with {:ok, platform_module} <- Platform.get_platform_module(submission.platform),
          access_token <- ClipperSocialAccount.get_access_token(submission.social_account),
-         {:ok, insights} <- fetch_insights_with_retry(platform_module, access_token, submission.platform_post_id) do
-
+         {:ok, insights} <-
+           fetch_insights_with_retry(platform_module, access_token, submission.platform_post_id) do
       view_count = insights.view_count || 0
 
       case Campaigns.update_submission_views(submission, view_count) do
         {:ok, _updated} ->
-          Logger.debug("[SubmissionViewSyncWorker] Synced submission #{submission.id}: #{view_count} views")
+          Logger.debug(
+            "[SubmissionViewSyncWorker] Synced submission #{submission.id}: #{view_count} views"
+          )
+
           :ok
+
         {:error, reason} ->
-          Logger.warning("[SubmissionViewSyncWorker] Failed to update submission #{submission.id}: #{inspect(reason)}")
+          Logger.warning(
+            "[SubmissionViewSyncWorker] Failed to update submission #{submission.id}: #{inspect(reason)}"
+          )
+
           {:error, reason}
       end
     else
       {:error, :not_implemented} ->
-        Logger.debug("[SubmissionViewSyncWorker] Platform not implemented for submission #{submission.id}")
+        Logger.debug(
+          "[SubmissionViewSyncWorker] Platform not implemented for submission #{submission.id}"
+        )
+
         {:error, :not_implemented}
 
       {:error, reason} ->
-        Logger.warning("[SubmissionViewSyncWorker] Failed to sync submission #{submission.id}: #{inspect(reason)}")
+        Logger.warning(
+          "[SubmissionViewSyncWorker] Failed to sync submission #{submission.id}: #{inspect(reason)}"
+        )
+
         {:error, reason}
     end
   end
@@ -240,7 +263,11 @@ defmodule ClippsterServer.Campaigns.SubmissionViewSyncWorker do
       {:error, _reason} when attempt < @max_retries ->
         # Exponential backoff
         delay = :math.pow(2, attempt) |> round() |> Kernel.*(@rate_limit_delay)
-        Logger.debug("[SubmissionViewSyncWorker] Retry #{attempt} after #{delay}ms for post #{post_id}")
+
+        Logger.debug(
+          "[SubmissionViewSyncWorker] Retry #{attempt} after #{delay}ms for post #{post_id}"
+        )
+
         Process.sleep(delay)
         fetch_insights_with_retry(platform_module, access_token, post_id, attempt + 1)
 

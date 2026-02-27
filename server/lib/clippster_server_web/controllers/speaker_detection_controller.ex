@@ -28,7 +28,6 @@ defmodule ClippsterServerWeb.SpeakerDetectionController do
     with {:ok, video_path} <- get_required_param(params, "video_path"),
          {:ok, start_time} <- get_required_float(params, "start_time"),
          {:ok, end_time} <- get_required_float(params, "end_time") do
-
       # Optional parameters
       target_aspect_ratio = Map.get(params, "target_aspect_ratio", "9:16")
       sample_interval = Map.get(params, "sample_interval", 2) |> to_integer()
@@ -43,10 +42,19 @@ defmodule ClippsterServerWeb.SpeakerDetectionController do
       ]
 
       # Generate framing strategy
-      case FramingStrategy.generate_strategy(video_path, start_time, end_time, target_aspect_ratio, opts) do
+      case FramingStrategy.generate_strategy(
+             video_path,
+             start_time,
+             end_time,
+             target_aspect_ratio,
+             opts
+           ) do
         {:ok, strategy} ->
           IO.puts("[SpeakerDetectionController] Strategy generated successfully")
-          IO.puts("[SpeakerDetectionController] Mode: #{strategy.mode}, Type: #{strategy.video_type}")
+
+          IO.puts(
+            "[SpeakerDetectionController] Mode: #{strategy.mode}, Type: #{strategy.video_type}"
+          )
 
           response = %{
             success: true,
@@ -64,7 +72,7 @@ defmodule ClippsterServerWeb.SpeakerDetectionController do
 
         {:error, reason} ->
           IO.puts("[SpeakerDetectionController] Analysis failed: #{inspect(reason)}")
-          
+
           conn
           |> put_status(500)
           |> json(%{
@@ -98,7 +106,6 @@ defmodule ClippsterServerWeb.SpeakerDetectionController do
     with {:ok, video_path} <- get_required_param(params, "video_path"),
          {:ok, start_time} <- get_required_float(params, "start_time"),
          {:ok, end_time} <- get_required_float(params, "end_time") do
-
       # Use longer sample interval for quick classification
       sample_interval = Map.get(params, "sample_interval", 5) |> to_integer()
 
@@ -153,35 +160,47 @@ defmodule ClippsterServerWeb.SpeakerDetectionController do
 
   defp get_required_float(params, key) do
     case Map.get(params, key) do
-      nil -> 
+      nil ->
         {:error, "Missing required parameter: #{key}"}
-      value when is_number(value) -> 
-        {:ok, value / 1.0}  # Ensure float
+
+      value when is_number(value) ->
+        # Ensure float
+        {:ok, value / 1.0}
+
       value when is_binary(value) ->
         case Float.parse(value) do
           {float_val, _} -> {:ok, float_val}
           :error -> {:error, "Invalid number for #{key}: #{value}"}
         end
+
       _ ->
         {:error, "Invalid value for #{key}"}
     end
   end
 
   defp to_integer(value) when is_integer(value), do: value
+
   defp to_integer(value) when is_binary(value) do
     case Integer.parse(value) do
       {int, _} -> int
-      :error -> 2  # Default
+      # Default
+      :error -> 2
     end
   end
+
   defp to_integer(_), do: 2
 
   # Serialize strategy for JSON response
   defp serialize_strategy(strategy) do
     strategy
     |> Map.take([
-      :mode, :video_type, :confidence, :speaker_count,
-      :target_aspect_ratio, :is_portrait, :source_dimensions,
+      :mode,
+      :video_type,
+      :confidence,
+      :speaker_count,
+      :target_aspect_ratio,
+      :is_portrait,
+      :source_dimensions,
       :generated_at
     ])
     |> Map.merge(serialize_mode_specific_data(strategy))
@@ -195,6 +214,7 @@ defmodule ClippsterServerWeb.SpeakerDetectionController do
       ffmpeg_filter: strategy.ffmpeg_filter
     }
   end
+
   defp serialize_mode_specific_data(%{mode: :dynamic_pan} = strategy) do
     %{
       keyframes: strategy.keyframes,
@@ -203,6 +223,7 @@ defmodule ClippsterServerWeb.SpeakerDetectionController do
       ffmpeg_filter: strategy.ffmpeg_filter
     }
   end
+
   defp serialize_mode_specific_data(%{mode: :static} = strategy) do
     %{
       crop_region: strategy.crop_region,
@@ -210,6 +231,7 @@ defmodule ClippsterServerWeb.SpeakerDetectionController do
       ffmpeg_filter: strategy.ffmpeg_filter
     }
   end
+
   defp serialize_mode_specific_data(strategy) do
     # Fallback for unknown modes
     Map.take(strategy, [:ffmpeg_filter])
@@ -225,10 +247,11 @@ defmodule ClippsterServerWeb.SpeakerDetectionController do
     end)
     |> Map.new()
   end
+
   defp convert_atoms_to_strings(list) when is_list(list) do
     Enum.map(list, &convert_atoms_to_strings/1)
   end
+
   defp convert_atoms_to_strings(atom) when is_atom(atom), do: Atom.to_string(atom)
   defp convert_atoms_to_strings(other), do: other
 end
-

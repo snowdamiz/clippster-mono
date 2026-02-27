@@ -14,10 +14,15 @@ defmodule ClippsterServerWeb.ClipsController do
   require Logger
 
   @max_parallel_chunks 10
-  @chunk_timeout_normal 180_000      # 3 minutes per chunk for normal mode
-  @chunk_timeout_multimodal 300_000  # 5 minutes per chunk for multimodal mode
+  # 3 minutes per chunk for normal mode
+  @chunk_timeout_normal 180_000
+  # 5 minutes per chunk for multimodal mode
+  @chunk_timeout_multimodal 300_000
 
-  def detect_chunked(conn, %{"project_id" => project_id, "prompt" => user_prompt, "chunks" => chunks_json} = params) do
+  def detect_chunked(
+        conn,
+        %{"project_id" => project_id, "prompt" => user_prompt, "chunks" => chunks_json} = params
+      ) do
     # Get user ID and admin status from token
     case get_user_id_from_token(conn) do
       {:ok, user_id, is_admin} ->
@@ -29,6 +34,7 @@ defmodule ClippsterServerWeb.ClipsController do
         case ai_check do
           {:error, message} ->
             IO.puts("[ClipsController] AI blocked for user #{user_id}: #{message}")
+
             conn
             |> put_status(403)
             |> json(%{
@@ -39,14 +45,17 @@ defmodule ClippsterServerWeb.ClipsController do
 
           :ok ->
             # Parse chunks JSON since FormData sends it as a string
-            chunks_metadata = case Jason.decode(chunks_json) do
-              {:ok, parsed_chunks} when is_list(parsed_chunks) ->
-                parsed_chunks
-              {:ok, _} ->
-                throw {:error, "chunks must be a list"}
-              {:error, _} ->
-                throw {:error, "chunks must be valid JSON"}
-            end
+            chunks_metadata =
+              case Jason.decode(chunks_json) do
+                {:ok, parsed_chunks} when is_list(parsed_chunks) ->
+                  parsed_chunks
+
+                {:ok, _} ->
+                  throw({:error, "chunks must be a list"})
+
+                {:error, _} ->
+                  throw({:error, "chunks must be valid JSON"})
+              end
 
             # Check for multimodal mode
             multimodal_raw = Map.get(params, "multimodal")
@@ -55,58 +64,79 @@ defmodule ClippsterServerWeb.ClipsController do
             IO.puts("[ClipsController] Multimodal mode enabled: #{multimodal}")
 
             # Extract optional time range parameters
-            start_time = case Map.get(params, "start_time") do
-              nil -> 0.0
-              "" -> 0.0
-              val -> String.to_float(val)
-            end
+            start_time =
+              case Map.get(params, "start_time") do
+                nil -> 0.0
+                "" -> 0.0
+                val -> String.to_float(val)
+              end
 
-            end_time = case Map.get(params, "end_time") do
-              nil -> nil
-              "" -> nil
-              val -> String.to_float(val)
-            end
+            end_time =
+              case Map.get(params, "end_time") do
+                nil -> nil
+                "" -> nil
+                val -> String.to_float(val)
+              end
 
             IO.puts("[ClipsController] Starting chunked clip detection for project #{project_id}")
             IO.puts("[ClipsController] Processing #{length(chunks_metadata)} chunks")
             IO.puts("[ClipsController] User prompt: #{String.slice(user_prompt, 0, 100)}...")
+
             if start_time > 0 or end_time != nil do
-              IO.puts("[ClipsController] Time range filter: #{start_time}s - #{inspect(end_time)}s")
+              IO.puts(
+                "[ClipsController] Time range filter: #{start_time}s - #{inspect(end_time)}s"
+              )
             end
 
             # Check if chunks array is empty
             if length(chunks_metadata) == 0 do
-              IO.puts("[ClipsController] No chunks provided - this indicates incomplete chunked transcript data")
-              throw {:error, "No chunks available for processing. The chunked transcript may be incomplete or not yet generated."}
+              IO.puts(
+                "[ClipsController] No chunks provided - this indicates incomplete chunked transcript data"
+              )
+
+              throw(
+                {:error,
+                 "No chunks available for processing. The chunked transcript may be incomplete or not yet generated."}
+              )
             end
 
             # Filter chunks by time range if specified
-            filtered_chunks = if start_time > 0 or end_time != nil do
-              chunks_metadata
-              |> Enum.filter(fn chunk ->
-                chunk_start = Map.get(chunk, "start_time", 0)
-                chunk_end = Map.get(chunk, "end_time", 0)
-                
-                # Include chunk if it overlaps with the requested time range
-                chunk_overlaps = chunk_end > start_time and (end_time == nil or chunk_start < end_time)
-                
-                if not chunk_overlaps do
-                  IO.puts("[ClipsController] Filtering out chunk #{chunk_start}s-#{chunk_end}s (outside range)")
-                end
-                
-                chunk_overlaps
-              end)
-            else
-              chunks_metadata
-            end
+            filtered_chunks =
+              if start_time > 0 or end_time != nil do
+                chunks_metadata
+                |> Enum.filter(fn chunk ->
+                  chunk_start = Map.get(chunk, "start_time", 0)
+                  chunk_end = Map.get(chunk, "end_time", 0)
+
+                  # Include chunk if it overlaps with the requested time range
+                  chunk_overlaps =
+                    chunk_end > start_time and (end_time == nil or chunk_start < end_time)
+
+                  if not chunk_overlaps do
+                    IO.puts(
+                      "[ClipsController] Filtering out chunk #{chunk_start}s-#{chunk_end}s (outside range)"
+                    )
+                  end
+
+                  chunk_overlaps
+                end)
+              else
+                chunks_metadata
+              end
 
             if length(filtered_chunks) == 0 do
               IO.puts("[ClipsController] No chunks in specified time range")
-              throw {:error, "No chunks available in the specified time range (#{start_time}s - #{inspect(end_time)}s)"}
+
+              throw(
+                {:error,
+                 "No chunks available in the specified time range (#{start_time}s - #{inspect(end_time)}s)"}
+              )
             end
 
             if length(filtered_chunks) < length(chunks_metadata) do
-              IO.puts("[ClipsController] Filtered to #{length(filtered_chunks)} chunks in time range")
+              IO.puts(
+                "[ClipsController] Filtered to #{length(filtered_chunks)} chunks in time range"
+              )
             end
 
             # Use filtered chunks for processing
@@ -122,69 +152,103 @@ defmodule ClippsterServerWeb.ClipsController do
 
             # Calculate audio duration from FILTERED chunks (not total)
             duration_hours = calculate_duration_from_filtered_chunks(chunks_metadata)
-            IO.puts("[ClipsController] Audio duration (filtered): #{Float.round(duration_hours, 3)} hours")
+
+            IO.puts(
+              "[ClipsController] Audio duration (filtered): #{Float.round(duration_hours, 3)} hours"
+            )
 
             # Extract optional organization_id for org credit deduction
             organization_id = Map.get(params, "organization_id") |> parse_org_id()
 
             # Bypass credit deduction for admin users
-            credit_result = if is_admin do
-              IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
-              {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
-            else
-              # Deduct credits and create job record for regular users
-              # Apply 2x multiplier for multimodal mode
-              case deduct_credits_and_create_job(user_id, duration_hours, is_first_run,
-                     project_id: project_id,
-                     organization_id: organization_id,
-                     multimodal: multimodal) do
-                {:ok, result} ->
-                  {:ok, result}
-                {:error, :insufficient_credits, remaining, needed} ->
-                  IO.puts("[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}")
-                  {:halt, conn
-                  |> put_status(402)
-                  |> json(%{
-                    success: false,
-                    error: "Insufficient credits",
-                    details: "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
-                    credits_required: needed,
-                    credits_remaining: remaining
-                  })}
+            credit_result =
+              if is_admin do
+                IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
+                {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
+              else
+                # Deduct credits and create job record for regular users
+                # Apply 2x multiplier for multimodal mode
+                case deduct_credits_and_create_job(user_id, duration_hours, is_first_run,
+                       project_id: project_id,
+                       organization_id: organization_id,
+                       multimodal: multimodal
+                     ) do
+                  {:ok, result} ->
+                    {:ok, result}
 
-                {:error, :not_a_member, details} ->
-                  IO.puts("[ClipsController] User not a member of organization")
-                  {:halt, conn
-                  |> put_status(403)
-                  |> json(%{
-                    success: false,
-                    error: "Not authorized",
-                    details: details
-                  })}
+                  {:error, :insufficient_credits, remaining, needed} ->
+                    IO.puts(
+                      "[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}"
+                    )
 
-                {:error, reason, details} ->
-                  IO.puts("[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}")
-                  {:halt, conn
-                  |> put_status(500)
-                  |> json(%{
-                    success: false,
-                    error: "Credit deduction failed",
-                    details: "Unable to process credits: #{inspect(details)}"
-                  })}
+                    {:halt,
+                     conn
+                     |> put_status(402)
+                     |> json(%{
+                       success: false,
+                       error: "Insufficient credits",
+                       details:
+                         "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
+                       credits_required: needed,
+                       credits_remaining: remaining
+                     })}
+
+                  {:error, :not_a_member, details} ->
+                    IO.puts("[ClipsController] User not a member of organization")
+
+                    {:halt,
+                     conn
+                     |> put_status(403)
+                     |> json(%{
+                       success: false,
+                       error: "Not authorized",
+                       details: details
+                     })}
+
+                  {:error, reason, details} ->
+                    IO.puts(
+                      "[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}"
+                    )
+
+                    {:halt,
+                     conn
+                     |> put_status(500)
+                     |> json(%{
+                       success: false,
+                       error: "Credit deduction failed",
+                       details: "Unable to process credits: #{inspect(details)}"
+                     })}
+                end
               end
-            end
 
             # Continue with processing if not halted
             case credit_result do
-              {:halt, response} -> response
+              {:halt, response} ->
+                response
+
               {:ok, %{credits: credits, job_id: job_id, credit_source: credit_source}} ->
-                IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}, source: #{credit_source}")
-                process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits, is_admin, job_id, multimodal)
+                IO.puts(
+                  "[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}, source: #{credit_source}"
+                )
+
+                process_chunked_clip_detection(
+                  conn,
+                  project_id,
+                  user_prompt,
+                  chunks_metadata,
+                  processing_mode,
+                  user_id,
+                  credits,
+                  is_admin,
+                  job_id,
+                  multimodal
+                )
             end
         end
 
       {:error, reason} ->
         IO.puts("[ClipsController] Authentication failed: #{inspect(reason)}")
+
         conn
         |> put_status(401)
         |> json(%{
@@ -196,9 +260,27 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   # Separate function to handle the actual chunked clip detection process
-  defp process_chunked_clip_detection(conn, project_id, user_prompt, chunks_metadata, processing_mode, user_id, credits_deducted, is_admin, job_id, multimodal) do
+  defp process_chunked_clip_detection(
+         conn,
+         project_id,
+         user_prompt,
+         chunks_metadata,
+         processing_mode,
+         user_id,
+         credits_deducted,
+         is_admin,
+         job_id,
+         multimodal
+       ) do
     operation = fn ->
-      execute_chunked_clip_detection(project_id, user_prompt, chunks_metadata, processing_mode, user_id, multimodal)
+      execute_chunked_clip_detection(
+        project_id,
+        user_prompt,
+        chunks_metadata,
+        processing_mode,
+        user_id,
+        multimodal
+      )
     end
 
     case retry_with_backoff(operation, 3, project_id) do
@@ -207,41 +289,50 @@ defmodule ClippsterServerWeb.ClipsController do
         complete_job(job_id)
 
         # Get updated user balance after credit deduction (or show unlimited for admins)
-        remaining_credits = if is_admin do
-          %{
-            hours_remaining: :unlimited,
-            hours_used: 0.0
-          }
-        else
-          {:ok, updated_balance} = Credits.get_user_balance(user_id)
-          %{
-            hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
-            hours_used: Decimal.to_float(updated_balance.hours_used)
-          }
-        end
+        remaining_credits =
+          if is_admin do
+            %{
+              hours_remaining: :unlimited,
+              hours_used: 0.0
+            }
+          else
+            {:ok, updated_balance} = Credits.get_user_balance(user_id)
+
+            %{
+              hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
+              hours_used: Decimal.to_float(updated_balance.hours_used)
+            }
+          end
 
         # Add credit info and job_id to result map
-        final_result = result_map
-        |> put_in([:processing_info, :credits_charged], credits_deducted)
-        |> put_in([:processing_info, :remaining_credits], remaining_credits)
-        |> put_in([:processing_info, :job_id], job_id)
+        final_result =
+          result_map
+          |> put_in([:processing_info, :credits_charged], credits_deducted)
+          |> put_in([:processing_info, :remaining_credits], remaining_credits)
+          |> put_in([:processing_info, :job_id], job_id)
 
         json(conn, final_result)
 
       {:error, reason} ->
         # Mark job as failed (but don't auto-refund - user must explicitly cancel)
-        error_msg = case reason do
-          %RuntimeError{message: msg} -> msg
-          s when is_binary(s) -> s
-          _ -> inspect(reason)
-        end
+        error_msg =
+          case reason do
+            %RuntimeError{message: msg} -> msg
+            s when is_binary(s) -> s
+            _ -> inspect(reason)
+          end
 
         fail_job(job_id, error_msg)
 
         # Still refund credits on server errors (legacy behavior)
         refund_credits(user_id, credits_deducted, is_admin)
 
-        ProgressChannel.broadcast_progress(project_id, "error", 0, "Failed after retries: #{error_msg}. Credits have been refunded.")
+        ProgressChannel.broadcast_progress(
+          project_id,
+          "error",
+          0,
+          "Failed after retries: #{error_msg}. Credits have been refunded."
+        )
 
         conn
         |> put_status(500)
@@ -255,24 +346,43 @@ defmodule ClippsterServerWeb.ClipsController do
     end
   end
 
-  defp execute_chunked_clip_detection(project_id, user_prompt, chunks_metadata, processing_mode, user_id, multimodal) do
+  defp execute_chunked_clip_detection(
+         project_id,
+         user_prompt,
+         chunks_metadata,
+         processing_mode,
+         user_id,
+         multimodal
+       ) do
     # Broadcast initial progress
     mode_label = if multimodal, do: "multimodal", else: "chunked"
-    ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing #{mode_label} clip detection...")
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "starting",
+      0,
+      "Initializing #{mode_label} clip detection..."
+    )
 
     # Process chunks based on their content type
-    {chunk_transcripts, successful_chunks, failed_chunks} = case processing_mode do
-      :pre_transcribed ->
-        process_pre_transcribed_chunks(chunks_metadata, project_id)
-      :raw_audio ->
-        process_raw_audio_chunks(chunks_metadata, project_id, user_id)
-    end
+    {chunk_transcripts, successful_chunks, failed_chunks} =
+      case processing_mode do
+        :pre_transcribed ->
+          process_pre_transcribed_chunks(chunks_metadata, project_id)
 
-    IO.puts("[ClipsController] All chunks processed. #{length(chunk_transcripts)} results received")
+        :raw_audio ->
+          process_raw_audio_chunks(chunks_metadata, project_id, user_id)
+      end
+
+    IO.puts(
+      "[ClipsController] All chunks processed. #{length(chunk_transcripts)} results received"
+    )
 
     if length(failed_chunks) > 0 do
       IO.puts("[ClipsController] Warning: #{length(failed_chunks)} chunks failed to process")
-      failed_chunks |> Enum.each(fn {:error, reason} ->
+
+      failed_chunks
+      |> Enum.each(fn {:error, reason} ->
         IO.puts("[ClipsController] Failed chunk: #{inspect(reason)}")
       end)
     end
@@ -285,7 +395,10 @@ defmodule ClippsterServerWeb.ClipsController do
     sorted_chunks = chunk_transcripts |> Enum.sort_by(&Map.get(&1, :start_time, 0))
 
     # Reconstruct timeline from chunks (needed for validation and final output)
-    IO.puts("[ClipsController] Reconstructing timeline from #{length(sorted_chunks)} successful chunks...")
+    IO.puts(
+      "[ClipsController] Reconstructing timeline from #{length(sorted_chunks)} successful chunks..."
+    )
+
     ProgressChannel.broadcast_progress(project_id, "analyzing", 30, "Reconstructing timeline...")
 
     reconstructed_transcript = reconstruct_timeline_from_chunks(sorted_chunks)
@@ -294,21 +407,44 @@ defmodule ClippsterServerWeb.ClipsController do
     system_prompt = SystemPrompt.get()
     total_chunks = length(sorted_chunks)
 
-    {all_clips, total_usage_tokens} = if multimodal do
-      # Multimodal mode: Each chunk processed by 3 models + decider, all chunks in parallel
-      IO.puts("[ClipsController] Starting MULTIMODAL detection with #{total_chunks} chunks...")
-      ProgressChannel.broadcast_progress(project_id, "analyzing", 35,
-        "Starting multimodal detection (3 AI models per chunk)...")
+    {all_clips, total_usage_tokens} =
+      if multimodal do
+        # Multimodal mode: Each chunk processed by 3 models + decider, all chunks in parallel
+        IO.puts("[ClipsController] Starting MULTIMODAL detection with #{total_chunks} chunks...")
 
-      process_chunks_parallel_multimodal(sorted_chunks, system_prompt, user_prompt, project_id, user_id)
-    else
-      # Normal mode: All chunks processed in parallel by single model
-      IO.puts("[ClipsController] Starting PARALLEL detection with #{total_chunks} chunks...")
-      ProgressChannel.broadcast_progress(project_id, "analyzing", 35,
-        "Processing #{total_chunks} chunks in parallel...")
+        ProgressChannel.broadcast_progress(
+          project_id,
+          "analyzing",
+          35,
+          "Starting multimodal detection (3 AI models per chunk)..."
+        )
 
-      process_chunks_parallel_normal(sorted_chunks, system_prompt, user_prompt, project_id, user_id)
-    end
+        process_chunks_parallel_multimodal(
+          sorted_chunks,
+          system_prompt,
+          user_prompt,
+          project_id,
+          user_id
+        )
+      else
+        # Normal mode: All chunks processed in parallel by single model
+        IO.puts("[ClipsController] Starting PARALLEL detection with #{total_chunks} chunks...")
+
+        ProgressChannel.broadcast_progress(
+          project_id,
+          "analyzing",
+          35,
+          "Processing #{total_chunks} chunks in parallel..."
+        )
+
+        process_chunks_parallel_normal(
+          sorted_chunks,
+          system_prompt,
+          user_prompt,
+          project_id,
+          user_id
+        )
+      end
 
     IO.puts("[ClipsController] All chunks processed. Total clips found: #{length(all_clips)}")
     IO.puts("[ClipsController] Total AI tokens used: #{total_usage_tokens}")
@@ -317,249 +453,328 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] Merging overlapping clips from chunk boundaries...")
     ProgressChannel.broadcast_progress(project_id, "merging", 92, "Merging overlapping clips...")
     merged_clips = merge_overlapping_clips(all_clips)
-    IO.puts("[ClipsController] After merge: #{length(merged_clips)} clips (was #{length(all_clips)})")
+
+    IO.puts(
+      "[ClipsController] After merge: #{length(merged_clips)} clips (was #{length(all_clips)})"
+    )
 
     # Validation step - using the merged clips and the reconstructed full transcript
     IO.puts("[ClipsController] Starting enhanced clip validation with full timeline data...")
-    ProgressChannel.broadcast_progress(project_id, "validating", 95, "Validating clips with timeline data...")
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "validating",
+      95,
+      "Validating clips with timeline data..."
+    )
 
     # Validate all clips against the reconstructed transcript
     case ClipValidation.validate_and_correct_clips(merged_clips, reconstructed_transcript, true) do
-          {:ok, validation_result} ->
-            IO.puts("[ClipsController] Enhanced validation completed")
-            IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
+      {:ok, validation_result} ->
+        IO.puts("[ClipsController] Enhanced validation completed")
+        IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
 
-            # Apply minimum duration filtering if specified in user prompt
-            final_clips = case PromptRulesParser.parse_minimum_duration(user_prompt) do
-              nil ->
-                # No minimum duration rule found, use all validated clips
-                validation_result.validatedClips
+        # Apply minimum duration filtering if specified in user prompt
+        final_clips =
+          case PromptRulesParser.parse_minimum_duration(user_prompt) do
+            nil ->
+              # No minimum duration rule found, use all validated clips
+              validation_result.validatedClips
 
-              min_duration ->
-                # Filter clips by minimum duration
-                IO.puts("[ClipsController] Applying minimum duration filter: #{min_duration}s")
-                filtered = ClipValidation.filter_by_minimum_duration(
+            min_duration ->
+              # Filter clips by minimum duration
+              IO.puts("[ClipsController] Applying minimum duration filter: #{min_duration}s")
+
+              filtered =
+                ClipValidation.filter_by_minimum_duration(
                   validation_result.validatedClips,
                   min_duration
                 )
-                removed_count = length(validation_result.validatedClips) - length(filtered)
-                if removed_count > 0 do
-                  IO.puts("[ClipsController] Removed #{removed_count} clips below minimum duration")
-                end
-                filtered
-            end
+
+              removed_count = length(validation_result.validatedClips) - length(filtered)
+
+              if removed_count > 0 do
+                IO.puts("[ClipsController] Removed #{removed_count} clips below minimum duration")
+              end
+
+              filtered
+          end
 
         # Prepare final response
-            total_processed = length(successful_chunks) + length(failed_chunks)
-            ProgressChannel.broadcast_progress(project_id, "completed", 100,
-          "Chunked clip detection completed! Found #{length(final_clips)} clips.")
+        total_processed = length(successful_chunks) + length(failed_chunks)
 
-            {:ok, %{
-              success: true,
-          clips: %{"clips" => final_clips},
-              transcript: reconstructed_transcript,
-              processing_info: %{
-                used_chunked_processing: true,
-                total_chunks: total_processed,
-                successful_chunks: length(successful_chunks),
-                failed_chunks: length(failed_chunks),
-            completion_message: "Clip detection completed using chunked AI processing!"
-              },
-              validation: %{
-                qualityScore: validation_result.qualityScore,
-                issues: validation_result.issues,
-                corrections: validation_result.corrections,
-                clipsProcessed: length(final_clips)
-              }
-            }}
+        ProgressChannel.broadcast_progress(
+          project_id,
+          "completed",
+          100,
+          "Chunked clip detection completed! Found #{length(final_clips)} clips."
+        )
 
-          _ ->
-            IO.puts("[ClipsController] Enhanced validation failed, using original clips")
+        {:ok,
+         %{
+           success: true,
+           clips: %{"clips" => final_clips},
+           transcript: reconstructed_transcript,
+           processing_info: %{
+             used_chunked_processing: true,
+             total_chunks: total_processed,
+             successful_chunks: length(successful_chunks),
+             failed_chunks: length(failed_chunks),
+             completion_message: "Clip detection completed using chunked AI processing!"
+           },
+           validation: %{
+             qualityScore: validation_result.qualityScore,
+             issues: validation_result.issues,
+             corrections: validation_result.corrections,
+             clipsProcessed: length(final_clips)
+           }
+         }}
 
-            total_processed = length(successful_chunks) + length(failed_chunks)
-            ProgressChannel.broadcast_progress(project_id, "completed", 100,
-          "Chunked clip detection completed! Found #{length(all_clips)} clips.")
+      _ ->
+        IO.puts("[ClipsController] Enhanced validation failed, using original clips")
 
-            {:ok, %{
-              success: true,
-          clips: %{"clips" => all_clips},
-              transcript: reconstructed_transcript,
-              processing_info: %{
-                used_chunked_processing: true,
-                total_chunks: total_processed,
-                successful_chunks: length(successful_chunks),
-                failed_chunks: length(failed_chunks),
-            completion_message: "Clip detection completed using chunked AI processing!"
-              },
-              validation: %{
-                qualityScore: 0.0,
-                issues: ["Enhanced validation failed"],
-                corrections: []
-              }
-            }}
-        end
+        total_processed = length(successful_chunks) + length(failed_chunks)
+
+        ProgressChannel.broadcast_progress(
+          project_id,
+          "completed",
+          100,
+          "Chunked clip detection completed! Found #{length(all_clips)} clips."
+        )
+
+        {:ok,
+         %{
+           success: true,
+           clips: %{"clips" => all_clips},
+           transcript: reconstructed_transcript,
+           processing_info: %{
+             used_chunked_processing: true,
+             total_chunks: total_processed,
+             successful_chunks: length(successful_chunks),
+             failed_chunks: length(failed_chunks),
+             completion_message: "Clip detection completed using chunked AI processing!"
+           },
+           validation: %{
+             qualityScore: 0.0,
+             issues: ["Enhanced validation failed"],
+             corrections: []
+           }
+         }}
+    end
   end
 
   # Process all chunks in parallel using a single model (normal mode)
-  defp process_chunks_parallel_normal(sorted_chunks, system_prompt, user_prompt, project_id, user_id) do
+  defp process_chunks_parallel_normal(
+         sorted_chunks,
+         system_prompt,
+         user_prompt,
+         project_id,
+         user_id
+       ) do
     total_chunks = length(sorted_chunks)
 
     Logger.info("[ClipsController] Starting parallel normal processing of #{total_chunks} chunks")
 
-    results = sorted_chunks
-    |> Enum.with_index()
-    |> Task.async_stream(
-      fn {chunk, index} ->
-        Logger.info("[ClipsController] Processing chunk #{index + 1}/#{total_chunks} in parallel...")
+    results =
+      sorted_chunks
+      |> Enum.with_index()
+      |> Task.async_stream(
+        fn {chunk, index} ->
+          Logger.info(
+            "[ClipsController] Processing chunk #{index + 1}/#{total_chunks} in parallel..."
+          )
 
-        # Prepare optimized transcript for this chunk
-        ai_transcript = process_whisper_response_for_ai(chunk.adjusted_whisper_response)
+          # Prepare optimized transcript for this chunk
+          ai_transcript = process_whisper_response_for_ai(chunk.adjusted_whisper_response)
 
-        # Call AI for this chunk
-        case OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id) do
-          {:ok, ai_response, usage} ->
-            clips = ai_response["clips"] || []
-            Logger.info("[ClipsController] Chunk #{index + 1}: Found #{length(clips)} clips")
+          # Call AI for this chunk
+          case OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id) do
+            {:ok, ai_response, usage} ->
+              clips = ai_response["clips"] || []
+              Logger.info("[ClipsController] Chunk #{index + 1}: Found #{length(clips)} clips")
 
-            # Log usage for this chunk
-            AI.log_usage(%{
-              user_id: user_id,
-              project_id: project_id,
-              provider: "openrouter",
-              model: Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7"),
-              input_tokens: Map.get(usage, "prompt_tokens"),
-              output_tokens: Map.get(usage, "completion_tokens"),
-              total_tokens: Map.get(usage, "total_tokens"),
-              operation_type: "clip_generation_chunk"
-            })
+              # Log usage for this chunk
+              AI.log_usage(%{
+                user_id: user_id,
+                project_id: project_id,
+                provider: "openrouter",
+                model:
+                  Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7"),
+                input_tokens: Map.get(usage, "prompt_tokens"),
+                output_tokens: Map.get(usage, "completion_tokens"),
+                total_tokens: Map.get(usage, "total_tokens"),
+                operation_type: "clip_generation_chunk"
+              })
 
-            {:ok, clips, Map.get(usage, "total_tokens", 0)}
+              {:ok, clips, Map.get(usage, "total_tokens", 0)}
 
-          {:error, reason} ->
-            Logger.warning("[ClipsController] Error processing chunk #{index + 1}: #{inspect(reason)}")
-            {:error, reason}
+            {:error, reason} ->
+              Logger.warning(
+                "[ClipsController] Error processing chunk #{index + 1}: #{inspect(reason)}"
+              )
+
+              {:error, reason}
+          end
+        end,
+        max_concurrency: @max_parallel_chunks,
+        timeout: @chunk_timeout_normal,
+        on_timeout: :kill_task
+      )
+      |> Enum.reduce({[], 0}, fn result, {acc_clips, acc_tokens} ->
+        case result do
+          {:ok, {:ok, clips, tokens}} ->
+            {acc_clips ++ clips, acc_tokens + tokens}
+
+          {:ok, {:error, _reason}} ->
+            {acc_clips, acc_tokens}
+
+          {:exit, :timeout} ->
+            Logger.warning("[ClipsController] Chunk processing timed out")
+            {acc_clips, acc_tokens}
+
+          {:exit, reason} ->
+            Logger.warning("[ClipsController] Chunk processing exited: #{inspect(reason)}")
+            {acc_clips, acc_tokens}
         end
-      end,
-      max_concurrency: @max_parallel_chunks,
-      timeout: @chunk_timeout_normal,
-      on_timeout: :kill_task
-    )
-    |> Enum.reduce({[], 0}, fn result, {acc_clips, acc_tokens} ->
-      case result do
-        {:ok, {:ok, clips, tokens}} ->
-          {acc_clips ++ clips, acc_tokens + tokens}
-        {:ok, {:error, _reason}} ->
-          {acc_clips, acc_tokens}
-        {:exit, :timeout} ->
-          Logger.warning("[ClipsController] Chunk processing timed out")
-          {acc_clips, acc_tokens}
-        {:exit, reason} ->
-          Logger.warning("[ClipsController] Chunk processing exited: #{inspect(reason)}")
-          {acc_clips, acc_tokens}
-      end
-    end)
+      end)
 
     # Update progress after parallel processing completes
-    ProgressChannel.broadcast_progress(project_id, "analyzing", 90,
-      "Parallel processing complete. Aggregating results...")
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "analyzing",
+      90,
+      "Parallel processing complete. Aggregating results..."
+    )
 
     results
   end
 
   # Process all chunks in parallel using multimodal detection (3 models + decider per chunk)
-  defp process_chunks_parallel_multimodal(sorted_chunks, system_prompt, user_prompt, project_id, user_id) do
+  defp process_chunks_parallel_multimodal(
+         sorted_chunks,
+         system_prompt,
+         user_prompt,
+         project_id,
+         user_id
+       ) do
     total_chunks = length(sorted_chunks)
 
-    Logger.info("[ClipsController] Starting parallel MULTIMODAL processing of #{total_chunks} chunks")
-    Logger.info("[ClipsController] Each chunk will be processed by #{length(MultimodalClipDetection.get_detection_models())} models + decider")
-
-    results = sorted_chunks
-    |> Enum.with_index()
-    |> Task.async_stream(
-      fn {chunk, index} ->
-        Logger.info("[ClipsController] Multimodal processing chunk #{index + 1}/#{total_chunks}...")
-
-        # Prepare optimized transcript for this chunk
-        ai_transcript = process_whisper_response_for_ai(chunk.adjusted_whisper_response)
-
-        # Use multimodal detection for this chunk
-        case MultimodalClipDetection.process_chunk_multimodal(
-          ai_transcript,
-          system_prompt,
-          user_prompt,
-          project_id,
-          index,
-          total_chunks
-        ) do
-          {:ok, clips, usage_info} ->
-            Logger.info("[ClipsController] Multimodal chunk #{index + 1}: Found #{length(clips)} clips")
-
-            # Log usage for each individual model used in multimodal detection
-            per_model_usage = Map.get(usage_info, "per_model_usage", [])
-            Enum.each(per_model_usage, fn model_usage ->
-              AI.log_usage(%{
-                user_id: user_id,
-                project_id: project_id,
-                provider: "openrouter",
-                model: Map.get(model_usage, "model", "unknown"),
-                input_tokens: Map.get(model_usage, "input_tokens", 0),
-                output_tokens: Map.get(model_usage, "output_tokens", 0),
-                total_tokens: Map.get(model_usage, "total_tokens", 0),
-                operation_type: "clip_generation_multimodal_detector"
-              })
-            end)
-
-            # Log usage for the decider model
-            decider_model = Map.get(usage_info, "decider_model")
-            if decider_model do
-              AI.log_usage(%{
-                user_id: user_id,
-                project_id: project_id,
-                provider: "openrouter",
-                model: decider_model,
-                input_tokens: Map.get(usage_info, "decider_input_tokens", 0),
-                output_tokens: Map.get(usage_info, "decider_output_tokens", 0),
-                total_tokens: Map.get(usage_info, "decider_tokens", 0),
-                operation_type: "clip_generation_multimodal_decider"
-              })
-            end
-
-            {:ok, clips, Map.get(usage_info, "total_tokens", 0)}
-
-          {:error, reason} ->
-            Logger.warning("[ClipsController] Multimodal error on chunk #{index + 1}: #{inspect(reason)}")
-            {:error, reason}
-        end
-      end,
-      max_concurrency: @max_parallel_chunks,
-      timeout: @chunk_timeout_multimodal,
-      on_timeout: :kill_task
+    Logger.info(
+      "[ClipsController] Starting parallel MULTIMODAL processing of #{total_chunks} chunks"
     )
-    |> Enum.reduce({[], 0}, fn result, {acc_clips, acc_tokens} ->
-      case result do
-        {:ok, {:ok, clips, tokens}} ->
-          {acc_clips ++ clips, acc_tokens + tokens}
-        {:ok, {:error, _reason}} ->
-          {acc_clips, acc_tokens}
-        {:exit, :timeout} ->
-          Logger.warning("[ClipsController] Multimodal chunk processing timed out")
-          {acc_clips, acc_tokens}
-        {:exit, reason} ->
-          Logger.warning("[ClipsController] Multimodal chunk processing exited: #{inspect(reason)}")
-          {acc_clips, acc_tokens}
-      end
-    end)
+
+    Logger.info(
+      "[ClipsController] Each chunk will be processed by #{length(MultimodalClipDetection.get_detection_models())} models + decider"
+    )
+
+    results =
+      sorted_chunks
+      |> Enum.with_index()
+      |> Task.async_stream(
+        fn {chunk, index} ->
+          Logger.info(
+            "[ClipsController] Multimodal processing chunk #{index + 1}/#{total_chunks}..."
+          )
+
+          # Prepare optimized transcript for this chunk
+          ai_transcript = process_whisper_response_for_ai(chunk.adjusted_whisper_response)
+
+          # Use multimodal detection for this chunk
+          case MultimodalClipDetection.process_chunk_multimodal(
+                 ai_transcript,
+                 system_prompt,
+                 user_prompt,
+                 project_id,
+                 index,
+                 total_chunks
+               ) do
+            {:ok, clips, usage_info} ->
+              Logger.info(
+                "[ClipsController] Multimodal chunk #{index + 1}: Found #{length(clips)} clips"
+              )
+
+              # Log usage for each individual model used in multimodal detection
+              per_model_usage = Map.get(usage_info, "per_model_usage", [])
+
+              Enum.each(per_model_usage, fn model_usage ->
+                AI.log_usage(%{
+                  user_id: user_id,
+                  project_id: project_id,
+                  provider: "openrouter",
+                  model: Map.get(model_usage, "model", "unknown"),
+                  input_tokens: Map.get(model_usage, "input_tokens", 0),
+                  output_tokens: Map.get(model_usage, "output_tokens", 0),
+                  total_tokens: Map.get(model_usage, "total_tokens", 0),
+                  operation_type: "clip_generation_multimodal_detector"
+                })
+              end)
+
+              # Log usage for the decider model
+              decider_model = Map.get(usage_info, "decider_model")
+
+              if decider_model do
+                AI.log_usage(%{
+                  user_id: user_id,
+                  project_id: project_id,
+                  provider: "openrouter",
+                  model: decider_model,
+                  input_tokens: Map.get(usage_info, "decider_input_tokens", 0),
+                  output_tokens: Map.get(usage_info, "decider_output_tokens", 0),
+                  total_tokens: Map.get(usage_info, "decider_tokens", 0),
+                  operation_type: "clip_generation_multimodal_decider"
+                })
+              end
+
+              {:ok, clips, Map.get(usage_info, "total_tokens", 0)}
+
+            {:error, reason} ->
+              Logger.warning(
+                "[ClipsController] Multimodal error on chunk #{index + 1}: #{inspect(reason)}"
+              )
+
+              {:error, reason}
+          end
+        end,
+        max_concurrency: @max_parallel_chunks,
+        timeout: @chunk_timeout_multimodal,
+        on_timeout: :kill_task
+      )
+      |> Enum.reduce({[], 0}, fn result, {acc_clips, acc_tokens} ->
+        case result do
+          {:ok, {:ok, clips, tokens}} ->
+            {acc_clips ++ clips, acc_tokens + tokens}
+
+          {:ok, {:error, _reason}} ->
+            {acc_clips, acc_tokens}
+
+          {:exit, :timeout} ->
+            Logger.warning("[ClipsController] Multimodal chunk processing timed out")
+            {acc_clips, acc_tokens}
+
+          {:exit, reason} ->
+            Logger.warning(
+              "[ClipsController] Multimodal chunk processing exited: #{inspect(reason)}"
+            )
+
+            {acc_clips, acc_tokens}
+        end
+      end)
 
     # Update progress after parallel processing completes
-    ProgressChannel.broadcast_progress(project_id, "analyzing", 90,
-      "Multimodal processing complete. Aggregating results...")
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "analyzing",
+      90,
+      "Multimodal processing complete. Aggregating results..."
+    )
 
     results
   end
 
   # Split a transcript into time-based chunks for processing with overlap
   # Overlap ensures clips spanning chunk boundaries are properly detected
-  @chunk_overlap_seconds 90  # 90 seconds of overlap between chunks
+  # 90 seconds of overlap between chunks
+  @chunk_overlap_seconds 90
 
   defp split_transcript_into_chunks(transcript, chunk_duration_seconds) do
     segments = transcript["segments"] || []
@@ -571,30 +786,36 @@ defmodule ClippsterServerWeb.ClipsController do
     effective_chunk_duration = chunk_duration_seconds
 
     # Build chunks with overlap - use sliding window approach
-    chunk_boundaries = build_chunk_boundaries(total_duration, effective_chunk_duration, @chunk_overlap_seconds)
+    chunk_boundaries =
+      build_chunk_boundaries(total_duration, effective_chunk_duration, @chunk_overlap_seconds)
 
-    Logger.info("[ClipsController] Building #{length(chunk_boundaries)} chunks with #{@chunk_overlap_seconds}s overlap")
+    Logger.info(
+      "[ClipsController] Building #{length(chunk_boundaries)} chunks with #{@chunk_overlap_seconds}s overlap"
+    )
 
     # Assign segments to chunks (segments can belong to multiple chunks due to overlap)
     chunk_boundaries
     |> Enum.with_index()
     |> Enum.map(fn {{chunk_start, chunk_end}, index} ->
       # Get all segments that fall within this chunk's time range
-      chunk_segments = Enum.filter(segments, fn segment ->
-        seg_start = segment["start"] || 0
-        seg_end = segment["end"] || seg_start
-        # Include segment if it overlaps with chunk time range
-        seg_start < chunk_end and seg_end > chunk_start
-      end)
+      chunk_segments =
+        Enum.filter(segments, fn segment ->
+          seg_start = segment["start"] || 0
+          seg_end = segment["end"] || seg_start
+          # Include segment if it overlaps with chunk time range
+          seg_start < chunk_end and seg_end > chunk_start
+        end)
 
-      chunk_text = chunk_segments
-      |> Enum.map(&Map.get(&1, "text", ""))
-      |> Enum.join(" ")
+      chunk_text =
+        chunk_segments
+        |> Enum.map(&Map.get(&1, "text", ""))
+        |> Enum.join(" ")
 
-      actual_chunk_end = case List.last(chunk_segments) do
-        nil -> chunk_end
-        last_seg -> Map.get(last_seg, "end", chunk_end)
-      end
+      actual_chunk_end =
+        case List.last(chunk_segments) do
+          nil -> chunk_end
+          last_seg -> Map.get(last_seg, "end", chunk_end)
+        end
 
       %{
         "segments" => chunk_segments,
@@ -621,7 +842,13 @@ defmodule ClippsterServerWeb.ClipsController do
     |> Enum.reverse()
   end
 
-  defp build_chunk_boundaries_recursive(current_start, total_duration, chunk_duration, overlap, acc) do
+  defp build_chunk_boundaries_recursive(
+         current_start,
+         total_duration,
+         chunk_duration,
+         overlap,
+         acc
+       ) do
     if current_start >= total_duration do
       acc
     else
@@ -644,30 +871,43 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   # Process transcript chunks in parallel with multimodal detection
-  defp process_transcript_chunks_multimodal(transcript_chunks, system_prompt, user_prompt, project_id, user_id) do
+  defp process_transcript_chunks_multimodal(
+         transcript_chunks,
+         system_prompt,
+         user_prompt,
+         project_id,
+         user_id
+       ) do
     total_chunks = length(transcript_chunks)
 
-    Logger.info("[ClipsController] Starting parallel MULTIMODAL processing of #{total_chunks} transcript chunks")
+    Logger.info(
+      "[ClipsController] Starting parallel MULTIMODAL processing of #{total_chunks} transcript chunks"
+    )
 
     transcript_chunks
     |> Enum.with_index()
     |> Task.async_stream(
       fn {chunk_transcript, index} ->
-        Logger.info("[ClipsController] Multimodal processing transcript chunk #{index + 1}/#{total_chunks}...")
+        Logger.info(
+          "[ClipsController] Multimodal processing transcript chunk #{index + 1}/#{total_chunks}..."
+        )
 
         case MultimodalClipDetection.process_chunk_multimodal(
-          chunk_transcript,
-          system_prompt,
-          user_prompt,
-          project_id,
-          index,
-          total_chunks
-        ) do
+               chunk_transcript,
+               system_prompt,
+               user_prompt,
+               project_id,
+               index,
+               total_chunks
+             ) do
           {:ok, clips, usage_info} ->
-            Logger.info("[ClipsController] Multimodal chunk #{index + 1}: Found #{length(clips)} clips")
+            Logger.info(
+              "[ClipsController] Multimodal chunk #{index + 1}: Found #{length(clips)} clips"
+            )
 
             # Log usage for each individual model used in multimodal detection
             per_model_usage = Map.get(usage_info, "per_model_usage", [])
+
             Enum.each(per_model_usage, fn model_usage ->
               AI.log_usage(%{
                 user_id: user_id,
@@ -683,6 +923,7 @@ defmodule ClippsterServerWeb.ClipsController do
 
             # Log usage for the decider model
             decider_model = Map.get(usage_info, "decider_model")
+
             if decider_model do
               AI.log_usage(%{
                 user_id: user_id,
@@ -699,7 +940,10 @@ defmodule ClippsterServerWeb.ClipsController do
             {:ok, clips, Map.get(usage_info, "total_tokens", 0)}
 
           {:error, reason} ->
-            Logger.warning("[ClipsController] Multimodal error on transcript chunk #{index + 1}: #{inspect(reason)}")
+            Logger.warning(
+              "[ClipsController] Multimodal error on transcript chunk #{index + 1}: #{inspect(reason)}"
+            )
+
             {:error, reason}
         end
       end,
@@ -711,13 +955,19 @@ defmodule ClippsterServerWeb.ClipsController do
       case result do
         {:ok, {:ok, clips, tokens}} ->
           {acc_clips ++ clips, acc_tokens + tokens}
+
         {:ok, {:error, _reason}} ->
           {acc_clips, acc_tokens}
+
         {:exit, :timeout} ->
           Logger.warning("[ClipsController] Transcript chunk processing timed out")
           {acc_clips, acc_tokens}
+
         {:exit, reason} ->
-          Logger.warning("[ClipsController] Transcript chunk processing exited: #{inspect(reason)}")
+          Logger.warning(
+            "[ClipsController] Transcript chunk processing exited: #{inspect(reason)}"
+          )
+
           {acc_clips, acc_tokens}
       end
     end)
@@ -734,69 +984,92 @@ defmodule ClippsterServerWeb.ClipsController do
           duration_hours = calculate_audio_duration_hours(params)
 
           # Deduct credits and create job for tracking/refunds
-          credit_result = if is_admin do
-            {:ok, %{credits: 0.0, job_id: nil}}
-          else
-            case deduct_credits_for_transcription(user_id, duration_hours) do
-              {:ok, credits} ->
-                # Create job record for refund tracking
-                case Credits.create_processing_job(user_id, credits, duration_hours, [
-                  project_id: project_id,
-                  job_type: "transcription"
-                ]) do
-                  {:ok, job} ->
-                    IO.puts("[ClipsController] Created transcription job #{job.id} for tracking (#{Float.round(credits, 3)} credits)")
-                    {:ok, %{credits: credits, job_id: job.id}}
-                  {:error, _} ->
-                    {:ok, %{credits: credits, job_id: nil}}
-                end
-              {:error, :insufficient_credits, remaining, needed} ->
-                 {:halt, conn
-                 |> put_status(402)
-                 |> json(%{
-                   success: false,
-                   error: "Insufficient credits",
-                   details: "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}"
-                 })}
-              {:error, _reason, _} ->
-                 {:halt, conn
-                 |> put_status(500)
-                 |> json(%{success: false, error: "Credit deduction failed"})}
+          credit_result =
+            if is_admin do
+              {:ok, %{credits: 0.0, job_id: nil}}
+            else
+              case deduct_credits_for_transcription(user_id, duration_hours) do
+                {:ok, credits} ->
+                  # Create job record for refund tracking
+                  case Credits.create_processing_job(user_id, credits, duration_hours,
+                         project_id: project_id,
+                         job_type: "transcription"
+                       ) do
+                    {:ok, job} ->
+                      IO.puts(
+                        "[ClipsController] Created transcription job #{job.id} for tracking (#{Float.round(credits, 3)} credits)"
+                      )
+
+                      {:ok, %{credits: credits, job_id: job.id}}
+
+                    {:error, _} ->
+                      {:ok, %{credits: credits, job_id: nil}}
+                  end
+
+                {:error, :insufficient_credits, remaining, needed} ->
+                  {:halt,
+                   conn
+                   |> put_status(402)
+                   |> json(%{
+                     success: false,
+                     error: "Insufficient credits",
+                     details:
+                       "Need #{Float.round(needed, 3)} credits, have #{Float.round(remaining, 3)}"
+                   })}
+
+                {:error, _reason, _} ->
+                  {:halt,
+                   conn
+                   |> put_status(500)
+                   |> json(%{success: false, error: "Credit deduction failed"})}
+              end
             end
-          end
 
           case credit_result do
-            {:halt, response} -> response
+            {:halt, response} ->
+              response
+
             {:ok, %{credits: credits, job_id: job_id}} ->
-              IO.puts("[ClipsController] Processing transcription with credits: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}")
+              IO.puts(
+                "[ClipsController] Processing transcription with credits: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}"
+              )
 
               case WhisperAPI.transcribe(audio_upload) do
                 {:ok, response} ->
-                   # Mark job as completed
-                   complete_job(job_id)
+                  # Mark job as completed
+                  complete_job(job_id)
 
-                   duration = Map.get(response, "duration", 0)
-                   AI.log_usage(%{
-                      user_id: user_id,
-                      project_id: project_id,
-                      provider: "whisper",
-                      model: "whisper-1",
-                      duration_seconds: Decimal.new(to_string(duration)),
-                      operation_type: "transcription_only"
-                   })
-                   json(conn, %{success: true, transcript: response, job_id: job_id})
+                  duration = Map.get(response, "duration", 0)
+
+                  AI.log_usage(%{
+                    user_id: user_id,
+                    project_id: project_id,
+                    provider: "whisper",
+                    model: "whisper-1",
+                    duration_seconds: Decimal.new(to_string(duration)),
+                    operation_type: "transcription_only"
+                  })
+
+                  json(conn, %{success: true, transcript: response, job_id: job_id})
+
                 {:error, reason} ->
-                   # Mark job as failed and refund
-                   fail_job(job_id, inspect(reason))
-                   refund_credits(user_id, credits, is_admin)
-                   conn
-                   |> put_status(500)
-                   |> json(%{success: false, error: "Transcription failed: #{inspect(reason)}", job_id: job_id})
+                  # Mark job as failed and refund
+                  fail_job(job_id, inspect(reason))
+                  refund_credits(user_id, credits, is_admin)
+
+                  conn
+                  |> put_status(500)
+                  |> json(%{
+                    success: false,
+                    error: "Transcription failed: #{inspect(reason)}",
+                    job_id: job_id
+                  })
               end
           end
         else
           conn |> put_status(400) |> json(%{success: false, error: "No audio file provided"})
         end
+
       {:error, _} ->
         conn |> put_status(401) |> json(%{success: false, error: "Unauthorized"})
     end
@@ -817,6 +1090,7 @@ defmodule ClippsterServerWeb.ClipsController do
         case ai_check do
           {:error, message} ->
             IO.puts("[ClipsController] AI blocked for user #{user_id}: #{message}")
+
             conn
             |> put_status(403)
             |> json(%{
@@ -827,12 +1101,18 @@ defmodule ClippsterServerWeb.ClipsController do
 
           :ok ->
             # Check if we're using a cached transcript or fresh audio
-            using_cached_transcript = Map.get(params, "using_cached_transcript", "false") == "true"
+            using_cached_transcript =
+              Map.get(params, "using_cached_transcript", "false") == "true"
+
             is_first_run = not using_cached_transcript and Map.has_key?(params, "audio")
 
             # Check for multimodal mode
             multimodal_raw = Map.get(params, "multimodal")
-            IO.puts("[ClipsController] Raw multimodal param in detect: #{inspect(multimodal_raw)}")
+
+            IO.puts(
+              "[ClipsController] Raw multimodal param in detect: #{inspect(multimodal_raw)}"
+            )
+
             multimodal = multimodal_raw == "true"
 
             IO.puts("[ClipsController] Using cached transcript: #{using_cached_transcript}")
@@ -847,63 +1127,91 @@ defmodule ClippsterServerWeb.ClipsController do
             organization_id = Map.get(params, "organization_id") |> parse_org_id()
 
             # Bypass credit deduction for admin users
-            credit_result = if is_admin do
-              IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
-              {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
-            else
-              # Deduct credits and create job record for regular users
-              # Apply 2x multiplier for multimodal mode
-              case deduct_credits_and_create_job(user_id, duration_hours, is_first_run,
-                     project_id: project_id,
-                     organization_id: organization_id,
-                     multimodal: multimodal) do
-                {:ok, result} ->
-                  {:ok, result}
-                {:error, :insufficient_credits, remaining, needed} ->
-                  IO.puts("[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}")
-                  {:halt, conn
-                  |> put_status(402)
-                  |> json(%{
-                    success: false,
-                    error: "Insufficient credits",
-                    details: "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
-                    credits_required: needed,
-                    credits_remaining: remaining
-                  })}
+            credit_result =
+              if is_admin do
+                IO.puts("[ClipsController] Admin user detected - bypassing credit charges")
+                {:ok, %{credits: 0.0, job_id: nil, credit_source: :unlimited}}
+              else
+                # Deduct credits and create job record for regular users
+                # Apply 2x multiplier for multimodal mode
+                case deduct_credits_and_create_job(user_id, duration_hours, is_first_run,
+                       project_id: project_id,
+                       organization_id: organization_id,
+                       multimodal: multimodal
+                     ) do
+                  {:ok, result} ->
+                    {:ok, result}
 
-                {:error, :not_a_member, details} ->
-                  IO.puts("[ClipsController] User not a member of organization")
-                  {:halt, conn
-                  |> put_status(403)
-                  |> json(%{
-                    success: false,
-                    error: "Not authorized",
-                    details: details
-                  })}
+                  {:error, :insufficient_credits, remaining, needed} ->
+                    IO.puts(
+                      "[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}"
+                    )
 
-                {:error, reason, details} ->
-                  IO.puts("[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}")
-                  {:halt, conn
-                  |> put_status(500)
-                  |> json(%{
-                    success: false,
-                    error: "Credit deduction failed",
-                    details: "Unable to process credits: #{inspect(details)}"
-                  })}
+                    {:halt,
+                     conn
+                     |> put_status(402)
+                     |> json(%{
+                       success: false,
+                       error: "Insufficient credits",
+                       details:
+                         "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
+                       credits_required: needed,
+                       credits_remaining: remaining
+                     })}
+
+                  {:error, :not_a_member, details} ->
+                    IO.puts("[ClipsController] User not a member of organization")
+
+                    {:halt,
+                     conn
+                     |> put_status(403)
+                     |> json(%{
+                       success: false,
+                       error: "Not authorized",
+                       details: details
+                     })}
+
+                  {:error, reason, details} ->
+                    IO.puts(
+                      "[ClipsController] Credit deduction failed: #{inspect(reason)} - #{inspect(details)}"
+                    )
+
+                    {:halt,
+                     conn
+                     |> put_status(500)
+                     |> json(%{
+                       success: false,
+                       error: "Credit deduction failed",
+                       details: "Unable to process credits: #{inspect(details)}"
+                     })}
+                end
               end
-            end
 
             # Continue with processing if not halted
             case credit_result do
-              {:halt, response} -> response
+              {:halt, response} ->
+                response
+
               {:ok, %{credits: credits, job_id: job_id, credit_source: credit_source}} ->
-                IO.puts("[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}, source: #{credit_source}")
-                process_clip_detection(conn, params, user_id, credits, is_admin, job_id, multimodal)
+                IO.puts(
+                  "[ClipsController] Processing with credits deducted: #{Float.round(credits, 3)}, job_id: #{inspect(job_id)}, source: #{credit_source}"
+                )
+
+                process_clip_detection(
+                  conn,
+                  params,
+                  user_id,
+                  credits,
+                  is_admin,
+                  job_id,
+                  multimodal
+                )
             end
         end
 
       {:error, reason} ->
         IO.puts("[ClipsController] Authentication failed: #{inspect(reason)}")
+
         conn
         |> put_status(401)
         |> json(%{
@@ -915,7 +1223,15 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   # Separate function to handle the actual clip detection process
-  defp process_clip_detection(conn, params, user_id, credits_deducted, is_admin, job_id, multimodal) do
+  defp process_clip_detection(
+         conn,
+         params,
+         user_id,
+         credits_deducted,
+         is_admin,
+         job_id,
+         multimodal
+       ) do
     %{"project_id" => project_id} = params
 
     operation = fn ->
@@ -934,41 +1250,50 @@ defmodule ClippsterServerWeb.ClipsController do
         })
 
         # Get updated user balance after credit deduction (or show unlimited for admins)
-        remaining_credits = if is_admin do
-          %{
-            hours_remaining: :unlimited,
-            hours_used: 0.0
-          }
-        else
-          {:ok, updated_balance} = Credits.get_user_balance(user_id)
-          %{
-            hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
-            hours_used: Decimal.to_float(updated_balance.hours_used)
-          }
-        end
+        remaining_credits =
+          if is_admin do
+            %{
+              hours_remaining: :unlimited,
+              hours_used: 0.0
+            }
+          else
+            {:ok, updated_balance} = Credits.get_user_balance(user_id)
+
+            %{
+              hours_remaining: Decimal.to_float(updated_balance.hours_remaining),
+              hours_used: Decimal.to_float(updated_balance.hours_used)
+            }
+          end
 
         # Add credit info and job_id to result map
-        final_result = result_map
-        |> put_in([:processing_info, :credits_charged], credits_deducted)
-        |> put_in([:processing_info, :remaining_credits], remaining_credits)
-        |> put_in([:processing_info, :job_id], job_id)
+        final_result =
+          result_map
+          |> put_in([:processing_info, :credits_charged], credits_deducted)
+          |> put_in([:processing_info, :remaining_credits], remaining_credits)
+          |> put_in([:processing_info, :job_id], job_id)
 
         json(conn, final_result)
 
       {:error, reason} ->
         # Mark job as failed
-        error_msg = case reason do
-          %RuntimeError{message: msg} -> msg
-          s when is_binary(s) -> s
-          _ -> inspect(reason)
-        end
+        error_msg =
+          case reason do
+            %RuntimeError{message: msg} -> msg
+            s when is_binary(s) -> s
+            _ -> inspect(reason)
+          end
 
         fail_job(job_id, error_msg)
 
         # Refund credits on server error
         refund_credits(user_id, credits_deducted, is_admin)
 
-        ProgressChannel.broadcast_progress(project_id, "error", 0, "Failed after retries: #{error_msg}. Credits have been refunded.")
+        ProgressChannel.broadcast_progress(
+          project_id,
+          "error",
+          0,
+          "Failed after retries: #{error_msg}. Credits have been refunded."
+        )
 
         conn
         |> put_status(500)
@@ -988,53 +1313,83 @@ defmodule ClippsterServerWeb.ClipsController do
 
     # Broadcast initial progress
     mode_label = if multimodal, do: "multimodal", else: "standard"
-    ProgressChannel.broadcast_progress(project_id, "starting", 0, "Initializing #{mode_label} clip detection...")
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "starting",
+      0,
+      "Initializing #{mode_label} clip detection..."
+    )
 
     # Step 1: Get transcript data (either from cache or transcribe fresh audio)
-    {whisper_result, processing_type} = cond do
-      using_cached_transcript and Map.has_key?(params, "transcript") ->
-        IO.puts("[ClipsController] Using cached transcript data...")
-        ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Using cached transcript...")
+    {whisper_result, processing_type} =
+      cond do
+        using_cached_transcript and Map.has_key?(params, "transcript") ->
+          IO.puts("[ClipsController] Using cached transcript data...")
 
-        # Parse cached transcript data
-        transcript_data = Jason.decode!(params["transcript"])
-        # raw_response is already a JSON string from the database
-        cached_whisper_response = Jason.decode!(transcript_data["raw_response"])
-        IO.puts("[ClipsController] Cached transcript parsed successfully")
-        {{:ok, cached_whisper_response}, "cached"}
+          ProgressChannel.broadcast_progress(
+            project_id,
+            "transcribing",
+            40,
+            "Using cached transcript..."
+          )
 
-      Map.has_key?(params, "audio") ->
-        audio_upload = params["audio"]
-        IO.puts("[ClipsController] Audio filename: #{audio_upload.filename}")
-        IO.puts("[ClipsController] Audio content type: #{audio_upload.content_type}")
+          # Parse cached transcript data
+          transcript_data = Jason.decode!(params["transcript"])
+          # raw_response is already a JSON string from the database
+          cached_whisper_response = Jason.decode!(transcript_data["raw_response"])
+          IO.puts("[ClipsController] Cached transcript parsed successfully")
+          {{:ok, cached_whisper_response}, "cached"}
 
-        # Forward audio to Whisper API
-        IO.puts("[ClipsController] Sending audio to Whisper API...")
-        ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing audio with Whisper...")
-        whisper_result = WhisperAPI.transcribe(audio_upload)
+        Map.has_key?(params, "audio") ->
+          audio_upload = params["audio"]
+          IO.puts("[ClipsController] Audio filename: #{audio_upload.filename}")
+          IO.puts("[ClipsController] Audio content type: #{audio_upload.content_type}")
 
-        # Log Whisper usage if successful
-        case whisper_result do
-          {:ok, response} ->
-             duration = Map.get(response, "duration")
-             AI.log_usage(%{
+          # Forward audio to Whisper API
+          IO.puts("[ClipsController] Sending audio to Whisper API...")
+
+          ProgressChannel.broadcast_progress(
+            project_id,
+            "transcribing",
+            10,
+            "Transcribing audio with Whisper..."
+          )
+
+          whisper_result = WhisperAPI.transcribe(audio_upload)
+
+          # Log Whisper usage if successful
+          case whisper_result do
+            {:ok, response} ->
+              duration = Map.get(response, "duration")
+
+              AI.log_usage(%{
                 user_id: user_id,
                 project_id: project_id,
                 provider: "whisper",
                 model: "whisper-1",
                 duration_seconds: Decimal.new(to_string(duration)),
                 operation_type: "transcription"
-             })
-          _ -> :ok
-        end
+              })
 
-        IO.puts("[ClipsController] WhisperAPI call completed")
-        ProgressChannel.broadcast_progress(project_id, "transcribing", 40, "Audio transcription completed")
-        {whisper_result, "fresh"}
+            _ ->
+              :ok
+          end
 
-      true ->
-        raise "Either audio file or transcript data must be provided"
-    end
+          IO.puts("[ClipsController] WhisperAPI call completed")
+
+          ProgressChannel.broadcast_progress(
+            project_id,
+            "transcribing",
+            40,
+            "Audio transcription completed"
+          )
+
+          {whisper_result, "fresh"}
+
+        true ->
+          raise "Either audio file or transcript data must be provided"
+      end
 
     case whisper_result do
       {:ok, whisper_response} ->
@@ -1042,32 +1397,46 @@ defmodule ClippsterServerWeb.ClipsController do
         IO.puts("[ClipsController] Whisper response keys: #{inspect(Map.keys(whisper_response))}")
 
         # Debug: Check if word-level data is available
-        words_available = try do
-          words = extract_words_from_response(whisper_response)
-          case words do
-            nil ->
-              IO.puts("[ClipsController] extract_words_from_response returned nil")
-              false
-            [] ->
-              IO.puts("[ClipsController] No words found in response")
-              false
-            words when is_list(words) ->
-              IO.puts("[ClipsController] Word-level data available: #{length(words)} words")
-              if length(words) > 0 do
-                first_word = hd(words)
-                IO.puts("[ClipsController] First word sample: #{inspect(first_word)}")
-              end
-              true
-            _ ->
-              IO.puts("[ClipsController] extract_words_from_response returned unexpected type: #{inspect(words)}")
+        words_available =
+          try do
+            words = extract_words_from_response(whisper_response)
+
+            case words do
+              nil ->
+                IO.puts("[ClipsController] extract_words_from_response returned nil")
+                false
+
+              [] ->
+                IO.puts("[ClipsController] No words found in response")
+                false
+
+              words when is_list(words) ->
+                IO.puts("[ClipsController] Word-level data available: #{length(words)} words")
+
+                if length(words) > 0 do
+                  first_word = hd(words)
+                  IO.puts("[ClipsController] First word sample: #{inspect(first_word)}")
+                end
+
+                true
+
+              _ ->
+                IO.puts(
+                  "[ClipsController] extract_words_from_response returned unexpected type: #{inspect(words)}"
+                )
+
+                false
+            end
+          rescue
+            error ->
+              IO.puts("[ClipsController] Error during word extraction: #{inspect(error)}")
+
+              IO.puts(
+                "[ClipsController] Error type: #{inspect(Exception.format(:error, error, []))}"
+              )
+
               false
           end
-        rescue
-          error ->
-            IO.puts("[ClipsController] Error during word extraction: #{inspect(error)}")
-            IO.puts("[ClipsController] Error type: #{inspect(Exception.format(:error, error, []))}")
-            false
-        end
 
         IO.puts("[ClipsController] Word-level timestamps available: #{words_available}")
 
@@ -1078,65 +1447,116 @@ defmodule ClippsterServerWeb.ClipsController do
         # Create optimized version for AI (words stripped)
         ai_transcript = process_whisper_response_for_ai(full_enhanced_transcript)
 
-        IO.puts("[ClipsController] Full enhanced transcript keys: #{inspect(Map.keys(full_enhanced_transcript))}")
+        IO.puts(
+          "[ClipsController] Full enhanced transcript keys: #{inspect(Map.keys(full_enhanced_transcript))}"
+        )
+
         if full_enhanced_transcript["segments"] do
-          IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(hd(full_enhanced_transcript["segments"])))}")
+          IO.puts(
+            "[ClipsController] First segment keys: #{inspect(Map.keys(hd(full_enhanced_transcript["segments"])))}"
+          )
         end
 
         IO.puts("[ClipsController] AI transcript keys: #{inspect(Map.keys(ai_transcript))}")
+
         if ai_transcript["segments"] do
-          IO.puts("[ClipsController] AI first segment keys: #{inspect(Map.keys(hd(ai_transcript["segments"])))}")
+          IO.puts(
+            "[ClipsController] AI first segment keys: #{inspect(Map.keys(hd(ai_transcript["segments"])))}"
+          )
         end
 
         # Step 3: Send to OpenRouter API with system prompt using optimized transcript
         system_prompt = SystemPrompt.get()
 
-        ai_result = if multimodal do
-          # Multimodal mode: Use 3 models + decider for enhanced detection
-          # Split large transcripts into chunks to avoid context length limits
-          segments = ai_transcript["segments"] || []
-          segment_count = length(segments)
+        ai_result =
+          if multimodal do
+            # Multimodal mode: Use 3 models + decider for enhanced detection
+            # Split large transcripts into chunks to avoid context length limits
+            segments = ai_transcript["segments"] || []
+            segment_count = length(segments)
 
-          # Estimate tokens: ~4 chars per token, each segment has ~100 chars average
-          # Split into chunks of ~15 minutes (900 seconds) to stay under context limits
-          chunk_duration_seconds = 900
-          total_duration = ai_transcript["duration"] || 0
+            # Estimate tokens: ~4 chars per token, each segment has ~100 chars average
+            # Split into chunks of ~15 minutes (900 seconds) to stay under context limits
+            chunk_duration_seconds = 900
+            total_duration = ai_transcript["duration"] || 0
 
-          if total_duration > chunk_duration_seconds and segment_count > 100 do
-            # Split transcript into time-based chunks
-            IO.puts("[ClipsController] Large transcript detected (#{segment_count} segments, #{Float.round(total_duration/60, 1)} min)")
-            IO.puts("[ClipsController] Splitting into #{Float.round(total_duration/chunk_duration_seconds, 0) |> trunc()} chunks for multimodal processing...")
+            if total_duration > chunk_duration_seconds and segment_count > 100 do
+              # Split transcript into time-based chunks
+              IO.puts(
+                "[ClipsController] Large transcript detected (#{segment_count} segments, #{Float.round(total_duration / 60, 1)} min)"
+              )
 
-            transcript_chunks = split_transcript_into_chunks(ai_transcript, chunk_duration_seconds)
-            total_chunks = length(transcript_chunks)
+              IO.puts(
+                "[ClipsController] Splitting into #{Float.round(total_duration / chunk_duration_seconds, 0) |> trunc()} chunks for multimodal processing..."
+              )
 
-            IO.puts("[ClipsController] Created #{total_chunks} transcript chunks for multimodal detection")
-            ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "Running multimodal detection on #{total_chunks} chunks...")
+              transcript_chunks =
+                split_transcript_into_chunks(ai_transcript, chunk_duration_seconds)
 
-            # Process chunks in parallel with multimodal detection
-            {all_clips, total_tokens} = process_transcript_chunks_multimodal(
-              transcript_chunks, system_prompt, user_prompt, project_id, user_id
+              total_chunks = length(transcript_chunks)
+
+              IO.puts(
+                "[ClipsController] Created #{total_chunks} transcript chunks for multimodal detection"
+              )
+
+              ProgressChannel.broadcast_progress(
+                project_id,
+                "analyzing",
+                50,
+                "Running multimodal detection on #{total_chunks} chunks..."
+              )
+
+              # Process chunks in parallel with multimodal detection
+              {all_clips, total_tokens} =
+                process_transcript_chunks_multimodal(
+                  transcript_chunks,
+                  system_prompt,
+                  user_prompt,
+                  project_id,
+                  user_id
+                )
+
+              {:ok, %{"clips" => all_clips}, %{"total_tokens" => total_tokens}}
+            else
+              # Small transcript - process as single chunk
+              IO.puts("[ClipsController] Using MULTIMODAL detection (3 models + decider)...")
+
+              ProgressChannel.broadcast_progress(
+                project_id,
+                "analyzing",
+                50,
+                "Running multimodal detection with 3 AI models..."
+              )
+
+              case MultimodalClipDetection.process_chunk_multimodal(
+                     ai_transcript,
+                     system_prompt,
+                     user_prompt,
+                     project_id,
+                     0,
+                     1
+                   ) do
+                {:ok, clips, usage_info} ->
+                  {:ok, %{"clips" => clips},
+                   %{"total_tokens" => Map.get(usage_info, "total_tokens", 0)}}
+
+                {:error, reason} ->
+                  {:error, reason}
+              end
+            end
+          else
+            # Normal mode: Single model detection
+            IO.puts("[ClipsController] Sending optimized transcript to OpenRouter API...")
+
+            ProgressChannel.broadcast_progress(
+              project_id,
+              "analyzing",
+              50,
+              "Analyzing transcript for clip-worthy moments..."
             )
 
-            {:ok, %{"clips" => all_clips}, %{"total_tokens" => total_tokens}}
-          else
-            # Small transcript - process as single chunk
-            IO.puts("[ClipsController] Using MULTIMODAL detection (3 models + decider)...")
-            ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "Running multimodal detection with 3 AI models...")
-
-            case MultimodalClipDetection.process_chunk_multimodal(ai_transcript, system_prompt, user_prompt, project_id, 0, 1) do
-              {:ok, clips, usage_info} ->
-                {:ok, %{"clips" => clips}, %{"total_tokens" => Map.get(usage_info, "total_tokens", 0)}}
-              {:error, reason} ->
-                {:error, reason}
-            end
+            OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id)
           end
-        else
-          # Normal mode: Single model detection
-          IO.puts("[ClipsController] Sending optimized transcript to OpenRouter API...")
-          ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "Analyzing transcript for clip-worthy moments...")
-          OpenRouterAPI.generate_clips(ai_transcript, system_prompt, user_prompt, project_id)
-        end
 
         IO.puts("[ClipsController] AI detection completed")
         ProgressChannel.broadcast_progress(project_id, "analyzing", 80, "AI analysis completed")
@@ -1151,7 +1571,8 @@ defmodule ClippsterServerWeb.ClipsController do
               user_id: user_id,
               project_id: project_id,
               provider: "openrouter",
-              model: Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7"),
+              model:
+                Map.get(usage, "model") || System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7"),
               input_tokens: Map.get(usage, "prompt_tokens"),
               output_tokens: Map.get(usage, "completion_tokens"),
               total_tokens: Map.get(usage, "total_tokens"),
@@ -1165,116 +1586,165 @@ defmodule ClippsterServerWeb.ClipsController do
 
                 # Handle empty clips array - no clip-worthy content found
                 clips_list = ai_response["clips"] || []
-                if length(clips_list) == 0 do
-                  IO.puts("[ClipsController] No clips found in transcript - returning empty result")
-                  ProgressChannel.broadcast_progress(project_id, "completed", 100, "Analysis complete - no clip-worthy moments found in this segment")
 
-                  {:ok, %{
-                    success: true,
-                    clips: %{"clips" => []},
-                    transcript: whisper_response,
-                    processing_info: %{
-                      used_cached_transcript: processing_type == "cached",
-                      processing_type: processing_type,
-                      completion_message: "No clip-worthy moments found in this segment"
-                    },
-                    validation: %{
-                      qualityScore: 0.0,
-                      issues: [],
-                      corrections: [],
-                      clipsProcessed: 0
-                    }
-                  }}
+                if length(clips_list) == 0 do
+                  IO.puts(
+                    "[ClipsController] No clips found in transcript - returning empty result"
+                  )
+
+                  ProgressChannel.broadcast_progress(
+                    project_id,
+                    "completed",
+                    100,
+                    "Analysis complete - no clip-worthy moments found in this segment"
+                  )
+
+                  {:ok,
+                   %{
+                     success: true,
+                     clips: %{"clips" => []},
+                     transcript: whisper_response,
+                     processing_info: %{
+                       used_cached_transcript: processing_type == "cached",
+                       processing_type: processing_type,
+                       completion_message: "No clip-worthy moments found in this segment"
+                     },
+                     validation: %{
+                       qualityScore: 0.0,
+                       issues: [],
+                       corrections: [],
+                       clipsProcessed: 0
+                     }
+                   }}
                 else
                   # Step 5: Enhanced validation and correction using original Whisper response with word-level data
                   IO.puts("[ClipsController] Starting enhanced clip validation...")
                   IO.puts("[ClipsController] Using original Whisper response for validation...")
-                  ProgressChannel.broadcast_progress(project_id, "validating", 85, "Validating and correcting clip timestamps...")
-                  case ClipValidation.validate_and_correct_clips(clips_list, whisper_response, false) do
-                  {:ok, validation_result} ->
-                    IO.puts("[ClipsController] Enhanced validation completed")
-                    IO.puts("[ClipsController] Quality score: #{validation_result.qualityScore}")
 
-                    # Apply minimum duration filtering if specified in user prompt
-                    final_clips = case PromptRulesParser.parse_minimum_duration(user_prompt) do
-                      nil ->
-                        # No minimum duration rule found, use all validated clips
-                        validation_result.validatedClips
+                  ProgressChannel.broadcast_progress(
+                    project_id,
+                    "validating",
+                    85,
+                    "Validating and correcting clip timestamps..."
+                  )
 
-                      min_duration ->
-                        # Filter clips by minimum duration
-                        IO.puts("[ClipsController] Applying minimum duration filter: #{min_duration}s")
-                        filtered = ClipValidation.filter_by_minimum_duration(
-                          validation_result.validatedClips,
-                          min_duration
-                        )
-                        removed_count = length(validation_result.validatedClips) - length(filtered)
-                        if removed_count > 0 do
-                          IO.puts("[ClipsController] Removed #{removed_count} clips below minimum duration")
+                  case ClipValidation.validate_and_correct_clips(
+                         clips_list,
+                         whisper_response,
+                         false
+                       ) do
+                    {:ok, validation_result} ->
+                      IO.puts("[ClipsController] Enhanced validation completed")
+
+                      IO.puts(
+                        "[ClipsController] Quality score: #{validation_result.qualityScore}"
+                      )
+
+                      # Apply minimum duration filtering if specified in user prompt
+                      final_clips =
+                        case PromptRulesParser.parse_minimum_duration(user_prompt) do
+                          nil ->
+                            # No minimum duration rule found, use all validated clips
+                            validation_result.validatedClips
+
+                          min_duration ->
+                            # Filter clips by minimum duration
+                            IO.puts(
+                              "[ClipsController] Applying minimum duration filter: #{min_duration}s"
+                            )
+
+                            filtered =
+                              ClipValidation.filter_by_minimum_duration(
+                                validation_result.validatedClips,
+                                min_duration
+                              )
+
+                            removed_count =
+                              length(validation_result.validatedClips) - length(filtered)
+
+                            if removed_count > 0 do
+                              IO.puts(
+                                "[ClipsController] Removed #{removed_count} clips below minimum duration"
+                              )
+                            end
+
+                            filtered
                         end
-                        filtered
-                    end
 
-                    # Replace clips with validated and corrected versions
-                    enhanced_response = ai_response
-                    |> Map.put("clips", final_clips)
-                    |> Map.put("validation_metadata", %{
-                      "qualityScore" => validation_result.qualityScore,
-                      "issuesCount" => length(validation_result.issues),
-                      "correctionsCount" => length(validation_result.corrections),
-                      "validatedAt" => DateTime.utc_now() |> DateTime.to_iso8601()
-                    })
+                      # Replace clips with validated and corrected versions
+                      enhanced_response =
+                        ai_response
+                        |> Map.put("clips", final_clips)
+                        |> Map.put("validation_metadata", %{
+                          "qualityScore" => validation_result.qualityScore,
+                          "issuesCount" => length(validation_result.issues),
+                          "correctionsCount" => length(validation_result.corrections),
+                          "validatedAt" => DateTime.utc_now() |> DateTime.to_iso8601()
+                        })
 
-                    # Step 6: Return enhanced response with validation data
-                    ProgressChannel.broadcast_progress(project_id, "completed", 100, "Clip detection completed successfully!")
-                    completion_message = if processing_type == "cached" do
-                      "Clip detection completed using cached transcript!"
-                    else
-                      "Clip detection completed successfully!"
-                    end
+                      # Step 6: Return enhanced response with validation data
+                      ProgressChannel.broadcast_progress(
+                        project_id,
+                        "completed",
+                        100,
+                        "Clip detection completed successfully!"
+                      )
 
-                    {:ok, %{
-                      success: true,
-                      clips: enhanced_response,
-                      transcript: whisper_response,
-                      processing_info: %{
-                        used_cached_transcript: processing_type == "cached",
-                        processing_type: processing_type,
-                        completion_message: completion_message
-                      },
-                      validation: %{
-                        qualityScore: validation_result.qualityScore,
-                        issues: validation_result.issues,
-                        corrections: validation_result.corrections,
-                        clipsProcessed: length(final_clips)
-                      }
-                    }}
+                      completion_message =
+                        if processing_type == "cached" do
+                          "Clip detection completed using cached transcript!"
+                        else
+                          "Clip detection completed successfully!"
+                        end
 
-                  _ ->
-                    IO.puts("[ClipsController] Enhanced validation failed, using original clips")
-                    # Fall back to original clips if enhanced validation fails
-                    completion_message = if processing_type == "cached" do
-                      "Clip detection completed using cached transcript!"
-                    else
-                      "Clip detection completed successfully!"
-                    end
+                      {:ok,
+                       %{
+                         success: true,
+                         clips: enhanced_response,
+                         transcript: whisper_response,
+                         processing_info: %{
+                           used_cached_transcript: processing_type == "cached",
+                           processing_type: processing_type,
+                           completion_message: completion_message
+                         },
+                         validation: %{
+                           qualityScore: validation_result.qualityScore,
+                           issues: validation_result.issues,
+                           corrections: validation_result.corrections,
+                           clipsProcessed: length(final_clips)
+                         }
+                       }}
 
-                    {:ok, %{
-                      success: true,
-                      clips: ai_response,
-                      transcript: whisper_response,
-                      processing_info: %{
-                        used_cached_transcript: processing_type == "cached",
-                        processing_type: processing_type,
-                        completion_message: completion_message
-                      },
-                      validation: %{
-                        qualityScore: 0.0,
-                        issues: ["Enhanced validation failed"],
-                        corrections: []
-                      }
-                    }}
-                end
+                    _ ->
+                      IO.puts(
+                        "[ClipsController] Enhanced validation failed, using original clips"
+                      )
+
+                      # Fall back to original clips if enhanced validation fails
+                      completion_message =
+                        if processing_type == "cached" do
+                          "Clip detection completed using cached transcript!"
+                        else
+                          "Clip detection completed successfully!"
+                        end
+
+                      {:ok,
+                       %{
+                         success: true,
+                         clips: ai_response,
+                         transcript: whisper_response,
+                         processing_info: %{
+                           used_cached_transcript: processing_type == "cached",
+                           processing_type: processing_type,
+                           completion_message: completion_message
+                         },
+                         validation: %{
+                           qualityScore: 0.0,
+                           issues: ["Enhanced validation failed"],
+                           corrections: []
+                         }
+                       }}
+                  end
                 end
 
               {:error, reason} ->
@@ -1309,12 +1779,15 @@ defmodule ClippsterServerWeb.ClipsController do
 
           # Default to raw audio if unsure
           true ->
-            IO.puts("[ClipsController] Warning: Could not determine chunk type, defaulting to raw audio")
+            IO.puts(
+              "[ClipsController] Warning: Could not determine chunk type, defaulting to raw audio"
+            )
+
             :raw_audio
         end
 
       [] ->
-        throw {:error, "No chunks provided"}
+        throw({:error, "No chunks provided"})
     end
   end
 
@@ -1322,18 +1795,30 @@ defmodule ClippsterServerWeb.ClipsController do
   defp process_pre_transcribed_chunks(chunks_metadata, project_id) do
     total_chunks = length(chunks_metadata)
     IO.puts("[ClipsController] Processing #{total_chunks} pre-transcribed chunks")
-    ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Processing #{total_chunks} cached transcript chunks...")
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "transcribing",
+      10,
+      "Processing #{total_chunks} cached transcript chunks..."
+    )
 
     # Process chunks in parallel
-    all_chunk_results = chunks_metadata
-    |> Enum.with_index()
-    |> Enum.map(fn {chunk_metadata, chunk_index} ->
-      chunk_progress = 10 + ((chunk_index + 1) * 80 / total_chunks)
-      ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(chunk_progress),
-        "Processing chunk #{chunk_index + 1}/#{total_chunks}...")
+    all_chunk_results =
+      chunks_metadata
+      |> Enum.with_index()
+      |> Enum.map(fn {chunk_metadata, chunk_index} ->
+        chunk_progress = 10 + (chunk_index + 1) * 80 / total_chunks
 
-      process_pre_transcribed_chunk(chunk_metadata, chunk_index, project_id)
-    end)
+        ProgressChannel.broadcast_progress(
+          project_id,
+          "transcribing",
+          trunc(chunk_progress),
+          "Processing chunk #{chunk_index + 1}/#{total_chunks}..."
+        )
+
+        process_pre_transcribed_chunk(chunk_metadata, chunk_index, project_id)
+      end)
 
     # Separate successful and failed chunks
     {successful_chunks, failed_chunks} = Enum.split_with(all_chunk_results, &match?({:ok, _}, &1))
@@ -1348,33 +1833,53 @@ defmodule ClippsterServerWeb.ClipsController do
   defp process_raw_audio_chunks(chunks_metadata, project_id, user_id) do
     total_chunks = length(chunks_metadata)
     IO.puts("[ClipsController] Processing #{total_chunks} raw audio chunks")
-    ProgressChannel.broadcast_progress(project_id, "transcribing", 10, "Transcribing #{total_chunks} audio chunks...")
+
+    ProgressChannel.broadcast_progress(
+      project_id,
+      "transcribing",
+      10,
+      "Transcribing #{total_chunks} audio chunks..."
+    )
 
     # Process chunks in batches of 2 to manage API limits
     batch_size = 2
     chunks_with_index = chunks_metadata |> Enum.with_index()
     batches = chunks_with_index |> Enum.chunk_every(batch_size)
 
-    all_chunk_results = batches
-    |> Enum.with_index()
-    |> Enum.flat_map(fn {batch, batch_index} ->
-      IO.puts("[ClipsController] Processing batch #{batch_index + 1}/#{length(batches)} (#{length(batch)} chunks)")
+    all_chunk_results =
+      batches
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {batch, batch_index} ->
+        IO.puts(
+          "[ClipsController] Processing batch #{batch_index + 1}/#{length(batches)} (#{length(batch)} chunks)"
+        )
 
-      # Update progress for batch start
-      batch_progress = 10 + (batch_index * 70 / length(batches))
-      ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(batch_progress),
-        "Transcribing batch #{batch_index + 1}/#{length(batches)}...")
+        # Update progress for batch start
+        batch_progress = 10 + batch_index * 70 / length(batches)
 
-      # Process chunks in this batch in parallel
-      batch
-      |> Enum.map(fn {chunk_metadata, chunk_index} ->
-        chunk_progress = batch_progress + ((chunk_index + 1) * (70 / length(batches)) / length(batch))
-        ProgressChannel.broadcast_progress(project_id, "transcribing", trunc(chunk_progress),
-          "Transcribing chunk #{chunk_index + 1}/#{total_chunks}...")
+        ProgressChannel.broadcast_progress(
+          project_id,
+          "transcribing",
+          trunc(batch_progress),
+          "Transcribing batch #{batch_index + 1}/#{length(batches)}..."
+        )
 
-        process_single_chunk(chunk_metadata, chunk_index, project_id, user_id)
+        # Process chunks in this batch in parallel
+        batch
+        |> Enum.map(fn {chunk_metadata, chunk_index} ->
+          chunk_progress =
+            batch_progress + (chunk_index + 1) * (70 / length(batches)) / length(batch)
+
+          ProgressChannel.broadcast_progress(
+            project_id,
+            "transcribing",
+            trunc(chunk_progress),
+            "Transcribing chunk #{chunk_index + 1}/#{total_chunks}..."
+          )
+
+          process_single_chunk(chunk_metadata, chunk_index, project_id, user_id)
+        end)
       end)
-    end)
 
     # Separate successful and failed chunks
     {successful_chunks, failed_chunks} = Enum.split_with(all_chunk_results, &match?({:ok, _}, &1))
@@ -1393,7 +1898,9 @@ defmodule ClippsterServerWeb.ClipsController do
       start_time = Map.get(chunk_metadata, "start_time")
       end_time = Map.get(chunk_metadata, "end_time")
 
-      IO.puts("[ClipsController] Processing pre-transcribed chunk #{chunk_index}: #{chunk_id} (#{start_time}s - #{end_time}s)")
+      IO.puts(
+        "[ClipsController] Processing pre-transcribed chunk #{chunk_index}: #{chunk_id} (#{start_time}s - #{end_time}s)"
+      )
 
       # Parse the pre-transcribed JSON data
       case Jason.decode(raw_json) do
@@ -1419,14 +1926,25 @@ defmodule ClippsterServerWeb.ClipsController do
           {:ok, chunk_result}
 
         {:error, reason} ->
-          IO.puts("[ClipsController] Chunk #{chunk_index} JSON parsing failed: #{inspect(reason)}")
-          {:error, %{chunk_id: chunk_id, chunk_index: chunk_index, reason: "JSON parsing failed: #{inspect(reason)}"}}
-      end
+          IO.puts(
+            "[ClipsController] Chunk #{chunk_index} JSON parsing failed: #{inspect(reason)}"
+          )
 
+          {:error,
+           %{
+             chunk_id: chunk_id,
+             chunk_index: chunk_index,
+             reason: "JSON parsing failed: #{inspect(reason)}"
+           }}
+      end
     rescue
       error ->
-        IO.puts("[ClipsController] Error processing pre-transcribed chunk #{chunk_index}: #{inspect(error)}")
-        {:error, %{chunk_id: "unknown", chunk_index: chunk_index, reason: Exception.message(error)}}
+        IO.puts(
+          "[ClipsController] Error processing pre-transcribed chunk #{chunk_index}: #{inspect(error)}"
+        )
+
+        {:error,
+         %{chunk_id: "unknown", chunk_index: chunk_index, reason: Exception.message(error)}}
     end
   end
 
@@ -1440,11 +1958,16 @@ defmodule ClippsterServerWeb.ClipsController do
 
     # Enhance segments with word-level timing analysis
     enhanced_segments = enhance_segments_with_word_timing(whisper_response["segments"] || [])
-    IO.puts("[ClipsController] Enhanced #{length(enhanced_segments)} segments with timing analysis")
 
-    processed_response = whisper_response
-    |> Map.put("segments", enhanced_segments)
-    |> Map.put("words", words)  # Preserve words at top level for validation
+    IO.puts(
+      "[ClipsController] Enhanced #{length(enhanced_segments)} segments with timing analysis"
+    )
+
+    processed_response =
+      whisper_response
+      |> Map.put("segments", enhanced_segments)
+      # Preserve words at top level for validation
+      |> Map.put("words", words)
 
     IO.puts("[ClipsController] Enhanced processing complete")
     processed_response
@@ -1452,88 +1975,113 @@ defmodule ClippsterServerWeb.ClipsController do
 
   # Extract word-level timestamps from Whisper response
   defp extract_words_from_response(whisper_response) do
-    IO.puts("[ClipsController] extract_words_from_response called with keys: #{inspect(Map.keys(whisper_response))}")
+    IO.puts(
+      "[ClipsController] extract_words_from_response called with keys: #{inspect(Map.keys(whisper_response))}"
+    )
 
-    words = case whisper_response do
-      %{"words" => words} when is_list(words) ->
-        IO.puts("[ClipsController] Found top-level words: #{length(words)}")
-        words
-      %{"verbose_json" => %{"words" => words}} when is_list(words) ->
-        IO.puts("[ClipsController] Found verbose_json words: #{length(words)}")
-        words
-      %{"segments" => segments} when is_list(segments) and length(segments) > 0 ->
-        IO.puts("[ClipsController] Checking #{length(segments)} segments for word data")
+    words =
+      case whisper_response do
+        %{"words" => words} when is_list(words) ->
+          IO.puts("[ClipsController] Found top-level words: #{length(words)}")
+          words
 
-        # Check first segment structure safely
-        first_segment = hd(segments)
-        IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(first_segment))}")
+        %{"verbose_json" => %{"words" => words}} when is_list(words) ->
+          IO.puts("[ClipsController] Found verbose_json words: #{length(words)}")
+          words
 
-        # Check what type the 'words' field actually is
-        case Map.get(first_segment, "words") do
-          words when is_list(words) ->
-            IO.puts("[ClipsController] First segment words is a list with #{length(words)} items")
-          words when is_map(words) ->
-            IO.puts("[ClipsController] First segment words is a map: #{inspect(words)}")
-          words when is_nil(words) ->
-            IO.puts("[ClipsController] First segment words is nil")
-          words ->
-            IO.puts("[ClipsController] First segment words is unexpected type: #{inspect(words)}")
-        end
+        %{"segments" => segments} when is_list(segments) and length(segments) > 0 ->
+          IO.puts("[ClipsController] Checking #{length(segments)} segments for word data")
 
-        # Extract words from segments if available, with defensive programming
-        extracted_words = segments
-        |> Enum.reduce([], fn segment, acc ->
-          case segment do
-            %{"words" => words} when is_list(words) ->
-              IO.puts("[ClipsController] Found segment with #{length(words)} words")
+          # Check first segment structure safely
+          first_segment = hd(segments)
+          IO.puts("[ClipsController] First segment keys: #{inspect(Map.keys(first_segment))}")
 
-              # Debug: Show first few word entries
-              sample_words = Enum.take(words, 3)
-              IO.puts("[ClipsController] Sample words: #{inspect(sample_words)}")
+          # Check what type the 'words' field actually is
+          case Map.get(first_segment, "words") do
+            words when is_list(words) ->
+              IO.puts(
+                "[ClipsController] First segment words is a list with #{length(words)} items"
+              )
 
-              # Filter out nil values and ensure word has required structure
-              valid_words = Enum.filter(words, fn word ->
-                cond do
-                  word == nil ->
-                    false
-                  not is_map(word) ->
-                    IO.puts("[ClipsController] Word is not a map: #{inspect(word)}")
-                    false
-                  not Map.has_key?(word, "start") ->
-                    IO.puts("[ClipsController] Word missing 'start': #{inspect(word)}")
-                    false
-                  not Map.has_key?(word, "end") ->
-                    IO.puts("[ClipsController] Word missing 'end': #{inspect(word)}")
-                    false
-                  not Map.has_key?(word, "word") ->
-                    IO.puts("[ClipsController] Word missing 'word': #{inspect(word)}")
-                    false
-                  true ->
-                    true
-                end
-              end)
+            words when is_map(words) ->
+              IO.puts("[ClipsController] First segment words is a map: #{inspect(words)}")
 
-              IO.puts("[ClipsController] Valid words in this segment: #{length(valid_words)}")
-              acc ++ valid_words
-            %{"words" => words} ->
-              IO.puts("[ClipsController] Found segment with words that is not a list: #{inspect(words)}")
-              acc
-            _ ->
-              IO.puts("[ClipsController] Segment has no words or wrong structure")
-              acc
+            words when is_nil(words) ->
+              IO.puts("[ClipsController] First segment words is nil")
+
+            words ->
+              IO.puts(
+                "[ClipsController] First segment words is unexpected type: #{inspect(words)}"
+              )
           end
-        end)
 
-        IO.puts("[ClipsController] Extracted #{length(extracted_words)} words from segments")
-        extracted_words
+          # Extract words from segments if available, with defensive programming
+          extracted_words =
+            segments
+            |> Enum.reduce([], fn segment, acc ->
+              case segment do
+                %{"words" => words} when is_list(words) ->
+                  IO.puts("[ClipsController] Found segment with #{length(words)} words")
 
-      %{"segments" => segments} when is_list(segments) ->
-        IO.puts("[ClipsController] Found empty segments list")
-        []
-      _ ->
-        IO.puts("[ClipsController] No word data found in response")
-        []
-    end
+                  # Debug: Show first few word entries
+                  sample_words = Enum.take(words, 3)
+                  IO.puts("[ClipsController] Sample words: #{inspect(sample_words)}")
+
+                  # Filter out nil values and ensure word has required structure
+                  valid_words =
+                    Enum.filter(words, fn word ->
+                      cond do
+                        word == nil ->
+                          false
+
+                        not is_map(word) ->
+                          IO.puts("[ClipsController] Word is not a map: #{inspect(word)}")
+                          false
+
+                        not Map.has_key?(word, "start") ->
+                          IO.puts("[ClipsController] Word missing 'start': #{inspect(word)}")
+                          false
+
+                        not Map.has_key?(word, "end") ->
+                          IO.puts("[ClipsController] Word missing 'end': #{inspect(word)}")
+                          false
+
+                        not Map.has_key?(word, "word") ->
+                          IO.puts("[ClipsController] Word missing 'word': #{inspect(word)}")
+                          false
+
+                        true ->
+                          true
+                      end
+                    end)
+
+                  IO.puts("[ClipsController] Valid words in this segment: #{length(valid_words)}")
+                  acc ++ valid_words
+
+                %{"words" => words} ->
+                  IO.puts(
+                    "[ClipsController] Found segment with words that is not a list: #{inspect(words)}"
+                  )
+
+                  acc
+
+                _ ->
+                  IO.puts("[ClipsController] Segment has no words or wrong structure")
+                  acc
+              end
+            end)
+
+          IO.puts("[ClipsController] Extracted #{length(extracted_words)} words from segments")
+          extracted_words
+
+        %{"segments" => segments} when is_list(segments) ->
+          IO.puts("[ClipsController] Found empty segments list")
+          []
+
+        _ ->
+          IO.puts("[ClipsController] No word data found in response")
+          []
+      end
 
     IO.puts("[ClipsController] extract_words_from_response returning #{length(words)} words")
     words
@@ -1552,7 +2100,10 @@ defmodule ClippsterServerWeb.ClipsController do
         cond do
           # Empty clips array is valid - means no clip-worthy content found
           is_list(clips) and length(clips) == 0 ->
-            IO.puts("[ClipsController] AI returned empty clips array - no clip-worthy content found")
+            IO.puts(
+              "[ClipsController] AI returned empty clips array - no clip-worthy content found"
+            )
+
             :ok
 
           # Non-empty clips array - validate each clip structure
@@ -1567,14 +2118,16 @@ defmodule ClippsterServerWeb.ClipsController do
             {:error, "clips must be an array"}
         end
 
-      error -> error
+      error ->
+        error
     end
   end
 
   defp validate_required_fields(map, required_fields) do
-    missing_fields = Enum.filter(required_fields, fn field ->
-      not Map.has_key?(map, field)
-    end)
+    missing_fields =
+      Enum.filter(required_fields, fn field ->
+        not Map.has_key?(map, field)
+      end)
 
     if length(missing_fields) == 0 do
       :ok
@@ -1585,9 +2138,16 @@ defmodule ClippsterServerWeb.ClipsController do
 
   defp validate_clips_structure(clips) do
     required_clip_fields = [
-      "id", "title", "filename", "type", "segments",
-      "total_duration", "combined_transcript", "virality_score",
-      "reason", "socialMediaPost"
+      "id",
+      "title",
+      "filename",
+      "type",
+      "segments",
+      "total_duration",
+      "combined_transcript",
+      "virality_score",
+      "reason",
+      "socialMediaPost"
     ]
 
     clips
@@ -1598,13 +2158,15 @@ defmodule ClippsterServerWeb.ClipsController do
         :ok ->
           # Validate segments array
           segments = clip["segments"]
+
           if is_list(segments) and length(segments) > 0 do
             validate_segments_structure(segments, index)
           else
-            throw {:error, "Clip #{index} segments must be a non-empty array"}
+            throw({:error, "Clip #{index} segments must be a non-empty array"})
           end
 
-        error -> throw error
+        error ->
+          throw(error)
       end
     end)
 
@@ -1624,7 +2186,8 @@ defmodule ClippsterServerWeb.ClipsController do
           # Validate timestamp fields are numbers
           validate_timestamp_fields(segment, clip_index, segment_index)
 
-        error -> throw error
+        error ->
+          throw(error)
       end
     end)
 
@@ -1638,8 +2201,9 @@ defmodule ClippsterServerWeb.ClipsController do
 
     Enum.each(timestamp_fields, fn field ->
       value = segment[field]
+
       if not is_number(value) do
-        throw {:error, "Clip #{clip_index} segment #{segment_index} #{field} must be a number"}
+        throw({:error, "Clip #{clip_index} segment #{segment_index} #{field} must be a number"})
       end
     end)
 
@@ -1688,16 +2252,19 @@ defmodule ClippsterServerWeb.ClipsController do
       # Identify filler words
       filler_words = identify_filler_words(words_with_gaps)
 
-      enhanced_segment = segment
-      |> Map.put("words", words_with_gaps)
-      |> Map.put("internal_gaps", internal_gaps)
-      |> Map.put("content_density_score", density_score)
-      |> Map.put("speaking_rate", speaking_rate)
-      |> Map.put("filler_word_count", length(filler_words))
-      |> Map.put("total_word_count", length(words_with_gaps))
-      |> Map.put("has_internal_dead_space", length(internal_gaps) > 0)
+      enhanced_segment =
+        segment
+        |> Map.put("words", words_with_gaps)
+        |> Map.put("internal_gaps", internal_gaps)
+        |> Map.put("content_density_score", density_score)
+        |> Map.put("speaking_rate", speaking_rate)
+        |> Map.put("filler_word_count", length(filler_words))
+        |> Map.put("total_word_count", length(words_with_gaps))
+        |> Map.put("has_internal_dead_space", length(internal_gaps) > 0)
 
-      IO.puts("[ClipsController] Segment #{index}: density=#{Float.round(density_score, 2)}, rate=#{Float.round(speaking_rate, 1)}wpm, gaps=#{length(internal_gaps)}")
+      IO.puts(
+        "[ClipsController] Segment #{index}: density=#{Float.round(density_score, 2)}, rate=#{Float.round(speaking_rate, 1)}wpm, gaps=#{length(internal_gaps)}"
+      )
 
       enhanced_segment
     else
@@ -1711,12 +2278,13 @@ defmodule ClippsterServerWeb.ClipsController do
     words
     |> Enum.with_index()
     |> Enum.map(fn {word, index} ->
-      gap_after = if index < length(words) - 1 do
-        next_word = Enum.at(words, index + 1)
-        next_word["start"] - word["end"]
-      else
-        0.0
-      end
+      gap_after =
+        if index < length(words) - 1 do
+          next_word = Enum.at(words, index + 1)
+          next_word["start"] - word["end"]
+        else
+          0.0
+        end
 
       word
       |> Map.put("gap_after", Float.round(gap_after, 3))
@@ -1727,8 +2295,10 @@ defmodule ClippsterServerWeb.ClipsController do
   # Identify internal gaps that are candidates for splicing
   defp identify_internal_gaps(words_with_gaps) do
     # Define thresholds for different types of gaps
-    extended_pause_threshold = 1.5  # >1.5s is significant dead space
-    natural_break_threshold = 0.8   # 0.8-1.5s are natural break points
+    # >1.5s is significant dead space
+    extended_pause_threshold = 1.5
+    # 0.8-1.5s are natural break points
+    natural_break_threshold = 0.8
 
     words_with_gaps
     |> Enum.map(fn word ->
@@ -1737,10 +2307,11 @@ defmodule ClippsterServerWeb.ClipsController do
 
       cond do
         gap > extended_pause_threshold ->
-          severity = cond do
-            gap > 3.0 -> "severe"
-            true -> "moderate"
-          end
+          severity =
+            cond do
+              gap > 3.0 -> "severe"
+              true -> "moderate"
+            end
 
           %{
             "type" => "extended_pause",
@@ -1775,13 +2346,15 @@ defmodule ClippsterServerWeb.ClipsController do
 
     if segment_duration > 0 and word_count > 0 do
       # Base density: words per minute
-      words_per_minute = (word_count / segment_duration) * 60.0
+      words_per_minute = word_count / segment_duration * 60.0
 
       # Penalty for extended pauses
-      total_pause_time = words_with_gaps
-      |> Enum.map(&Map.get(&1, "gap_after", 0.0))
-      |> Enum.filter(&(&1 > 0.5))  # Only count pauses > 0.5s
-      |> Enum.sum()
+      total_pause_time =
+        words_with_gaps
+        |> Enum.map(&Map.get(&1, "gap_after", 0.0))
+        # Only count pauses > 0.5s
+        |> Enum.filter(&(&1 > 0.5))
+        |> Enum.sum()
 
       pause_ratio = total_pause_time / segment_duration
 
@@ -1790,17 +2363,24 @@ defmodule ClippsterServerWeb.ClipsController do
       information_ratio = information_indicators / word_count
 
       # Calculate final density score (0.0 to 1.0)
-      density_score = cond do
-        words_per_minute > 180 and pause_ratio < 0.2 -> 1.0  # Very dense
-        words_per_minute > 150 and pause_ratio < 0.3 -> 0.9  # Dense
-        words_per_minute > 120 and pause_ratio < 0.4 -> 0.8  # Above average
-        words_per_minute > 100 and pause_ratio < 0.5 -> 0.7  # Average
-        words_per_minute > 80  and pause_ratio < 0.6 -> 0.6  # Below average
-        true -> 0.5  # Low density
-      end
+      density_score =
+        cond do
+          # Very dense
+          words_per_minute > 180 and pause_ratio < 0.2 -> 1.0
+          # Dense
+          words_per_minute > 150 and pause_ratio < 0.3 -> 0.9
+          # Above average
+          words_per_minute > 120 and pause_ratio < 0.4 -> 0.8
+          # Average
+          words_per_minute > 100 and pause_ratio < 0.5 -> 0.7
+          # Below average
+          words_per_minute > 80 and pause_ratio < 0.6 -> 0.6
+          # Low density
+          true -> 0.5
+        end
 
       # Boost score for high information value
-      final_score = min(1.0, density_score + (information_ratio * 0.2))
+      final_score = min(1.0, density_score + information_ratio * 0.2)
 
       Float.round(final_score, 3)
     else
@@ -1814,7 +2394,7 @@ defmodule ClippsterServerWeb.ClipsController do
     word_count = length(words_with_gaps)
 
     if segment_duration > 0 do
-      Float.round((word_count / segment_duration) * 60.0, 1)
+      Float.round(word_count / segment_duration * 60.0, 1)
     else
       0.0
     end
@@ -1823,25 +2403,57 @@ defmodule ClippsterServerWeb.ClipsController do
   # Count information value indicators in words
   defp count_information_indicators(words) do
     information_words = [
-      "what", "why", "how", "when", "where", "who",  # Questions
-      "amazing", "incredible", "unbelievable", "perfect", "excellent",  # Strong adjectives
-      "absolutely", "definitely", "literally", "actually", "basically",  # Intensifiers
-      "important", "critical", "essential", "significant", "major"  # Importance markers
+      # Questions
+      "what",
+      "why",
+      "how",
+      "when",
+      "where",
+      "who",
+      # Strong adjectives
+      "amazing",
+      "incredible",
+      "unbelievable",
+      "perfect",
+      "excellent",
+      # Intensifiers
+      "absolutely",
+      "definitely",
+      "literally",
+      "actually",
+      "basically",
+      # Importance markers
+      "important",
+      "critical",
+      "essential",
+      "significant",
+      "major"
     ]
 
     words
     |> Enum.map(&String.downcase(Map.get(&1, "word", "")))
     |> Enum.count(fn word ->
-      String.contains?(word, "?") or  # Question marks in transcripts
-      Enum.any?(information_words, &String.contains?(word, &1))
+      # Question marks in transcripts
+      String.contains?(word, "?") or
+        Enum.any?(information_words, &String.contains?(word, &1))
     end)
   end
 
   # Identify filler words and hesitation markers
   defp identify_filler_words(words_with_gaps) do
     filler_patterns = [
-      "um", "uh", "er", "ah", "like", "you know", "i mean",
-      "sort of", "kind of", "actually", "basically", "literally"
+      "um",
+      "uh",
+      "er",
+      "ah",
+      "like",
+      "you know",
+      "i mean",
+      "sort of",
+      "kind of",
+      "actually",
+      "basically",
+      "literally"
     ]
 
     words_with_gaps
@@ -1857,19 +2469,22 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] Creating optimized transcript for AI...")
 
     # Process segments to strip words but keep enhanced metrics
-    optimized_segments = case full_enhanced_transcript["segments"] do
-      segments when is_list(segments) ->
-        segments
-        |> Enum.map(fn segment ->
-          # Strip the words array but keep all enhanced analysis
-          segment
-          |> Map.delete("words")
-          |> Map.delete("verbose_json")  # Remove any nested verbose data
-        end)
-      _ ->
-        IO.puts("[ClipsController] No segments found in enhanced transcript")
-        []
-    end
+    optimized_segments =
+      case full_enhanced_transcript["segments"] do
+        segments when is_list(segments) ->
+          segments
+          |> Enum.map(fn segment ->
+            # Strip the words array but keep all enhanced analysis
+            segment
+            |> Map.delete("words")
+            # Remove any nested verbose data
+            |> Map.delete("verbose_json")
+          end)
+
+        _ ->
+          IO.puts("[ClipsController] No segments found in enhanced transcript")
+          []
+      end
 
     # Create optimized transcript structure
     optimized_transcript = %{
@@ -1885,7 +2500,10 @@ defmodule ClippsterServerWeb.ClipsController do
       }
     }
 
-    IO.puts("[ClipsController] Optimized transcript created with #{length(optimized_segments)} segments")
+    IO.puts(
+      "[ClipsController] Optimized transcript created with #{length(optimized_segments)} segments"
+    )
+
     IO.puts("[ClipsController] Words array stripped to reduce AI payload size")
 
     optimized_transcript
@@ -1899,7 +2517,9 @@ defmodule ClippsterServerWeb.ClipsController do
       start_time = Map.get(chunk_metadata, "start_time")
       end_time = Map.get(chunk_metadata, "end_time")
 
-      IO.puts("[ClipsController] Processing chunk #{chunk_index}: #{chunk_id} (#{start_time}s - #{end_time}s)")
+      IO.puts(
+        "[ClipsController] Processing chunk #{chunk_index}: #{chunk_id} (#{start_time}s - #{end_time}s)"
+      )
 
       # Decode base64 audio data
       audio_data = Base.decode64!(base64_data)
@@ -1918,38 +2538,44 @@ defmodule ClippsterServerWeb.ClipsController do
 
           # Log Whisper usage
           duration = Map.get(whisper_response, "duration")
+
           AI.log_usage(%{
-             user_id: user_id,
-             project_id: project_id,
-             provider: "whisper",
-             model: "whisper-1",
-             duration_seconds: Decimal.new(to_string(duration)),
-             operation_type: "transcription_chunk"
+            user_id: user_id,
+            project_id: project_id,
+            provider: "whisper",
+            model: "whisper-1",
+            duration_seconds: Decimal.new(to_string(duration)),
+            operation_type: "transcription_chunk"
           })
 
           # Adjust timestamps in the response by chunk start_time
           adjusted_response = adjust_timestamps_for_chunk(whisper_response, start_time)
 
           # Return result with original response for validation
-          {:ok, %{
-            chunk_id: chunk_id,
-            chunk_index: chunk_index,
-            start_time: start_time,
-            end_time: end_time,
-            adjusted_whisper_response: adjusted_response,
-            original_whisper_response: whisper_response,
-            transcription: adjusted_response
-          }}
+          {:ok,
+           %{
+             chunk_id: chunk_id,
+             chunk_index: chunk_index,
+             start_time: start_time,
+             end_time: end_time,
+             adjusted_whisper_response: adjusted_response,
+             original_whisper_response: whisper_response,
+             transcription: adjusted_response
+           }}
 
         {:error, reason} ->
-          IO.puts("[ClipsController] Chunk #{chunk_index} transcription failed: #{inspect(reason)}")
+          IO.puts(
+            "[ClipsController] Chunk #{chunk_index} transcription failed: #{inspect(reason)}"
+          )
+
           {:error, %{chunk_id: chunk_id, chunk_index: chunk_index, reason: reason}}
       end
-
     rescue
       error ->
         IO.puts("[ClipsController] Error processing chunk #{chunk_index}: #{inspect(error)}")
-        {:error, %{chunk_id: "unknown", chunk_index: chunk_index, reason: Exception.message(error)}}
+
+        {:error,
+         %{chunk_id: "unknown", chunk_index: chunk_index, reason: Exception.message(error)}}
     end
   end
 
@@ -1958,30 +2584,34 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] Adjusting timestamps for chunk starting at #{chunk_start_time}s")
 
     # Adjust segments
-    adjusted_segments = case Map.get(whisper_response, "segments") do
-      segments when is_list(segments) ->
-        segments
-        |> Enum.map(fn segment ->
-          segment
-          |> Map.put("start", Map.get(segment, "start", 0) + chunk_start_time)
-          |> Map.put("end", Map.get(segment, "end", 0) + chunk_start_time)
-        end)
-      _ ->
-        []
-    end
+    adjusted_segments =
+      case Map.get(whisper_response, "segments") do
+        segments when is_list(segments) ->
+          segments
+          |> Enum.map(fn segment ->
+            segment
+            |> Map.put("start", Map.get(segment, "start", 0) + chunk_start_time)
+            |> Map.put("end", Map.get(segment, "end", 0) + chunk_start_time)
+          end)
+
+        _ ->
+          []
+      end
 
     # Adjust words if available
-    adjusted_words = case Map.get(whisper_response, "words") do
-      words when is_list(words) ->
-        words
-        |> Enum.map(fn word ->
-          word
-          |> Map.put("start", Map.get(word, "start", 0) + chunk_start_time)
-          |> Map.put("end", Map.get(word, "end", 0) + chunk_start_time)
-        end)
-      _ ->
-        []
-    end
+    adjusted_words =
+      case Map.get(whisper_response, "words") do
+        words when is_list(words) ->
+          words
+          |> Enum.map(fn word ->
+            word
+            |> Map.put("start", Map.get(word, "start", 0) + chunk_start_time)
+            |> Map.put("end", Map.get(word, "end", 0) + chunk_start_time)
+          end)
+
+        _ ->
+          []
+      end
 
     # Update duration to reflect the full timeline position
     original_duration = Map.get(whisper_response, "duration", 0)
@@ -2008,8 +2638,13 @@ defmodule ClippsterServerWeb.ClipsController do
         case Float.parse(to_string(source["duration"])) do
           {duration_seconds, _} ->
             duration_minutes = duration_seconds / 60.0
-            IO.puts("[ClipsController] Duration from params: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)")
+
+            IO.puts(
+              "[ClipsController] Duration from params: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)"
+            )
+
             duration_minutes
+
           :error ->
             IO.puts("[ClipsController] Warning: Could not parse duration param")
             # Fallback to other methods if parsing fails
@@ -2038,7 +2673,10 @@ defmodule ClippsterServerWeb.ClipsController do
         calculate_duration_from_chunks(source["chunks"])
 
       true ->
-        IO.puts("[ClipsController] Warning: Could not determine audio source for duration calculation")
+        IO.puts(
+          "[ClipsController] Warning: Could not determine audio source for duration calculation"
+        )
+
         0.0
     end
   end
@@ -2052,7 +2690,11 @@ defmodule ClippsterServerWeb.ClipsController do
         # Basic estimation: assume 1MB = 1 minute of audio (rough approximation)
         file_size_mb = get_file_size_mb(path)
         estimated_minutes = file_size_mb * 1.0
-        IO.puts("[ClipsController] Estimated duration from file size: #{Float.round(estimated_minutes, 3)} minutes")
+
+        IO.puts(
+          "[ClipsController] Estimated duration from file size: #{Float.round(estimated_minutes, 3)} minutes"
+        )
+
         estimated_minutes
 
       _ ->
@@ -2069,7 +2711,11 @@ defmodule ClippsterServerWeb.ClipsController do
           {:ok, raw_response} ->
             duration_seconds = Map.get(raw_response, "duration", 0.0)
             duration_minutes = duration_seconds / 60.0
-            IO.puts("[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)")
+
+            IO.puts(
+              "[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)"
+            )
+
             duration_minutes
 
           _ ->
@@ -2079,7 +2725,11 @@ defmodule ClippsterServerWeb.ClipsController do
 
       %{"duration" => duration_seconds} when is_number(duration_seconds) ->
         duration_minutes = duration_seconds / 60.0
-        IO.puts("[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)")
+
+        IO.puts(
+          "[ClipsController] Duration from transcript: #{Float.round(duration_minutes, 3)} minutes (#{duration_seconds}s)"
+        )
+
         duration_minutes
 
       _ ->
@@ -2093,13 +2743,18 @@ defmodule ClippsterServerWeb.ClipsController do
     case Jason.decode(chunks_json) do
       {:ok, chunks} when is_list(chunks) ->
         # Find the maximum end_time across all chunks
-        max_end_time = chunks
-        |> Enum.map(fn chunk -> Map.get(chunk, "end_time", 0.0) end)
-        |> Enum.max()
-        |> Kernel.||(0.0)
+        max_end_time =
+          chunks
+          |> Enum.map(fn chunk -> Map.get(chunk, "end_time", 0.0) end)
+          |> Enum.max()
+          |> Kernel.||(0.0)
 
         duration_minutes = max_end_time / 60.0
-        IO.puts("[ClipsController] Duration from chunks: #{Float.round(duration_minutes, 3)} minutes (#{max_end_time}s)")
+
+        IO.puts(
+          "[ClipsController] Duration from chunks: #{Float.round(duration_minutes, 3)} minutes (#{max_end_time}s)"
+        )
+
         duration_minutes
 
       _ ->
@@ -2113,16 +2768,21 @@ defmodule ClippsterServerWeb.ClipsController do
   # Calculate duration from filtered chunks (already parsed list)
   defp calculate_duration_from_filtered_chunks(chunks) when is_list(chunks) do
     # Sum the duration of all chunks in the filtered list
-    total_seconds = chunks
-    |> Enum.reduce(0.0, fn chunk, acc ->
-      chunk_start = Map.get(chunk, "start_time", 0.0)
-      chunk_end = Map.get(chunk, "end_time", 0.0)
-      chunk_duration = chunk_end - chunk_start
-      acc + chunk_duration
-    end)
+    total_seconds =
+      chunks
+      |> Enum.reduce(0.0, fn chunk, acc ->
+        chunk_start = Map.get(chunk, "start_time", 0.0)
+        chunk_end = Map.get(chunk, "end_time", 0.0)
+        chunk_duration = chunk_end - chunk_start
+        acc + chunk_duration
+      end)
 
     duration_minutes = total_seconds / 60.0
-    IO.puts("[ClipsController] Duration from filtered chunks: #{Float.round(duration_minutes, 3)} minutes (#{Float.round(total_seconds, 1)}s)")
+
+    IO.puts(
+      "[ClipsController] Duration from filtered chunks: #{Float.round(duration_minutes, 3)} minutes (#{Float.round(total_seconds, 1)}s)"
+    )
+
     duration_minutes
   end
 
@@ -2152,6 +2812,7 @@ defmodule ClippsterServerWeb.ClipsController do
     case Credits.get_user_balance(user_id) do
       {:ok, %{hours_remaining: remaining}} when remaining != :unlimited ->
         remaining_credits = Decimal.to_float(remaining)
+
         if remaining_credits < credits_to_deduct do
           {:error, :insufficient_credits, remaining_credits, credits_to_deduct}
         else
@@ -2160,7 +2821,9 @@ defmodule ClippsterServerWeb.ClipsController do
             {:error, reason} -> {:error, :deduction_failed, reason}
           end
         end
-      {:ok, %{hours_remaining: :unlimited}} -> {:ok, 0.0}
+
+      {:ok, %{hours_remaining: :unlimited}} ->
+        {:ok, 0.0}
     end
   end
 
@@ -2168,7 +2831,13 @@ defmodule ClippsterServerWeb.ClipsController do
   # Now supports optional organization_id for org credit deduction
   # Credits are rounded up to whole minutes
   # Multimodal mode applies a 2x multiplier
-  defp deduct_credits_for_processing(user_id, duration_minutes, is_first_run, organization_id, multimodal) do
+  defp deduct_credits_for_processing(
+         user_id,
+         duration_minutes,
+         is_first_run,
+         organization_id,
+         multimodal
+       ) do
     # Determine base credit rate based on processing type
     base_rate = if is_first_run, do: 1.0, else: 0.7
 
@@ -2179,9 +2848,17 @@ defmodule ClippsterServerWeb.ClipsController do
 
     IO.puts("[ClipsController] Credit deduction calculation:")
     IO.puts("[ClipsController]   Duration: #{Float.round(duration_minutes, 3)} minutes")
-    IO.puts("[ClipsController]   Processing type: #{if is_first_run, do: "First run", else: "Followup run"}")
+
+    IO.puts(
+      "[ClipsController]   Processing type: #{if is_first_run, do: "First run", else: "Followup run"}"
+    )
+
     IO.puts("[ClipsController]   Multimodal mode: #{multimodal}")
-    IO.puts("[ClipsController]   Credit rate: #{credit_rate}x#{if multimodal, do: " (2x multimodal multiplier)", else: ""}")
+
+    IO.puts(
+      "[ClipsController]   Credit rate: #{credit_rate}x#{if multimodal, do: " (2x multimodal multiplier)", else: ""}"
+    )
+
     IO.puts("[ClipsController]   Credits to deduct: #{Float.round(credits_to_deduct, 3)}")
     IO.puts("[ClipsController]   Organization context: #{inspect(organization_id)}")
 
@@ -2190,7 +2867,10 @@ defmodule ClippsterServerWeb.ClipsController do
       # Use organization credits
       case Credits.deduct_credits_with_org_context(user_id, credits_to_deduct, organization_id) do
         {:ok, %{source: :organization, org_id: org_id}} ->
-          IO.puts("[ClipsController] Successfully deducted #{Float.round(credits_to_deduct, 3)} credits from org #{org_id}")
+          IO.puts(
+            "[ClipsController] Successfully deducted #{Float.round(credits_to_deduct, 3)} credits from org #{org_id}"
+          )
+
           {:ok, credits_to_deduct, :organization}
 
         {:error, :insufficient_credits, remaining, needed} ->
@@ -2210,13 +2890,17 @@ defmodule ClippsterServerWeb.ClipsController do
       case Credits.get_user_balance(user_id) do
         {:ok, %{hours_remaining: remaining}} when remaining != :unlimited ->
           remaining_hours = Decimal.to_float(remaining)
+
           if remaining_hours < credits_to_deduct do
             {:error, :insufficient_credits, remaining_hours, credits_to_deduct}
           else
             # Deduct credits
             case Credits.deduct_credits(user_id, credits_to_deduct) do
               {:ok, _updated_credit} ->
-                IO.puts("[ClipsController] Successfully deducted #{Float.round(credits_to_deduct, 3)} personal credits")
+                IO.puts(
+                  "[ClipsController] Successfully deducted #{Float.round(credits_to_deduct, 3)} personal credits"
+                )
+
                 {:ok, credits_to_deduct, :personal}
 
               {:error, reason} ->
@@ -2245,20 +2929,32 @@ defmodule ClippsterServerWeb.ClipsController do
     multimodal = Keyword.get(opts, :multimodal, false)
 
     # First deduct credits (with optional org context and multimodal multiplier)
-    case deduct_credits_for_processing(user_id, duration_hours, is_first_run, organization_id, multimodal) do
-      {:ok, credits_deducted, credit_source} when is_number(credits_deducted) and credits_deducted > 0 ->
+    case deduct_credits_for_processing(
+           user_id,
+           duration_hours,
+           is_first_run,
+           organization_id,
+           multimodal
+         ) do
+      {:ok, credits_deducted, credit_source}
+      when is_number(credits_deducted) and credits_deducted > 0 ->
         # Create a processing job record for refund tracking
         job_opts = [
           project_id: project_id,
           video_url: video_url,
           job_type: job_type
         ]
+
         # Add organization_id to job if using org credits
-        job_opts = if organization_id, do: [{:organization_id, organization_id} | job_opts], else: job_opts
+        job_opts =
+          if organization_id, do: [{:organization_id, organization_id} | job_opts], else: job_opts
 
         case Credits.create_processing_job(user_id, credits_deducted, duration_hours, job_opts) do
           {:ok, job} ->
-            IO.puts("[ClipsController] Created processing job #{job.id} for tracking (#{Float.round(credits_deducted, 3)} credits from #{credit_source})")
+            IO.puts(
+              "[ClipsController] Created processing job #{job.id} for tracking (#{Float.round(credits_deducted, 3)} credits from #{credit_source})"
+            )
+
             {:ok, %{credits: credits_deducted, job_id: job.id, credit_source: credit_source}}
 
           {:error, reason} ->
@@ -2267,7 +2963,8 @@ defmodule ClippsterServerWeb.ClipsController do
             {:ok, %{credits: credits_deducted, job_id: nil, credit_source: credit_source}}
         end
 
-      {:ok, credits_deducted, credit_source} when credits_deducted == 0 or credits_deducted == 0.0 ->
+      {:ok, credits_deducted, credit_source}
+      when credits_deducted == 0 or credits_deducted == 0.0 ->
         # Admin user or unlimited - no job needed
         {:ok, %{credits: 0.0, job_id: nil, credit_source: credit_source}}
 
@@ -2278,27 +2975,33 @@ defmodule ClippsterServerWeb.ClipsController do
 
   # Marks a processing job as completed.
   defp complete_job(nil), do: :ok
+
   defp complete_job(job_id) do
     case Credits.complete_processing_job(job_id) do
       {:ok, _job} ->
         IO.puts("[ClipsController] Marked job #{job_id} as completed")
         :ok
+
       {:error, reason} ->
         IO.puts("[ClipsController] Warning: Failed to mark job as completed: #{inspect(reason)}")
-        :ok  # Non-critical error
+        # Non-critical error
+        :ok
     end
   end
 
   # Marks a processing job as failed.
   defp fail_job(nil, _error), do: :ok
+
   defp fail_job(job_id, error) do
     case Credits.fail_processing_job(job_id, %{error: error}) do
       {:ok, _job} ->
         IO.puts("[ClipsController] Marked job #{job_id} as failed")
         :ok
+
       {:error, reason} ->
         IO.puts("[ClipsController] Warning: Failed to mark job as failed: #{inspect(reason)}")
-        :ok  # Non-critical error
+        # Non-critical error
+        :ok
     end
   end
 
@@ -2308,9 +3011,12 @@ defmodule ClippsterServerWeb.ClipsController do
       ["Bearer " <> token] ->
         # Simple JWT decode without verification (for development)
         # In production, use proper JWT verification
-        case Jason.decode(Base.url_decode64!(String.split(token, ".") |> Enum.at(1), padding: false)) do
+        case Jason.decode(
+               Base.url_decode64!(String.split(token, ".") |> Enum.at(1), padding: false)
+             ) do
           {:ok, claims} ->
             {:ok, claims["user_id"], claims["is_admin"] || false}
+
           _ ->
             {:error, :invalid_token}
         end
@@ -2326,23 +3032,26 @@ defmodule ClippsterServerWeb.ClipsController do
     Logger.info("[ClipsController] Merging overlapping clips from #{length(clips)} total clips")
 
     # Sort clips by start time
-    sorted_clips = Enum.sort_by(clips, fn clip ->
-      get_clip_start_time(clip)
-    end)
+    sorted_clips =
+      Enum.sort_by(clips, fn clip ->
+        get_clip_start_time(clip)
+      end)
 
     # Merge clips that have significant overlap (>50% of shorter clip's duration)
-    merged = Enum.reduce(sorted_clips, [], fn clip, acc ->
-      case find_overlapping_clip(clip, acc) do
-        nil ->
-          # No overlap, add clip to list
-          [clip | acc]
-        {overlapping_clip, rest} ->
-          # Found overlap, merge clips (keep the longer one with expanded boundaries)
-          merged_clip = merge_two_clips(overlapping_clip, clip)
-          [merged_clip | rest]
-      end
-    end)
-    |> Enum.reverse()
+    merged =
+      Enum.reduce(sorted_clips, [], fn clip, acc ->
+        case find_overlapping_clip(clip, acc) do
+          nil ->
+            # No overlap, add clip to list
+            [clip | acc]
+
+          {overlapping_clip, rest} ->
+            # Found overlap, merge clips (keep the longer one with expanded boundaries)
+            merged_clip = merge_two_clips(overlapping_clip, clip)
+            [merged_clip | rest]
+        end
+      end)
+      |> Enum.reverse()
 
     Logger.info("[ClipsController] After merging: #{length(merged)} clips")
     merged
@@ -2351,6 +3060,7 @@ defmodule ClippsterServerWeb.ClipsController do
   # Get the start time of a clip from its segments
   defp get_clip_start_time(clip) do
     segments = Map.get(clip, "segments", [])
+
     case segments do
       [first | _] -> Map.get(first, "start_time", 0)
       [] -> 0
@@ -2360,6 +3070,7 @@ defmodule ClippsterServerWeb.ClipsController do
   # Get the end time of a clip from its segments
   defp get_clip_end_time(clip) do
     segments = Map.get(clip, "segments", [])
+
     case List.last(segments) do
       nil -> 0
       last -> Map.get(last, "end_time", 0)
@@ -2417,17 +3128,21 @@ defmodule ClippsterServerWeb.ClipsController do
 
     # Update the segments with merged boundaries
     # For simplicity, create a single continuous segment with merged boundaries
-    merged_segments = [%{
-      "start_time" => merged_start,
-      "end_time" => merged_end,
-      "duration" => merged_duration,
-      "transcript" => get_merged_transcript(clip1, clip2)
-    }]
+    merged_segments = [
+      %{
+        "start_time" => merged_start,
+        "end_time" => merged_end,
+        "duration" => merged_duration,
+        "transcript" => get_merged_transcript(clip1, clip2)
+      }
+    ]
 
     # Combine transcripts
     combined_transcript = get_merged_transcript(clip1, clip2)
 
-    Logger.info("[ClipsController] Merged clips: #{clip1_start}-#{clip1_end} + #{clip2_start}-#{clip2_end} -> #{merged_start}-#{merged_end}")
+    Logger.info(
+      "[ClipsController] Merged clips: #{clip1_start}-#{clip1_end} + #{clip2_start}-#{clip2_end} -> #{merged_start}-#{merged_end}"
+    )
 
     base_clip
     |> Map.put("segments", merged_segments)
@@ -2450,32 +3165,37 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController] Reconstructing timeline from #{length(chunk_transcripts)} chunks")
 
     # Sort chunks by start_time to ensure proper order
-    sorted_chunks = chunk_transcripts
-    |> Enum.sort_by(&Map.get(&1, :start_time, 0))
+    sorted_chunks =
+      chunk_transcripts
+      |> Enum.sort_by(&Map.get(&1, :start_time, 0))
 
     # Combine all segments from all chunks
-    all_segments = sorted_chunks
-    |> Enum.flat_map(fn chunk ->
-      Map.get(chunk.adjusted_whisper_response, "segments", [])
-    end)
+    all_segments =
+      sorted_chunks
+      |> Enum.flat_map(fn chunk ->
+        Map.get(chunk.adjusted_whisper_response, "segments", [])
+      end)
 
     # Combine all words from all chunks
-    all_words = sorted_chunks
-    |> Enum.flat_map(fn chunk ->
-      Map.get(chunk.adjusted_whisper_response, "words", [])
-    end)
+    all_words =
+      sorted_chunks
+      |> Enum.flat_map(fn chunk ->
+        Map.get(chunk.adjusted_whisper_response, "words", [])
+      end)
 
     # Calculate total duration
-    total_duration = sorted_chunks
-    |> Enum.map(fn chunk -> Map.get(chunk, :end_time, 0) end)
-    |> Enum.max()
-    |> Kernel.||(0)
+    total_duration =
+      sorted_chunks
+      |> Enum.map(fn chunk -> Map.get(chunk, :end_time, 0) end)
+      |> Enum.max()
+      |> Kernel.||(0)
 
     # Combine text from all chunks
-    combined_text = sorted_chunks
-    |> Enum.map_join(" ", fn chunk ->
-      Map.get(chunk.adjusted_whisper_response, "text", "")
-    end)
+    combined_text =
+      sorted_chunks
+      |> Enum.map_join(" ", fn chunk ->
+        Map.get(chunk.adjusted_whisper_response, "text", "")
+      end)
 
     # Create reconstructed transcript
     reconstructed_transcript = %{
@@ -2483,7 +3203,8 @@ defmodule ClippsterServerWeb.ClipsController do
       "text" => combined_text,
       "segments" => all_segments,
       "words" => all_words,
-      "language" => "en", # Default language, could be detected from chunks
+      # Default language, could be detected from chunks
+      "language" => "en",
       "chunk_reconstruction_metadata" => %{
         "chunks_processed" => length(chunk_transcripts),
         "total_segments" => length(all_segments),
@@ -2512,21 +3233,30 @@ defmodule ClippsterServerWeb.ClipsController do
     catch
       :throw, {:error, reason} ->
         handle_retry(reason, fun, retries, project_id)
+
       kind, reason ->
         handle_retry("#{inspect(kind)}: #{inspect(reason)}", fun, retries, project_id)
     end
   end
 
   defp handle_retry(reason, fun, retries, project_id) do
-    error_msg = case reason do
-      %RuntimeError{message: msg} -> msg
-      s when is_binary(s) -> s
-      _ -> inspect(reason)
-    end
+    error_msg =
+      case reason do
+        %RuntimeError{message: msg} -> msg
+        s when is_binary(s) -> s
+        _ -> inspect(reason)
+      end
 
     if retries > 0 do
       IO.puts("[ClipsController] Error: #{error_msg}. Retrying... (#{retries} attempts left)")
-      ProgressChannel.broadcast_progress(project_id, "retrying", 0, "Error: #{error_msg}. Auto-retrying in 2s... (#{retries} attempts left)")
+
+      ProgressChannel.broadcast_progress(
+        project_id,
+        "retrying",
+        0,
+        "Error: #{error_msg}. Auto-retrying in 2s... (#{retries} attempts left)"
+      )
+
       Process.sleep(2000)
       retry_with_backoff(fun, retries - 1, project_id)
     else
@@ -2538,6 +3268,7 @@ defmodule ClippsterServerWeb.ClipsController do
   defp refund_credits(user_id, amount, is_admin) do
     if !is_admin and amount > 0 do
       IO.puts("[ClipsController] Refunding #{amount} credits to user #{user_id}")
+
       case Credits.add_credits(user_id, amount) do
         {:ok, _} -> IO.puts("[ClipsController] Refund successful")
         {:error, e} -> IO.puts("[ClipsController] Refund failed: #{inspect(e)}")
@@ -2549,12 +3280,14 @@ defmodule ClippsterServerWeb.ClipsController do
   defp parse_org_id(nil), do: nil
   defp parse_org_id(""), do: nil
   defp parse_org_id(id) when is_integer(id), do: id
+
   defp parse_org_id(id) when is_binary(id) do
     case Integer.parse(id) do
       {int_id, ""} -> int_id
       _ -> nil
     end
   end
+
   defp parse_org_id(_), do: nil
 
   # Check if AI clip detection is allowed for a user

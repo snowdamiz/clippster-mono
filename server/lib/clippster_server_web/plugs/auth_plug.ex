@@ -16,14 +16,18 @@ defmodule ClippsterServerWeb.AuthPlug do
       ["Bearer " <> token] ->
         IO.puts("[AuthPlug] #{path} - Token received (#{String.length(token)} chars)")
         verify_token(conn, token)
+
       [] ->
         IO.puts("[AuthPlug] #{path} - No Authorization header!")
+
         conn
         |> put_status(401)
         |> Phoenix.Controller.json(%{error: "Authentication required"})
         |> halt()
+
       other ->
         IO.puts("[AuthPlug] #{path} - Invalid header format: #{inspect(other)}")
+
         conn
         |> put_status(401)
         |> Phoenix.Controller.json(%{error: "Authentication required"})

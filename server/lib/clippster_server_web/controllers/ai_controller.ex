@@ -15,23 +15,25 @@ defmodule ClippsterServerWeb.AIController do
     if can_access_ai_editor?(user) do
       Logger.info("AI video generation request from user #{user.id}")
 
-      with {:ok, composition} <- VideoComposer.generate(
-        params["prompt"],
-        params["media"],
-        params["style"] || params["stylePreset"],
-        params["duration"],
-        params["aspectRatio"],
-        user,
-        params["existingComposition"],
-        %{
-          "intensity" => params["intensity"],
-          "captionStyle" => params["captionStyle"]
-        }
-      ) do
+      with {:ok, composition} <-
+             VideoComposer.generate(
+               params["prompt"],
+               params["media"],
+               params["style"] || params["stylePreset"],
+               params["duration"],
+               params["aspectRatio"],
+               user,
+               params["existingComposition"],
+               %{
+                 "intensity" => params["intensity"],
+                 "captionStyle" => params["captionStyle"]
+               }
+             ) do
         json(conn, %{composition: composition})
       else
         {:error, reason} ->
           Logger.error("AI video generation failed: #{inspect(reason)}")
+
           conn
           |> put_status(:bad_request)
           |> json(%{error: reason})
@@ -39,7 +41,10 @@ defmodule ClippsterServerWeb.AIController do
     else
       conn
       |> put_status(:forbidden)
-      |> json(%{error: "AI Video Creator access requires admin approval. Contact support to request access."})
+      |> json(%{
+        error:
+          "AI Video Creator access requires admin approval. Contact support to request access."
+      })
     end
   end
 
@@ -63,8 +68,11 @@ defmodule ClippsterServerWeb.AIController do
       send_fn = fn %{event: event, data: data} ->
         sse_data = Jason.encode!(data)
         chunk_data = "event: #{event}\ndata: #{sse_data}\n\n"
+
         case Plug.Conn.chunk(conn, chunk_data) do
-          {:ok, _conn} -> :ok
+          {:ok, _conn} ->
+            :ok
+
           {:error, reason} ->
             Logger.warning("SSE chunk send failed: #{inspect(reason)}")
             :error
@@ -93,7 +101,10 @@ defmodule ClippsterServerWeb.AIController do
     else
       conn
       |> put_status(:forbidden)
-      |> json(%{error: "AI Video Creator access requires admin approval. Contact support to request access."})
+      |> json(%{
+        error:
+          "AI Video Creator access requires admin approval. Contact support to request access."
+      })
     end
   end
 

@@ -21,4 +21,3 @@ defmodule ClippsterServer.Repo.Migrations.CreateAppSettings do
     )
   end
 end
-

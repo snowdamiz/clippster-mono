@@ -1,5 +1,5 @@
 use super::frame_cache::{CachedFrame, FrameCache, FrameCacheKey};
-use super::frame_decoder::{VideoDecoder, DecoderError};
+use super::frame_decoder::{DecoderError, VideoDecoder};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -32,16 +32,22 @@ impl DecoderPool {
 
         let lock = Arc::new(Mutex::new(()));
         let mut locks = self.source_locks.write();
-        let entry = locks.entry(source_id.to_string()).or_insert_with(|| Arc::clone(&lock));
+        let entry = locks
+            .entry(source_id.to_string())
+            .or_insert_with(|| Arc::clone(&lock));
         Arc::clone(entry)
     }
 
-    pub fn get_or_create_decoder(&self, source_id: &str, video_path: &str) -> Result<Arc<VideoDecoder>, DecoderError> {
+    pub fn get_or_create_decoder(
+        &self,
+        source_id: &str,
+        video_path: &str,
+    ) -> Result<Arc<VideoDecoder>, DecoderError> {
         // Check if we have a cached decoder AND if the path matches
         {
             let decoders = self.decoders.read();
             let paths = self.decoder_paths.read();
-            
+
             if let Some(decoder) = decoders.get(source_id) {
                 // Check if the path matches - if not, we need to recreate the decoder
                 if let Some(cached_path) = paths.get(source_id) {
@@ -49,7 +55,10 @@ impl DecoderPool {
                         return Ok(Arc::clone(decoder));
                     }
                     // Path changed (e.g., original -> proxy), need to recreate
-                    eprintln!("[DecoderPool] Path changed for {}: {} -> {}", source_id, cached_path, video_path);
+                    eprintln!(
+                        "[DecoderPool] Path changed for {}: {} -> {}",
+                        source_id, cached_path, video_path
+                    );
                 } else {
                     // No path recorded but decoder exists - use it
                     return Ok(Arc::clone(decoder));
@@ -64,7 +73,7 @@ impl DecoderPool {
         }
 
         let decoder = Arc::new(VideoDecoder::new(video_path)?);
-        
+
         {
             let mut decoders = self.decoders.write();
             let mut paths = self.decoder_paths.write();
@@ -77,9 +86,14 @@ impl DecoderPool {
         Ok(decoder)
     }
 
-    pub fn get_frame(&self, source_id: &str, video_path: &str, timestamp: f64) -> Result<CachedFrame, DecoderError> {
+    pub fn get_frame(
+        &self,
+        source_id: &str,
+        video_path: &str,
+        timestamp: f64,
+    ) -> Result<CachedFrame, DecoderError> {
         let cache_key = FrameCacheKey::new(source_id.to_string(), timestamp);
-        
+
         if let Some(cached_frame) = self.frame_cache.get(&cache_key) {
             return Ok(cached_frame);
         }
@@ -102,19 +116,26 @@ impl DecoderPool {
         Ok(cached_frame)
     }
 
-    pub fn prefetch_frames(&self, source_id: &str, video_path: &str, start_time: f64, count: usize, fps: f64) -> Result<(), DecoderError> {
+    pub fn prefetch_frames(
+        &self,
+        source_id: &str,
+        video_path: &str,
+        start_time: f64,
+        count: usize,
+        fps: f64,
+    ) -> Result<(), DecoderError> {
         let frame_duration = 1.0 / fps;
-        
+
         for i in 0..count {
             let timestamp = start_time + (i as f64 * frame_duration);
             let cache_key = FrameCacheKey::new(source_id.to_string(), timestamp);
-            
+
             if self.frame_cache.get(&cache_key).is_some() {
                 continue;
             }
 
             match self.get_frame(source_id, video_path, timestamp) {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     eprintln!("Failed to prefetch frame at {}: {}", timestamp, e);
                 }

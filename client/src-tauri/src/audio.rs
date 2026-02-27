@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
+use crate::ffmpeg_utils::parse_duration_from_ffmpeg_output;
 use crate::storage;
-use crate::ffmpeg_utils::{parse_duration_from_ffmpeg_output};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioChunk {
@@ -18,7 +18,7 @@ pub struct AudioChunk {
 pub async fn extract_audio_from_video(
     app: tauri::AppHandle,
     video_path: String,
-    output_path: String
+    output_path: String,
 ) -> Result<(String, String), String> {
     use tauri_plugin_shell::ShellExt;
 
@@ -27,38 +27,43 @@ pub async fn extract_audio_from_video(
     println!("[Rust]   output_path: {}", output_path);
 
     // Get storage paths for temporary file
-    let paths = storage::init_storage_dirs()
-        .map_err(|e| {
-            println!("[Rust] Failed to get storage paths: {}", e);
-            format!("Failed to get storage paths: {}", e)
-        })?;
+    let paths = storage::init_storage_dirs().map_err(|e| {
+        println!("[Rust] Failed to get storage paths: {}", e);
+        format!("Failed to get storage paths: {}", e)
+    })?;
 
     // Check if we have a cached audio file from waveform generation
     let video_path_hash = crate::waveform::generate_video_path_hash(&video_path);
     let cached_path_result = crate::waveform::get_audio_cache_file_path(&video_path_hash);
-    
+
     if let Ok(ref cached_path) = cached_path_result {
         if cached_path.exists() {
-            println!("[Rust] Found cached audio file for clip detection: {:?}", cached_path);
-            
-            // Read the cached file
-            let audio_bytes = std::fs::read(cached_path)
-                .map_err(|e| {
-                    println!("[Rust] Failed to read cached audio file: {}", e);
-                    format!("Failed to read audio file: {}", e)
-                })?;
+            println!(
+                "[Rust] Found cached audio file for clip detection: {:?}",
+                cached_path
+            );
 
-            println!("[Rust] Read {} bytes from cached audio file", audio_bytes.len());
+            // Read the cached file
+            let audio_bytes = std::fs::read(cached_path).map_err(|e| {
+                println!("[Rust] Failed to read cached audio file: {}", e);
+                format!("Failed to read audio file: {}", e)
+            })?;
+
+            println!(
+                "[Rust] Read {} bytes from cached audio file",
+                audio_bytes.len()
+            );
 
             // Encode to base64
-            use base64::{Engine as _, engine::general_purpose};
+            use base64::{engine::general_purpose, Engine as _};
             let base64_data = general_purpose::STANDARD.encode(&audio_bytes);
 
             // Get filename for return
-            let filename = cached_path.file_name()
+            let filename = cached_path
+                .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("audio.mp3");
-                
+
             return Ok((filename.to_string(), base64_data));
         }
     }
@@ -70,12 +75,13 @@ pub async fn extract_audio_from_video(
         println!("[Rust] Will save to cache path: {:?}", path);
         (path, true)
     } else {
-        let temp_path = paths.videos.join(format!("temp_audio_{}_audio_only.mp3",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| format!("Failed to get timestamp: {}", e))?
-            .as_secs()
-    ));
+        let temp_path = paths.videos.join(format!(
+            "temp_audio_{}_audio_only.mp3",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| format!("Failed to get timestamp: {}", e))?
+                .as_secs()
+        ));
         println!("[Rust] Will save to temp path: {:?}", temp_path);
         (temp_path, false)
     };
@@ -86,14 +92,18 @@ pub async fn extract_audio_from_video(
     let shell = app.shell();
     println!("[Rust] Running FFmpeg to extract audio...");
 
-    let output = shell.sidecar("ffmpeg")
+    let output = shell
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args([
-            "-i", &video_path,
-            "-c:a", "libmp3lame", // MP3 codec
-            "-q:a", "8",          // Quality level 8 (~85kbps)
-            "-vn",               // No video
-            "-y",                // Overwrite output file
+            "-i",
+            &video_path,
+            "-c:a",
+            "libmp3lame", // MP3 codec
+            "-q:a",
+            "8",   // Quality level 8 (~85kbps)
+            "-vn", // No video
+            "-y",  // Overwrite output file
             target_path.to_str().ok_or("Invalid target audio path")?,
         ])
         .output()
@@ -119,11 +129,10 @@ pub async fn extract_audio_from_video(
 
     // Read the file and return as base64 encoded data
     println!("[Rust] Reading audio file for base64 encoding...");
-    let mut audio_bytes = std::fs::read(&target_path)
-        .map_err(|e| {
-            println!("[Rust] Failed to read audio file: {}", e);
-            format!("Failed to read audio file: {}", e)
-        })?;
+    let mut audio_bytes = std::fs::read(&target_path).map_err(|e| {
+        println!("[Rust] Failed to read audio file: {}", e);
+        format!("Failed to read audio file: {}", e)
+    })?;
 
     println!("[Rust] Read {} bytes from audio file", audio_bytes.len());
 
@@ -178,8 +187,8 @@ pub async fn extract_audio_from_video(
             return Err(msg);
         }
 
-        audio_bytes = std::fs::read(&wav_path)
-            .map_err(|e| format!("Failed to read wav fallback: {}", e))?;
+        audio_bytes =
+            std::fs::read(&wav_path).map_err(|e| format!("Failed to read wav fallback: {}", e))?;
 
         println!(
             "[Rust] WAV fallback bytes: {} (path: {})",
@@ -199,22 +208,31 @@ pub async fn extract_audio_from_video(
     }
 
     // Encode to base64
-    use base64::{Engine as _, engine::general_purpose};
+    use base64::{engine::general_purpose, Engine as _};
     let base64_data = general_purpose::STANDARD.encode(&audio_bytes);
 
-    println!("[Rust] Encoded {} bytes to {} chars of base64", audio_bytes.len(), base64_data.len());
+    println!(
+        "[Rust] Encoded {} bytes to {} chars of base64",
+        audio_bytes.len(),
+        base64_data.len()
+    );
 
     // Get filename for return
-    let filename = target_path.file_name()
+    let filename = target_path
+        .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("audio.mp3");
 
     // Clean up only if it's a temporary file (not cached)
     if !is_cache_file {
         if let Err(e) = std::fs::remove_file(&target_path) {
-            eprintln!("[Rust] Warning: Failed to remove temporary audio file {}: {}", target_path.display(), e);
-    } else {
-        println!("[Rust] Cleaned up temporary audio file");
+            eprintln!(
+                "[Rust] Warning: Failed to remove temporary audio file {}: {}",
+                target_path.display(),
+                e
+            );
+        } else {
+            println!("[Rust] Cleaned up temporary audio file");
         }
     } else {
         println!("[Rust] Kept cached audio file: {:?}", target_path);
@@ -230,22 +248,24 @@ pub async fn extract_and_chunk_audio(
     video_path: String,
     project_id: String,
     chunk_duration_minutes: u32,
-    overlap_seconds: u32
+    overlap_seconds: u32,
 ) -> Result<Vec<AudioChunk>, String> {
     use tauri_plugin_shell::ShellExt;
 
     println!("[Rust] extract_and_chunk_audio called with:");
     println!("[Rust]   video_path: {}", video_path);
     println!("[Rust]   project_id: {}", project_id);
-    println!("[Rust]   chunk_duration_minutes: {}", chunk_duration_minutes);
+    println!(
+        "[Rust]   chunk_duration_minutes: {}",
+        chunk_duration_minutes
+    );
     println!("[Rust]   overlap_seconds: {}", overlap_seconds);
 
     // Get storage paths for temporary files
-    let paths = storage::init_storage_dirs()
-        .map_err(|e| {
-            println!("[Rust] Failed to get storage paths: {}", e);
-            format!("Failed to get storage paths: {}", e)
-        })?;
+    let paths = storage::init_storage_dirs().map_err(|e| {
+        println!("[Rust] Failed to get storage paths: {}", e);
+        format!("Failed to get storage paths: {}", e)
+    })?;
 
     let chunk_duration_secs = chunk_duration_minutes as f64 * 60.0;
     let overlap_secs = overlap_seconds as f64;
@@ -257,11 +277,10 @@ pub async fn extract_and_chunk_audio(
 
     // Get video duration using FFmpeg header probe (just -i, no decoding)
     println!("[Rust] Getting video duration (header probe)...");
-    let duration_output = shell.sidecar("ffmpeg")
+    let duration_output = shell
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", &video_path,
-        ])
+        .args(["-i", &video_path])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg for duration: {}", e))?;
@@ -279,13 +298,15 @@ pub async fn extract_and_chunk_audio(
     // Determine if we should use the cached audio file or the original video
     let use_cached_audio = if let Ok(ref cached_path) = cached_audio_path_result {
         if cached_path.exists() {
-            println!("[Rust] Found cached audio file, validating duration: {:?}", cached_path);
+            println!(
+                "[Rust] Found cached audio file, validating duration: {:?}",
+                cached_path
+            );
 
-            let cache_duration_output = shell.sidecar("ffmpeg")
+            let cache_duration_output = shell
+                .sidecar("ffmpeg")
                 .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-                .args([
-                    "-i", cached_path.to_str().ok_or("Invalid cached path")?,
-                ])
+                .args(["-i", cached_path.to_str().ok_or("Invalid cached path")?])
                 .output()
                 .await
                 .map_err(|e| format!("Failed to check cached audio duration: {}", e))?;
@@ -293,7 +314,10 @@ pub async fn extract_and_chunk_audio(
             let cache_stderr = String::from_utf8_lossy(&cache_duration_output.stderr);
             let cached_duration = parse_duration_from_ffmpeg_output(&cache_stderr).unwrap_or(0.0);
 
-            println!("[Rust] Cached audio duration: {:.2}s, Video duration: {:.2}s", cached_duration, video_duration);
+            println!(
+                "[Rust] Cached audio duration: {:.2}s, Video duration: {:.2}s",
+                cached_duration, video_duration
+            );
 
             let duration_diff = (cached_duration - video_duration).abs();
             let tolerance = video_duration * 0.05;
@@ -304,7 +328,10 @@ pub async fn extract_and_chunk_audio(
             } else {
                 println!("[Rust] WARNING: Cached audio duration mismatch ({:.2}s vs {:.2}s), skipping cache", cached_duration, video_duration);
                 if let Err(e) = std::fs::remove_file(cached_path) {
-                    eprintln!("[Rust] Warning: Failed to remove corrupted cache file: {}", e);
+                    eprintln!(
+                        "[Rust] Warning: Failed to remove corrupted cache file: {}",
+                        e
+                    );
                 } else {
                     println!("[Rust] Deleted corrupted cache file");
                 }
@@ -318,7 +345,12 @@ pub async fn extract_and_chunk_audio(
     };
 
     let source_path_str: String = if use_cached_audio {
-        cached_audio_path_result.as_ref().unwrap().to_str().ok_or("Invalid cached path")?.to_string()
+        cached_audio_path_result
+            .as_ref()
+            .unwrap()
+            .to_str()
+            .ok_or("Invalid cached path")?
+            .to_string()
     } else {
         video_path.clone()
     };
@@ -335,12 +367,20 @@ pub async fn extract_and_chunk_audio(
         let actual_duration = current_end - current_start;
 
         if actual_duration < 30.0 {
-            println!("[Rust] Skipping small final chunk of {:.2} seconds", actual_duration);
+            println!(
+                "[Rust] Skipping small final chunk of {:.2} seconds",
+                actual_duration
+            );
             break;
         }
 
         chunk_specs.push((current_start, current_end, actual_duration, chunk_index));
-        current_start = current_end - if current_end < video_duration { overlap_secs } else { 0.0 };
+        current_start = current_end
+            - if current_end < video_duration {
+                overlap_secs
+            } else {
+                0.0
+            };
         chunk_index += 1;
 
         if chunk_index > 100 {
@@ -351,7 +391,11 @@ pub async fn extract_and_chunk_audio(
     // Allow higher concurrency since each chunk extraction is I/O-bound (fast seeking).
     // With -ss before -i, each FFmpeg process starts near-instantly.
     let concurrency: usize = 6;
-    println!("[Rust] Extracting {} chunks with concurrency={}", chunk_specs.len(), concurrency);
+    println!(
+        "[Rust] Extracting {} chunks with concurrency={}",
+        chunk_specs.len(),
+        concurrency
+    );
 
     let videos_dir = paths.videos.clone();
     let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(concurrency));
@@ -366,34 +410,47 @@ pub async fn extract_and_chunk_audio(
         let sem = semaphore.clone();
 
         let handle = tokio::spawn(async move {
+            use base64::{engine::general_purpose, Engine as _};
             use tauri_plugin_shell::ShellExt;
-            use base64::{Engine as _, engine::general_purpose};
 
-            let _permit = sem.acquire().await.map_err(|e| format!("Semaphore error: {}", e))?;
+            let _permit = sem
+                .acquire()
+                .await
+                .map_err(|e| format!("Semaphore error: {}", e))?;
 
             let chunk_filename = format!("{}_chunk_{:03}.mp3", pid, idx);
             let chunk_path = vdir.join(&chunk_filename);
 
-            println!("[Rust] Chunk {}: {:.2}s - {:.2}s starting", idx, start_time, end_time);
+            println!(
+                "[Rust] Chunk {}: {:.2}s - {:.2}s starting",
+                idx, start_time, end_time
+            );
 
             // Place -ss BEFORE -i for fast input seeking (keyframe-based)
             // instead of slow output seeking (decodes from start to seek point)
             let mut args = vec![
-                "-ss".to_string(), format!("{:.3}", start_time),
-                "-i".to_string(), source.clone(),
-                "-t".to_string(), format!("{:.3}", actual_duration),
+                "-ss".to_string(),
+                format!("{:.3}", start_time),
+                "-i".to_string(),
+                source.clone(),
+                "-t".to_string(),
+                format!("{:.3}", actual_duration),
             ];
 
             if use_cached {
                 args.extend_from_slice(&[
-                    "-c:a".to_string(), "libmp3lame".to_string(),
-                    "-q:a".to_string(), "8".to_string(),
+                    "-c:a".to_string(),
+                    "libmp3lame".to_string(),
+                    "-q:a".to_string(),
+                    "8".to_string(),
                 ]);
             } else {
                 args.extend_from_slice(&[
                     "-vn".to_string(),
-                    "-c:a".to_string(), "libmp3lame".to_string(),
-                    "-q:a".to_string(), "8".to_string(),
+                    "-c:a".to_string(),
+                    "libmp3lame".to_string(),
+                    "-q:a".to_string(),
+                    "8".to_string(),
                 ]);
             }
 
@@ -403,7 +460,8 @@ pub async fn extract_and_chunk_audio(
             ]);
 
             let shell = app_clone.shell();
-            let chunk_output = shell.sidecar("ffmpeg")
+            let chunk_output = shell
+                .sidecar("ffmpeg")
                 .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
                 .args(&args)
                 .output()
@@ -413,7 +471,10 @@ pub async fn extract_and_chunk_audio(
             if !chunk_output.status.success() {
                 let stderr = String::from_utf8_lossy(&chunk_output.stderr);
                 println!("[Rust] FFmpeg chunk {} failed: {}", idx, stderr);
-                return Err(format!("FFmpeg chunk {} extraction failed: {}", idx, stderr));
+                return Err(format!(
+                    "FFmpeg chunk {} extraction failed: {}",
+                    idx, stderr
+                ));
             }
 
             let chunk_bytes = std::fs::read(&chunk_path)
@@ -432,10 +493,18 @@ pub async fn extract_and_chunk_audio(
                 file_size: chunk_bytes.len() as u64,
             };
 
-            println!("[Rust] Chunk {} completed: {} bytes", idx, chunk_bytes.len());
+            println!(
+                "[Rust] Chunk {} completed: {} bytes",
+                idx,
+                chunk_bytes.len()
+            );
 
             if let Err(e) = std::fs::remove_file(&chunk_path) {
-                eprintln!("[Rust] Warning: Failed to remove chunk file {}: {}", chunk_path.display(), e);
+                eprintln!(
+                    "[Rust] Warning: Failed to remove chunk file {}: {}",
+                    chunk_path.display(),
+                    e
+                );
             }
 
             Ok::<AudioChunk, String>(audio_chunk)
@@ -455,9 +524,16 @@ pub async fn extract_and_chunk_audio(
     }
 
     // Sort by start_time since tasks may complete out of order
-    chunks.sort_by(|a, b| a.start_time.partial_cmp(&b.start_time).unwrap_or(std::cmp::Ordering::Equal));
+    chunks.sort_by(|a, b| {
+        a.start_time
+            .partial_cmp(&b.start_time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
-    println!("[Rust] Audio chunking completed successfully. Created {} chunks.", chunks.len());
+    println!(
+        "[Rust] Audio chunking completed successfully. Created {} chunks.",
+        chunks.len()
+    );
     Ok(chunks)
 }
 
@@ -491,8 +567,11 @@ pub async fn extract_audio_to_file(
     println!("[Rust]   trim_start: {:?}", trim_start);
     println!("[Rust]   trim_duration: {:?}", trim_duration);
     println!("[Rust]   trim_start.is_some(): {}", trim_start.is_some());
-    println!("[Rust]   trim_duration.is_some(): {}", trim_duration.is_some());
-    
+    println!(
+        "[Rust]   trim_duration.is_some(): {}",
+        trim_duration.is_some()
+    );
+
     // Log the actual values if present
     if let Some(start) = trim_start {
         println!("[Rust]   trim_start VALUE: {:.3}", start);
@@ -507,11 +586,10 @@ pub async fn extract_audio_to_file(
     println!("[Rust] ========================================");
 
     // Get storage paths
-    let paths = storage::init_storage_dirs()
-        .map_err(|e| {
-            println!("[Rust] Failed to get storage paths: {}", e);
-            format!("Failed to get storage paths: {}", e)
-        })?;
+    let paths = storage::init_storage_dirs().map_err(|e| {
+        println!("[Rust] Failed to get storage paths: {}", e);
+        format!("Failed to get storage paths: {}", e)
+    })?;
 
     // Create audio directory if it doesn't exist
     let audio_dir = paths.videos.join("extracted_audio");
@@ -533,34 +611,40 @@ pub async fn extract_audio_to_file(
     println!("[Rust] Running FFmpeg to extract audio...");
 
     let mut args: Vec<String> = Vec::new();
-    
+
     // Add seek position if trim_start is provided (before input for fast seeking)
     if let Some(start) = trim_start {
         args.push("-ss".to_string());
         args.push(format!("{:.3}", start));
     }
-    
+
     args.push("-i".to_string());
     args.push(video_path.clone());
-    
+
     // Add duration if trim_duration is provided
     if let Some(duration) = trim_duration {
         args.push("-t".to_string());
         args.push(format!("{:.3}", duration));
     }
-    
+
     args.push("-c:a".to_string());
     args.push("libmp3lame".to_string());
     args.push("-q:a".to_string());
-    args.push("9".to_string());  // Low quality (~45kbps VBR) - sufficient for waveform peaks
+    args.push("9".to_string()); // Low quality (~45kbps VBR) - sufficient for waveform peaks
     args.push("-vn".to_string()); // No video
-    args.push("-y".to_string());  // Overwrite output file
-    args.push(output_path.to_str().ok_or("Invalid output path")?.to_string());
+    args.push("-y".to_string()); // Overwrite output file
+    args.push(
+        output_path
+            .to_str()
+            .ok_or("Invalid output path")?
+            .to_string(),
+    );
 
     println!("[Rust] FFmpeg args: {:?}", args);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    
-    let output = shell.sidecar("ffmpeg")
+
+    let output = shell
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args(&args_refs)
         .output()
@@ -611,11 +695,10 @@ pub async fn extract_audio_to_file_wav(
     println!("[Rust]   trim_duration: {:?}", trim_duration);
 
     // Get storage paths
-    let paths = storage::init_storage_dirs()
-        .map_err(|e| {
-            println!("[Rust] Failed to get storage paths: {}", e);
-            format!("Failed to get storage paths: {}", e)
-        })?;
+    let paths = storage::init_storage_dirs().map_err(|e| {
+        println!("[Rust] Failed to get storage paths: {}", e);
+        format!("Failed to get storage paths: {}", e)
+    })?;
 
     // Create audio directory if it doesn't exist
     let audio_dir = paths.videos.join("extracted_audio");
@@ -637,37 +720,43 @@ pub async fn extract_audio_to_file_wav(
     println!("[Rust] Running FFmpeg to extract audio as WAV...");
 
     let mut args: Vec<String> = Vec::new();
-    
+
     // Add seek position if trim_start is provided (before input for fast seeking)
     if let Some(start) = trim_start {
         args.push("-ss".to_string());
         args.push(format!("{:.3}", start));
     }
-    
+
     args.push("-i".to_string());
     args.push(video_path.clone());
-    
+
     // Add duration if trim_duration is provided
     if let Some(duration) = trim_duration {
         args.push("-t".to_string());
         args.push(format!("{:.3}", duration));
     }
-    
+
     // WAV format settings - 16-bit PCM, 48kHz, stereo
     args.push("-c:a".to_string());
     args.push("pcm_s16le".to_string()); // 16-bit PCM
     args.push("-ar".to_string());
-    args.push("48000".to_string());     // 48kHz sample rate
+    args.push("48000".to_string()); // 48kHz sample rate
     args.push("-ac".to_string());
-    args.push("2".to_string());         // Stereo
-    args.push("-vn".to_string());       // No video
-    args.push("-y".to_string());        // Overwrite output file
-    args.push(output_path.to_str().ok_or("Invalid output path")?.to_string());
+    args.push("2".to_string()); // Stereo
+    args.push("-vn".to_string()); // No video
+    args.push("-y".to_string()); // Overwrite output file
+    args.push(
+        output_path
+            .to_str()
+            .ok_or("Invalid output path")?
+            .to_string(),
+    );
 
     println!("[Rust] FFmpeg WAV args: {:?}", args);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    
-    let output = shell.sidecar("ffmpeg")
+
+    let output = shell
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args(&args_refs)
         .output()
@@ -698,20 +787,19 @@ pub async fn extract_audio_to_file_wav(
 
 /// Get the duration of an audio file
 #[tauri::command]
-pub async fn get_audio_duration(
-    app: tauri::AppHandle,
-    file_path: String,
-) -> Result<f64, String> {
+pub async fn get_audio_duration(app: tauri::AppHandle, file_path: String) -> Result<f64, String> {
     use tauri_plugin_shell::ShellExt;
 
-    println!("[Rust] get_audio_duration called with file_path: {}", file_path);
+    println!(
+        "[Rust] get_audio_duration called with file_path: {}",
+        file_path
+    );
 
     let shell = app.shell();
-    let duration_output = shell.sidecar("ffmpeg")
+    let duration_output = shell
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
-        .args([
-            "-i", &file_path,
-        ])
+        .args(["-i", &file_path])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg for duration: {}", e))?;

@@ -24,7 +24,9 @@ defmodule ClippsterServer.Repo.Migrations.CreateOrganizationSharedClips do
     create index(:organization_shared_clips, [:expires_at])
 
     create table(:organization_shared_clip_recipients) do
-      add :shared_clip_id, references(:organization_shared_clips, on_delete: :delete_all), null: false
+      add :shared_clip_id, references(:organization_shared_clips, on_delete: :delete_all),
+        null: false
+
       add :user_id, references(:users, on_delete: :delete_all), null: false
       add :viewed_at, :utc_datetime
       add :downloaded_at, :utc_datetime

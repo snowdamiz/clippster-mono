@@ -27,8 +27,11 @@ defmodule ClippsterServer.AI.ChatSessions do
 
   def get_session_with_messages(id) do
     case Repo.get(ChatSession, id) do
-      nil -> nil
-      session -> Repo.preload(session, messages: from(m in ChatMessage, order_by: [asc: m.inserted_at]))
+      nil ->
+        nil
+
+      session ->
+        Repo.preload(session, messages: from(m in ChatMessage, order_by: [asc: m.inserted_at]))
     end
   end
 

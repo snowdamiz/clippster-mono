@@ -6,7 +6,13 @@ defmodule ClippsterServer.ClipperProfiles.ClipperProfile do
   import Ecto.Changeset
 
   alias ClippsterServer.Accounts.User
-  alias ClippsterServer.ClipperProfiles.{ClipperChannelLink, ClipperPortfolioClip, ClipperEndorsement, ClipperBadge}
+
+  alias ClippsterServer.ClipperProfiles.{
+    ClipperChannelLink,
+    ClipperPortfolioClip,
+    ClipperEndorsement,
+    ClipperBadge
+  }
 
   @experience_levels ~w(beginner intermediate experienced professional)
   @specialty_tags ~w(gaming irl just-chatting esports music sports news crypto comedy educational asmr creative podcasts)
@@ -47,9 +53,19 @@ defmodule ClippsterServer.ClipperProfiles.ClipperProfile do
   def create_changeset(profile, attrs) do
     profile
     |> cast(attrs, [
-      :user_id, :display_name, :bio, :avatar_url, :slug, :is_public,
-      :looking_for_work, :experience_level, :specialty_tags, :content_style_tags,
-      :preferred_platforms, :languages, :timezone
+      :user_id,
+      :display_name,
+      :bio,
+      :avatar_url,
+      :slug,
+      :is_public,
+      :looking_for_work,
+      :experience_level,
+      :specialty_tags,
+      :content_style_tags,
+      :preferred_platforms,
+      :languages,
+      :timezone
     ])
     |> strip_avatar_url_query_params()
     |> validate_required([:user_id])
@@ -71,9 +87,18 @@ defmodule ClippsterServer.ClipperProfiles.ClipperProfile do
   def update_changeset(profile, attrs) do
     profile
     |> cast(attrs, [
-      :display_name, :bio, :avatar_url, :slug, :is_public,
-      :looking_for_work, :experience_level, :specialty_tags, :content_style_tags,
-      :preferred_platforms, :languages, :timezone
+      :display_name,
+      :bio,
+      :avatar_url,
+      :slug,
+      :is_public,
+      :looking_for_work,
+      :experience_level,
+      :specialty_tags,
+      :content_style_tags,
+      :preferred_platforms,
+      :languages,
+      :timezone
     ])
     |> strip_avatar_url_query_params()
     |> validate_length(:display_name, max: 100)
@@ -90,7 +115,12 @@ defmodule ClippsterServer.ClipperProfiles.ClipperProfile do
   """
   def stats_changeset(profile, attrs) do
     profile
-    |> cast(attrs, [:total_campaigns_completed, :total_clips_delivered, :total_endorsements, :response_time_hours])
+    |> cast(attrs, [
+      :total_campaigns_completed,
+      :total_clips_delivered,
+      :total_endorsements,
+      :response_time_hours
+    ])
   end
 
   @doc """
@@ -108,7 +138,9 @@ defmodule ClippsterServer.ClipperProfiles.ClipperProfile do
           nil -> changeset
           name -> put_change(changeset, :slug, slugify(name))
         end
-      _ -> changeset
+
+      _ ->
+        changeset
     end
   end
 
@@ -116,12 +148,16 @@ defmodule ClippsterServer.ClipperProfiles.ClipperProfile do
   # which can make the URL exceed the 255 character limit
   defp strip_avatar_url_query_params(changeset) do
     case get_change(changeset, :avatar_url) do
-      nil -> changeset
+      nil ->
+        changeset
+
       url when is_binary(url) ->
         # Parse the URL and strip query parameters
         stripped_url = url |> URI.parse() |> Map.put(:query, nil) |> URI.to_string()
         put_change(changeset, :avatar_url, stripped_url)
-      _ -> changeset
+
+      _ ->
+        changeset
     end
   end
 

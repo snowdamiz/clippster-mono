@@ -7,7 +7,8 @@ defmodule ClippsterServer.Organizations.OrganizationAsset do
   import Ecto.Changeset
 
   schema "organization_assets" do
-    field :asset_type, :string  # 'intro', 'outro', 'watermark', 'audio', 'image', 'overlay'
+    # 'intro', 'outro', 'watermark', 'audio', 'image', 'overlay'
+    field :asset_type, :string
     field :name, :string
     field :url, :string
     field :thumbnail_url, :string
@@ -16,7 +17,8 @@ defmodule ClippsterServer.Organizations.OrganizationAsset do
     field :height, :integer
     field :file_size, :integer
     field :mime_type, :string
-    field :content_hash, :string  # SHA-256 hash of file content for deduplication
+    # SHA-256 hash of file content for deduplication
+    field :content_hash, :string
 
     belongs_to :organization, ClippsterServer.Organizations.Organization
     belongs_to :uploaded_by, ClippsterServer.Accounts.User, foreign_key: :uploaded_by_user_id
@@ -77,4 +79,3 @@ defmodule ClippsterServer.Organizations.OrganizationAsset do
   def valid_asset_type?(type) when is_binary(type), do: type in @asset_types
   def valid_asset_type?(_), do: false
 end
-

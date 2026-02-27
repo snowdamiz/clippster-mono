@@ -5,14 +5,20 @@ defmodule ClippsterServer.Repo.Migrations.CreateOrganizationCreditTransactions d
     create table(:organization_credit_transactions) do
       add :organization_id, references(:organizations, on_delete: :restrict), null: false
       add :purchased_by_user_id, references(:users, on_delete: :restrict), null: false
-      add :pack_type, :string, null: false  # 'starter', 'creator', 'pro', 'studio'
+      # 'starter', 'creator', 'pro', 'studio'
+      add :pack_type, :string, null: false
       add :hours_purchased, :decimal, precision: 10, scale: 2, null: false
       add :amount_usd, :decimal, precision: 10, scale: 2, null: false
-      add :amount_sol, :decimal, precision: 18, scale: 9  # Can be null for Stripe payments
-      add :sol_usd_rate, :decimal, precision: 10, scale: 2  # Can be null for Stripe payments
-      add :tx_signature, :string, null: false  # Solana tx signature or Stripe session ID
-      add :status, :string, null: false  # 'pending', 'confirmed', 'failed'
-      add :payment_method, :string, null: false, default: "solana"  # 'solana', 'stripe'
+      # Can be null for Stripe payments
+      add :amount_sol, :decimal, precision: 18, scale: 9
+      # Can be null for Stripe payments
+      add :sol_usd_rate, :decimal, precision: 10, scale: 2
+      # Solana tx signature or Stripe session ID
+      add :tx_signature, :string, null: false
+      # 'pending', 'confirmed', 'failed'
+      add :status, :string, null: false
+      # 'solana', 'stripe'
+      add :payment_method, :string, null: false, default: "solana"
       add :stripe_session_id, :string
       add :stripe_payment_intent_id, :string
 
@@ -24,7 +30,9 @@ defmodule ClippsterServer.Repo.Migrations.CreateOrganizationCreditTransactions d
     create unique_index(:organization_credit_transactions, [:tx_signature])
     create index(:organization_credit_transactions, [:status])
     create index(:organization_credit_transactions, [:payment_method])
-    create unique_index(:organization_credit_transactions, [:stripe_session_id], where: "stripe_session_id IS NOT NULL")
+
+    create unique_index(:organization_credit_transactions, [:stripe_session_id],
+             where: "stripe_session_id IS NOT NULL"
+           )
   end
 end
-

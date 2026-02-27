@@ -22,12 +22,18 @@ defmodule ClippsterServer.Repo.Migrations.CreateOrganizationSocialAccounts do
     create index(:organization_social_accounts, [:organization_id])
     create index(:organization_social_accounts, [:platform])
     create index(:organization_social_accounts, [:is_active])
-    create unique_index(:organization_social_accounts, [:organization_id, :platform, :platform_user_id],
-      name: :org_social_accounts_unique)
+
+    create unique_index(
+             :organization_social_accounts,
+             [:organization_id, :platform, :platform_user_id],
+             name: :org_social_accounts_unique
+           )
 
     # Create social_account_assignments table (many-to-many)
     create table(:social_account_assignments) do
-      add :organization_social_account_id, references(:organization_social_accounts, on_delete: :delete_all), null: false
+      add :organization_social_account_id,
+          references(:organization_social_accounts, on_delete: :delete_all), null: false
+
       add :user_id, references(:users, on_delete: :delete_all), null: false
       add :assigned_at, :utc_datetime, null: false
       add :assigned_by_user_id, references(:users, on_delete: :nilify_all)
@@ -37,7 +43,9 @@ defmodule ClippsterServer.Repo.Migrations.CreateOrganizationSocialAccounts do
 
     create index(:social_account_assignments, [:organization_social_account_id])
     create index(:social_account_assignments, [:user_id])
+
     create unique_index(:social_account_assignments, [:organization_social_account_id, :user_id],
-      name: :social_account_assignments_unique)
+             name: :social_account_assignments_unique
+           )
   end
 end

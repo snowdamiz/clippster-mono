@@ -8,7 +8,8 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{SocialAccount, Platform, TwitterDuplicateDetector}
+  alias ClippsterServer.Social.{ProviderMode, SocialAccount, Platform, TwitterDuplicateDetector}
+  alias ClippsterServer.Social.Providers.PostForMe
   alias ClippsterServer.Organizations
 
   plug ClippsterServerWeb.AuthPlug
@@ -37,16 +38,17 @@ defmodule ClippsterServerWeb.PostSubmissionController do
     user = conn.assigns.current_user
 
     if Organizations.is_member?(org_id, user.id) do
-      opts = [
-        creator_profile_id: params["creator_profile_id"],
-        account_id: params["account_id"],
-        platform: params["platform"],
-        status: params["status"],
-        submitted_by_user_id: params["submitted_by_user_id"],
-        limit: parse_int(params["limit"], 50),
-        offset: parse_int(params["offset"], 0)
-      ]
-      |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      opts =
+        [
+          creator_profile_id: params["creator_profile_id"],
+          account_id: params["account_id"],
+          platform: params["platform"],
+          status: params["status"],
+          submitted_by_user_id: params["submitted_by_user_id"],
+          limit: parse_int(params["limit"], 50),
+          offset: parse_int(params["offset"], 0)
+        ]
+        |> Enum.reject(fn {_, v} -> is_nil(v) end)
 
       {:ok, %{posts: posts, total: total}} = Social.list_post_submissions(org_id, opts)
 
@@ -127,82 +129,95 @@ defmodule ClippsterServerWeb.PostSubmissionController do
             |> put_status(400)
             |> json(%{success: false, error: "Social account is not active"})
           else
-            # Create the post submission record first
-            submission_attrs = %{
-              organization_social_account_id: account.id,
-              organization_creator_profile_id: params["creator_profile_id"],
-              platform: account.platform,
-              media_type: params["media_type"],
-              caption: params["caption"],
-              media_url: params["media_url"],
-              thumbnail_url: params["thumbnail_url"]
-            }
+            if ProviderMode.post_for_me?() and
+                 (is_nil(account.provider_account_id) or account.provider_account_id == "") do
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error:
+                  "This social account is missing a Post For Me provider_account_id. Reconnect it via /api/social/connect-url first."
+              })
+            else
+              # Create the post submission record first
+              submission_attrs = %{
+                organization_social_account_id: account.id,
+                organization_creator_profile_id: params["creator_profile_id"],
+                platform: account.platform,
+                media_type: params["media_type"],
+                caption: params["caption"],
+                media_url: params["media_url"],
+                thumbnail_url: params["thumbnail_url"]
+              }
 
-            case Social.create_post_submission(org_id, submission_attrs, user) do
-              {:ok, submission} ->
-                # PulseKit: Log submission created
-                pulse_capture(%{
-                  type: "post.submission.created",
-                  level: :info,
-                  message: "Post submission created: #{submission.id}",
-                  metadata: %{
-                    submission_id: submission.id,
-                    organization_id: org_id,
-                    account_id: account.id,
-                    platform: account.platform,
-                    media_url: params["media_url"],
-                    media_type: params["media_type"],
-                    user_id: user.id
-                  },
-                  tags: %{platform: account.platform, action: "submission_created"}
-                })
+              case Social.create_post_submission(org_id, submission_attrs, user) do
+                {:ok, submission} ->
+                  # PulseKit: Log submission created
+                  pulse_capture(%{
+                    type: "post.submission.created",
+                    level: :info,
+                    message: "Post submission created: #{submission.id}",
+                    metadata: %{
+                      submission_id: submission.id,
+                      organization_id: org_id,
+                      account_id: account.id,
+                      platform: account.platform,
+                      media_url: params["media_url"],
+                      media_type: params["media_type"],
+                      user_id: user.id
+                    },
+                    tags: %{platform: account.platform, action: "submission_created"}
+                  })
 
-                # Attempt to publish asynchronously
-                Task.start(fn ->
-                  publish_to_platform(submission, account, params)
-                end)
+                  # Attempt to publish asynchronously (mode-dependent provider dispatch)
+                  Task.start(fn ->
+                    dispatch_publish(submission, account, params)
+                  end)
 
-                conn
-                |> put_status(202)
-                |> json(%{
-                  success: true,
-                  post: serialize_post(submission),
-                  message: "Post is being published"
-                })
+                  conn
+                  |> put_status(202)
+                  |> json(%{
+                    success: true,
+                    post: serialize_post(submission),
+                    message: "Post is being published"
+                  })
 
-              {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
-                pulse_capture(%{
-                  type: "post.submission.error",
-                  level: :error,
-                  message: "Failed to create post submission: validation error",
-                  metadata: %{
-                    organization_id: org_id,
-                    account_id: account.id,
-                    platform: account.platform,
-                    error: format_errors(changeset)
-                  },
-                  tags: %{platform: account.platform, action: "submission_error"}
-                })
-                conn
-                |> put_status(422)
-                |> json(%{success: false, error: format_errors(changeset)})
+                {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
+                  pulse_capture(%{
+                    type: "post.submission.error",
+                    level: :error,
+                    message: "Failed to create post submission: validation error",
+                    metadata: %{
+                      organization_id: org_id,
+                      account_id: account.id,
+                      platform: account.platform,
+                      error: format_errors(changeset)
+                    },
+                    tags: %{platform: account.platform, action: "submission_error"}
+                  })
 
-              {:error, reason} ->
-                pulse_capture(%{
-                  type: "post.submission.error",
-                  level: :error,
-                  message: "Failed to create post submission: #{inspect(reason)}",
-                  metadata: %{
-                    organization_id: org_id,
-                    account_id: account.id,
-                    platform: account.platform,
-                    error: to_string(reason)
-                  },
-                  tags: %{platform: account.platform, action: "submission_error"}
-                })
-                conn
-                |> put_status(400)
-                |> json(%{success: false, error: to_string(reason)})
+                  conn
+                  |> put_status(422)
+                  |> json(%{success: false, error: format_errors(changeset)})
+
+                {:error, reason} ->
+                  pulse_capture(%{
+                    type: "post.submission.error",
+                    level: :error,
+                    message: "Failed to create post submission: #{inspect(reason)}",
+                    metadata: %{
+                      organization_id: org_id,
+                      account_id: account.id,
+                      platform: account.platform,
+                      error: to_string(reason)
+                    },
+                    tags: %{platform: account.platform, action: "submission_error"}
+                  })
+
+                  conn
+                  |> put_status(400)
+                  |> json(%{success: false, error: to_string(reason)})
+              end
             end
           end
       end
@@ -224,16 +239,17 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         |> json(%{success: false, error: "Post not found"})
 
       post ->
-        analytics = %{
-          view_count: params["view_count"],
-          like_count: params["like_count"],
-          comment_count: params["comment_count"],
-          save_count: params["save_count"],
-          reach_count: params["reach_count"],
-          impressions_count: params["impressions_count"]
-        }
-        |> Enum.reject(fn {_, v} -> is_nil(v) end)
-        |> Enum.into(%{})
+        analytics =
+          %{
+            view_count: params["view_count"],
+            like_count: params["like_count"],
+            comment_count: params["comment_count"],
+            save_count: params["save_count"],
+            reach_count: params["reach_count"],
+            impressions_count: params["impressions_count"]
+          }
+          |> Enum.reject(fn {_, v} -> is_nil(v) end)
+          |> Enum.into(%{})
 
         case Social.update_post_analytics_manual(post, analytics, user) do
           {:ok, updated} ->
@@ -322,11 +338,12 @@ defmodule ClippsterServerWeb.PostSubmissionController do
     user = conn.assigns.current_user
 
     if Organizations.is_member?(org_id, user.id) do
-      opts = [
-        creator_profile_id: params["creator_profile_id"],
-        days: parse_int(params["days"], 30)
-      ]
-      |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      opts =
+        [
+          creator_profile_id: params["creator_profile_id"],
+          days: parse_int(params["days"], 30)
+        ]
+        |> Enum.reject(fn {_, v} -> is_nil(v) end)
 
       summary = Social.get_analytics_summary(org_id, opts)
 
@@ -372,37 +389,49 @@ defmodule ClippsterServerWeb.PostSubmissionController do
           key = "social-media/#{org_id}/#{timestamp}_#{unique_id}#{ext}"
 
           # Determine content type
-          content_type = case ext do
-            ".mp4" -> "video/mp4"
-            ".mov" -> "video/quicktime"
-            ".webm" -> "video/webm"
-            ".jpg" -> "image/jpeg"
-            ".jpeg" -> "image/jpeg"
-            ".png" -> "image/png"
-            ".gif" -> "image/gif"
-            _ -> "application/octet-stream"
-          end
+          content_type =
+            case ext do
+              ".mp4" -> "video/mp4"
+              ".mov" -> "video/quicktime"
+              ".webm" -> "video/webm"
+              ".jpg" -> "image/jpeg"
+              ".jpeg" -> "image/jpeg"
+              ".png" -> "image/png"
+              ".gif" -> "image/gif"
+              _ -> "application/octet-stream"
+            end
 
-          case ClippsterServer.Storage.upload_file_from_path(upload.path, key, content_type: content_type) do
+          case ClippsterServer.Storage.upload_file_from_path(upload.path, key,
+                 content_type: content_type
+               ) do
             {:ok, url} ->
               # Handle optional thumbnail upload
-              thumbnail_url = case params["thumbnail"] do
-                %Plug.Upload{} = thumb ->
-                  thumb_ext = Path.extname(thumb.filename) |> String.downcase()
-                  thumb_key = "social-media/#{org_id}/#{timestamp}_#{unique_id}_thumb#{thumb_ext}"
-                  thumb_content_type = case thumb_ext do
-                    ".jpg" -> "image/jpeg"
-                    ".jpeg" -> "image/jpeg"
-                    ".png" -> "image/png"
-                    _ -> "image/jpeg"
-                  end
+              thumbnail_url =
+                case params["thumbnail"] do
+                  %Plug.Upload{} = thumb ->
+                    thumb_ext = Path.extname(thumb.filename) |> String.downcase()
 
-                  case ClippsterServer.Storage.upload_file_from_path(thumb.path, thumb_key, content_type: thumb_content_type) do
-                    {:ok, thumb_url} -> thumb_url
-                    {:error, _} -> nil
-                  end
-                _ -> nil
-              end
+                    thumb_key =
+                      "social-media/#{org_id}/#{timestamp}_#{unique_id}_thumb#{thumb_ext}"
+
+                    thumb_content_type =
+                      case thumb_ext do
+                        ".jpg" -> "image/jpeg"
+                        ".jpeg" -> "image/jpeg"
+                        ".png" -> "image/png"
+                        _ -> "image/jpeg"
+                      end
+
+                    case ClippsterServer.Storage.upload_file_from_path(thumb.path, thumb_key,
+                           content_type: thumb_content_type
+                         ) do
+                      {:ok, thumb_url} -> thumb_url
+                      {:error, _} -> nil
+                    end
+
+                  _ ->
+                    nil
+                end
 
               json(conn, %{
                 success: true,
@@ -432,8 +461,115 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   # Private Functions
   # ============================================================================
 
-  defp publish_to_platform(submission, %{platform: "twitter"} = account, params) do
-    Logger.info("[PostSubmission] Starting Twitter publish for submission #{submission.id} (two-step flow)")
+  defp dispatch_publish(submission, account, params) do
+    case ProviderMode.mode() do
+      "post_for_me" ->
+        publish_to_post_for_me(submission, account, params)
+
+      "dual" ->
+        # Legacy remains source-of-truth while dual-writing to Post For Me for rollout parity.
+        if is_binary(account.provider_account_id) and account.provider_account_id != "" do
+          Task.start(fn -> mirror_to_post_for_me(submission, account, params) end)
+        else
+          Logger.debug(
+            "[PostSubmission] Skipping Post For Me mirror for submission #{submission.id}: no provider_account_id"
+          )
+        end
+
+        publish_to_platform(submission, account, params)
+
+      _ ->
+        publish_to_platform(submission, account, params)
+    end
+  end
+
+  defp publish_to_post_for_me(submission, account, params) do
+    Logger.info("[PostSubmission] Starting Post For Me publish for submission #{submission.id}")
+
+    with {:ok, provider_account_id} <- get_provider_account_id(account),
+         {:ok, media_url} <- ensure_post_for_me_media_url(params["media_url"]),
+         {:ok, post} <-
+           PostForMe.create_social_post(%{
+             caption: params["caption"] || "",
+             social_accounts: [provider_account_id],
+             media: [%{url: media_url}],
+             external_id: "submission:#{submission.id}"
+           }) do
+      provider_post_id = post.id || "submission-#{submission.id}"
+
+      publish_attrs = %{
+        post_id: provider_post_id,
+        post_url: nil,
+        posted_at: DateTime.utc_now(),
+        provider: "post_for_me",
+        provider_post_id: provider_post_id,
+        provider_payload: post.raw
+      }
+
+      case Social.mark_post_published(submission, publish_attrs) do
+        {:ok, _updated} ->
+          Logger.info(
+            "[PostSubmission] Post For Me publish accepted for submission #{submission.id}"
+          )
+
+        {:error, reason} ->
+          Logger.error(
+            "[PostSubmission] Failed to persist Post For Me publish result for submission #{submission.id}: #{inspect(reason)}"
+          )
+      end
+    else
+      {:error, reason} ->
+        error_message = format_provider_error(reason)
+
+        Logger.error(
+          "[PostSubmission] Post For Me publish failed for submission #{submission.id}: #{error_message}"
+        )
+
+        Social.mark_post_failed(submission, error_message)
+    end
+  end
+
+  defp mirror_to_post_for_me(submission, account, params) do
+    with {:ok, provider_account_id} <- get_provider_account_id(account),
+         {:ok, media_url} <- ensure_post_for_me_media_url(params["media_url"]),
+         {:ok, post} <-
+           PostForMe.create_social_post(%{
+             caption: params["caption"] || "",
+             social_accounts: [provider_account_id],
+             media: [%{url: media_url}],
+             external_id: "submission:#{submission.id}:dual"
+           }) do
+      metadata_attrs = %{
+        provider: "post_for_me",
+        provider_post_id: post.id,
+        provider_payload: post.raw
+      }
+
+      case Social.update_post_provider_metadata(submission, metadata_attrs) do
+        {:ok, _updated} ->
+          Logger.info(
+            "[PostSubmission] Dual-write mirrored submission #{submission.id} to Post For Me"
+          )
+
+        {:error, reason} ->
+          Logger.warning(
+            "[PostSubmission] Dual-write metadata save failed for submission #{submission.id}: #{inspect(reason)}"
+          )
+      end
+    else
+      {:error, reason} ->
+        Logger.warning(
+          "[PostSubmission] Dual-write mirror failed for submission #{submission.id}: #{format_provider_error(reason)}"
+        )
+    end
+  end
+
+  defp publish_to_platform(submission, %{platform: platform} = account, params)
+       when platform in ["twitter", "x"] do
+    Logger.info(
+      "[PostSubmission] Starting X publish for submission #{submission.id} (two-step flow)"
+    )
+
     Logger.info("[PostSubmission] Media URL: #{params["media_url"]}")
     Logger.info("[PostSubmission] Platform User ID: #{account.platform_user_id}")
 
@@ -457,6 +593,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
     if is_nil(access_token) or access_token == "" do
       Logger.error("[PostSubmission] No access token found for account #{account.id}")
+
       pulse_capture(%{
         type: "post.publish.error",
         level: :error,
@@ -469,9 +606,12 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         },
         tags: %{platform: account.platform, action: "publish_error", error_type: "no_token"}
       })
+
       Social.mark_post_failed(submission, "No access token available")
     else
-      Logger.info("[PostSubmission] Access token available (length: #{String.length(access_token)})")
+      Logger.info(
+        "[PostSubmission] Access token available (length: #{String.length(access_token)})"
+      )
 
       # Check for duplicate content before publishing
       caption = params["caption"] || ""
@@ -486,105 +626,131 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
           # Step 1: Upload media
           Logger.info("[PostSubmission] Twitter: uploading media for submission #{submission.id}")
-      pulse_capture(%{
-        type: "post.publish.twitter_upload",
-        level: :info,
-        message: "Uploading media to Twitter for submission #{submission.id}",
-        metadata: %{
-          submission_id: submission.id,
-          platform: account.platform,
-          media_type: params["media_type"]
-        },
-        tags: %{platform: account.platform, action: "twitter_upload"}
-      })
 
-      case Platform.call("twitter", :publish_media, [access_token, params["media_url"], publish_opts]) do
-        {:ok, %{media_id: media_id}} ->
-          # Step 2: Create tweet with media_id
-          Logger.info("[PostSubmission] Twitter: creating tweet with media_id #{media_id}")
           pulse_capture(%{
-            type: "post.publish.twitter_create_tweet",
+            type: "post.publish.twitter_upload",
             level: :info,
-            message: "Creating tweet with media_id #{media_id} for submission #{submission.id}",
+            message: "Uploading media to Twitter for submission #{submission.id}",
             metadata: %{
               submission_id: submission.id,
               platform: account.platform,
-              media_id: media_id,
-              has_caption: params["caption"] != nil && params["caption"] != ""
+              media_type: params["media_type"]
             },
-            tags: %{platform: account.platform, action: "twitter_create_tweet"}
+            tags: %{platform: account.platform, action: "twitter_upload"}
           })
 
-          case Platform.call("twitter", :create_tweet, [access_token, params["caption"] || "", [media_ids: [media_id]]]) do
-            {:ok, result} ->
-              Logger.info("[PostSubmission] Twitter tweet created successfully! Post ID: #{result.post_id}")
+          case Platform.call("twitter", :publish_media, [
+                 access_token,
+                 params["media_url"],
+                 publish_opts
+               ]) do
+            {:ok, %{media_id: media_id}} ->
+              # Step 2: Create tweet with media_id
+              Logger.info("[PostSubmission] Twitter: creating tweet with media_id #{media_id}")
+
               pulse_capture(%{
-                type: "post.publish.success",
+                type: "post.publish.twitter_create_tweet",
                 level: :info,
-                message: "Successfully published submission #{submission.id}",
+                message:
+                  "Creating tweet with media_id #{media_id} for submission #{submission.id}",
                 metadata: %{
                   submission_id: submission.id,
                   platform: account.platform,
-                  post_id: result.post_id,
-                  post_url: result.post_url
+                  media_id: media_id,
+                  has_caption: params["caption"] != nil && params["caption"] != ""
                 },
-                tags: %{platform: account.platform, action: "publish_success"}
+                tags: %{platform: account.platform, action: "twitter_create_tweet"}
               })
-              # Update submission with post details and content hash
-              final_content_hash = TwitterDuplicateDetector.generate_hash(caption, [media_id])
-              Social.mark_post_published(submission, %{
-                post_id: result.post_id,
-                post_url: result.post_url,
-                posted_at: DateTime.utc_now(),
-                content_hash: final_content_hash
-              })
+
+              case Platform.call("twitter", :create_tweet, [
+                     access_token,
+                     params["caption"] || "",
+                     [media_ids: [media_id]]
+                   ]) do
+                {:ok, result} ->
+                  Logger.info(
+                    "[PostSubmission] Twitter tweet created successfully! Post ID: #{result.post_id}"
+                  )
+
+                  pulse_capture(%{
+                    type: "post.publish.success",
+                    level: :info,
+                    message: "Successfully published submission #{submission.id}",
+                    metadata: %{
+                      submission_id: submission.id,
+                      platform: account.platform,
+                      post_id: result.post_id,
+                      post_url: result.post_url
+                    },
+                    tags: %{platform: account.platform, action: "publish_success"}
+                  })
+
+                  # Update submission with post details and content hash
+                  final_content_hash = TwitterDuplicateDetector.generate_hash(caption, [media_id])
+
+                  Social.mark_post_published(submission, %{
+                    post_id: result.post_id,
+                    post_url: result.post_url,
+                    posted_at: DateTime.utc_now(),
+                    content_hash: final_content_hash
+                  })
+
+                {:error, reason} ->
+                  error_msg = if is_binary(reason), do: reason, else: inspect(reason)
+                  Logger.error("[PostSubmission] Twitter tweet creation failed: #{error_msg}")
+
+                  pulse_capture(%{
+                    type: "post.publish.failed",
+                    level: :error,
+                    message:
+                      "Failed to create tweet for submission #{submission.id}: #{error_msg}",
+                    metadata: %{
+                      submission_id: submission.id,
+                      account_id: account.id,
+                      platform: account.platform,
+                      media_id: media_id,
+                      error: error_msg,
+                      error_raw: inspect(reason)
+                    },
+                    tags: %{platform: account.platform, action: "publish_failed"}
+                  })
+
+                  Social.mark_post_failed(submission, error_msg)
+              end
 
             {:error, reason} ->
               error_msg = if is_binary(reason), do: reason, else: inspect(reason)
-              Logger.error("[PostSubmission] Twitter tweet creation failed: #{error_msg}")
+              Logger.error("[PostSubmission] Twitter media upload failed: #{error_msg}")
+
               pulse_capture(%{
                 type: "post.publish.failed",
                 level: :error,
-                message: "Failed to create tweet for submission #{submission.id}: #{error_msg}",
+                message: "Failed to upload media for submission #{submission.id}: #{error_msg}",
                 metadata: %{
                   submission_id: submission.id,
                   account_id: account.id,
                   platform: account.platform,
-                  media_id: media_id,
+                  platform_user_id: account.platform_user_id,
+                  media_url: params["media_url"],
+                  media_type: params["media_type"],
                   error: error_msg,
                   error_raw: inspect(reason)
                 },
                 tags: %{platform: account.platform, action: "publish_failed"}
               })
+
               Social.mark_post_failed(submission, error_msg)
           end
 
-        {:error, reason} ->
-          error_msg = if is_binary(reason), do: reason, else: inspect(reason)
-          Logger.error("[PostSubmission] Twitter media upload failed: #{error_msg}")
-          pulse_capture(%{
-            type: "post.publish.failed",
-            level: :error,
-            message: "Failed to upload media for submission #{submission.id}: #{error_msg}",
-            metadata: %{
-              submission_id: submission.id,
-              account_id: account.id,
-              platform: account.platform,
-              platform_user_id: account.platform_user_id,
-              media_url: params["media_url"],
-              media_type: params["media_type"],
-              error: error_msg,
-              error_raw: inspect(reason)
-            },
-            tags: %{platform: account.platform, action: "publish_failed"}
-          })
-          Social.mark_post_failed(submission, error_msg)
-      end
-
         {:error, :duplicate_content, existing_post} ->
           # Duplicate detected
-          error_msg = "This content has already been posted to X. Duplicate posts are not allowed within 24 hours. (Matches post #{existing_post.id})"
-          Logger.warning("[PostSubmission] Duplicate content detected for submission #{submission.id}: #{error_msg}")
+          error_msg =
+            "This content has already been posted to X. Duplicate posts are not allowed within 24 hours. (Matches post #{existing_post.id})"
+
+          Logger.warning(
+            "[PostSubmission] Duplicate content detected for submission #{submission.id}: #{error_msg}"
+          )
+
           pulse_capture(%{
             type: "post.publish.duplicate",
             level: :warning,
@@ -598,13 +764,17 @@ defmodule ClippsterServerWeb.PostSubmissionController do
             },
             tags: %{platform: account.platform, action: "duplicate_detected"}
           })
+
           Social.mark_post_failed(submission, error_msg)
       end
     end
   end
 
   defp publish_to_platform(submission, account, params) do
-    Logger.info("[PostSubmission] Starting publish for submission #{submission.id} to #{account.platform}")
+    Logger.info(
+      "[PostSubmission] Starting publish for submission #{submission.id} to #{account.platform}"
+    )
+
     Logger.info("[PostSubmission] Media URL: #{params["media_url"]}")
     Logger.info("[PostSubmission] Platform User ID: #{account.platform_user_id}")
 
@@ -628,6 +798,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
     if is_nil(access_token) or access_token == "" do
       Logger.error("[PostSubmission] No access token found for account #{account.id}")
+
       pulse_capture(%{
         type: "post.publish.error",
         level: :error,
@@ -640,9 +811,12 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         },
         tags: %{platform: account.platform, action: "publish_error", error_type: "no_token"}
       })
+
       Social.mark_post_failed(submission, "No access token available")
     else
-      Logger.info("[PostSubmission] Access token available (length: #{String.length(access_token)})")
+      Logger.info(
+        "[PostSubmission] Access token available (length: #{String.length(access_token)})"
+      )
 
       publish_opts = %{
         caption: params["caption"] || "",
@@ -665,9 +839,14 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         tags: %{platform: account.platform, action: "platform_call"}
       })
 
-      case Platform.call(account.platform, :publish_media, [access_token, params["media_url"], publish_opts]) do
+      case Platform.call(account.platform, :publish_media, [
+             access_token,
+             params["media_url"],
+             publish_opts
+           ]) do
         {:ok, result} ->
           Logger.info("[PostSubmission] Publish successful! Post ID: #{result.post_id}")
+
           pulse_capture(%{
             type: "post.publish.success",
             level: :info,
@@ -680,6 +859,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
             },
             tags: %{platform: account.platform, action: "publish_success"}
           })
+
           # Update submission with post details
           Social.mark_post_published(submission, %{
             post_id: result.post_id,
@@ -690,6 +870,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         {:error, reason} ->
           error_msg = if is_binary(reason), do: reason, else: inspect(reason)
           Logger.error("[PostSubmission] Publish failed: #{error_msg}")
+
           pulse_capture(%{
             type: "post.publish.failed",
             level: :error,
@@ -706,6 +887,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
             },
             tags: %{platform: account.platform, action: "publish_failed"}
           })
+
           Social.mark_post_failed(submission, error_msg)
       end
     end
@@ -716,6 +898,8 @@ defmodule ClippsterServerWeb.PostSubmissionController do
       id: post.id,
       organization_id: post.organization_id,
       platform: post.platform,
+      provider: post.provider,
+      provider_post_id: post.provider_post_id,
       post_id: post.post_id,
       post_url: post.post_url,
       media_type: post.media_type,
@@ -745,10 +929,13 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
   defp serialize_social_account(nil), do: nil
   defp serialize_social_account(%Ecto.Association.NotLoaded{}), do: nil
+
   defp serialize_social_account(account) do
     %{
       id: account.id,
       platform: account.platform,
+      provider: account.provider,
+      provider_account_id: account.provider_account_id,
       username: account.username,
       display_name: account.display_name,
       profile_image_url: account.profile_image_url
@@ -757,6 +944,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
   defp serialize_creator_profile(nil), do: nil
   defp serialize_creator_profile(%Ecto.Association.NotLoaded{}), do: nil
+
   defp serialize_creator_profile(profile) do
     %{
       id: profile.id,
@@ -767,6 +955,7 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
   defp serialize_user(nil), do: nil
   defp serialize_user(%Ecto.Association.NotLoaded{}), do: nil
+
   defp serialize_user(user) do
     %{
       id: user.id,
@@ -776,8 +965,39 @@ defmodule ClippsterServerWeb.PostSubmissionController do
     }
   end
 
+  defp get_provider_account_id(account) do
+    provider_account_id = account.provider_account_id
+
+    if is_binary(provider_account_id) and provider_account_id != "" do
+      {:ok, provider_account_id}
+    else
+      {:error, "Social account is missing a Post For Me provider_account_id"}
+    end
+  end
+
+  defp ensure_post_for_me_media_url(nil), do: {:error, "media_url is required"}
+
+  defp ensure_post_for_me_media_url(media_url) when is_binary(media_url) do
+    if String.contains?(media_url, ".r2.cloudflarestorage.com") do
+      case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7_200) do
+        {:ok, presigned_url} ->
+          {:ok, presigned_url}
+
+        {:error, reason} ->
+          {:error, "Failed to create presigned URL for Post For Me upload: #{inspect(reason)}"}
+      end
+    else
+      {:ok, media_url}
+    end
+  end
+
+  defp format_provider_error(%PostForMe.ApiError{message: message}), do: message
+  defp format_provider_error(error) when is_binary(error), do: error
+  defp format_provider_error(error), do: inspect(error)
+
   defp parse_int(nil, default), do: default
   defp parse_int(value, _default) when is_integer(value), do: value
+
   defp parse_int(value, default) when is_binary(value) do
     case Integer.parse(value) do
       {int, _} -> int

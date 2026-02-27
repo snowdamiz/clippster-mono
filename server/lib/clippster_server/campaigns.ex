@@ -9,6 +9,7 @@ defmodule ClippsterServer.Campaigns do
   alias ClippsterServer.Accounts.User
   alias ClippsterServer.Organizations
   alias ClippsterServer.Organizations.{Organization, OrganizationProfileAssignment}
+
   alias ClippsterServer.Campaigns.{
     Campaign,
     CampaignCreatorProfile,
@@ -18,6 +19,7 @@ defmodule ClippsterServer.Campaigns do
     ClipperSocialAccount,
     ClipperPaymentMethod
   }
+
   alias ClippsterServer.Social.Platforms.Twitter
 
   # ============================================================================
@@ -50,7 +52,14 @@ defmodule ClippsterServer.Campaigns do
   def get_campaign_with_details(id) do
     Campaign
     |> where([c], c.id == ^id)
-    |> preload([:organization, :creator_profile, :global_intro, :global_outro, participants: :user, creator_profiles: :platform_links])
+    |> preload([
+      :organization,
+      :creator_profile,
+      :global_intro,
+      :global_outro,
+      participants: :user,
+      creator_profiles: :platform_links
+    ])
     |> Repo.one()
   end
 
@@ -91,7 +100,13 @@ defmodule ClippsterServer.Campaigns do
     |> order_by([c], desc: c.inserted_at)
     |> limit(^limit)
     |> offset(^offset)
-    |> preload([:organization, :creator_profile, :global_intro, :global_outro, creator_profiles: :platform_links])
+    |> preload([
+      :organization,
+      :creator_profile,
+      :global_intro,
+      :global_outro,
+      creator_profiles: :platform_links
+    ])
     |> Repo.all()
   end
 
@@ -117,16 +132,18 @@ defmodule ClippsterServer.Campaigns do
   def list_organization_campaigns(organization_id, opts \\ []) do
     status = Keyword.get(opts, :status)
 
-    query = from c in Campaign,
-      where: c.organization_id == ^organization_id,
-      order_by: [desc: c.inserted_at],
-      preload: [:creator_profile]
+    query =
+      from c in Campaign,
+        where: c.organization_id == ^organization_id,
+        order_by: [desc: c.inserted_at],
+        preload: [:creator_profile]
 
-    query = if status do
-      where(query, [c], c.status == ^status)
-    else
-      query
-    end
+    query =
+      if status do
+        where(query, [c], c.status == ^status)
+      else
+        query
+      end
 
     Repo.all(query)
   end
@@ -152,10 +169,12 @@ defmodule ClippsterServer.Campaigns do
     if Organizations.is_admin?(campaign.organization_id, user.id) do
       Repo.transaction(fn ->
         # Get all profile assignment IDs from participants
-        assignment_ids = from(p in CampaignParticipant,
-          where: p.campaign_id == ^campaign.id and not is_nil(p.profile_assignment_id),
-          select: p.profile_assignment_id
-        ) |> Repo.all()
+        assignment_ids =
+          from(p in CampaignParticipant,
+            where: p.campaign_id == ^campaign.id and not is_nil(p.profile_assignment_id),
+            select: p.profile_assignment_id
+          )
+          |> Repo.all()
 
         # Delete all profile assignments (revoke access)
         if length(assignment_ids) > 0 do
@@ -168,7 +187,8 @@ defmodule ClippsterServer.Campaigns do
         |> Repo.update_all(set: [profile_assignment_id: nil])
 
         # Update campaign status
-        {:ok, updated_campaign} = campaign
+        {:ok, updated_campaign} =
+          campaign
           |> Campaign.update_changeset(%{status: "completed"})
           |> Repo.update()
 
@@ -202,7 +222,11 @@ defmodule ClippsterServer.Campaigns do
   @doc """
   Removes a creator profile from a campaign.
   """
-  def remove_creator_profile_from_campaign(%Campaign{} = campaign, creator_profile_id, %User{} = user) do
+  def remove_creator_profile_from_campaign(
+        %Campaign{} = campaign,
+        creator_profile_id,
+        %User{} = user
+      ) do
     if Organizations.is_admin?(campaign.organization_id, user.id) do
       from(ccp in CampaignCreatorProfile,
         where: ccp.campaign_id == ^campaign.id and ccp.creator_profile_id == ^creator_profile_id
@@ -273,7 +297,8 @@ defmodule ClippsterServer.Campaigns do
         status = if campaign.join_type == "open", do: "approved", else: "pending"
 
         Repo.transaction(fn ->
-          {:ok, participant} = %CampaignParticipant{}
+          {:ok, participant} =
+            %CampaignParticipant{}
             |> CampaignParticipant.create_changeset(%{
               campaign_id: campaign.id,
               user_id: user.id,
@@ -301,7 +326,8 @@ defmodule ClippsterServer.Campaigns do
 
     if Organizations.is_admin?(campaign.organization_id, approver.id) do
       Repo.transaction(fn ->
-        {:ok, participant} = participant
+        {:ok, participant} =
+          participant
           |> CampaignParticipant.approve_changeset(%{approved_by_user_id: approver.id})
           |> Repo.update()
 
@@ -343,11 +369,14 @@ defmodule ClippsterServer.Campaigns do
       Repo.transaction(fn ->
         # Revoke profile access if exists
         if participant.profile_assignment_id do
-          Repo.delete_all(from a in OrganizationProfileAssignment,
-            where: a.id == ^participant.profile_assignment_id)
+          Repo.delete_all(
+            from a in OrganizationProfileAssignment,
+              where: a.id == ^participant.profile_assignment_id
+          )
         end
 
-        {:ok, updated} = participant
+        {:ok, updated} =
+          participant
           |> CampaignParticipant.remove_changeset()
           |> Repo.update()
 
@@ -364,16 +393,18 @@ defmodule ClippsterServer.Campaigns do
   def list_campaign_participants(campaign_id, opts \\ []) do
     status = Keyword.get(opts, :status)
 
-    query = from p in CampaignParticipant,
-      where: p.campaign_id == ^campaign_id,
-      order_by: [desc: p.inserted_at],
-      preload: [:user, :approved_by_user]
+    query =
+      from p in CampaignParticipant,
+        where: p.campaign_id == ^campaign_id,
+        order_by: [desc: p.inserted_at],
+        preload: [:user, :approved_by_user]
 
-    query = if status do
-      where(query, [p], p.status == ^status)
-    else
-      query
-    end
+    query =
+      if status do
+        where(query, [p], p.status == ^status)
+      else
+        query
+      end
 
     Repo.all(query)
   end
@@ -400,17 +431,28 @@ defmodule ClippsterServer.Campaigns do
   def list_user_campaigns(user_id, opts \\ []) do
     status = Keyword.get(opts, :status)
 
-    query = from p in CampaignParticipant,
-      where: p.user_id == ^user_id and p.status == "approved",
-      join: c in Campaign, on: c.id == p.campaign_id,
-      order_by: [desc: p.inserted_at],
-      preload: [campaign: [:organization, :creator_profile, :global_intro, :global_outro, creator_profiles: :platform_links]]
+    query =
+      from p in CampaignParticipant,
+        where: p.user_id == ^user_id and p.status == "approved",
+        join: c in Campaign,
+        on: c.id == p.campaign_id,
+        order_by: [desc: p.inserted_at],
+        preload: [
+          campaign: [
+            :organization,
+            :creator_profile,
+            :global_intro,
+            :global_outro,
+            creator_profiles: :platform_links
+          ]
+        ]
 
-    query = if status do
-      where(query, [p, c], c.status == ^status)
-    else
-      query
-    end
+    query =
+      if status do
+        where(query, [p, c], c.status == ^status)
+      else
+        query
+      end
 
     Repo.all(query)
   end
@@ -421,12 +463,22 @@ defmodule ClippsterServer.Campaigns do
   def list_user_campaigns_by_creator_profile(user_id, creator_profile_id) do
     from(p in CampaignParticipant,
       where: p.user_id == ^user_id and p.status == "approved",
-      join: c in Campaign, on: c.id == p.campaign_id,
-      join: ccp in CampaignCreatorProfile, on: ccp.campaign_id == c.id,
+      join: c in Campaign,
+      on: c.id == p.campaign_id,
+      join: ccp in CampaignCreatorProfile,
+      on: ccp.campaign_id == c.id,
       where: ccp.creator_profile_id == ^creator_profile_id,
       where: c.status == "active",
       order_by: [desc: p.inserted_at],
-      preload: [campaign: [:organization, :creator_profile, :global_intro, :global_outro, creator_profiles: :platform_links]],
+      preload: [
+        campaign: [
+          :organization,
+          :creator_profile,
+          :global_intro,
+          :global_outro,
+          creator_profiles: :platform_links
+        ]
+      ],
       distinct: true
     )
     |> Repo.all()
@@ -441,7 +493,8 @@ defmodule ClippsterServer.Campaigns do
 
   defp grant_profile_access(participant, campaign, approver_id) do
     # Create profile assignment
-    {:ok, assignment} = %OrganizationProfileAssignment{}
+    {:ok, assignment} =
+      %OrganizationProfileAssignment{}
       |> OrganizationProfileAssignment.changeset(%{
         organization_creator_profile_id: campaign.creator_profile_id,
         user_id: participant.user_id
@@ -449,13 +502,15 @@ defmodule ClippsterServer.Campaigns do
       |> Repo.insert(on_conflict: :nothing)
 
     # Get the assignment (might already exist)
-    assignment = if assignment.id do
-      assignment
-    else
-      Repo.get_by!(OrganizationProfileAssignment,
-        organization_creator_profile_id: campaign.creator_profile_id,
-        user_id: participant.user_id)
-    end
+    assignment =
+      if assignment.id do
+        assignment
+      else
+        Repo.get_by!(OrganizationProfileAssignment,
+          organization_creator_profile_id: campaign.creator_profile_id,
+          user_id: participant.user_id
+        )
+      end
 
     # Update participant with assignment reference
     participant
@@ -490,20 +545,24 @@ defmodule ClippsterServer.Campaigns do
         if platform && platform not in campaign.allowed_platforms do
           {:error, :platform_not_allowed}
         else
-          result = %CampaignSubmission{}
-          |> CampaignSubmission.create_changeset(Map.merge(attrs, %{
-            campaign_id: campaign.id,
-            participant_id: participant.id,
-            user_id: user.id,
-            platform: platform || Map.get(attrs, :platform) || Map.get(attrs, "platform")
-          }))
-          |> Repo.insert()
+          result =
+            %CampaignSubmission{}
+            |> CampaignSubmission.create_changeset(
+              Map.merge(attrs, %{
+                campaign_id: campaign.id,
+                participant_id: participant.id,
+                user_id: user.id,
+                platform: platform || Map.get(attrs, :platform) || Map.get(attrs, "platform")
+              })
+            )
+            |> Repo.insert()
 
           # Fetch platform metadata asynchronously after successful insert
           case result do
             {:ok, submission} ->
               Task.start(fn -> fetch_and_update_submission_metadata(submission) end)
               {:ok, submission}
+
             error ->
               error
           end
@@ -518,6 +577,7 @@ defmodule ClippsterServer.Campaigns do
     case submission.platform do
       platform when platform in ["x", "twitter"] ->
         fetch_twitter_metadata(submission)
+
       # Add other platforms as needed
       _ ->
         Logger.debug("[Campaigns] No metadata fetcher for platform: #{submission.platform}")
@@ -540,10 +600,12 @@ defmodule ClippsterServer.Campaigns do
               caption: analytics[:text],
               platform_post_id: tweet_id
             })
+
           {:error, reason} ->
             Logger.warning("[Campaigns] Failed to fetch Twitter metadata: #{inspect(reason)}")
             {:error, reason}
         end
+
       {:error, reason} ->
         Logger.warning("[Campaigns] Failed to extract tweet ID: #{inspect(reason)}")
         {:error, reason}
@@ -616,16 +678,18 @@ defmodule ClippsterServer.Campaigns do
   def list_campaign_submissions(campaign_id, opts \\ []) do
     status = Keyword.get(opts, :status)
 
-    query = from s in CampaignSubmission,
-      where: s.campaign_id == ^campaign_id,
-      order_by: [desc: s.inserted_at],
-      preload: [:user, :social_account]
+    query =
+      from s in CampaignSubmission,
+        where: s.campaign_id == ^campaign_id,
+        order_by: [desc: s.inserted_at],
+        preload: [:user, :social_account]
 
-    query = if status do
-      where(query, [s], s.status == ^status)
-    else
-      query
-    end
+    query =
+      if status do
+        where(query, [s], s.status == ^status)
+      else
+        query
+      end
 
     Repo.all(query)
   end
@@ -634,18 +698,22 @@ defmodule ClippsterServer.Campaigns do
   Lists all submissions for an organization (across all campaigns).
   """
   def list_organization_submissions(organization_id, opts \\ []) do
-    org_id = if is_binary(organization_id), do: String.to_integer(organization_id), else: organization_id
+    org_id =
+      if is_binary(organization_id), do: String.to_integer(organization_id), else: organization_id
+
     status = Keyword.get(opts, :status)
     platform = Keyword.get(opts, :platform)
     campaign_id = Keyword.get(opts, :campaign_id)
     limit_val = Keyword.get(opts, :limit, 100)
     offset_val = Keyword.get(opts, :offset, 0)
 
-    query = from s in CampaignSubmission,
-      join: c in Campaign, on: s.campaign_id == c.id,
-      where: c.organization_id == ^org_id,
-      order_by: [desc: s.inserted_at],
-      preload: [:user, :social_account, campaign: [:creator_profile, :creator_profiles]]
+    query =
+      from s in CampaignSubmission,
+        join: c in Campaign,
+        on: s.campaign_id == c.id,
+        where: c.organization_id == ^org_id,
+        order_by: [desc: s.inserted_at],
+        preload: [:user, :social_account, campaign: [:creator_profile, :creator_profiles]]
 
     query = if status, do: where(query, [s], s.status == ^status), else: query
     query = if platform, do: where(query, [s], s.platform == ^platform), else: query
@@ -663,16 +731,18 @@ defmodule ClippsterServer.Campaigns do
   def list_user_submissions(user_id, opts \\ []) do
     campaign_id = Keyword.get(opts, :campaign_id)
 
-    query = from s in CampaignSubmission,
-      where: s.user_id == ^user_id,
-      order_by: [desc: s.inserted_at],
-      preload: [:campaign, :social_account]
+    query =
+      from s in CampaignSubmission,
+        where: s.user_id == ^user_id,
+        order_by: [desc: s.inserted_at],
+        preload: [:campaign, :social_account]
 
-    query = if campaign_id do
-      where(query, [s], s.campaign_id == ^campaign_id)
-    else
-      query
-    end
+    query =
+      if campaign_id do
+        where(query, [s], s.campaign_id == ^campaign_id)
+      else
+        query
+      end
 
     Repo.all(query)
   end
@@ -714,7 +784,8 @@ defmodule ClippsterServer.Campaigns do
     if Organizations.is_admin?(campaign.organization_id, payer.id) do
       Repo.transaction(fn ->
         # Update payment status
-        {:ok, updated_payment} = payment
+        {:ok, updated_payment} =
+          payment
           |> CampaignPayment.complete_changeset(Map.put(attrs, :paid_by_user_id, payer.id))
           |> Repo.update()
 
@@ -727,6 +798,7 @@ defmodule ClippsterServer.Campaigns do
 
         # Mark submission as paid
         submission = Repo.get!(CampaignSubmission, payment.submission_id)
+
         submission
         |> CampaignSubmission.mark_paid_changeset()
         |> Repo.update()
@@ -744,16 +816,18 @@ defmodule ClippsterServer.Campaigns do
   def list_campaign_payments(campaign_id, opts \\ []) do
     status = Keyword.get(opts, :status)
 
-    query = from p in CampaignPayment,
-      where: p.campaign_id == ^campaign_id,
-      order_by: [desc: p.inserted_at],
-      preload: [:user, :submission, :payment_method]
+    query =
+      from p in CampaignPayment,
+        where: p.campaign_id == ^campaign_id,
+        order_by: [desc: p.inserted_at],
+        preload: [:user, :submission, :payment_method]
 
-    query = if status do
-      where(query, [p], p.status == ^status)
-    else
-      query
-    end
+    query =
+      if status do
+        where(query, [p], p.status == ^status)
+      else
+        query
+      end
 
     Repo.all(query)
   end
@@ -774,25 +848,33 @@ defmodule ClippsterServer.Campaigns do
   Gets earnings summary for a user.
   """
   def get_user_earnings_summary(user_id) do
-    total_earned = from(p in CampaignPayment,
-      where: p.user_id == ^user_id and p.status == "completed",
-      select: coalesce(sum(p.amount), 0)
-    ) |> Repo.one()
+    total_earned =
+      from(p in CampaignPayment,
+        where: p.user_id == ^user_id and p.status == "completed",
+        select: coalesce(sum(p.amount), 0)
+      )
+      |> Repo.one()
 
-    pending = from(p in CampaignPayment,
-      where: p.user_id == ^user_id and p.status in ["pending", "processing"],
-      select: coalesce(sum(p.amount), 0)
-    ) |> Repo.one()
+    pending =
+      from(p in CampaignPayment,
+        where: p.user_id == ^user_id and p.status in ["pending", "processing"],
+        select: coalesce(sum(p.amount), 0)
+      )
+      |> Repo.one()
 
-    total_submissions = from(s in CampaignSubmission,
-      where: s.user_id == ^user_id,
-      select: count(s.id)
-    ) |> Repo.one()
+    total_submissions =
+      from(s in CampaignSubmission,
+        where: s.user_id == ^user_id,
+        select: count(s.id)
+      )
+      |> Repo.one()
 
-    verified_submissions = from(s in CampaignSubmission,
-      where: s.user_id == ^user_id and s.status in ["verified", "paid"],
-      select: count(s.id)
-    ) |> Repo.one()
+    verified_submissions =
+      from(s in CampaignSubmission,
+        where: s.user_id == ^user_id and s.status in ["verified", "paid"],
+        select: count(s.id)
+      )
+      |> Repo.one()
 
     %{
       total_earned: total_earned,
@@ -820,6 +902,18 @@ defmodule ClippsterServer.Campaigns do
   """
   def get_social_account(id) do
     Repo.get(ClipperSocialAccount, id)
+  end
+
+  @doc """
+  Gets a social account by provider + provider account ID for a user.
+  """
+  def get_social_account_by_provider(user_id, provider, provider_account_id) do
+    from(a in ClipperSocialAccount,
+      where:
+        a.user_id == ^user_id and a.provider == ^provider and
+          a.provider_account_id == ^provider_account_id
+    )
+    |> Repo.one()
   end
 
   @doc """
@@ -920,21 +1014,25 @@ defmodule ClippsterServer.Campaigns do
 
     since = DateTime.utc_now() |> DateTime.add(-days, :day)
 
-    query = from p in UserPost,
-      where: p.user_id == ^user_id,
-      where: p.status == "published",
-      where: p.inserted_at >= ^since,
-      select: %{
-        total_posts: count(p.id),
-        total_views: sum(p.view_count),
-        total_likes: sum(p.like_count),
-        total_comments: sum(p.comment_count),
-        total_saves: sum(p.save_count),
-        total_reach: sum(p.reach_count),
-        total_impressions: sum(p.impressions_count)
-      }
+    query =
+      from p in UserPost,
+        where: p.user_id == ^user_id,
+        where: p.status == "published",
+        where: p.inserted_at >= ^since,
+        select: %{
+          total_posts: count(p.id),
+          total_views: sum(p.view_count),
+          total_likes: sum(p.like_count),
+          total_comments: sum(p.comment_count),
+          total_saves: sum(p.save_count),
+          total_reach: sum(p.reach_count),
+          total_impressions: sum(p.impressions_count)
+        }
 
-    query = if account_id, do: where(query, [p], p.clipper_social_account_id == ^account_id), else: query
+    query =
+      if account_id,
+        do: where(query, [p], p.clipper_social_account_id == ^account_id),
+        else: query
 
     Repo.one(query)
   end
@@ -982,7 +1080,8 @@ defmodule ClippsterServer.Campaigns do
         |> Repo.update_all(set: [is_default: false])
       end
 
-      {:ok, method} = %ClipperPaymentMethod{}
+      {:ok, method} =
+        %ClipperPaymentMethod{}
         |> ClipperPaymentMethod.create_changeset(Map.put(attrs, :user_id, user.id))
         |> Repo.insert()
 
@@ -1009,7 +1108,8 @@ defmodule ClippsterServer.Campaigns do
           |> Repo.update_all(set: [is_default: false])
         end
 
-        {:ok, updated} = method
+        {:ok, updated} =
+          method
           |> ClipperPaymentMethod.update_changeset(attrs)
           |> Repo.update()
 
@@ -1061,30 +1161,40 @@ defmodule ClippsterServer.Campaigns do
   Gets campaign statistics.
   """
   def get_campaign_stats(campaign_id) do
-    participants_count = from(p in CampaignParticipant,
-      where: p.campaign_id == ^campaign_id and p.status == "approved",
-      select: count(p.id)
-    ) |> Repo.one()
+    participants_count =
+      from(p in CampaignParticipant,
+        where: p.campaign_id == ^campaign_id and p.status == "approved",
+        select: count(p.id)
+      )
+      |> Repo.one()
 
-    submissions_count = from(s in CampaignSubmission,
-      where: s.campaign_id == ^campaign_id,
-      select: count(s.id)
-    ) |> Repo.one()
+    submissions_count =
+      from(s in CampaignSubmission,
+        where: s.campaign_id == ^campaign_id,
+        select: count(s.id)
+      )
+      |> Repo.one()
 
-    verified_count = from(s in CampaignSubmission,
-      where: s.campaign_id == ^campaign_id and s.status in ["verified", "paid"],
-      select: count(s.id)
-    ) |> Repo.one()
+    verified_count =
+      from(s in CampaignSubmission,
+        where: s.campaign_id == ^campaign_id and s.status in ["verified", "paid"],
+        select: count(s.id)
+      )
+      |> Repo.one()
 
-    total_views = from(s in CampaignSubmission,
-      where: s.campaign_id == ^campaign_id and s.status in ["verified", "paid"],
-      select: coalesce(sum(s.view_count), 0)
-    ) |> Repo.one()
+    total_views =
+      from(s in CampaignSubmission,
+        where: s.campaign_id == ^campaign_id and s.status in ["verified", "paid"],
+        select: coalesce(sum(s.view_count), 0)
+      )
+      |> Repo.one()
 
-    total_paid = from(p in CampaignPayment,
-      where: p.campaign_id == ^campaign_id and p.status == "completed",
-      select: coalesce(sum(p.amount), 0)
-    ) |> Repo.one()
+    total_paid =
+      from(p in CampaignPayment,
+        where: p.campaign_id == ^campaign_id and p.status == "completed",
+        select: coalesce(sum(p.amount), 0)
+      )
+      |> Repo.one()
 
     %{
       participants_count: participants_count,

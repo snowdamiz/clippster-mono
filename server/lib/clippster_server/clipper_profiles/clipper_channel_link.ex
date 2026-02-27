@@ -49,6 +49,7 @@ defmodule ClippsterServer.ClipperProfiles.ClipperChannelLink do
       case URI.parse(value) do
         %URI{scheme: scheme, host: host} when scheme in ["http", "https"] and not is_nil(host) ->
           []
+
         _ ->
           [{field, "must be a valid URL"}]
       end

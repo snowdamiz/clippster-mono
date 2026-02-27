@@ -30,6 +30,30 @@ export interface TwitterAuthResult {
   error?: string;
 }
 
+interface PostForMeConnectUrlResponse {
+  success: boolean;
+  auth_url?: string;
+  external_id?: string;
+  platform?: string;
+  error?: string;
+}
+
+interface PostForMeCompleteConnectResponse {
+  success: boolean;
+  social_account?: UserTwitterAccount;
+  social_accounts?: UserTwitterAccount[];
+  error?: string;
+}
+
+interface PostForMeAuthCallbackResult {
+  success: boolean;
+  account_id?: string;
+  account_ids?: string[];
+  external_id?: string;
+  platform?: string;
+  error?: string;
+}
+
 // ============================================
 // OAuth Functions
 // ============================================
@@ -57,6 +81,82 @@ export async function startUserTwitterOAuth(
   // Dynamic import to handle Tauri-specific code
   const { invoke } = await import('@tauri-apps/api/core');
   const { listen } = await import('@tauri-apps/api/event');
+
+  try {
+    // Preferred flow: Post For Me generic OAuth
+    const connectResponse = await api.post<PostForMeConnectUrlResponse>(
+      '/user/social/connect-url',
+      { platform: 'x' }
+    );
+
+    if (!connectResponse.data.success || !connectResponse.data.auth_url) {
+      throw new Error(connectResponse.data.error || 'Failed to create Post For Me auth URL');
+    }
+
+    const externalId = connectResponse.data.external_id;
+
+    const unlistenPostForMe = await listen<PostForMeAuthCallbackResult>(
+      'post-for-me-auth-complete',
+      async (event) => {
+        if (!onResult) return;
+
+        const callback = event.payload;
+
+        if (!callback.success) {
+          onResult({
+            success: false,
+            error: callback.error || 'Social account connection failed',
+          });
+          return;
+        }
+
+        try {
+          const completeResponse = await api.post<PostForMeCompleteConnectResponse>(
+            '/user/social/complete-connect',
+            {
+              platform: 'x',
+              external_id: callback.external_id || externalId,
+              account_id: callback.account_id,
+              account_ids: callback.account_ids || [],
+            }
+          );
+
+          if (!completeResponse.data.success) {
+            onResult({
+              success: false,
+              error: completeResponse.data.error || 'Failed to finalize social account connection',
+            });
+            return;
+          }
+
+          const account =
+            completeResponse.data.social_account || completeResponse.data.social_accounts?.[0];
+
+          onResult({
+            success: true,
+            account,
+          });
+        } catch (error: any) {
+          onResult({
+            success: false,
+            error:
+              error.response?.data?.error ||
+              error.message ||
+              'Failed to finalize social account connection',
+          });
+        }
+      }
+    );
+
+    await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
+
+    return unlistenPostForMe;
+  } catch (postForMeError) {
+    console.warn(
+      '[UserTwitterApi] Post For Me connect failed, falling back to legacy X OAuth:',
+      postForMeError
+    );
+  }
 
   try {
     // Start OAuth - Tauri will open browser and handle callback

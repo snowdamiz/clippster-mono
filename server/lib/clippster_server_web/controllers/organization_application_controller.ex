@@ -6,9 +6,15 @@ defmodule ClippsterServerWeb.OrganizationApplicationController do
   # Handle OPTIONS requests for CORS preflight
   def options(conn, _params) do
     conn
-    |> put_resp_header("access-control-allow-origin", get_req_header(conn, "origin") |> List.first() || "*")
+    |> put_resp_header(
+      "access-control-allow-origin",
+      get_req_header(conn, "origin") |> List.first() || "*"
+    )
     |> put_resp_header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS")
-    |> put_resp_header("access-control-allow-headers", "Authorization, Content-Type, Accept, Origin, X-Requested-With")
+    |> put_resp_header(
+      "access-control-allow-headers",
+      "Authorization, Content-Type, Accept, Origin, X-Requested-With"
+    )
     |> put_resp_header("access-control-max-age", "86400")
     |> send_resp(200, "")
   end
@@ -38,11 +44,15 @@ defmodule ClippsterServerWeb.OrganizationApplicationController do
             logo_url: presign_url(application.logo_url),
             status: application.status,
             admin_notes: application.admin_notes,
-            reviewed_by: if(application.reviewed_by, do: %{
-              id: application.reviewed_by.id,
-              email: application.reviewed_by.email,
-              name: application.reviewed_by.name
-            }, else: nil),
+            reviewed_by:
+              if(application.reviewed_by,
+                do: %{
+                  id: application.reviewed_by.id,
+                  email: application.reviewed_by.email,
+                  name: application.reviewed_by.name
+                },
+                else: nil
+              ),
             reviewed_at: application.reviewed_at,
             inserted_at: application.inserted_at,
             updated_at: application.updated_at
@@ -136,17 +146,25 @@ defmodule ClippsterServerWeb.OrganizationApplicationController do
           logo_url: presign_url(app.logo_url),
           status: app.status,
           admin_notes: app.admin_notes,
-          user: if(app.user, do: %{
-            id: app.user.id,
-            email: app.user.email,
-            name: app.user.name,
-            wallet_address: app.user.wallet_address
-          }, else: nil),
-          reviewed_by: if(app.reviewed_by, do: %{
-            id: app.reviewed_by.id,
-            email: app.reviewed_by.email,
-            name: app.reviewed_by.name
-          }, else: nil),
+          user:
+            if(app.user,
+              do: %{
+                id: app.user.id,
+                email: app.user.email,
+                name: app.user.name,
+                wallet_address: app.user.wallet_address
+              },
+              else: nil
+            ),
+          reviewed_by:
+            if(app.reviewed_by,
+              do: %{
+                id: app.reviewed_by.id,
+                email: app.reviewed_by.email,
+                name: app.reviewed_by.name
+              },
+              else: nil
+            ),
           reviewed_at: app.reviewed_at,
           inserted_at: app.inserted_at,
           updated_at: app.updated_at
@@ -195,7 +213,11 @@ defmodule ClippsterServerWeb.OrganizationApplicationController do
       {:error, reason} ->
         conn
         |> put_status(500)
-        |> json(%{success: false, error: "Failed to approve application", details: inspect(reason)})
+        |> json(%{
+          success: false,
+          error: "Failed to approve application",
+          details: inspect(reason)
+        })
     end
   end
 
@@ -230,7 +252,11 @@ defmodule ClippsterServerWeb.OrganizationApplicationController do
       {:error, reason} ->
         conn
         |> put_status(500)
-        |> json(%{success: false, error: "Failed to reject application", details: inspect(reason)})
+        |> json(%{
+          success: false,
+          error: "Failed to reject application",
+          details: inspect(reason)
+        })
     end
   end
 
@@ -273,7 +299,10 @@ defmodule ClippsterServerWeb.OrganizationApplicationController do
       {:error, :cannot_update_processed_application} ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: "Cannot update an application that has already been processed"})
+        |> json(%{
+          success: false,
+          error: "Cannot update an application that has already been processed"
+        })
 
       {:error, changeset} ->
         errors =
@@ -347,11 +376,11 @@ defmodule ClippsterServerWeb.OrganizationApplicationController do
   def upload_logo(conn, %{"id" => id} = params) do
     user = conn.assigns[:current_user]
 
-    with application when not is_nil(application) <- Organizations.get_organization_application(id),
+    with application when not is_nil(application) <-
+           Organizations.get_organization_application(id),
          true <- application.user_id == user.id,
          true <- application.status == "pending",
          %Plug.Upload{path: temp_path, filename: filename} <- params["file"] do
-
       # Read file contents
       {:ok, file_binary} = File.read(temp_path)
 

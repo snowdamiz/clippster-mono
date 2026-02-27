@@ -29,8 +29,9 @@ Enum.each(dev_codes, fn code ->
       %BetaCode{}
       |> BetaCode.changeset(%{code: code})
       |> Repo.insert!()
+
       IO.puts("✓ Created beta code: #{code}")
-    
+
     _existing ->
       IO.puts("⊘ Beta code already exists: #{code}")
   end

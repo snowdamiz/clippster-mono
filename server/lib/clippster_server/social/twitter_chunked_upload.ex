@@ -37,10 +37,14 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
   @init_url "https://api.x.com/2/media/upload/initialize"
 
   # Upload configuration
-  @chunk_size 1_024_000  # 1MB chunks (recommended by X)
-  @max_poll_attempts 60  # ~5 minutes max polling
-  @http_timeout 30_000  # 30 second timeout for INIT/FINALIZE/STATUS
-  @append_timeout 60_000  # 60 second timeout for APPEND (larger payloads)
+  # 1MB chunks (recommended by X)
+  @chunk_size 1_024_000
+  # ~5 minutes max polling
+  @max_poll_attempts 60
+  # 30 second timeout for INIT/FINALIZE/STATUS
+  @http_timeout 30_000
+  # 60 second timeout for APPEND (larger payloads)
+  @append_timeout 60_000
 
   @doc """
   Upload video to X API using chunked upload workflow.
@@ -79,11 +83,12 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
   defp init_upload(access_token, total_bytes, media_type) do
     Logger.info("[TwitterUpload] INIT upload: #{total_bytes} bytes, type: #{media_type}")
 
-    body = Jason.encode!(%{
-      "media_type" => media_type,
-      "total_bytes" => total_bytes,
-      "media_category" => "tweet_video"
-    })
+    body =
+      Jason.encode!(%{
+        "media_type" => media_type,
+        "total_bytes" => total_bytes,
+        "media_category" => "tweet_video"
+      })
 
     headers = [
       {"Authorization", "Bearer #{access_token}"},
@@ -93,21 +98,26 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
     http_options = [timeout: @http_timeout, recv_timeout: @http_timeout, hackney: [pool: false]]
 
     case HTTPoison.post(@init_url, body, headers, http_options) do
-      {:ok, %HTTPoison.Response{status_code: status, body: response_body}} when status in 200..299 ->
+      {:ok, %HTTPoison.Response{status_code: status, body: response_body}}
+      when status in 200..299 ->
         Logger.info("[TwitterUpload] INIT raw response: #{response_body}")
+
         case Jason.decode(response_body) do
           {:ok, parsed} ->
             # v2 wraps in "data", extract the inner object
             inner = Map.get(parsed, "data", parsed)
             media_id = inner["media_id_string"] || inner["id"]
+
             cond do
               is_binary(media_id) && media_id != "" ->
                 Logger.info("[TwitterUpload] INIT success: media_id=#{media_id}")
                 {:ok, media_id}
+
               is_integer(media_id) ->
                 media_id_str = Integer.to_string(media_id)
                 Logger.info("[TwitterUpload] INIT success: media_id=#{media_id_str}")
                 {:ok, media_id_str}
+
               true ->
                 Logger.error("[TwitterUpload] INIT response missing media_id: #{inspect(parsed)}")
                 {:error, {:init_failed, :invalid_response}}
@@ -137,7 +147,9 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
     total_size = byte_size(video_binary)
     chunk_count = ceil(total_size / @chunk_size)
 
-    Logger.info("[TwitterUpload] APPEND chunks: #{chunk_count} chunks (#{@chunk_size} bytes each)")
+    Logger.info(
+      "[TwitterUpload] APPEND chunks: #{chunk_count} chunks (#{@chunk_size} bytes each)"
+    )
 
     # Upload chunks sequentially (X requires order)
     Enum.reduce_while(0..(chunk_count - 1), :ok, fn segment_index, _acc ->
@@ -160,7 +172,8 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
     append_chunk_with_retry(access_token, media_id, chunk_binary, segment_index, 0)
   end
 
-  defp append_chunk_with_retry(_access_token, _media_id, _chunk_binary, segment_index, attempt) when attempt >= 3 do
+  defp append_chunk_with_retry(_access_token, _media_id, _chunk_binary, segment_index, attempt)
+       when attempt >= 3 do
     Logger.error("[TwitterUpload] APPEND segment #{segment_index} failed after 3 retries")
     {:error, {:append_failed, segment_index, :max_retries}}
   end
@@ -175,10 +188,13 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
     try do
       File.write!(tmp_path, chunk_binary)
 
-      body = {:multipart, [
-        {"segment_index", "#{segment_index}"},
-        {:file, tmp_path, {"form-data", [name: "media", filename: "video.mp4"]}, [{"Content-Type", "application/octet-stream"}]}
-      ]}
+      body =
+        {:multipart,
+         [
+           {"segment_index", "#{segment_index}"},
+           {:file, tmp_path, {"form-data", [name: "media", filename: "video.mp4"]},
+            [{"Content-Type", "application/octet-stream"}]}
+         ]}
 
       headers = [
         {"Authorization", "Bearer #{access_token}"}
@@ -186,7 +202,11 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
       ]
 
       # Disable connection pooling to prevent :closed errors from stale connections
-      http_options = [timeout: @append_timeout, recv_timeout: @append_timeout, hackney: [pool: false]]
+      http_options = [
+        timeout: @append_timeout,
+        recv_timeout: @append_timeout,
+        hackney: [pool: false]
+      ]
 
       case HTTPoison.post(append_url, body, headers, http_options) do
         {:ok, %HTTPoison.Response{status_code: status}} when status in [200, 202, 204] ->
@@ -194,16 +214,34 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
 
         {:ok, %HTTPoison.Response{status_code: status, body: response_body}} ->
           error = extract_error(response_body)
-          Logger.error("[TwitterUpload] APPEND segment #{segment_index} failed: status=#{status}, error=#{inspect(error)}")
+
+          Logger.error(
+            "[TwitterUpload] APPEND segment #{segment_index} failed: status=#{status}, error=#{inspect(error)}"
+          )
+
           {:error, {:append_failed, segment_index, status, error}}
 
-        {:error, %HTTPoison.Error{reason: reason}} when reason in [:closed, :timeout, :connect_timeout] ->
-          Logger.warning("[TwitterUpload] APPEND segment #{segment_index} transient error: #{inspect(reason)}, retry #{attempt + 1}/3")
+        {:error, %HTTPoison.Error{reason: reason}}
+        when reason in [:closed, :timeout, :connect_timeout] ->
+          Logger.warning(
+            "[TwitterUpload] APPEND segment #{segment_index} transient error: #{inspect(reason)}, retry #{attempt + 1}/3"
+          )
+
           :timer.sleep(1000 * (attempt + 1))
-          append_chunk_with_retry(access_token, media_id, chunk_binary, segment_index, attempt + 1)
+
+          append_chunk_with_retry(
+            access_token,
+            media_id,
+            chunk_binary,
+            segment_index,
+            attempt + 1
+          )
 
         {:error, reason} ->
-          Logger.error("[TwitterUpload] APPEND segment #{segment_index} HTTP error: #{inspect(reason)}")
+          Logger.error(
+            "[TwitterUpload] APPEND segment #{segment_index} HTTP error: #{inspect(reason)}"
+          )
+
           {:error, {:append_failed, segment_index, reason}}
       end
     after
@@ -228,13 +266,16 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
     http_options = [timeout: @http_timeout, recv_timeout: @http_timeout, hackney: [pool: false]]
 
     case HTTPoison.post(finalize_url, "{}", headers, http_options) do
-      {:ok, %HTTPoison.Response{status_code: status, body: response_body}} when status in 200..299 ->
+      {:ok, %HTTPoison.Response{status_code: status, body: response_body}}
+      when status in 200..299 ->
         Logger.info("[TwitterUpload] FINALIZE raw response: #{response_body}")
+
         case Jason.decode(response_body) do
           {:ok, parsed} ->
             # v2 wraps in "data"
             inner = Map.get(parsed, "data", parsed)
             processing_info = inner["processing_info"]
+
             if processing_info do
               Logger.info("[TwitterUpload] FINALIZE success: requires async processing")
               {:ok, processing_info}
@@ -301,7 +342,11 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
 
             s when s in ["pending", "in_progress"] ->
               next_check_after = Map.get(processing_info, "check_after_secs", wait_seconds)
-              Logger.debug("[TwitterUpload] STATUS #{s}: attempt #{attempt + 1}/#{@max_poll_attempts}, next check in #{next_check_after}s")
+
+              Logger.debug(
+                "[TwitterUpload] STATUS #{s}: attempt #{attempt + 1}/#{@max_poll_attempts}, next check in #{next_check_after}s"
+              )
+
               do_poll(access_token, media_id, next_check_after, attempt + 1)
 
             _ ->
@@ -326,7 +371,8 @@ defmodule ClippsterServer.Social.TwitterChunkedUpload do
     http_options = [timeout: @http_timeout, recv_timeout: @http_timeout, hackney: [pool: false]]
 
     case HTTPoison.get(url, headers, http_options) do
-      {:ok, %HTTPoison.Response{status_code: status, body: response_body}} when status in 200..299 ->
+      {:ok, %HTTPoison.Response{status_code: status, body: response_body}}
+      when status in 200..299 ->
         case Jason.decode(response_body) do
           {:ok, response} -> {:ok, response}
           {:error, decode_error} -> {:error, {:json_decode_error, decode_error}}

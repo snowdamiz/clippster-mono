@@ -25,7 +25,15 @@ defmodule ClippsterServer.ClipperProfiles.ClipperPortfolioClip do
   """
   def create_changeset(clip, attrs) do
     clip
-    |> cast(attrs, [:clipper_profile_id, :title, :video_url, :thumbnail_url, :duration, :file_size, :display_order])
+    |> cast(attrs, [
+      :clipper_profile_id,
+      :title,
+      :video_url,
+      :thumbnail_url,
+      :duration,
+      :file_size,
+      :display_order
+    ])
     |> validate_required([:clipper_profile_id, :video_url])
     |> validate_length(:title, max: 200)
     |> validate_url(:video_url)
@@ -47,6 +55,7 @@ defmodule ClippsterServer.ClipperProfiles.ClipperPortfolioClip do
       case URI.parse(value) do
         %URI{scheme: scheme, host: host} when scheme in ["http", "https"] and not is_nil(host) ->
           []
+
         _ ->
           [{field, "must be a valid URL"}]
       end

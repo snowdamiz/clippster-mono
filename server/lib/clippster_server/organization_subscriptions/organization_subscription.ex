@@ -3,7 +3,8 @@ defmodule ClippsterServer.OrganizationSubscriptions.OrganizationSubscription do
   import Ecto.Changeset
 
   schema "organization_subscriptions" do
-    field :subscription_type, :string  # "base" or "addon"
+    # "base" or "addon"
+    field :subscription_type, :string
     field :tier, :string
     field :status, :string
     field :start_date, :utc_datetime

@@ -6,16 +6,16 @@ use std::{
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use tokio::sync::oneshot;
 use tauri::Emitter;
+use tokio::sync::oneshot;
 
-use crate::storage;
-use tokio::io::AsyncBufReadExt;
 use crate::downloads::{
-    DownloadProgress, DownloadResult, ACTIVE_DOWNLOADS, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA,
-    DownloadMetadata,
+    DownloadMetadata, DownloadProgress, DownloadResult, ACTIVE_DOWNLOADS,
+    ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA,
 };
 use crate::ffmpeg_utils::{get_video_info, parse_ffmpeg_time};
+use crate::storage;
+use tokio::io::AsyncBufReadExt;
 
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
@@ -163,16 +163,16 @@ pub struct TwitchVod {
 }
 
 /// Check if a Twitch channel is live using the public GQL endpoint
-/// 
+///
 /// # Arguments
 /// * `channel` - The Twitch channel name/login (e.g., "xqc", "ninja")
 #[tauri::command]
 pub async fn check_twitch_livestream(channel: String) -> Result<String, String> {
     let channel_name = normalize_channel_name(&channel);
-    
+
     // Use Twitch's public GQL endpoint (same as their website)
     let url = "https://gql.twitch.tv/gql";
-    
+
     // GraphQL query to get user and stream info
     let query = serde_json::json!({
         "query": format!(r#"
@@ -216,16 +216,21 @@ pub async fn check_twitch_livestream(channel: String) -> Result<String, String> 
         .map_err(|e| format!("Failed to read response: {}", e))?;
 
     // Parse the response
-    let gql_response: TwitchGqlResponse = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse Twitch response: {} - Body: {}", e, &body[..body.len().min(500)]))?;
+    let gql_response: TwitchGqlResponse = serde_json::from_str(&body).map_err(|e| {
+        format!(
+            "Failed to parse Twitch response: {} - Body: {}",
+            e,
+            &body[..body.len().min(500)]
+        )
+    })?;
 
     // Build the live status response
     let user = gql_response.data.and_then(|d| d.user);
-    
+
     let status = if let Some(user) = user {
         let is_live = user.stream.is_some();
         let stream = user.stream.as_ref();
-        
+
         TwitchLiveStatus {
             is_live,
             channel_id: user.id,
@@ -234,7 +239,9 @@ pub async fn check_twitch_livestream(channel: String) -> Result<String, String> 
             profile_image_url: user.profile_image_url,
             stream_title: stream.and_then(|s| s.title.clone()),
             viewer_count: stream.and_then(|s| s.viewers_count),
-            game_name: stream.and_then(|s| s.game.as_ref()).and_then(|g| g.name.clone()),
+            game_name: stream
+                .and_then(|s| s.game.as_ref())
+                .and_then(|g| g.name.clone()),
             started_at: stream.and_then(|s| s.created_at.clone()),
         }
     } else {
@@ -260,22 +267,24 @@ pub async fn check_twitch_livestream(channel: String) -> Result<String, String> 
 pub async fn get_twitch_vods(channel: String, limit: Option<u32>) -> Result<String, String> {
     let channel_name = normalize_channel_name(&channel);
     let limit = limit.unwrap_or(20);
-    
+
     let ytdlp_path = resolve_ytdlp_binary()?;
     let twitch_url = format!("https://twitch.tv/{}/videos", channel_name);
-    
+
     // Use yt-dlp to get playlist info
     // Note: We don't use --flat-playlist because it doesn't include upload_date
     // This is slower but provides complete metadata including timestamps
-    let output = no_window(tokio::process::Command::new(&ytdlp_path)
-        .arg("--dump-json")
-        .arg("--skip-download")
-        .arg("--playlist-end")
-        .arg(limit.to_string())
-        .arg(&twitch_url))
-        .output()
-        .await
-        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    let output = no_window(
+        tokio::process::Command::new(&ytdlp_path)
+            .arg("--dump-json")
+            .arg("--skip-download")
+            .arg("--playlist-end")
+            .arg(limit.to_string())
+            .arg(&twitch_url),
+    )
+    .output()
+    .await
+    .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -283,48 +292,48 @@ pub async fn get_twitch_vods(channel: String, limit: Option<u32>) -> Result<Stri
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    
+
     // Parse each line as a separate JSON object (yt-dlp outputs one per line)
     let mut vods: Vec<TwitchVod> = Vec::new();
-    
+
     for line in stdout.lines() {
         if line.trim().is_empty() {
             continue;
         }
-        
+
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
             let vod = TwitchVod {
-                vod_id: json.get("id")
+                vod_id: json
+                    .get("id")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                title: json.get("title")
+                title: json
+                    .get("title")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                duration: json.get("duration")
-                    .and_then(|v| v.as_f64()),
-                view_count: json.get("view_count")
-                    .and_then(|v| v.as_i64()),
-                thumbnail_url: json.get("thumbnail")
+                duration: json.get("duration").and_then(|v| v.as_f64()),
+                view_count: json.get("view_count").and_then(|v| v.as_i64()),
+                thumbnail_url: json
+                    .get("thumbnail")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                created_at: json.get("upload_date")
-                    .and_then(|v| v.as_str())
-                    .map(|s| {
-                        // yt-dlp returns date as YYYYMMDD, convert to ISO format YYYY-MM-DD
-                        if s.len() == 8 {
-                            format!("{}-{}-{}", &s[0..4], &s[4..6], &s[6..8])
-                        } else {
-                            s.to_string()
-                        }
-                    }),
-                url: json.get("webpage_url")
+                created_at: json.get("upload_date").and_then(|v| v.as_str()).map(|s| {
+                    // yt-dlp returns date as YYYYMMDD, convert to ISO format YYYY-MM-DD
+                    if s.len() == 8 {
+                        format!("{}-{}-{}", &s[0..4], &s[4..6], &s[6..8])
+                    } else {
+                        s.to_string()
+                    }
+                }),
+                url: json
+                    .get("webpage_url")
                     .or_else(|| json.get("url"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
             };
-            
+
             if !vod.vod_id.is_empty() {
                 vods.push(vod);
             }
@@ -338,44 +347,46 @@ pub async fn get_twitch_vods(channel: String, limit: Option<u32>) -> Result<Stri
 fn get_target_triple() -> &'static str {
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     return "x86_64-pc-windows-msvc";
-    
+
     #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
     return "aarch64-pc-windows-msvc";
-    
+
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     return "x86_64-unknown-linux-gnu";
-    
+
     #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
     return "aarch64-unknown-linux-gnu";
-    
+
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
     return "x86_64-apple-darwin";
-    
+
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     return "aarch64-apple-darwin";
 }
 
 /// Resolve a sidecar binary path using Tauri's naming convention.
 fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?;
-    
-    let exe_dir = exe_path
-        .parent()
-        .ok_or("Failed to get parent directory")?;
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
+
+    let exe_dir = exe_path.parent().ok_or("Failed to get parent directory")?;
 
     let target_triple = get_target_triple();
-    
+
     #[cfg(target_os = "windows")]
     let binary_name = format!("{}-{}.exe", base_name, target_triple);
-    
+
     #[cfg(not(target_os = "windows"))]
     let binary_name = format!("{}-{}", base_name, target_triple);
 
     // Production: sidecar is next to the executable
     let prod_path = exe_dir.join(&binary_name);
     if prod_path.exists() {
-        println!("[Twitch] Found {} at (prod): {}", base_name, prod_path.display());
+        println!(
+            "[Twitch] Found {} at (prod): {}",
+            base_name,
+            prod_path.display()
+        );
         return Ok(prod_path.to_string_lossy().to_string());
     }
 
@@ -387,7 +398,11 @@ fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
 
     let bare_path = exe_dir.join(&bare_name);
     if bare_path.exists() {
-        println!("[Twitch] Found {} at (bundle): {}", base_name, bare_path.display());
+        println!(
+            "[Twitch] Found {} at (bundle): {}",
+            base_name,
+            bare_path.display()
+        );
         return Ok(bare_path.to_string_lossy().to_string());
     }
 
@@ -396,7 +411,11 @@ fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
         if let Some(target_parent) = target_dir.parent() {
             let dev_path = target_parent.join("binaries").join(&binary_name);
             if dev_path.exists() {
-                println!("[Twitch] Found {} at (dev): {}", base_name, dev_path.display());
+                println!(
+                    "[Twitch] Found {} at (dev): {}",
+                    base_name,
+                    dev_path.display()
+                );
                 return Ok(dev_path.to_string_lossy().to_string());
             }
         }
@@ -405,11 +424,14 @@ fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
     // Fallback to system PATH
     #[cfg(target_os = "windows")]
     let fallback = format!("{}.exe", base_name);
-    
+
     #[cfg(not(target_os = "windows"))]
     let fallback = base_name.to_string();
-    
-    println!("[Twitch] {} not found in bundle, falling back to PATH: {}", base_name, fallback);
+
+    println!(
+        "[Twitch] {} not found in bundle, falling back to PATH: {}",
+        base_name, fallback
+    );
     Ok(fallback)
 }
 
@@ -427,20 +449,20 @@ fn resolve_ffmpeg_binary() -> Result<String, String> {
 /// Handles: "xqc", "twitch.tv/xqc", "https://twitch.tv/xqc", etc.
 fn normalize_channel_name(input: &str) -> String {
     let input = input.trim();
-    
+
     // Remove protocol and domain if present
     let name = if input.contains("twitch.tv/") {
         input.split("twitch.tv/").last().unwrap_or(input)
     } else {
         input
     };
-    
+
     // Remove any trailing slashes, paths, or query params
     let name = name.split('/').next().unwrap_or(name);
     let name = name.split('?').next().unwrap_or(name);
     let name = name.split('#').next().unwrap_or(name);
     let name = name.trim_matches('/');
-    
+
     name.to_lowercase()
 }
 
@@ -455,24 +477,31 @@ pub async fn start_twitch_recording(
     segment_duration_minutes: Option<u32>,
 ) -> Result<(), String> {
     let channel_name = normalize_channel_name(&channel_name);
-    
+
     // Check if this specific session is already recording
     // Allow multiple sessions per channel (e.g., temp viewer + persistent auto-detect)
-    if TWITCH_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&session_id) {
-        println!("[Twitch] Session {} already recording, skipping duplicate start", session_id);
+    if TWITCH_ACTIVE_RECORDINGS
+        .lock()
+        .unwrap()
+        .contains_key(&session_id)
+    {
+        println!(
+            "[Twitch] Session {} already recording, skipping duplicate start",
+            session_id
+        );
         return Ok(());
     }
 
     // Get output directory
     let output_dir = storage::get_livestream_recordings_dir()
         .map_err(|e| format!("Failed to get recordings directory: {}", e))?;
-    
+
     let session_dir = output_dir.join(&session_id);
     std::fs::create_dir_all(&session_dir)
         .map_err(|e| format!("Failed to create session directory: {}", e))?;
 
     let segment_duration = segment_duration_minutes.unwrap_or(5);
-    
+
     // Create stop channel
     let (stop_tx, stop_rx) = oneshot::channel();
 
@@ -484,12 +513,15 @@ pub async fn start_twitch_recording(
     let app_handle = app.clone();
 
     // Emit log that recording is starting
-    let _ = app.emit("recorder-log", TwitchRecorderLogPayload {
-        streamer_id: streamer_id.clone(),
-        channel_name: channel_name.clone(),
-        message: format!("Starting Twitch recording for {}", channel_name),
-        level: "info".to_string(),
-    });
+    let _ = app.emit(
+        "recorder-log",
+        TwitchRecorderLogPayload {
+            streamer_id: streamer_id.clone(),
+            channel_name: channel_name.clone(),
+            message: format!("Starting Twitch recording for {}", channel_name),
+            level: "info".to_string(),
+        },
+    );
 
     let streamer_for_err = streamer_id.clone();
     let channel_for_err = channel_name.clone();
@@ -509,17 +541,26 @@ pub async fn start_twitch_recording(
         {
             eprintln!("[TwitchRecorder] {}", err);
             // Emit error to frontend so it's visible in WebView console
-            let _ = app_for_err.emit("recorder-log", TwitchRecorderLogPayload {
-                streamer_id: streamer_for_err,
-                channel_name: channel_for_err,
-                message: format!("Recording failed: {}", err),
-                level: "error".to_string(),
-            });
+            let _ = app_for_err.emit(
+                "recorder-log",
+                TwitchRecorderLogPayload {
+                    streamer_id: streamer_for_err,
+                    channel_name: channel_for_err,
+                    message: format!("Recording failed: {}", err),
+                    level: "error".to_string(),
+                },
+            );
         }
         // Clean up the recording entry when the task exits (success or error)
         // Remove by session_id (not channel_name) since we track by session now
-        TWITCH_ACTIVE_RECORDINGS.lock().unwrap().remove(&session_for_cleanup);
-        println!("[TwitchRecorder] Cleaned up recording entry for session {}", session_for_cleanup);
+        TWITCH_ACTIVE_RECORDINGS
+            .lock()
+            .unwrap()
+            .remove(&session_for_cleanup);
+        println!(
+            "[TwitchRecorder] Cleaned up recording entry for session {}",
+            session_for_cleanup
+        );
     });
 
     // Insert by session_id (not channel_name) to allow multiple sessions per channel
@@ -540,7 +581,7 @@ pub async fn start_twitch_recording(
 #[tauri::command]
 pub async fn stop_twitch_recording(channel_name: String) -> Result<(), String> {
     let channel_name = normalize_channel_name(&channel_name);
-    
+
     // Find all sessions recording this channel and collect their entries
     // We need to collect entries (not just IDs) to avoid holding the lock across await
     let entries: Vec<(String, TwitchRecordingEntry)> = {
@@ -550,25 +591,30 @@ pub async fn stop_twitch_recording(channel_name: String) -> Result<(), String> {
             .filter(|(_, entry)| entry.channel_name == channel_name)
             .map(|(session_id, _)| session_id.clone())
             .collect();
-        
+
         session_ids
             .into_iter()
             .filter_map(|session_id| {
-                recordings.remove(&session_id).map(|entry| (session_id, entry))
+                recordings
+                    .remove(&session_id)
+                    .map(|entry| (session_id, entry))
             })
             .collect()
     }; // Lock is dropped here
-    
+
     // Stop each session (no lock held during await)
     for (session_id, entry) in entries {
         if let Some(tx) = entry.stop_tx {
             let _ = tx.send(());
         }
         if let Err(err) = entry.task.await {
-            eprintln!("[TwitchRecorder] Join error for session {}: {}", session_id, err);
+            eprintln!(
+                "[TwitchRecorder] Join error for session {}: {}",
+                session_id, err
+            );
         }
     }
-    
+
     Ok(())
 }
 
@@ -593,7 +639,12 @@ pub fn get_active_twitch_recordings_count() -> usize {
 /// Get list of active Twitch recording channel names
 #[tauri::command]
 pub fn get_active_twitch_recordings() -> Vec<String> {
-    TWITCH_ACTIVE_RECORDINGS.lock().unwrap().keys().cloned().collect()
+    TWITCH_ACTIVE_RECORDINGS
+        .lock()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect()
 }
 
 /// Get the output directory for a Twitch session (for HLS playback)
@@ -601,7 +652,7 @@ pub fn get_active_twitch_recordings() -> Vec<String> {
 pub async fn get_twitch_session_output_dir(session_id: String) -> Result<String, String> {
     let output_dir = storage::get_livestream_recordings_dir()
         .map_err(|e| format!("Failed to get recordings directory: {}", e))?;
-    
+
     let session_dir = output_dir.join(&session_id);
     Ok(session_dir.to_string_lossy().to_string())
 }
@@ -626,13 +677,18 @@ async fn run_twitch_recorder(
     let ffmpeg_exists = std::path::Path::new(&ffmpeg_path).exists();
 
     // Log resolved binary paths and output dir for debugging macOS production issues
-    let _ = app.emit("recorder-log", TwitchRecorderLogPayload {
-        streamer_id: streamer_id.clone(),
-        channel_name: channel_name.clone(),
-        message: format!("Resolved binaries - yt-dlp: {} (exists: {}), ffmpeg: {} (exists: {}), output: {}", 
-            ytdlp_path, ytdlp_exists, ffmpeg_path, ffmpeg_exists, output_dir),
-        level: "info".to_string(),
-    });
+    let _ = app.emit(
+        "recorder-log",
+        TwitchRecorderLogPayload {
+            streamer_id: streamer_id.clone(),
+            channel_name: channel_name.clone(),
+            message: format!(
+                "Resolved binaries - yt-dlp: {} (exists: {}), ffmpeg: {} (exists: {}), output: {}",
+                ytdlp_path, ytdlp_exists, ffmpeg_path, ffmpeg_exists, output_dir
+            ),
+            level: "info".to_string(),
+        },
+    );
 
     if !ytdlp_exists {
         return Err(format!("yt-dlp binary not found at: {}", ytdlp_path));
@@ -649,17 +705,20 @@ async fn run_twitch_recorder(
     } else {
         segment_duration_minutes * 60 // Convert minutes to seconds for recording
     };
-    
+
     let playlist_path = PathBuf::from(&output_dir).join("playlist.m3u8");
     let segment_pattern = PathBuf::from(&output_dir).join("segment_%04d.ts");
 
     // Emit log for recording start
-    let _ = app.emit("recorder-log", TwitchRecorderLogPayload {
-        streamer_id: streamer_id.clone(),
-        channel_name: channel_name.clone(),
-        message: format!("Starting stream capture for {}", channel_name),
-        level: "info".to_string(),
-    });
+    let _ = app.emit(
+        "recorder-log",
+        TwitchRecorderLogPayload {
+            streamer_id: streamer_id.clone(),
+            channel_name: channel_name.clone(),
+            message: format!("Starting stream capture for {}", channel_name),
+            level: "info".to_string(),
+        },
+    );
 
     // Spawn yt-dlp to output stream to stdout
     let mut ytdlp_cmd = tokio::process::Command::new(&ytdlp_path);
@@ -672,19 +731,27 @@ async fn run_twitch_recorder(
 
     ytdlp_cmd
         .arg(&twitch_url)
-        .arg("-o").arg("-")  // Output to stdout
-        .arg("--quiet")      // Suppress progress output
-        .arg("--no-part")    // Don't use .part files
-        .arg("--ffmpeg-location").arg(&ffmpeg_dir)
+        .arg("-o")
+        .arg("-") // Output to stdout
+        .arg("--quiet") // Suppress progress output
+        .arg("--no-part") // Don't use .part files
+        .arg("--ffmpeg-location")
+        .arg(&ffmpeg_dir)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
-    println!("[TwitchRecorder] Starting yt-dlp: {} {} --ffmpeg-location {}", ytdlp_path, twitch_url, ffmpeg_dir);
+    println!(
+        "[TwitchRecorder] Starting yt-dlp: {} {} --ffmpeg-location {}",
+        ytdlp_path, twitch_url, ffmpeg_dir
+    );
 
-    let mut ytdlp_child = ytdlp_cmd.spawn()
+    let mut ytdlp_child = ytdlp_cmd
+        .spawn()
         .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
 
-    let ytdlp_stdout = ytdlp_child.stdout.take()
+    let ytdlp_stdout = ytdlp_child
+        .stdout
+        .take()
         .ok_or("Failed to get yt-dlp stdout")?;
 
     // CRITICAL: Drain yt-dlp stderr in a background task to prevent pipe buffer deadlock.
@@ -702,58 +769,90 @@ async fn run_twitch_recorder(
                 // PyInstaller crashes (hardened runtime) output "MemoryError",
                 // "Failed to execute script", "Killed", "Traceback" etc.
                 let line_lower = line.to_lowercase();
-                let is_error = line_lower.contains("error") || line_lower.contains("fail")
-                    || line_lower.contains("killed") || line_lower.contains("traceback")
-                    || line_lower.contains("crash") || line_lower.contains("abort");
-                let _ = app_for_ytdlp_stderr.emit("recorder-log", TwitchRecorderLogPayload {
-                    streamer_id: streamer_id_for_ytdlp.clone(),
-                    channel_name: channel_name_for_ytdlp.clone(),
-                    message: format!("yt-dlp stderr: {}", line),
-                    level: if is_error { "error".to_string() } else { "info".to_string() },
-                });
+                let is_error = line_lower.contains("error")
+                    || line_lower.contains("fail")
+                    || line_lower.contains("killed")
+                    || line_lower.contains("traceback")
+                    || line_lower.contains("crash")
+                    || line_lower.contains("abort");
+                let _ = app_for_ytdlp_stderr.emit(
+                    "recorder-log",
+                    TwitchRecorderLogPayload {
+                        streamer_id: streamer_id_for_ytdlp.clone(),
+                        channel_name: channel_name_for_ytdlp.clone(),
+                        message: format!("yt-dlp stderr: {}", line),
+                        level: if is_error {
+                            "error".to_string()
+                        } else {
+                            "info".to_string()
+                        },
+                    },
+                );
             }
         });
     }
 
     // Convert tokio ChildStdout to std Stdio for piping to FFmpeg
-    let ytdlp_stdout_std: std::process::Stdio = ytdlp_stdout.try_into()
+    let ytdlp_stdout_std: std::process::Stdio = ytdlp_stdout
+        .try_into()
         .map_err(|_| "Failed to convert yt-dlp stdout")?;
 
-    let _ = app.emit("recorder-log", TwitchRecorderLogPayload {
-        streamer_id: streamer_id.clone(),
-        channel_name: channel_name.clone(),
-        message: format!("Starting HLS recording for {}", channel_name),
-        level: "info".to_string(),
-    });
+    let _ = app.emit(
+        "recorder-log",
+        TwitchRecorderLogPayload {
+            streamer_id: streamer_id.clone(),
+            channel_name: channel_name.clone(),
+            message: format!("Starting HLS recording for {}", channel_name),
+            level: "info".to_string(),
+        },
+    );
 
     // Spawn FFmpeg to read from yt-dlp's stdout and output HLS
     let mut ffmpeg_cmd = tokio::process::Command::new(&ffmpeg_path);
     no_window(&mut ffmpeg_cmd);
     ffmpeg_cmd
-        .arg("-i").arg("pipe:0")       // Read from stdin (piped from yt-dlp)
+        .arg("-i")
+        .arg("pipe:0") // Read from stdin (piped from yt-dlp)
         // Re-encode to H.264 Baseline + AAC for guaranteed MSE/WebView2 compatibility.
         // -c copy can pass through codecs (HEVC, VP9) that MSE rejects in production.
-        .arg("-c:v").arg("libx264")
-        .arg("-preset").arg("ultrafast")  // Minimize CPU usage for live streaming
-        .arg("-tune").arg("zerolatency")  // Low-latency encoding
-        .arg("-profile:v").arg("baseline") // Baseline profile = widest MSE compatibility
-        .arg("-level").arg("4.0")
-        .arg("-crf").arg("23")            // Reasonable quality
-        .arg("-c:a").arg("aac")
-        .arg("-b:a").arg("128k")
-        .arg("-f").arg("hls")          // HLS output format
-        .arg("-hls_time").arg(hls_segment_seconds.to_string())
-        .arg("-hls_list_size").arg("0")  // Keep all segments in playlist
-        .arg("-hls_flags").arg("append_list+omit_endlist+temp_file")  // Live streaming flags + atomic writes
-        .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
+        .arg("-c:v")
+        .arg("libx264")
+        .arg("-preset")
+        .arg("ultrafast") // Minimize CPU usage for live streaming
+        .arg("-tune")
+        .arg("zerolatency") // Low-latency encoding
+        .arg("-profile:v")
+        .arg("baseline") // Baseline profile = widest MSE compatibility
+        .arg("-level")
+        .arg("4.0")
+        .arg("-crf")
+        .arg("23") // Reasonable quality
+        .arg("-c:a")
+        .arg("aac")
+        .arg("-b:a")
+        .arg("128k")
+        .arg("-f")
+        .arg("hls") // HLS output format
+        .arg("-hls_time")
+        .arg(hls_segment_seconds.to_string())
+        .arg("-hls_list_size")
+        .arg("0") // Keep all segments in playlist
+        .arg("-hls_flags")
+        .arg("append_list+omit_endlist+temp_file") // Live streaming flags + atomic writes
+        .arg("-hls_segment_filename")
+        .arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
-        .stdin(ytdlp_stdout_std)       // Pipe yt-dlp output to FFmpeg
-        .stdout(std::process::Stdio::null())  // FFmpeg writes HLS to files, not stdout. MUST be null to prevent pipe buffer deadlock on macOS.
+        .stdin(ytdlp_stdout_std) // Pipe yt-dlp output to FFmpeg
+        .stdout(std::process::Stdio::null()) // FFmpeg writes HLS to files, not stdout. MUST be null to prevent pipe buffer deadlock on macOS.
         .stderr(std::process::Stdio::piped());
 
-    println!("[TwitchRecorder] Starting ffmpeg HLS output to: {}", playlist_path.display());
+    println!(
+        "[TwitchRecorder] Starting ffmpeg HLS output to: {}",
+        playlist_path.display()
+    );
 
-    let mut ffmpeg_child = ffmpeg_cmd.spawn()
+    let mut ffmpeg_child = ffmpeg_cmd
+        .spawn()
         .map_err(|e| format!("Failed to spawn ffmpeg: {}", e))?;
 
     // CRITICAL: Drain FFmpeg stderr in a background task to prevent pipe buffer deadlock.
@@ -770,12 +869,15 @@ async fn run_twitch_recorder(
                 let line_lower = line.to_lowercase();
                 if line_lower.contains("error") || line_lower.contains("fatal") {
                     println!("[TwitchRecorder] FFmpeg ERROR: {}", line);
-                    let _ = app_for_ffmpeg_stderr.emit("recorder-log", TwitchRecorderLogPayload {
-                        streamer_id: streamer_id_for_ffmpeg.clone(),
-                        channel_name: channel_name_for_ffmpeg.clone(),
-                        message: format!("FFmpeg: {}", line),
-                        level: "error".to_string(),
-                    });
+                    let _ = app_for_ffmpeg_stderr.emit(
+                        "recorder-log",
+                        TwitchRecorderLogPayload {
+                            streamer_id: streamer_id_for_ffmpeg.clone(),
+                            channel_name: channel_name_for_ffmpeg.clone(),
+                            message: format!("FFmpeg: {}", line),
+                            level: "error".to_string(),
+                        },
+                    );
                 } else if line_lower.contains("warning") {
                     println!("[TwitchRecorder] FFmpeg warning: {}", line);
                 } else {
@@ -806,7 +908,7 @@ async fn run_twitch_recorder(
 
                         // Kill yt-dlp too
                         let _ = ytdlp_child.kill().await;
-                        
+
                         if !exit_status.success() {
                             // Stream might have ended - emit event
                             let _ = app.emit("stream-ended", TwitchStreamEndedPayload {
@@ -822,7 +924,7 @@ async fn run_twitch_recorder(
                 }
                 break;
             }
-            
+
             // Check for stop signal
             _ = &mut stop_rx => {
                 println!("[TwitchRecorder] Stop signal received, killing processes...");
@@ -830,7 +932,7 @@ async fn run_twitch_recorder(
                 let _ = ytdlp_child.kill().await;
                 break;
             }
-            
+
             // Periodically check for new segments and emit events
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
                 // Check for the next expected segment (FFmpeg uses 0-indexed naming)
@@ -838,7 +940,7 @@ async fn run_twitch_recorder(
                 // So next segment file is segment_{last_emitted_segment:04}.ts (0-indexed)
                 let next_segment_index = last_emitted_segment; // 0-indexed file number
                 let seg_path = PathBuf::from(&output_dir).join(format!("segment_{:04}.ts", next_segment_index));
-                
+
                 // With +temp_file flag, the .ts file only exists once FFmpeg has finished
                 // writing it (it writes to .tmp first, then atomically renames).
                 // We still do a stability check as a safety measure.
@@ -847,16 +949,16 @@ async fn run_twitch_recorder(
                     let size1 = std::fs::metadata(&seg_path).ok().map(|m| m.len());
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     let size2 = std::fs::metadata(&seg_path).ok().map(|m| m.len());
-                    
+
                     // If sizes match and file is non-empty, segment is complete
                     if let (Some(s1), Some(s2)) = (size1, size2) {
                         if s1 == s2 && s1 > 0 {
                             // Segment is ready - emit event
                             let segment_number = next_segment_index + 1; // Frontend expects 1-indexed
-                            
-                            println!("[TwitchRecorder] Segment {} ready: {} ({} bytes)", 
+
+                            println!("[TwitchRecorder] Segment {} ready: {} ({} bytes)",
                                 segment_number, seg_path.display(), s1);
-                            
+
                             let _ = app.emit("segment-ready", TwitchSegmentReadyPayload {
                                 streamer_id: streamer_id.clone(),
                                 session_id: session_id.clone(),
@@ -866,19 +968,19 @@ async fn run_twitch_recorder(
                                 path: seg_path.to_string_lossy().to_string(),
                                 duration: hls_segment_seconds as f64,
                             });
-                            
+
                             last_emitted_segment = segment_number;
                         }
                     }
                 }
-                
+
                 // Emit periodic status log (every 10 seconds)
                 if last_log_time.elapsed().as_secs() >= 10 {
                     let _ = app.emit("recorder-log", TwitchRecorderLogPayload {
                         streamer_id: streamer_id.clone(),
                         channel_name: channel_name.clone(),
-                        message: format!("Recording: {} segments, {:.0}s", 
-                            last_emitted_segment, 
+                        message: format!("Recording: {} segments, {:.0}s",
+                            last_emitted_segment,
                             recording_start.elapsed().as_secs_f64()),
                         level: "info".to_string(),
                     });
@@ -889,12 +991,15 @@ async fn run_twitch_recorder(
     }
 
     // Emit exit event
-    let _ = app.emit("recorder-exit", TwitchRecorderExitPayload {
-        streamer_id,
-        session_id,
-        channel_name,
-        code: Some(0),
-    });
+    let _ = app.emit(
+        "recorder-exit",
+        TwitchRecorderExitPayload {
+            streamer_id,
+            session_id,
+            channel_name,
+            code: Some(0),
+        },
+    );
 
     Ok(())
 }
@@ -906,7 +1011,7 @@ pub async fn download_twitch_vod(
     download_id: String,
     title: String,
     video_url: String,
-    channel_name: String
+    channel_name: String,
 ) -> Result<(), String> {
     println!("[Twitch] download_twitch_vod called with:");
     println!("[Twitch]   download_id: {}", download_id);
@@ -938,18 +1043,26 @@ pub async fn download_twitch_vod(
 
     // Get storage paths
     println!("[Twitch] Getting storage paths...");
-    let paths = storage::init_storage_dirs()
-        .map_err(|e| {
-            println!("[Twitch] Failed to get storage paths: {}", e);
-            format!("Failed to get storage paths: {}", e)
-        })?;
+    let paths = storage::init_storage_dirs().map_err(|e| {
+        println!("[Twitch] Failed to get storage paths: {}", e);
+        format!("Failed to get storage paths: {}", e)
+    })?;
 
-    println!("[Twitch] Storage paths retrieved. Videos dir: {}", paths.videos.display());
+    println!(
+        "[Twitch] Storage paths retrieved. Videos dir: {}",
+        paths.videos.display()
+    );
 
     // Generate filename
     let safe_title = title
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>();
 
     let timestamp = std::time::SystemTime::now()
@@ -966,22 +1079,28 @@ pub async fn download_twitch_vod(
     // Store download metadata
     {
         let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
-        metadata_map.insert(download_id.clone(), DownloadMetadata {
-            output_path: Some(video_path.to_string_lossy().to_string()),
-            thumbnail_path: None,
-            started_at: std::time::SystemTime::now(),
-            process_id: None,
-        });
+        metadata_map.insert(
+            download_id.clone(),
+            DownloadMetadata {
+                output_path: Some(video_path.to_string_lossy().to_string()),
+                thumbnail_path: None,
+                started_at: std::time::SystemTime::now(),
+                process_id: None,
+            },
+        );
     }
 
     // Send initial progress
-    let progress_result = app.emit("download-progress", DownloadProgress {
-        download_id: download_id.clone(),
-        progress: 0.0,
-        current_time: None,
-        total_time: None,
-        status: "Fetching video info...".to_string(),
-    });
+    let progress_result = app.emit(
+        "download-progress",
+        DownloadProgress {
+            download_id: download_id.clone(),
+            progress: 0.0,
+            current_time: None,
+            total_time: None,
+            status: "Fetching video info...".to_string(),
+        },
+    );
 
     if let Err(e) = progress_result {
         println!("[Twitch] Failed to emit initial progress: {}", e);
@@ -999,7 +1118,10 @@ pub async fn download_twitch_vod(
     }
 
     let result = tokio::spawn(async move {
-        println!("[Twitch] Async task started for download: {}", download_id_clone);
+        println!(
+            "[Twitch] Async task started for download: {}",
+            download_id_clone
+        );
 
         let ytdlp_path = resolve_ytdlp_binary()?;
         let ffmpeg_path = resolve_ffmpeg_binary()?;
@@ -1010,21 +1132,25 @@ pub async fn download_twitch_vod(
 
         // Get video duration first for progress reporting
         println!("[Twitch] Fetching video duration...");
-        let duration_output = no_window(tokio::process::Command::new(&ytdlp_path)
-            .arg("--print")
-            .arg("duration")
-            .arg(&video_url))
-            .output()
-            .await
-            .map_err(|e| format!("Failed to fetch duration: {}", e))?;
+        let duration_output = no_window(
+            tokio::process::Command::new(&ytdlp_path)
+                .arg("--print")
+                .arg("duration")
+                .arg(&video_url),
+        )
+        .output()
+        .await
+        .map_err(|e| format!("Failed to fetch duration: {}", e))?;
 
         let total_duration = if duration_output.status.success() {
-            let duration_str = String::from_utf8_lossy(&duration_output.stdout).trim().to_string();
+            let duration_str = String::from_utf8_lossy(&duration_output.stdout)
+                .trim()
+                .to_string();
             duration_str.parse::<f64>().ok()
         } else {
             None
         };
-        
+
         println!("[Twitch] Total duration: {:?}", total_duration);
 
         // Run yt-dlp to download the VOD
@@ -1036,17 +1162,20 @@ pub async fn download_twitch_vod(
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| ffmpeg_path.clone());
         cmd.arg(&video_url)
-            .arg("-o").arg(&video_path_str)
-            .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--no-part")  // Don't use .part files
-            .arg("--newline")  // Output progress on new lines
-            .arg("--progress")  // Show progress
+            .arg("-o")
+            .arg(&video_path_str)
+            .arg("--ffmpeg-location")
+            .arg(&ffmpeg_dir)
+            .arg("--no-part") // Don't use .part files
+            .arg("--newline") // Output progress on new lines
+            .arg("--progress") // Show progress
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
 
         println!("[Twitch] Running yt-dlp command...");
 
-        let mut child = cmd.spawn()
+        let mut child = cmd
+            .spawn()
             .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
 
         let stdout = child.stdout.take();
@@ -1056,30 +1185,36 @@ pub async fn download_twitch_vod(
         let app_for_progress = app_clone.clone();
         let download_id_for_progress = download_id_clone.clone();
         let duration_for_progress = total_duration;
-        
-        let stdout_task = stdout.map(|stdout| tokio::spawn(async move {
+
+        let stdout_task = stdout.map(|stdout| {
+            tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let reader = BufReader::new(stdout);
                 let mut lines = reader.lines();
                 let mut last_progress_time = std::time::Instant::now();
-                
+
                 while let Ok(Some(line)) = lines.next_line().await {
                     // Parse yt-dlp progress output
                     // Format: [download]  XX.X% of ~XXX.XXMIB at XXX.XXKIB/s ETA XX:XX
                     if line.contains("% of") || line.contains("100% of") {
                         if let Some(pct_str) = line.split('%').next() {
-                            let pct_str = pct_str.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                            let pct_str = pct_str
+                                .trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
                             if let Ok(pct) = pct_str.trim().parse::<f64>() {
                                 if last_progress_time.elapsed().as_millis() >= 500 {
-                                    let current_time = duration_for_progress.map(|dur| (pct / 100.0) * dur);
+                                    let current_time =
+                                        duration_for_progress.map(|dur| (pct / 100.0) * dur);
 
-                                    let _ = app_for_progress.emit("download-progress", DownloadProgress {
-                                        download_id: download_id_for_progress.clone(),
-                                        progress: pct.min(99.0),
-                                        current_time,
-                                        total_time: duration_for_progress,
-                                        status: format!("Downloading: {:.1}%", pct),
-                                    });
+                                    let _ = app_for_progress.emit(
+                                        "download-progress",
+                                        DownloadProgress {
+                                            download_id: download_id_for_progress.clone(),
+                                            progress: pct.min(99.0),
+                                            current_time,
+                                            total_time: duration_for_progress,
+                                            status: format!("Downloading: {:.1}%", pct),
+                                        },
+                                    );
                                     last_progress_time = std::time::Instant::now();
                                 }
                             }
@@ -1088,10 +1223,12 @@ pub async fn download_twitch_vod(
                         println!("[Twitch] yt-dlp: {}", line);
                     }
                 }
-            }));
+            })
+        });
 
         // Drain stderr for warnings/errors
-        let stderr_task = stderr.map(|stderr| tokio::spawn(async move {
+        let stderr_task = stderr.map(|stderr| {
+            tokio::spawn(async move {
                 use tokio::io::{AsyncBufReadExt, BufReader};
                 let reader = BufReader::new(stderr);
                 let mut lines = reader.lines();
@@ -1100,7 +1237,8 @@ pub async fn download_twitch_vod(
                         println!("[Twitch] yt-dlp stderr: {}", line);
                     }
                 }
-            }));
+            })
+        });
 
         let mut stdout_task = stdout_task;
         let mut stderr_task = stderr_task;
@@ -1151,19 +1289,25 @@ pub async fn download_twitch_vod(
 
         // Generate thumbnail
         println!("[Twitch] Generating thumbnail...");
-        let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
-            .args([
-                "-hwaccel", "auto",
-                "-ss", "00:00:01",
-                "-i", &video_path_str,
-                "-vframes", "1",
-                "-vf", "scale=320:-1",
-                "-y",
-                thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-            ]))
-            .output()
-            .await;
+        let thumbnail_path = paths
+            .thumbnails
+            .join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
+        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path).args([
+            "-hwaccel",
+            "auto",
+            "-ss",
+            "00:00:01",
+            "-i",
+            &video_path_str,
+            "-vframes",
+            "1",
+            "-vf",
+            "scale=320:-1",
+            "-y",
+            thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
+        ]))
+        .output()
+        .await;
 
         let thumbnail_path_str = match thumbnail_result {
             Ok(output) if output.status.success() => {
@@ -1180,14 +1324,22 @@ pub async fn download_twitch_vod(
         println!("[Twitch] Getting video info...");
         let video_info = tokio::time::timeout(
             std::time::Duration::from_secs(30),
-            get_video_info(&app_clone, &video_path)
-        ).await;
-        
+            get_video_info(&app_clone, &video_path),
+        )
+        .await;
+
         let (width, height, codec, duration) = match video_info {
             Ok(Ok(info)) => {
-                println!("[Twitch] Video info - width: {}, height: {}, codec: {}, duration: {:?}", 
-                    info.width, info.height, info.codec, info.duration);
-                (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
+                println!(
+                    "[Twitch] Video info - width: {}, height: {}, codec: {}, duration: {:?}",
+                    info.width, info.height, info.codec, info.duration
+                );
+                (
+                    Some(info.width),
+                    Some(info.height),
+                    Some(info.codec.clone()),
+                    info.duration,
+                )
             }
             Ok(Err(e)) => {
                 println!("[Twitch] Failed to get video info: {}", e);
@@ -1212,7 +1364,8 @@ pub async fn download_twitch_vod(
             file_size: Some(file_size),
             error: None,
         })
-    }).await;
+    })
+    .await;
 
     println!("[Twitch] Async task completed");
 
@@ -1228,13 +1381,16 @@ pub async fn download_twitch_vod(
         Ok(Ok(download_result)) => {
             println!("[Twitch] Download successful!");
 
-            let _ = app.emit("download-progress", DownloadProgress {
-                download_id: download_id.clone(),
-                progress: 100.0,
-                current_time: None,
-                total_time: None,
-                status: "Download completed!".to_string(),
-            });
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    progress: 100.0,
+                    current_time: None,
+                    total_time: None,
+                    status: "Download completed!".to_string(),
+                },
+            );
 
             let _ = app.emit("download-complete", download_result);
 
@@ -1244,26 +1400,32 @@ pub async fn download_twitch_vod(
             let error_msg = format!("Download failed: {}", e);
             println!("[Twitch] Download failed: {}", error_msg);
 
-            let _ = app.emit("download-progress", DownloadProgress {
-                download_id: download_id.clone(),
-                progress: 0.0,
-                current_time: None,
-                total_time: None,
-                status: error_msg.clone(),
-            });
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    progress: 0.0,
+                    current_time: None,
+                    total_time: None,
+                    status: error_msg.clone(),
+                },
+            );
 
-            let _ = app.emit("download-complete", DownloadResult {
-                download_id,
-                success: false,
-                file_path: None,
-                thumbnail_path: None,
-                duration: None,
-                width: None,
-                height: None,
-                codec: None,
-                file_size: None,
-                error: Some(error_msg),
-            });
+            let _ = app.emit(
+                "download-complete",
+                DownloadResult {
+                    download_id,
+                    success: false,
+                    file_path: None,
+                    thumbnail_path: None,
+                    duration: None,
+                    width: None,
+                    height: None,
+                    codec: None,
+                    file_size: None,
+                    error: Some(error_msg),
+                },
+            );
 
             Err(e)
         }
@@ -1271,26 +1433,32 @@ pub async fn download_twitch_vod(
             let error_msg = format!("Download task failed: {}", e);
             println!("[Twitch] Download task failed: {}", error_msg);
 
-            let _ = app.emit("download-progress", DownloadProgress {
-                download_id: download_id.clone(),
-                progress: 0.0,
-                current_time: None,
-                total_time: None,
-                status: error_msg.clone(),
-            });
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    progress: 0.0,
+                    current_time: None,
+                    total_time: None,
+                    status: error_msg.clone(),
+                },
+            );
 
-            let _ = app.emit("download-complete", DownloadResult {
-                download_id,
-                success: false,
-                file_path: None,
-                thumbnail_path: None,
-                duration: None,
-                width: None,
-                height: None,
-                codec: None,
-                file_size: None,
-                error: Some(error_msg.clone()),
-            });
+            let _ = app.emit(
+                "download-complete",
+                DownloadResult {
+                    download_id,
+                    success: false,
+                    file_path: None,
+                    thumbnail_path: None,
+                    duration: None,
+                    width: None,
+                    height: None,
+                    codec: None,
+                    file_size: None,
+                    error: Some(error_msg.clone()),
+                },
+            );
 
             Err(error_msg)
         }
@@ -1306,7 +1474,7 @@ pub async fn download_twitch_vod_segment(
     video_url: String,
     channel_name: String,
     start_time: f64,
-    end_time: f64
+    end_time: f64,
 ) -> Result<(), String> {
     println!("[Twitch] download_twitch_vod_segment called with:");
     println!("[Twitch]   download_id: {}", download_id);
@@ -1350,18 +1518,26 @@ pub async fn download_twitch_vod_segment(
 
     // Get storage paths
     println!("[Twitch] Getting storage paths...");
-    let paths = storage::init_storage_dirs()
-        .map_err(|e| {
-            println!("[Twitch] Failed to get storage paths: {}", e);
-            format!("Failed to get storage paths: {}", e)
-        })?;
+    let paths = storage::init_storage_dirs().map_err(|e| {
+        println!("[Twitch] Failed to get storage paths: {}", e);
+        format!("Failed to get storage paths: {}", e)
+    })?;
 
-    println!("[Twitch] Storage paths retrieved. Videos dir: {}", paths.videos.display());
+    println!(
+        "[Twitch] Storage paths retrieved. Videos dir: {}",
+        paths.videos.display()
+    );
 
     // Generate filename with segment info
     let safe_title = title
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect::<String>();
 
     let timestamp = std::time::SystemTime::now()
@@ -1373,8 +1549,10 @@ pub async fn download_twitch_vod_segment(
     let start_formatted = format_time_for_filename(start_time);
     let end_formatted = format_time_for_filename(end_time);
 
-    let filename = format!("twitch_{}_{}_{}_{}_{}.mp4",
-        channel_name, safe_title, start_formatted, end_formatted, timestamp);
+    let filename = format!(
+        "twitch_{}_{}_{}_{}_{}.mp4",
+        channel_name, safe_title, start_formatted, end_formatted, timestamp
+    );
     let video_path = paths.videos.join(&filename);
 
     println!("[Twitch] Generated filename: {}", filename);
@@ -1383,22 +1561,28 @@ pub async fn download_twitch_vod_segment(
     // Store download metadata
     {
         let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
-        metadata_map.insert(download_id.clone(), DownloadMetadata {
-            output_path: Some(video_path.to_string_lossy().to_string()),
-            thumbnail_path: None,
-            started_at: std::time::SystemTime::now(),
-            process_id: None,
-        });
+        metadata_map.insert(
+            download_id.clone(),
+            DownloadMetadata {
+                output_path: Some(video_path.to_string_lossy().to_string()),
+                thumbnail_path: None,
+                started_at: std::time::SystemTime::now(),
+                process_id: None,
+            },
+        );
     }
 
     // Send initial progress
-    let progress_result = app.emit("download-progress", DownloadProgress {
-        download_id: download_id.clone(),
-        progress: 0.0,
-        current_time: Some(0.0),
-        total_time: Some(segment_duration),
-        status: "Starting Twitch segment download...".to_string(),
-    });
+    let progress_result = app.emit(
+        "download-progress",
+        DownloadProgress {
+            download_id: download_id.clone(),
+            progress: 0.0,
+            current_time: Some(0.0),
+            total_time: Some(segment_duration),
+            status: "Starting Twitch segment download...".to_string(),
+        },
+    );
 
     if let Err(e) = progress_result {
         println!("[Twitch] Failed to emit initial progress: {}", e);
@@ -1674,13 +1858,16 @@ pub async fn download_twitch_vod_segment(
         Ok(Ok(download_result)) => {
             println!("[Twitch] Segment download successful!");
 
-            let _ = app.emit("download-progress", DownloadProgress {
-                download_id: download_id.clone(),
-                progress: 100.0,
-                current_time: None,
-                total_time: None,
-                status: "Segment download completed!".to_string(),
-            });
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    progress: 100.0,
+                    current_time: None,
+                    total_time: None,
+                    status: "Segment download completed!".to_string(),
+                },
+            );
 
             let _ = app.emit("download-complete", download_result);
 
@@ -1690,26 +1877,32 @@ pub async fn download_twitch_vod_segment(
             let error_msg = format!("Segment download failed: {}", e);
             println!("[Twitch] Segment download failed: {}", error_msg);
 
-            let _ = app.emit("download-progress", DownloadProgress {
-                download_id: download_id.clone(),
-                progress: 0.0,
-                current_time: None,
-                total_time: None,
-                status: error_msg.clone(),
-            });
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    progress: 0.0,
+                    current_time: None,
+                    total_time: None,
+                    status: error_msg.clone(),
+                },
+            );
 
-            let _ = app.emit("download-complete", DownloadResult {
-                download_id,
-                success: false,
-                file_path: None,
-                thumbnail_path: None,
-                duration: None,
-                width: None,
-                height: None,
-                codec: None,
-                file_size: None,
-                error: Some(error_msg),
-            });
+            let _ = app.emit(
+                "download-complete",
+                DownloadResult {
+                    download_id,
+                    success: false,
+                    file_path: None,
+                    thumbnail_path: None,
+                    duration: None,
+                    width: None,
+                    height: None,
+                    codec: None,
+                    file_size: None,
+                    error: Some(error_msg),
+                },
+            );
 
             Err(e)
         }
@@ -1717,26 +1910,32 @@ pub async fn download_twitch_vod_segment(
             let error_msg = format!("Segment download task failed: {}", e);
             println!("[Twitch] Segment download task failed: {}", error_msg);
 
-            let _ = app.emit("download-progress", DownloadProgress {
-                download_id: download_id.clone(),
-                progress: 0.0,
-                current_time: None,
-                total_time: None,
-                status: error_msg.clone(),
-            });
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    progress: 0.0,
+                    current_time: None,
+                    total_time: None,
+                    status: error_msg.clone(),
+                },
+            );
 
-            let _ = app.emit("download-complete", DownloadResult {
-                download_id,
-                success: false,
-                file_path: None,
-                thumbnail_path: None,
-                duration: None,
-                width: None,
-                height: None,
-                codec: None,
-                file_size: None,
-                error: Some(error_msg.clone()),
-            });
+            let _ = app.emit(
+                "download-complete",
+                DownloadResult {
+                    download_id,
+                    success: false,
+                    file_path: None,
+                    thumbnail_path: None,
+                    duration: None,
+                    width: None,
+                    height: None,
+                    codec: None,
+                    file_size: None,
+                    error: Some(error_msg.clone()),
+                },
+            );
 
             Err(error_msg)
         }
@@ -1762,7 +1961,13 @@ mod tests {
         assert_eq!(normalize_channel_name("twitch.tv/xqc"), "xqc");
         assert_eq!(normalize_channel_name("https://twitch.tv/xqc"), "xqc");
         assert_eq!(normalize_channel_name("https://twitch.tv/xqc/"), "xqc");
-        assert_eq!(normalize_channel_name("https://twitch.tv/xqc/videos"), "xqc");
-        assert_eq!(normalize_channel_name("https://twitch.tv/xqc?ref=123"), "xqc");
+        assert_eq!(
+            normalize_channel_name("https://twitch.tv/xqc/videos"),
+            "xqc"
+        );
+        assert_eq!(
+            normalize_channel_name("https://twitch.tv/xqc?ref=123"),
+            "xqc"
+        );
     }
 }

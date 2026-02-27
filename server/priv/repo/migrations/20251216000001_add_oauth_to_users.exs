@@ -26,4 +26,3 @@ defmodule ClippsterServer.Repo.Migrations.AddOAuthToUsers do
     create unique_index(:users, [:provider, :provider_id])
   end
 end
-

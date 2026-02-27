@@ -701,6 +701,30 @@ import {
   type TwitterAuthResult,
 } from '@/lib/twitter-auth';
 
+interface PostForMeConnectUrlResponse {
+  success: boolean;
+  auth_url?: string;
+  external_id?: string;
+  platform?: string;
+  error?: string;
+}
+
+interface PostForMeCompleteConnectResponse {
+  success: boolean;
+  account?: SocialAccount;
+  accounts?: SocialAccount[];
+  error?: string;
+}
+
+interface PostForMeAuthCallbackResult {
+  success: boolean;
+  account_id?: string;
+  account_ids?: string[];
+  external_id?: string;
+  platform?: string;
+  error?: string;
+}
+
 /**
  * Get the API base URL
  */
@@ -713,6 +737,74 @@ function getApiBase(): string {
  */
 function getAuthToken(): string {
   return localStorage.getItem('auth_token') || '';
+}
+
+async function startPostForMeOrganizationOAuth(
+  organizationId: string | number,
+  platform: string,
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): Promise<() => void> {
+  const { invoke } = await import('@tauri-apps/api/core');
+  const { listen } = await import('@tauri-apps/api/event');
+
+  const connectResponse = await api.post<PostForMeConnectUrlResponse>('/social/connect-url', {
+    organization_id: organizationId,
+    platform,
+  });
+
+  if (!connectResponse.data.success || !connectResponse.data.auth_url) {
+    throw new Error(connectResponse.data.error || 'Failed to create Post For Me auth URL');
+  }
+
+  const externalId = connectResponse.data.external_id;
+
+  const unlisten = await listen<PostForMeAuthCallbackResult>('post-for-me-auth-complete', async (event) => {
+    if (!onResult) return;
+
+    const callback = event.payload;
+
+    if (!callback.success) {
+      onResult({
+        success: false,
+        error: callback.error || 'Social account connection failed',
+      });
+      return;
+    }
+
+    try {
+      const completeResponse = await api.post<PostForMeCompleteConnectResponse>('/social/complete-connect', {
+        organization_id: organizationId,
+        platform,
+        external_id: callback.external_id || externalId,
+        account_id: callback.account_id,
+        account_ids: callback.account_ids || [],
+      });
+
+      if (!completeResponse.data.success) {
+        onResult({
+          success: false,
+          error: completeResponse.data.error || 'Failed to finalize social account connection',
+        });
+        return;
+      }
+
+      const account = completeResponse.data.account || completeResponse.data.accounts?.[0];
+
+      onResult({
+        success: true,
+        account,
+      });
+    } catch (error: any) {
+      onResult({
+        success: false,
+        error: error.response?.data?.error || error.message || 'Failed to finalize social account connection',
+      });
+    }
+  });
+
+  await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
+
+  return unlisten;
 }
 
 /**
@@ -735,15 +827,26 @@ export async function startInstagramOAuthPopup(
     throw new Error('You must be logged in to connect Instagram');
   }
 
-  return startInstagramOAuth(organizationId, apiBase, authToken, (result: InstagramAuthResult) => {
-    if (onResult) {
-      onResult({
-        success: result.success,
-        account: result.account as SocialAccount | undefined,
-        error: result.error,
-      });
+  try {
+    return await startPostForMeOrganizationOAuth(organizationId, 'instagram', onResult);
+  } catch (postForMeError) {
+    console.warn('[SocialAccountsApi] Post For Me connect failed, falling back to legacy Instagram OAuth:', postForMeError);
+  }
+
+  return startInstagramOAuth(
+    organizationId,
+    apiBase,
+    authToken,
+    (result: InstagramAuthResult) => {
+      if (onResult) {
+        onResult({
+          success: result.success,
+          account: result.account as SocialAccount | undefined,
+          error: result.error,
+        });
+      }
     }
-  });
+  );
 }
 
 /**
@@ -791,15 +894,26 @@ export async function startTwitterOAuthPopup(
     throw new Error('You must be logged in to connect X');
   }
 
-  return startTwitterOAuth(organizationId, apiBase, authToken, (result: TwitterAuthResult) => {
-    if (onResult) {
-      onResult({
-        success: result.success,
-        account: result.account as SocialAccount | undefined,
-        error: result.error,
-      });
+  try {
+    return await startPostForMeOrganizationOAuth(organizationId, 'x', onResult);
+  } catch (postForMeError) {
+    console.warn('[SocialAccountsApi] Post For Me connect failed, falling back to legacy X OAuth:', postForMeError);
+  }
+
+  return startTwitterOAuth(
+    organizationId,
+    apiBase,
+    authToken,
+    (result: TwitterAuthResult) => {
+      if (onResult) {
+        onResult({
+          success: result.success,
+          account: result.account as SocialAccount | undefined,
+          error: result.error,
+        });
+      }
     }
-  });
+  );
 }
 
 /**

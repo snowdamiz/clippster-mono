@@ -1,6 +1,8 @@
-use std::fs;
-use crate::downloads::{ACTIVE_DOWNLOADS, ACTIVE_FFMPEG_PROCESSES, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA};
+use crate::downloads::{
+    ACTIVE_DOWNLOADS, ACTIVE_DOWNLOAD_CANCELLERS, ACTIVE_FFMPEG_PROCESSES, DOWNLOAD_METADATA,
+};
 use crate::storage;
+use std::fs;
 
 /// Cancels all active downloads and cleans up partial files
 ///
@@ -20,7 +22,10 @@ pub async fn cancel_all_downloads() -> Result<Vec<String>, String> {
     let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
     // We need to drain the processes to own them so we can call kill() which consumes self
     for (download_id, child) in processes.drain() {
-        println!("[Rust] Killing active process for download: {}", download_id);
+        println!(
+            "[Rust] Killing active process for download: {}",
+            download_id
+        );
         if let Err(e) = child.kill() {
             eprintln!("[Rust] Failed to kill process for {}: {}", download_id, e);
         }
@@ -45,7 +50,11 @@ pub async fn cancel_all_downloads() -> Result<Vec<String>, String> {
                 if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
                     if filename.contains(download_id) || filename.starts_with("pumpfun_") {
                         if let Err(e) = fs::remove_file(&path) {
-                            eprintln!("[Rust] Failed to remove partial file {}: {}", path.display(), e);
+                            eprintln!(
+                                "[Rust] Failed to remove partial file {}: {}",
+                                path.display(),
+                                e
+                            );
                         } else {
                             cleaned_files.push(path.to_string_lossy().to_string());
                             println!("[Rust] Removed partial file: {}", path.display());
@@ -62,7 +71,11 @@ pub async fn cancel_all_downloads() -> Result<Vec<String>, String> {
                 if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
                     if filename.contains(download_id) {
                         if let Err(e) = fs::remove_file(&path) {
-                            eprintln!("[Rust] Failed to remove partial thumbnail {}: {}", path.display(), e);
+                            eprintln!(
+                                "[Rust] Failed to remove partial thumbnail {}: {}",
+                                path.display(),
+                                e
+                            );
                         } else {
                             cleaned_files.push(path.to_string_lossy().to_string());
                             println!("[Rust] Removed partial thumbnail: {}", path.display());
@@ -75,7 +88,11 @@ pub async fn cancel_all_downloads() -> Result<Vec<String>, String> {
 
     // Clear all active downloads
     downloads.clear();
-    println!("[Rust] Cancelled {} downloads and cleaned up {} files", download_ids.len(), cleaned_files.len());
+    println!(
+        "[Rust] Cancelled {} downloads and cleaned up {} files",
+        download_ids.len(),
+        cleaned_files.len()
+    );
 
     Ok(download_ids)
 }
@@ -108,13 +125,16 @@ pub async fn cancel_download(download_id: String) -> Result<bool, String> {
     {
         let mut processes = ACTIVE_FFMPEG_PROCESSES.lock().unwrap();
         if let Some(child) = processes.remove(&download_id) {
-            println!("[Rust] Found active sidecar process for download {}, killing it...", download_id);
+            println!(
+                "[Rust] Found active sidecar process for download {}, killing it...",
+                download_id
+            );
             // CommandChild::kill consumes self, so we don't need to dereference
             match child.kill() {
                 Ok(_) => {
                     println!("[Rust] Successfully killed active sidecar process");
                     ffmpeg_killed = true;
-                },
+                }
                 Err(e) => println!("[Rust] Failed to kill sidecar process: {}", e),
             }
         }
@@ -131,13 +151,19 @@ pub async fn cancel_download(download_id: String) -> Result<bool, String> {
 
     // Clean up files if we have metadata
     if let Some(meta) = metadata {
-        println!("[Rust] Cleaning up files for cancelled download: {}", download_id);
+        println!(
+            "[Rust] Cleaning up files for cancelled download: {}",
+            download_id
+        );
 
         // Remove video file if it exists
         if let Some(video_path) = meta.output_path {
             match std::fs::remove_file(&video_path) {
                 Ok(()) => println!("[Rust] Removed partial video file: {}", video_path),
-                Err(e) => println!("[Rust] Failed to remove partial video file {}: {}", video_path, e),
+                Err(e) => println!(
+                    "[Rust] Failed to remove partial video file {}: {}",
+                    video_path, e
+                ),
             }
         }
 
@@ -145,7 +171,10 @@ pub async fn cancel_download(download_id: String) -> Result<bool, String> {
         if let Some(thumbnail_path) = meta.thumbnail_path {
             match std::fs::remove_file(&thumbnail_path) {
                 Ok(()) => println!("[Rust] Removed partial thumbnail file: {}", thumbnail_path),
-                Err(e) => println!("[Rust] Failed to remove partial thumbnail file {}: {}", thumbnail_path, e),
+                Err(e) => println!(
+                    "[Rust] Failed to remove partial thumbnail file {}: {}",
+                    thumbnail_path, e
+                ),
             }
         }
     }
@@ -165,7 +194,10 @@ pub async fn cancel_download(download_id: String) -> Result<bool, String> {
     } else if ffmpeg_killed || task_cancelled {
         println!("[Rust] Download was not active in tracking, but process/task was cancelled - cancellation successful: {}", download_id);
     } else {
-        println!("[Rust] Cancellation attempt failed - download not active and no process killed: {}", download_id);
+        println!(
+            "[Rust] Cancellation attempt failed - download not active and no process killed: {}",
+            download_id
+        );
     }
 
     Ok(cancellation_successful)
@@ -179,7 +211,10 @@ pub async fn cancel_download(download_id: String) -> Result<bool, String> {
 /// * `download_id` - The ID of the completed download to clean up
 #[tauri::command]
 pub async fn cleanup_completed_download(download_id: String) -> Result<(), String> {
-    println!("[Rust] Cleaning up metadata for completed download: {}", download_id);
+    println!(
+        "[Rust] Cleaning up metadata for completed download: {}",
+        download_id
+    );
 
     // Remove metadata for completed downloads (keep the files)
     let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();

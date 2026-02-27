@@ -1,5 +1,5 @@
-use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::Output;
+use tauri_plugin_shell::ShellExt;
 
 // Helper function to get FFmpeg quality settings
 pub fn get_quality_settings(quality: &str) -> (&str, &str) {
@@ -49,7 +49,7 @@ pub fn is_hardware_encoder_failure(stderr: &str) -> bool {
         "Cannot open",
         "Device setup failed",
     ];
-    
+
     let stderr_lower = stderr.to_lowercase();
     for pattern in failure_patterns {
         if stderr_lower.contains(&pattern.to_lowercase()) {
@@ -61,7 +61,10 @@ pub fn is_hardware_encoder_failure(stderr: &str) -> bool {
 
 // Check if encoder is a hardware encoder that might fail at runtime
 pub fn is_hardware_encoder(codec: &str) -> bool {
-    matches!(codec, "h264_nvenc" | "h264_amf" | "h264_qsv" | "h264_videotoolbox" | "h264_vaapi")
+    matches!(
+        codec,
+        "h264_nvenc" | "h264_amf" | "h264_qsv" | "h264_videotoolbox" | "h264_vaapi"
+    )
 }
 
 // Check if FFmpeg output indicates a hardware decoder failure
@@ -79,7 +82,7 @@ pub fn is_hardware_decoder_failure(stderr: &str) -> bool {
         "Failed to initialise device",
         "Incompatible pixel format",
     ];
-    
+
     let stderr_lower = stderr.to_lowercase();
     for pattern in failure_patterns {
         if stderr_lower.contains(&pattern.to_lowercase()) {
@@ -93,7 +96,10 @@ pub fn is_hardware_decoder_failure(stderr: &str) -> bool {
 pub fn remove_hwaccel_flags(args: &mut Vec<String>) {
     let mut i = 0;
     while i < args.len() {
-        if args[i] == "-hwaccel" || args[i] == "-hwaccel_output_format" || args[i] == "-hwaccel_device" {
+        if args[i] == "-hwaccel"
+            || args[i] == "-hwaccel_output_format"
+            || args[i] == "-hwaccel_device"
+        {
             args.remove(i); // Remove flag
             if i < args.len() {
                 args.remove(i); // Remove value
@@ -111,17 +117,17 @@ pub fn remove_hwaccel_flags(args: &mut Vec<String>) {
 // Always use GPU decode, but skip hwaccel_output_format to let FFmpeg handle format conversion.
 pub fn build_hwaccel_args(encoder: &EncoderConfig, _uses_cpu_filters: bool) -> Vec<String> {
     let mut args = Vec::new();
-    
+
     if let Some(hw_accel) = &encoder.hw_accel {
         println!("[Rust] Building hardware acceleration args:");
         println!("[Rust]   -hwaccel {}", hw_accel);
         args.push("-hwaccel".to_string());
         args.push(hw_accel.clone());
-        
+
         // NEVER use hwaccel_output_format - it causes format conversion errors
         // FFmpeg will automatically handle GPU decode -> CPU memory -> GPU encode
         println!("[Rust]   Skipping hwaccel_output_format (let FFmpeg handle format conversion)");
-        
+
         if let Some(device) = &encoder.hw_accel_device {
             println!("[Rust]   -hwaccel_device {}", device);
             args.push("-hwaccel_device".to_string());
@@ -130,14 +136,14 @@ pub fn build_hwaccel_args(encoder: &EncoderConfig, _uses_cpu_filters: bool) -> V
     } else {
         println!("[Rust] No hardware acceleration args (hw_accel is None)");
     }
-    
+
     args
 }
 
 // Replace encoder args in an args vector with software encoder settings
 pub fn replace_encoder_in_args(args: &mut Vec<String>, quality: &str) {
     let software_encoder = get_software_encoder(quality);
-    
+
     // Find and replace -c:v argument
     for i in 0..args.len() {
         if args[i] == "-c:v" && i + 1 < args.len() {
@@ -145,7 +151,7 @@ pub fn replace_encoder_in_args(args: &mut Vec<String>, quality: &str) {
             break;
         }
     }
-    
+
     // Find and replace -preset if present, or add it
     let mut preset_idx = None;
     for i in 0..args.len() {
@@ -154,7 +160,7 @@ pub fn replace_encoder_in_args(args: &mut Vec<String>, quality: &str) {
             break;
         }
     }
-    
+
     if let Some(idx) = preset_idx {
         if let Some(preset) = &software_encoder.preset {
             args[idx + 1] = preset.clone();
@@ -169,7 +175,7 @@ pub fn replace_encoder_in_args(args: &mut Vec<String>, quality: &str) {
             }
         }
     }
-    
+
     // Find and replace quality param (various hardware encoder quality params)
     let hw_quality_params = ["-cq", "-global_quality", "-qp", "-rc"];
     for i in 0..args.len() {
@@ -182,19 +188,19 @@ pub fn replace_encoder_in_args(args: &mut Vec<String>, quality: &str) {
 }
 
 /// Run FFmpeg with automatic fallback to software encoder if hardware encoding fails.
-/// 
+///
 /// This function:
 /// 1. Runs FFmpeg with the provided args (which may use hardware encoding)
 /// 2. If FFmpeg fails with a hardware encoder error, modifies args to use libx264 and retries
 /// 3. Returns the final output
-/// 
+///
 /// # Arguments
 /// * `app` - Tauri app handle
 /// * `args` - FFmpeg arguments (will be modified in-place if fallback needed)
 /// * `encoder` - The encoder config used to build the args
 /// * `quality` - Quality setting for fallback encoder
 /// * `env_vars` - Optional environment variables to set
-/// 
+///
 /// # Returns
 /// * `Ok(Output)` on success
 /// * `Err(String)` if both attempts fail
@@ -219,37 +225,45 @@ pub async fn run_ffmpeg_with_fallback(
     args.insert(0, "-filter_complex_threads".to_string());
 
     let shell = app.shell();
-    
+
     // First attempt with original encoder
-    let mut cmd = shell.sidecar("ffmpeg")
+    let mut cmd = shell
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?;
-    
+
     // Add environment variables if provided
     if let Some(vars) = &env_vars {
         for (key, value) in vars {
             cmd = cmd.env(key, value);
         }
     }
-    
+
     println!("[Rust] ========== FFMPEG EXECUTION START ==========");
     println!("[Rust] Encoder: {}", encoder.codec);
     println!("[Rust] Hardware Accel: {:?}", encoder.hw_accel);
-    println!("[Rust] Hardware Accel Output Format: {:?}", encoder.hw_accel_output_format);
-    println!("[Rust] Hardware Accel Device: {:?}", encoder.hw_accel_device);
+    println!(
+        "[Rust] Hardware Accel Output Format: {:?}",
+        encoder.hw_accel_output_format
+    );
+    println!(
+        "[Rust] Hardware Accel Device: {:?}",
+        encoder.hw_accel_device
+    );
     println!("[Rust] FFmpeg args count: {}", args.len());
-    
+
     // Log first 20 args for debugging
     let preview_args: Vec<String> = args.iter().take(20).cloned().collect();
     println!("[Rust] FFmpeg args (first 20): {:?}", preview_args);
-    
-    let output = cmd.args(&args)
+
+    let output = cmd
+        .args(&args)
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-    
+
     // Always log FFmpeg stderr for performance analysis
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     // Extract and log encoding speed from last progress line
     for line in stderr.lines().rev().take(20) {
         if line.contains("speed=") || line.contains("fps=") {
@@ -257,134 +271,154 @@ pub async fn run_ffmpeg_with_fallback(
             break;
         }
     }
-    
+
     // Check if successful
     if output.status.success() {
         println!("[Rust] ✓ FFmpeg execution succeeded");
         println!("[Rust] ========== FFMPEG EXECUTION END ==========");
         return Ok(output);
     }
-    
+
     println!("[Rust] ✗ FFmpeg execution failed");
-    
+
     let stderr = String::from_utf8_lossy(&output.stderr);
-    
+
     // Check for hardware decoder failure first (more common than encoder failure)
     if is_hardware_decoder_failure(&stderr) {
         println!("[Rust] ⚠ HARDWARE DECODER FAILURE DETECTED");
-        println!("[Rust] Error snippet: {}. Retrying with CPU decode...", 
-                 stderr.lines().take(2).collect::<Vec<_>>().join(" | "));
-        
+        println!(
+            "[Rust] Error snippet: {}. Retrying with CPU decode...",
+            stderr.lines().take(2).collect::<Vec<_>>().join(" | ")
+        );
+
         // Remove hardware acceleration flags
         remove_hwaccel_flags(&mut args);
-        
+
         // Retry with CPU decode
-        let mut retry_cmd = shell.sidecar("ffmpeg")
+        let mut retry_cmd = shell
+            .sidecar("ffmpeg")
             .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?;
-        
+
         if let Some(vars) = &env_vars {
             for (key, value) in vars {
                 retry_cmd = retry_cmd.env(key, value);
             }
         }
-        
+
         println!("[Rust] ========== RETRY #1: CPU DECODE ==========");
         println!("[Rust] Removed hardware acceleration flags");
         println!("[Rust] Retrying FFmpeg with CPU decode");
-        let retry_output = retry_cmd.args(&args)
+        let retry_output = retry_cmd
+            .args(&args)
             .output()
             .await
             .map_err(|e| format!("Failed to run ffmpeg (retry): {}", e))?;
-        
+
         if retry_output.status.success() {
             println!("[Rust] ✓ CPU decode succeeded");
             println!("[Rust] ========== FFMPEG EXECUTION END ==========");
             return Ok(retry_output);
         }
-        
+
         println!("[Rust] ✗ CPU decode also failed");
-        
+
         // Decoder fallback failed, check if it's an encoder issue
         let retry_stderr = String::from_utf8_lossy(&retry_output.stderr);
-        
+
         if is_hardware_encoder(&encoder.codec) && is_hardware_encoder_failure(&retry_stderr) {
             println!("[Rust] ⚠ HARDWARE ENCODER FAILURE DETECTED");
             println!("[Rust] ========== RETRY #2: CPU DECODE + SOFTWARE ENCODER ==========");
             println!("[Rust] Switching to libx264 software encoder");
-            
+
             // Replace encoder with software encoder
             replace_encoder_in_args(&mut args, quality);
-            
-            let mut final_retry_cmd = shell.sidecar("ffmpeg")
+
+            let mut final_retry_cmd = shell
+                .sidecar("ffmpeg")
                 .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?;
-            
+
             if let Some(vars) = &env_vars {
                 for (key, value) in vars {
                     final_retry_cmd = final_retry_cmd.env(key, value);
                 }
             }
-            
-            let final_output = final_retry_cmd.args(&args)
+
+            let final_output = final_retry_cmd
+                .args(&args)
                 .output()
                 .await
                 .map_err(|e| format!("Failed to run ffmpeg (final retry): {}", e))?;
-            
+
             if final_output.status.success() {
                 println!("[Rust] ✓ CPU decode + software encoder succeeded");
                 println!("[Rust] ========== FFMPEG EXECUTION END ==========");
                 return Ok(final_output);
             }
-            
+
             println!("[Rust] ✗ All fallback attempts failed");
             println!("[Rust] ========== FFMPEG EXECUTION END ==========");
-            
+
             let final_stderr = String::from_utf8_lossy(&final_output.stderr);
-            return Err(format!("FFmpeg failed with all fallback attempts. Final error: {}", final_stderr));
+            return Err(format!(
+                "FFmpeg failed with all fallback attempts. Final error: {}",
+                final_stderr
+            ));
         }
-        
-        return Err(format!("FFmpeg failed after decoder fallback: {}", retry_stderr));
+
+        return Err(format!(
+            "FFmpeg failed after decoder fallback: {}",
+            retry_stderr
+        ));
     }
-    
+
     // Check if this was a hardware encoder failure
     if is_hardware_encoder(&encoder.codec) && is_hardware_encoder_failure(&stderr) {
         println!("[Rust] ⚠ HARDWARE ENCODER FAILURE DETECTED");
-        println!("[Rust] Encoder: {} failed: {}. Retrying with libx264...", 
-                 encoder.codec, stderr.lines().take(3).collect::<Vec<_>>().join(" | "));
-        
+        println!(
+            "[Rust] Encoder: {} failed: {}. Retrying with libx264...",
+            encoder.codec,
+            stderr.lines().take(3).collect::<Vec<_>>().join(" | ")
+        );
+
         // Replace encoder in args with software encoder
         replace_encoder_in_args(&mut args, quality);
-        
+
         // Retry with software encoder
-        let mut retry_cmd = shell.sidecar("ffmpeg")
+        let mut retry_cmd = shell
+            .sidecar("ffmpeg")
             .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?;
-        
+
         if let Some(vars) = &env_vars {
             for (key, value) in vars {
                 retry_cmd = retry_cmd.env(key, value);
             }
         }
-        
+
         println!("[Rust] ========== RETRY: SOFTWARE ENCODER ==========");
         println!("[Rust] Switching to libx264 software encoder");
-        let retry_output = retry_cmd.args(&args)
+        let retry_output = retry_cmd
+            .args(&args)
             .output()
             .await
             .map_err(|e| format!("Failed to run ffmpeg (retry): {}", e))?;
-        
+
         if retry_output.status.success() {
             println!("[Rust] ✓ Software encoder (libx264) succeeded");
             println!("[Rust] ========== FFMPEG EXECUTION END ==========");
             return Ok(retry_output);
         }
-        
+
         println!("[Rust] ✗ Software encoder also failed");
         println!("[Rust] ========== FFMPEG EXECUTION END ==========");
-        
+
         // Both attempts failed
         let retry_stderr = String::from_utf8_lossy(&retry_output.stderr);
-        return Err(format!("FFmpeg failed with both hardware and software encoders. Software encoder error: {}", retry_stderr));
+        return Err(format!(
+            "FFmpeg failed with both hardware and software encoders. Software encoder error: {}",
+            retry_stderr
+        ));
     }
-    
+
     // Not a hardware failure, return original error
     println!("[Rust] ✗ FFmpeg failed with non-hardware error");
     println!("[Rust] ========== FFMPEG EXECUTION END ==========");
@@ -408,16 +442,21 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle, quality: &str) -> E
     println!("[Rust] ========== HARDWARE ENCODER DETECTION START ==========");
     println!("[Rust] Requested quality: {}", quality);
     let shell = app.shell();
-    
+
     // Try to get ffmpeg encoder list
-    let encoder_check = shell.sidecar("ffmpeg")
-        .map_err(|_| ()).map(|cmd| cmd.args(["-encoders"]));
-    
+    let encoder_check = shell
+        .sidecar("ffmpeg")
+        .map_err(|_| ())
+        .map(|cmd| cmd.args(["-encoders"]));
+
     if let Ok(cmd) = encoder_check {
         if let Ok(output) = cmd.output().await {
             let encoders = String::from_utf8_lossy(&output.stdout);
-            println!("[Rust] FFmpeg encoders list retrieved ({} bytes)", encoders.len());
-            
+            println!(
+                "[Rust] FFmpeg encoders list retrieved ({} bytes)",
+                encoders.len()
+            );
+
             // Check for NVIDIA NVENC (best quality/speed)
             if encoders.contains("h264_nvenc") {
                 println!("[Rust] ✓ Hardware encoder detected: NVIDIA NVENC");
@@ -437,7 +476,7 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle, quality: &str) -> E
                     hw_accel_device: None,
                 };
             }
-            
+
             // Check for AMD AMF
             if encoders.contains("h264_amf") {
                 println!("[Rust] ✓ Hardware encoder detected: AMD AMF");
@@ -474,7 +513,7 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle, quality: &str) -> E
                     hw_accel_device: None,
                 };
             }
-            
+
             // Check for Apple VideoToolbox (macOS)
             if encoders.contains("h264_videotoolbox") {
                 println!("[Rust] ✓ Hardware encoder detected: Apple VideoToolbox");
@@ -484,7 +523,7 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle, quality: &str) -> E
                 println!("[Rust] Hardware decoder enabled: VideoToolbox");
                 // VideoToolbox uses different quality scale, map CRF to bitrate
                 let quality_value = match quality {
-                    "low" => "2000000",   // 2 Mbps
+                    "low" => "2000000",    // 2 Mbps
                     "medium" => "5000000", // 5 Mbps
                     "high" => "10000000",  // 10 Mbps
                     _ => "5000000",
@@ -519,7 +558,7 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle, quality: &str) -> E
             }
         }
     }
-    
+
     // Fallback to software encoder
     println!("[Rust] ⚠ No hardware encoder detected, falling back to software");
     println!("[Rust]   - Codec: libx264");
@@ -537,4 +576,3 @@ pub async fn detect_hardware_encoder(app: &tauri::AppHandle, quality: &str) -> E
         hw_accel_device: None,
     }
 }
-

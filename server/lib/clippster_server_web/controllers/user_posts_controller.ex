@@ -24,7 +24,6 @@ defmodule ClippsterServerWeb.UserPostsController do
          {:ok, media_url} <- get_required_param(params, "media_url"),
          {:ok, account} <- get_user_account(user.id, account_id),
          {:ok, post_data} <- publish_to_instagram(account, media_url, params) do
-
       # Create post record
       post_attrs = %{
         user_id: user.id,
@@ -88,7 +87,6 @@ defmodule ClippsterServerWeb.UserPostsController do
          {:ok, account} <- get_user_account(user.id, account_id),
          :ok <- validate_platform(account, "twitter"),
          {:ok, post_data} <- publish_to_twitter(account, media_url, params) do
-
       post_attrs = %{
         user_id: user.id,
         clipper_social_account_id: account.id,
@@ -143,7 +141,10 @@ defmodule ClippsterServerWeb.UserPostsController do
     end
   rescue
     e ->
-      Logger.error("[UserPosts] publish_twitter crashed: #{Exception.message(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}")
+      Logger.error(
+        "[UserPosts] publish_twitter crashed: #{Exception.message(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}"
+      )
+
       conn
       |> put_status(500)
       |> json(%{success: false, error: "Internal error: #{Exception.message(e)}"})
@@ -157,10 +158,11 @@ defmodule ClippsterServerWeb.UserPostsController do
   def index(conn, params) do
     user = conn.assigns.current_user
 
-    posts = case params["account_id"] do
-      nil -> Campaigns.list_user_posts(user.id)
-      account_id -> Campaigns.list_user_posts_by_account(user.id, account_id)
-    end
+    posts =
+      case params["account_id"] do
+        nil -> Campaigns.list_user_posts(user.id)
+        account_id -> Campaigns.list_user_posts_by_account(user.id, account_id)
+      end
 
     conn
     |> json(%{
@@ -178,8 +180,16 @@ defmodule ClippsterServerWeb.UserPostsController do
     user = conn.assigns.current_user
 
     opts = []
-    opts = if params["days"], do: Keyword.put(opts, :days, String.to_integer(params["days"])), else: opts
-    opts = if params["account_id"], do: Keyword.put(opts, :account_id, String.to_integer(params["account_id"])), else: opts
+
+    opts =
+      if params["days"],
+        do: Keyword.put(opts, :days, String.to_integer(params["days"])),
+        else: opts
+
+    opts =
+      if params["account_id"],
+        do: Keyword.put(opts, :account_id, String.to_integer(params["account_id"])),
+        else: opts
 
     summary = Campaigns.get_user_analytics_summary(user.id, opts)
 
@@ -238,7 +248,6 @@ defmodule ClippsterServerWeb.UserPostsController do
     with {:ok, post} <- get_user_post(user.id, id),
          {:ok, account} <- get_user_account(user.id, post.clipper_social_account_id),
          {:ok, insights} <- fetch_insights(account, post) do
-
       case Campaigns.update_user_post_analytics(post, insights) do
         {:ok, updated_post} ->
           conn
@@ -287,37 +296,49 @@ defmodule ClippsterServerWeb.UserPostsController do
         key = "social-media/users/#{user.id}/#{timestamp}_#{unique_id}#{ext}"
 
         # Determine content type
-        content_type = case ext do
-          ".mp4" -> "video/mp4"
-          ".mov" -> "video/quicktime"
-          ".webm" -> "video/webm"
-          ".jpg" -> "image/jpeg"
-          ".jpeg" -> "image/jpeg"
-          ".png" -> "image/png"
-          ".gif" -> "image/gif"
-          _ -> "application/octet-stream"
-        end
+        content_type =
+          case ext do
+            ".mp4" -> "video/mp4"
+            ".mov" -> "video/quicktime"
+            ".webm" -> "video/webm"
+            ".jpg" -> "image/jpeg"
+            ".jpeg" -> "image/jpeg"
+            ".png" -> "image/png"
+            ".gif" -> "image/gif"
+            _ -> "application/octet-stream"
+          end
 
-        case ClippsterServer.Storage.upload_file_from_path(upload.path, key, content_type: content_type) do
+        case ClippsterServer.Storage.upload_file_from_path(upload.path, key,
+               content_type: content_type
+             ) do
           {:ok, url} ->
             # Handle optional thumbnail upload
-            thumbnail_url = case params["thumbnail"] do
-              %Plug.Upload{} = thumb ->
-                thumb_ext = Path.extname(thumb.filename) |> String.downcase()
-                thumb_key = "social-media/users/#{user.id}/#{timestamp}_#{unique_id}_thumb#{thumb_ext}"
-                thumb_content_type = case thumb_ext do
-                  ".jpg" -> "image/jpeg"
-                  ".jpeg" -> "image/jpeg"
-                  ".png" -> "image/png"
-                  _ -> "image/jpeg"
-                end
+            thumbnail_url =
+              case params["thumbnail"] do
+                %Plug.Upload{} = thumb ->
+                  thumb_ext = Path.extname(thumb.filename) |> String.downcase()
 
-                case ClippsterServer.Storage.upload_file_from_path(thumb.path, thumb_key, content_type: thumb_content_type) do
-                  {:ok, thumb_url} -> thumb_url
-                  {:error, _} -> nil
-                end
-              _ -> nil
-            end
+                  thumb_key =
+                    "social-media/users/#{user.id}/#{timestamp}_#{unique_id}_thumb#{thumb_ext}"
+
+                  thumb_content_type =
+                    case thumb_ext do
+                      ".jpg" -> "image/jpeg"
+                      ".jpeg" -> "image/jpeg"
+                      ".png" -> "image/png"
+                      _ -> "image/jpeg"
+                    end
+
+                  case ClippsterServer.Storage.upload_file_from_path(thumb.path, thumb_key,
+                         content_type: thumb_content_type
+                       ) do
+                    {:ok, thumb_url} -> thumb_url
+                    {:error, _} -> nil
+                  end
+
+                _ ->
+                  nil
+              end
 
             json(conn, %{
               success: true,
@@ -356,9 +377,11 @@ defmodule ClippsterServerWeb.UserPostsController do
   end
 
   defp platforms_match?(actual, expected) when actual == expected, do: true
+
   defp platforms_match?(actual, expected)
        when actual in ["x", "twitter"] and expected in ["x", "twitter"],
        do: true
+
   defp platforms_match?(_, _), do: false
 
   defp get_user_account(user_id, account_id) do
@@ -374,7 +397,9 @@ defmodule ClippsterServerWeb.UserPostsController do
 
   defp get_user_post(user_id, post_id) do
     case Campaigns.get_user_post(post_id) do
-      nil -> {:error, :not_found}
+      nil ->
+        {:error, :not_found}
+
       post ->
         if post.user_id == user_id do
           {:ok, post}
@@ -413,36 +438,41 @@ defmodule ClippsterServerWeb.UserPostsController do
   end
 
   defp maybe_refresh_twitter_token(%ClipperSocialAccount{} = account) do
-    needs_refresh = account.token_expires_at == nil or ClipperSocialAccount.token_needs_refresh?(account)
+    needs_refresh =
+      account.token_expires_at == nil or ClipperSocialAccount.token_needs_refresh?(account)
+
     if needs_refresh do
       Logger.info("[UserPosts] X token needs refresh for account #{account.id}")
       refresh_token = ClipperSocialAccount.get_refresh_token(account)
 
       case Twitter.refresh_tokens(refresh_token) do
         {:ok, new_tokens} ->
-          expires_at = if new_tokens[:expires_in] do
-            DateTime.utc_now()
-            |> DateTime.add(new_tokens[:expires_in], :second)
-            |> DateTime.truncate(:second)
-          else
-            nil
-          end
+          expires_at =
+            if new_tokens[:expires_in] do
+              DateTime.utc_now()
+              |> DateTime.add(new_tokens[:expires_in], :second)
+              |> DateTime.truncate(:second)
+            else
+              nil
+            end
 
           attrs = %{
             access_token: new_tokens[:access_token],
             token_expires_at: expires_at
           }
 
-          attrs = if new_tokens[:refresh_token] do
-            Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
-          else
-            attrs
-          end
+          attrs =
+            if new_tokens[:refresh_token] do
+              Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
+            else
+              attrs
+            end
 
           case Campaigns.update_social_account_tokens(account, attrs) do
             {:ok, updated_account} ->
               Logger.info("[UserPosts] Successfully refreshed X token for account #{account.id}")
               {:ok, updated_account}
+
             {:error, reason} ->
               Logger.warning("[UserPosts] Failed to save refreshed X token: #{inspect(reason)}")
               {:ok, account}
@@ -488,6 +518,7 @@ defmodule ClippsterServerWeb.UserPostsController do
 
   defp extract_changeset_error(changeset) do
     errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
+
     errors
     |> Enum.map(fn {field, msgs} -> "#{field}: #{Enum.join(msgs, ", ")}" end)
     |> Enum.join("; ")
