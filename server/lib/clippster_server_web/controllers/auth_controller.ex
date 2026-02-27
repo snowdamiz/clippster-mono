@@ -336,13 +336,15 @@ defmodule ClippsterServerWeb.AuthController do
       # Build Google OAuth authorization URL
       scope = "email profile"
 
-      # Encode web=true and referral_code into state if present
+      # Encode web=true, invite mode, and referral_code into state if present
       web_mode = params["web"] == "true"
+      invite_mode = params["redirect_mode"] == "invite"
       web_origin = params["origin"]
       referral_code = params["referral_code"]
+      invite_token = params["invite_token"]
 
       state_data =
-        if web_mode or referral_code do
+        if web_mode or invite_mode or referral_code do
           state_map = %{
             "nonce" => Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
           }
@@ -350,6 +352,11 @@ defmodule ClippsterServerWeb.AuthController do
           state_map =
             if web_mode,
               do: Map.merge(state_map, %{"web" => true, "origin" => web_origin}),
+              else: state_map
+
+          state_map =
+            if invite_mode,
+              do: Map.merge(state_map, %{"invite" => true, "invite_token" => invite_token}),
               else: state_map
 
           state_map =
@@ -522,7 +529,7 @@ defmodule ClippsterServerWeb.AuthController do
     end
   end
 
-  defp parse_oauth_state(nil), do: %{web: false, origin: nil, referral_code: nil}
+  defp parse_oauth_state(nil), do: %{web: false, invite: false, origin: nil, referral_code: nil, invite_token: nil}
 
   defp parse_oauth_state(state) do
     case Base.url_decode64(state, padding: false) do
@@ -531,17 +538,42 @@ defmodule ClippsterServerWeb.AuthController do
           {:ok, decoded} ->
             %{
               web: Map.get(decoded, "web", false),
+              invite: Map.get(decoded, "invite", false),
               origin: Map.get(decoded, "origin"),
-              referral_code: Map.get(decoded, "referral_code")
+              referral_code: Map.get(decoded, "referral_code"),
+              invite_token: Map.get(decoded, "invite_token")
             }
 
           _ ->
-            %{web: false, origin: nil, referral_code: nil}
+            %{web: false, invite: false, origin: nil, referral_code: nil, invite_token: nil}
         end
 
       _ ->
-        %{web: false, origin: nil, referral_code: nil}
+        %{web: false, invite: false, origin: nil, referral_code: nil, invite_token: nil}
     end
+  end
+
+  defp send_auth_success_html(conn, token, _user, %{invite: true}, _is_new_user) do
+    # Invite mode: render a small HTML page that posts the JWT token back to the opener window
+    html = """
+    <!DOCTYPE html>
+    <html><head><title>Signing in...</title></head>
+    <body style="background:#0a0a0b;color:#f4f4f5;font-family:sans-serif;display:grid;place-items:center;min-height:100vh;">
+      <p>Signing you in...</p>
+      <script>
+        if (window.opener) {
+          window.opener.postMessage({ type: 'google-auth-success', token: '#{token}' }, '*');
+          window.close();
+        } else {
+          document.body.innerHTML = '<p>Authentication successful. You can close this window and return to the invite page.</p>';
+        }
+      </script>
+    </body></html>
+    """
+
+    conn
+    |> put_resp_content_type("text/html")
+    |> send_resp(200, html)
   end
 
   defp send_auth_success_html(conn, token, user, %{web: true} = web_opts, is_new_user) do
@@ -609,6 +641,24 @@ defmodule ClippsterServerWeb.AuthController do
       })
 
     redirect(conn, external: "http://localhost:54321/google-callback?#{params}")
+  end
+
+  defp send_auth_error_html(conn, error_message, %{invite: true}) do
+    # Invite mode: show error in popup
+    html = """
+    <!DOCTYPE html>
+    <html><head><title>Authentication Error</title></head>
+    <body style="background:#0a0a0b;color:#f4f4f5;font-family:sans-serif;display:grid;place-items:center;min-height:100vh;">
+      <div style="text-align:center;">
+        <p style="color:#ef4444;">Authentication failed: #{error_message}</p>
+        <p><a href="#" onclick="window.close()" style="color:#06b6d4;">Close this window and try again</a></p>
+      </div>
+    </body></html>
+    """
+
+    conn
+    |> put_resp_content_type("text/html")
+    |> send_resp(200, html)
   end
 
   defp send_auth_error_html(conn, error_message, %{web: true} = web_opts) do
