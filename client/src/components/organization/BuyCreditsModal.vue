@@ -586,7 +586,7 @@
       });
 
       paymentStatus.value = 'Opening payment window...';
-      const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+      const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
       await invoke('open_wallet_payment_window', {
         packKey: selectedPackKey.value,
         packName: selectedPackKey.value.charAt(0).toUpperCase() + selectedPackKey.value.slice(1),

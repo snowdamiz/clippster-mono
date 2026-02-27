@@ -30,7 +30,7 @@ export function useProgressSocket(initialProjectId: string | null) {
       // Import Phoenix Socket dynamically to avoid SSR issues
       import('phoenix')
         .then(({ Socket }) => {
-          const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+          const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
           const wsUrl = API_BASE.replace('http://', 'ws://').replace('https://', 'wss://');
           const socketUrl = `${wsUrl}/socket`;
 

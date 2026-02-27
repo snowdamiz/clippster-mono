@@ -4,6 +4,10 @@ defmodule ClippsterServerWeb.AuthController do
   alias ClippsterServer.Auth.{ChallengeStore, TokenGenerator}
   alias ClippsterServer.Accounts
   alias ClippsterServer.Affiliates
+  alias ClippsterServerWeb.OAuthCallbackTarget
+
+  @google_state_salt "google_oauth_state"
+  @oauth_state_max_age 600
 
   @sign_message_template """
   <%= domain %> wants you to sign in with your Solana account:
@@ -339,28 +343,24 @@ defmodule ClippsterServerWeb.AuthController do
       # Encode web=true and referral_code into state if present
       web_mode = params["web"] == "true"
       web_origin = params["origin"]
-      referral_code = params["referral_code"]
+      referral_code = sanitize_referral_code(params["referral_code"])
 
-      state_data =
-        if web_mode or referral_code do
-          state_map = %{
-            "nonce" => Base.url_encode64(:crypto.strong_rand_bytes(16), padding: false)
-          }
-
-          state_map =
-            if web_mode,
-              do: Map.merge(state_map, %{"web" => true, "origin" => web_origin}),
-              else: state_map
-
-          state_map =
-            if referral_code,
-              do: Map.put(state_map, "referral_code", referral_code),
-              else: state_map
-
-          Jason.encode!(state_map) |> Base.url_encode64(padding: false)
+      target_origin =
+        if web_mode do
+          case OAuthCallbackTarget.normalize_web_origin(web_origin || "") do
+            {:ok, origin} -> origin
+            {:error, _reason} -> OAuthCallbackTarget.default_web_origin()
+          end
         else
-          :crypto.strong_rand_bytes(16) |> Base.url_encode64(padding: false)
+          nil
         end
+
+      state_payload =
+        %{"web" => web_mode}
+        |> maybe_put_state_value("origin", target_origin)
+        |> maybe_put_state_value("referral_code", referral_code)
+
+      state_data = Phoenix.Token.sign(conn, @google_state_salt, state_payload)
 
       google_auth_url =
         "https://accounts.google.com/o/oauth2/v2/auth?" <>
@@ -390,77 +390,89 @@ defmodule ClippsterServerWeb.AuthController do
     IO.puts("\n=== Google OAuth Callback ===")
     IO.puts("Received code: #{String.slice(code, 0, 20)}...")
 
-    # Decode state to check for web mode
-    web_opts = parse_oauth_state(params["state"])
+    case parse_oauth_state(conn, params["state"]) do
+      {:ok, web_opts} ->
+        # Check for error from Google
+        if Map.has_key?(params, "error") do
+          IO.puts("Google OAuth Error: #{params["error"]}")
+          send_auth_error_html(conn, params["error_description"] || params["error"], web_opts)
+        else
+          # Exchange code for tokens
+          case exchange_google_code(code) do
+            {:ok, tokens} ->
+              IO.puts("Token exchange successful")
 
-    # Check for error from Google
-    if Map.has_key?(params, "error") do
-      IO.puts("Google OAuth Error: #{params["error"]}")
-      send_auth_error_html(conn, params["error_description"] || params["error"], web_opts)
-    else
-      # Exchange code for tokens
-      case exchange_google_code(code) do
-        {:ok, tokens} ->
-          IO.puts("Token exchange successful")
+              # Get user info from Google
+              case get_google_user_info(tokens["access_token"]) do
+                {:ok, google_user} ->
+                  IO.puts(
+                    "Got user info - Email: #{google_user["email"]}, ID: #{google_user["id"]}"
+                  )
 
-          # Get user info from Google
-          case get_google_user_info(tokens["access_token"]) do
-            {:ok, google_user} ->
-              IO.puts("Got user info - Email: #{google_user["email"]}, ID: #{google_user["id"]}")
-
-              oauth_info = %{
-                email: google_user["email"],
-                name: google_user["name"],
-                avatar_url: google_user["picture"]
-              }
-
-              # Extract referral code from OAuth state
-              oauth_referral_code = web_opts[:referral_code]
-
-              case Accounts.get_or_create_oauth_user(
-                     "google",
-                     google_user["id"],
-                     oauth_info,
-                     oauth_referral_code
-                   ) do
-                {:ok, user, is_new_user} ->
-                  IO.puts("User created/retrieved: #{user.id}, is_new: #{is_new_user}")
-
-                  # Generate JWT token
-                  token_claims = %{
-                    "sub" => "google:#{google_user["id"]}",
-                    "iat" => DateTime.utc_now() |> DateTime.to_unix(),
-                    "exp" => DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.to_unix(),
-                    "provider" => "google",
-                    "provider_id" => google_user["id"],
-                    "user_id" => user.id,
-                    "is_admin" => user.is_admin,
-                    "is_moderator" => user.is_moderator,
-                    "email" => user.email
+                  oauth_info = %{
+                    email: google_user["email"],
+                    name: google_user["name"],
+                    avatar_url: google_user["picture"]
                   }
 
-                  case TokenGenerator.generate_token(token_claims) do
-                    {:ok, token} ->
-                      send_auth_success_html(conn, token, user, web_opts, is_new_user)
+                  # Extract referral code from OAuth state
+                  oauth_referral_code = web_opts[:referral_code]
 
-                    {:error, _reason} ->
-                      send_auth_error_html(conn, "Token generation failed", web_opts)
+                  case Accounts.get_or_create_oauth_user(
+                         "google",
+                         google_user["id"],
+                         oauth_info,
+                         oauth_referral_code
+                       ) do
+                    {:ok, user, is_new_user} ->
+                      IO.puts("User created/retrieved: #{user.id}, is_new: #{is_new_user}")
+
+                      # Generate JWT token
+                      token_claims = %{
+                        "sub" => "google:#{google_user["id"]}",
+                        "iat" => DateTime.utc_now() |> DateTime.to_unix(),
+                        "exp" =>
+                          DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.to_unix(),
+                        "provider" => "google",
+                        "provider_id" => google_user["id"],
+                        "user_id" => user.id,
+                        "is_admin" => user.is_admin,
+                        "is_moderator" => user.is_moderator,
+                        "email" => user.email
+                      }
+
+                      case TokenGenerator.generate_token(token_claims) do
+                        {:ok, token} ->
+                          send_auth_success_html(conn, token, user, web_opts, is_new_user)
+
+                        {:error, _reason} ->
+                          send_auth_error_html(conn, "Token generation failed", web_opts)
+                      end
+
+                    {:error, reason} ->
+                      IO.puts("Failed to create user: #{inspect(reason)}")
+                      send_auth_error_html(conn, "Failed to create user account", web_opts)
                   end
 
                 {:error, reason} ->
-                  IO.puts("Failed to create user: #{inspect(reason)}")
-                  send_auth_error_html(conn, "Failed to create user account", web_opts)
+                  IO.puts("Failed to get user info: #{inspect(reason)}")
+
+                  send_auth_error_html(
+                    conn,
+                    "Failed to get user information from Google",
+                    web_opts
+                  )
               end
 
             {:error, reason} ->
-              IO.puts("Failed to get user info: #{inspect(reason)}")
-              send_auth_error_html(conn, "Failed to get user information from Google", web_opts)
+              IO.puts("Token exchange failed: #{inspect(reason)}")
+              send_auth_error_html(conn, "Failed to authenticate with Google", web_opts)
           end
+        end
 
-        {:error, reason} ->
-          IO.puts("Token exchange failed: #{inspect(reason)}")
-          send_auth_error_html(conn, "Failed to authenticate with Google", web_opts)
-      end
+      {:error, reason} ->
+        IO.puts("Invalid Google OAuth state: #{inspect(reason)}")
+        send_auth_error_html(conn, "Invalid or expired authentication session", %{web: false})
     end
   end
 
@@ -469,8 +481,16 @@ defmodule ClippsterServerWeb.AuthController do
     IO.puts("\n=== Google OAuth Callback - No Code ===")
     IO.puts("Params: #{inspect(params)}")
 
-    web_opts = parse_oauth_state(params["state"])
-    error_msg = params["error_description"] || params["error"] || "Authentication failed"
+    {web_opts, error_msg} =
+      case parse_oauth_state(conn, params["state"]) do
+        {:ok, opts} ->
+          {opts, params["error_description"] || params["error"] || "Authentication failed"}
+
+        {:error, reason} ->
+          IO.puts("Invalid Google OAuth state in fallback callback: #{inspect(reason)}")
+          {%{web: false}, "Invalid or expired authentication session"}
+      end
+
     send_auth_error_html(conn, error_msg, web_opts)
   end
 
@@ -522,32 +542,42 @@ defmodule ClippsterServerWeb.AuthController do
     end
   end
 
-  defp parse_oauth_state(nil), do: %{web: false, origin: nil, referral_code: nil}
+  defp parse_oauth_state(_conn, nil), do: {:error, :missing_state}
 
-  defp parse_oauth_state(state) do
-    case Base.url_decode64(state, padding: false) do
-      {:ok, json} ->
-        case Jason.decode(json) do
-          {:ok, decoded} ->
-            %{
-              web: Map.get(decoded, "web", false),
-              origin: Map.get(decoded, "origin"),
-              referral_code: Map.get(decoded, "referral_code")
-            }
+  defp parse_oauth_state(conn, state) do
+    case Phoenix.Token.verify(conn, @google_state_salt, state, max_age: @oauth_state_max_age) do
+      {:ok, payload} when is_map(payload) ->
+        web_mode = Map.get(payload, "web", false) == true
 
-          _ ->
-            %{web: false, origin: nil, referral_code: nil}
-        end
+        origin =
+          if web_mode do
+            case OAuthCallbackTarget.normalize_web_origin(Map.get(payload, "origin")) do
+              {:ok, normalized} -> normalized
+              {:error, _reason} -> OAuthCallbackTarget.default_web_origin()
+            end
+          else
+            nil
+          end
 
-      _ ->
-        %{web: false, origin: nil, referral_code: nil}
+        {:ok,
+         %{
+           web: web_mode,
+           origin: origin,
+           referral_code: sanitize_referral_code(Map.get(payload, "referral_code"))
+         }}
+
+      {:ok, _other} ->
+        {:error, :invalid_state_payload}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   defp send_auth_success_html(conn, token, user, %{web: true} = web_opts, is_new_user) do
     # Web mode: redirect to the origin's callback page (avoids COOP issues with window.opener)
     ai_allowed = check_ai_allowed_for_user(user)
-    target_origin = web_opts[:origin] || "https://clippster.app"
+    target_origin = web_opts[:origin] || OAuthCallbackTarget.default_web_origin()
 
     user_json =
       Jason.encode!(%{
@@ -613,7 +643,7 @@ defmodule ClippsterServerWeb.AuthController do
 
   defp send_auth_error_html(conn, error_message, %{web: true} = web_opts) do
     # Web mode: redirect to the origin's callback page with error (avoids COOP issues)
-    target_origin = web_opts[:origin] || "https://clippster.app"
+    target_origin = web_opts[:origin] || OAuthCallbackTarget.default_web_origin()
     params = URI.encode_query(%{"error" => error_message})
     redirect(conn, external: "#{target_origin}/auth/google/callback?#{params}")
   end
@@ -628,6 +658,23 @@ defmodule ClippsterServerWeb.AuthController do
 
     redirect(conn, external: "http://localhost:54321/google-callback?#{params}")
   end
+
+  defp maybe_put_state_value(map, _key, nil), do: map
+  defp maybe_put_state_value(map, key, value), do: Map.put(map, key, value)
+
+  defp sanitize_referral_code(nil), do: nil
+
+  defp sanitize_referral_code(referral_code) when is_binary(referral_code) do
+    cleaned = String.trim(referral_code)
+
+    cond do
+      cleaned == "" -> nil
+      String.length(cleaned) > 128 -> nil
+      true -> cleaned
+    end
+  end
+
+  defp sanitize_referral_code(_), do: nil
 
   @doc """
   Links a Google account to an existing authenticated user.
