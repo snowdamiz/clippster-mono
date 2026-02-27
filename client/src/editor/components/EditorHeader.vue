@@ -6,6 +6,7 @@ import ExportButton from "./ExportButton.vue";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ArrowLeft, Pencil, Trash2, Keyboard, X } from "lucide-vue-next";
 import ShortcutsDialog from "./dialogs/ShortcutsDialog.vue";
+import ChatFab from "@/components/chat/ChatFab.vue";
 
 const { editor, version } = useEditor();
 const router = useRouter();
@@ -147,6 +148,7 @@ function openRename() {
 		</div>
 
 		<nav class="flex items-center gap-2">
+			<ChatFab />
 			<ExportButton />
 			<button
 				type="button"

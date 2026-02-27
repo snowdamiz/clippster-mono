@@ -146,6 +146,7 @@ defmodule ClippsterServerWeb.Router do
 
     get("/stripe-success", StripeRedirectController, :success)
     get("/stripe-cancel", StripeRedirectController, :cancel)
+    get("/invite/:token", InviteController, :show)
   end
 
   scope "/api", ClippsterServerWeb do

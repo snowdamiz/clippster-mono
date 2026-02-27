@@ -587,6 +587,8 @@ pub async fn export_video_editor_project(
 
         // This produces letterboxing/pillarboxing when video AR differs from canvas AR
 
+        // CRITICAL: pad must use canvas dimensions (width x height) to ensure concat gets uniform inputs
+
         if (scale - 1.0).abs() > 0.001 {
             let sw = (width as f64 * scale) as i32;
 

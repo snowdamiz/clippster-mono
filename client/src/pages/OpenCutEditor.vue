@@ -89,7 +89,11 @@ function handleBack() {
 	</div>
 
 	<!-- Editor -->
-	<div v-else class="h-screen w-screen overflow-hidden">
+	<div v-else class="opencut-editor h-screen w-screen overflow-hidden">
 		<EditorLayout />
 	</div>
 </template>
+
+<style scoped>
+/* FloatingChat is hidden via useChatPopout composable for this route */
+</style>
