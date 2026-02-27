@@ -20,9 +20,10 @@ export function useChatPopout() {
   const isVisible = computed(() => {
     if (!authStore.isAuthenticated) return false;
     const path = route.path;
-    // Hide on messages page (redundant) and PIP window
+    // Hide on messages page (redundant), PIP window, and OpenCut editor (has ChatFab in header)
     if (path === '/messages') return false;
     if (path === '/pip-controls') return false;
+    if (path === '/opencut-editor') return false;
     return true;
   });
 

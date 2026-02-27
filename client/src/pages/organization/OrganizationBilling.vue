@@ -856,9 +856,11 @@
   import SubscribeDialog from '@/components/SubscribeDialog.vue';
   import { useOrganization } from '@/composables/useOrganization';
   import { useToast } from '@/composables/useToast';
+  import { useSubscription } from '@/composables/useSubscription';
   import api from '@/services/api';
 
   const { success: showSuccess, error: showError } = useToast();
+  const { fetchSubscriptionStatus } = useSubscription();
 
   const {
     organizationId,
@@ -985,10 +987,17 @@
     showSubscriptionModal.value = true;
   }
 
-  function handleSubscribeSuccess() {
+  async function handleSubscribeSuccess() {
     showSubscriptionModal.value = false;
     selectedPlan.value = null;
-    loadOrganization();
+    
+    // Refresh user subscription status (updates auth store)
+    await fetchSubscriptionStatus();
+    
+    // Reload organization data
+    await loadOrganization();
+    
+    showSuccess('Subscription activated', 'Your organization plan is now active');
   }
 
   async function cancelSubscription() {

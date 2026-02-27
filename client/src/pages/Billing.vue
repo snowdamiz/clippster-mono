@@ -797,6 +797,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import { useToast } from '@/composables/useToast';
+  import { useSubscription } from '@/composables/useSubscription';
   import api from '@/services/api';
   import {
     CreditCard,
@@ -830,6 +831,7 @@
   const route = useRoute();
   const router = useRouter();
   const { success: showSuccessToast, error: showErrorToast } = useToast();
+  const { fetchSubscriptionStatus } = useSubscription();
 
   const loadingBalance = ref(true);
   const loadingTiers = ref(true);
@@ -1185,11 +1187,19 @@
     return tier.price_usd.toFixed(2);
   }
 
-  function handleSubscribeSuccess() {
+  async function handleSubscribeSuccess() {
     showPaymentModal.value = false;
     selectedSubscription.value = null;
-    fetchBalance();
-    fetchPaymentHistory();
+    
+    // Refresh subscription status (this updates both subscription state and auth store)
+    await fetchSubscriptionStatus();
+    
+    // Fetch updated balance and history
+    await fetchBalance();
+    await fetchPaymentHistory();
+    
+    // Show success toast
+    showSuccessToast('Subscription activated', 'Your plan is now active');
   }
 
   async function cancelSubscription() {
