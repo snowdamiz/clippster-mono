@@ -5,7 +5,9 @@ defmodule ClippsterServer.Repo.Migrations.AddCampaignCreatorProfilesAndGlobalAss
     # Join table for assigning multiple creator profiles to a campaign
     create table(:campaign_creator_profiles) do
       add :campaign_id, references(:clipping_campaigns, on_delete: :delete_all), null: false
-      add :creator_profile_id, references(:organization_creator_profiles, on_delete: :delete_all), null: false
+
+      add :creator_profile_id, references(:organization_creator_profiles, on_delete: :delete_all),
+        null: false
 
       timestamps(type: :utc_datetime)
     end

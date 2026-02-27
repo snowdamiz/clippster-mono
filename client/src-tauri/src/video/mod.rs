@@ -1,11 +1,11 @@
-pub mod frame_decoder;
-pub mod frame_cache;
 pub mod decoder_pool;
 pub mod ffmpeg;
+pub mod frame_cache;
+pub mod frame_decoder;
 
-use decoder_pool::{DecoderPool, CacheStats, DecoderInfo};
-use std::sync::Arc;
+use decoder_pool::{CacheStats, DecoderInfo, DecoderPool};
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 pub struct VideoFrameState {
     decoder_pool: Arc<Mutex<DecoderPool>>,
@@ -27,10 +27,11 @@ pub async fn get_video_frame(
     state: tauri::State<'_, VideoFrameState>,
 ) -> Result<Vec<u8>, String> {
     let pool = state.decoder_pool.lock();
-    
-    let frame = pool.get_frame(&source_id, &video_path, timestamp)
+
+    let frame = pool
+        .get_frame(&source_id, &video_path, timestamp)
         .map_err(|e| format!("Failed to get frame: {}", e))?;
-    
+
     Ok((*frame.rgb_data).clone())
 }
 
@@ -42,10 +43,11 @@ pub async fn get_video_frame_with_dimensions(
     state: tauri::State<'_, VideoFrameState>,
 ) -> Result<serde_json::Value, String> {
     let pool = state.decoder_pool.lock();
-    
-    let frame = pool.get_frame(&source_id, &video_path, timestamp)
+
+    let frame = pool
+        .get_frame(&source_id, &video_path, timestamp)
         .map_err(|e| format!("Failed to get frame: {}", e))?;
-    
+
     Ok(serde_json::json!({
         "width": frame.width,
         "height": frame.height,
@@ -64,10 +66,10 @@ pub async fn prefetch_video_frames(
     state: tauri::State<'_, VideoFrameState>,
 ) -> Result<(), String> {
     let pool = state.decoder_pool.lock();
-    
+
     pool.prefetch_frames(&source_id, &video_path, start_time, count, fps)
         .map_err(|e| format!("Failed to prefetch frames: {}", e))?;
-    
+
     Ok(())
 }
 
@@ -77,7 +79,7 @@ pub async fn clear_video_decoder(
     state: tauri::State<'_, VideoFrameState>,
 ) -> Result<(), String> {
     let pool = state.decoder_pool.lock();
-    
+
     pool.clear_decoder(&source_id);
     Ok(())
 }
@@ -87,17 +89,15 @@ pub async fn clear_all_video_decoders(
     state: tauri::State<'_, VideoFrameState>,
 ) -> Result<(), String> {
     let pool = state.decoder_pool.lock();
-    
+
     pool.clear_all_decoders();
     Ok(())
 }
 
 #[tauri::command]
-pub async fn clear_frame_cache(
-    state: tauri::State<'_, VideoFrameState>,
-) -> Result<(), String> {
+pub async fn clear_frame_cache(state: tauri::State<'_, VideoFrameState>) -> Result<(), String> {
     let pool = state.decoder_pool.lock();
-    
+
     pool.clear_cache();
     Ok(())
 }
@@ -107,7 +107,7 @@ pub async fn get_frame_cache_stats(
     state: tauri::State<'_, VideoFrameState>,
 ) -> Result<CacheStats, String> {
     let pool = state.decoder_pool.lock();
-    
+
     Ok(pool.get_cache_stats())
 }
 
@@ -117,6 +117,6 @@ pub async fn get_decoder_info(
     state: tauri::State<'_, VideoFrameState>,
 ) -> Result<Option<DecoderInfo>, String> {
     let pool = state.decoder_pool.lock();
-    
+
     Ok(pool.get_decoder_info(&source_id))
 }

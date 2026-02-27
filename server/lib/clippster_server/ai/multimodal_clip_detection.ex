@@ -33,8 +33,17 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
   Runs 3 models in parallel, then uses a decider to synthesize results.
   Returns {:ok, clips, total_usage} or {:error, reason}.
   """
-  def process_chunk_multimodal(chunk_transcript, system_prompt, user_prompt, project_id, chunk_index, total_chunks) do
-    Logger.info("[MultimodalClipDetection] Processing chunk #{chunk_index + 1}/#{total_chunks} with #{length(@detection_models)} models")
+  def process_chunk_multimodal(
+        chunk_transcript,
+        system_prompt,
+        user_prompt,
+        project_id,
+        chunk_index,
+        total_chunks
+      ) do
+    Logger.info(
+      "[MultimodalClipDetection] Processing chunk #{chunk_index + 1}/#{total_chunks} with #{length(@detection_models)} models"
+    )
 
     ProgressChannel.broadcast_progress(
       project_id,
@@ -44,18 +53,22 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
     )
 
     # Step 1: Run all detection models in parallel
-    model_results = run_detection_models_parallel(chunk_transcript, system_prompt, user_prompt, project_id)
+    model_results =
+      run_detection_models_parallel(chunk_transcript, system_prompt, user_prompt, project_id)
 
     # Count successful results
-    successful_results = Enum.filter(model_results, fn
-      {:ok, _, _, _} -> true
-      _ -> false
-    end)
+    successful_results =
+      Enum.filter(model_results, fn
+        {:ok, _, _, _} -> true
+        _ -> false
+      end)
 
     failed_count = length(@detection_models) - length(successful_results)
 
     if failed_count > 0 do
-      Logger.warning("[MultimodalClipDetection] #{failed_count} model(s) failed for chunk #{chunk_index + 1}")
+      Logger.warning(
+        "[MultimodalClipDetection] #{failed_count} model(s) failed for chunk #{chunk_index + 1}"
+      )
     end
 
     # Need at least 1 successful result to proceed
@@ -64,18 +77,20 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
       {:error, "All detection models failed"}
     else
       # Extract clips and usage from successful results
-      model_clips_with_metadata = Enum.map(successful_results, fn {:ok, model, clips, usage} ->
-        %{
-          model: model,
-          clips: clips,
-          usage: usage
-        }
-      end)
+      model_clips_with_metadata =
+        Enum.map(successful_results, fn {:ok, model, clips, usage} ->
+          %{
+            model: model,
+            clips: clips,
+            usage: usage
+          }
+        end)
 
       # Calculate total usage from detection models
-      detection_usage = Enum.reduce(model_clips_with_metadata, 0, fn result, acc ->
-        acc + Map.get(result.usage, "total_tokens", 0)
-      end)
+      detection_usage =
+        Enum.reduce(model_clips_with_metadata, 0, fn result, acc ->
+          acc + Map.get(result.usage, "total_tokens", 0)
+        end)
 
       ProgressChannel.broadcast_progress(
         project_id,
@@ -85,50 +100,57 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
       )
 
       # Build per-model usage details for logging
-      per_model_usage = Enum.map(model_clips_with_metadata, fn result ->
-        %{
-          "model" => result.model,
-          "input_tokens" => Map.get(result.usage, "prompt_tokens", 0),
-          "output_tokens" => Map.get(result.usage, "completion_tokens", 0),
-          "total_tokens" => Map.get(result.usage, "total_tokens", 0),
-          "clips_found" => length(result.clips)
-        }
-      end)
+      per_model_usage =
+        Enum.map(model_clips_with_metadata, fn result ->
+          %{
+            "model" => result.model,
+            "input_tokens" => Map.get(result.usage, "prompt_tokens", 0),
+            "output_tokens" => Map.get(result.usage, "completion_tokens", 0),
+            "total_tokens" => Map.get(result.usage, "total_tokens", 0),
+            "clips_found" => length(result.clips)
+          }
+        end)
 
       # Step 2: Run decider to synthesize results
       case run_decider(model_clips_with_metadata, chunk_transcript, project_id) do
         {:ok, final_clips, decider_usage} ->
           total_usage = detection_usage + Map.get(decider_usage, "total_tokens", 0)
 
-          Logger.info("[MultimodalClipDetection] Chunk #{chunk_index + 1} complete: #{length(final_clips)} clips, #{total_usage} tokens")
+          Logger.info(
+            "[MultimodalClipDetection] Chunk #{chunk_index + 1} complete: #{length(final_clips)} clips, #{total_usage} tokens"
+          )
 
-          {:ok, final_clips, %{
-            "total_tokens" => total_usage,
-            "detection_tokens" => detection_usage,
-            "decider_tokens" => Map.get(decider_usage, "total_tokens", 0),
-            "models_used" => length(successful_results),
-            "models_failed" => failed_count,
-            "per_model_usage" => per_model_usage,
-            "decider_model" => @decider_model,
-            "decider_input_tokens" => Map.get(decider_usage, "prompt_tokens", 0),
-            "decider_output_tokens" => Map.get(decider_usage, "completion_tokens", 0)
-          }}
+          {:ok, final_clips,
+           %{
+             "total_tokens" => total_usage,
+             "detection_tokens" => detection_usage,
+             "decider_tokens" => Map.get(decider_usage, "total_tokens", 0),
+             "models_used" => length(successful_results),
+             "models_failed" => failed_count,
+             "per_model_usage" => per_model_usage,
+             "decider_model" => @decider_model,
+             "decider_input_tokens" => Map.get(decider_usage, "prompt_tokens", 0),
+             "decider_output_tokens" => Map.get(decider_usage, "completion_tokens", 0)
+           }}
 
         {:error, reason} ->
-          Logger.error("[MultimodalClipDetection] Decider failed for chunk #{chunk_index + 1}: #{inspect(reason)}")
+          Logger.error(
+            "[MultimodalClipDetection] Decider failed for chunk #{chunk_index + 1}: #{inspect(reason)}"
+          )
 
           # Fallback: use clips from the model with highest average virality score
           fallback_clips = select_best_model_clips(model_clips_with_metadata)
 
-          {:ok, fallback_clips, %{
-            "total_tokens" => detection_usage,
-            "detection_tokens" => detection_usage,
-            "decider_tokens" => 0,
-            "models_used" => length(successful_results),
-            "models_failed" => failed_count,
-            "used_fallback" => true,
-            "per_model_usage" => per_model_usage
-          }}
+          {:ok, fallback_clips,
+           %{
+             "total_tokens" => detection_usage,
+             "detection_tokens" => detection_usage,
+             "decider_tokens" => 0,
+             "models_used" => length(successful_results),
+             "models_failed" => failed_count,
+             "used_fallback" => true,
+             "per_model_usage" => per_model_usage
+           }}
       end
     end
   end
@@ -141,7 +163,13 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
       fn model ->
         Logger.info("[MultimodalClipDetection] Starting model: #{model}")
 
-        case OpenRouterAPI.generate_clips_with_model(chunk_transcript, system_prompt, user_prompt, model, project_id) do
+        case OpenRouterAPI.generate_clips_with_model(
+               chunk_transcript,
+               system_prompt,
+               user_prompt,
+               model,
+               project_id
+             ) do
           {:ok, ai_response, usage} ->
             clips = Map.get(ai_response, "clips", [])
             Logger.info("[MultimodalClipDetection] Model #{model} found #{length(clips)} clips")
@@ -153,7 +181,8 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
         end
       end,
       max_concurrency: 3,
-      timeout: 180_000,  # 3 minutes per model
+      # 3 minutes per model
+      timeout: 180_000,
       on_timeout: :kill_task
     )
     |> Enum.map(fn
@@ -171,10 +200,13 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
     consensus_analysis = identify_consensus_clips(model_clips_with_metadata)
 
     # Log consensus findings
-    Logger.info("[MultimodalClipDetection] Consensus analysis: #{length(consensus_analysis.unanimous)} unanimous, #{length(consensus_analysis.consensus)} consensus clips")
+    Logger.info(
+      "[MultimodalClipDetection] Consensus analysis: #{length(consensus_analysis.unanimous)} unanimous, #{length(consensus_analysis.consensus)} consensus clips"
+    )
 
     # Build the decider prompt with all model results and consensus analysis
-    decider_prompt = build_decider_prompt(model_clips_with_metadata, chunk_transcript, consensus_analysis)
+    decider_prompt =
+      build_decider_prompt(model_clips_with_metadata, chunk_transcript, consensus_analysis)
 
     case OpenRouterAPI.decide_final_clips(decider_prompt, @decider_model, project_id) do
       {:ok, final_clips, usage} ->
@@ -215,7 +247,9 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
 
     consensus =
       clip_groups
-      |> Enum.filter(fn group -> length(group.models) >= 2 and length(group.models) < total_models end)
+      |> Enum.filter(fn group ->
+        length(group.models) >= 2 and length(group.models) < total_models
+      end)
       |> Enum.map(fn group ->
         %{
           clip: select_best_clip_version(group.clips),
@@ -240,12 +274,13 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
   # Group clips that overlap by >50% in time
   defp group_overlapping_clips(clips_with_source) do
     # Start with each clip as its own group
-    initial_groups = Enum.map(clips_with_source, fn {clip, model} ->
-      %{
-        clips: [clip],
-        models: [model]
-      }
-    end)
+    initial_groups =
+      Enum.map(clips_with_source, fn {clip, model} ->
+        %{
+          clips: [clip],
+          models: [model]
+        }
+      end)
 
     # Merge overlapping groups
     merge_overlapping_groups(initial_groups)
@@ -341,7 +376,9 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
       %{"segments" => segments} when is_list(segments) and length(segments) > 0 ->
         last_segment = List.last(segments)
         Map.get(last_segment, "end_time", 0)
-      _ -> 0
+
+      _ ->
+        0
     end
   end
 
@@ -357,36 +394,41 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
     consensus_count = length(consensus_analysis.consensus)
     unique_count = length(consensus_analysis.unique)
 
-    unanimous_text = if unanimous_count > 0 do
-      clips_json = Jason.encode!(consensus_analysis.unanimous, pretty: true)
-      """
-      ### Unanimous Clips (Found by ALL #{consensus_analysis.total_models} models) - MANDATORY
-      These #{unanimous_count} clip(s) MUST be included in your final output:
-      ```json
-      #{clips_json}
-      ```
-      """
-    else
-      "### Unanimous Clips: None (no clips found by all models)\n"
-    end
+    unanimous_text =
+      if unanimous_count > 0 do
+        clips_json = Jason.encode!(consensus_analysis.unanimous, pretty: true)
 
-    consensus_text = if consensus_count > 0 do
-      consensus_info = Enum.map(consensus_analysis.consensus, fn item ->
         """
-        - #{Map.get(item.clip, "title", "Untitled")} (#{item.model_count}/#{consensus_analysis.total_models} models: #{Enum.join(item.models, ", ")})
-          Time: #{get_clip_start_time(item.clip)}s - #{get_clip_end_time(item.clip)}s
-          Virality: #{Map.get(item.clip, "virality_score", 0)}/100
+        ### Unanimous Clips (Found by ALL #{consensus_analysis.total_models} models) - MANDATORY
+        These #{unanimous_count} clip(s) MUST be included in your final output:
+        ```json
+        #{clips_json}
+        ```
         """
-      end) |> Enum.join("\n")
+      else
+        "### Unanimous Clips: None (no clips found by all models)\n"
+      end
 
-      """
-      ### Consensus Clips (Found by 2+ models) - HIGH PRIORITY
-      These #{consensus_count} clip(s) should be strongly considered:
-      #{consensus_info}
-      """
-    else
-      "### Consensus Clips: None\n"
-    end
+    consensus_text =
+      if consensus_count > 0 do
+        consensus_info =
+          Enum.map(consensus_analysis.consensus, fn item ->
+            """
+            - #{Map.get(item.clip, "title", "Untitled")} (#{item.model_count}/#{consensus_analysis.total_models} models: #{Enum.join(item.models, ", ")})
+              Time: #{get_clip_start_time(item.clip)}s - #{get_clip_end_time(item.clip)}s
+              Virality: #{Map.get(item.clip, "virality_score", 0)}/100
+            """
+          end)
+          |> Enum.join("\n")
+
+        """
+        ### Consensus Clips (Found by 2+ models) - HIGH PRIORITY
+        These #{consensus_count} clip(s) should be strongly considered:
+        #{consensus_info}
+        """
+      else
+        "### Consensus Clips: None\n"
+      end
 
     unique_text = "### Unique Clips (Found by only 1 model): #{unique_count} clip(s)\n"
 
@@ -405,26 +447,30 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
     consensus_section = build_consensus_section(consensus_analysis)
 
     # Format each model's results
-    model_results_text = model_clips_with_metadata
-    |> Enum.with_index(1)
-    |> Enum.map(fn {result, index} ->
-      clips_json = Jason.encode!(result.clips, pretty: true)
-      """
-      ## Model #{index}: #{result.model}
-      Found #{length(result.clips)} clips:
-      ```json
-      #{clips_json}
-      ```
-      """
-    end)
-    |> Enum.join("\n\n")
+    model_results_text =
+      model_clips_with_metadata
+      |> Enum.with_index(1)
+      |> Enum.map(fn {result, index} ->
+        clips_json = Jason.encode!(result.clips, pretty: true)
+
+        """
+        ## Model #{index}: #{result.model}
+        Found #{length(result.clips)} clips:
+        ```json
+        #{clips_json}
+        ```
+        """
+      end)
+      |> Enum.join("\n\n")
 
     # Get FULL transcript text for context - no truncation to ensure complete context for clip boundary decisions
     # The decider needs full context to make accurate decisions about clip boundaries
-    transcript_text = case chunk_transcript do
-      %{"text" => text} -> text  # Pass full transcript, no truncation
-      _ -> "[Transcript not available]"
-    end
+    transcript_text =
+      case chunk_transcript do
+        # Pass full transcript, no truncation
+        %{"text" => text} -> text
+        _ -> "[Transcript not available]"
+      end
 
     """
     You are an expert video clip curator. Multiple AI models have analyzed the same transcript segment and identified potential viral clips. Your job is to synthesize their results into a single, optimal clip list.
@@ -509,21 +555,26 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
       final_clips
     else
       # Check each unanimous clip to see if it's represented in final output
-      missing_clips = Enum.filter(unanimous_clips, fn unanimous_clip ->
-        not clip_exists_in_final?(unanimous_clip, final_clips)
-      end)
+      missing_clips =
+        Enum.filter(unanimous_clips, fn unanimous_clip ->
+          not clip_exists_in_final?(unanimous_clip, final_clips)
+        end)
 
       if length(missing_clips) > 0 do
-        Logger.warning("[MultimodalClipDetection] Decider skipped #{length(missing_clips)} unanimous clip(s). Adding them back.")
+        Logger.warning(
+          "[MultimodalClipDetection] Decider skipped #{length(missing_clips)} unanimous clip(s). Adding them back."
+        )
 
         # Add missing clips with unique IDs
         next_id = length(final_clips) + 1
-        restored_clips = missing_clips
-        |> Enum.with_index(next_id)
-        |> Enum.map(fn {clip, idx} ->
-          # Update the clip ID to avoid conflicts
-          Map.put(clip, "id", "multimodal_clip_#{idx}_restored")
-        end)
+
+        restored_clips =
+          missing_clips
+          |> Enum.with_index(next_id)
+          |> Enum.map(fn {clip, idx} ->
+            # Update the clip ID to avoid conflicts
+            Map.put(clip, "id", "multimodal_clip_#{idx}_restored")
+          end)
 
         final_clips ++ restored_clips
       else
@@ -544,14 +595,19 @@ defmodule ClippsterServer.AI.MultimodalClipDetection do
   defp select_best_model_clips(model_clips_with_metadata) do
     model_clips_with_metadata
     |> Enum.map(fn result ->
-      avg_score = case result.clips do
-        [] -> 0
-        clips ->
-          total = Enum.reduce(clips, 0, fn clip, acc ->
-            acc + (Map.get(clip, "virality_score", 0) || 0)
-          end)
-          total / length(clips)
-      end
+      avg_score =
+        case result.clips do
+          [] ->
+            0
+
+          clips ->
+            total =
+              Enum.reduce(clips, 0, fn clip, acc ->
+                acc + (Map.get(clip, "virality_score", 0) || 0)
+              end)
+
+            total / length(clips)
+        end
 
       {result.clips, avg_score}
     end)

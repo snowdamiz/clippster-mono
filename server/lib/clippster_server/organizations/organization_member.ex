@@ -14,6 +14,7 @@ defmodule ClippsterServer.Organizations.OrganizationMember do
 
     belongs_to :organization, ClippsterServer.Organizations.Organization
     belongs_to :user, ClippsterServer.Accounts.User
+
     belongs_to :branding_profile, ClippsterServer.Organizations.OrganizationCreatorProfile,
       foreign_key: :branding_profile_id
 
@@ -54,7 +55,7 @@ defmodule ClippsterServer.Organizations.OrganizationMember do
 
   defp validate_not_demoting_owner(changeset) do
     current_role = get_field(changeset, :role)
-    
+
     # This validation would need the original role from the database
     # For now, we'll handle this at the context level
     if current_role != "owner" do
@@ -96,4 +97,3 @@ defmodule ClippsterServer.Organizations.OrganizationMember do
     |> foreign_key_constraint(:branding_profile_id)
   end
 end
-

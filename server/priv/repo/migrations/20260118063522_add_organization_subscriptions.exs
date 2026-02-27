@@ -46,7 +46,8 @@ defmodule ClippsterServer.Repo.Migrations.AddOrganizationSubscriptions do
     # Create organization_subscriptions table (history)
     create table(:organization_subscriptions) do
       add :organization_id, references(:organizations, on_delete: :delete_all), null: false
-      add :subscription_type, :string, null: false  # "base" or "addon"
+      # "base" or "addon"
+      add :subscription_type, :string, null: false
       add :tier, :string, null: false
       add :status, :string, null: false
       add :start_date, :utc_datetime, null: false

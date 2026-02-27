@@ -29,7 +29,9 @@ defmodule ClippsterServer.Organizations.SharedClipCleanupWorker do
     {:ok, count} = Organizations.cleanup_expired_shared_clips()
     Logger.info("[SharedClipCleanupWorker] Cleanup complete. Deleted #{count} expired clips.")
     schedule_next_cleanup()
-    {:noreply, %{state | last_cleanup: DateTime.utc_now(), clips_deleted: state.clips_deleted + count}}
+
+    {:noreply,
+     %{state | last_cleanup: DateTime.utc_now(), clips_deleted: state.clips_deleted + count}}
   end
 
   @impl true

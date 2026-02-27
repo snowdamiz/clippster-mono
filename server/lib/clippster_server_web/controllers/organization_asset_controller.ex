@@ -80,7 +80,11 @@ defmodule ClippsterServerWeb.OrganizationAssetController do
       is_nil(asset_type) or not Organizations.OrganizationAsset.valid_asset_type?(asset_type) ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: "Invalid asset_type. Must be one of: intro, outro, watermark, audio, image, overlay"})
+        |> json(%{
+          success: false,
+          error:
+            "Invalid asset_type. Must be one of: intro, outro, watermark, audio, image, overlay"
+        })
 
       # Check if R2 is configured
       not Storage.configured?() ->
@@ -96,8 +100,9 @@ defmodule ClippsterServerWeb.OrganizationAssetController do
 
       # All validations passed, process the upload
       true ->
-        %Plug.Upload{path: temp_path, filename: filename, content_type: content_type} = params["file"]
-        
+        %Plug.Upload{path: temp_path, filename: filename, content_type: content_type} =
+          params["file"]
+
         case File.read(temp_path) do
           {:ok, file_binary} ->
             # Get custom name or use filename
@@ -112,16 +117,26 @@ defmodule ClippsterServerWeb.OrganizationAssetController do
             ]
 
             # Handle thumbnail if provided
-            opts = case params["thumbnail"] do
-              %Plug.Upload{path: thumb_path} ->
-                case File.read(thumb_path) do
-                  {:ok, thumb_binary} -> Keyword.put(opts, :thumbnail_binary, thumb_binary)
-                  _ -> opts
-                end
-              _ -> opts
-            end
+            opts =
+              case params["thumbnail"] do
+                %Plug.Upload{path: thumb_path} ->
+                  case File.read(thumb_path) do
+                    {:ok, thumb_binary} -> Keyword.put(opts, :thumbnail_binary, thumb_binary)
+                    _ -> opts
+                  end
 
-            case Organizations.create_organization_asset(org_id, user.id, asset_type, file_binary, name, opts) do
+                _ ->
+                  opts
+              end
+
+            case Organizations.create_organization_asset(
+                   org_id,
+                   user.id,
+                   asset_type,
+                   file_binary,
+                   name,
+                   opts
+                 ) do
               {:ok, asset} ->
                 conn
                 |> put_status(201)
@@ -220,16 +235,17 @@ defmodule ClippsterServerWeb.OrganizationAssetController do
   """
   def user_assets(conn, _params) do
     user = conn.assigns.current_user
-    
+
     org_assets = Organizations.get_assets_for_user_organizations(user.id)
 
     # Transform to list format with org info
-    assets_list = Enum.flat_map(org_assets, fn {_org_id, %{organization: org, assets: assets}} ->
-      Enum.map(assets, fn asset ->
-        serialize_asset(asset)
-        |> Map.put(:organization_name, org.name)
+    assets_list =
+      Enum.flat_map(org_assets, fn {_org_id, %{organization: org, assets: assets}} ->
+        Enum.map(assets, fn asset ->
+          serialize_asset(asset)
+          |> Map.put(:organization_name, org.name)
+        end)
       end)
-    end)
 
     json(conn, %{
       success: true,
@@ -242,8 +258,10 @@ defmodule ClippsterServerWeb.OrganizationAssetController do
   defp serialize_asset(asset) do
     # Generate presigned URLs for private bucket access (1 hour expiry)
     presigned_url = if asset.url, do: Storage.presigned_url!(asset.url), else: nil
-    presigned_thumbnail_url = if asset.thumbnail_url, do: Storage.presigned_url!(asset.thumbnail_url), else: nil
-    
+
+    presigned_thumbnail_url =
+      if asset.thumbnail_url, do: Storage.presigned_url!(asset.thumbnail_url), else: nil
+
     %{
       id: asset.id,
       organization_id: asset.organization_id,
@@ -285,21 +303,24 @@ defmodule ClippsterServerWeb.OrganizationAssetController do
   end
 
   defp parse_decimal(nil), do: nil
+
   defp parse_decimal(value) when is_binary(value) do
     case Decimal.parse(value) do
       {decimal, _} -> decimal
       :error -> nil
     end
   end
+
   defp parse_decimal(value) when is_number(value), do: Decimal.from_float(value / 1)
 
   defp parse_integer(nil), do: nil
+
   defp parse_integer(value) when is_binary(value) do
     case Integer.parse(value) do
       {int, _} -> int
       :error -> nil
     end
   end
+
   defp parse_integer(value) when is_integer(value), do: value
 end
-

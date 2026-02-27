@@ -66,4 +66,3 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorPlatformLink do
   def valid_platform?(platform) when is_binary(platform), do: platform in @platforms
   def valid_platform?(_), do: false
 end
-

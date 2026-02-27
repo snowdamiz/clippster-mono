@@ -21,12 +21,31 @@ defmodule ClippsterServer.AI.VideoComposer do
   Non-streaming generation (backwards-compatible). Returns {:ok, composition} or {:error, reason}.
   Internally uses scene-by-scene generation but collects all results before returning.
   """
-  def generate(prompt, media, style, target_duration, aspect_ratio, user, existing_composition \\ nil, extra_options \\ %{}) do
+  def generate(
+        prompt,
+        media,
+        style,
+        target_duration,
+        aspect_ratio,
+        user,
+        existing_composition \\ nil,
+        extra_options \\ %{}
+      ) do
     Logger.info("Generating AI video composition for user #{user.id}")
 
-    ctx = build_generation_context(prompt, media, style, target_duration, aspect_ratio, existing_composition, extra_options)
+    ctx =
+      build_generation_context(
+        prompt,
+        media,
+        style,
+        target_duration,
+        aspect_ratio,
+        existing_composition,
+        extra_options
+      )
 
     api_key = System.get_env("OPENROUTER_API_KEY")
+
     if is_nil(api_key) do
       {:error, "OPENROUTER_API_KEY not configured"}
     else
@@ -44,24 +63,63 @@ defmodule ClippsterServer.AI.VideoComposer do
   `send_fn` is called with a map: %{event: "...", data: %{...}}
   Events: "plan" (scene plan), "scene" (each scene's tracks), "complete" (final composition), "error"
   """
-  def generate_streamed(prompt, media, style, target_duration, aspect_ratio, user, send_fn, existing_composition \\ nil, extra_options \\ %{}) do
+  def generate_streamed(
+        prompt,
+        media,
+        style,
+        target_duration,
+        aspect_ratio,
+        user,
+        send_fn,
+        existing_composition \\ nil,
+        extra_options \\ %{}
+      ) do
     Logger.info("Generating AI video composition (streamed) for user #{user.id}")
 
-    ctx = build_generation_context(prompt, media, style, target_duration, aspect_ratio, existing_composition, extra_options)
+    ctx =
+      build_generation_context(
+        prompt,
+        media,
+        style,
+        target_duration,
+        aspect_ratio,
+        existing_composition,
+        extra_options
+      )
 
     api_key = System.get_env("OPENROUTER_API_KEY")
+
     if is_nil(api_key) do
       send_fn.(%{event: "error", data: %{message: "OPENROUTER_API_KEY not configured"}})
       {:error, "OPENROUTER_API_KEY not configured"}
     else
       if existing_composition do
         # Single-shot for modifications
-        send_fn.(%{event: "plan", data: %{scenes: [%{index: 0, description: "Modifying existing composition", startTime: 0, endTime: ctx.duration}], total: 1}})
+        send_fn.(%{
+          event: "plan",
+          data: %{
+            scenes: [
+              %{
+                index: 0,
+                description: "Modifying existing composition",
+                startTime: 0,
+                endTime: ctx.duration
+              }
+            ],
+            total: 1
+          }
+        })
+
         case generate_single_shot(ctx, api_key) do
           {:ok, composition} ->
-            send_fn.(%{event: "scene", data: %{index: 0, total: 1, tracks: Map.get(composition, "tracks", [])}})
+            send_fn.(%{
+              event: "scene",
+              data: %{index: 0, total: 1, tracks: Map.get(composition, "tracks", [])}
+            })
+
             send_fn.(%{event: "complete", data: %{composition: composition}})
             {:ok, composition}
+
           {:error, reason} ->
             send_fn.(%{event: "error", data: %{message: reason}})
             {:error, reason}
@@ -90,24 +148,33 @@ defmodule ClippsterServer.AI.VideoComposer do
 
         # Phase 2: Generate OVERLAY tracks for each scene (text, camera, effects, transitions)
         # Track what was used in previous scenes to enforce diversity
-        all_overlay_tracks = Enum.reduce_while(scenes, {:ok, [], %{templates: [], camera_types: [], transition_types: []}}, fn scene, {:ok, acc, diversity_tracker} ->
-          case generate_scene_overlay_tracks(ctx, scene, scenes, api_key, diversity_tracker) do
-            {:ok, tracks} -> 
-              # Update diversity tracker with what was used in this scene
-              new_tracker = update_diversity_tracker(diversity_tracker, tracks)
-              {:cont, {:ok, acc ++ tracks, new_tracker}}
-            {:error, reason} -> {:halt, {:error, reason}}
+        all_overlay_tracks =
+          Enum.reduce_while(
+            scenes,
+            {:ok, [], %{templates: [], camera_types: [], transition_types: []}},
+            fn scene, {:ok, acc, diversity_tracker} ->
+              case generate_scene_overlay_tracks(ctx, scene, scenes, api_key, diversity_tracker) do
+                {:ok, tracks} ->
+                  # Update diversity tracker with what was used in this scene
+                  new_tracker = update_diversity_tracker(diversity_tracker, tracks)
+                  {:cont, {:ok, acc ++ tracks, new_tracker}}
+
+                {:error, reason} ->
+                  {:halt, {:error, reason}}
+              end
+            end
+          )
+          |> case do
+            {:ok, tracks, _tracker} -> {:ok, tracks}
+            error -> error
           end
-        end)
-        |> case do
-          {:ok, tracks, _tracker} -> {:ok, tracks}
-          error -> error
-        end
 
         case all_overlay_tracks do
           {:ok, overlay_tracks} ->
             # Phase 3: Merge base media + ambient + overlay tracks into final composition
-            {:ok, build_final_composition(ctx, base_media_tracks ++ ambient_tracks ++ overlay_tracks)}
+            {:ok,
+             build_final_composition(ctx, base_media_tracks ++ ambient_tracks ++ overlay_tracks)}
+
           {:error, reason} ->
             {:error, reason}
         end
@@ -132,28 +199,50 @@ defmodule ClippsterServer.AI.VideoComposer do
 
         # Phase 2: Generate OVERLAY tracks for each scene, streaming progress
         # Track what was used in previous scenes to enforce diversity
-        result = Enum.reduce_while(Enum.with_index(scenes), {:ok, [], %{templates: [], camera_types: [], transition_types: []}}, fn {scene, idx}, {:ok, acc, diversity_tracker} ->
-          case generate_scene_overlay_tracks(ctx, scene, scenes, api_key, diversity_tracker) do
-            {:ok, tracks} ->
-              send_fn.(%{event: "scene", data: %{index: idx, total: length(scenes), tracks: tracks, description: Map.get(scene, "description", "Scene #{idx + 1}")}})
-              # Update diversity tracker with what was used in this scene
-              new_tracker = update_diversity_tracker(diversity_tracker, tracks)
-              {:cont, {:ok, acc ++ tracks, new_tracker}}
-            {:error, reason} ->
-              send_fn.(%{event: "error", data: %{message: "Scene #{idx + 1} failed: #{reason}"}})
-              {:halt, {:error, reason}}
+        result =
+          Enum.reduce_while(
+            Enum.with_index(scenes),
+            {:ok, [], %{templates: [], camera_types: [], transition_types: []}},
+            fn {scene, idx}, {:ok, acc, diversity_tracker} ->
+              case generate_scene_overlay_tracks(ctx, scene, scenes, api_key, diversity_tracker) do
+                {:ok, tracks} ->
+                  send_fn.(%{
+                    event: "scene",
+                    data: %{
+                      index: idx,
+                      total: length(scenes),
+                      tracks: tracks,
+                      description: Map.get(scene, "description", "Scene #{idx + 1}")
+                    }
+                  })
+
+                  # Update diversity tracker with what was used in this scene
+                  new_tracker = update_diversity_tracker(diversity_tracker, tracks)
+                  {:cont, {:ok, acc ++ tracks, new_tracker}}
+
+                {:error, reason} ->
+                  send_fn.(%{
+                    event: "error",
+                    data: %{message: "Scene #{idx + 1} failed: #{reason}"}
+                  })
+
+                  {:halt, {:error, reason}}
+              end
+            end
+          )
+          |> case do
+            {:ok, tracks, _tracker} -> {:ok, tracks}
+            error -> error
           end
-        end)
-        |> case do
-          {:ok, tracks, _tracker} -> {:ok, tracks}
-          error -> error
-        end
 
         case result do
           {:ok, overlay_tracks} ->
-            composition = build_final_composition(ctx, base_media_tracks ++ ambient_tracks ++ overlay_tracks)
+            composition =
+              build_final_composition(ctx, base_media_tracks ++ ambient_tracks ++ overlay_tracks)
+
             send_fn.(%{event: "complete", data: %{composition: composition}})
             {:ok, composition}
+
           {:error, reason} ->
             {:error, reason}
         end
@@ -172,7 +261,10 @@ defmodule ClippsterServer.AI.VideoComposer do
     # First, check if the discovery conversation produced a user-approved scene plan
     case extract_discovery_scenes(ctx) do
       {:ok, scenes} ->
-        Logger.info("[VideoComposer] Using user-approved discovery scene plan (#{length(scenes)} scenes)")
+        Logger.info(
+          "[VideoComposer] Using user-approved discovery scene plan (#{length(scenes)} scenes)"
+        )
+
         {:ok, scenes}
 
       :none ->
@@ -189,43 +281,48 @@ defmodule ClippsterServer.AI.VideoComposer do
           {:ok, scenes} when is_list(scenes) and length(scenes) > 0 ->
             media_items = ctx.media || []
 
-            converted = scenes
-            |> Enum.with_index()
-            |> Enum.reduce({[], 0}, fn {scene, idx}, {acc, cumulative_start} ->
-              duration = Map.get(scene, "duration", 5)
-              start_time = cumulative_start
-              end_time = cumulative_start + duration
+            converted =
+              scenes
+              |> Enum.with_index()
+              |> Enum.reduce({[], 0}, fn {scene, idx}, {acc, cumulative_start} ->
+                duration = Map.get(scene, "duration", 5)
+                start_time = cumulative_start
+                end_time = cumulative_start + duration
 
-              # Map mediaNames to mediaPaths by matching against uploaded media filenames
-              media_names = Map.get(scene, "mediaNames", [])
-              media_paths = Enum.flat_map(media_names, fn name ->
-                case Enum.find(media_items, fn item ->
-                  item_name = Map.get(item, "name", "")
-                  String.downcase(item_name) == String.downcase(name)
-                end) do
-                  nil -> []
-                  item ->
-                    path = get_media_path(item)
-                    if path, do: [path], else: []
-                end
+                # Map mediaNames to mediaPaths by matching against uploaded media filenames
+                media_names = Map.get(scene, "mediaNames", [])
+
+                media_paths =
+                  Enum.flat_map(media_names, fn name ->
+                    case Enum.find(media_items, fn item ->
+                           item_name = Map.get(item, "name", "")
+                           String.downcase(item_name) == String.downcase(name)
+                         end) do
+                      nil ->
+                        []
+
+                      item ->
+                        path = get_media_path(item)
+                        if path, do: [path], else: []
+                    end
+                  end)
+
+                converted_scene = %{
+                  "index" => idx,
+                  "description" => Map.get(scene, "description", "Scene #{idx + 1}"),
+                  "startTime" => start_time,
+                  "endTime" => end_time,
+                  "mediaPaths" => media_paths,
+                  "transcriptSegment" => "",
+                  "audioPeaks" => [],
+                  "mood" => Map.get(scene, "mood", "auto"),
+                  "textOverlay" => Map.get(scene, "textOverlay"),
+                  "effects" => Map.get(scene, "effects")
+                }
+
+                {acc ++ [converted_scene], end_time}
               end)
-
-              converted_scene = %{
-                "index" => idx,
-                "description" => Map.get(scene, "description", "Scene #{idx + 1}"),
-                "startTime" => start_time,
-                "endTime" => end_time,
-                "mediaPaths" => media_paths,
-                "transcriptSegment" => "",
-                "audioPeaks" => [],
-                "mood" => Map.get(scene, "mood", "auto"),
-                "textOverlay" => Map.get(scene, "textOverlay"),
-                "effects" => Map.get(scene, "effects")
-              }
-
-              {acc ++ [converted_scene], end_time}
-            end)
-            |> elem(0)
+              |> elem(0)
 
             {:ok, converted}
 
@@ -241,19 +338,26 @@ defmodule ClippsterServer.AI.VideoComposer do
   defp plan_scenes_with_ai(ctx, api_key) do
     # Count media types to guide scene planning
     media_items = ctx.media || []
-    image_count = Enum.count(media_items, fn item -> Map.get(item, "type") in ["image", "screenshot"] end)
+
+    image_count =
+      Enum.count(media_items, fn item -> Map.get(item, "type") in ["image", "screenshot"] end)
+
     video_count = Enum.count(media_items, fn item -> Map.get(item, "type") == "video" end)
-    
-    media_type_hint = cond do
-      image_count > 0 && video_count == 0 ->
-        "CRITICAL: This is an IMAGE SLIDESHOW with #{image_count} images. You MUST create #{image_count} scenes (one per image). Each scene should use a DIFFERENT image from the media list. Assign mediaPaths for EVERY scene."
-      image_count > 0 && video_count > 0 ->
-        "CRITICAL: Mix of #{video_count} videos and #{image_count} images. Ensure ALL #{image_count} images are used across scenes. Assign mediaPaths for EVERY scene."
-      video_count > 0 ->
-        "Video content with #{video_count} videos. Break into scenes based on content/transcript. Assign mediaPaths for EVERY scene."
-      true ->
-        "Assign mediaPaths for EVERY scene using the exact paths from the media list."
-    end
+
+    media_type_hint =
+      cond do
+        image_count > 0 && video_count == 0 ->
+          "CRITICAL: This is an IMAGE SLIDESHOW with #{image_count} images. You MUST create #{image_count} scenes (one per image). Each scene should use a DIFFERENT image from the media list. Assign mediaPaths for EVERY scene."
+
+        image_count > 0 && video_count > 0 ->
+          "CRITICAL: Mix of #{video_count} videos and #{image_count} images. Ensure ALL #{image_count} images are used across scenes. Assign mediaPaths for EVERY scene."
+
+        video_count > 0 ->
+          "Video content with #{video_count} videos. Break into scenes based on content/transcript. Assign mediaPaths for EVERY scene."
+
+        true ->
+          "Assign mediaPaths for EVERY scene using the exact paths from the media list."
+      end
 
     system_prompt = """
     You are a professional video editor planning scenes for a composition.
@@ -316,6 +420,7 @@ defmodule ClippsterServer.AI.VideoComposer do
     case call_openrouter(system_prompt, user_prompt, api_key, max_tokens: 4096) do
       {:ok, content} ->
         parse_scenes_response(content, ctx)
+
       {:error, reason} ->
         {:error, "Scene planning failed: #{reason}"}
     end
@@ -328,15 +433,28 @@ defmodule ClippsterServer.AI.VideoComposer do
     case Jason.decode(cleaned) do
       {:ok, scenes} when is_list(scenes) ->
         # Validate and fix scene timing
-        scenes = scenes
-        |> Enum.with_index()
-        |> Enum.map(fn {scene, idx} ->
-          Map.merge(scene, %{"index" => idx})
-        end)
+        scenes =
+          scenes
+          |> Enum.with_index()
+          |> Enum.map(fn {scene, idx} ->
+            Map.merge(scene, %{"index" => idx})
+          end)
 
         if length(scenes) == 0 do
           # Fallback: single scene covering entire duration
-          {:ok, [%{"index" => 0, "description" => "Full video", "startTime" => 0, "endTime" => ctx.duration, "mediaPaths" => [], "transcriptSegment" => "", "audioPeaks" => [], "mood" => "auto"}]}
+          {:ok,
+           [
+             %{
+               "index" => 0,
+               "description" => "Full video",
+               "startTime" => 0,
+               "endTime" => ctx.duration,
+               "mediaPaths" => [],
+               "transcriptSegment" => "",
+               "audioPeaks" => [],
+               "mood" => "auto"
+             }
+           ]}
         else
           {:ok, scenes}
         end
@@ -348,7 +466,19 @@ defmodule ClippsterServer.AI.VideoComposer do
         Logger.error("[VideoComposer] Failed to parse scene plan: #{inspect(reason)}")
         Logger.error("[VideoComposer] Raw content: #{String.slice(content, 0, 1000)}")
         # Fallback: single scene
-        {:ok, [%{"index" => 0, "description" => "Full video", "startTime" => 0, "endTime" => ctx.duration, "mediaPaths" => [], "transcriptSegment" => "", "audioPeaks" => [], "mood" => "auto"}]}
+        {:ok,
+         [
+           %{
+             "index" => 0,
+             "description" => "Full video",
+             "startTime" => 0,
+             "endTime" => ctx.duration,
+             "mediaPaths" => [],
+             "transcriptSegment" => "",
+             "audioPeaks" => [],
+             "mood" => "auto"
+           }
+         ]}
     end
   end
 
@@ -361,17 +491,19 @@ defmodule ClippsterServer.AI.VideoComposer do
     media_items = ctx.media || []
 
     # Check if ANY scene has mediaPaths assigned by the AI planner
-    has_explicit_assignments = Enum.any?(scenes, fn scene ->
-      media_paths = Map.get(scene, "mediaPaths", [])
-      is_list(media_paths) && length(media_paths) > 0
-    end)
+    has_explicit_assignments =
+      Enum.any?(scenes, fn scene ->
+        media_paths = Map.get(scene, "mediaPaths", [])
+        is_list(media_paths) && length(media_paths) > 0
+      end)
 
     # If NO scenes have explicit assignments, distribute ALL media across scenes intelligently
-    scenes_with_media = if has_explicit_assignments do
-      scenes
-    else
-      distribute_media_across_scenes(scenes, media_items)
-    end
+    scenes_with_media =
+      if has_explicit_assignments do
+        scenes
+      else
+        distribute_media_across_scenes(scenes, media_items)
+      end
 
     # For each scene, create a video/image track for its media
     scenes_with_media
@@ -382,22 +514,23 @@ defmodule ClippsterServer.AI.VideoComposer do
       media_paths = Map.get(scene, "mediaPaths", [])
 
       # Use assigned media paths
-      paths = if is_list(media_paths) && length(media_paths) > 0 do
-        media_paths
-      else
-        []
-      end
+      paths =
+        if is_list(media_paths) && length(media_paths) > 0 do
+          media_paths
+        else
+          []
+        end
 
       paths
       |> Enum.with_index()
       |> Enum.map(fn {path, media_idx} ->
         media_type = detect_media_type(path, media_items)
-        
+
         # Add a default slow zoom or pan for variety (static video is boring)
         motion_types = ["slowZoom", "dollyPan"]
         motion_type = Enum.random(motion_types)
         motion_dir = Enum.random(["in", "out", "left", "right"])
-        
+
         %{
           "id" => "s#{scene_index}-#{media_type}-#{media_idx}",
           "type" => media_type,
@@ -409,7 +542,8 @@ defmodule ClippsterServer.AI.VideoComposer do
           "properties" => %{
             "x" => 50,
             "y" => 50,
-            "scale" => 0.9, # Leave room for borders
+            # Leave room for borders
+            "scale" => 0.9,
             "opacity" => 1,
             "effects" => [
               %{
@@ -432,9 +566,10 @@ defmodule ClippsterServer.AI.VideoComposer do
       scenes
     else
       # Get all media paths
-      all_media_paths = media_items
-      |> Enum.map(&get_media_path/1)
-      |> Enum.filter(&(&1 != nil))
+      all_media_paths =
+        media_items
+        |> Enum.map(&get_media_path/1)
+        |> Enum.filter(&(&1 != nil))
 
       if length(all_media_paths) == 0 do
         scenes
@@ -449,7 +584,7 @@ defmodule ClippsterServer.AI.VideoComposer do
           # For image slideshows: one image per scene, cycling through all images
           media_idx = rem(idx, length(all_media_paths))
           assigned_path = Enum.at(all_media_paths, media_idx)
-          
+
           Map.put(scene, "mediaPaths", [assigned_path])
         end)
       end
@@ -463,7 +598,7 @@ defmodule ClippsterServer.AI.VideoComposer do
 
     Enum.flat_map(Enum.with_index(scenes), fn {scene, idx} ->
       scene_start = Map.get(scene, "startTime", 0)
-      scene_end   = Map.get(scene, "endTime", scene_start + 5)
+      scene_end = Map.get(scene, "endTime", scene_start + 5)
 
       [
         # Mesh gradient background on layer 15 (rich animated gradient, cinematic depth)
@@ -508,26 +643,39 @@ defmodule ClippsterServer.AI.VideoComposer do
     case get_in(media_item, ["source", "path"]) do
       nil ->
         Map.get(media_item, "path") || Map.get(media_item, "filePath")
-      path -> path
+
+      path ->
+        path
     end
   end
+
   defp get_media_path(_), do: nil
 
   defp detect_media_type(path, media_items) when is_binary(path) do
     # Check if any media item with this path has a type
-    found = Enum.find(media_items, fn item ->
-      get_media_path(item) == path
-    end)
+    found =
+      Enum.find(media_items, fn item ->
+        get_media_path(item) == path
+      end)
 
     cond do
       found && Map.get(found, "type") in ["video", "image", "audio"] ->
         Map.get(found, "type")
-      String.match?(path, ~r/\.(mp4|mov|avi|webm|mkv)$/i) -> "video"
-      String.match?(path, ~r/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) -> "image"
-      String.match?(path, ~r/\.(mp3|wav|ogg|aac|flac)$/i) -> "audio"
-      true -> "video"
+
+      String.match?(path, ~r/\.(mp4|mov|avi|webm|mkv)$/i) ->
+        "video"
+
+      String.match?(path, ~r/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) ->
+        "image"
+
+      String.match?(path, ~r/\.(mp3|wav|ogg|aac|flac)$/i) ->
+        "audio"
+
+      true ->
+        "video"
     end
   end
+
   defp detect_media_type(_, _), do: "video"
 
   # ---------------------------------------------------------------------------
@@ -536,35 +684,41 @@ defmodule ClippsterServer.AI.VideoComposer do
 
   # Track what templates/effects were used in previous scenes to enforce variety
   defp update_diversity_tracker(tracker, tracks) do
-    templates = Enum.flat_map(tracks, fn track ->
-      case get_in(track, ["properties", "motionGraphic", "templateId"]) do
-        nil -> []
-        template -> [template]
-      end
-    end)
-    
-    camera_types = Enum.flat_map(tracks, fn track ->
-      if Map.get(track, "type") == "cameraMotion" do
-        get_in(track, ["properties", "effects"]) || []
-        |> Enum.map(&Map.get(&1, "type"))
-        |> Enum.filter(&(&1 != nil))
-      else
-        []
-      end
-    end)
-    
-    transition_types = Enum.flat_map(tracks, fn track ->
-      if Map.get(track, "type") == "transition" do
-        get_in(track, ["properties", "transitions"]) || []
-        |> Enum.map(&Map.get(&1, "type"))
-        |> Enum.filter(&(&1 != nil))
-      else
-        []
-      end
-    end)
-    
+    templates =
+      Enum.flat_map(tracks, fn track ->
+        case get_in(track, ["properties", "motionGraphic", "templateId"]) do
+          nil -> []
+          template -> [template]
+        end
+      end)
+
+    camera_types =
+      Enum.flat_map(tracks, fn track ->
+        if Map.get(track, "type") == "cameraMotion" do
+          get_in(track, ["properties", "effects"]) ||
+            []
+            |> Enum.map(&Map.get(&1, "type"))
+            |> Enum.filter(&(&1 != nil))
+        else
+          []
+        end
+      end)
+
+    transition_types =
+      Enum.flat_map(tracks, fn track ->
+        if Map.get(track, "type") == "transition" do
+          get_in(track, ["properties", "transitions"]) ||
+            []
+            |> Enum.map(&Map.get(&1, "type"))
+            |> Enum.filter(&(&1 != nil))
+        else
+          []
+        end
+      end)
+
     %{
-      templates: (tracker.templates ++ templates) |> Enum.take(-10),  # Keep last 10
+      # Keep last 10
+      templates: (tracker.templates ++ templates) |> Enum.take(-10),
       camera_types: (tracker.camera_types ++ camera_types) |> Enum.take(-10),
       transition_types: (tracker.transition_types ++ transition_types) |> Enum.take(-10)
     }
@@ -581,74 +735,86 @@ defmodule ClippsterServer.AI.VideoComposer do
     text_overlay = Map.get(scene, "textOverlay")
     discovery_effects = Map.get(scene, "effects")
 
-    scene_context = all_scenes
-    |> Enum.map(fn s ->
-      idx = Map.get(s, "index", 0)
-      marker = if idx == scene_index, do: " ← CURRENT", else: ""
-      "  Scene #{idx + 1} (#{Map.get(s, "startTime", 0)}s-#{Map.get(s, "endTime", 0)}s): #{Map.get(s, "description", "")}#{marker}"
-    end)
-    |> Enum.join("\n")
-    
+    scene_context =
+      all_scenes
+      |> Enum.map(fn s ->
+        idx = Map.get(s, "index", 0)
+        marker = if idx == scene_index, do: " ← CURRENT", else: ""
+
+        "  Scene #{idx + 1} (#{Map.get(s, "startTime", 0)}s-#{Map.get(s, "endTime", 0)}s): #{Map.get(s, "description", "")}#{marker}"
+      end)
+      |> Enum.join("\n")
+
     # Build diversity enforcement context
-    diversity_context = if scene_index > 0 do
-      used_templates = diversity_tracker.templates |> Enum.uniq() |> Enum.join(", ")
-      used_camera = diversity_tracker.camera_types |> Enum.uniq() |> Enum.join(", ")
-      used_transitions = diversity_tracker.transition_types |> Enum.uniq() |> Enum.join(", ")
-      
-      """
-      ## DIVERSITY ENFORCEMENT (CRITICAL)
-      Previous scenes already used these — you MUST use DIFFERENT ones:
-      - Motion Graphics: #{if String.length(used_templates) > 0, do: used_templates, else: "none yet"}
-      - Camera Motions: #{if String.length(used_camera) > 0, do: used_camera, else: "none yet"}
-      - Transitions: #{if String.length(used_transitions) > 0, do: used_transitions, else: "none yet"}
-      
-      **MANDATORY**: Pick DIFFERENT templates/motions/transitions than the ones listed above. Never repeat the same effect twice in a row.
-      """
-    else
-      """
-      ## DIVERSITY ENFORCEMENT
-      This is the first scene. Choose varied templates/motions for visual interest.
-      """
-    end
+    diversity_context =
+      if scene_index > 0 do
+        used_templates = diversity_tracker.templates |> Enum.uniq() |> Enum.join(", ")
+        used_camera = diversity_tracker.camera_types |> Enum.uniq() |> Enum.join(", ")
+        used_transitions = diversity_tracker.transition_types |> Enum.uniq() |> Enum.join(", ")
+
+        """
+        ## DIVERSITY ENFORCEMENT (CRITICAL)
+        Previous scenes already used these — you MUST use DIFFERENT ones:
+        - Motion Graphics: #{if String.length(used_templates) > 0, do: used_templates, else: "none yet"}
+        - Camera Motions: #{if String.length(used_camera) > 0, do: used_camera, else: "none yet"}
+        - Transitions: #{if String.length(used_transitions) > 0, do: used_transitions, else: "none yet"}
+
+        **MANDATORY**: Pick DIFFERENT templates/motions/transitions than the ones listed above. Never repeat the same effect twice in a row.
+        """
+      else
+        """
+        ## DIVERSITY ENFORCEMENT
+        This is the first scene. Choose varied templates/motions for visual interest.
+        """
+      end
 
     system_prompt = build_scene_overlay_system_prompt(ctx)
 
-    peaks_context = if is_list(audio_peaks) && length(audio_peaks) > 0 do
-      peaks_str = Enum.map(audio_peaks, fn p ->
-        "#{Map.get(p, "time", 0)}s (amp: #{Map.get(p, "amplitude", 0)})"
-      end) |> Enum.join(", ")
-      "Audio peaks in this scene: #{peaks_str}"
-    else
-      ""
-    end
+    peaks_context =
+      if is_list(audio_peaks) && length(audio_peaks) > 0 do
+        peaks_str =
+          Enum.map(audio_peaks, fn p ->
+            "#{Map.get(p, "time", 0)}s (amp: #{Map.get(p, "amplitude", 0)})"
+          end)
+          |> Enum.join(", ")
+
+        "Audio peaks in this scene: #{peaks_str}"
+      else
+        ""
+      end
 
     # Build discovery hints from user-approved scene plan
-    discovery_hints = cond do
-      text_overlay && discovery_effects ->
-        """
-        ## USER-APPROVED HINTS (from discovery conversation)
-        The user approved this scene with these specific choices — follow them:
-        - Text overlay: "#{text_overlay}" — use this as the primary text/headline for this scene
-        - Effects: #{discovery_effects} — use these specific effect templates/types
-        """
-      text_overlay ->
-        """
-        ## USER-APPROVED HINTS (from discovery conversation)
-        The user approved this scene with this specific text:
-        - Text overlay: "#{text_overlay}" — use this as the primary text/headline for this scene
-        """
-      discovery_effects ->
-        """
-        ## USER-APPROVED HINTS (from discovery conversation)
-        The user approved this scene with these specific effects:
-        - Effects: #{discovery_effects} — use these specific effect templates/types
-        """
-      true -> ""
-    end
+    discovery_hints =
+      cond do
+        text_overlay && discovery_effects ->
+          """
+          ## USER-APPROVED HINTS (from discovery conversation)
+          The user approved this scene with these specific choices — follow them:
+          - Text overlay: "#{text_overlay}" — use this as the primary text/headline for this scene
+          - Effects: #{discovery_effects} — use these specific effect templates/types
+          """
+
+        text_overlay ->
+          """
+          ## USER-APPROVED HINTS (from discovery conversation)
+          The user approved this scene with this specific text:
+          - Text overlay: "#{text_overlay}" — use this as the primary text/headline for this scene
+          """
+
+        discovery_effects ->
+          """
+          ## USER-APPROVED HINTS (from discovery conversation)
+          The user approved this scene with these specific effects:
+          - Effects: #{discovery_effects} — use these specific effect templates/types
+          """
+
+        true ->
+          ""
+      end
 
     user_prompt = """
     Generate the OVERLAY tracks for Scene #{scene_index + 1} of the video.
-    
+
     #{diversity_context}
 
     ## Scene Details
@@ -702,12 +868,17 @@ defmodule ClippsterServer.AI.VideoComposer do
         case parse_scene_tracks_response(content) do
           {:ok, tracks} ->
             # Safety: filter out any video/image tracks the AI may have generated anyway
-            filtered = Enum.reject(tracks, fn t ->
-              Map.get(t, "type") in ["video", "image"]
-            end)
+            filtered =
+              Enum.reject(tracks, fn t ->
+                Map.get(t, "type") in ["video", "image"]
+              end)
+
             {:ok, filtered}
-          error -> error
+
+          error ->
+            error
         end
+
       {:error, reason} ->
         {:error, "Scene #{scene_index + 1} generation failed: #{reason}"}
     end
@@ -719,10 +890,12 @@ defmodule ClippsterServer.AI.VideoComposer do
     case Jason.decode(cleaned) do
       {:ok, %{"tracks" => tracks}} when is_list(tracks) ->
         {:ok, tracks}
+
       {:ok, result} ->
         # Maybe the AI returned just an array
         tracks = Map.get(result, "tracks", [])
         if is_list(tracks), do: {:ok, tracks}, else: {:ok, []}
+
       {:error, reason} ->
         Logger.error("[VideoComposer] Failed to parse scene tracks: #{inspect(reason)}")
         Logger.error("[VideoComposer] Raw content: #{String.slice(content, 0, 1000)}")
@@ -735,10 +908,12 @@ defmodule ClippsterServer.AI.VideoComposer do
   # ---------------------------------------------------------------------------
 
   defp build_final_composition(ctx, all_tracks) do
-    max_track_end = Enum.reduce(all_tracks, 0, fn track, acc ->
-      end_time = Map.get(track, "endTime", 0)
-      max(acc, end_time)
-    end)
+    max_track_end =
+      Enum.reduce(all_tracks, 0, fn track, acc ->
+        end_time = Map.get(track, "endTime", 0)
+        max(acc, end_time)
+      end)
+
     effective_duration = Enum.max([ctx.duration, max_track_end])
 
     %{
@@ -759,19 +934,21 @@ defmodule ClippsterServer.AI.VideoComposer do
   # ---------------------------------------------------------------------------
 
   defp generate_single_shot(ctx, api_key) do
-    system_prompt = build_system_prompt(ctx.media_context, ctx.duration, ctx.aspect_ratio, ctx.style)
+    system_prompt =
+      build_system_prompt(ctx.media_context, ctx.duration, ctx.aspect_ratio, ctx.style)
 
-    existing_context = if ctx.existing_composition do
-      """
+    existing_context =
+      if ctx.existing_composition do
+        """
 
-      EXISTING COMPOSITION TO MODIFY:
-      #{Jason.encode!(ctx.existing_composition, pretty: true)}
+        EXISTING COMPOSITION TO MODIFY:
+        #{Jason.encode!(ctx.existing_composition, pretty: true)}
 
-      IMPORTANT: Modify the existing composition based on the user's request. Keep existing tracks unless the user asks to remove or change them.
-      """
-    else
-      ""
-    end
+        IMPORTANT: Modify the existing composition based on the user's request. Keep existing tracks unless the user asks to remove or change them.
+        """
+      else
+        ""
+      end
 
     user_prompt = """
     Create a video composition based on this request:
@@ -792,6 +969,7 @@ defmodule ClippsterServer.AI.VideoComposer do
     case call_openrouter(system_prompt, user_prompt, api_key, max_tokens: 32768) do
       {:ok, content} ->
         parse_composition_response_from_content(content, ctx.width, ctx.height, ctx.duration)
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -828,39 +1006,62 @@ defmodule ClippsterServer.AI.VideoComposer do
     ]
 
     case HTTPoison.post(
-      @openrouter_url,
-      Jason.encode!(payload),
-      headers,
-      recv_timeout: 180_000
-    ) do
+           @openrouter_url,
+           Jason.encode!(payload),
+           headers,
+           recv_timeout: 180_000
+         ) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
           {:ok, response} ->
             content = get_in(response, ["choices", Access.at(0), "message", "content"])
             if content, do: {:ok, content}, else: {:error, "No content in response"}
+
           {:error, reason} ->
             {:error, "Failed to parse response: #{inspect(reason)}"}
         end
 
-      {:ok, %HTTPoison.Response{status_code: status, body: body}} when status in [429, 500, 502, 503, 529] ->
-        maybe_retry(system_prompt, user_prompt, api_key, opts, attempt, "API error #{status}: #{String.slice(body, 0, 200)}")
+      {:ok, %HTTPoison.Response{status_code: status, body: body}}
+      when status in [429, 500, 502, 503, 529] ->
+        maybe_retry(
+          system_prompt,
+          user_prompt,
+          api_key,
+          opts,
+          attempt,
+          "API error #{status}: #{String.slice(body, 0, 200)}"
+        )
 
       {:ok, %HTTPoison.Response{status_code: status, body: body}} ->
         {:error, "API error #{status}: #{body}"}
 
       {:error, %HTTPoison.Error{reason: reason}} ->
-        maybe_retry(system_prompt, user_prompt, api_key, opts, attempt, "Network error: #{inspect(reason)}")
+        maybe_retry(
+          system_prompt,
+          user_prompt,
+          api_key,
+          opts,
+          attempt,
+          "Network error: #{inspect(reason)}"
+        )
     end
   end
 
   defp maybe_retry(system_prompt, user_prompt, api_key, opts, attempt, error_msg) do
     if attempt < @max_retries do
       delay = :timer.seconds(attempt * 2)
-      Logger.warning("[VideoComposer] Attempt #{attempt}/#{@max_retries} failed: #{error_msg}. Retrying in #{div(delay, 1000)}s...")
+
+      Logger.warning(
+        "[VideoComposer] Attempt #{attempt}/#{@max_retries} failed: #{error_msg}. Retrying in #{div(delay, 1000)}s..."
+      )
+
       Process.sleep(delay)
       call_openrouter_with_retry(system_prompt, user_prompt, api_key, opts, attempt + 1)
     else
-      Logger.error("[VideoComposer] All #{@max_retries} attempts failed. Last error: #{error_msg}")
+      Logger.error(
+        "[VideoComposer] All #{@max_retries} attempts failed. Last error: #{error_msg}"
+      )
+
       {:error, error_msg}
     end
   end
@@ -869,7 +1070,15 @@ defmodule ClippsterServer.AI.VideoComposer do
   # Context builder
   # ---------------------------------------------------------------------------
 
-  defp build_generation_context(prompt, media, style, target_duration, aspect_ratio, existing_composition, extra_options) do
+  defp build_generation_context(
+         prompt,
+         media,
+         style,
+         target_duration,
+         aspect_ratio,
+         existing_composition,
+         extra_options
+       ) do
     media_context = build_media_context(media)
     {width, height} = get_dimensions(aspect_ratio || "16:9")
     duration = target_duration || calculate_duration(media)
@@ -902,6 +1111,7 @@ defmodule ClippsterServer.AI.VideoComposer do
   end
 
   defp build_reference_context(nil), do: ""
+
   defp build_reference_context(ref) when is_map(ref) do
     """
     ## REFERENCE STYLE PROFILE
@@ -911,9 +1121,11 @@ defmodule ClippsterServer.AI.VideoComposer do
     Use the exact color palette, similar motion types, matching typography style, and equivalent pacing.
     """
   end
+
   defp build_reference_context(_), do: ""
 
   defp build_media_analysis_context(nil), do: ""
+
   defp build_media_analysis_context(analysis) when is_list(analysis) and length(analysis) > 0 do
     """
     ## MEDIA CONTENT ANALYSIS
@@ -923,25 +1135,41 @@ defmodule ClippsterServer.AI.VideoComposer do
     Use this to order images intelligently, match effects to content, and use dominant colors.
     """
   end
+
   defp build_media_analysis_context(_), do: ""
 
   defp build_intensity_context(intensity) do
     if intensity do
-      intensity_val = cond do
-        is_binary(intensity) ->
-          case Float.parse(intensity) do
-            {val, _} -> val
-            :error -> 0.5
-          end
-        is_number(intensity) -> intensity / 1
-        true -> 0.5
-      end
+      intensity_val =
+        cond do
+          is_binary(intensity) ->
+            case Float.parse(intensity) do
+              {val, _} -> val
+              :error -> 0.5
+            end
+
+          is_number(intensity) ->
+            intensity / 1
+
+          true ->
+            0.5
+        end
+
       cond do
-        intensity_val <= 0.2 -> "INTENSITY: Very subtle. Use minimal effects (1-3 total), no shake, gentle zooms only."
-        intensity_val <= 0.4 -> "INTENSITY: Subtle. Use few effects (3-5 total), light camera motion, clean aesthetic."
-        intensity_val <= 0.6 -> "INTENSITY: Moderate. Use balanced effects (5-8 total), standard camera motion."
-        intensity_val <= 0.8 -> "INTENSITY: High energy. Use many effects (8-12 total), dynamic camera, bold styling."
-        true -> "INTENSITY: Maximum. Use heavy effects (12-20 total), aggressive camera motion, explosive impacts."
+        intensity_val <= 0.2 ->
+          "INTENSITY: Very subtle. Use minimal effects (1-3 total), no shake, gentle zooms only."
+
+        intensity_val <= 0.4 ->
+          "INTENSITY: Subtle. Use few effects (3-5 total), light camera motion, clean aesthetic."
+
+        intensity_val <= 0.6 ->
+          "INTENSITY: Moderate. Use balanced effects (5-8 total), standard camera motion."
+
+        intensity_val <= 0.8 ->
+          "INTENSITY: High energy. Use many effects (8-12 total), dynamic camera, bold styling."
+
+        true ->
+          "INTENSITY: Maximum. Use heavy effects (12-20 total), aggressive camera motion, explosive impacts."
       end
     else
       ""
@@ -950,12 +1178,23 @@ defmodule ClippsterServer.AI.VideoComposer do
 
   defp build_caption_context(caption_style) do
     case caption_style do
-      "bold_tiktok" -> "CAPTION STYLE: Bold TikTok — fontSize 64, fontWeight 900, white (#FFFFFF), black stroke width 6, animation fade 0.3s"
-      "clean_subtitle" -> "CAPTION STYLE: Clean Subtitle — fontSize 42, fontWeight 500, white (#FFFFFF), semi-transparent black background, no stroke"
-      "neon_glow" -> "CAPTION STYLE: Neon Glow — fontSize 56, fontWeight 700, cyan (#00FFFF), text-shadow glow effect, no stroke"
-      "minimal" -> "CAPTION STYLE: Minimal — fontSize 36, fontWeight 400, light gray (#CCCCCC), no stroke, no background, letter-spacing 1px"
-      "none" -> "CAPTION STYLE: No captions. Do NOT add any text tracks."
-      _ -> ""
+      "bold_tiktok" ->
+        "CAPTION STYLE: Bold TikTok — fontSize 64, fontWeight 900, white (#FFFFFF), black stroke width 6, animation fade 0.3s"
+
+      "clean_subtitle" ->
+        "CAPTION STYLE: Clean Subtitle — fontSize 42, fontWeight 500, white (#FFFFFF), semi-transparent black background, no stroke"
+
+      "neon_glow" ->
+        "CAPTION STYLE: Neon Glow — fontSize 56, fontWeight 700, cyan (#00FFFF), text-shadow glow effect, no stroke"
+
+      "minimal" ->
+        "CAPTION STYLE: Minimal — fontSize 36, fontWeight 400, light gray (#CCCCCC), no stroke, no background, letter-spacing 1px"
+
+      "none" ->
+        "CAPTION STYLE: No captions. Do NOT add any text tracks."
+
+      _ ->
+        ""
     end
   end
 
@@ -971,7 +1210,7 @@ defmodule ClippsterServer.AI.VideoComposer do
       transcript = Map.get(item, "transcript")
       _waveform = Map.get(item, "waveform")
       audio_peaks = Map.get(item, "audioPeaks")
-      
+
       # Get the actual file path from source
       source = Map.get(item, "source", %{})
       path = Map.get(source, "path", "")
@@ -983,57 +1222,101 @@ defmodule ClippsterServer.AI.VideoComposer do
       ]
 
       info = if duration, do: info ++ ["Duration: #{Float.round(duration / 1, 2)}s"], else: info
-      info = if dimensions do
-        info ++ ["Size: #{dimensions["width"]}x#{dimensions["height"]}"]
-      else
-        info
-      end
-      
-      # Add transcript with word-level analysis if available
-      info = if transcript && is_binary(transcript) && String.length(transcript) > 0 do
-        # Analyze transcript for excitement markers
-        excitement_words = ["boom", "wow", "omg", "holy", "shit", "fuck", "insane", "crazy", "wild", "huge", "massive", "no way", "what", "yes", "let's go"]
-        celebration_words = ["win", "won", "hit", "got it", "there it is", "nice", "good", "great", "perfect"]
-        
-        transcript_lower = String.downcase(transcript)
-        found_excitement = Enum.filter(excitement_words, fn word -> String.contains?(transcript_lower, word) end)
-        found_celebration = Enum.filter(celebration_words, fn word -> String.contains?(transcript_lower, word) end)
-        
-        excitement_markers = if length(found_excitement) > 0 or length(found_celebration) > 0 do
-          Logger.info("[VideoComposer] EXCITEMENT WORDS DETECTED: #{Enum.join(found_excitement ++ found_celebration, ", ")}")
-          " | EXCITEMENT WORDS DETECTED (PLACE EFFECTS WHEN THESE ARE SPOKEN): #{Enum.join(found_excitement ++ found_celebration, ", ")}"
+
+      info =
+        if dimensions do
+          info ++ ["Size: #{dimensions["width"]}x#{dimensions["height"]}"]
         else
-          ""
+          info
         end
-        
-        info ++ ["Transcript: #{transcript}#{excitement_markers}"]
-      else
-        info
-      end
-      
+
+      # Add transcript with word-level analysis if available
+      info =
+        if transcript && is_binary(transcript) && String.length(transcript) > 0 do
+          # Analyze transcript for excitement markers
+          excitement_words = [
+            "boom",
+            "wow",
+            "omg",
+            "holy",
+            "shit",
+            "fuck",
+            "insane",
+            "crazy",
+            "wild",
+            "huge",
+            "massive",
+            "no way",
+            "what",
+            "yes",
+            "let's go"
+          ]
+
+          celebration_words = [
+            "win",
+            "won",
+            "hit",
+            "got it",
+            "there it is",
+            "nice",
+            "good",
+            "great",
+            "perfect"
+          ]
+
+          transcript_lower = String.downcase(transcript)
+
+          found_excitement =
+            Enum.filter(excitement_words, fn word -> String.contains?(transcript_lower, word) end)
+
+          found_celebration =
+            Enum.filter(celebration_words, fn word -> String.contains?(transcript_lower, word) end)
+
+          excitement_markers =
+            if length(found_excitement) > 0 or length(found_celebration) > 0 do
+              Logger.info(
+                "[VideoComposer] EXCITEMENT WORDS DETECTED: #{Enum.join(found_excitement ++ found_celebration, ", ")}"
+              )
+
+              " | EXCITEMENT WORDS DETECTED (PLACE EFFECTS WHEN THESE ARE SPOKEN): #{Enum.join(found_excitement ++ found_celebration, ", ")}"
+            else
+              ""
+            end
+
+          info ++ ["Transcript: #{transcript}#{excitement_markers}"]
+        else
+          info
+        end
+
       # Add detailed audio peak analysis if available
-      info = if audio_peaks && is_list(audio_peaks) && length(audio_peaks) > 0 do
-        peak_count = length(audio_peaks)
-        Logger.info("[VideoComposer] ✅ RECEIVED #{peak_count} AUDIO PEAKS for #{name}")
-        
-        # Analyze peak distribution and intensity
-        sorted_peaks = Enum.sort_by(audio_peaks, &Map.get(&1, "amplitude"), :desc)
-        top_peaks = Enum.take(sorted_peaks, 10)
-        
-        peak_analysis = top_peaks
-        |> Enum.map(fn peak ->
-          time = Map.get(peak, "time", 0)
-          amp = Map.get(peak, "amplitude", 0)
-          "#{Float.round(time / 1, 1)}s (amp: #{Float.round(amp / 1, 2)})"
-        end)
-        |> Enum.join(", ")
-        
-        Logger.info("[VideoComposer] TOP 10 LOUDEST PEAKS: #{peak_analysis}")
-        info ++ ["Audio Peaks: #{peak_count} total | TOP 10 LOUDEST MOMENTS (MUST USE THESE EXACT TIMESTAMPS FOR EFFECTS): #{peak_analysis} | PLACE EXPLOSIVE EFFECTS AT EACH OF THESE TIMES"]
-      else
-        Logger.info("[VideoComposer] ⚠️ NO AUDIO PEAKS received for #{name}")
-        info
-      end
+      info =
+        if audio_peaks && is_list(audio_peaks) && length(audio_peaks) > 0 do
+          peak_count = length(audio_peaks)
+          Logger.info("[VideoComposer] ✅ RECEIVED #{peak_count} AUDIO PEAKS for #{name}")
+
+          # Analyze peak distribution and intensity
+          sorted_peaks = Enum.sort_by(audio_peaks, &Map.get(&1, "amplitude"), :desc)
+          top_peaks = Enum.take(sorted_peaks, 10)
+
+          peak_analysis =
+            top_peaks
+            |> Enum.map(fn peak ->
+              time = Map.get(peak, "time", 0)
+              amp = Map.get(peak, "amplitude", 0)
+              "#{Float.round(time / 1, 1)}s (amp: #{Float.round(amp / 1, 2)})"
+            end)
+            |> Enum.join(", ")
+
+          Logger.info("[VideoComposer] TOP 10 LOUDEST PEAKS: #{peak_analysis}")
+
+          info ++
+            [
+              "Audio Peaks: #{peak_count} total | TOP 10 LOUDEST MOMENTS (MUST USE THESE EXACT TIMESTAMPS FOR EFFECTS): #{peak_analysis} | PLACE EXPLOSIVE EFFECTS AT EACH OF THESE TIMES"
+            ]
+        else
+          Logger.info("[VideoComposer] ⚠️ NO AUDIO PEAKS received for #{name}")
+          info
+        end
 
       Enum.join(info, " | ")
     end)
@@ -1043,21 +1326,26 @@ defmodule ClippsterServer.AI.VideoComposer do
   defp build_media_context(_), do: "No media provided"
 
   defp calculate_duration(media) when is_list(media) do
-    total = Enum.reduce(media, 0, fn item, acc ->
-      duration = Map.get(item, "duration", 0)
-      acc + (duration || 0)
-    end)
+    total =
+      Enum.reduce(media, 0, fn item, acc ->
+        duration = Map.get(item, "duration", 0)
+        acc + (duration || 0)
+      end)
 
     # If total is very low (e.g. all images with 0 duration), use a sensible default
     # based on number of media items (6-8s per image is a good pace)
-    effective = if total < 5 do
-      image_count = Enum.count(media, fn item -> Map.get(item, "type") in ["image", "screenshot"] end)
-      if image_count > 0, do: min(image_count * 7, 120), else: 30
-    else
-      total
-    end
+    effective =
+      if total < 5 do
+        image_count =
+          Enum.count(media, fn item -> Map.get(item, "type") in ["image", "screenshot"] end)
 
-    min(max(effective, 10), 120)  # Between 10 and 120 seconds
+        if image_count > 0, do: min(image_count * 7, 120), else: 30
+      else
+        total
+      end
+
+    # Between 10 and 120 seconds
+    min(max(effective, 10), 120)
   end
 
   defp calculate_duration(_), do: @default_duration
@@ -1070,103 +1358,121 @@ defmodule ClippsterServer.AI.VideoComposer do
 
   defp build_system_prompt(media_context, duration, aspect_ratio, style) do
     # Build style-specific guidance if a preset style was selected
-    style_guidance = case style do
-      "hype" -> """
-      STYLE PRESET: Hype/Viral/Alex Hormozi Style
-      - FAST PACED: 0.5-1.5s per cut. High energy.
-      - KINETIC TYPOGRAPHY: Every spoken word must have a caption. Use 'kineticText' motion graphics for important phrases. Use 'heroGradientText' for the main title.
-      - FANCY TEXT: Use fontWeight 900, textCase uppercase, white with thick black stroke (width 6-8). Add 'glow' (intensity 10, color matching brand).
-      - COLOR PALETTE: Pick ONE bright accent color (e.g. #fbbf24 Yellow, #22d3ee Cyan, #a855f7 Purple) and use it for all emphasis text and graphics.
-      - CAMERA: Frequent 'punchZoom' on audio peaks. Continuous 'handheldShake' (intensity 0.05).
-      - IMPACT: flash + screenShake + particleBurst on every single audio peak > 0.6. Add 'sweepingLight' on scene transitions.
-      - LAYERING: Always have 4+ layers active (meshGradientBg + Media + Camera + Text + ImpactFX).
-      - BACKGROUNDS: Use 'meshGradientBg' on layer 15 instead of plain particleBackground for richer depth.
-      """
-      "professional" -> """
-      STYLE PRESET: Professional/Clean Corporate
-      - POLISHED & SPACED: 3-6s per scene.
-      - ELEGANT TEXT: Use 'Inter' or 'Montserrat'. fontSize 42, fontWeight 500, white with subtle shadow. No stroke.
-      - MOTION GRAPHICS: Use 'animatedInfoCard' and 'animatedDivider' to present facts.
-      - CAMERA: Smooth 'slowZoom' (in or out) on every scene. No shake.
-      - TRANSITIONS: Use 'fade' or 'blur' exclusively.
-      - COLOR: saturation 1.1, contrast 1.1.
-      """
-      "gaming" -> """
-      STYLE PRESET: Gaming Montage
-      - Dynamic camera motion, action-focused
-      - Impact effects on eliminations/wins, freeze frames on clutch moments
-      - Bold captions for callouts (40-50% coverage)
-      - Vibrant gaming aesthetic: saturation 1.3, contrast 1.2
-      - Effect budget: 6-10 effects + 3-5 transitions
-      """
-      "cinematic" -> """
-      STYLE PRESET: Cinematic
-      - Film-like aesthetic with letterboxing feel
-      - Slow, deliberate camera movements (slowZoom, dollyPan)
-      - Minimal but impactful effects (lens flare, light rays)
-      - Rich color grading: saturation 1.2, contrast 1.2, vignette 0.5
-      - Effect budget: 5-8 effects + 3-5 transitions
-      """
-      "tutorial" -> """
-      STYLE PRESET: Tutorial/Educational
-      - Clear, easy-to-follow pacing
-      - Clean captions for key instructions (60-70% coverage)
-      - Minimal effects, slow zooms to emphasize points
-      - Neutral color: saturation 1.1, contrast 1.1
-      - Effect budget: 2-4 effects + 1-2 transitions
-      """
-      "vlog" -> """
-      STYLE PRESET: Vlog/Story
-      - Natural, authentic feel
-      - Subtle handheld shake (0.04), warm color grade
-      - Minimal effects, let the story shine
-      - Warm tones: saturation 1.2, contrast 1.1
-      - Effect budget: 3-6 effects + 2-3 transitions
-      """
-      "music_video" -> """
-      STYLE PRESET: Music Video
-      - Beat-synced editing, artistic freedom
-      - Heavy use of transitions synced to music
-      - Creative effects: prism, holographic, kaleidoscope
-      - Stylized color grading based on mood
-      - Effect budget: 15-25 effects + 6-10 transitions
-      """
-      "product" -> """
-      STYLE PRESET: Premium SaaS / Motion Graphics Promo (Astra Motion Style)
-      - **HIGH-END MOTION GRAPHICS**: Use 'glassMorphCard' for feature highlights, 'deviceMockup' for app/product shots, 'floatingMockup' for hero sections, 'featureShowcase' for feature grids, 'animatedInfoCard' for data points, 'dataCounter' for stats, 'logoReveal' for branding.
-      - **HERO TEXT**: Use 'heroGradientText' for the main title/hero text with animated gradient fill. Use 'kineticText' for secondary headlines.
-      - **CINEMATIC BACKGROUNDS**: Use 'meshGradientBg' on layer 15 for rich animated gradient backgrounds. Use 'sweepingLight' for cinematic light streaks on transitions.
-      - **3D PARALLAX**: Use 'orbit' or 'parallax' camera motion. Everything should feel like it's floating in 3D space.
-      - **LAYERING (MANDATORY — 5+ active layers per scene)**:
-        - Layer 15: 'meshGradientBg' (animated gradient background)
-        - Layer 17: 'neonFrame' (cinematic border with animated corners)
-        - Layer 0: Main Image/Video
-        - Layer 10-14: 'glassMorphCard', 'deviceMockup', 'floatingMockup', or 'heroGradientText'
-        - Layer 18: 'sweepingLight' (cinematic light streak)
-        - Layer 20+: impactFX (flash, radialGlow)
-      - **GLASS MORPHISM**: Use 'glassMorphCard' with frosted glass (backdrop-blur) for feature cards. This is the signature SaaS promo look.
-      - **FANCY TEXT**: Use 'heroGradientText' with animated gradient fills. Add 'animatedUnderline' for emphasis.
-      - **COLORS**: Pick a consistent brand color (e.g. #6366f1) and use it for ALL 'customColors' arrays across every template.
-      - **TRANSITIONS**: Use 'glitchTransition', 'zoomIn', or 'cube3D' between major sections.
-      - **PACE**: Professional but dynamic. 2-4s per scene. Every scene must feel alive with motion.
-      """
-      _ -> if style && is_binary(style) && String.length(style) > 0 do
-        "STYLE HINT: #{style}. Default to motion-graphics-heavy editing with kineticText for headlines, particleBackground on layer 15, neonFrame on layer 17, and layered compositions with 3+ active layers per scene."
-      else
-        """
-        AUTO-DETECT STYLE — Default to Premium Motion Graphics:
-        - Use 'heroGradientText' for main titles, 'kineticText' for secondary headlines (pipe-separated words).
-        - Use 'glassMorphCard' for feature highlights, 'floatingMockup' for product shots.
-        - Use 'meshGradientBg' on layer 15 for rich animated gradient backgrounds.
-        - Use 'neonFrame' on layer 17 for cinematic borders.
-        - Use 'sweepingLight' for cinematic light streaks on transitions.
-        - Camera: mix of slowZoom, dollyPan, orbit. Never static.
-        - Transitions: glitchTransition, zoomIn, or fade between scenes.
-        - Text: fontSize 56, fontWeight 800, white, stroke width 6, glow intensity 8.
-        - ALWAYS have 5+ active layers per scene (gradient bg + border + content + text + effects).
-        """
+    style_guidance =
+      case style do
+        "hype" ->
+          """
+          STYLE PRESET: Hype/Viral/Alex Hormozi Style
+          - FAST PACED: 0.5-1.5s per cut. High energy.
+          - KINETIC TYPOGRAPHY: Every spoken word must have a caption. Use 'kineticText' motion graphics for important phrases. Use 'heroGradientText' for the main title.
+          - FANCY TEXT: Use fontWeight 900, textCase uppercase, white with thick black stroke (width 6-8). Add 'glow' (intensity 10, color matching brand).
+          - COLOR PALETTE: Pick ONE bright accent color (e.g. #fbbf24 Yellow, #22d3ee Cyan, #a855f7 Purple) and use it for all emphasis text and graphics.
+          - CAMERA: Frequent 'punchZoom' on audio peaks. Continuous 'handheldShake' (intensity 0.05).
+          - IMPACT: flash + screenShake + particleBurst on every single audio peak > 0.6. Add 'sweepingLight' on scene transitions.
+          - LAYERING: Always have 4+ layers active (meshGradientBg + Media + Camera + Text + ImpactFX).
+          - BACKGROUNDS: Use 'meshGradientBg' on layer 15 instead of plain particleBackground for richer depth.
+          """
+
+        "professional" ->
+          """
+          STYLE PRESET: Professional/Clean Corporate
+          - POLISHED & SPACED: 3-6s per scene.
+          - ELEGANT TEXT: Use 'Inter' or 'Montserrat'. fontSize 42, fontWeight 500, white with subtle shadow. No stroke.
+          - MOTION GRAPHICS: Use 'animatedInfoCard' and 'animatedDivider' to present facts.
+          - CAMERA: Smooth 'slowZoom' (in or out) on every scene. No shake.
+          - TRANSITIONS: Use 'fade' or 'blur' exclusively.
+          - COLOR: saturation 1.1, contrast 1.1.
+          """
+
+        "gaming" ->
+          """
+          STYLE PRESET: Gaming Montage
+          - Dynamic camera motion, action-focused
+          - Impact effects on eliminations/wins, freeze frames on clutch moments
+          - Bold captions for callouts (40-50% coverage)
+          - Vibrant gaming aesthetic: saturation 1.3, contrast 1.2
+          - Effect budget: 6-10 effects + 3-5 transitions
+          """
+
+        "cinematic" ->
+          """
+          STYLE PRESET: Cinematic
+          - Film-like aesthetic with letterboxing feel
+          - Slow, deliberate camera movements (slowZoom, dollyPan)
+          - Minimal but impactful effects (lens flare, light rays)
+          - Rich color grading: saturation 1.2, contrast 1.2, vignette 0.5
+          - Effect budget: 5-8 effects + 3-5 transitions
+          """
+
+        "tutorial" ->
+          """
+          STYLE PRESET: Tutorial/Educational
+          - Clear, easy-to-follow pacing
+          - Clean captions for key instructions (60-70% coverage)
+          - Minimal effects, slow zooms to emphasize points
+          - Neutral color: saturation 1.1, contrast 1.1
+          - Effect budget: 2-4 effects + 1-2 transitions
+          """
+
+        "vlog" ->
+          """
+          STYLE PRESET: Vlog/Story
+          - Natural, authentic feel
+          - Subtle handheld shake (0.04), warm color grade
+          - Minimal effects, let the story shine
+          - Warm tones: saturation 1.2, contrast 1.1
+          - Effect budget: 3-6 effects + 2-3 transitions
+          """
+
+        "music_video" ->
+          """
+          STYLE PRESET: Music Video
+          - Beat-synced editing, artistic freedom
+          - Heavy use of transitions synced to music
+          - Creative effects: prism, holographic, kaleidoscope
+          - Stylized color grading based on mood
+          - Effect budget: 15-25 effects + 6-10 transitions
+          """
+
+        "product" ->
+          """
+          STYLE PRESET: Premium SaaS / Motion Graphics Promo (Astra Motion Style)
+          - **HIGH-END MOTION GRAPHICS**: Use 'glassMorphCard' for feature highlights, 'deviceMockup' for app/product shots, 'floatingMockup' for hero sections, 'featureShowcase' for feature grids, 'animatedInfoCard' for data points, 'dataCounter' for stats, 'logoReveal' for branding.
+          - **HERO TEXT**: Use 'heroGradientText' for the main title/hero text with animated gradient fill. Use 'kineticText' for secondary headlines.
+          - **CINEMATIC BACKGROUNDS**: Use 'meshGradientBg' on layer 15 for rich animated gradient backgrounds. Use 'sweepingLight' for cinematic light streaks on transitions.
+          - **3D PARALLAX**: Use 'orbit' or 'parallax' camera motion. Everything should feel like it's floating in 3D space.
+          - **LAYERING (MANDATORY — 5+ active layers per scene)**:
+            - Layer 15: 'meshGradientBg' (animated gradient background)
+            - Layer 17: 'neonFrame' (cinematic border with animated corners)
+            - Layer 0: Main Image/Video
+            - Layer 10-14: 'glassMorphCard', 'deviceMockup', 'floatingMockup', or 'heroGradientText'
+            - Layer 18: 'sweepingLight' (cinematic light streak)
+            - Layer 20+: impactFX (flash, radialGlow)
+          - **GLASS MORPHISM**: Use 'glassMorphCard' with frosted glass (backdrop-blur) for feature cards. This is the signature SaaS promo look.
+          - **FANCY TEXT**: Use 'heroGradientText' with animated gradient fills. Add 'animatedUnderline' for emphasis.
+          - **COLORS**: Pick a consistent brand color (e.g. #6366f1) and use it for ALL 'customColors' arrays across every template.
+          - **TRANSITIONS**: Use 'glitchTransition', 'zoomIn', or 'cube3D' between major sections.
+          - **PACE**: Professional but dynamic. 2-4s per scene. Every scene must feel alive with motion.
+          """
+
+        _ ->
+          if style && is_binary(style) && String.length(style) > 0 do
+            "STYLE HINT: #{style}. Default to motion-graphics-heavy editing with kineticText for headlines, particleBackground on layer 15, neonFrame on layer 17, and layered compositions with 3+ active layers per scene."
+          else
+            """
+            AUTO-DETECT STYLE — Default to Premium Motion Graphics:
+            - Use 'heroGradientText' for main titles, 'kineticText' for secondary headlines (pipe-separated words).
+            - Use 'glassMorphCard' for feature highlights, 'floatingMockup' for product shots.
+            - Use 'meshGradientBg' on layer 15 for rich animated gradient backgrounds.
+            - Use 'neonFrame' on layer 17 for cinematic borders.
+            - Use 'sweepingLight' for cinematic light streaks on transitions.
+            - Camera: mix of slowZoom, dollyPan, orbit. Never static.
+            - Transitions: glitchTransition, zoomIn, or fade between scenes.
+            - Text: fontSize 56, fontWeight 800, white, stroke width 6, glow intensity 8.
+            - ALWAYS have 5+ active layers per scene (gradient bg + border + content + text + effects).
+            """
+          end
       end
-    end
 
     """
     # AI VIDEO EDITOR — Remotion Composition Generator
@@ -1479,38 +1785,50 @@ defmodule ClippsterServer.AI.VideoComposer do
   end
 
   defp build_style_guidance(style) do
-    base = case style do
-      "hype" ->
-        "STYLE: Hype/Viral/Hormozi. Use heroGradientText for main title, kineticText for secondary headlines. flash+screenShake+particleBurst on peaks. sweepingLight on transitions. Bold captions: fontSize 56, fontWeight 900, white, stroke 6-8, glow 10. Camera: punchZoom on peaks, handheldShake 0.05. Pick ONE accent color for all graphics."
-      "professional" ->
-        "STYLE: Professional/Corporate. Use animatedInfoCard for facts, animatedDivider between sections. Elegant text: fontSize 42, fontWeight 500, subtle shadow. Camera: slowZoom only. Transitions: fade. No shake."
-      "gaming" ->
-        "STYLE: Gaming Montage. Use kineticText for callouts, flash+screenShake on kills. Bold captions with glow. Camera: punchZoom+handheldShake. Neon accent colors."
-      "cinematic" ->
-        "STYLE: Cinematic. Slow deliberate camera (slowZoom, dollyPan). Use titleCard for scene intros. Letterbox feel. Rich shadows. Minimal but impactful effects."
-      "tutorial" ->
-        "STYLE: Tutorial. Use calloutBox for tips, animatedInfoCard for steps. Clean captions. Camera: gentle slowZoom. Minimal effects."
-      "vlog" ->
-        "STYLE: Vlog/Story. Natural handheldShake 0.04. Warm tones. Use floatingBadge for labels. Minimal effects, let content shine."
-      "music_video" ->
-        "STYLE: Music Video. Beat-synced transitions. Use glitchTitle, splitReveal, gradientWave. Heavy creative effects. Camera synced to rhythm."
-      "product" ->
-        "STYLE: Premium SaaS/Motion Graphics Promo. Use heroGradientText for hero titles, glassMorphCard for feature cards, deviceMockup for app previews, floatingMockup for product cards, featureShowcase for feature grids. meshGradientBg on layer 15. sweepingLight on layer 18. 3D parallax camera (orbit). Pick ONE brand color for all customColors."
-      s when is_binary(s) and byte_size(s) > 0 ->
-        "STYLE: #{s}"
-      _ ->
-        "STYLE: Auto-detect. Default to premium motion-graphics style: heroGradientText for titles, glassMorphCard for features, meshGradientBg backgrounds, sweepingLight accents, and 5+ layered compositions."
-    end
+    base =
+      case style do
+        "hype" ->
+          "STYLE: Hype/Viral/Hormozi. Use heroGradientText for main title, kineticText for secondary headlines. flash+screenShake+particleBurst on peaks. sweepingLight on transitions. Bold captions: fontSize 56, fontWeight 900, white, stroke 6-8, glow 10. Camera: punchZoom on peaks, handheldShake 0.05. Pick ONE accent color for all graphics."
 
-    base <> "\n\nMINIMUM REQUIREMENTS PER SCENE: At least 2 motionGraphic tracks (use PREMIUM templates: heroGradientText, glassMorphCard, floatingMockup, featureShowcase, deviceMockup, sweepingLight, animatedUnderline — plus kineticText, animatedInfoCard) + 1 cameraMotion track + 1 transition at scene boundaries. Never output a scene with fewer than 3 overlay tracks."
+        "professional" ->
+          "STYLE: Professional/Corporate. Use animatedInfoCard for facts, animatedDivider between sections. Elegant text: fontSize 42, fontWeight 500, subtle shadow. Camera: slowZoom only. Transitions: fade. No shake."
+
+        "gaming" ->
+          "STYLE: Gaming Montage. Use kineticText for callouts, flash+screenShake on kills. Bold captions with glow. Camera: punchZoom+handheldShake. Neon accent colors."
+
+        "cinematic" ->
+          "STYLE: Cinematic. Slow deliberate camera (slowZoom, dollyPan). Use titleCard for scene intros. Letterbox feel. Rich shadows. Minimal but impactful effects."
+
+        "tutorial" ->
+          "STYLE: Tutorial. Use calloutBox for tips, animatedInfoCard for steps. Clean captions. Camera: gentle slowZoom. Minimal effects."
+
+        "vlog" ->
+          "STYLE: Vlog/Story. Natural handheldShake 0.04. Warm tones. Use floatingBadge for labels. Minimal effects, let content shine."
+
+        "music_video" ->
+          "STYLE: Music Video. Beat-synced transitions. Use glitchTitle, splitReveal, gradientWave. Heavy creative effects. Camera synced to rhythm."
+
+        "product" ->
+          "STYLE: Premium SaaS/Motion Graphics Promo. Use heroGradientText for hero titles, glassMorphCard for feature cards, deviceMockup for app previews, floatingMockup for product cards, featureShowcase for feature grids. meshGradientBg on layer 15. sweepingLight on layer 18. 3D parallax camera (orbit). Pick ONE brand color for all customColors."
+
+        s when is_binary(s) and byte_size(s) > 0 ->
+          "STYLE: #{s}"
+
+        _ ->
+          "STYLE: Auto-detect. Default to premium motion-graphics style: heroGradientText for titles, glassMorphCard for features, meshGradientBg backgrounds, sweepingLight accents, and 5+ layered compositions."
+      end
+
+    base <>
+      "\n\nMINIMUM REQUIREMENTS PER SCENE: At least 2 motionGraphic tracks (use PREMIUM templates: heroGradientText, glassMorphCard, floatingMockup, featureShowcase, deviceMockup, sweepingLight, animatedUnderline — plus kineticText, animatedInfoCard) + 1 cameraMotion track + 1 transition at scene boundaries. Never output a scene with fewer than 3 overlay tracks."
   end
 
   defp parse_composition_response_from_content(content, width, height, duration) do
     # Try to extract JSON from markdown code blocks if present
-    json_content = case Regex.run(~r/```(?:json)?\s*(\{.*\})\s*```/s, content) do
-      [_, json] -> json
-      _ -> content
-    end
+    json_content =
+      case Regex.run(~r/```(?:json)?\s*(\{.*\})\s*```/s, content) do
+        [_, json] -> json
+        _ -> content
+      end
 
     cleaned_json = extract_first_json_object(json_content)
 
@@ -1518,20 +1836,24 @@ defmodule ClippsterServer.AI.VideoComposer do
       {:ok, composition} ->
         ai_duration = Map.get(composition, "duration", duration)
         tracks = Map.get(composition, "tracks", [])
-        max_track_end = Enum.reduce(tracks, 0, fn track, acc ->
-          end_time = Map.get(track, "endTime", 0)
-          max(acc, end_time)
-        end)
+
+        max_track_end =
+          Enum.reduce(tracks, 0, fn track, acc ->
+            end_time = Map.get(track, "endTime", 0)
+            max(acc, end_time)
+          end)
+
         effective_duration = Enum.max([duration, ai_duration, max_track_end])
 
-        composition = Map.merge(composition, %{
-          "id" => Ecto.UUID.generate(),
-          "width" => width,
-          "height" => height,
-          "aspectRatio" => calculate_aspect_ratio(width, height),
-          "duration" => effective_duration,
-          "fps" => @default_fps
-        })
+        composition =
+          Map.merge(composition, %{
+            "id" => Ecto.UUID.generate(),
+            "width" => width,
+            "height" => height,
+            "aspectRatio" => calculate_aspect_ratio(width, height),
+            "duration" => effective_duration,
+            "fps" => @default_fps
+          })
 
         {:ok, composition}
 
@@ -1546,15 +1868,17 @@ defmodule ClippsterServer.AI.VideoComposer do
   # Extract the first complete JSON array from a string
   defp extract_first_json_array(content) do
     # Try markdown code block first
-    cleaned = case Regex.run(~r/```(?:json)?\s*(\[.*\])\s*```/s, content) do
-      [_, json] -> json
-      _ -> content
-    end
+    cleaned =
+      case Regex.run(~r/```(?:json)?\s*(\[.*\])\s*```/s, content) do
+        [_, json] -> json
+        _ -> content
+      end
 
     # Find the first opening bracket
     case String.split(cleaned, "[", parts: 2) do
       [_, rest] ->
         extract_json_with_bracket_counting("[" <> rest)
+
       _ ->
         cleaned
     end
@@ -1563,31 +1887,42 @@ defmodule ClippsterServer.AI.VideoComposer do
   defp extract_json_with_bracket_counting(content) do
     content
     |> String.graphemes()
-    |> Enum.reduce_while({0, 0, false, false, []}, fn char, {bracket_depth, brace_depth, in_string, escaped, acc} ->
+    |> Enum.reduce_while({0, 0, false, false, []}, fn char,
+                                                      {bracket_depth, brace_depth, in_string,
+                                                       escaped, acc} ->
       new_acc = [char | acc]
 
       cond do
         escaped ->
           {:cont, {bracket_depth, brace_depth, in_string, false, new_acc}}
+
         char == "\\" and in_string ->
           {:cont, {bracket_depth, brace_depth, in_string, true, new_acc}}
+
         char == "\"" ->
           {:cont, {bracket_depth, brace_depth, !in_string, false, new_acc}}
+
         in_string ->
           {:cont, {bracket_depth, brace_depth, in_string, false, new_acc}}
+
         char == "[" ->
           {:cont, {bracket_depth + 1, brace_depth, in_string, false, new_acc}}
+
         char == "]" ->
           new_depth = bracket_depth - 1
+
           if new_depth == 0 and brace_depth == 0 do
             {:halt, {new_depth, brace_depth, in_string, false, new_acc}}
           else
             {:cont, {new_depth, brace_depth, in_string, false, new_acc}}
           end
+
         char == "{" ->
           {:cont, {bracket_depth, brace_depth + 1, in_string, false, new_acc}}
+
         char == "}" ->
           {:cont, {bracket_depth, brace_depth - 1, in_string, false, new_acc}}
+
         true ->
           {:cont, {bracket_depth, brace_depth, in_string, false, new_acc}}
       end
@@ -1605,6 +1940,7 @@ defmodule ClippsterServer.AI.VideoComposer do
       [_, rest] ->
         # Count braces to find the matching closing brace
         extract_json_with_brace_counting("{" <> rest)
+
       _ ->
         content
     end
@@ -1616,37 +1952,38 @@ defmodule ClippsterServer.AI.VideoComposer do
     |> String.graphemes()
     |> Enum.reduce_while({0, false, false, []}, fn char, {depth, in_string, escaped, acc} ->
       new_acc = [char | acc]
-      
+
       cond do
         # Previous char was a backslash — this char is escaped, skip it
         escaped ->
           {:cont, {depth, in_string, false, new_acc}}
-        
+
         # Backslash — next char is escaped
         char == "\\" and in_string ->
           {:cont, {depth, in_string, true, new_acc}}
-        
+
         # Quote toggles string mode
         char == "\"" ->
           {:cont, {depth, !in_string, false, new_acc}}
-        
+
         # Inside a string — don't count braces
         in_string ->
           {:cont, {depth, in_string, false, new_acc}}
-        
+
         # Outside string — count braces
         char == "{" ->
           new_depth = depth + 1
           {:cont, {new_depth, in_string, false, new_acc}}
-        
+
         char == "}" ->
           new_depth = depth - 1
+
           if new_depth == 0 do
             {:halt, {new_depth, in_string, false, new_acc}}
           else
             {:cont, {new_depth, in_string, false, new_acc}}
           end
-        
+
         true ->
           {:cont, {depth, in_string, false, new_acc}}
       end

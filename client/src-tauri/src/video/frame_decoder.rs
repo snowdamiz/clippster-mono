@@ -102,18 +102,18 @@ impl VideoDecoder {
             video_stream_index,
         })
     }
-    
+
     pub fn decode_frame_at(&self, timestamp: f64) -> Result<DecodedFrame, DecoderError> {
         if timestamp < 0.0 || timestamp > self.duration {
             return Err(DecoderError::InvalidTimestamp);
         }
-        
+
         // Try seeking with retry logic for sparse keyframes
         // Reduced to 2 retries for faster failure - frontend will hold last frame
         let mut last_error = None;
         for retry in 0..2 {
             let adjusted_timestamp = (timestamp - (retry as f64 * 2.0)).max(0.0);
-            
+
             match self.try_decode_frame_at(adjusted_timestamp, timestamp) {
                 Ok(frame) => return Ok(frame),
                 Err(e) => {
@@ -122,30 +122,38 @@ impl VideoDecoder {
                 }
             }
         }
-        
+
         // All retries failed
-        Err(last_error.unwrap_or(DecoderError::DecodingFailed(
-            format!("Failed to decode frame at {} after retries", timestamp)
-        )))
+        Err(last_error.unwrap_or(DecoderError::DecodingFailed(format!(
+            "Failed to decode frame at {} after retries",
+            timestamp
+        ))))
     }
-    
-    fn try_decode_frame_at(&self, seek_timestamp: f64, target_timestamp: f64) -> Result<DecodedFrame, DecoderError> {
+
+    fn try_decode_frame_at(
+        &self,
+        seek_timestamp: f64,
+        target_timestamp: f64,
+    ) -> Result<DecodedFrame, DecoderError> {
         let mut input = ffmpeg::format::input(&self.video_path)?;
-        
-        let video_stream = input.stream(self.video_stream_index)
+
+        let video_stream = input
+            .stream(self.video_stream_index)
             .ok_or(DecoderError::NoVideoStream)?;
         let time_base = video_stream.time_base();
 
         let seek_ts = (seek_timestamp / f64::from(time_base)) as i64;
         input.seek(seek_ts, ..)?;
 
-        let video_stream = input.stream(self.video_stream_index)
+        let video_stream = input
+            .stream(self.video_stream_index)
             .ok_or(DecoderError::NoVideoStream)?;
         let time_base = video_stream.time_base();
 
-        let mut decoder = ffmpeg::codec::context::Context::from_parameters(video_stream.parameters())?
-            .decoder()
-            .video()?;
+        let mut decoder =
+            ffmpeg::codec::context::Context::from_parameters(video_stream.parameters())?
+                .decoder()
+                .video()?;
 
         let mut scaler = ffmpeg::software::scaling::Context::get(
             decoder.format(),
@@ -163,9 +171,12 @@ impl VideoDecoder {
         let mut frames_decoded = 0;
         let mut first_frame_ts = None;
         let mut last_frame_ts = None;
-        
-        eprintln!("[FrameDecoder] Seeking to {:.3}s, looking for frame at {:.3}s", seek_timestamp, target_timestamp);
-        
+
+        eprintln!(
+            "[FrameDecoder] Seeking to {:.3}s, looking for frame at {:.3}s",
+            seek_timestamp, target_timestamp
+        );
+
         for result in input.packets() {
             let (stream, packet) = result?;
             packets_processed += 1;
@@ -180,21 +191,21 @@ impl VideoDecoder {
                 let frame_pts = frame.pts().unwrap_or(0);
                 let frame_timestamp = frame_pts as f64 * f64::from(time_base);
                 frames_decoded += 1;
-                
+
                 if first_frame_ts.is_none() {
                     first_frame_ts = Some(frame_timestamp);
                 }
                 last_frame_ts = Some(frame_timestamp);
-                
+
                 if frame_timestamp >= target_timestamp {
                     eprintln!("[FrameDecoder] FOUND frame at {:.3}s (target: {:.3}s, packets: {}, frames: {})", 
                         frame_timestamp, target_timestamp, packets_processed, frames_decoded);
-                    
+
                     let mut rgb_frame = ffmpeg::frame::Video::empty();
                     scaler.run(&frame, &mut rgb_frame)?;
 
                     let rgb_data = rgb_frame.data(0).to_vec();
-                    
+
                     decoded_frame = Some(DecodedFrame {
                         width: self.width,
                         height: self.height,
@@ -220,21 +231,23 @@ impl VideoDecoder {
                 let frame_pts = frame.pts().unwrap_or(0);
                 let frame_timestamp = frame_pts as f64 * f64::from(time_base);
                 frames_decoded += 1;
-                
+
                 if first_frame_ts.is_none() {
                     first_frame_ts = Some(frame_timestamp);
                 }
                 last_frame_ts = Some(frame_timestamp);
-                
+
                 if frame_timestamp >= target_timestamp {
-                    eprintln!("[FrameDecoder] FOUND frame in flush at {:.3}s (target: {:.3}s)", 
-                        frame_timestamp, target_timestamp);
-                    
+                    eprintln!(
+                        "[FrameDecoder] FOUND frame in flush at {:.3}s (target: {:.3}s)",
+                        frame_timestamp, target_timestamp
+                    );
+
                     let mut rgb_frame = ffmpeg::frame::Video::empty();
                     scaler.run(&frame, &mut rgb_frame)?;
 
                     let rgb_data = rgb_frame.data(0).to_vec();
-                    
+
                     decoded_frame = Some(DecodedFrame {
                         width: self.width,
                         height: self.height,
@@ -252,22 +265,25 @@ impl VideoDecoder {
         }
 
         decoded_frame.ok_or_else(|| {
-            DecoderError::DecodingFailed(format!("No frame found at timestamp {}", target_timestamp))
+            DecoderError::DecodingFailed(format!(
+                "No frame found at timestamp {}",
+                target_timestamp
+            ))
         })
     }
-    
+
     pub fn width(&self) -> u32 {
         self.width
     }
-    
+
     pub fn height(&self) -> u32 {
         self.height
     }
-    
+
     pub fn duration(&self) -> f64 {
         self.duration
     }
-    
+
     pub fn fps(&self) -> f64 {
         self.fps
     }

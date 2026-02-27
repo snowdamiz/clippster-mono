@@ -3,9 +3,7 @@ use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 
 use crate::ffmpeg_utils::{
-    extract_duration_from_ffmpeg_output,
-    parse_video_info_from_ffmpeg_output,
-    VideoValidationResult
+    extract_duration_from_ffmpeg_output, parse_video_info_from_ffmpeg_output, VideoValidationResult,
 };
 use crate::storage;
 
@@ -34,17 +32,25 @@ pub async fn generate_proxy_file(
         return Err("Source file does not exist".to_string());
     }
 
-    let paths = storage::init_storage_dirs()
-        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    let paths =
+        storage::init_storage_dirs().map_err(|e| format!("Failed to get storage paths: {}", e))?;
     let proxy_dir = paths.temp.join("proxies");
     std::fs::create_dir_all(&proxy_dir)
         .map_err(|e| format!("Failed to create proxy dir: {}", e))?;
 
     // Include trim info in filename to differentiate trimmed proxies
     // Use milliseconds to prevent bucket collisions (match TypeScript format)
-    let extension = if codec == "prores_proxy" { "mov" } else { "mp4" };
+    let extension = if codec == "prores_proxy" {
+        "mov"
+    } else {
+        "mp4"
+    };
     let trim_suffix = match (trim_start, trim_duration) {
-        (Some(start), Some(dur)) => format!("_t{}_{}", (start * 1000.0).round() as i64, (dur * 1000.0).round() as i64),
+        (Some(start), Some(dur)) => format!(
+            "_t{}_{}",
+            (start * 1000.0).round() as i64,
+            (dur * 1000.0).round() as i64
+        ),
         (Some(start), None) => format!("_t{}", (start * 1000.0).round() as i64),
         _ => String::new(),
     };
@@ -57,16 +63,20 @@ pub async fn generate_proxy_file(
     if proxy_path.exists() {
         let proxy_path_str = proxy_path.to_string_lossy().to_string();
         // Validate by checking if FFmpeg can read it (has valid moov atom)
-        let validate_output = app.shell()
+        let validate_output = app
+            .shell()
             .sidecar("ffmpeg")
             .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
             .args(["-i", &proxy_path_str, "-f", "null", "-t", "0.1", "-"])
             .output()
             .await;
-        
+
         if let Ok(output) = validate_output {
             if output.status.success() {
-                eprintln!("[generate_proxy_file] Using existing valid proxy: {}", proxy_path_str);
+                eprintln!(
+                    "[generate_proxy_file] Using existing valid proxy: {}",
+                    proxy_path_str
+                );
                 return Ok(ProxyGenerationResult {
                     proxy_path: proxy_path_str,
                 });
@@ -84,23 +94,23 @@ pub async fn generate_proxy_file(
 
     // Build FFmpeg args with optional trim
     let mut args = vec!["-y".to_string()];
-    
+
     // Add seek BEFORE input for fast seeking (uses keyframes)
     if let Some(start) = trim_start {
         if start > 0.0 {
             args.extend(["-ss".to_string(), format!("{:.3}", start)]);
         }
     }
-    
+
     args.extend(["-i".to_string(), source_path.clone()]);
-    
+
     // Add duration limit AFTER input (web-demuxer has no sample limits)
     if let Some(duration) = trim_duration {
         if duration > 0.0 {
             args.extend(["-t".to_string(), format!("{:.3}", duration)]);
         }
     }
-    
+
     args.extend(["-vf".to_string(), scale_filter]);
 
     if codec == "prores_proxy" {
@@ -110,10 +120,14 @@ pub async fn generate_proxy_file(
             _ => "9",
         };
         args.extend([
-            "-c:v".to_string(), "prores_ks".to_string(),
-            "-profile:v".to_string(), "0".to_string(),
-            "-pix_fmt".to_string(), "yuv422p10le".to_string(),
-            "-qscale:v".to_string(), qscale.to_string(),
+            "-c:v".to_string(),
+            "prores_ks".to_string(),
+            "-profile:v".to_string(),
+            "0".to_string(),
+            "-pix_fmt".to_string(),
+            "yuv422p10le".to_string(),
+            "-qscale:v".to_string(),
+            qscale.to_string(),
         ]);
     } else {
         // Use I-frame only H.264 for instant frame-accurate seeking
@@ -125,16 +139,24 @@ pub async fn generate_proxy_file(
                 "low" => "26",
                 _ => "22",
             };
-            
+
             // Use software libx264 for I-frame only mode (NVENC doesn't support GOP=1)
             // I-frame only = instant seeking like ProRes
-            ("libx264", vec![
-                "-preset".to_string(), "ultrafast".to_string(), // Fast encoding
-                "-crf".to_string(), crf.to_string(),
-                "-g".to_string(), "1".to_string(), // Every frame is a keyframe
-                "-bf".to_string(), "0".to_string(), // No B-frames
-                "-pix_fmt".to_string(), "yuv420p".to_string(),
-            ])
+            (
+                "libx264",
+                vec![
+                    "-preset".to_string(),
+                    "ultrafast".to_string(), // Fast encoding
+                    "-crf".to_string(),
+                    crf.to_string(),
+                    "-g".to_string(),
+                    "1".to_string(), // Every frame is a keyframe
+                    "-bf".to_string(),
+                    "0".to_string(), // No B-frames
+                    "-pix_fmt".to_string(),
+                    "yuv420p".to_string(),
+                ],
+            )
         } else if cfg!(target_os = "macos") {
             // macOS - use I-frame only for instant seeking
             let crf = match quality.as_str() {
@@ -142,14 +164,22 @@ pub async fn generate_proxy_file(
                 "low" => "26",
                 _ => "22",
             };
-            
-            ("libx264", vec![
-                "-preset".to_string(), "ultrafast".to_string(),
-                "-crf".to_string(), crf.to_string(),
-                "-g".to_string(), "1".to_string(), // Every frame is a keyframe
-                "-bf".to_string(), "0".to_string(), // No B-frames
-                "-pix_fmt".to_string(), "yuv420p".to_string(),
-            ])
+
+            (
+                "libx264",
+                vec![
+                    "-preset".to_string(),
+                    "ultrafast".to_string(),
+                    "-crf".to_string(),
+                    crf.to_string(),
+                    "-g".to_string(),
+                    "1".to_string(), // Every frame is a keyframe
+                    "-bf".to_string(),
+                    "0".to_string(), // No B-frames
+                    "-pix_fmt".to_string(),
+                    "yuv420p".to_string(),
+                ],
+            )
         } else {
             // Linux - try VAAPI, fallback to software
             let crf = match quality.as_str() {
@@ -157,30 +187,45 @@ pub async fn generate_proxy_file(
                 "low" => "30",
                 _ => "28",
             };
-            
-            ("libx264", vec![
-                "-preset".to_string(), "veryfast".to_string(),
-                "-crf".to_string(), crf.to_string(),
-                "-g".to_string(), "30".to_string(),
-                "-keyint_min".to_string(), "30".to_string(),
-                "-pix_fmt".to_string(), "yuv420p".to_string(),
-            ])
+
+            (
+                "libx264",
+                vec![
+                    "-preset".to_string(),
+                    "veryfast".to_string(),
+                    "-crf".to_string(),
+                    crf.to_string(),
+                    "-g".to_string(),
+                    "30".to_string(),
+                    "-keyint_min".to_string(),
+                    "30".to_string(),
+                    "-pix_fmt".to_string(),
+                    "yuv420p".to_string(),
+                ],
+            )
         };
-        
+
         args.extend(["-c:v".to_string(), encoder.to_string()]);
         args.extend(encoder_args);
     }
 
     args.extend([
-        "-c:a".to_string(), "aac".to_string(),
-        "-b:a".to_string(), "128k".to_string(),
-        "-movflags".to_string(), "+faststart".to_string(),
+        "-c:a".to_string(),
+        "aac".to_string(),
+        "-b:a".to_string(),
+        "128k".to_string(),
+        "-movflags".to_string(),
+        "+faststart".to_string(),
         proxy_path.to_string_lossy().to_string(),
     ]);
 
-    eprintln!("[generate_proxy_file] Generating proxy with args: {:?}", args);
+    eprintln!(
+        "[generate_proxy_file] Generating proxy with args: {:?}",
+        args
+    );
 
-    let output = app.shell()
+    let output = app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args(args)
@@ -193,7 +238,10 @@ pub async fn generate_proxy_file(
         return Err(format!("Proxy generation failed: {}", stderr));
     }
 
-    eprintln!("[generate_proxy_file] Proxy generated successfully: {}", proxy_path.display());
+    eprintln!(
+        "[generate_proxy_file] Proxy generated successfully: {}",
+        proxy_path.display()
+    );
 
     Ok(ProxyGenerationResult {
         proxy_path: proxy_path.to_string_lossy().to_string(),
@@ -226,8 +274,14 @@ pub async fn check_file_exists(path: String) -> Result<bool, String> {
 /// # Returns
 /// A VideoValidationResult containing validation status and metadata
 #[tauri::command]
-pub async fn validate_video_file(app: AppHandle, file_path: String) -> Result<VideoValidationResult, String> {
-    println!("[Rust Validation] validate_video_file called with path: {}", file_path);
+pub async fn validate_video_file(
+    app: AppHandle,
+    file_path: String,
+) -> Result<VideoValidationResult, String> {
+    println!(
+        "[Rust Validation] validate_video_file called with path: {}",
+        file_path
+    );
 
     let video_path = Path::new(&file_path);
 
@@ -278,12 +332,15 @@ pub async fn validate_video_file(app: AppHandle, file_path: String) -> Result<Vi
 
     let output = match shell.sidecar("ffmpeg") {
         Ok(ffmpeg) => {
-            match ffmpeg.args([
-                "-i", &file_path,
-                "-f", "null",
-                "-t", "1",  // Only validate first second to be fast
-                "-"
-            ]).output().await {
+            match ffmpeg
+                .args([
+                    "-i", &file_path, "-f", "null", "-t",
+                    "1", // Only validate first second to be fast
+                    "-",
+                ])
+                .output()
+                .await
+            {
                 Ok(output) => output,
                 Err(e) => {
                     return Ok(VideoValidationResult {
@@ -387,7 +444,9 @@ pub async fn validate_video_file(app: AppHandle, file_path: String) -> Result<Vi
         Err(_) => {
             // If we can't parse video info but FFmpeg succeeded, consider it valid
             // This can happen for some video formats or with minimal validation
-            println!("[Validation] Could not parse detailed video info, but FFmpeg validation passed");
+            println!(
+                "[Validation] Could not parse detailed video info, but FFmpeg validation passed"
+            );
             Ok(VideoValidationResult {
                 is_valid: true,
                 error: None,

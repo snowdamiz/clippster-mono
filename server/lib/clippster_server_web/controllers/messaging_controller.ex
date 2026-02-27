@@ -31,7 +31,9 @@ defmodule ClippsterServerWeb.MessagingController do
     user_id = conn.assigns.current_user.id
     # Ensure IDs are integers (may come as strings from JSON/URL params)
     org_id = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
-    other_user_id = if is_binary(other_user_id), do: String.to_integer(other_user_id), else: other_user_id
+
+    other_user_id =
+      if is_binary(other_user_id), do: String.to_integer(other_user_id), else: other_user_id
 
     case Messaging.create_direct_conversation(org_id, user_id, other_user_id) do
       {:ok, conversation} ->
@@ -54,7 +56,11 @@ defmodule ClippsterServerWeb.MessagingController do
   @doc """
   Create a group conversation.
   """
-  def create_group(conn, %{"organization_id" => org_id, "name" => name, "member_ids" => member_ids}) do
+  def create_group(conn, %{
+        "organization_id" => org_id,
+        "name" => name,
+        "member_ids" => member_ids
+      }) do
     user_id = conn.assigns.current_user.id
 
     case Messaging.create_group_conversation(org_id, name, user_id, member_ids) do
@@ -189,7 +195,11 @@ defmodule ClippsterServerWeb.MessagingController do
   @doc """
   Edit a message.
   """
-  def edit_message(conn, %{"id" => _conversation_id, "message_id" => message_id, "content" => content}) do
+  def edit_message(conn, %{
+        "id" => _conversation_id,
+        "message_id" => message_id,
+        "content" => content
+      }) do
     user_id = conn.assigns.current_user.id
 
     case Messaging.edit_message(message_id, user_id, content) do
@@ -278,7 +288,9 @@ defmodule ClippsterServerWeb.MessagingController do
   def add_participant(conn, %{"id" => conversation_id, "user_id" => new_user_id}) do
     user_id = conn.assigns.current_user.id
     # Ensure IDs are integers (may come as strings from JSON/URL params)
-    conversation_id = if is_binary(conversation_id), do: String.to_integer(conversation_id), else: conversation_id
+    conversation_id =
+      if is_binary(conversation_id), do: String.to_integer(conversation_id), else: conversation_id
+
     new_user_id = if is_binary(new_user_id), do: String.to_integer(new_user_id), else: new_user_id
 
     case Messaging.add_participant(conversation_id, new_user_id, user_id) do
@@ -305,8 +317,11 @@ defmodule ClippsterServerWeb.MessagingController do
   def remove_participant(conn, %{"id" => conversation_id, "user_id" => target_user_id}) do
     user_id = conn.assigns.current_user.id
     # Ensure IDs are integers (may come as strings from URL params)
-    conversation_id = if is_binary(conversation_id), do: String.to_integer(conversation_id), else: conversation_id
-    target_user_id = if is_binary(target_user_id), do: String.to_integer(target_user_id), else: target_user_id
+    conversation_id =
+      if is_binary(conversation_id), do: String.to_integer(conversation_id), else: conversation_id
+
+    target_user_id =
+      if is_binary(target_user_id), do: String.to_integer(target_user_id), else: target_user_id
 
     case Messaging.remove_participant(conversation_id, target_user_id, user_id) do
       :ok ->
@@ -421,9 +436,9 @@ defmodule ClippsterServerWeb.MessagingController do
     user_id = conn.assigns.current_user.id
     query = Map.get(params, "query", "")
     limit = Map.get(params, "limit", "20") |> String.to_integer()
-    
+
     users = Messaging.search_messageable_users(user_id, query, limit: limit)
-    
+
     json(conn, %{data: users})
   end
 
@@ -433,7 +448,8 @@ defmodule ClippsterServerWeb.MessagingController do
   def create_global_direct(conn, %{"user_id" => other_user_id}) do
     user_id = conn.assigns.current_user.id
     # Ensure other_user_id is an integer (may come as string from JSON)
-    other_user_id = if is_binary(other_user_id), do: String.to_integer(other_user_id), else: other_user_id
+    other_user_id =
+      if is_binary(other_user_id), do: String.to_integer(other_user_id), else: other_user_id
 
     case Messaging.create_global_direct_conversation(user_id, other_user_id) do
       {:ok, conversation} ->
@@ -459,7 +475,9 @@ defmodule ClippsterServerWeb.MessagingController do
   """
   def upload_attachments(conn, %{"conversation_id" => conversation_id} = params) do
     user_id = conn.assigns.current_user.id
-    conversation_id = if is_binary(conversation_id), do: String.to_integer(conversation_id), else: conversation_id
+
+    conversation_id =
+      if is_binary(conversation_id), do: String.to_integer(conversation_id), else: conversation_id
 
     # Verify user is a participant in the conversation
     case Messaging.get_conversation_for_user(conversation_id, user_id) do
@@ -471,14 +489,15 @@ defmodule ClippsterServerWeb.MessagingController do
       {:ok, conversation} ->
         # Debug: Log received params
         IO.inspect(params, label: "Upload params")
-        
+
         # Get uploaded files (can be single or multiple)
-        files = case params do
-          %{"files" => files} when is_list(files) -> files
-          %{"files" => file} -> [file]
-          %{"file" => file} -> [file]
-          _ -> []
-        end
+        files =
+          case params do
+            %{"files" => files} when is_list(files) -> files
+            %{"files" => file} -> [file]
+            %{"file" => file} -> [file]
+            _ -> []
+          end
 
         IO.inspect(files, label: "Parsed files")
 
@@ -488,31 +507,38 @@ defmodule ClippsterServerWeb.MessagingController do
           |> json(%{error: "No files provided"})
         else
           # Process each file - handle pattern match errors
-          results = Enum.map(files, fn file ->
-            case file do
-              %Plug.Upload{path: temp_path, filename: filename, content_type: content_type} ->
-                IO.inspect({temp_path, filename, content_type}, label: "Processing file")
-                result = process_and_upload_attachment(conversation, filename, temp_path, content_type)
-                IO.inspect(result, label: "Processing result")
-                result
-              other ->
-                IO.inspect(other, label: "Invalid file format")
-                {:error, "Invalid file format: expected Plug.Upload, got #{inspect(other)}"}
-            end
-          end)
+          results =
+            Enum.map(files, fn file ->
+              case file do
+                %Plug.Upload{path: temp_path, filename: filename, content_type: content_type} ->
+                  IO.inspect({temp_path, filename, content_type}, label: "Processing file")
+
+                  result =
+                    process_and_upload_attachment(conversation, filename, temp_path, content_type)
+
+                  IO.inspect(result, label: "Processing result")
+                  result
+
+                other ->
+                  IO.inspect(other, label: "Invalid file format")
+                  {:error, "Invalid file format: expected Plug.Upload, got #{inspect(other)}"}
+              end
+            end)
 
           # Check for errors
           errors = Enum.filter(results, fn {status, _} -> status == :error end)
           IO.inspect(errors, label: "Errors found")
-          
+
           if Enum.empty?(errors) do
             attachments = Enum.map(results, fn {:ok, attachment} -> attachment end)
+
             json(conn, %{
               success: true,
               attachments: Enum.map(attachments, &MessagingJSON.attachment/1)
             })
           else
             error_messages = Enum.map(errors, fn {:error, msg} -> msg end)
+
             conn
             |> put_status(:unprocessable_entity)
             |> json(%{error: "Failed to process some files", details: error_messages})
@@ -526,7 +552,8 @@ defmodule ClippsterServerWeb.MessagingController do
   Returns a presigned URL redirect.
   """
   def download_attachment(conn, %{"id" => attachment_id}) do
-    attachment_id = if is_binary(attachment_id), do: String.to_integer(attachment_id), else: attachment_id
+    attachment_id =
+      if is_binary(attachment_id), do: String.to_integer(attachment_id), else: attachment_id
 
     case Messaging.get_message_attachment(attachment_id) do
       nil ->
@@ -564,32 +591,48 @@ defmodule ClippsterServerWeb.MessagingController do
           case ImageProcessor.process_image(file_binary, content_type) do
             {:ok, processed} ->
               org_id = conversation.organization_id || 0
-              full_key = Storage.generate_message_attachment_key(org_id, conversation.id, filename, "full")
-              thumb_key = Storage.generate_message_attachment_key(org_id, conversation.id, filename, "thumbnail")
-              
+
+              full_key =
+                Storage.generate_message_attachment_key(org_id, conversation.id, filename, "full")
+
+              thumb_key =
+                Storage.generate_message_attachment_key(
+                  org_id,
+                  conversation.id,
+                  filename,
+                  "thumbnail"
+                )
+
               # Upload to R2
-              with {:ok, full_url} <- Storage.upload_file(processed.compressed, full_key, content_type: "image/jpeg"),
-                   {:ok, thumb_url} <- Storage.upload_file(processed.thumbnail, thumb_key, content_type: "image/jpeg") do
-                
+              with {:ok, full_url} <-
+                     Storage.upload_file(processed.compressed, full_key,
+                       content_type: "image/jpeg"
+                     ),
+                   {:ok, thumb_url} <-
+                     Storage.upload_file(processed.thumbnail, thumb_key,
+                       content_type: "image/jpeg"
+                     ) do
                 # Return attachment metadata
-                {:ok, %{
-                  url: full_url,
-                  thumbnail_url: thumb_url,
-                  filename: filename,
-                  mime_type: "image/jpeg",
-                  file_size: byte_size(processed.compressed),
-                  width: processed.width,
-                  height: processed.height,
-                  attachment_type: "image"
-                }}
+                {:ok,
+                 %{
+                   url: full_url,
+                   thumbnail_url: thumb_url,
+                   filename: filename,
+                   mime_type: "image/jpeg",
+                   file_size: byte_size(processed.compressed),
+                   width: processed.width,
+                   height: processed.height,
+                   attachment_type: "image"
+                 }}
               else
                 {:error, reason} -> {:error, "Failed to upload to storage: #{inspect(reason)}"}
               end
-            
-            {:error, reason} -> {:error, "Failed to process image: #{inspect(reason)}"}
+
+            {:error, reason} ->
+              {:error, "Failed to process image: #{inspect(reason)}"}
           end
-        
-        {:error, reason} -> 
+
+        {:error, reason} ->
           {:error, "Failed to read uploaded file at #{temp_path}: #{inspect(reason)}"}
       end
     end
@@ -616,7 +659,9 @@ defmodule ClippsterServerWeb.MessagingController do
 
     # Also notify user channels for participants not in the conversation channel
     case Messaging.get_conversation(conversation_id) do
-      nil -> :ok
+      nil ->
+        :ok
+
       conversation ->
         Enum.each(conversation.participants, fn participant ->
           if is_nil(participant.left_at) do

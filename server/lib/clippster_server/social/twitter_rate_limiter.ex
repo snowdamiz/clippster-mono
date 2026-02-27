@@ -35,7 +35,6 @@ defmodule ClippsterServer.Social.TwitterRateLimiter do
     with {:ok, limit} <- parse_header(headers, "x-rate-limit-limit"),
          {:ok, remaining} <- parse_header(headers, "x-rate-limit-remaining"),
          {:ok, reset} <- parse_header(headers, "x-rate-limit-reset") do
-
       reset_datetime = unix_to_datetime(reset)
       now = DateTime.utc_now()
 
@@ -61,7 +60,10 @@ defmodule ClippsterServer.Social.TwitterRateLimiter do
         {:ok, nil}
 
       error ->
-        Logger.warning("[TwitterRateLimiter] Failed to parse rate limit headers: #{inspect(error)}")
+        Logger.warning(
+          "[TwitterRateLimiter] Failed to parse rate limit headers: #{inspect(error)}"
+        )
+
         {:ok, nil}
     end
   end
@@ -117,8 +119,8 @@ defmodule ClippsterServer.Social.TwitterRateLimiter do
     name_lower = String.downcase(name)
 
     case Enum.find(headers, fn {key, _value} ->
-      String.downcase(to_string(key)) == name_lower
-    end) do
+           String.downcase(to_string(key)) == name_lower
+         end) do
       {_key, value} -> {:ok, to_string(value)}
       nil -> {:error, :not_found}
     end

@@ -6,18 +6,24 @@ defmodule ClippsterServer.Social.PostSubmission do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias ClippsterServer.Social.ProviderMode
   alias ClippsterServer.Organizations.{Organization, OrganizationCreatorProfile}
   alias ClippsterServer.Social.SocialAccount
   alias ClippsterServer.Campaigns.ClipperSocialAccount
   alias ClippsterServer.Accounts.User
 
-  @platforms ~w(instagram tiktok twitter youtube)
+  @known_platforms ~w(
+    instagram facebook x twitter tiktok tiktok_business youtube linkedin threads pinterest bluesky
+  )
   @media_types ~w(image video carousel reel story)
   @statuses ~w(pending scheduled publishing published failed canceled)
   @owner_types ~w(org user)
 
   schema "post_submissions" do
     field :platform, :string
+    field :provider, :string
+    field :provider_post_id, :string
+    field :provider_payload, :map
     field :post_id, :string
     field :post_url, :string
     field :media_type, :string
@@ -77,6 +83,9 @@ defmodule ClippsterServer.Social.PostSubmission do
       :submitted_by_user_id,
       :campaign_id,
       :platform,
+      :provider,
+      :provider_post_id,
+      :provider_payload,
       :media_type,
       :caption,
       :media_url,
@@ -86,7 +95,7 @@ defmodule ClippsterServer.Social.PostSubmission do
       :scheduled_at
     ])
     |> validate_required([:submitted_by_user_id, :platform, :media_url])
-    |> validate_inclusion(:platform, @platforms)
+    |> normalize_platform()
     |> validate_inclusion(:media_type, @media_types ++ [nil])
     |> validate_inclusion(:owner_type, @owner_types)
     |> validate_caption()
@@ -113,6 +122,9 @@ defmodule ClippsterServer.Social.PostSubmission do
       :submitted_by_user_id,
       :campaign_id,
       :platform,
+      :provider,
+      :provider_post_id,
+      :provider_payload,
       :media_type,
       :caption,
       :media_url,
@@ -122,7 +134,7 @@ defmodule ClippsterServer.Social.PostSubmission do
       :scheduled_at
     ])
     |> validate_required([:submitted_by_user_id, :platform, :media_url, :scheduled_at])
-    |> validate_inclusion(:platform, @platforms)
+    |> normalize_platform()
     |> validate_inclusion(:media_type, @media_types ++ [nil])
     |> validate_inclusion(:owner_type, @owner_types)
     |> validate_caption()
@@ -208,14 +220,43 @@ defmodule ClippsterServer.Social.PostSubmission do
   Changeset for marking a post as published.
   """
   def publish_changeset(submission, attrs) do
+    attrs =
+      attrs
+      |> maybe_put_provider_post_id()
+      |> maybe_put_provider()
+
     submission
-    |> cast(attrs, [:post_id, :post_url, :posted_at, :content_hash])
+    |> cast(attrs, [
+      :post_id,
+      :post_url,
+      :posted_at,
+      :content_hash,
+      :provider,
+      :provider_post_id,
+      :provider_payload
+    ])
     |> validate_required([:post_id])
     |> put_change(:status, "published")
     |> put_posted_at()
     |> unique_constraint([:platform, :post_id],
       name: :post_submissions_platform_post_unique,
       message: "this post has already been tracked"
+    )
+    |> unique_constraint([:provider, :provider_post_id],
+      name: :post_submissions_provider_post_unique,
+      message: "this provider post has already been tracked"
+    )
+  end
+
+  @doc """
+  Changeset for updating provider metadata without mutating publication status.
+  """
+  def provider_metadata_changeset(submission, attrs) do
+    submission
+    |> cast(attrs, [:provider, :provider_post_id, :provider_payload])
+    |> unique_constraint([:provider, :provider_post_id],
+      name: :post_submissions_provider_post_unique,
+      message: "this provider post has already been tracked"
     )
   end
 
@@ -224,7 +265,11 @@ defmodule ClippsterServer.Social.PostSubmission do
   """
   def failed_changeset(submission, error_message) do
     submission
-    |> change(status: "failed", error_message: error_message, completed_at: DateTime.utc_now() |> DateTime.truncate(:second))
+    |> change(
+      status: "failed",
+      error_message: error_message,
+      completed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+    )
   end
 
   @doc """
@@ -233,8 +278,9 @@ defmodule ClippsterServer.Social.PostSubmission do
   """
   def retry_changeset(submission) do
     # Schedule for 1 minute from now to give time for any cleanup
-    new_scheduled_at = DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.truncate(:second)
-    
+    new_scheduled_at =
+      DateTime.utc_now() |> DateTime.add(60, :second) |> DateTime.truncate(:second)
+
     submission
     |> change(
       status: "scheduled",
@@ -301,7 +347,7 @@ defmodule ClippsterServer.Social.PostSubmission do
   @doc """
   Returns the list of valid platforms.
   """
-  def platforms, do: @platforms
+  def platforms, do: @known_platforms
 
   @doc """
   Returns the list of valid media types.
@@ -351,15 +397,17 @@ defmodule ClippsterServer.Social.PostSubmission do
     caption = get_field(changeset, :caption) || ""
     hashtag_count = Regex.scan(~r/#\w+/, caption) |> length()
 
-    max_length = case platform do
-      "twitter" -> 280
-      _ -> 2200
-    end
+    max_length =
+      case platform do
+        platform when platform in ["twitter", "x"] -> 280
+        _ -> 2200
+      end
 
-    error_message = case platform do
-      "twitter" -> "Twitter captions limited to 280 characters"
-      _ -> "caption cannot exceed 2,200 characters"
-    end
+    error_message =
+      case platform do
+        platform when platform in ["twitter", "x"] -> "X captions limited to 280 characters"
+        _ -> "caption cannot exceed 2,200 characters"
+      end
 
     changeset
     |> validate_length(:caption, max: max_length, message: error_message)
@@ -397,7 +445,11 @@ defmodule ClippsterServer.Social.PostSubmission do
     case owner_type do
       "org" ->
         if is_nil(org_account) do
-          add_error(changeset, :organization_social_account_id, "is required for organization posts")
+          add_error(
+            changeset,
+            :organization_social_account_id,
+            "is required for organization posts"
+          )
         else
           changeset
         end
@@ -418,6 +470,27 @@ defmodule ClippsterServer.Social.PostSubmission do
     case get_field(changeset, :scheduled_at) do
       nil -> put_change(changeset, :status, "pending")
       _ -> put_change(changeset, :status, "scheduled")
+    end
+  end
+
+  defp normalize_platform(changeset) do
+    update_change(changeset, :platform, &ProviderMode.normalize_platform/1)
+  end
+
+  defp maybe_put_provider(attrs) when is_map(attrs) do
+    if Map.has_key?(attrs, :provider) or Map.has_key?(attrs, "provider") do
+      attrs
+    else
+      Map.put(attrs, :provider, "legacy")
+    end
+  end
+
+  defp maybe_put_provider_post_id(attrs) when is_map(attrs) do
+    if Map.has_key?(attrs, :provider_post_id) or Map.has_key?(attrs, "provider_post_id") do
+      attrs
+    else
+      post_id = Map.get(attrs, :post_id) || Map.get(attrs, "post_id")
+      Map.put(attrs, :provider_post_id, post_id)
     end
   end
 end

@@ -1,28 +1,28 @@
 // Module declarations
-mod types;
+pub mod audio_effect_renderer;
+pub mod effect_renderer;
 pub mod encoder;
 mod font_manager;
-pub mod video_info;
-mod subtitle;
-pub mod video_processor;
-mod orchestrator;
 pub mod livestream_clip;
+mod orchestrator;
 mod overlay_renderer;
-pub mod effect_renderer;
-pub mod audio_effect_renderer;
+mod subtitle;
 pub mod text_renderer;
+mod types;
+pub mod video_info;
+pub mod video_processor;
 
 // Re-export public types
 pub use types::*;
 
 // Internal imports
-use once_cell::sync::Lazy;
-use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
-use tauri::Emitter;
-use orchestrator::build_clip_internal_simple;
-use effect_renderer::ClipEffectSettings;
 use audio_effect_renderer::AudioEffectSettings;
+use effect_renderer::ClipEffectSettings;
+use once_cell::sync::Lazy;
+use orchestrator::build_clip_internal_simple;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use tauri::Emitter;
 use tokio::sync::watch;
 
 // Cancellation token for clip builds
@@ -30,7 +30,8 @@ pub type CancellationToken = watch::Receiver<bool>;
 
 // Active clip builds tracking with cancellation senders
 #[allow(clippy::type_complexity)]
-static ACTIVE_CLIP_BUILDS: Lazy<Arc<Mutex<HashMap<String, watch::Sender<bool>>>>> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+static ACTIVE_CLIP_BUILDS: Lazy<Arc<Mutex<HashMap<String, watch::Sender<bool>>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 // Build clip from segments using FFmpeg
 #[allow(clippy::too_many_arguments)]
@@ -72,15 +73,25 @@ pub async fn build_clip_from_segments(
     audio_effects: Option<Vec<AudioEffectSettings>>,
     layout_overlays: Option<Vec<LayoutOverlaySettings>>,
 ) -> Result<(), String> {
-
     println!("[Rust] build_clip_from_segments called with:");
     println!("[Rust]   project_id: {}", project_id);
     println!("[Rust]   clip_id: {}", clip_id);
     println!("[Rust]   clip_name: {}", clip_name);
     println!("[Rust]   video_path: {}", video_path);
     println!("[Rust]   segments count: {}", segments.len());
-    println!("[Rust]   subtitles enabled: {}", subtitle_settings.as_ref().map(|s| s.enabled).unwrap_or(false));
-    println!("[Rust]   subtitle_overrides: {:?}", subtitle_overrides.as_ref().map(|o| o.keys().collect::<Vec<_>>()));
+    println!(
+        "[Rust]   subtitles enabled: {}",
+        subtitle_settings
+            .as_ref()
+            .map(|s| s.enabled)
+            .unwrap_or(false)
+    );
+    println!(
+        "[Rust]   subtitle_overrides: {:?}",
+        subtitle_overrides
+            .as_ref()
+            .map(|o| o.keys().collect::<Vec<_>>())
+    );
     println!("[Rust]   max words: {}", max_words.unwrap_or(0));
     println!("[Rust]   aspect_ratios: {:?}", aspect_ratios);
     println!("[Rust]   quality: {}", quality);
@@ -91,22 +102,65 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   build_id: {:?}", build_id);
     println!("[Rust]   intro_path: {:?}", intro_path);
     println!("[Rust]   outro_path: {:?}", outro_path);
-    println!("[Rust]   intro_outro_per_ratio: {:?}", intro_outro_per_ratio.as_ref().map(|m| m.keys().collect::<Vec<_>>()));
-    println!("[Rust]   watermark enabled: {}", watermark_settings.as_ref().map(|w| w.enabled).unwrap_or(false));
+    println!(
+        "[Rust]   intro_outro_per_ratio: {:?}",
+        intro_outro_per_ratio
+            .as_ref()
+            .map(|m| m.keys().collect::<Vec<_>>())
+    );
+    println!(
+        "[Rust]   watermark enabled: {}",
+        watermark_settings
+            .as_ref()
+            .map(|w| w.enabled)
+            .unwrap_or(false)
+    );
     if let Some(ref wm) = watermark_settings {
         println!("[Rust]   watermark file_path: {}", wm.file_path);
-        println!("[Rust]   watermark width: {:?}, height: {:?}", wm.width, wm.height);
+        println!(
+            "[Rust]   watermark width: {:?}, height: {:?}",
+            wm.width, wm.height
+        );
     }
     println!("[Rust]   audio settings: {:?}", audio_settings);
-    println!("[Rust]   framing_strategy: {:?}", framing_strategy.as_ref().map(|s| &s.mode));
-    println!("[Rust]   video_filter_segments count: {}", video_filter_segments.as_ref().map(|v| v.len()).unwrap_or(0));
-    println!("[Rust]   text_overlays count: {}", text_overlays.as_ref().map(|v| v.len()).unwrap_or(0));
-    println!("[Rust]   stickers count: {}", stickers.as_ref().map(|v| v.len()).unwrap_or(0));
-    println!("[Rust]   clip_watermarks count: {}", clip_watermarks.as_ref().map(|v| v.len()).unwrap_or(0));
-    println!("[Rust]   clip_effects count: {}", clip_effects.as_ref().map(|v| v.len()).unwrap_or(0));
-    println!("[Rust]   audio_effects count: {}", audio_effects.as_ref().map(|v| v.len()).unwrap_or(0));
-    println!("[Rust]   segment_framing_configs: {:?}", segment_framing_configs.as_ref().map(|c| c.keys().collect::<Vec<_>>()));
-    println!("[Rust]   layout_overlays count: {}", layout_overlays.as_ref().map(|v| v.len()).unwrap_or(0));
+    println!(
+        "[Rust]   framing_strategy: {:?}",
+        framing_strategy.as_ref().map(|s| &s.mode)
+    );
+    println!(
+        "[Rust]   video_filter_segments count: {}",
+        video_filter_segments.as_ref().map(|v| v.len()).unwrap_or(0)
+    );
+    println!(
+        "[Rust]   text_overlays count: {}",
+        text_overlays.as_ref().map(|v| v.len()).unwrap_or(0)
+    );
+    println!(
+        "[Rust]   stickers count: {}",
+        stickers.as_ref().map(|v| v.len()).unwrap_or(0)
+    );
+    println!(
+        "[Rust]   clip_watermarks count: {}",
+        clip_watermarks.as_ref().map(|v| v.len()).unwrap_or(0)
+    );
+    println!(
+        "[Rust]   clip_effects count: {}",
+        clip_effects.as_ref().map(|v| v.len()).unwrap_or(0)
+    );
+    println!(
+        "[Rust]   audio_effects count: {}",
+        audio_effects.as_ref().map(|v| v.len()).unwrap_or(0)
+    );
+    println!(
+        "[Rust]   segment_framing_configs: {:?}",
+        segment_framing_configs
+            .as_ref()
+            .map(|c| c.keys().collect::<Vec<_>>())
+    );
+    println!(
+        "[Rust]   layout_overlays count: {}",
+        layout_overlays.as_ref().map(|v| v.len()).unwrap_or(0)
+    );
 
     // Check if clip is already being built and create cancellation token
     let cancel_rx = {
@@ -152,18 +206,24 @@ pub async fn build_clip_from_segments(
     let layout_overlays_clone = layout_overlays.clone();
 
     // Send initial progress
-    let _ = app.emit("clip-build-progress", ClipBuildProgress {
-        clip_id: clip_id.clone(),
-        project_id: project_id.clone(),
-        progress: 0.0,
-        stage: "initializing".to_string(),
-        message: "Starting clip build...".to_string(),
-        error: None,
-    });
+    let _ = app.emit(
+        "clip-build-progress",
+        ClipBuildProgress {
+            clip_id: clip_id.clone(),
+            project_id: project_id.clone(),
+            progress: 0.0,
+            stage: "initializing".to_string(),
+            message: "Starting clip build...".to_string(),
+            error: None,
+        },
+    );
 
     // Use tokio::spawn for background processing (following the download pattern)
     tokio::spawn(async move {
-        println!("[Rust] Async task started for clip build: {}", clip_id_clone);
+        println!(
+            "[Rust] Async task started for clip build: {}",
+            clip_id_clone
+        );
 
         let build_result = match build_clip_internal_simple(
             &app_clone,
@@ -201,28 +261,36 @@ pub async fn build_clip_from_segments(
             clip_effects_clone,
             audio_effects_clone,
             layout_overlays_clone,
-            cancel_rx
-        ).await {
+            cancel_rx,
+        )
+        .await
+        {
             Ok(result) => {
-                println!("[Rust] Clip build completed successfully for: {}", clip_id_clone);
+                println!(
+                    "[Rust] Clip build completed successfully for: {}",
+                    clip_id_clone
+                );
                 result
-            },
+            }
             Err(e) => {
                 // Check if this was a cancellation
                 let is_cancelled = e.contains("cancelled") || e.contains("Cancelled");
                 if is_cancelled {
                     println!("[Rust] Clip build was cancelled: {}", clip_id_clone);
                     // Emit cancellation event
-                    let _ = app_clone.emit("clip-build-progress", ClipBuildProgress {
-                        clip_id: clip_id_clone.clone(),
-                        project_id: project_id_clone.clone(),
-                        progress: 0.0,
-                        stage: "cancelled".to_string(),
-                        message: "Build cancelled by user".to_string(),
-                        error: None,
-                    });
+                    let _ = app_clone.emit(
+                        "clip-build-progress",
+                        ClipBuildProgress {
+                            clip_id: clip_id_clone.clone(),
+                            project_id: project_id_clone.clone(),
+                            progress: 0.0,
+                            stage: "cancelled".to_string(),
+                            message: "Build cancelled by user".to_string(),
+                            error: None,
+                        },
+                    );
                 }
-                
+
                 println!("[Rust] Clip build failed with error: {}", e);
                 ClipBuildResult {
                     clip_id: clip_id_clone.clone(),
@@ -233,7 +301,11 @@ pub async fn build_clip_from_segments(
                     thumbnail_path: None,
                     duration: None,
                     file_size: None,
-                    error: if is_cancelled { Some("Cancelled by user".to_string()) } else { Some(e) },
+                    error: if is_cancelled {
+                        Some("Cancelled by user".to_string())
+                    } else {
+                        Some(e)
+                    },
                 }
             }
         };
@@ -287,4 +359,3 @@ pub async fn is_clip_build_active(clip_id: String) -> Result<bool, String> {
 pub fn is_build_cancelled(cancel_rx: &CancellationToken) -> bool {
     *cancel_rx.borrow()
 }
-

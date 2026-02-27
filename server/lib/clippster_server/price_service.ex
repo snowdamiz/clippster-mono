@@ -42,7 +42,7 @@ defmodule ClippsterServer.PriceService do
       price: nil,
       last_updated: nil
     }
-    
+
     # Fetch price immediately on startup
     {:ok, state, {:continue, :fetch_initial_price}}
   end
@@ -98,6 +98,7 @@ defmodule ClippsterServer.PriceService do
   # Private Functions
 
   defp should_refresh?(%{last_updated: nil}), do: true
+
   defp should_refresh?(%{last_updated: last_updated}) do
     DateTime.diff(DateTime.utc_now(), last_updated, :second) > @cache_ttl_seconds
   end
@@ -105,21 +106,24 @@ defmodule ClippsterServer.PriceService do
   defp fetch_price_from_api do
     # Try Alchemy Prices API first (reliable and accurate)
     case fetch_from_alchemy() do
-      {:ok, price} -> 
+      {:ok, price} ->
         Logger.info("Price fetched from Alchemy: $#{price}")
         {:ok, price}
-      
+
       {:error, reason} ->
         Logger.warning("Alchemy API failed (#{inspect(reason)}), trying CoinGecko...")
-        
+
         # Fallback to CoinGecko free API
         case fetch_from_coingecko() do
-          {:ok, price} -> 
+          {:ok, price} ->
             Logger.info("Price fetched from CoinGecko: $#{price}")
             {:ok, price}
-          
+
           {:error, cg_reason} ->
-            Logger.error("All price sources failed - Alchemy: #{inspect(reason)}, CoinGecko: #{inspect(cg_reason)}")
+            Logger.error(
+              "All price sources failed - Alchemy: #{inspect(reason)}, CoinGecko: #{inspect(cg_reason)}"
+            )
+
             {:error, :all_sources_failed}
         end
     end
@@ -127,22 +131,23 @@ defmodule ClippsterServer.PriceService do
 
   defp fetch_from_alchemy do
     api_key = System.get_env("ALCHEMY_API_KEY")
-    
+
     if !api_key || api_key == "" do
       Logger.error("ALCHEMY_API_KEY not set")
       {:error, :missing_api_key}
     else
       url = "#{@alchemy_prices_api_url}/#{api_key}/tokens/by-address"
-      
-      payload = Jason.encode!(%{
-        addresses: [
-          %{
-            network: "solana-mainnet",
-            address: @sol_mint
-          }
-        ]
-      })
-      
+
+      payload =
+        Jason.encode!(%{
+          addresses: [
+            %{
+              network: "solana-mainnet",
+              address: @sol_mint
+            }
+          ]
+        })
+
       headers = [{"Content-Type", "application/json"}]
 
       case HTTPoison.post(url, payload, headers, recv_timeout: 10_000) do

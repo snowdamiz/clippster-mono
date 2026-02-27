@@ -6,7 +6,10 @@ defmodule ClippsterServer.AI.PromptRulesParserTest do
     test "parses 'no clips under X seconds'" do
       assert PromptRulesParser.parse_minimum_duration("no clips under 10 seconds") == 10
       assert PromptRulesParser.parse_minimum_duration("No clips under 15 seconds please") == 15
-      assert PromptRulesParser.parse_minimum_duration("detect clips but no clips under 20 seconds") == 20
+
+      assert PromptRulesParser.parse_minimum_duration(
+               "detect clips but no clips under 20 seconds"
+             ) == 20
     end
 
     test "parses 'no clips below X seconds'" do

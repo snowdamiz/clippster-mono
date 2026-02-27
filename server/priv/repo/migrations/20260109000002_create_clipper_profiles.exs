@@ -11,7 +11,8 @@ defmodule ClippsterServer.Repo.Migrations.CreateClipperProfiles do
       add :slug, :string
       add :is_public, :boolean, default: false
       add :looking_for_work, :boolean, default: false
-      add :experience_level, :string  # beginner, intermediate, experienced, professional
+      # beginner, intermediate, experienced, professional
+      add :experience_level, :string
       add :specialty_tags, {:array, :string}, default: []
       add :content_style_tags, {:array, :string}, default: []
       add :preferred_platforms, {:array, :string}, default: []
@@ -36,7 +37,8 @@ defmodule ClippsterServer.Repo.Migrations.CreateClipperProfiles do
     # Channel links - links to clipper's clip channels (TikTok, YouTube, etc.)
     create table(:clipper_channel_links) do
       add :clipper_profile_id, references(:clipper_profiles, on_delete: :delete_all), null: false
-      add :platform, :string, null: false  # tiktok, youtube, instagram, x, kick, twitch
+      # tiktok, youtube, instagram, x, kick, twitch
+      add :platform, :string, null: false
       add :url, :string, null: false
       add :username, :string
       add :display_order, :integer, default: 0
@@ -53,8 +55,10 @@ defmodule ClippsterServer.Repo.Migrations.CreateClipperProfiles do
       add :title, :string
       add :video_url, :string, null: false
       add :thumbnail_url, :string
-      add :duration, :decimal  # seconds
-      add :file_size, :bigint  # bytes
+      # seconds
+      add :duration, :decimal
+      # bytes
+      add :file_size, :bigint
       add :display_order, :integer, default: 0
 
       timestamps(type: :utc_datetime)
@@ -69,7 +73,8 @@ defmodule ClippsterServer.Repo.Migrations.CreateClipperProfiles do
       add :endorsed_by_user_id, references(:users, on_delete: :nilify_all)
       add :campaign_id, references(:clipping_campaigns, on_delete: :nilify_all)
       add :content, :text
-      add :rating, :integer  # 1-5 stars
+      # 1-5 stars
+      add :rating, :integer
 
       timestamps(type: :utc_datetime)
     end
@@ -81,7 +86,8 @@ defmodule ClippsterServer.Repo.Migrations.CreateClipperProfiles do
     # Badges earned by clippers
     create table(:clipper_badges) do
       add :clipper_profile_id, references(:clipper_profiles, on_delete: :delete_all), null: false
-      add :badge_type, :string, null: false  # verified, top_clipper, rising_star
+      # verified, top_clipper, rising_star
+      add :badge_type, :string, null: false
       add :earned_at, :utc_datetime, null: false
       add :expires_at, :utc_datetime
 
@@ -94,7 +100,8 @@ defmodule ClippsterServer.Repo.Migrations.CreateClipperProfiles do
     # Leaderboard entries (weekly/monthly snapshots)
     create table(:clipper_leaderboard_entries) do
       add :clipper_profile_id, references(:clipper_profiles, on_delete: :delete_all), null: false
-      add :period_type, :string, null: false  # weekly, monthly
+      # weekly, monthly
+      add :period_type, :string, null: false
       add :period_start, :date, null: false
       add :period_end, :date, null: false
       add :rank, :integer
@@ -108,6 +115,11 @@ defmodule ClippsterServer.Repo.Migrations.CreateClipperProfiles do
 
     create index(:clipper_leaderboard_entries, [:clipper_profile_id])
     create index(:clipper_leaderboard_entries, [:period_type, :period_start])
-    create unique_index(:clipper_leaderboard_entries, [:clipper_profile_id, :period_type, :period_start])
+
+    create unique_index(:clipper_leaderboard_entries, [
+             :clipper_profile_id,
+             :period_type,
+             :period_start
+           ])
   end
 end

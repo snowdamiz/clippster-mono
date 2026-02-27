@@ -23,7 +23,15 @@ defmodule ClippsterServer.Messaging.ConversationParticipant do
   @doc false
   def changeset(participant, attrs) do
     participant
-    |> cast(attrs, [:role, :joined_at, :left_at, :last_read_at, :muted, :conversation_id, :user_id])
+    |> cast(attrs, [
+      :role,
+      :joined_at,
+      :left_at,
+      :last_read_at,
+      :muted,
+      :conversation_id,
+      :user_id
+    ])
     |> validate_required([:conversation_id, :user_id])
     |> validate_inclusion(:role, @participant_roles)
     |> unique_constraint([:conversation_id, :user_id])

@@ -36,10 +36,10 @@ defmodule ClippsterServer.Messaging.Message do
   # Validate that either content or attachments will be present
   defp validate_content_or_attachments(changeset) do
     content = get_field(changeset, :content)
-    
+
     # Content is valid if it's not nil and not empty after trimming
     has_content = content && String.trim(content) != ""
-    
+
     # For now, we'll allow empty content (attachments will be added after message creation)
     # This validation will pass, and we'll rely on the channel to ensure attachments are added
     if has_content do

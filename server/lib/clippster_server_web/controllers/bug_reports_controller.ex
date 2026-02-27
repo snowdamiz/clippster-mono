@@ -5,9 +5,15 @@ defmodule ClippsterServerWeb.BugReportsController do
   # Handle OPTIONS requests for CORS preflight
   def options(conn, _params) do
     conn
-    |> put_resp_header("access-control-allow-origin", get_req_header(conn, "origin") |> List.first() || "*")
+    |> put_resp_header(
+      "access-control-allow-origin",
+      get_req_header(conn, "origin") |> List.first() || "*"
+    )
     |> put_resp_header("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS")
-    |> put_resp_header("access-control-allow-headers", "Authorization, Content-Type, Accept, Origin, X-Requested-With")
+    |> put_resp_header(
+      "access-control-allow-headers",
+      "Authorization, Content-Type, Accept, Origin, X-Requested-With"
+    )
     |> put_resp_header("access-control-max-age", "86400")
     |> send_resp(200, "")
   end
@@ -175,6 +181,7 @@ defmodule ClippsterServerWeb.BugReportsController do
         case ClippsterServer.Auth.TokenGenerator.verify_token(token) do
           {:ok, claims} ->
             claims["wallet_address"]
+
           {:error, _} ->
             nil
         end

@@ -143,6 +143,21 @@ pub struct TwitterAccount {
     pub connected_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostForMeAuthResult {
+    pub success: bool,
+    #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
+    pub account_ids: Vec<String>,
+    #[serde(default)]
+    pub external_id: Option<String>,
+    #[serde(default)]
+    pub platform: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
 pub static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static PAYMENT_RESULT: Lazy<Arc<Mutex<Option<PaymentResult>>>> =
@@ -155,12 +170,15 @@ pub static INSTAGRAM_AUTH_RESULT: Lazy<Arc<Mutex<Option<InstagramAuthResult>>>> 
     Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static TWITTER_AUTH_RESULT: Lazy<Arc<Mutex<Option<TwitterAuthResult>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
+pub static POST_FOR_ME_AUTH_RESULT: Lazy<Arc<Mutex<Option<PostForMeAuthResult>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static AUTH_SERVER_PORT: u16 = 48274;
 pub static PAYMENT_SERVER_PORT: u16 = 48275;
 pub static GOOGLE_AUTH_SERVER_PORT: u16 = 54321;
 pub static EMAIL_VERIFICATION_SERVER_PORT: u16 = 54322;
 pub static INSTAGRAM_AUTH_SERVER_PORT: u16 = 54323;
 pub static TWITTER_AUTH_SERVER_PORT: u16 = 54324;
+pub static POST_FOR_ME_AUTH_SERVER_PORT: u16 = 54325;
 
 const WALLET_AUTH_HTML: &str = include_str!("../../public/wallet-auth.html");
 const WALLET_PAYMENT_HTML: &str = include_str!("../../public/wallet-payment.html");
@@ -227,6 +245,27 @@ fn parse_i64(value: Option<&String>, default: i64) -> i64 {
 
 fn parse_i32(value: Option<&String>, default: i32) -> i32 {
     value.and_then(|v| v.parse::<i32>().ok()).unwrap_or(default)
+}
+
+fn parse_post_for_me_account_ids(value: &str) -> Vec<String> {
+    let trimmed = value.trim();
+
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        trimmed
+            .trim_matches(['[', ']'])
+            .split(',')
+            .map(|entry| entry.trim().trim_matches('"').trim_matches('\''))
+            .filter(|entry| !entry.is_empty())
+            .map(|entry| entry.to_string())
+            .collect()
+    } else {
+        trimmed
+            .split(',')
+            .map(|entry| entry.trim())
+            .filter(|entry| !entry.is_empty())
+            .map(|entry| entry.to_string())
+            .collect()
+    }
 }
 
 fn oauth_result_html(title: &str, message: &str, color: &str) -> String {
@@ -462,6 +501,23 @@ pub async fn start_user_twitter_oauth(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn start_post_for_me_oauth(
+    app: tauri::AppHandle,
+    auth_url: String,
+) -> Result<(), String> {
+    // Clear any previous auth result
+    *POST_FOR_ME_AUTH_RESULT.lock().unwrap() = None;
+
+    // Start local callback server
+    start_post_for_me_callback_server(app.clone());
+
+    tauri_plugin_opener::open_url(auth_url, None::<&str>)
+        .map_err(|e| format!("Failed to open browser: {}", e))?;
+
+    Ok(())
+}
+
 pub fn start_auth_callback_server(app: tauri::AppHandle) {
     use std::sync::atomic::{AtomicBool, Ordering};
     static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
@@ -594,7 +650,10 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                         status: subscription_status,
                         tier: parse_optional_string(&params, "subscription_tier"),
                         tier_name: parse_optional_string(&params, "subscription_tier_name"),
-                        needs_subscription: parse_bool(params.get("subscription_needs_subscription"), false),
+                        needs_subscription: parse_bool(
+                            params.get("subscription_needs_subscription"),
+                            false,
+                        ),
                         days_remaining: parse_i32(params.get("subscription_days_remaining"), 0),
                     });
 
@@ -608,7 +667,9 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                         avatar_url: parse_optional_string(&params, "avatar_url"),
                         is_admin: parse_bool(params.get("is_admin"), false),
                         account_type: parse_optional_string(&params, "account_type"),
-                        owned_organization_id: parse_optional_i64(params.get("owned_organization_id")),
+                        owned_organization_id: parse_optional_i64(
+                            params.get("owned_organization_id"),
+                        ),
                         created_by_organization_id: parse_optional_i64(
                             params.get("created_by_organization_id"),
                         ),
@@ -625,7 +686,9 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                         token: parse_optional_string(&params, "token"),
                         provider: Some("google".to_string()),
                         user: Some(user),
-                        is_new_user: params.get("is_new_user").map(|v| parse_bool(Some(v), false)),
+                        is_new_user: params
+                            .get("is_new_user")
+                            .map(|v| parse_bool(Some(v), false)),
                         error: None,
                     }
                 } else {
@@ -640,7 +703,10 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                     }
                 };
 
-                println!("[Google Auth] Callback received: success={}", result.success);
+                println!(
+                    "[Google Auth] Callback received: success={}",
+                    result.success
+                );
 
                 *google_auth_result.lock().unwrap() = Some(result.clone());
                 let _ = app_handle.emit("google-auth-complete", result.clone());
@@ -833,7 +899,10 @@ pub fn start_instagram_callback_server(app: tauri::AppHandle) {
                     error: error.clone(),
                 };
 
-                println!("[Instagram Auth] Callback received: success={}", result.success);
+                println!(
+                    "[Instagram Auth] Callback received: success={}",
+                    result.success
+                );
 
                 *instagram_auth_result.lock().unwrap() = Some(result.clone());
                 let _ = app_handle.emit("instagram-auth-complete", result.clone());
@@ -999,6 +1068,102 @@ pub fn start_twitter_callback_server(app: tauri::AppHandle) {
     });
 }
 
+pub fn start_post_for_me_callback_server(app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
+        return; // Server already running
+    }
+
+    tokio::spawn(async move {
+        let post_for_me_auth_result = POST_FOR_ME_AUTH_RESULT.clone();
+        let app_handle = app.clone();
+
+        let post_for_me_callback = warp::path("postforme-callback")
+            .and(warp::get())
+            .and(warp::query::<HashMap<String, String>>())
+            .map(move |params: HashMap<String, String>| {
+                let success = parse_bool(params.get("success"), false);
+                let account_id = parse_optional_string(&params, "account_id");
+                let platform = parse_optional_string(&params, "platform");
+                let external_id = parse_optional_string(&params, "external_id");
+
+                let mut account_ids = Vec::new();
+
+                if let Some(id) = account_id.clone() {
+                    account_ids.push(id);
+                }
+
+                if let Some(raw_ids) = parse_optional_string(&params, "account_ids")
+                    .or_else(|| parse_optional_string(&params, "account_ids[]"))
+                {
+                    account_ids.extend(parse_post_for_me_account_ids(&raw_ids));
+                }
+
+                account_ids.sort();
+                account_ids.dedup();
+
+                let error = if success {
+                    None
+                } else {
+                    parse_optional_string(&params, "error")
+                        .or_else(|| parse_optional_string(&params, "error_description"))
+                        .or_else(|| Some("Post For Me authentication failed".to_string()))
+                };
+
+                let result = PostForMeAuthResult {
+                    success,
+                    account_id: account_id.or_else(|| account_ids.first().cloned()),
+                    account_ids,
+                    external_id,
+                    platform,
+                    error: error.clone(),
+                };
+
+                println!(
+                    "[PostForMe Auth] Callback received: success={}",
+                    result.success
+                );
+
+                *post_for_me_auth_result.lock().unwrap() = Some(result.clone());
+                let _ = app_handle.emit("post-for-me-auth-complete", result);
+
+                let (title, message, color) = if success {
+                    (
+                        "Account Connected",
+                        "You can close this tab and return to the app.",
+                        "#22c55e",
+                    )
+                } else {
+                    (
+                        "Connection Failed",
+                        error
+                            .as_deref()
+                            .unwrap_or("Authentication failed. You can close this tab."),
+                        "#ef4444",
+                    )
+                };
+
+                warp::reply::html(oauth_result_html(title, message, color))
+            });
+
+        let cors = warp::cors()
+            .allow_any_origin()
+            .allow_methods(vec!["GET", "OPTIONS"])
+            .allow_headers(vec!["Content-Type"]);
+
+        println!(
+            "Starting Post For Me auth callback server on port {}",
+            POST_FOR_ME_AUTH_SERVER_PORT
+        );
+
+        warp::serve(post_for_me_callback.with(cors))
+            .run(([127, 0, 0, 1], POST_FOR_ME_AUTH_SERVER_PORT))
+            .await;
+    });
+}
+
 #[tauri::command]
 pub async fn poll_twitter_auth_result() -> Result<Option<TwitterAuthResult>, String> {
     let result = TWITTER_AUTH_RESULT.lock().unwrap().clone();
@@ -1008,5 +1173,17 @@ pub async fn poll_twitter_auth_result() -> Result<Option<TwitterAuthResult>, Str
 #[tauri::command]
 pub async fn clear_twitter_auth_result() -> Result<(), String> {
     *TWITTER_AUTH_RESULT.lock().unwrap() = None;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn poll_post_for_me_auth_result() -> Result<Option<PostForMeAuthResult>, String> {
+    let result = POST_FOR_ME_AUTH_RESULT.lock().unwrap().clone();
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn clear_post_for_me_auth_result() -> Result<(), String> {
+    *POST_FOR_ME_AUTH_RESULT.lock().unwrap() = None;
     Ok(())
 }

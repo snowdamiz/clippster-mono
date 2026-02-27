@@ -11,8 +11,10 @@ defmodule ClippsterServer.Social.VideoValidator do
 
   require Logger
 
-  @default_max_size 512 * 1024 * 1024  # 512MB for non-premium accounts
-  @default_max_duration 140  # 140 seconds for standard X accounts
+  # 512MB for non-premium accounts
+  @default_max_size 512 * 1024 * 1024
+  # 140 seconds for standard X accounts
+  @default_max_duration 140
   @allowed_extensions [".mp4", ".mov"]
 
   @doc """
@@ -106,8 +108,13 @@ defmodule ClippsterServer.Social.VideoValidator do
     if extension in @allowed_extensions do
       :ok
     else
-      supported = @allowed_extensions |> Enum.map(&String.upcase(String.trim_leading(&1, "."))) |> Enum.join(", ")
-      {:error, {:validation_failed, "Unsupported video format: #{extension}. Supported: #{supported}"}}
+      supported =
+        @allowed_extensions
+        |> Enum.map(&String.upcase(String.trim_leading(&1, ".")))
+        |> Enum.join(", ")
+
+      {:error,
+       {:validation_failed, "Unsupported video format: #{extension}. Supported: #{supported}"}}
     end
   end
 
@@ -118,7 +125,9 @@ defmodule ClippsterServer.Social.VideoValidator do
 
   defp validate_duration(duration_seconds, max_duration) when is_number(duration_seconds) do
     if duration_seconds > max_duration do
-      {:error, {:validation_failed, "Video exceeds #{max_duration} second limit (got #{duration_seconds}s)"}}
+      {:error,
+       {:validation_failed,
+        "Video exceeds #{max_duration} second limit (got #{duration_seconds}s)"}}
     else
       :ok
     end

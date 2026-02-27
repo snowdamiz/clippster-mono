@@ -30,7 +30,8 @@ defmodule ClippsterServerWeb.RestrictionPlug do
         |> put_status(:forbidden)
         |> json(%{
           error: "Account restricted",
-          message: "Your account has been restricted. Reason: #{user.restricted_reason || "No reason provided"}",
+          message:
+            "Your account has been restricted. Reason: #{user.restricted_reason || "No reason provided"}",
           is_restricted: true,
           restricted_at: user.restricted_at,
           restricted_reason: user.restricted_reason

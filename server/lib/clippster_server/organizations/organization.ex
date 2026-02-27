@@ -14,36 +14,47 @@ defmodule ClippsterServer.Organizations.Organization do
     field :scheduling_enabled, :boolean, default: true
 
     # Restriction defaults for restricted members
-    field :restriction_defaults, :map, default: %{
-      "allow_ai" => true,
-      "allow_asset_uploads" => false,
-      "allow_custom_prompts" => false,
-      "allow_clipper_profile" => false,
-      "allow_personal_social" => true,
-      "allow_clip_deletion" => false,
-      "allow_hiring_browse" => true,
-      "force_org_watermark" => true,
-      "require_clip_approval" => false,
-      "clips_visible_to_admins" => true
-    }
+    field :restriction_defaults, :map,
+      default: %{
+        "allow_ai" => true,
+        "allow_asset_uploads" => false,
+        "allow_custom_prompts" => false,
+        "allow_clipper_profile" => false,
+        "allow_personal_social" => true,
+        "allow_clip_deletion" => false,
+        "allow_hiring_browse" => true,
+        "force_org_watermark" => true,
+        "require_clip_approval" => false,
+        "clips_visible_to_admins" => true
+      }
 
     # Subscription fields
-    field :subscription_status, :string, default: "none"  # none, active, cancelled, expired
-    field :subscription_tier, :string  # enterprise_base, enterprise_ai
+    # none, active, cancelled, expired
+    field :subscription_status, :string, default: "none"
+    # enterprise_base, enterprise_ai
+    field :subscription_tier, :string
     field :subscription_start_date, :utc_datetime
     field :subscription_end_date, :utc_datetime
-    field :subscription_renewal_method, :string  # stripe, crypto
+    # stripe, crypto
+    field :subscription_renewal_method, :string
     field :stripe_subscription_id, :string
     field :stripe_customer_id, :string
-    field :max_seats, :integer  # nil = unlimited (legacy), otherwise seat limit
-    field :monthly_credits, :integer, default: 0  # Credits granted per renewal
-    field :pending_subscription_tier, :string  # Tier org is downgrading to at period end
+    # nil = unlimited (legacy), otherwise seat limit
+    field :max_seats, :integer
+    # Credits granted per renewal
+    field :monthly_credits, :integer, default: 0
+    # Tier org is downgrading to at period end
+    field :pending_subscription_tier, :string
 
     # Admin-managed subscription fields
-    field :admin_price_cents, :integer  # Custom price set by admin (in cents), nil = use tier default
-    field :admin_billing_cycle_day, :integer  # Day of month for billing cycle
-    field :created_by_admin_id, :integer  # Admin user ID who created this org account
-    field :setup_completed, :boolean, default: true  # false = user needs to finish setup on first login
+    # Custom price set by admin (in cents), nil = use tier default
+    field :admin_price_cents, :integer
+    # Day of month for billing cycle
+    field :admin_billing_cycle_day, :integer
+    # Admin user ID who created this org account
+    field :created_by_admin_id, :integer
+    # false = user needs to finish setup on first login
+    field :setup_completed, :boolean, default: true
 
     belongs_to :owner, ClippsterServer.Accounts.User
     has_many :members, ClippsterServer.Organizations.OrganizationMember
@@ -58,7 +69,15 @@ defmodule ClippsterServer.Organizations.Organization do
   """
   def create_changeset(organization, attrs) do
     organization
-    |> cast(attrs, [:name, :description, :logo_url, :owner_id, :settings, :allow_personal_instagram, :scheduling_enabled])
+    |> cast(attrs, [
+      :name,
+      :description,
+      :logo_url,
+      :owner_id,
+      :settings,
+      :allow_personal_instagram,
+      :scheduling_enabled
+    ])
     |> validate_required([:name, :owner_id])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, max: 500)
@@ -72,7 +91,15 @@ defmodule ClippsterServer.Organizations.Organization do
   """
   def update_changeset(organization, attrs) do
     organization
-    |> cast(attrs, [:name, :description, :logo_url, :settings, :allow_personal_instagram, :scheduling_enabled, :restriction_defaults])
+    |> cast(attrs, [
+      :name,
+      :description,
+      :logo_url,
+      :settings,
+      :allow_personal_instagram,
+      :scheduling_enabled,
+      :restriction_defaults
+    ])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, max: 500)
     |> maybe_regenerate_slug()
@@ -100,7 +127,13 @@ defmodule ClippsterServer.Organizations.Organization do
       :setup_completed
     ])
     |> validate_inclusion(:subscription_status, ["none", "active", "cancelled", "expired"])
-    |> validate_inclusion(:subscription_tier, ["solo", "enterprise_base", "enterprise_ai", "enterprise_unlimited", nil])
+    |> validate_inclusion(:subscription_tier, [
+      "solo",
+      "enterprise_base",
+      "enterprise_ai",
+      "enterprise_unlimited",
+      nil
+    ])
   end
 
   @doc """
@@ -121,7 +154,9 @@ defmodule ClippsterServer.Organizations.Organization do
 
   defp maybe_regenerate_slug(changeset) do
     case get_change(changeset, :name) do
-      nil -> changeset
+      nil ->
+        changeset
+
       name ->
         # Only regenerate slug if name changed and current slug matches old name pattern
         current_slug = get_field(changeset, :slug)

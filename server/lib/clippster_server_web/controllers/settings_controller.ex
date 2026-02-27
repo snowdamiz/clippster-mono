@@ -28,13 +28,17 @@ defmodule ClippsterServerWeb.SettingsController do
 
     branding =
       case raw do
-        nil -> nil
+        nil ->
+          nil
+
         value when is_binary(value) ->
           case Jason.decode(value) do
             {:ok, decoded} -> decoded
             _ -> nil
           end
-        value -> value
+
+        value ->
+          value
       end
 
     json(conn, %{
@@ -43,4 +47,3 @@ defmodule ClippsterServerWeb.SettingsController do
     })
   end
 end
-

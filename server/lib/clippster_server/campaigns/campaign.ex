@@ -6,8 +6,18 @@ defmodule ClippsterServer.Campaigns.Campaign do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias ClippsterServer.Organizations.{Organization, OrganizationCreatorProfile, OrganizationAsset}
-  alias ClippsterServer.Campaigns.{CampaignParticipant, CampaignSubmission, CampaignPayment, CampaignCreatorProfile}
+  alias ClippsterServer.Organizations.{
+    Organization,
+    OrganizationCreatorProfile,
+    OrganizationAsset
+  }
+
+  alias ClippsterServer.Campaigns.{
+    CampaignParticipant,
+    CampaignSubmission,
+    CampaignPayment,
+    CampaignCreatorProfile
+  }
 
   @join_types ~w(open application_required)
   @statuses ~w(draft active paused completed)
@@ -152,7 +162,9 @@ defmodule ClippsterServer.Campaigns.Campaign do
 
   defp validate_platforms(changeset) do
     case get_change(changeset, :allowed_platforms) do
-      nil -> changeset
+      nil ->
+        changeset
+
       platforms ->
         if Enum.all?(platforms, &(&1 in @platforms)) do
           changeset
@@ -164,7 +176,9 @@ defmodule ClippsterServer.Campaigns.Campaign do
 
   defp validate_payment_methods(changeset) do
     case get_change(changeset, :payment_methods) do
-      nil -> changeset
+      nil ->
+        changeset
+
       methods ->
         if Enum.all?(methods, &(&1 in @payment_methods)) do
           changeset

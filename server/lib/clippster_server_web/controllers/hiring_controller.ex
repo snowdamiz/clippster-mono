@@ -26,7 +26,11 @@ defmodule ClippsterServerWeb.HiringController do
   rescue
     e ->
       require Logger
-      Logger.error("show_org_post crashed: #{inspect(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}")
+
+      Logger.error(
+        "show_org_post crashed: #{inspect(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}"
+      )
+
       json(conn |> put_status(500), %{success: false, error: "Internal error: #{inspect(e)}"})
   end
 
@@ -72,7 +76,11 @@ defmodule ClippsterServerWeb.HiringController do
   rescue
     e ->
       require Logger
-      Logger.error("save_org_post crashed: #{inspect(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}")
+
+      Logger.error(
+        "save_org_post crashed: #{inspect(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}"
+      )
+
       json(conn |> put_status(500), %{success: false, error: "Internal error: #{inspect(e)}"})
   end
 
@@ -82,8 +90,11 @@ defmodule ClippsterServerWeb.HiringController do
 
     with {:ok, _} <- verify_org_admin(org_id, user.id) do
       case Hiring.delete_hiring_post(String.to_integer(org_id)) do
-        {:ok, _} -> json(conn, %{success: true})
-        {:error, :not_found} -> json(conn |> put_status(404), %{success: false, error: "No hiring post found"})
+        {:ok, _} ->
+          json(conn, %{success: true})
+
+        {:error, :not_found} ->
+          json(conn |> put_status(404), %{success: false, error: "No hiring post found"})
       end
     else
       {:error, reason} -> error_response(conn, reason)
@@ -101,7 +112,11 @@ defmodule ClippsterServerWeb.HiringController do
 
         post ->
           applications = Hiring.list_applications_for_post(post.id)
-          json(conn, %{success: true, applications: Enum.map(applications, &serialize_application/1)})
+
+          json(conn, %{
+            success: true,
+            applications: Enum.map(applications, &serialize_application/1)
+          })
       end
     else
       {:error, reason} -> error_response(conn, reason)
@@ -127,7 +142,10 @@ defmodule ClippsterServerWeb.HiringController do
           json(conn |> put_status(422), %{success: false, error: "Application already accepted"})
 
         {:error, :seat_limit_reached} ->
-          json(conn |> put_status(422), %{success: false, error: "Organization seat limit reached"})
+          json(conn |> put_status(422), %{
+            success: false,
+            error: "Organization seat limit reached"
+          })
 
         {:error, reason} ->
           json(conn |> put_status(422), %{success: false, error: inspect(reason)})
@@ -143,11 +161,11 @@ defmodule ClippsterServerWeb.HiringController do
 
     with {:ok, _} <- verify_org_admin(org_id, user.id) do
       case Hiring.reject_application(
-        String.to_integer(app_id),
-        String.to_integer(org_id),
-        user.id,
-        params["admin_notes"]
-      ) do
+             String.to_integer(app_id),
+             String.to_integer(org_id),
+             user.id,
+             params["admin_notes"]
+           ) do
         {:ok, application} ->
           json(conn, %{success: true, application: serialize_application(application)})
 
@@ -172,9 +190,13 @@ defmodule ClippsterServerWeb.HiringController do
   @doc "Browse all active public hiring posts"
   def index(conn, params) do
     filters = %{
-      "content_types" => params["content_types"] || params["content_types[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
-      "languages" => params["languages"] || params["languages[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
-      "platforms" => params["platforms"] || params["platforms[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
+      "content_types" =>
+        params["content_types"] ||
+          params["content_types[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
+      "languages" =>
+        params["languages"] || params["languages[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
+      "platforms" =>
+        params["platforms"] || params["platforms[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
       "payment_type" => params["payment_type"]
     }
 
@@ -187,10 +209,11 @@ defmodule ClippsterServerWeb.HiringController do
 
     json(conn, %{
       success: true,
-      hiring_posts: Enum.map(posts, fn post ->
-        serialize_post(post)
-        |> Map.put(:has_applied, MapSet.member?(applied_post_ids, post.id))
-      end)
+      hiring_posts:
+        Enum.map(posts, fn post ->
+          serialize_post(post)
+          |> Map.put(:has_applied, MapSet.member?(applied_post_ids, post.id))
+        end)
     })
   end
 
@@ -223,12 +246,18 @@ defmodule ClippsterServerWeb.HiringController do
         json(conn |> put_status(404), %{success: false, error: "Hiring post not found"})
 
       {:error, :post_not_active} ->
-        json(conn |> put_status(422), %{success: false, error: "This hiring post is no longer accepting applications"})
+        json(conn |> put_status(422), %{
+          success: false,
+          error: "This hiring post is no longer accepting applications"
+        })
 
       {:error, %Ecto.Changeset{} = changeset} ->
         if Keyword.has_key?(changeset.errors, :hiring_post_id_user_id) ||
-           Keyword.has_key?(changeset.errors, :hiring_post_id) do
-          json(conn |> put_status(422), %{success: false, error: "You have already applied to this hiring post"})
+             Keyword.has_key?(changeset.errors, :hiring_post_id) do
+          json(conn |> put_status(422), %{
+            success: false,
+            error: "You have already applied to this hiring post"
+          })
         else
           json(conn |> put_status(422), %{
             success: false,
@@ -246,16 +275,17 @@ defmodule ClippsterServerWeb.HiringController do
 
     json(conn, %{
       success: true,
-      applications: Enum.map(applications, fn app ->
-        %{
-          id: app.id,
-          message: app.message,
-          status: app.status,
-          reviewed_at: app.reviewed_at,
-          inserted_at: app.inserted_at,
-          hiring_post: if(app.hiring_post, do: serialize_post(app.hiring_post), else: nil)
-        }
-      end)
+      applications:
+        Enum.map(applications, fn app ->
+          %{
+            id: app.id,
+            message: app.message,
+            status: app.status,
+            reviewed_at: app.reviewed_at,
+            inserted_at: app.inserted_at,
+            hiring_post: if(app.hiring_post, do: serialize_post(app.hiring_post), else: nil)
+          }
+        end)
     })
   end
 
@@ -267,7 +297,9 @@ defmodule ClippsterServerWeb.HiringController do
     org_id = if is_binary(org_id), do: String.to_integer(org_id), else: org_id
 
     case Organizations.get_member(org_id, user_id) do
-      nil -> {:error, :not_member}
+      nil ->
+        {:error, :not_member}
+
       member ->
         if member.role in ["owner", "admin"] do
           {:ok, member}
@@ -278,7 +310,10 @@ defmodule ClippsterServerWeb.HiringController do
   end
 
   defp error_response(conn, :not_member) do
-    json(conn |> put_status(403), %{success: false, error: "You are not a member of this organization"})
+    json(conn |> put_status(403), %{
+      success: false,
+      error: "You are not a member of this organization"
+    })
   end
 
   defp error_response(conn, :not_admin) do
@@ -308,11 +343,15 @@ defmodule ClippsterServerWeb.HiringController do
       is_public: post.is_public,
       inserted_at: post.inserted_at,
       updated_at: post.updated_at,
-      organization: if(Ecto.assoc_loaded?(post.organization) && post.organization, do: %{
-        id: post.organization.id,
-        name: post.organization.name,
-        logo_url: post.organization.logo_url
-      }, else: nil)
+      organization:
+        if(Ecto.assoc_loaded?(post.organization) && post.organization,
+          do: %{
+            id: post.organization.id,
+            name: post.organization.name,
+            logo_url: post.organization.logo_url
+          },
+          else: nil
+        )
     }
   end
 
@@ -329,41 +368,44 @@ defmodule ClippsterServerWeb.HiringController do
       updated_at: app.updated_at
     }
 
-    base = if Ecto.assoc_loaded?(app.user) && app.user do
-      Map.put(base, :user, %{
-        id: app.user.id,
-        name: app.user.name,
-        email: app.user.email,
-        avatar_url: app.user.avatar_url
-      })
-    else
-      base
-    end
+    base =
+      if Ecto.assoc_loaded?(app.user) && app.user do
+        Map.put(base, :user, %{
+          id: app.user.id,
+          name: app.user.name,
+          email: app.user.email,
+          avatar_url: app.user.avatar_url
+        })
+      else
+        base
+      end
 
-    base = if Map.has_key?(app, :clipper_profile) && app.clipper_profile do
-      cp = app.clipper_profile
-      Map.put(base, :clipper_profile, %{
-        id: cp.id,
-        user_id: cp.user_id,
-        display_name: cp.display_name,
-        avatar_url: maybe_presign(cp.avatar_url),
-        slug: cp.slug,
-        bio: cp.bio,
-        is_verified: cp.is_verified,
-        looking_for_work: cp.looking_for_work,
-        experience_level: cp.experience_level,
-        response_time_hours: cp.response_time_hours,
-        specialty_tags: cp.specialty_tags || [],
-        content_style_tags: cp.content_style_tags || [],
-        preferred_platforms: cp.preferred_platforms || [],
-        languages: cp.languages || [],
-        total_clips_delivered: cp.total_clips_delivered || 0,
-        total_endorsements: cp.total_endorsements || 0,
-        total_campaigns_completed: cp.total_campaigns_completed || 0
-      })
-    else
-      base
-    end
+    base =
+      if Map.has_key?(app, :clipper_profile) && app.clipper_profile do
+        cp = app.clipper_profile
+
+        Map.put(base, :clipper_profile, %{
+          id: cp.id,
+          user_id: cp.user_id,
+          display_name: cp.display_name,
+          avatar_url: maybe_presign(cp.avatar_url),
+          slug: cp.slug,
+          bio: cp.bio,
+          is_verified: cp.is_verified,
+          looking_for_work: cp.looking_for_work,
+          experience_level: cp.experience_level,
+          response_time_hours: cp.response_time_hours,
+          specialty_tags: cp.specialty_tags || [],
+          content_style_tags: cp.content_style_tags || [],
+          preferred_platforms: cp.preferred_platforms || [],
+          languages: cp.languages || [],
+          total_clips_delivered: cp.total_clips_delivered || 0,
+          total_endorsements: cp.total_endorsements || 0,
+          total_campaigns_completed: cp.total_campaigns_completed || 0
+        })
+      else
+        base
+      end
 
     base
   end
@@ -375,12 +417,14 @@ defmodule ClippsterServerWeb.HiringController do
   defp to_integer_or_nil(nil), do: nil
   defp to_integer_or_nil(""), do: nil
   defp to_integer_or_nil(val) when is_integer(val), do: val
+
   defp to_integer_or_nil(val) when is_binary(val) do
     case Integer.parse(val) do
       {int, _} -> int
       :error -> nil
     end
   end
+
   defp to_integer_or_nil(val) when is_float(val), do: round(val)
   defp to_integer_or_nil(_), do: nil
 

@@ -27,40 +27,40 @@ defmodule ClippsterServerWeb.KickController do
       {:ok, %Req.Response{status: 200, body: body}} ->
         # RapidAPI wraps response in "data" key
         data = body["data"] || body
-        
+
         # Extract live status from channel data
         livestream = data["livestream"]
         user = data["user"]
-        
+
         # Check multiple possible field names for is_live
-        is_live = case livestream do
-          nil -> false
-          %{"is_live" => true} -> true
-          %{"isLive" => true} -> true
-          # Also check if livestream exists and has an id (sometimes is_live field is missing)
-          %{"id" => id} when not is_nil(id) -> true
-          _ -> false
-        end
-        
+        is_live =
+          case livestream do
+            nil -> false
+            %{"is_live" => true} -> true
+            %{"isLive" => true} -> true
+            # Also check if livestream exists and has an id (sometimes is_live field is missing)
+            %{"id" => id} when not is_nil(id) -> true
+            _ -> false
+          end
+
         Logger.info("Kick channel #{channel_slug} is_live: #{is_live}")
 
         # Extract profile image with robust fallbacks (API field names may vary)
         profile_image_url =
-          (user && (
-            user["profile_pic"] ||
-            user["profilePic"] ||
-            user["profile_picture"] ||
-            user["profilePicture"] ||
-            user["profile_image_url"] ||
-            user["profileImageUrl"] ||
-            user["avatar"]
-          )) ||
-          data["profile_pic"] ||
-          data["profilePic"] ||
-          data["profile_image_url"] ||
-          data["profileImageUrl"] ||
-          data["logo"] ||
-          data["icon"]
+          (user &&
+             (user["profile_pic"] ||
+                user["profilePic"] ||
+                user["profile_picture"] ||
+                user["profilePicture"] ||
+                user["profile_image_url"] ||
+                user["profileImageUrl"] ||
+                user["avatar"])) ||
+            data["profile_pic"] ||
+            data["profilePic"] ||
+            data["profile_image_url"] ||
+            data["profileImageUrl"] ||
+            data["logo"] ||
+            data["icon"]
 
         response = %{
           isLive: is_live,
@@ -68,9 +68,15 @@ defmodule ClippsterServerWeb.KickController do
           channelSlug: data["slug"] || channel_slug,
           username: (user && user["username"]) || nil,
           profileImageUrl: profile_image_url,
-          streamTitle: (livestream && (livestream["session_title"] || livestream["sessionTitle"])) || nil,
-          viewerCount: (livestream && (livestream["viewer_count"] || livestream["viewerCount"] || livestream["viewers"])) || nil,
-          thumbnailUrl: get_in(livestream || %{}, ["thumbnail", "url"]) || get_in(livestream || %{}, ["thumbnail", "src"]),
+          streamTitle:
+            (livestream && (livestream["session_title"] || livestream["sessionTitle"])) || nil,
+          viewerCount:
+            (livestream &&
+               (livestream["viewer_count"] || livestream["viewerCount"] || livestream["viewers"])) ||
+              nil,
+          thumbnailUrl:
+            get_in(livestream || %{}, ["thumbnail", "url"]) ||
+              get_in(livestream || %{}, ["thumbnail", "src"]),
           playbackUrl: data["playbackUrl"] || data["playback_url"],
           startedAt: (livestream && (livestream["created_at"] || livestream["createdAt"])) || nil
         }
@@ -85,25 +91,34 @@ defmodule ClippsterServerWeb.KickController do
         })
 
       {:ok, %Req.Response{status: status, body: _body}} when status >= 500 and retries_left > 1 ->
-        Logger.warning("Kick API returned #{status} for channel #{channel_slug}, retrying... (#{retries_left - 1} retries left)")
+        Logger.warning(
+          "Kick API returned #{status} for channel #{channel_slug}, retrying... (#{retries_left - 1} retries left)"
+        )
+
         # Wait briefly before retry (exponential backoff)
         Process.sleep(500 * (4 - retries_left))
         do_get_channel_with_retry(conn, channel_slug, retries_left - 1)
 
       {:ok, %Req.Response{status: status, body: body}} ->
-        Logger.error("Kick API returned #{status} for channel #{channel_slug}. Body: #{inspect(body)}")
-        
+        Logger.error(
+          "Kick API returned #{status} for channel #{channel_slug}. Body: #{inspect(body)}"
+        )
+
         conn
         |> put_status(:bad_gateway)
         |> json(%{isLive: false, error: "Kick API returned #{status}"})
 
       {:error, exception} when retries_left > 1 ->
-        Logger.warning("Kick API request failed for #{channel_slug}, retrying... (#{retries_left - 1} retries left): #{inspect(exception)}")
+        Logger.warning(
+          "Kick API request failed for #{channel_slug}, retrying... (#{retries_left - 1} retries left): #{inspect(exception)}"
+        )
+
         Process.sleep(500 * (4 - retries_left))
         do_get_channel_with_retry(conn, channel_slug, retries_left - 1)
 
       {:error, exception} ->
         Logger.error("Kick API request failed after retries: #{inspect(exception)}")
+
         conn
         |> put_status(:internal_server_error)
         |> json(%{isLive: false, error: "Kick API request failed"})
@@ -112,6 +127,7 @@ defmodule ClippsterServerWeb.KickController do
 
   defp do_get_channel_with_retry(conn, channel_slug, 0) do
     Logger.error("Kick API exhausted all retries for channel #{channel_slug}")
+
     conn
     |> put_status(:internal_server_error)
     |> json(%{isLive: false, error: "Kick API request failed after retries"})
@@ -120,7 +136,9 @@ defmodule ClippsterServerWeb.KickController do
   def get_clips(conn, %{"channel_slug" => channel_slug, "limit" => limit}) do
     # RapidAPI credentials
     # Using the key provided by the user
-    rapid_api_key = System.get_env("RAPID_API_KEY") || "1bf3ae18ffmshb1e5abbe9798a55p1246dfjsn389ea6e0de67"
+    rapid_api_key =
+      System.get_env("RAPID_API_KEY") || "1bf3ae18ffmshb1e5abbe9798a55p1246dfjsn389ea6e0de67"
+
     rapid_api_host = "kick-com-api.p.rapidapi.com"
 
     # Endpoint structure: /channels/{username}/videos (no /v2 prefix based on user input)
@@ -132,7 +150,10 @@ defmodule ClippsterServerWeb.KickController do
     ]
 
     # Log the first few chars of the key to verify it's not the placeholder
-    key_preview = if String.length(rapid_api_key) > 4, do: String.slice(rapid_api_key, 0, 4) <> "...", else: "TooShort"
+    key_preview =
+      if String.length(rapid_api_key) > 4,
+        do: String.slice(rapid_api_key, 0, 4) <> "...",
+        else: "TooShort"
 
     case Req.get(url, headers: headers) do
       {:ok, %Req.Response{status: 200, body: body}} ->
@@ -145,8 +166,12 @@ defmodule ClippsterServerWeb.KickController do
         # Based on screenshots: { "data": [...] } or just [...]
         videos_list =
           case body do
-            %{"data" => data} when is_list(data) -> data
-            list when is_list(list) -> list
+            %{"data" => data} when is_list(data) ->
+              data
+
+            list when is_list(list) ->
+              list
+
             _ ->
               Logger.warning("Kick API response body format unexpected: #{inspect(body)}")
               []
@@ -159,17 +184,19 @@ defmodule ClippsterServerWeb.KickController do
             # Try multiple thumbnail field paths (API response format may vary)
             thumbnail_url =
               get_in(video, ["thumbnail", "src"]) ||
-              get_in(video, ["thumbnail", "url"]) ||
-              get_in(video, ["thumbnail", "responsive"]) ||
-              video["thumbnail_url"] ||
-              video["thumbnailUrl"]
+                get_in(video, ["thumbnail", "url"]) ||
+                get_in(video, ["thumbnail", "responsive"]) ||
+                video["thumbnail_url"] ||
+                video["thumbnailUrl"]
 
             # Map fields safely, handle nil
             %{
               clipId: to_string(video["id"]),
               sessionId: video["slug"],
-              title: video["session_title"] || video["sessionTitle"], # Handle different casing
-              duration: (video["duration"] || 0) |> div(1000), # ms to seconds
+              # Handle different casing
+              title: video["session_title"] || video["sessionTitle"],
+              # ms to seconds
+              duration: (video["duration"] || 0) |> div(1000),
               thumbnailUrl: thumbnail_url,
               playlistUrl: video["source"],
               mp4Url: nil,
@@ -189,7 +216,9 @@ defmodule ClippsterServerWeb.KickController do
         })
 
       {:ok, %Req.Response{status: status, body: body}} ->
-        Logger.error("Kick API returned #{status}. Key used starts with: #{key_preview}. Body: #{inspect(body)}")
+        Logger.error(
+          "Kick API returned #{status}. Key used starts with: #{key_preview}. Body: #{inspect(body)}"
+        )
 
         error_msg =
           case body do
@@ -204,6 +233,7 @@ defmodule ClippsterServerWeb.KickController do
 
       {:error, exception} ->
         Logger.error("Kick API request failed: #{inspect(exception)}")
+
         conn
         |> put_status(:internal_server_error)
         |> json(%{success: false, error: "Kick API request failed"})

@@ -61,6 +61,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
         case TokenGenerator.generate_token(token_claims) do
           {:ok, token} ->
             ai_allowed = check_ai_allowed_for_user(user)
+
             json(conn, %{
               success: true,
               token: token,
@@ -151,7 +152,10 @@ defmodule ClippsterServerWeb.EmailAuthController do
         send_verification_error_html(conn, "Email already verified. You can close this window.")
 
       {:error, :token_expired} ->
-        send_verification_error_html(conn, "Verification link has expired. Please request a new one.")
+        send_verification_error_html(
+          conn,
+          "Verification link has expired. Please request a new one."
+        )
 
       {:error, _reason} ->
         send_verification_error_html(conn, "Verification failed")
@@ -164,7 +168,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
   def login(conn, %{"email" => email, "password" => password}) do
     require Logger
     Logger.info("Login attempt for email: #{email}")
-    
+
     case Accounts.authenticate_with_email(email, password) do
       {:ok, user} ->
         token_claims = %{
@@ -181,6 +185,7 @@ defmodule ClippsterServerWeb.EmailAuthController do
         case TokenGenerator.generate_token(token_claims) do
           {:ok, token} ->
             ai_allowed = check_ai_allowed_for_user(user)
+
             json(conn, %{
               success: true,
               token: token,
@@ -213,12 +218,19 @@ defmodule ClippsterServerWeb.EmailAuthController do
       {:error, :email_not_verified} ->
         conn
         |> put_status(403)
-        |> json(%{success: false, error: "Please verify your email before logging in", code: "EMAIL_NOT_VERIFIED"})
+        |> json(%{
+          success: false,
+          error: "Please verify your email before logging in",
+          code: "EMAIL_NOT_VERIFIED"
+        })
 
       {:error, :wrong_auth_method} ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: "This email is registered with a different sign-in method"})
+        |> json(%{
+          success: false,
+          error: "This email is registered with a different sign-in method"
+        })
 
       {:error, _reason} ->
         conn
@@ -253,7 +265,10 @@ defmodule ClippsterServerWeb.EmailAuthController do
       {:error, :not_email_user} ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: "This email is registered with a different sign-in method"})
+        |> json(%{
+          success: false,
+          error: "This email is registered with a different sign-in method"
+        })
 
       {:error, _reason} ->
         conn
@@ -558,5 +573,3 @@ defmodule ClippsterServerWeb.EmailAuthController do
     end
   end
 end
-
-

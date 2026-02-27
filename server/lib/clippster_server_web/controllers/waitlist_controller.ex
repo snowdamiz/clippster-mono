@@ -21,7 +21,10 @@ defmodule ClippsterServerWeb.WaitlistController do
 
         # Check if it's a duplicate email error
         if Keyword.has_key?(errors, :email) &&
-           Enum.any?(Keyword.get_values(errors, :email), &String.contains?(&1, "already on the waitlist")) do
+             Enum.any?(
+               Keyword.get_values(errors, :email),
+               &String.contains?(&1, "already on the waitlist")
+             ) do
           conn
           |> put_status(:conflict)
           |> json(%{
@@ -58,18 +61,19 @@ defmodule ClippsterServerWeb.WaitlistController do
     stats = Waitlist.get_stats()
     invite_stats = Waitlist.get_invite_stats()
 
-    entries_data = Enum.map(entries, fn entry ->
-      %{
-        id: entry.id,
-        email: entry.email,
-        created_at: entry.inserted_at,
-        invited_at: entry.invited_at,
-        email_sent_at: entry.email_sent_at,
-        email_delivery_error: entry.email_delivery_error,
-        beta_code: if(entry.beta_code, do: entry.beta_code.code, else: nil),
-        discount_code: entry.discount_code
-      }
-    end)
+    entries_data =
+      Enum.map(entries, fn entry ->
+        %{
+          id: entry.id,
+          email: entry.email,
+          created_at: entry.inserted_at,
+          invited_at: entry.invited_at,
+          email_sent_at: entry.email_sent_at,
+          email_delivery_error: entry.email_delivery_error,
+          beta_code: if(entry.beta_code, do: entry.beta_code.code, else: nil),
+          discount_code: entry.discount_code
+        }
+      end)
 
     json(conn, %{
       success: true,

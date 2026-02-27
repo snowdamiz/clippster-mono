@@ -128,14 +128,17 @@ defmodule ClippsterServerWeb.AffiliateController do
       Enum.map(payouts, fn row ->
         %{
           affiliate_id: row.affiliate_id,
-          affiliate: if(row.affiliate, do: %{
-            id: row.affiliate.id,
-            referral_code: row.affiliate.referral_code,
-            payout_method: row.affiliate.payout_method,
-            solana_usdc_address: row.affiliate.solana_usdc_address,
-            paypal_email: row.affiliate.paypal_email,
-            user: format_user(row.affiliate.user)
-          }),
+          affiliate:
+            if(row.affiliate,
+              do: %{
+                id: row.affiliate.id,
+                referral_code: row.affiliate.referral_code,
+                payout_method: row.affiliate.payout_method,
+                solana_usdc_address: row.affiliate.solana_usdc_address,
+                paypal_email: row.affiliate.paypal_email,
+                user: format_user(row.affiliate.user)
+              }
+            ),
           total_commission: Decimal.to_float(row.total_commission),
           referral_count: row.referral_count
         }
@@ -165,11 +168,14 @@ defmodule ClippsterServerWeb.AffiliateController do
               status: r.status,
               period_month: r.period_month,
               period_year: r.period_year,
-              referred_user: if(r.referred_user, do: %{
-                id: r.referred_user.id,
-                email: anonymize_email(r.referred_user.email),
-                name: r.referred_user.name
-              }),
+              referred_user:
+                if(r.referred_user,
+                  do: %{
+                    id: r.referred_user.id,
+                    email: anonymize_email(r.referred_user.email),
+                    name: r.referred_user.name
+                  }
+                ),
               inserted_at: r.inserted_at
             }
           end)
@@ -187,7 +193,8 @@ defmodule ClippsterServerWeb.AffiliateController do
               proof_screenshot_url: presign_url(p.proof_screenshot_url),
               status: p.status,
               paid_at: p.paid_at,
-              paid_by: if(p.paid_by_admin, do: %{id: p.paid_by_admin.id, email: p.paid_by_admin.email}),
+              paid_by:
+                if(p.paid_by_admin, do: %{id: p.paid_by_admin.id, email: p.paid_by_admin.email}),
               notes: p.notes,
               inserted_at: p.inserted_at
             }
@@ -208,7 +215,13 @@ defmodule ClippsterServerWeb.AffiliateController do
             solana_usdc_address: affiliate.solana_usdc_address,
             paypal_email: affiliate.paypal_email,
             notes: affiliate.notes,
-            approved_by: if(affiliate.approved_by_admin, do: %{id: affiliate.approved_by_admin.id, email: affiliate.approved_by_admin.email}),
+            approved_by:
+              if(affiliate.approved_by_admin,
+                do: %{
+                  id: affiliate.approved_by_admin.id,
+                  email: affiliate.approved_by_admin.email
+                }
+              ),
             inserted_at: affiliate.inserted_at,
             updated_at: affiliate.updated_at
           },
@@ -222,17 +235,18 @@ defmodule ClippsterServerWeb.AffiliateController do
   Update affiliate settings/rates.
   """
   def update_affiliate(conn, %{"id" => id} = params) do
-    attrs = %{}
-    |> maybe_put(params, "status", :status)
-    |> maybe_put(params, "referral_code", :referral_code)
-    |> maybe_put(params, "signup_commission_pct", :signup_commission_pct)
-    |> maybe_put(params, "recurring_commission_pct", :recurring_commission_pct)
-    |> maybe_put(params, "credit_pack_commission_enabled", :credit_pack_commission_enabled)
-    |> maybe_put(params, "credit_pack_commission_pct", :credit_pack_commission_pct)
-    |> maybe_put(params, "payout_method", :payout_method)
-    |> maybe_put(params, "solana_usdc_address", :solana_usdc_address)
-    |> maybe_put(params, "paypal_email", :paypal_email)
-    |> maybe_put(params, "notes", :notes)
+    attrs =
+      %{}
+      |> maybe_put(params, "status", :status)
+      |> maybe_put(params, "referral_code", :referral_code)
+      |> maybe_put(params, "signup_commission_pct", :signup_commission_pct)
+      |> maybe_put(params, "recurring_commission_pct", :recurring_commission_pct)
+      |> maybe_put(params, "credit_pack_commission_enabled", :credit_pack_commission_enabled)
+      |> maybe_put(params, "credit_pack_commission_pct", :credit_pack_commission_pct)
+      |> maybe_put(params, "payout_method", :payout_method)
+      |> maybe_put(params, "solana_usdc_address", :solana_usdc_address)
+      |> maybe_put(params, "paypal_email", :paypal_email)
+      |> maybe_put(params, "notes", :notes)
 
     case Affiliates.update_affiliate(parse_int(id), attrs) do
       {:ok, affiliate} ->
@@ -262,7 +276,11 @@ defmodule ClippsterServerWeb.AffiliateController do
   def deactivate(conn, %{"id" => id}) do
     case Affiliates.deactivate_affiliate(parse_int(id)) do
       {:ok, affiliate} ->
-        json(conn, %{success: true, message: "Affiliate deactivated", affiliate: %{id: affiliate.id, status: affiliate.status}})
+        json(conn, %{
+          success: true,
+          message: "Affiliate deactivated",
+          affiliate: %{id: affiliate.id, status: affiliate.status}
+        })
 
       {:error, :not_found} ->
         conn |> put_status(404) |> json(%{success: false, error: "Affiliate not found"})
@@ -275,7 +293,11 @@ defmodule ClippsterServerWeb.AffiliateController do
   def activate(conn, %{"id" => id}) do
     case Affiliates.activate_affiliate(parse_int(id)) do
       {:ok, affiliate} ->
-        json(conn, %{success: true, message: "Affiliate activated", affiliate: %{id: affiliate.id, status: affiliate.status}})
+        json(conn, %{
+          success: true,
+          message: "Affiliate activated",
+          affiliate: %{id: affiliate.id, status: affiliate.status}
+        })
 
       {:error, :not_found} ->
         conn |> put_status(404) |> json(%{success: false, error: "Affiliate not found"})
@@ -292,7 +314,9 @@ defmodule ClippsterServerWeb.AffiliateController do
     year = parse_int(params["period_year"])
 
     if is_nil(month) or is_nil(year) do
-      conn |> put_status(400) |> json(%{success: false, error: "period_month and period_year are required"})
+      conn
+      |> put_status(400)
+      |> json(%{success: false, error: "period_month and period_year are required"})
     else
       # Handle screenshot upload if present
       proof_url =
@@ -304,9 +328,13 @@ defmodule ClippsterServerWeb.AffiliateController do
                   {:ok, url} -> url
                   _ -> nil
                 end
-              _ -> nil
+
+              _ ->
+                nil
             end
-          _ -> nil
+
+          _ ->
+            nil
         end
 
       attrs = %{
@@ -333,10 +361,14 @@ defmodule ClippsterServerWeb.AffiliateController do
           conn |> put_status(404) |> json(%{success: false, error: "Affiliate not found"})
 
         {:error, :no_pending_commissions} ->
-          conn |> put_status(400) |> json(%{success: false, error: "No pending commissions for this period"})
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "No pending commissions for this period"})
 
         {:error, :no_payout_address} ->
-          conn |> put_status(400) |> json(%{success: false, error: "Affiliate has no payout address configured"})
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "Affiliate has no payout address configured"})
 
         {:error, %Ecto.Changeset{} = changeset} ->
           errors = format_changeset_errors(changeset)
@@ -455,10 +487,11 @@ defmodule ClippsterServerWeb.AffiliateController do
         conn |> put_status(404) |> json(%{success: false, error: "You are not an affiliate"})
 
       affiliate ->
-        attrs = %{}
-        |> maybe_put(params, "payout_method", :payout_method)
-        |> maybe_put(params, "solana_usdc_address", :solana_usdc_address)
-        |> maybe_put(params, "paypal_email", :paypal_email)
+        attrs =
+          %{}
+          |> maybe_put(params, "payout_method", :payout_method)
+          |> maybe_put(params, "solana_usdc_address", :solana_usdc_address)
+          |> maybe_put(params, "paypal_email", :paypal_email)
 
         case Affiliates.update_affiliate_settings(affiliate, attrs) do
           {:ok, updated} ->
@@ -484,6 +517,7 @@ defmodule ClippsterServerWeb.AffiliateController do
   # ============================================================================
 
   defp format_user(nil), do: nil
+
   defp format_user(user) do
     %{
       id: user.id,
@@ -499,9 +533,10 @@ defmodule ClippsterServerWeb.AffiliateController do
       three_months: format_stat(dashboard.three_months),
       ytd: format_stat(dashboard.ytd),
       all_time: format_stat(dashboard.all_time),
-      breakdown: Enum.into(dashboard.breakdown, %{}, fn {k, v} ->
-        {k, %{count: v.count, total: Decimal.to_float(v.total)}}
-      end)
+      breakdown:
+        Enum.into(dashboard.breakdown, %{}, fn {k, v} ->
+          {k, %{count: v.count, total: Decimal.to_float(v.total)}}
+        end)
     }
   end
 
@@ -510,16 +545,20 @@ defmodule ClippsterServerWeb.AffiliateController do
   end
 
   defp anonymize_email(nil), do: nil
+
   defp anonymize_email(email) do
     case String.split(email, "@") do
       [local, domain] ->
         masked = String.slice(local, 0, 2) <> "***"
         "#{masked}@#{domain}"
-      _ -> "***"
+
+      _ ->
+        "***"
     end
   end
 
   defp presign_url(nil), do: nil
+
   defp presign_url(url) do
     case Storage.presigned_url(url) do
       {:ok, presigned} -> presigned
@@ -529,6 +568,7 @@ defmodule ClippsterServerWeb.AffiliateController do
 
   defp parse_int(nil), do: nil
   defp parse_int(val) when is_integer(val), do: val
+
   defp parse_int(val) when is_binary(val) do
     case Integer.parse(val) do
       {int, ""} -> int

@@ -25,7 +25,9 @@ defmodule ClippsterServer.Waitlist.WaitlistEntry do
     entry
     |> cast(attrs, [:email])
     |> validate_required([:email])
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/, message: "must be a valid email address")
+    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/,
+      message: "must be a valid email address"
+    )
     |> unique_constraint(:email, message: "is already on the waitlist")
   end
 
@@ -34,7 +36,14 @@ defmodule ClippsterServer.Waitlist.WaitlistEntry do
   """
   def invite_changeset(entry, attrs) do
     entry
-    |> cast(attrs, [:invited_at, :email_sent_at, :email_delivery_error, :beta_code_id, :discount_code, :discount_stripe_promo_id])
+    |> cast(attrs, [
+      :invited_at,
+      :email_sent_at,
+      :email_delivery_error,
+      :beta_code_id,
+      :discount_code,
+      :discount_stripe_promo_id
+    ])
     |> unique_constraint(:beta_code_id)
   end
 end

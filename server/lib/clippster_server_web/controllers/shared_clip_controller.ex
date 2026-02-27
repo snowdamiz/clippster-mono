@@ -38,7 +38,8 @@ defmodule ClippsterServerWeb.SharedClipController do
         |> json(%{success: false, error: "No file provided"})
 
       true ->
-        %Plug.Upload{path: temp_path, filename: filename, content_type: content_type} = params["file"]
+        %Plug.Upload{path: temp_path, filename: filename, content_type: content_type} =
+          params["file"]
 
         case File.read(temp_path) do
           {:ok, file_binary} ->
@@ -61,16 +62,26 @@ defmodule ClippsterServerWeb.SharedClipController do
             ]
 
             # Handle thumbnail if provided
-            opts = case params["thumbnail"] do
-              %Plug.Upload{path: thumb_path} ->
-                case File.read(thumb_path) do
-                  {:ok, thumb_binary} -> Keyword.put(opts, :thumbnail_binary, thumb_binary)
-                  _ -> opts
-                end
-              _ -> opts
-            end
+            opts =
+              case params["thumbnail"] do
+                %Plug.Upload{path: thumb_path} ->
+                  case File.read(thumb_path) do
+                    {:ok, thumb_binary} -> Keyword.put(opts, :thumbnail_binary, thumb_binary)
+                    _ -> opts
+                  end
 
-            case Organizations.create_shared_clip(org_id, user.id, attrs, file_binary, filename, opts) do
+                _ ->
+                  opts
+              end
+
+            case Organizations.create_shared_clip(
+                   org_id,
+                   user.id,
+                   attrs,
+                   file_binary,
+                   filename,
+                   opts
+                 ) do
               {:ok, clip} ->
                 conn
                 |> put_status(201)
@@ -160,7 +171,12 @@ defmodule ClippsterServerWeb.SharedClipController do
     branding_config = parse_json(params["branding_config"], %{})
     branding_required = parse_boolean(params["branding_required"], true)
 
-    case Organizations.update_shared_clip_branding(clip_id, branding_config, branding_required, user) do
+    case Organizations.update_shared_clip_branding(
+           clip_id,
+           branding_config,
+           branding_required,
+           user
+         ) do
       {:ok, clip} ->
         json(conn, %{
           success: true,
@@ -246,9 +262,10 @@ defmodule ClippsterServerWeb.SharedClipController do
 
     json(conn, %{
       success: true,
-      clips: Enum.map(clips_with_recipients, fn %{clip: clip, recipient: recipient} ->
-        serialize_clip_for_member(clip, recipient)
-      end)
+      clips:
+        Enum.map(clips_with_recipients, fn %{clip: clip, recipient: recipient} ->
+          serialize_clip_for_member(clip, recipient)
+        end)
     })
   end
 
@@ -406,6 +423,7 @@ defmodule ClippsterServerWeb.SharedClipController do
   end
 
   defp serialize_user(nil), do: nil
+
   defp serialize_user(user) do
     %{
       id: user.id,
@@ -419,12 +437,14 @@ defmodule ClippsterServerWeb.SharedClipController do
   defp presign_url(url), do: Storage.presigned_url!(url)
 
   defp parse_decimal(nil), do: nil
+
   defp parse_decimal(value) when is_binary(value) do
     case Decimal.parse(value) do
       {decimal, _} -> decimal
       :error -> nil
     end
   end
+
   defp parse_decimal(value) when is_number(value), do: Decimal.new(to_string(value))
 
   defp parse_boolean(nil, default), do: default
@@ -437,12 +457,14 @@ defmodule ClippsterServerWeb.SharedClipController do
   defp parse_boolean(_, default), do: default
 
   defp parse_json(nil, default), do: default
+
   defp parse_json(value, default) when is_binary(value) do
     case Jason.decode(value) do
       {:ok, parsed} -> parsed
       {:error, _} -> default
     end
   end
+
   defp parse_json(value, _default) when is_map(value), do: value
   defp parse_json(value, _default) when is_list(value), do: value
   defp parse_json(_, default), do: default

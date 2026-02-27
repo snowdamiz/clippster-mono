@@ -11,7 +11,8 @@ defmodule ClippsterServer.Organizations.OrganizationInvitation do
     field :role, :string, default: "member"
     field :status, :string, default: "pending"
     field :expires_at, :utc_datetime
-    field :plain_token, :string, virtual: true  # Used to return token to caller
+    # Used to return token to caller
+    field :plain_token, :string, virtual: true
 
     belongs_to :organization, ClippsterServer.Organizations.Organization
     belongs_to :invited_by_user, ClippsterServer.Accounts.User, foreign_key: :invited_by
@@ -26,8 +27,13 @@ defmodule ClippsterServer.Organizations.OrganizationInvitation do
     invitation
     |> cast(attrs, [:organization_id, :email, :role, :invited_by])
     |> validate_required([:organization_id, :email, :role])
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/, message: "must be a valid email address")
-    |> validate_inclusion(:role, ClippsterServer.Organizations.OrganizationMember.roles() -- ["owner"])
+    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/,
+      message: "must be a valid email address"
+    )
+    |> validate_inclusion(
+      :role,
+      ClippsterServer.Organizations.OrganizationMember.roles() -- ["owner"]
+    )
     |> put_expires_at()
     |> put_change(:status, "pending")
     |> unique_constraint(:token)
@@ -63,10 +69,11 @@ defmodule ClippsterServer.Organizations.OrganizationInvitation do
   end
 
   defp put_expires_at(changeset) do
-    expires_at = DateTime.utc_now()
-    |> DateTime.add(@default_expiry_days, :day)
-    |> DateTime.truncate(:second)
-    
+    expires_at =
+      DateTime.utc_now()
+      |> DateTime.add(@default_expiry_days, :day)
+      |> DateTime.truncate(:second)
+
     put_change(changeset, :expires_at, expires_at)
   end
 
@@ -112,4 +119,3 @@ defmodule ClippsterServer.Organizations.OrganizationInvitation do
   """
   def statuses, do: @statuses
 end
-

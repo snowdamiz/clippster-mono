@@ -1,14 +1,14 @@
-use warp::{Filter, Reply};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use warp::{Filter, Reply};
 
 pub static VIDEO_SERVER_PORT: u16 = 48276;
 
 /// Probe the duration of a .ts file using FFmpeg
 async fn probe_ts_duration(file_path: &Path) -> Result<f64, String> {
-    use tokio::process::Command;
     use regex::Regex;
-    
+    use tokio::process::Command;
+
     // Get FFmpeg path - try exe dir first, then dev path, then system
     let ffmpeg_path = std::env::current_exe()
         .ok()
@@ -18,24 +18,30 @@ async fn probe_ts_duration(file_path: &Path) -> Result<f64, String> {
             let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("binaries")
                 .join("ffmpeg-x86_64-pc-windows-msvc.exe");
-            if dev_path.exists() { dev_path } else { PathBuf::from("ffmpeg") }
+            if dev_path.exists() {
+                dev_path
+            } else {
+                PathBuf::from("ffmpeg")
+            }
         });
-    
+
     let output = Command::new(&ffmpeg_path)
         .args(["-i", file_path.to_str().ok_or("Invalid path")?])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-    
+
     let stderr = String::from_utf8_lossy(&output.stderr);
     let re = Regex::new(r"Duration: (\d{2}):(\d{2}):([\d.]+)").map_err(|e| e.to_string())?;
-    
+
     if let Some(caps) = re.captures(&stderr) {
         let h: f64 = caps.get(1).unwrap().as_str().parse().unwrap_or(0.0);
         let m: f64 = caps.get(2).unwrap().as_str().parse().unwrap_or(0.0);
         let s: f64 = caps.get(3).unwrap().as_str().parse().unwrap_or(0.0);
         let total = h * 3600.0 + m * 60.0 + s;
-        if total > 0.0 { return Ok(total); }
+        if total > 0.0 {
+            return Ok(total);
+        }
     }
     Err("Duration not found".to_string())
 }
@@ -48,33 +54,46 @@ pub async fn start_video_server_impl() {
     }
 
     // HEAD route for video health checks with CORS headers
-    let video_head_route = warp::path!("video" / String)
-        .and(warp::head())
-        .and_then(|encoded_path: String| async move {
-            use base64::{Engine as _, engine::general_purpose};
-            let decoded = match general_purpose::URL_SAFE_NO_PAD.decode(&encoded_path)
+    let video_head_route = warp::path!("video" / String).and(warp::head()).and_then(
+        |encoded_path: String| async move {
+            use base64::{engine::general_purpose, Engine as _};
+            let decoded = match general_purpose::URL_SAFE_NO_PAD
+                .decode(&encoded_path)
                 .or_else(|_| general_purpose::URL_SAFE.decode(&encoded_path))
                 .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_path))
-                .or_else(|_| general_purpose::STANDARD.decode(&encoded_path)) {
+                .or_else(|_| general_purpose::STANDARD.decode(&encoded_path))
+            {
                 Ok(d) => d,
                 Err(_) => {
                     let resp = warp::reply::with_header("", "Access-Control-Allow-Origin", "*");
-                    return Ok::<_, warp::Rejection>(warp::reply::with_status(resp, warp::http::StatusCode::BAD_REQUEST).into_response());
+                    return Ok::<_, warp::Rejection>(
+                        warp::reply::with_status(resp, warp::http::StatusCode::BAD_REQUEST)
+                            .into_response(),
+                    );
                 }
             };
             let path_str = match String::from_utf8(decoded) {
                 Ok(s) => s,
                 Err(_) => {
                     let resp = warp::reply::with_header("", "Access-Control-Allow-Origin", "*");
-                    return Ok(warp::reply::with_status(resp, warp::http::StatusCode::BAD_REQUEST).into_response());
+                    return Ok(
+                        warp::reply::with_status(resp, warp::http::StatusCode::BAD_REQUEST)
+                            .into_response(),
+                    );
                 }
             };
             let file_path = PathBuf::from(&path_str);
             if !file_path.exists() {
                 let resp = warp::reply::with_header("", "Access-Control-Allow-Origin", "*");
-                return Ok(warp::reply::with_status(resp, warp::http::StatusCode::NOT_FOUND).into_response());
+                return Ok(
+                    warp::reply::with_status(resp, warp::http::StatusCode::NOT_FOUND)
+                        .into_response(),
+                );
             }
-            let file_size = tokio::fs::metadata(&file_path).await.map(|m| m.len()).unwrap_or(0);
+            let file_size = tokio::fs::metadata(&file_path)
+                .await
+                .map(|m| m.len())
+                .unwrap_or(0);
             let content_type = match file_path.extension().and_then(|e| e.to_str()) {
                 Some("mp4") => "video/mp4",
                 Some("webm") => "video/webm",
@@ -84,9 +103,14 @@ pub async fn start_video_server_impl() {
             let resp = warp::reply::with_header(resp, "Content-Length", file_size.to_string());
             let resp = warp::reply::with_header(resp, "Accept-Ranges", "bytes");
             let resp = warp::reply::with_header(resp, "Access-Control-Allow-Origin", "*");
-            let resp = warp::reply::with_header(resp, "Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges");
+            let resp = warp::reply::with_header(
+                resp,
+                "Access-Control-Expose-Headers",
+                "Content-Range, Content-Length, Accept-Ranges",
+            );
             Ok(warp::reply::with_status(resp, warp::http::StatusCode::OK).into_response())
-        });
+        },
+    );
 
     let video_route = warp::path!("video" / String)
         .and(warp::get())
@@ -338,23 +362,22 @@ pub async fn start_video_server_impl() {
     let hls_playlist_head_route = warp::path!("hls" / String / "playlist.m3u8")
         .and(warp::head())
         .and_then(|encoded_dir: String| async move {
-            use base64::{Engine as _, engine::general_purpose};
-            
+            use base64::{engine::general_purpose, Engine as _};
+
             let decoded = match general_purpose::STANDARD.decode(&encoded_dir) {
                 Ok(d) => d,
                 Err(_) => {
-                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
-                        warp::reply::with_header(
+                    return Ok::<_, warp::Rejection>(
+                        warp::reply::with_status(
                             warp::reply::with_header(
-                                "",
-                                "Access-Control-Allow-Origin",
-                                "*"
+                                warp::reply::with_header("", "Access-Control-Allow-Origin", "*"),
+                                "Access-Control-Allow-Methods",
+                                "GET, HEAD, OPTIONS",
                             ),
-                            "Access-Control-Allow-Methods",
-                            "GET, HEAD, OPTIONS"
-                        ),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                            warp::http::StatusCode::BAD_REQUEST,
+                        )
+                        .into_response(),
+                    );
                 }
             };
 
@@ -363,16 +386,13 @@ pub async fn start_video_server_impl() {
                 Err(_) => {
                     return Ok(warp::reply::with_status(
                         warp::reply::with_header(
-                            warp::reply::with_header(
-                                "",
-                                "Access-Control-Allow-Origin",
-                                "*"
-                            ),
+                            warp::reply::with_header("", "Access-Control-Allow-Origin", "*"),
                             "Access-Control-Allow-Methods",
-                            "GET, HEAD, OPTIONS"
+                            "GET, HEAD, OPTIONS",
                         ),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )
+                    .into_response());
                 }
             };
 
@@ -381,31 +401,24 @@ pub async fn start_video_server_impl() {
             if !playlist_path.exists() {
                 return Ok(warp::reply::with_status(
                     warp::reply::with_header(
-                        warp::reply::with_header(
-                            "",
-                            "Access-Control-Allow-Origin",
-                            "*"
-                        ),
+                        warp::reply::with_header("", "Access-Control-Allow-Origin", "*"),
                         "Access-Control-Allow-Methods",
-                        "GET, HEAD, OPTIONS"
+                        "GET, HEAD, OPTIONS",
                     ),
-                    warp::http::StatusCode::NOT_FOUND
-                ).into_response());
+                    warp::http::StatusCode::NOT_FOUND,
+                )
+                .into_response());
             }
 
             // File exists - return 200 OK with CORS headers
             let response = warp::reply::with_header(
                 warp::reply::with_header(
-                    warp::reply::with_header(
-                        "",
-                        "Content-Type",
-                        "application/vnd.apple.mpegurl"
-                    ),
+                    warp::reply::with_header("", "Content-Type", "application/vnd.apple.mpegurl"),
                     "Access-Control-Allow-Origin",
-                    "*"
+                    "*",
                 ),
                 "Access-Control-Allow-Methods",
-                "GET, HEAD, OPTIONS"
+                "GET, HEAD, OPTIONS",
             );
             Ok(response.into_response())
         });
@@ -414,23 +427,22 @@ pub async fn start_video_server_impl() {
     let hls_playlist_tmp_head_route = warp::path!("hls" / String / "playlist.m3u8.tmp")
         .and(warp::head())
         .and_then(|encoded_dir: String| async move {
-            use base64::{Engine as _, engine::general_purpose};
-            
+            use base64::{engine::general_purpose, Engine as _};
+
             let decoded = match general_purpose::STANDARD.decode(&encoded_dir) {
                 Ok(d) => d,
                 Err(_) => {
-                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
-                        warp::reply::with_header(
+                    return Ok::<_, warp::Rejection>(
+                        warp::reply::with_status(
                             warp::reply::with_header(
-                                "",
-                                "Access-Control-Allow-Origin",
-                                "*"
+                                warp::reply::with_header("", "Access-Control-Allow-Origin", "*"),
+                                "Access-Control-Allow-Methods",
+                                "GET, HEAD, OPTIONS",
                             ),
-                            "Access-Control-Allow-Methods",
-                            "GET, HEAD, OPTIONS"
-                        ),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                            warp::http::StatusCode::BAD_REQUEST,
+                        )
+                        .into_response(),
+                    );
                 }
             };
 
@@ -439,16 +451,13 @@ pub async fn start_video_server_impl() {
                 Err(_) => {
                     return Ok(warp::reply::with_status(
                         warp::reply::with_header(
-                            warp::reply::with_header(
-                                "",
-                                "Access-Control-Allow-Origin",
-                                "*"
-                            ),
+                            warp::reply::with_header("", "Access-Control-Allow-Origin", "*"),
                             "Access-Control-Allow-Methods",
-                            "GET, HEAD, OPTIONS"
+                            "GET, HEAD, OPTIONS",
                         ),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )
+                    .into_response());
                 }
             };
 
@@ -459,31 +468,24 @@ pub async fn start_video_server_impl() {
             if !playlist_tmp.exists() && !playlist_final.exists() {
                 return Ok(warp::reply::with_status(
                     warp::reply::with_header(
-                        warp::reply::with_header(
-                            "",
-                            "Access-Control-Allow-Origin",
-                            "*"
-                        ),
+                        warp::reply::with_header("", "Access-Control-Allow-Origin", "*"),
                         "Access-Control-Allow-Methods",
-                        "GET, HEAD, OPTIONS"
+                        "GET, HEAD, OPTIONS",
                     ),
-                    warp::http::StatusCode::NOT_FOUND
-                ).into_response());
+                    warp::http::StatusCode::NOT_FOUND,
+                )
+                .into_response());
             }
 
             // File exists - return 200 OK with CORS headers
             let response = warp::reply::with_header(
                 warp::reply::with_header(
-                    warp::reply::with_header(
-                        "",
-                        "Content-Type",
-                        "application/vnd.apple.mpegurl"
-                    ),
+                    warp::reply::with_header("", "Content-Type", "application/vnd.apple.mpegurl"),
                     "Access-Control-Allow-Origin",
-                    "*"
+                    "*",
                 ),
                 "Access-Control-Allow-Methods",
-                "GET, HEAD, OPTIONS"
+                "GET, HEAD, OPTIONS",
             );
             Ok(response.into_response())
         });
@@ -492,19 +494,25 @@ pub async fn start_video_server_impl() {
     let hls_playlist_route = warp::path!("hls" / String / "playlist.m3u8")
         .and(warp::get())
         .and_then(|encoded_dir: String| async move {
-            use base64::{Engine as _, engine::general_purpose};
-            
+            use base64::{engine::general_purpose, Engine as _};
+
             // Try multiple base64 variants: STANDARD, STANDARD_NO_PAD, URL_SAFE_NO_PAD
-            let decoded = general_purpose::STANDARD.decode(&encoded_dir)
+            let decoded = general_purpose::STANDARD
+                .decode(&encoded_dir)
                 .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_dir))
                 .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(&encoded_dir));
             let decoded = match decoded {
                 Ok(d) => d,
                 Err(_) => {
-                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
-                        warp::reply::json(&serde_json::json!({"error": "Invalid directory encoding"})),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                    return Ok::<_, warp::Rejection>(
+                        warp::reply::with_status(
+                            warp::reply::json(
+                                &serde_json::json!({"error": "Invalid directory encoding"}),
+                            ),
+                            warp::http::StatusCode::BAD_REQUEST,
+                        )
+                        .into_response(),
+                    );
                 }
             };
 
@@ -512,9 +520,12 @@ pub async fn start_video_server_impl() {
                 Ok(s) => s,
                 Err(_) => {
                     return Ok(warp::reply::with_status(
-                        warp::reply::json(&serde_json::json!({"error": "Invalid directory encoding"})),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                        warp::reply::json(
+                            &serde_json::json!({"error": "Invalid directory encoding"}),
+                        ),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )
+                    .into_response());
                 }
             };
 
@@ -523,8 +534,9 @@ pub async fn start_video_server_impl() {
             if !playlist_path.exists() {
                 return Ok(warp::reply::with_status(
                     warp::reply::json(&serde_json::json!({"error": "Playlist not found"})),
-                    warp::http::StatusCode::NOT_FOUND
-                ).into_response());
+                    warp::http::StatusCode::NOT_FOUND,
+                )
+                .into_response());
             }
 
             match tokio::fs::read(&playlist_path).await {
@@ -532,18 +544,15 @@ pub async fn start_video_server_impl() {
                     let response = warp::reply::with_header(
                         content,
                         "Content-Type",
-                        "application/vnd.apple.mpegurl"
+                        "application/vnd.apple.mpegurl",
                     );
-                    let response = warp::reply::with_header(
-                        response,
-                        "Access-Control-Allow-Origin",
-                        "*"
-                    );
+                    let response =
+                        warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
                     // Prevent caching for live playlist
                     let response = warp::reply::with_header(
                         response,
                         "Cache-Control",
-                        "no-cache, no-store, must-revalidate"
+                        "no-cache, no-store, must-revalidate",
                     );
                     Ok(response.into_response())
                 }
@@ -551,8 +560,9 @@ pub async fn start_video_server_impl() {
                     eprintln!("Failed to read HLS playlist: {}", e);
                     Ok(warp::reply::with_status(
                         warp::reply::json(&serde_json::json!({"error": "Cannot read playlist"})),
-                        warp::http::StatusCode::INTERNAL_SERVER_ERROR
-                    ).into_response())
+                        warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                    .into_response())
                 }
             }
         });
@@ -561,15 +571,20 @@ pub async fn start_video_server_impl() {
     let hls_playlist_tmp_route = warp::path!("hls" / String / "playlist.m3u8.tmp")
         .and(warp::get())
         .and_then(|encoded_dir: String| async move {
-            use base64::{Engine as _, engine::general_purpose};
-            
+            use base64::{engine::general_purpose, Engine as _};
+
             let decoded = match general_purpose::STANDARD.decode(&encoded_dir) {
                 Ok(d) => d,
                 Err(_) => {
-                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
-                        warp::reply::json(&serde_json::json!({"error": "Invalid directory encoding"})),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                    return Ok::<_, warp::Rejection>(
+                        warp::reply::with_status(
+                            warp::reply::json(
+                                &serde_json::json!({"error": "Invalid directory encoding"}),
+                            ),
+                            warp::http::StatusCode::BAD_REQUEST,
+                        )
+                        .into_response(),
+                    );
                 }
             };
 
@@ -577,9 +592,12 @@ pub async fn start_video_server_impl() {
                 Ok(s) => s,
                 Err(_) => {
                     return Ok(warp::reply::with_status(
-                        warp::reply::json(&serde_json::json!({"error": "Invalid directory encoding"})),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                        warp::reply::json(
+                            &serde_json::json!({"error": "Invalid directory encoding"}),
+                        ),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )
+                    .into_response());
                 }
             };
 
@@ -594,8 +612,9 @@ pub async fn start_video_server_impl() {
             } else {
                 return Ok(warp::reply::with_status(
                     warp::reply::json(&serde_json::json!({"error": "Playlist not found"})),
-                    warp::http::StatusCode::NOT_FOUND
-                ).into_response());
+                    warp::http::StatusCode::NOT_FOUND,
+                )
+                .into_response());
             };
 
             match tokio::fs::read(&playlist_path).await {
@@ -603,18 +622,15 @@ pub async fn start_video_server_impl() {
                     let response = warp::reply::with_header(
                         content,
                         "Content-Type",
-                        "application/vnd.apple.mpegurl"
+                        "application/vnd.apple.mpegurl",
                     );
-                    let response = warp::reply::with_header(
-                        response,
-                        "Access-Control-Allow-Origin",
-                        "*"
-                    );
+                    let response =
+                        warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
                     // Prevent caching for live playlist
                     let response = warp::reply::with_header(
                         response,
                         "Cache-Control",
-                        "no-cache, no-store, must-revalidate"
+                        "no-cache, no-store, must-revalidate",
                     );
                     Ok(response.into_response())
                 }
@@ -622,8 +638,9 @@ pub async fn start_video_server_impl() {
                     eprintln!("Failed to read HLS playlist tmp: {}", e);
                     Ok(warp::reply::with_status(
                         warp::reply::json(&serde_json::json!({"error": "Cannot read playlist"})),
-                        warp::http::StatusCode::INTERNAL_SERVER_ERROR
-                    ).into_response())
+                        warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                    .into_response())
                 }
             }
         });
@@ -632,27 +649,36 @@ pub async fn start_video_server_impl() {
     let hls_segment_route = warp::path!("hls" / String / String)
         .and(warp::get())
         .and_then(|encoded_dir: String, segment_filename: String| async move {
-            use base64::{Engine as _, engine::general_purpose};
+            use base64::{engine::general_purpose, Engine as _};
 
             // Only allow .ts files
             if !segment_filename.ends_with(".ts") {
-                return Ok::<_, warp::Rejection>(warp::reply::with_status(
-                    warp::reply::json(&serde_json::json!({"error": "Invalid segment file type"})),
-                    warp::http::StatusCode::BAD_REQUEST
-                ).into_response());
+                return Ok::<_, warp::Rejection>(
+                    warp::reply::with_status(
+                        warp::reply::json(
+                            &serde_json::json!({"error": "Invalid segment file type"}),
+                        ),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )
+                    .into_response(),
+                );
             }
 
             // Try multiple base64 variants: STANDARD, STANDARD_NO_PAD, URL_SAFE_NO_PAD
-            let decoded = general_purpose::STANDARD.decode(&encoded_dir)
+            let decoded = general_purpose::STANDARD
+                .decode(&encoded_dir)
                 .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_dir))
                 .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(&encoded_dir));
             let decoded = match decoded {
                 Ok(d) => d,
                 Err(_) => {
                     return Ok(warp::reply::with_status(
-                        warp::reply::json(&serde_json::json!({"error": "Invalid directory encoding"})),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                        warp::reply::json(
+                            &serde_json::json!({"error": "Invalid directory encoding"}),
+                        ),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )
+                    .into_response());
                 }
             };
 
@@ -660,9 +686,12 @@ pub async fn start_video_server_impl() {
                 Ok(s) => s,
                 Err(_) => {
                     return Ok(warp::reply::with_status(
-                        warp::reply::json(&serde_json::json!({"error": "Invalid directory encoding"})),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                        warp::reply::json(
+                            &serde_json::json!({"error": "Invalid directory encoding"}),
+                        ),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )
+                    .into_response());
                 }
             };
 
@@ -671,21 +700,24 @@ pub async fn start_video_server_impl() {
             if !segment_path.exists() {
                 return Ok(warp::reply::with_status(
                     warp::reply::json(&serde_json::json!({"error": "Segment not found"})),
-                    warp::http::StatusCode::NOT_FOUND
-                ).into_response());
+                    warp::http::StatusCode::NOT_FOUND,
+                )
+                .into_response());
             }
 
             match tokio::fs::read(&segment_path).await {
                 Ok(content) => {
                     let file_size = content.len();
                     let response = warp::reply::with_header(content, "Content-Type", "video/mp2t");
-                    let response = warp::reply::with_header(response, "Content-Length", file_size.to_string());
-                    let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
+                    let response =
+                        warp::reply::with_header(response, "Content-Length", file_size.to_string());
+                    let response =
+                        warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
                     // Live DVR: disable caching so HLS.js always fetches fresh segments
                     let response = warp::reply::with_header(
                         response,
                         "Cache-Control",
-                        "no-cache, no-store, must-revalidate"
+                        "no-cache, no-store, must-revalidate",
                     );
                     let response = warp::reply::with_header(response, "Pragma", "no-cache");
                     let response = warp::reply::with_header(response, "Expires", "0");
@@ -695,8 +727,9 @@ pub async fn start_video_server_impl() {
                     eprintln!("Failed to read HLS segment {}: {}", segment_filename, e);
                     Ok(warp::reply::with_status(
                         warp::reply::json(&serde_json::json!({"error": "Cannot read segment"})),
-                        warp::http::StatusCode::INTERNAL_SERVER_ERROR
-                    ).into_response())
+                        warp::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                    .into_response())
                 }
             }
         });
@@ -830,19 +863,25 @@ pub async fn start_video_server_impl() {
     let ts_hls_playlist_route = warp::path!("ts-hls" / String / "playlist.m3u8")
         .and(warp::get())
         .and_then(|encoded_path: String| async move {
-            use base64::{Engine as _, engine::general_purpose};
+            use base64::{engine::general_purpose, Engine as _};
 
             // Decode the base64-encoded file path
-            let decoded = general_purpose::STANDARD.decode(&encoded_path)
+            let decoded = general_purpose::STANDARD
+                .decode(&encoded_path)
                 .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&encoded_path))
                 .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(&encoded_path));
             let decoded = match decoded {
                 Ok(d) => d,
                 Err(_) => {
-                    return Ok::<_, warp::Rejection>(warp::reply::with_status(
-                        warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                    return Ok::<_, warp::Rejection>(
+                        warp::reply::with_status(
+                            warp::reply::json(
+                                &serde_json::json!({"error": "Invalid path encoding"}),
+                            ),
+                            warp::http::StatusCode::BAD_REQUEST,
+                        )
+                        .into_response(),
+                    );
                 }
             };
 
@@ -851,8 +890,9 @@ pub async fn start_video_server_impl() {
                 Err(_) => {
                     return Ok(warp::reply::with_status(
                         warp::reply::json(&serde_json::json!({"error": "Invalid path encoding"})),
-                        warp::http::StatusCode::BAD_REQUEST
-                    ).into_response());
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )
+                    .into_response());
                 }
             };
 
@@ -862,23 +902,31 @@ pub async fn start_video_server_impl() {
             if !file_path.exists() {
                 return Ok(warp::reply::with_status(
                     warp::reply::json(&serde_json::json!({"error": "File not found"})),
-                    warp::http::StatusCode::NOT_FOUND
-                ).into_response());
+                    warp::http::StatusCode::NOT_FOUND,
+                )
+                .into_response());
             }
 
             if file_path.extension().and_then(|e| e.to_str()) != Some("ts") {
                 return Ok(warp::reply::with_status(
                     warp::reply::json(&serde_json::json!({"error": "Not a .ts file"})),
-                    warp::http::StatusCode::BAD_REQUEST
-                ).into_response());
+                    warp::http::StatusCode::BAD_REQUEST,
+                )
+                .into_response());
             }
 
             // Probe actual duration using FFmpeg
             let duration = match probe_ts_duration(&file_path).await {
-                Ok(d) => { eprintln!("[ts-hls] Probed duration: {:.2}s", d); d }
+                Ok(d) => {
+                    eprintln!("[ts-hls] Probed duration: {:.2}s", d);
+                    d
+                }
                 Err(_) => {
                     // Fallback: estimate from file size (~2MB/min)
-                    let size = tokio::fs::metadata(&file_path).await.map(|m| m.len()).unwrap_or(0);
+                    let size = tokio::fs::metadata(&file_path)
+                        .await
+                        .map(|m| m.len())
+                        .unwrap_or(0);
                     ((size as f64) / (2.0 * 1024.0 * 1024.0) * 60.0).max(10.0)
                 }
             };
@@ -890,7 +938,8 @@ pub async fn start_video_server_impl() {
             };
 
             // Get the filename for the segment reference
-            let filename = file_path.file_name()
+            let filename = file_path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("segment.ts");
 
@@ -943,21 +992,10 @@ pub async fn start_video_server_impl() {
                 )
             };
 
-            let response = warp::reply::with_header(
-                playlist,
-                "Content-Type",
-                "application/vnd.apple.mpegurl"
-            );
-            let response = warp::reply::with_header(
-                response,
-                "Access-Control-Allow-Origin",
-                "*"
-            );
-            let response = warp::reply::with_header(
-                response,
-                "Cache-Control",
-                "no-cache"
-            );
+            let response =
+                warp::reply::with_header(playlist, "Content-Type", "application/vnd.apple.mpegurl");
+            let response = warp::reply::with_header(response, "Access-Control-Allow-Origin", "*");
+            let response = warp::reply::with_header(response, "Cache-Control", "no-cache");
             Ok(response.into_response())
         });
 
@@ -1091,21 +1129,28 @@ pub async fn start_video_server_impl() {
     // Explicit OPTIONS preflight for Chrome Private Network Access (PNA).
     // Warp's built-in CORS middleware won't include Access-Control-Allow-Private-Network
     // on its auto-generated OPTIONS responses, so we handle preflight ourselves.
-    let preflight = warp::options()
-        .map(|| {
-            warp::http::Response::builder()
-                .status(204)
-                .header("Access-Control-Allow-Origin", "*")
-                .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
-                .header("Access-Control-Allow-Headers", "Content-Type, Range, Accept, Origin, Access-Control-Request-Private-Network")
-                .header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges")
-                .header("Access-Control-Allow-Private-Network", "true")
-                .header("Access-Control-Max-Age", "86400")
-                .body("")
-                .unwrap()
-        });
+    let preflight = warp::options().map(|| {
+        warp::http::Response::builder()
+            .status(204)
+            .header("Access-Control-Allow-Origin", "*")
+            .header("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS")
+            .header(
+                "Access-Control-Allow-Headers",
+                "Content-Type, Range, Accept, Origin, Access-Control-Request-Private-Network",
+            )
+            .header(
+                "Access-Control-Expose-Headers",
+                "Content-Range, Content-Length, Accept-Ranges",
+            )
+            .header("Access-Control-Allow-Private-Network", "true")
+            .header("Access-Control-Max-Age", "86400")
+            .body("")
+            .unwrap()
+    });
 
-    let data_routes = video_head_route.or(video_route).or(hls_playlist_head_route)
+    let data_routes = video_head_route
+        .or(video_route)
+        .or(hls_playlist_head_route)
         .or(hls_playlist_tmp_head_route)
         .or(hls_playlist_route)
         .or(hls_playlist_tmp_route)
@@ -1113,12 +1158,23 @@ pub async fn start_video_server_impl() {
         .or(ts_hls_playlist_route)
         .or(ts_hls_segment_route)
         .or(kick_hls_proxy_route)
-        .with(warp::reply::with::header("Access-Control-Allow-Origin", "*"))
-        .with(warp::reply::with::header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Accept-Ranges"))
-        .with(warp::reply::with::header("Access-Control-Allow-Private-Network", "true"));
+        .with(warp::reply::with::header(
+            "Access-Control-Allow-Origin",
+            "*",
+        ))
+        .with(warp::reply::with::header(
+            "Access-Control-Expose-Headers",
+            "Content-Range, Content-Length, Accept-Ranges",
+        ))
+        .with(warp::reply::with::header(
+            "Access-Control-Allow-Private-Network",
+            "true",
+        ));
 
     let routes = preflight.or(data_routes);
 
     println!("Starting local video server on port {}", VIDEO_SERVER_PORT);
-    warp::serve(routes).run(([127, 0, 0, 1], VIDEO_SERVER_PORT)).await;
+    warp::serve(routes)
+        .run(([127, 0, 0, 1], VIDEO_SERVER_PORT))
+        .await;
 }

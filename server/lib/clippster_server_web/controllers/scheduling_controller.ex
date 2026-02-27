@@ -67,7 +67,6 @@ defmodule ClippsterServerWeb.SchedulingController do
       with :ok <- validate_scheduling_request(params, user, owner_type),
            attrs <- build_scheduling_attrs(params, owner_type),
            {:ok, post} <- Social.schedule_post(attrs, user) do
-
         pulse_capture(%{
           type: "post.scheduled",
           level: :info,
@@ -103,7 +102,10 @@ defmodule ClippsterServerWeb.SchedulingController do
         {:error, :personal_accounts_disabled} ->
           conn
           |> put_status(400)
-          |> json(%{success: false, error: "Personal Instagram accounts are not allowed for this organization"})
+          |> json(%{
+            success: false,
+            error: "Personal Instagram accounts are not allowed for this organization"
+          })
 
         {:error, %Ecto.Changeset{} = changeset} ->
           conn
@@ -143,14 +145,15 @@ defmodule ClippsterServerWeb.SchedulingController do
         |> json(%{success: false, error: "Post not found"})
 
       post ->
-        attrs = %{
-          caption: params["caption"],
-          scheduled_at: parse_datetime(params["scheduled_at"]),
-          organization_social_account_id: params["social_account_id"],
-          user_social_account_id: params["user_social_account_id"]
-        }
-        |> Enum.reject(fn {_, v} -> is_nil(v) end)
-        |> Enum.into(%{})
+        attrs =
+          %{
+            caption: params["caption"],
+            scheduled_at: parse_datetime(params["scheduled_at"]),
+            organization_social_account_id: params["social_account_id"],
+            user_social_account_id: params["user_social_account_id"]
+          }
+          |> Enum.reject(fn {_, v} -> is_nil(v) end)
+          |> Enum.into(%{})
 
         case Social.update_scheduled_post(post, attrs, user) do
           {:ok, updated} ->
@@ -259,7 +262,11 @@ defmodule ClippsterServerWeb.SchedulingController do
                 tags: %{platform: updated.platform, action: "retry"}
               })
 
-              json(conn, %{success: true, post: serialize_post(updated), message: "Post queued for retry"})
+              json(conn, %{
+                success: true,
+                post: serialize_post(updated),
+                message: "Post queued for retry"
+              })
 
             {:error, :not_failed} ->
               conn
@@ -337,12 +344,13 @@ defmodule ClippsterServerWeb.SchedulingController do
     user = conn.assigns.current_user
 
     if Organizations.is_member?(org_id, user.id) do
-      opts = [
-        status: params["status"],
-        limit: parse_int(params["limit"], 50),
-        offset: parse_int(params["offset"], 0)
-      ]
-      |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      opts =
+        [
+          status: params["status"],
+          limit: parse_int(params["limit"], 50),
+          offset: parse_int(params["offset"], 0)
+        ]
+        |> Enum.reject(fn {_, v} -> is_nil(v) end)
 
       {:ok, %{posts: posts, total: total}} = Social.get_org_scheduled_posts(org_id, opts)
 
@@ -385,31 +393,37 @@ defmodule ClippsterServerWeb.SchedulingController do
     # For Instagram, require connected account
     with :ok <- validate_instagram_account_if_needed(params["platform"], user) do
       # Auto-fetch analytics based on platform
-      platform_analytics = case params["platform"] do
-        "twitter" -> fetch_twitter_analytics_if_applicable(params["platform"], params["post_url"])
-        "instagram" -> fetch_instagram_analytics_if_applicable(params["post_url"], user)
-        _ -> %{}
-      end
+      platform_analytics =
+        case params["platform"] do
+          "twitter" ->
+            fetch_twitter_analytics_if_applicable(params["platform"], params["post_url"])
+
+          "instagram" ->
+            fetch_instagram_analytics_if_applicable(params["post_url"], user)
+
+          _ ->
+            %{}
+        end
 
       attrs = %{
         platform: params["platform"],
         post_url: params["post_url"],
-      caption: params["caption"],
-      media_type: params["media_type"],
-      organization_creator_profile_id: params["creator_profile_id"],
-      campaign_id: params["campaign_id"],
-      clip_id: params["clip_id"],
-      view_count: platform_analytics[:view_count] || params["view_count"],
-      like_count: platform_analytics[:like_count] || params["like_count"],
-      comment_count: platform_analytics[:comment_count] || params["comment_count"],
-      share_count: params["share_count"],
-      save_count: platform_analytics[:save_count] || params["save_count"],
-      notes: params["notes"],
-      # Author metadata from platform API
-      author_username: platform_analytics[:author_username],
-      author_name: platform_analytics[:author_name],
-      author_profile_image: platform_analytics[:author_profile_image]
-    }
+        caption: params["caption"],
+        media_type: params["media_type"],
+        organization_creator_profile_id: params["creator_profile_id"],
+        campaign_id: params["campaign_id"],
+        clip_id: params["clip_id"],
+        view_count: platform_analytics[:view_count] || params["view_count"],
+        like_count: platform_analytics[:like_count] || params["like_count"],
+        comment_count: platform_analytics[:comment_count] || params["comment_count"],
+        share_count: params["share_count"],
+        save_count: platform_analytics[:save_count] || params["save_count"],
+        notes: params["notes"],
+        # Author metadata from platform API
+        author_username: platform_analytics[:author_username],
+        author_name: platform_analytics[:author_name],
+        author_profile_image: platform_analytics[:author_profile_image]
+      }
 
       case Social.create_external_post_submission(org_id, attrs, user) do
         {:ok, submission} ->
@@ -440,7 +454,11 @@ defmodule ClippsterServerWeb.SchedulingController do
       {:error, :instagram_not_connected} ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: "You must connect your Instagram account before submitting Instagram links. Go to Settings > Social Accounts to connect."})
+        |> json(%{
+          success: false,
+          error:
+            "You must connect your Instagram account before submitting Instagram links. Go to Settings > Social Accounts to connect."
+        })
     end
   end
 
@@ -452,14 +470,15 @@ defmodule ClippsterServerWeb.SchedulingController do
     user = conn.assigns.current_user
 
     if Organizations.is_member?(org_id, user.id) do
-      opts = [
-        status: params["status"],
-        creator_profile_id: params["creator_profile_id"],
-        campaign_id: params["campaign_id"],
-        limit: parse_int(params["limit"], 50),
-        offset: parse_int(params["offset"], 0)
-      ]
-      |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      opts =
+        [
+          status: params["status"],
+          creator_profile_id: params["creator_profile_id"],
+          campaign_id: params["campaign_id"],
+          limit: parse_int(params["limit"], 50),
+          offset: parse_int(params["offset"], 0)
+        ]
+        |> Enum.reject(fn {_, v} -> is_nil(v) end)
 
       {:ok, %{posts: posts, total: total}} = Social.list_external_post_submissions(org_id, opts)
 
@@ -554,11 +573,17 @@ defmodule ClippsterServerWeb.SchedulingController do
     user = conn.assigns.current_user
 
     with :ok <- validate_instagram_account_if_needed(params["platform"], user) do
-      platform_analytics = case params["platform"] do
-        "twitter" -> fetch_twitter_analytics_if_applicable(params["platform"], params["post_url"])
-        "instagram" -> fetch_instagram_analytics_if_applicable(params["post_url"], user)
-        _ -> %{}
-      end
+      platform_analytics =
+        case params["platform"] do
+          "twitter" ->
+            fetch_twitter_analytics_if_applicable(params["platform"], params["post_url"])
+
+          "instagram" ->
+            fetch_instagram_analytics_if_applicable(params["post_url"], user)
+
+          _ ->
+            %{}
+        end
 
       attrs = %{
         platform: params["platform"],
@@ -603,7 +628,10 @@ defmodule ClippsterServerWeb.SchedulingController do
       {:error, :instagram_not_connected} ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: "You must connect your Instagram account before submitting Instagram links."})
+        |> json(%{
+          success: false,
+          error: "You must connect your Instagram account before submitting Instagram links."
+        })
     end
   end
 
@@ -614,15 +642,17 @@ defmodule ClippsterServerWeb.SchedulingController do
   def list_personal_external_posts(conn, params) do
     user = conn.assigns.current_user
 
-    opts = [
-      status: params["status"],
-      creator_profile_id: params["creator_profile_id"],
-      limit: parse_int(params["limit"], 50),
-      offset: parse_int(params["offset"], 0)
-    ]
-    |> Enum.reject(fn {_, v} -> is_nil(v) end)
+    opts =
+      [
+        status: params["status"],
+        creator_profile_id: params["creator_profile_id"],
+        limit: parse_int(params["limit"], 50),
+        offset: parse_int(params["offset"], 0)
+      ]
+      |> Enum.reject(fn {_, v} -> is_nil(v) end)
 
-    {:ok, %{posts: posts, total: total}} = Social.list_personal_external_post_submissions(user.id, opts)
+    {:ok, %{posts: posts, total: total}} =
+      Social.list_personal_external_post_submissions(user.id, opts)
 
     json(conn, %{
       success: true,
@@ -663,15 +693,22 @@ defmodule ClippsterServerWeb.SchedulingController do
           if post.organization_social_account && post.organization_social_account.access_token do
             # Only Instagram has get_insights - Twitter scheduled posts would use org's account
             if post.platform == "instagram" do
-              case Instagram.get_insights(post.organization_social_account.access_token, post.post_id) do
+              case Instagram.get_insights(
+                     post.organization_social_account.access_token,
+                     post.post_id
+                   ) do
                 {:ok, insights} ->
                   Social.sync_post_analytics(post, insights)
-                _ -> :ok
+
+                _ ->
+                  :ok
               end
             end
           end
         end
-      _ -> :ok
+
+      _ ->
+        :ok
     end
   end
 
@@ -697,51 +734,78 @@ defmodule ClippsterServerWeb.SchedulingController do
                         author_name: analytics.author_name,
                         author_profile_image: analytics.author_profile_image
                       })
-                    _ -> :ok
+
+                    _ ->
+                      :ok
                   end
-                _ -> :ok
+
+                _ ->
+                  :ok
               end
 
             "instagram" ->
               # Instagram needs user's connected account
               if submission.submitted_by_user_id do
-                case ClippsterServer.Campaigns.list_user_social_accounts(submission.submitted_by_user_id) do
+                case ClippsterServer.Campaigns.list_user_social_accounts(
+                       submission.submitted_by_user_id
+                     ) do
                   accounts when is_list(accounts) ->
-                    instagram_account = Enum.find(accounts, fn acc -> acc.platform == "instagram" end)
+                    instagram_account =
+                      Enum.find(accounts, fn acc -> acc.platform == "instagram" end)
+
                     if instagram_account && instagram_account.access_token do
                       case extract_instagram_post_id(submission.post_url) do
                         {:ok, post_id} ->
                           case Instagram.get_insights(instagram_account.access_token, post_id) do
                             {:ok, insights} ->
                               # Also get profile for author metadata
-                              author_info = case Instagram.get_user_profile(instagram_account.access_token) do
-                                {:ok, profile} -> %{
-                                  author_username: profile.username,
-                                  author_name: profile.display_name,
-                                  author_profile_image: profile.profile_image_url
-                                }
-                                _ -> %{}
-                              end
+                              author_info =
+                                case Instagram.get_user_profile(instagram_account.access_token) do
+                                  {:ok, profile} ->
+                                    %{
+                                      author_username: profile.username,
+                                      author_name: profile.display_name,
+                                      author_profile_image: profile.profile_image_url
+                                    }
 
-                              Social.sync_external_post_analytics(submission, Map.merge(%{
-                                view_count: insights.view_count,
-                                like_count: insights.like_count,
-                                comment_count: insights.comment_count,
-                                save_count: insights.save_count
-                              }, author_info))
-                            _ -> :ok
+                                  _ ->
+                                    %{}
+                                end
+
+                              Social.sync_external_post_analytics(
+                                submission,
+                                Map.merge(
+                                  %{
+                                    view_count: insights.view_count,
+                                    like_count: insights.like_count,
+                                    comment_count: insights.comment_count,
+                                    save_count: insights.save_count
+                                  },
+                                  author_info
+                                )
+                              )
+
+                            _ ->
+                              :ok
                           end
-                        _ -> :ok
+
+                        _ ->
+                          :ok
                       end
                     end
-                  _ -> :ok
+
+                  _ ->
+                    :ok
                 end
               end
 
-            _ -> :ok
+            _ ->
+              :ok
           end
         end
-      _ -> :ok
+
+      _ ->
+        :ok
     end
   end
 
@@ -756,7 +820,10 @@ defmodule ClippsterServerWeb.SchedulingController do
       {:ok, tweet_id} ->
         case Twitter.get_tweet_analytics(tweet_id) do
           {:ok, analytics} ->
-            Logger.info("[SchedulingController] Fetched Twitter analytics for tweet #{tweet_id}: #{analytics.view_count} views, author: @#{analytics.author_username}")
+            Logger.info(
+              "[SchedulingController] Fetched Twitter analytics for tweet #{tweet_id}: #{analytics.view_count} views, author: @#{analytics.author_username}"
+            )
+
             %{
               view_count: analytics.view_count,
               like_count: analytics.like_count,
@@ -767,7 +834,10 @@ defmodule ClippsterServerWeb.SchedulingController do
             }
 
           {:error, reason} ->
-            Logger.warning("[SchedulingController] Failed to fetch Twitter analytics: #{inspect(reason)}")
+            Logger.warning(
+              "[SchedulingController] Failed to fetch Twitter analytics: #{inspect(reason)}"
+            )
+
             %{}
         end
 
@@ -783,11 +853,13 @@ defmodule ClippsterServerWeb.SchedulingController do
     case ClippsterServer.Campaigns.list_user_social_accounts(user.id) do
       accounts when is_list(accounts) ->
         instagram_account = Enum.find(accounts, fn acc -> acc.platform == "instagram" end)
+
         if instagram_account && instagram_account.access_token do
           :ok
         else
           {:error, :instagram_not_connected}
         end
+
       _ ->
         {:error, :instagram_not_connected}
     end
@@ -812,31 +884,45 @@ defmodule ClippsterServerWeb.SchedulingController do
               case Instagram.get_insights(instagram_account.access_token, post_id) do
                 {:ok, insights} ->
                   # Also get user profile for author metadata
-                  author_info = case Instagram.get_user_profile(instagram_account.access_token) do
-                    {:ok, profile} ->
-                      %{
-                        author_username: profile.username,
-                        author_name: profile.display_name,
-                        author_profile_image: profile.profile_image_url
-                      }
-                    _ -> %{}
-                  end
+                  author_info =
+                    case Instagram.get_user_profile(instagram_account.access_token) do
+                      {:ok, profile} ->
+                        %{
+                          author_username: profile.username,
+                          author_name: profile.display_name,
+                          author_profile_image: profile.profile_image_url
+                        }
 
-                  Logger.info("[SchedulingController] Fetched Instagram analytics for post #{post_id}: #{insights.view_count} views, #{insights.like_count} likes")
+                      _ ->
+                        %{}
+                    end
 
-                  Map.merge(%{
-                    view_count: insights.view_count,
-                    like_count: insights.like_count,
-                    comment_count: insights.comment_count,
-                    save_count: insights.save_count
-                  }, author_info)
+                  Logger.info(
+                    "[SchedulingController] Fetched Instagram analytics for post #{post_id}: #{insights.view_count} views, #{insights.like_count} likes"
+                  )
+
+                  Map.merge(
+                    %{
+                      view_count: insights.view_count,
+                      like_count: insights.like_count,
+                      comment_count: insights.comment_count,
+                      save_count: insights.save_count
+                    },
+                    author_info
+                  )
 
                 {:error, reason} ->
-                  Logger.warning("[SchedulingController] Failed to fetch Instagram insights: #{inspect(reason)}")
+                  Logger.warning(
+                    "[SchedulingController] Failed to fetch Instagram insights: #{inspect(reason)}"
+                  )
+
                   %{}
               end
             else
-              Logger.info("[SchedulingController] User has no connected Instagram account, skipping analytics fetch")
+              Logger.info(
+                "[SchedulingController] User has no connected Instagram account, skipping analytics fetch"
+              )
+
               %{}
             end
 
@@ -845,7 +931,10 @@ defmodule ClippsterServerWeb.SchedulingController do
         end
 
       {:error, _} ->
-        Logger.warning("[SchedulingController] Could not extract Instagram post ID from URL: #{post_url}")
+        Logger.warning(
+          "[SchedulingController] Could not extract Instagram post ID from URL: #{post_url}"
+        )
+
         %{}
     end
   end
@@ -976,7 +1065,8 @@ defmodule ClippsterServerWeb.SchedulingController do
         reach_count: post.reach_count,
         impressions_count: post.impressions_count
       },
-      social_account: serialize_social_account(post.organization_social_account || post.user_social_account),
+      social_account:
+        serialize_social_account(post.organization_social_account || post.user_social_account),
       creator_profile: serialize_creator_profile(post.organization_creator_profile),
       organization: serialize_organization(post.organization),
       submitted_by: serialize_user(post.submitted_by_user),
@@ -988,6 +1078,7 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   defp serialize_social_account(nil), do: nil
   defp serialize_social_account(%Ecto.Association.NotLoaded{}), do: nil
+
   defp serialize_social_account(account) do
     %{
       id: account.id,
@@ -1032,6 +1123,7 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   defp serialize_user(nil), do: nil
   defp serialize_user(%Ecto.Association.NotLoaded{}), do: nil
+
   defp serialize_user(user) do
     %{
       id: user.id,
@@ -1043,6 +1135,7 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   defp serialize_organization(nil), do: nil
   defp serialize_organization(%Ecto.Association.NotLoaded{}), do: nil
+
   defp serialize_organization(org) do
     %{
       id: org.id,
@@ -1053,6 +1146,7 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   defp serialize_creator_profile(nil), do: nil
   defp serialize_creator_profile(%Ecto.Association.NotLoaded{}), do: nil
+
   defp serialize_creator_profile(profile) do
     %{
       id: profile.id,
@@ -1063,6 +1157,7 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   defp serialize_campaign(nil), do: nil
   defp serialize_campaign(%Ecto.Association.NotLoaded{}), do: nil
+
   defp serialize_campaign(campaign) do
     %{
       id: campaign.id,
@@ -1071,16 +1166,19 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp parse_datetime(nil), do: nil
+
   defp parse_datetime(datetime_string) when is_binary(datetime_string) do
     case DateTime.from_iso8601(datetime_string) do
       {:ok, datetime, _offset} -> DateTime.truncate(datetime, :second)
       _ -> nil
     end
   end
+
   defp parse_datetime(%DateTime{} = datetime), do: datetime
 
   defp parse_int(nil, default), do: default
   defp parse_int(value, _default) when is_integer(value), do: value
+
   defp parse_int(value, default) when is_binary(value) do
     case Integer.parse(value) do
       {int, _} -> int
