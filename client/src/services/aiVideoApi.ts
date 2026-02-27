@@ -50,7 +50,9 @@ export async function generateVideoCompositionStreamed(
 ): Promise<AIVideoComposition> {
   const authStore = useAuthStore();
   const token = authStore.token || localStorage.getItem('auth_token');
-  const baseUrl = api.defaults.baseURL || 'http://localhost:4000/api';
+  const baseUrl =
+    api.defaults.baseURL ||
+    (import.meta.env.DEV ? 'http://localhost:4000/api' : 'https://api.clippster.app/api');
 
   const response = await fetch(`${baseUrl}/ai/generate-video-streamed`, {
     method: 'POST',
