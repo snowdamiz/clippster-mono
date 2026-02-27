@@ -95,8 +95,5 @@ function handleBack() {
 </template>
 
 <style scoped>
-/* Hide global FloatingChat since ChatFab is in the EditorHeader */
-.opencut-editor :deep(.floating-chat) {
-	display: none;
-}
+/* FloatingChat is hidden via useChatPopout composable for this route */
 </style>

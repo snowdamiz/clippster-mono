@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, shallowRef, onUnmounted } from "vue";
+import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -11,7 +11,7 @@ import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
 import type { TimelineTrack } from "../../types/timeline";
 import type { AspectRatioId } from "../../types/project";
-import { ChevronDown, Smartphone } from "lucide-vue-next";
+import { ChevronDown, Smartphone, Maximize, Minimize } from "lucide-vue-next";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
 import { SOCIAL_OVERLAY_PRESETS } from "../../constants/social-overlay-constants";
@@ -32,6 +32,8 @@ const showAspectMenu = ref(false);
 const showSocialMenu = ref(false);
 const showSpeedMenu = ref(false);
 const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
+const isFullscreen = ref(false);
+const previewContainerRef = ref<HTMLDivElement | null>(null);
 
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
 
@@ -338,6 +340,33 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 		opacity: (overlay.opacity ?? 100) / 100,
 	};
 }
+
+function toggleFullscreen() {
+	const container = previewContainerRef.value;
+	if (!container) return;
+
+	if (!isFullscreen.value) {
+		if (container.requestFullscreen) {
+			container.requestFullscreen();
+		}
+	} else {
+		if (document.exitFullscreen) {
+			document.exitFullscreen();
+		}
+	}
+}
+
+function handleFullscreenChange() {
+	isFullscreen.value = !!document.fullscreenElement;
+}
+
+onMounted(() => {
+	document.addEventListener('fullscreenchange', handleFullscreenChange);
+});
+
+onUnmounted(() => {
+	document.removeEventListener('fullscreenchange', handleFullscreenChange);
+});
 </script>
 
 <template>
@@ -417,9 +446,21 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 			<!-- Click-away -->
 			<div v-if="showAspectMenu" class="fixed inset-0 z-40" @click="showAspectMenu = false" />
 
-			<!-- Social overlay toggle (9:16 only) -->
-			<div v-if="is916" class="absolute right-2 top-1/2 -translate-y-1/2">
+			<!-- Right controls: Fullscreen, Social overlay -->
+			<div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+				<!-- Fullscreen toggle -->
 				<button
+					type="button"
+					class="flex items-center rounded-md p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
+					@click="toggleFullscreen"
+				>
+					<Minimize v-if="isFullscreen" class="size-4" />
+					<Maximize v-else class="size-4" />
+				</button>
+
+				<!-- Social overlay toggle (9:16 only) -->
+				<button
+					v-if="is916"
 					type="button"
 					:class="[
 						'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
@@ -467,7 +508,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 		</div>
 
 		<!-- Canvas + Interactive Overlay -->
-		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
+		<div ref="previewContainerRef" class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
 			<div class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
 				:style="{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }"
 			>
