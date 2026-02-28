@@ -168,15 +168,6 @@ defmodule ClippsterServerWeb.Router do
     get("/auth/google/callback", AuthController, :google_callback)
     get("/auth/postforme/callback", PostForMeAuthController, :callback)
 
-    # Instagram OAuth routes (for Tauri desktop app)
-    get("/auth/instagram/start", InstagramAuthController, :start_oauth)
-    get("/auth/instagram/callback", InstagramAuthController, :oauth_callback)
-
-    # User Instagram OAuth routes (for individual users/clippers)
-    get("/auth/user-instagram/start", UserInstagramAuthController, :start_oauth)
-    get("/auth/user-instagram/callback", UserInstagramAuthController, :oauth_callback)
-    # The client obtains tokens via FB.login() and sends them to POST /social-accounts
-
     # X (Twitter) OAuth routes (for Tauri desktop app)
     get("/auth/twitter/start", TwitterAuthController, :start_oauth)
     get("/auth/twitter/callback", TwitterAuthController, :oauth_callback)
@@ -612,8 +603,6 @@ defmodule ClippsterServerWeb.Router do
       :user_assigned_profiles
     )
 
-    # Instagram OAuth - exchange code for tokens (admin only)
-    post("/auth/instagram/exchange", InstagramAuthController, :exchange_code)
     post("/social/connect-url", SocialAccountController, :connect_url)
     get("/social/connect-status", SocialAccountController, :connect_status)
     post("/social/complete-connect", SocialAccountController, :complete_connect)
@@ -795,6 +784,8 @@ defmodule ClippsterServerWeb.Router do
     post("/user/posts/upload-media", UserPostsController, :upload_media)
     post("/user/instagram/publish", UserPostsController, :publish)
     post("/user/twitter/publish", UserPostsController, :publish_twitter)
+    post("/user/tiktok/publish", UserPostsController, :publish_tiktok)
+    post("/user/youtube/publish", UserPostsController, :publish_youtube)
     get("/user/posts", UserPostsController, :index)
     get("/user/posts/analytics", UserPostsController, :analytics_summary)
     get("/user/posts/:id", UserPostsController, :show)

@@ -351,6 +351,8 @@
           data.campaign_id = props.campaignId;
         } else {
           data.user_social_account_id = selectedAccountId.value;
+          data.creator_profile_id = selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined;
+          data.campaign_id = props.campaignId;
         }
         response = await schedulePost(data);
         if (response.success) {
@@ -379,6 +381,8 @@
             caption: caption.value,
             media_type: props.mediaType || 'reel',
             thumbnail_url: props.thumbnailUrl,
+            creator_profile_id: selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined,
+            campaign_id: props.campaignId,
           });
         }
         if (response.success) {

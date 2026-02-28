@@ -10,10 +10,6 @@ export async function getSocialAccount(orgId: number | string, accountId: number
   return api.get<{ success: boolean; account?: SocialAccount; error?: string }>(`/organizations/${orgId}/social-accounts/${accountId}`)
 }
 
-export async function completeSocialConnection(data: { organization_id: number; platform: string; platform_user_id: string; username: string; display_name?: string; profile_image_url?: string; access_token: string; token_expires_at?: string }) {
-  return api.post<{ success: boolean; account?: SocialAccount; error?: string }>('/auth/social/complete', data)
-}
-
 export async function updateSocialAccount(orgId: number | string, accountId: number, data: { is_active?: boolean }) {
   return api.patch<{ success: boolean; account?: SocialAccount; error?: string }>(`/organizations/${orgId}/social-accounts/${accountId}`, data)
 }
