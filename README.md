@@ -313,8 +313,17 @@ git push origin release
 | `APPLE_ID` | macOS notarization (optional) |
 | `APPLE_PASSWORD` | macOS notarization (optional) |
 | `APPLE_TEAM_ID` | macOS notarization (optional) |
-| `WINDOWS_CERTIFICATE` | Windows code signing (optional) |
-| `WINDOWS_CERTIFICATE_PASSWORD` | Windows code signing (optional) |
+| `AZURE_CLIENT_ID` | Azure App Registration client ID for OIDC Windows signing (optional) |
+| `AZURE_TENANT_ID` | Azure tenant ID for OIDC Windows signing (optional) |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID for OIDC Windows signing (optional) |
+
+### Required GitHub Variables (Windows signing)
+
+| Variable | Purpose |
+|--------|---------|
+| `AZURE_TRUSTED_SIGNING_ENDPOINT` | Artifact Signing endpoint (for example `https://eus.codesigning.azure.net/`) |
+| `AZURE_TRUSTED_SIGNING_ACCOUNT_NAME` | Azure Trusted/Artifact Signing account name |
+| `AZURE_TRUSTED_SIGNING_CERT_PROFILE_NAME` | Certificate profile name used for Authenticode signing |
 
 ### Generating Signing Keys
 
