@@ -72,12 +72,12 @@ function loadRecentSearches(): RecentSearch[] {
 // Migrate old per-platform searches to unified format
 function migrateOldSearches(): RecentSearch[] {
   const allSearches: RecentSearch[] = [];
-  const platforms: PlatformId[] = ['pumpfun', 'kick', 'twitch', 'youtube', 'rumble', 'twitter'];
+  const platforms: PlatformId[] = ['pumpfun', 'kick', 'twitch', 'YouTube', 'rumble', 'twitter'];
   const oldKeys: Record<PlatformId, string> = {
     pumpfun: 'pumpfun_recent_searches',
     kick: 'kick_recent_searches',
     twitch: 'twitch_recent_searches',
-    youtube: 'youtube_recent_searches',
+    YouTube: 'youtube_recent_searches',
     rumble: 'rumble_recent_searches',
     twitter: 'twitter_recent_searches',
   };
@@ -311,7 +311,7 @@ export const usePlatformStore = defineStore('platform', {
             imageUrl: vods[0].thumbnailUrl,
           };
           console.log('[Platform] Updating YouTube metadata with:', metadata);
-          this.updateRecentSearchMetadata(channelId, 'youtube', metadata);
+          this.updateRecentSearchMetadata(channelId, 'YouTube', metadata);
         } else {
           console.warn('[Platform] No YouTube VODs found for:', channelId);
         }
@@ -330,7 +330,7 @@ export const usePlatformStore = defineStore('platform', {
           await this.fetchTwitchMetadata(search.id);
         } else if (search.platform === 'rumble' && (!search.name || !search.imageUrl)) {
           await this.fetchRumbleMetadata(search.id);
-        } else if (search.platform === 'youtube' && (!search.name || !search.imageUrl)) {
+        } else if (search.platform === 'YouTube' && (!search.name || !search.imageUrl)) {
           await this.fetchYouTubeMetadata(search.id);
         }
       }
@@ -467,7 +467,7 @@ export const usePlatformStore = defineStore('platform', {
             result = await this.getTwitchClips(extractedId, limit);
             break;
 
-          case 'youtube': {
+          case 'YouTube': {
             extractedId = extractYouTubeChannel(trimmedInput) || trimmedInput.trim();
             if (!extractedId) {
               this.error = 'Invalid YouTube channel URL or @handle';
@@ -553,7 +553,7 @@ export const usePlatformStore = defineStore('platform', {
             this.fetchTwitchMetadata(extractedId!);
           } else if (this.activePlatform === 'rumble') {
             this.fetchRumbleMetadata(extractedId!);
-          } else if (this.activePlatform === 'youtube') {
+          } else if (this.activePlatform === 'YouTube') {
             this.fetchYouTubeMetadata(extractedId!);
           }
 

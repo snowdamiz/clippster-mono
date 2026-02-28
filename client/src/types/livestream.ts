@@ -1,4 +1,4 @@
-export type SupportedLivestreamPlatform = 'PumpFun' | 'Youtube' | 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter';
+export type SupportedLivestreamPlatform = 'PumpFun' | 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter';
 
 export interface MonitoredStreamer {
   id: string;

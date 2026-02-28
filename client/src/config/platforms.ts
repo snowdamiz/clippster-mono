@@ -1,4 +1,4 @@
-export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble' | 'twitter';
+export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
 
 export interface PlatformConfig {
   id: PlatformId;
@@ -88,8 +88,8 @@ export const platformConfigs: Record<PlatformId, PlatformConfig> = {
     provider: 'twitch',
     localStorageKey: 'twitch_recent_searches',
   },
-  youtube: {
-    id: 'youtube',
+  YouTube: {
+    id: 'YouTube',
     name: 'YouTube',
     description: 'Download videos directly from YouTube',
     icon: '/youtube.svg',

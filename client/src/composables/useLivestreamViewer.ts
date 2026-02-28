@@ -1001,7 +1001,7 @@ export function useLivestreamViewer() {
       let outputDir: string;
       let sessionId: string;
 
-      if (existingPersistentSession && (existingPersistentSession.platform === 'YouTube' || existingPersistentSession.platform === 'Youtube')) {
+      if (existingPersistentSession && (existingPersistentSession.platform === 'YouTube')) {
         console.log('[LiveViewer] Found existing YouTube persistent session:', existingPersistentSession.sessionId);
         sessionId = existingPersistentSession.sessionId;
         state.value.tempSessionId = sessionId;
@@ -1383,7 +1383,7 @@ export function useLivestreamViewer() {
       return;
     }
 
-    if (platform === 'YouTube' || platform === 'Youtube') {
+    if (platform === 'YouTube') {
       await connectToYouTube(mintId, streamerId, displayName, profileImageUrl);
       return;
     }
@@ -2213,7 +2213,7 @@ export function useLivestreamViewer() {
       } else if (platform === 'Twitch') {
         const twitchStatus = await checkTwitchLivestream(mintId);
         isLive = twitchStatus.isLive;
-      } else if (platform === 'YouTube' || platform === 'Youtube') {
+      } else if (platform === 'YouTube') {
         const youtubeStatus = await checkYouTubeLivestream(mintId);
         isLive = youtubeStatus.isLive;
       } else if (platform === 'Rumble') {
@@ -2234,7 +2234,7 @@ export function useLivestreamViewer() {
         );
         state.value.isBuffering = true;
 
-        if (platform === 'Kick' || platform === 'Twitch' || platform === 'YouTube' || platform === 'Youtube' || platform === 'Rumble' || platform === 'Twitter') {
+        if (platform === 'Kick' || platform === 'Twitch' || platform === 'YouTube' || platform === 'Rumble' || platform === 'Twitter') {
           // yt-dlp based platforms: restart recorder in same directory to preserve DVR content
           const currentOutputDir = hlsOutputDir.value;
           const currentSessionId = state.value.tempSessionId;
@@ -2244,7 +2244,7 @@ export function useLivestreamViewer() {
               await stopKickRecording(mintId);
             } else if (platform === 'Twitch') {
               await stopTwitchRecording(mintId);
-            } else if (platform === 'YouTube' || platform === 'Youtube') {
+            } else if (platform === 'YouTube') {
               await stopYouTubeRecording(mintId);
             } else if (platform === 'Rumble') {
               await stopRumbleRecording(mintId);
@@ -2268,7 +2268,7 @@ export function useLivestreamViewer() {
               await startKickRecording(mintId, streamerId, currentSessionId!, segmentDuration);
             } else if (platform === 'Twitch') {
               await startTwitchRecording(mintId, streamerId, currentSessionId!, segmentDuration);
-            } else if (platform === 'YouTube' || platform === 'Youtube') {
+            } else if (platform === 'YouTube') {
               await startYouTubeRecording(mintId, streamerId, currentSessionId!, segmentDuration);
             } else if (platform === 'Rumble') {
               await startRumbleRecording(mintId, streamerId, currentSessionId!, segmentDuration);

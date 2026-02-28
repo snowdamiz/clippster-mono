@@ -274,7 +274,6 @@ async function fetchLiveStatus(
     case 'Twitch':
       return fetchTwitchLiveStatus(platformId);
     case 'YouTube':
-    case 'Youtube':
       return fetchYouTubeLiveStatus(platformId);
     case 'Rumble':
       return fetchRumbleLiveStatus(platformId);
@@ -411,7 +410,7 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
       await stopKickRecording(streamer.mintId);
     } else if (streamer.platform === 'Twitch') {
       await stopTwitchRecording(streamer.mintId);
-    } else if (streamer.platform === 'YouTube' || streamer.platform === 'Youtube') {
+    } else if (streamer.platform === 'YouTube') {
       await stopYouTubeRecording(streamer.mintId);
     } else if (streamer.platform === 'Rumble') {
       await stopRumbleRecording(streamer.mintId);
@@ -1445,7 +1444,7 @@ export function useLivestreamMonitoring() {
             await invoke('stop_kick_recording', { channelSlug: session.mintId });
           } else if (session.platform === 'Twitch') {
             await stopTwitchRecording(session.mintId);
-          } else if (session.platform === 'YouTube' || session.platform === 'Youtube') {
+          } else if (session.platform === 'YouTube') {
             await stopYouTubeRecording(session.mintId);
           } else if (session.platform === 'Rumble') {
             await stopRumbleRecording(session.mintId);
@@ -1668,7 +1667,7 @@ export function useLivestreamMonitoring() {
           sessionInfo.sessionId,
           segmentDuration
         );
-      } else if (streamer.platform === 'YouTube' || streamer.platform === 'Youtube') {
+      } else if (streamer.platform === 'YouTube') {
         console.log('[LiveMonitor] Starting YouTube recording via yt-dlp/FFmpeg');
         await startYouTubeRecording(
           streamer.mintId, // For YouTube, mintId is the channel ID or handle
