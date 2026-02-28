@@ -566,6 +566,9 @@
                   <Star class="org-billing__plan-corner-badge-icon" />
                   <span>Includes AI</span>
                 </div>
+                <div class="org-billing__plan-corner-badge org-billing__plan-corner-badge--fees">
+                  <span>0% Fees</span>
+                </div>
                 <h3 class="org-billing__plan-name">{{ tier.name }}</h3>
                 <div class="org-billing__plan-price">
                   <span class="org-billing__plan-price-currency">$</span>
@@ -575,7 +578,7 @@
                 <ul class="org-billing__plan-features">
                   <li class="org-billing__plan-feature">
                     <Check class="org-billing__plan-feature-icon" />
-                    <span>{{ tier.seats === null ? 'Unlimited team seats' : tier.seats === 0 ? 'No team seats (owner only)' : `${tier.seats} team seats` }}</span>
+                    <span>{{ tier.seats === null ? 'Unlimited team seats' : tier.seats === 0 ? 'Owner only (no team seats)' : `${tier.seats} team seats` }}</span>
                   </li>
                   <li v-if="tier.monthly_credits > 0" class="org-billing__plan-feature">
                     <Check class="org-billing__plan-feature-icon" />
@@ -588,6 +591,18 @@
                   <li class="org-billing__plan-feature">
                     <Check class="org-billing__plan-feature-icon" />
                     <span>Shared assets & profiles</span>
+                  </li>
+                  <li class="org-billing__plan-feature">
+                    <Check class="org-billing__plan-feature-icon" />
+                    <span>Unlimited marketing campaigns</span>
+                  </li>
+                  <li class="org-billing__plan-feature">
+                    <Check class="org-billing__plan-feature-icon" />
+                    <span>Browse clipper talent directory</span>
+                  </li>
+                  <li class="org-billing__plan-feature">
+                    <Check class="org-billing__plan-feature-icon" />
+                    <span>Post job listings for clippers & video editors</span>
                   </li>
                 </ul>
                 <Button
@@ -705,7 +720,7 @@
       <Transition name="modal">
         <div v-if="showChangePlanDialog" class="org-billing-modal__overlay" @click.self="closeChangePlanDialog">
           <Transition name="dialog" appear>
-            <div class="org-billing-modal" style="max-width: 520px">
+            <div class="org-billing-modal" style="max-width: 900px">
               <div class="org-billing-modal__content">
                 <div class="org-billing-modal__header">
                   <div class="org-billing-modal__icon" style="background-color: rgba(6, 182, 212, 0.15); color: #22d3ee">
@@ -715,21 +730,63 @@
                   <p class="org-billing-modal__subtitle">Current: {{ subscription?.tier_name }}</p>
                 </div>
 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem">
-                  <button
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem">
+                  <div
                     v-for="tier in sortedBaseTiers.filter((t: any) => t.id !== subscription?.tier)"
                     :key="tier.id"
                     @click="selectChangePlanTier(tier.id)"
-                    class="org-billing__tier-option"
-                    :class="{ 'org-billing__tier-option--selected': changePlanTier === tier.id }"
+                    class="org-billing__change-tier-card"
+                    :class="{ 
+                      'org-billing__change-tier-card--selected': changePlanTier === tier.id,
+                      'org-billing__change-tier-card--popular': tier.id === 'enterprise_ai'
+                    }"
                   >
-                    <span class="org-billing__tier-option-name">{{ tier.name }}</span>
-                    <span class="org-billing__tier-option-price">${{ tier.usd }}<span style="font-size:0.75rem;font-weight:400;color:var(--sidebar-text-muted)">/mo</span></span>
-                    <span class="org-billing__tier-option-info">
-                      {{ tier.seats === null ? '∞' : tier.seats === 0 ? '0' : tier.seats }} seats
-                      <template v-if="tier.monthly_credits > 0"> · {{ tier.monthly_credits.toLocaleString() }}/mo</template>
-                    </span>
-                  </button>
+                    <div class="org-billing__change-tier-content">
+                      <div v-if="tier.monthly_credits > 0" class="org-billing__plan-corner-badge">
+                        <Star class="org-billing__plan-corner-badge-icon" />
+                        <span>Includes AI</span>
+                      </div>
+                      <div class="org-billing__plan-corner-badge org-billing__plan-corner-badge--fees">
+                        <span>0% Fees</span>
+                      </div>
+                      <h3 class="org-billing__change-tier-name">{{ tier.name }}</h3>
+                      <div class="org-billing__change-tier-price">
+                        <span class="org-billing__change-tier-price-currency">$</span>
+                        <span class="org-billing__change-tier-price-amount">{{ tier.usd }}</span>
+                        <span class="org-billing__change-tier-price-period">/mo</span>
+                      </div>
+                      <ul class="org-billing__change-tier-features">
+                        <li class="org-billing__change-tier-feature">
+                          <Check class="org-billing__change-tier-feature-icon" />
+                          <span>{{ tier.seats === null ? 'Unlimited team seats' : tier.seats === 0 ? 'Owner only (no team seats)' : `${tier.seats} team seats` }}</span>
+                        </li>
+                        <li v-if="tier.monthly_credits > 0" class="org-billing__change-tier-feature">
+                          <Check class="org-billing__change-tier-feature-icon" />
+                          <span>{{ tier.monthly_credits.toLocaleString() }} credits/month</span>
+                        </li>
+                        <li class="org-billing__change-tier-feature">
+                          <Check class="org-billing__change-tier-feature-icon" />
+                          <span>Team collaboration tools</span>
+                        </li>
+                        <li class="org-billing__change-tier-feature">
+                          <Check class="org-billing__change-tier-feature-icon" />
+                          <span>Shared assets & profiles</span>
+                        </li>
+                        <li class="org-billing__change-tier-feature">
+                          <Check class="org-billing__change-tier-feature-icon" />
+                          <span>Unlimited marketing campaigns</span>
+                        </li>
+                        <li class="org-billing__change-tier-feature">
+                          <Check class="org-billing__change-tier-feature-icon" />
+                          <span>Browse clipper talent directory</span>
+                        </li>
+                        <li class="org-billing__change-tier-feature">
+                          <Check class="org-billing__change-tier-feature-icon" />
+                          <span>Post job listings for clippers & video editors</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
 
                 <div v-if="prorationLoading" style="display:flex;justify-content:center;padding:1rem">
@@ -2216,6 +2273,101 @@
     color: var(--sidebar-text-muted);
   }
 
+  /* Change Plan Dialog Tier Cards */
+  .org-billing__change-tier-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px;
+    border: 1px solid var(--sidebar-border);
+    background: var(--sidebar-hover);
+    cursor: pointer;
+    transition: all 200ms ease;
+    overflow: hidden;
+  }
+
+  .org-billing__change-tier-card:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+  }
+
+  .org-billing__change-tier-card--selected {
+    border-color: rgba(6, 182, 212, 0.6);
+    background: rgba(6, 182, 212, 0.08);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .org-billing__change-tier-card--popular {
+    border-color: rgba(6, 182, 212, 0.4);
+  }
+
+  .org-billing__change-tier-content {
+    position: relative;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  .org-billing__change-tier-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.75rem;
+  }
+
+  .org-billing__change-tier-price {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 1rem;
+  }
+
+  .org-billing__change-tier-price-currency {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin-right: 0.125rem;
+  }
+
+  .org-billing__change-tier-price-amount {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    line-height: 1;
+  }
+
+  .org-billing__change-tier-price-period {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-left: 0.25rem;
+  }
+
+  .org-billing__change-tier-features {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .org-billing__change-tier-feature {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.4;
+  }
+
+  .org-billing__change-tier-feature-icon {
+    width: 14px;
+    height: 14px;
+    color: #4ade80;
+    flex-shrink: 0;
+    margin-top: 0.125rem;
+  }
+
   .org-billing__proration-preview {
     padding: 1rem;
     background: var(--sidebar-hover);
@@ -2372,6 +2524,17 @@
   .org-billing__plan-corner-badge-icon {
     width: 11px;
     height: 11px;
+  }
+
+  .org-billing__plan-corner-badge--fees {
+    top: 2.75rem;
+    background: linear-gradient(135deg, #10b981, #059669);
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+  }
+
+  /* When there's no AI badge, position fees badge at the top */
+  .org-billing__plan-content:not(:has(.org-billing__plan-corner-badge:not(.org-billing__plan-corner-badge--fees))) .org-billing__plan-corner-badge--fees {
+    top: 0.75rem;
   }
 
   .org-billing__plan-name {
