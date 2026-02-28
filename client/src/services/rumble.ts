@@ -7,6 +7,7 @@ export interface RumbleLiveStatus {
   viewerCount?: number;
   thumbnailUrl?: string;
   startedAt?: string;
+  profileImageUrl?: string;
 }
 
 export interface RumbleVod {
@@ -17,6 +18,7 @@ export interface RumbleVod {
   thumbnailUrl?: string;
   uploadDate?: string;
   url: string;
+  isLive: boolean;
 }
 
 /**
@@ -51,6 +53,24 @@ export function extractRumbleChannel(input: string): string | null {
         if (parts.length > 1) {
           return 'user/' + parts[1].split('/')[0];
         }
+      }
+
+      // Handle direct channel paths like /ChannelName or /SomeChannel
+      // Exclude known non-channel paths (videos, browse, search, etc.)
+      const pathSegments = url.pathname.split('/').filter((p) => p.length > 0);
+      if (pathSegments.length === 1) {
+        const segment = pathSegments[0];
+        // Video URLs start with 'v' followed by alphanumeric and contain a dash (e.g., v1abc-title.html)
+        if (/^v[a-z0-9]+-/.test(segment)) {
+          return null;
+        }
+        // Skip known non-channel top-level paths
+        const nonChannelPaths = ['browse', 'search', 'login', 'register', 'account', 'about', 'contact', 'terms', 'privacy', 'embed', 'playlists'];
+        if (nonChannelPaths.includes(segment.toLowerCase())) {
+          return null;
+        }
+        // Treat as a direct channel name
+        return segment;
       }
 
       return null;

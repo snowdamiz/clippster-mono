@@ -53,7 +53,7 @@
                   <span class="streamvods-recent__name">
                     <template v-if="search.symbol">{{ search.symbol }}</template>
                     <template v-else-if="search.label">{{ search.label }}</template>
-                    <template v-else>{{ truncateId(search.id) }}</template>
+                    <template v-else>{{ getCleanChannelName(search.id, search.platform) }}</template>
                   </span>
                   <span class="streamvods-recent__detail">
                     <template v-if="search.name">{{ search.name }}</template>
@@ -156,6 +156,24 @@
           <button
             :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': youtubeTab === 'videos' }]"
             @click="switchYouTubeTab('videos')"
+            :disabled="platformStore.loading"
+          >
+            Videos
+          </button>
+        </div>
+
+        <!-- Rumble Tabs -->
+        <div v-if="detectedPlatform === 'rumble' && (platformStore.clips.length > 0 || platformStore.loading)" class="streamvods__youtube-tabs">
+          <button
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': rumbleTab === 'streams' }]"
+            @click="switchRumbleTab('streams')"
+            :disabled="platformStore.loading"
+          >
+            Live Streams
+          </button>
+          <button
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': rumbleTab === 'videos' }]"
+            @click="switchRumbleTab('videos')"
             :disabled="platformStore.loading"
           >
             Videos
@@ -485,6 +503,8 @@
   import { platformConfigs, type PlatformId } from '@/config/platforms';
   import { extractMintId } from '@/services/pumpfun';
   import { extractChannelSlug } from '@/services/kick';
+  import { extractRumbleChannel } from '@/services/rumble';
+  import { extractYouTubeChannel } from '@/services/youtube';
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
   import { getNextSegmentNumber, getDownloadedVodIds } from '@/services/database';
@@ -531,6 +551,9 @@
   
   // YouTube tab state (Live Streams vs Videos)
   const youtubeTab = ref<'streams' | 'videos'>('streams');
+  
+  // Rumble tab state (Live Streams vs Videos)
+  const rumbleTab = ref<'streams' | 'videos'>('streams');
 
   function detectPlatform() {
     const val = searchInput.value?.trim();
@@ -641,7 +664,14 @@
       detectedPlatform.value = platformStore.activePlatform;
       // Restore the search input to show what's currently loaded
       if (platformStore.currentSearchId) {
-        searchInput.value = platformStore.currentSearchId;
+        // Clean up the display for Rumble and YouTube
+        let displayValue = platformStore.currentSearchId;
+        if (platformStore.activePlatform === 'rumble') {
+          displayValue = displayValue.replace(/^(c\/|user\/)/, '');
+        } else if (platformStore.activePlatform === 'youtube') {
+          displayValue = displayValue.replace(/^@/, '');
+        }
+        searchInput.value = displayValue;
       }
     }
   });
@@ -716,6 +746,26 @@
   function getPlatformFallbackIcon(_platform: PlatformId) {
     // Return a component or default to Clock
     return Clock;
+  }
+
+  function getCleanChannelName(id: string, platform: PlatformId): string {
+    // Clean up channel names for display
+    if (platform === 'rumble') {
+      // Remove 'c/' or 'user/' prefix from Rumble channels
+      if (id.startsWith('c/')) {
+        return id.substring(2);
+      }
+      if (id.startsWith('user/')) {
+        return id.substring(5);
+      }
+    }
+    if (platform === 'youtube') {
+      // Remove '@' prefix from YouTube handles if present
+      if (id.startsWith('@')) {
+        return id.substring(1);
+      }
+    }
+    return truncateId(id);
   }
 
   const formatDuration = (duration?: number) => {
@@ -809,6 +859,36 @@
     }
   }
 
+  // Switch Rumble tab and refetch content
+  async function switchRumbleTab(tab: 'streams' | 'videos') {
+    if (rumbleTab.value === tab || platformStore.loading) return;
+    
+    console.log('[StreamVods] Switching Rumble tab to:', tab);
+    rumbleTab.value = tab;
+    
+    // Refetch with the new tab
+    const input = searchInput.value.trim();
+    if (input && detectedPlatform.value === 'rumble') {
+      // Ensure platform is set before searching
+      platformStore.setActivePlatform('rumble');
+      
+      try {
+        console.log('[StreamVods] Calling searchClips with tab:', rumbleTab.value);
+        const result = await platformStore.searchClips(input, 20, rumbleTab.value);
+        if (result.success) {
+          await loadDownloadedVodIds();
+          if (result.total === 0) {
+            showError('No Content Found', `No ${tab === 'streams' ? 'live streams' : 'videos'} found for this channel`);
+          }
+        } else {
+          showError('Search Failed', result.error || 'Failed to fetch content');
+        }
+      } catch (err) {
+        showError('Error', err instanceof Error ? err.message : 'An unexpected error occurred');
+      }
+    }
+  }
+
   async function handleSearch() {
     const input = searchInput.value.trim();
     if (!input) {
@@ -850,11 +930,20 @@
       youtubeTab.value = 'streams';
     }
 
+    // Reset Rumble tab to streams (default) when doing a new search
+    if (detectedPlatform.value === 'rumble') {
+      rumbleTab.value = 'streams';
+    }
+
     // Set the active platform in the store
     platformStore.setActivePlatform(detectedPlatform.value);
 
     try {
-      const result = await platformStore.searchClips(input, 20, detectedPlatform.value === 'youtube' ? youtubeTab.value : undefined);
+      // Pass tab parameter for YouTube and Rumble
+      const tabParam = detectedPlatform.value === 'youtube' ? youtubeTab.value 
+                     : detectedPlatform.value === 'rumble' ? rumbleTab.value 
+                     : undefined;
+      const result = await platformStore.searchClips(input, 20, tabParam);
       if (result.success) {
         // Reload downloaded VOD IDs after search to ensure we have latest data
         await loadDownloadedVodIds();
@@ -1001,6 +1090,14 @@
                     // Try to extract mint ID from URL if it's a full URL
                     const extractedMint = extractMintId(storedId);
                     if (extractedMint) storedId = extractedMint;
+                  } else if (link.platform === 'rumble') {
+                    // Try to extract channel name from URL if it's a full URL
+                    const extractedChannel = extractRumbleChannel(storedId);
+                    if (extractedChannel) storedId = extractedChannel;
+                  } else if (link.platform === 'youtube') {
+                    // Try to extract channel ID from URL if it's a full URL
+                    const extractedChannel = extractYouTubeChannel(storedId);
+                    if (extractedChannel) storedId = extractedChannel;
                   }
 
                   return storedId.toLowerCase() === platformStore.currentSearchId.toLowerCase();

@@ -5,6 +5,7 @@ use std::{
 };
 
 use once_cell::sync::Lazy;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tauri::Emitter;
@@ -30,6 +31,17 @@ fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command 
 fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command {
     cmd
 }
+
+/// HTTP client for scraping Rumble channel pages.
+/// Rumble does not have a public API, so we scrape the channel HTML
+/// and look for the `videostream__status--live` CSS class (same approach as the Kodi Rumble plugin).
+static RUMBLE_HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .expect("Failed to build Rumble HTTP client")
+});
 
 // Recording state management
 #[derive(Debug)]
@@ -89,6 +101,7 @@ pub struct RumbleLiveStatus {
     pub viewer_count: Option<i64>,
     pub thumbnail_url: Option<String>,
     pub started_at: Option<String>,
+    pub profile_image_url: Option<String>,
 }
 
 /// VOD info from yt-dlp
@@ -102,76 +115,191 @@ pub struct RumbleVod {
     pub thumbnail_url: Option<String>,
     pub upload_date: Option<String>,
     pub url: String,
+    pub is_live: bool,
 }
 
-/// Check if a Rumble channel is live using yt-dlp metadata
+/// Check if a Rumble channel is live by scraping the channel page HTML.
+/// 
+/// This approach is modelled after Kick's API-based check but uses HTML scraping
+/// since Rumble has no public API. We look for the `videostream__status--live`
+/// CSS class in the channel page, which is the same technique used by the
+/// Kodi Rumble plugin (azzy9/plugin.video.rumble).
 /// 
 /// # Arguments
 /// * `channel` - Rumble channel name or URL
 #[tauri::command]
 pub async fn check_rumble_livestream(channel: String) -> Result<String, String> {
     let channel_name = normalize_channel_name(&channel);
-    let ytdlp_path = resolve_ytdlp_binary()?;
-
-    // Use --flat-playlist to list the channel's videos without downloading.
-    // The live stream (if any) will have is_live=true in the entry.
     let channel_url = channel_to_url(&channel_name);
+    println!("[Rumble] Checking livestream status for {} via HTML scrape: {}", channel_name, channel_url);
 
-    let mut cmd = tokio::process::Command::new(&ytdlp_path);
-    no_window(&mut cmd);
+    let response = RUMBLE_HTTP_CLIENT
+        .get(&channel_url)
+        .header("Accept", "text/html,application/xhtml+xml")
+        .send()
+        .await;
 
-    cmd.arg("--flat-playlist")
-        .arg("--dump-single-json")
-        .arg("--no-warnings")
-        .arg("--playlist-end").arg("5")
-        .arg(&channel_url);
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let body = resp.text().await
+                .map_err(|e| format!("Failed to read Rumble response: {}", e))?;
 
-    let output = cmd.output().await
-        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+            // Extract profile image from channel page
+            // Look for profile image in various possible locations
+            let profile_image = extract_html_attr(&body, r#"class="listing-header--thumb"[^>]*src="([^"]+)""#)
+                .or_else(|| extract_html_attr(&body, r#"<img[^>]+class="listing-header--thumb"[^>]+src="([^"]+)""#))
+                .or_else(|| extract_html_attr(&body, r#"<img[^>]+src="(https://[^"]*rumble\.com[^"]*profile[^"]*\.(jpg|png|webp)[^"]*)""#))
+                .or_else(|| extract_html_attr(&body, r#"<meta\s+property="og:image"\s+content="([^"]+)""#))
+                .or_else(|| {
+                    // Try to find any image in the listing-header section
+                    if let Some(header_section) = body.split("listing-header").nth(1) {
+                        if let Some(img_section) = header_section.split("</header>").next() {
+                            extract_html_attr(img_section, r#"<img[^>]+src="([^"]+)""#)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                });
+            
+            if let Some(ref img_url) = profile_image {
+                println!("[Rumble] Found profile image: {}", img_url);
+            } else {
+                println!("[Rumble] No profile image found for channel {}", channel_name);
+            }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+            // Split the HTML into individual video stream blocks.
+            // Each video on the channel page is wrapped in a div with class "videostream".
+            // The Kodi plugin splits on '"videostream thumbnail__grid-' or '"videostream videostream__list-item'.
+            let blocks: Vec<&str> = body.split("videostream thumbnail__grid-").collect();
 
-    // Parse the playlist JSON and look for a live entry
-    if let Ok(playlist) = serde_json::from_str::<serde_json::Value>(stdout.trim()) {
-        if let Some(entries) = playlist["entries"].as_array() {
-            for entry in entries {
-                let is_live = entry["is_live"].as_bool().unwrap_or(false)
-                    || entry["live_status"].as_str().map(|s| s == "is_live").unwrap_or(false);
-                if is_live {
+            // Check each block for the live indicator class
+            for block in blocks.iter().skip(1) {
+                if block.contains("videostream__status--live") {
+                    // Found a live stream! Extract metadata from this block.
+                    let title = extract_html_text(block, r#"<h3[^>]*>(.*?)</h3>"#);
+                    let thumbnail = extract_html_attr(block, r#"<img\s*class="thumbnail__image\s*"\s*draggable="false"\s*src="([^"]+)""#);
+                    let link = extract_html_attr(block, r#"<a\s*class="videostream__link\s+link"\s*draggable="false"\s*href="([^"]+)""#);
+                    let watching = extract_html_text(block, r#"<span class="video-item--watching">([^<]+)</span>"#);
+
+                    // Parse viewer count from "X watching" text
+                    let viewer_count = watching.as_ref().and_then(|w| {
+                        w.replace(',', "").split_whitespace().next()
+                            .and_then(|n| n.parse::<i64>().ok())
+                    });
+
+                    let stream_title = title.map(|t| clean_html_text(&t));
+
+                    println!("[Rumble] Channel {} is LIVE: {:?} ({:?} viewers)", 
+                        channel_name, stream_title, viewer_count);
+
                     let status = RumbleLiveStatus {
                         is_live: true,
                         channel_name: Some(channel_name),
-                        stream_title: entry["title"].as_str().map(String::from),
-                        viewer_count: entry["view_count"].as_i64(),
-                        thumbnail_url: entry["thumbnail"].as_str().map(String::from),
-                        started_at: entry["timestamp"].as_i64().map(|t| t.to_string()),
+                        stream_title,
+                        viewer_count,
+                        thumbnail_url: thumbnail,
+                        started_at: link.map(|l| format!("https://rumble.com{}", l)),
+                        profile_image_url: profile_image,
                     };
                     return Ok(serde_json::to_string(&status).unwrap());
                 }
             }
+
+            // No live stream block found
+            println!("[Rumble] Channel {} is not live", channel_name);
+            let status = RumbleLiveStatus {
+                is_live: false,
+                channel_name: Some(channel_name),
+                stream_title: None,
+                viewer_count: None,
+                thumbnail_url: None,
+                started_at: None,
+                profile_image_url: profile_image,
+            };
+            Ok(serde_json::to_string(&status).unwrap())
+        }
+        Ok(resp) => {
+            println!("[Rumble] Channel page returned {} for {}", resp.status(), channel_name);
+            let status = RumbleLiveStatus {
+                is_live: false,
+                channel_name: Some(channel_name),
+                stream_title: None,
+                viewer_count: None,
+                thumbnail_url: None,
+                started_at: None,
+                profile_image_url: None,
+            };
+            Ok(serde_json::to_string(&status).unwrap())
+        }
+        Err(e) => {
+            println!("[Rumble] HTTP request failed for {}: {}", channel_name, e);
+            let status = RumbleLiveStatus {
+                is_live: false,
+                channel_name: Some(channel_name),
+                stream_title: None,
+                viewer_count: None,
+                thumbnail_url: None,
+                started_at: None,
+                profile_image_url: None,
+            };
+            Ok(serde_json::to_string(&status).unwrap())
         }
     }
+}
 
-    // Not live
-    let status = RumbleLiveStatus {
-        is_live: false,
-        channel_name: Some(channel_name),
-        stream_title: None,
-        viewer_count: None,
-        thumbnail_url: None,
-        started_at: None,
-    };
-    Ok(serde_json::to_string(&status).unwrap())
+/// Extract text content from an HTML element using a regex pattern.
+/// The first capture group is returned as the match.
+fn extract_html_text(html: &str, pattern: &str) -> Option<String> {
+    Regex::new(pattern).ok()
+        .and_then(|re| re.captures(html))
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+/// Extract an attribute value from an HTML element using a regex pattern.
+/// The first capture group is returned as the match.
+fn extract_html_attr(html: &str, pattern: &str) -> Option<String> {
+    Regex::new(pattern).ok()
+        .and_then(|re| re.captures(html))
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
+}
+
+/// Strip HTML tags and decode basic HTML entities from text.
+fn clean_html_text(text: &str) -> String {
+    // Remove HTML tags
+    let tag_re = Regex::new(r"<[^>]+>").unwrap();
+    let cleaned = tag_re.replace_all(text, "");
+    // Decode common HTML entities
+    cleaned
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .trim()
+        .to_string()
 }
 
 /// Get list of VODs from a Rumble channel using yt-dlp
 #[tauri::command]
 pub async fn get_rumble_vods(channel: String, limit: Option<u32>) -> Result<String, String> {
-    let channel_name = normalize_channel_name(&channel);
     let ytdlp_path = resolve_ytdlp_binary()?;
     
     let limit_str = limit.unwrap_or(10).to_string();
-    let channel_url = channel_to_url(&channel_name);
+    
+    // If input is a full URL (contains /livestreams or /videos), use it directly
+    // Otherwise, normalize and construct a channel URL
+    let channel_url = if channel.contains("rumble.com/") {
+        // Use the URL as-is to preserve /livestreams or /videos paths
+        channel.trim().to_string()
+    } else {
+        let channel_name = normalize_channel_name(&channel);
+        channel_to_url(&channel_name)
+    };
     
     println!("[Rumble VODs] Fetching from: {}", channel_url);
 
@@ -197,7 +325,8 @@ pub async fn get_rumble_vods(channel: String, limit: Option<u32>) -> Result<Stri
 
     let mut vods = Vec::new();
 
-    for line in stdout.lines() {
+    println!("[Rumble VODs] Processing yt-dlp output...");
+    for (index, line) in stdout.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() { continue; }
         let json: serde_json::Value = match serde_json::from_str(line) {
@@ -214,17 +343,41 @@ pub async fn get_rumble_vods(channel: String, limit: Option<u32>) -> Result<Stri
             .map(String::from)
             .unwrap_or_else(|| format!("https://rumble.com/v{}.html", video_id));
 
+        // Check if this is a live stream
+        // yt-dlp sets is_live to true for ongoing live streams
+        let is_live = json["is_live"].as_bool().unwrap_or(false);
+        let was_live = json["was_live"].as_bool().unwrap_or(false);
+        
+        // Skip currently live streams - they can't be downloaded as VODs yet
+        if is_live {
+            if index < 3 {
+                println!("[Rumble VODs] Skipping currently live stream: {:?}", json["title"].as_str());
+            }
+            continue;
+        }
+        
+        let title = json["title"].as_str().map(String::from);
+        
+        // Log first few entries for debugging
+        if index < 3 {
+            println!("[Rumble VODs] Entry {}: title={:?}, is_live={}, was_live={}, url={}", 
+                index, title, is_live, was_live, url);
+        }
+
         let vod = RumbleVod {
             video_id,
-            title: json["title"].as_str().map(String::from),
+            title,
             duration: json["duration"].as_f64(),
             view_count: json["view_count"].as_i64(),
             thumbnail_url: json["thumbnail"].as_str().map(String::from),
             upload_date: json["upload_date"].as_str().map(String::from),
             url,
+            is_live: was_live, // Only mark as live if it was a past livestream (not currently live)
         };
         vods.push(vod);
     }
+    
+    println!("[Rumble VODs] Total VODs fetched: {}", vods.len());
 
     Ok(serde_json::to_string(&vods).unwrap())
 }
@@ -515,41 +668,17 @@ async fn run_rumble_recorder(
     let playlist_path = PathBuf::from(&output_dir).join("playlist.m3u8");
     let segment_pattern = PathBuf::from(&output_dir).join("segment_%04d.ts");
     
-    // Resolve the live video URL from the channel page first.
-    // The channel page is a playlist; we need the actual live video URL for streaming.
+    // Resolve the live video URL by scraping the channel page HTML.
+    // yt-dlp hangs on Rumble channel pages, so we use direct HTTP scraping
+    // to find the live stream's video page URL, then pass that to yt-dlp.
     let channel_url = channel_to_url(&channel_name);
-    println!("[RumbleRecorder] Resolving live stream URL from: {}", channel_url);
+    println!("[RumbleRecorder] Resolving live stream URL via HTML scrape: {}", channel_url);
 
-    let mut resolve_cmd = tokio::process::Command::new(&ytdlp_path);
-    no_window(&mut resolve_cmd);
-    resolve_cmd
-        .arg("--flat-playlist")
-        .arg("--dump-single-json")
-        .arg("--no-warnings")
-        .arg("--playlist-end").arg("5")
-        .arg(&channel_url);
-
-    let resolve_output = resolve_cmd.output().await
-        .map_err(|e| format!("Failed to resolve live URL: {}", e))?;
-    let resolve_stdout = String::from_utf8_lossy(&resolve_output.stdout);
-
-    // Find the live entry and get its URL
-    let stream_url = if let Ok(playlist) = serde_json::from_str::<serde_json::Value>(resolve_stdout.trim()) {
-        if let Some(entries) = playlist["entries"].as_array() {
-            entries.iter().find(|e| {
-                e["is_live"].as_bool().unwrap_or(false)
-                    || e["live_status"].as_str().map(|s| s == "is_live").unwrap_or(false)
-            }).and_then(|e| {
-                e["url"].as_str().map(String::from)
-                    .or_else(|| e["id"].as_str().map(|id| format!("https://rumble.com/v{}.html", id)))
-            })
-        } else { None }
-    } else { None };
-
-    let stream_url = stream_url.unwrap_or_else(|| {
-        println!("[RumbleRecorder] No live entry found, falling back to channel URL");
-        channel_url.clone()
-    });
+    let stream_url = resolve_rumble_live_stream_url(&channel_name).await
+        .unwrap_or_else(|| {
+            println!("[RumbleRecorder] Could not find live stream URL, falling back to channel URL");
+            channel_url.clone()
+        });
 
     println!("[RumbleRecorder] Streaming from: {}", stream_url);
 
@@ -782,6 +911,44 @@ fn channel_to_url(channel_name: &str) -> String {
     } else {
         format!("https://rumble.com/c/{}", channel_name)
     }
+}
+
+/// Scrape the Rumble channel page to find the live stream's video page URL.
+/// Returns `Some("https://rumble.com/v1abc-title.html")` if a live stream is found.
+/// This is used by the recorder to get a specific video URL that yt-dlp can handle
+/// (yt-dlp works fine on individual Rumble video pages but hangs on channel pages).
+async fn resolve_rumble_live_stream_url(channel_name: &str) -> Option<String> {
+    let channel_url = channel_to_url(channel_name);
+
+    let response = RUMBLE_HTTP_CLIENT
+        .get(&channel_url)
+        .header("Accept", "text/html,application/xhtml+xml")
+        .send()
+        .await
+        .ok()?;
+
+    if !response.status().is_success() {
+        println!("[RumbleRecorder] Channel page returned {}", response.status());
+        return None;
+    }
+
+    let body = response.text().await.ok()?;
+
+    // Split into video stream blocks and find the live one
+    let blocks: Vec<&str> = body.split("videostream thumbnail__grid-").collect();
+    for block in blocks.iter().skip(1) {
+        if block.contains("videostream__status--live") {
+            // Extract the video page link from this live block
+            if let Some(link) = extract_html_attr(block, r#"<a\s*class="videostream__link\s+link"\s*draggable="false"\s*href="([^"]+)""#) {
+                let full_url = format!("https://rumble.com{}", link);
+                println!("[RumbleRecorder] Found live stream URL: {}", full_url);
+                return Some(full_url);
+            }
+        }
+    }
+
+    println!("[RumbleRecorder] No live stream found on channel page");
+    None
 }
 
 fn resolve_ytdlp_binary() -> Result<PathBuf, String> {

@@ -9,7 +9,7 @@ import {
 import { getKickClips, extractChannelSlug, checkKickLivestream } from '@/services/kick';
 import { getTwitchVods, extractChannelName, checkTwitchLivestream, type TwitchVod } from '@/services/twitch';
 import { getYouTubeVods, extractYouTubeChannel, type YouTubeVod } from '@/services/youtube';
-import { getRumbleVods, extractRumbleChannel, type RumbleVod } from '@/services/rumble';
+import { getRumbleVods, extractRumbleChannel, checkRumbleLivestream, type RumbleVod } from '@/services/rumble';
 import { extractTwitterBroadcastId, validateTwitterUrl, getTwitterBroadcastInfo } from '@/services/twitter';
 
 // Unified clip type that works across platforms
@@ -258,6 +258,68 @@ export const usePlatformStore = defineStore('platform', {
       }
     },
 
+    // Background metadata fetch for Rumble (channel name and avatar from livestream check)
+    async fetchRumbleMetadata(channelId: string) {
+      try {
+        console.log('[Platform] Fetching Rumble metadata for:', channelId);
+        const status = await checkRumbleLivestream(channelId);
+        console.log('[Platform] Rumble status response:', status);
+        
+        let profileImageUrl = status?.profileImageUrl;
+        
+        // If no profile image from livestream check, try to get from VODs
+        if (!profileImageUrl) {
+          console.log('[Platform] No profile image from livestream check, trying VODs...');
+          try {
+            const vods = await getRumbleVods(channelId, 1);
+            if (vods.length > 0 && vods[0].thumbnailUrl) {
+              // Use the first VOD's thumbnail as a fallback
+              profileImageUrl = vods[0].thumbnailUrl;
+              console.log('[Platform] Using VOD thumbnail as fallback:', profileImageUrl);
+            }
+          } catch (vodError) {
+            console.warn('[Platform] Failed to fetch VODs for avatar fallback:', vodError);
+          }
+        }
+        
+        if (status?.channelName || profileImageUrl) {
+          const metadata = {
+            name: status?.channelName || channelId.replace(/^(c\/|user\/)/, ''),
+            imageUrl: profileImageUrl,
+          };
+          console.log('[Platform] Updating Rumble metadata with:', metadata);
+          this.updateRecentSearchMetadata(channelId, 'rumble', metadata);
+          console.log('[Platform] Recent searches after update:', this.recentSearches);
+        } else {
+          console.warn('[Platform] No Rumble metadata available');
+        }
+      } catch (error) {
+        console.error('[Platform] Failed to fetch Rumble metadata for:', channelId, error);
+      }
+    },
+
+    // Background metadata fetch for YouTube (channel name and avatar from VODs)
+    async fetchYouTubeMetadata(channelId: string) {
+      try {
+        console.log('[Platform] Fetching YouTube metadata for:', channelId);
+        const vods = await getYouTubeVods(channelId, 1);
+        
+        if (vods.length > 0) {
+          // Use the first VOD's thumbnail as avatar
+          const metadata = {
+            name: channelId.replace(/^@/, ''), // Remove @ prefix if present
+            imageUrl: vods[0].thumbnailUrl,
+          };
+          console.log('[Platform] Updating YouTube metadata with:', metadata);
+          this.updateRecentSearchMetadata(channelId, 'youtube', metadata);
+        } else {
+          console.warn('[Platform] No YouTube VODs found for:', channelId);
+        }
+      } catch (error) {
+        console.error('[Platform] Failed to fetch YouTube metadata for:', channelId, error);
+      }
+    },
+
     // Refresh missing metadata (avatars) for recent searches
     async refreshRecentSearchMetadata() {
       // Process sequentially to avoid burst requests
@@ -266,6 +328,10 @@ export const usePlatformStore = defineStore('platform', {
           await this.fetchKickMetadata(search.id);
         } else if (search.platform === 'twitch' && !search.imageUrl) {
           await this.fetchTwitchMetadata(search.id);
+        } else if (search.platform === 'rumble' && (!search.name || !search.imageUrl)) {
+          await this.fetchRumbleMetadata(search.id);
+        } else if (search.platform === 'youtube' && (!search.name || !search.imageUrl)) {
+          await this.fetchYouTubeMetadata(search.id);
         }
       }
     },
@@ -345,7 +411,7 @@ export const usePlatformStore = defineStore('platform', {
     },
 
     // Universal search function that handles different platforms
-    async searchClips(input: string, limit: number = 20, youtubeTab?: 'streams' | 'videos') {
+    async searchClips(input: string, limit: number = 20, tab?: 'streams' | 'videos') {
       const trimmedInput = input.trim();
       const config = platformConfigs[this.activePlatform];
 
@@ -409,21 +475,33 @@ export const usePlatformStore = defineStore('platform', {
               return { success: false, error: this.error };
             }
             this.currentSearchId = extractedId;
-            const tabToUse = youtubeTab || 'streams';
+            const tabToUse = tab || 'streams';
             console.log('[Platform Store] YouTube search - tab:', tabToUse);
             result = await this.getYouTubeClips(extractedId, limit, tabToUse);
             break;
           }
 
           case 'rumble': {
-            extractedId = extractRumbleChannel(trimmedInput) || trimmedInput.trim();
+            // If it's a full URL, use it directly to preserve /livestreams or /videos paths
+            // Otherwise, extract the channel name
+            let channelInput: string;
+            if (trimmedInput.includes('rumble.com/')) {
+              channelInput = trimmedInput;
+              // Extract channel name for currentSearchId (for display purposes)
+              extractedId = extractRumbleChannel(trimmedInput) || trimmedInput.trim();
+            } else {
+              extractedId = extractRumbleChannel(trimmedInput) || trimmedInput.trim();
+              channelInput = extractedId;
+            }
+            
             if (!extractedId) {
               this.error = 'Invalid Rumble channel URL or name';
               this.loading = false;
               return { success: false, error: this.error };
             }
             this.currentSearchId = extractedId;
-            result = await this.getRumbleClips(extractedId, limit);
+            const tabToUse = tab || 'streams';
+            result = await this.getRumbleClips(channelInput, limit, tabToUse);
             break;
           }
 
@@ -466,13 +544,17 @@ export const usePlatformStore = defineStore('platform', {
             this.addToRecentSearches(extractedId!, trimmedInput, this.activePlatform, undefined);
           }
 
-          // Fetch metadata for PumpFun, Kick, or Twitch searches
+          // Fetch metadata for PumpFun, Kick, Twitch, Rumble, or YouTube searches
           if (this.activePlatform === 'pumpfun') {
             this.fetchPumpFunMetadata(extractedId!);
           } else if (this.activePlatform === 'kick') {
             this.fetchKickMetadata(extractedId!);
           } else if (this.activePlatform === 'twitch') {
             this.fetchTwitchMetadata(extractedId!);
+          } else if (this.activePlatform === 'rumble') {
+            this.fetchRumbleMetadata(extractedId!);
+          } else if (this.activePlatform === 'youtube') {
+            this.fetchYouTubeMetadata(extractedId!);
           }
 
           return {
@@ -532,7 +614,7 @@ export const usePlatformStore = defineStore('platform', {
     },
 
     // Helper to convert Rumble VODs to PlatformClip format
-    async getRumbleClips(channelName: string, limit: number = 20): Promise<{
+    async getRumbleClips(channelName: string, limit: number = 20, tab: 'streams' | 'videos' = 'streams'): Promise<{
       success: boolean;
       clips: PlatformClip[];
       hasMore: boolean;
@@ -540,8 +622,34 @@ export const usePlatformStore = defineStore('platform', {
       error?: string;
     }> {
       try {
-        const vods = await getRumbleVods(channelName, limit);
-        const clips: PlatformClip[] = vods.map((vod: RumbleVod) => {
+        // Construct URL with /livestreams or /videos path based on tab
+        let urlToFetch = channelName;
+        
+        // If it's already a full URL, extract the base and reconstruct with the correct path
+        if (channelName.includes('rumble.com/')) {
+          // Extract base channel URL and add the appropriate path
+          const baseUrl = channelName.split(/\/(livestreams|videos)/)[0];
+          urlToFetch = `${baseUrl}/${tab === 'streams' ? 'livestreams' : 'videos'}`;
+        } else {
+          // Construct URL from channel name
+          const channelPath = channelName.startsWith('c/') || channelName.startsWith('user/') 
+            ? channelName 
+            : `c/${channelName}`;
+          urlToFetch = `https://rumble.com/${channelPath}/${tab === 'streams' ? 'livestreams' : 'videos'}`;
+        }
+        
+        console.log('[Platform Store] Fetching Rumble', tab, 'from:', urlToFetch);
+        const vods = await getRumbleVods(urlToFetch, limit);
+        
+        // Filter VODs based on tab selection using was_live field
+        // Note: Rumble's /livestreams and /videos URLs return the same content,
+        // so we must filter client-side based on the was_live field from yt-dlp
+        const filteredVods = tab === 'streams' 
+          ? vods.filter(vod => vod.isLive)  // isLive = is_live || was_live from backend
+          : vods.filter(vod => !vod.isLive);
+        
+        console.log('[Platform Store] Filtered', filteredVods.length, 'out of', vods.length, 'VODs for tab:', tab);
+        const clips: PlatformClip[] = filteredVods.map((vod: RumbleVod) => {
           // upload_date from yt-dlp is YYYYMMDD — convert to ISO
           let createdAt: string | undefined;
           if (vod.uploadDate) {

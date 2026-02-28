@@ -27,6 +27,13 @@
                 <img src="/kick.svg" class="liveclip-search__platform-icon liveclip-search__platform-icon--dark" />
               </div>
               <div
+                v-else-if="detectedPlatform === 'Rumble'"
+                class="liveclip-search__platform liveclip-search__platform--rumble"
+                key="rumble"
+              >
+                <img src="/rumble.svg" class="liveclip-search__platform-icon" />
+              </div>
+              <div
                 v-else-if="detectedPlatform === 'PumpFun'"
                 class="liveclip-search__platform liveclip-search__platform--pumpfun"
                 key="pf"
@@ -892,10 +899,16 @@
         };
         const platform = platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
 
+        // Clean display name for Rumble channels (remove c/ or user/ prefix)
+        let displayName = record.display_name;
+        if (platform === 'Rumble' && displayName) {
+          displayName = displayName.replace(/^(c\/|user\/)/, '');
+        }
+
         const streamer = {
           id: record.id,
           mintId: record.mint_id,
-          displayName: record.display_name,
+          displayName: displayName,
           platform,
           lastCheckTimestamp: record.last_check_timestamp,
           isCurrentlyLive: Boolean(record.is_currently_live),
@@ -1082,15 +1095,27 @@
     if (detectedPlatform.value === 'Rumble') {
       const channelName = extractRumbleChannel(inputValue.value);
       if (channelName) {
+        // Clean display name by removing c/ or user/ prefix
+        const displayName = channelName.replace(/^(c\/|user\/)/, '');
+        
         addActivityLog({
           streamerId: 'system',
           streamerName: 'System',
           platform: 'Rumble',
-          message: `Adding Rumble channel "${channelName}"...`,
+          message: `Adding Rumble channel "${displayName}"...`,
           status: 'loading',
         });
 
-        await confirmAddStreamer(channelName, channelName, undefined, 'rumble');
+        await confirmAddStreamer(channelName, displayName, undefined, 'rumble');
+        return;
+      } else {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Rumble',
+          message: `Could not extract a Rumble channel from "${inputValue.value}". Please use a channel URL like rumble.com/c/ChannelName.`,
+          status: 'info',
+        });
         return;
       }
     }
@@ -1722,6 +1747,9 @@
   }
   .liveclip-search__platform--kick {
     background-color: #53fc18;
+  }
+  .liveclip-search__platform--rumble {
+    background-color: #85c742;
   }
   .liveclip-search__platform--pumpfun {
     background-color: #10b981;

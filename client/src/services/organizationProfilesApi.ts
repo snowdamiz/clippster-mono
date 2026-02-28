@@ -11,7 +11,7 @@ import api from './api';
 
 export interface ServerOrganizationPlatformLink {
   id: number;
-  platform: 'pumpfun' | 'kick' | 'twitch' | 'youtube';
+  platform: 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble';
   platform_id: string;
   display_name: string | null;
   profile_image_url: string | null;

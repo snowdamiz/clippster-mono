@@ -20,7 +20,7 @@ import { OverlayPositionPicker, type PerRatioOverlaySettings } from './OverlayPo
 import { IntroOutroRatioPicker, type RatioAssetMap } from './IntroOutroRatioPicker'
 import { API_BASE } from '@/lib/apiBase'
 
-type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube'
+type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble'
 
 interface PlatformLinkInput {
   platform: PlatformId
@@ -44,21 +44,22 @@ const PLATFORMS = [
   { id: 'pumpfun' as PlatformId, name: 'PumpFun', disabled: false },
   { id: 'kick' as PlatformId, name: 'Kick', disabled: false },
   { id: 'twitch' as PlatformId, name: 'Twitch', disabled: false },
-  { id: 'youtube' as PlatformId, name: 'YouTube', disabled: true },
+  { id: 'youtube' as PlatformId, name: 'YouTube', disabled: false },
+  { id: 'rumble' as PlatformId, name: 'Rumble', disabled: false },
 ]
 
 function getPlatformIcon(platform: string): string {
-  const icons: Record<string, string> = { pumpfun: '/capsule.svg', kick: '/kick.svg', twitch: '/twitch.svg', youtube: '/youtube.svg' }
+  const icons: Record<string, string> = { pumpfun: '/capsule.svg', kick: '/kick.svg', twitch: '/twitch.svg', youtube: '/youtube.svg', rumble: '/rumble.svg' }
   return icons[platform] || '/capsule.svg'
 }
 
 function getPlatformColor(platform: string): string {
-  const colors: Record<string, string> = { pumpfun: '#10b981', kick: '#53FC18', twitch: '#9146FF', youtube: '#dc2626' }
+  const colors: Record<string, string> = { pumpfun: '#10b981', kick: '#53FC18', twitch: '#9146FF', youtube: '#dc2626', rumble: '#85c742' }
   return colors[platform] || '#6b7280'
 }
 
 function getPlatformName(platform: string): string {
-  const names: Record<string, string> = { pumpfun: 'PumpFun', kick: 'Kick', twitch: 'Twitch', youtube: 'YouTube' }
+  const names: Record<string, string> = { pumpfun: 'PumpFun', kick: 'Kick', twitch: 'Twitch', youtube: 'YouTube', rumble: 'Rumble' }
   return names[platform] || platform
 }
 
@@ -264,6 +265,51 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
     return trimmed
   }
 
+  // Extract channel name from Rumble URL or return as-is
+  const extractRumbleChannel = (input: string): string => {
+    const trimmed = input.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      try {
+        const url = new URL(trimmed)
+        if (url.hostname.includes('rumble.com')) {
+          const parts = url.pathname.split('/').filter(p => p.length > 0)
+          // Rumble URLs are like rumble.com/c/ChannelName or rumble.com/user/Username
+          if (parts.length > 1 && (parts[0] === 'c' || parts[0] === 'user')) {
+            return `${parts[0]}/${parts[1]}`
+          }
+          return parts[0] || trimmed
+        }
+      } catch {
+        return trimmed
+      }
+    }
+    return trimmed
+  }
+
+  // Extract channel ID from YouTube URL or return as-is
+  const extractYouTubeChannel = (input: string): string => {
+    const trimmed = input.trim()
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      try {
+        const url = new URL(trimmed)
+        if (url.hostname.includes('youtube.com') || url.hostname.includes('youtu.be')) {
+          const parts = url.pathname.split('/').filter(p => p.length > 0)
+          // YouTube URLs can be youtube.com/@handle or youtube.com/channel/ID
+          if (parts.length > 0) {
+            if (parts[0] === 'channel' && parts.length > 1) {
+              return parts[1]
+            }
+            // Return @handle or first path segment
+            return parts[0]
+          }
+        }
+      } catch {
+        return trimmed
+      }
+    }
+    return trimmed
+  }
+
   // Fetch platform metadata (avatar) when platform ID is entered
   const fetchPlatformMetadata = async (index: number, platform: PlatformId, platformId: string) => {
     if (!platformId.trim()) return
@@ -311,6 +357,34 @@ export function ProfileDialog({ open, onClose, onSuccess, profile, scope: scopeP
           }
         } else {
           console.error('[ProfileDialog] PumpFun API error:', response.status, await response.text())
+        }
+      } else if (platform === 'rumble') {
+        const channelName = extractRumbleChannel(platformId)
+        const response = await fetch(`${API_BASE}/rumble/channels/${encodeURIComponent(channelName)}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.profileImageUrl) {
+            updateLink(index, { 
+              profile_image_url: data.profileImageUrl, 
+              display_name: data.channelName || channelName.replace(/^(c\/|user\/)/, '') 
+            })
+          }
+        } else {
+          console.error('[ProfileDialog] Rumble API error:', response.status, await response.text())
+        }
+      } else if (platform === 'youtube') {
+        const channelId = extractYouTubeChannel(platformId)
+        const response = await fetch(`${API_BASE}/youtube/channels/${encodeURIComponent(channelId)}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.profileImageUrl) {
+            updateLink(index, { 
+              profile_image_url: data.profileImageUrl, 
+              display_name: data.channelName || channelId.replace(/^@/, '') 
+            })
+          }
+        } else {
+          console.error('[ProfileDialog] YouTube API error:', response.status, await response.text())
         }
       }
     } catch (err) {
