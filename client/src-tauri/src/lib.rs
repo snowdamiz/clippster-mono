@@ -1053,8 +1053,6 @@ commands::file_utils::generate_video_thumbnail,
             auth::poll_twitter_auth_result,
             auth::clear_twitter_auth_result,
             auth::start_post_for_me_oauth,
-            auth::poll_post_for_me_auth_result,
-            auth::clear_post_for_me_auth_result,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,
