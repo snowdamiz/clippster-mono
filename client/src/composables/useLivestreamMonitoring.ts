@@ -1445,6 +1445,12 @@ export function useLivestreamMonitoring() {
             await invoke('stop_kick_recording', { channelSlug: session.mintId });
           } else if (session.platform === 'Twitch') {
             await stopTwitchRecording(session.mintId);
+          } else if (session.platform === 'YouTube' || session.platform === 'Youtube') {
+            await stopYouTubeRecording(session.mintId);
+          } else if (session.platform === 'Rumble') {
+            await stopRumbleRecording(session.mintId);
+          } else if (session.platform === 'Twitter') {
+            await stopTwitterRecording(session.mintId);
           } else {
             // PumpFun - process any remaining DVR chunks before stopping
             const state = chunkAggregationState.get(id);

@@ -114,7 +114,7 @@
                   :project-id="project?.id"
                   :hovered-timeline-clip-id="hoveredTimelineClipId"
                   :is-playing-segments="isPlayingSegments"
-                  :playing-clip-id="getCurrentPlayingClipId()"
+                  :playing-clip-id="currentlyPlayingClipId"
                   :video-duration="duration"
                   :current-time="currentTime"
                   :aspect-ratio="selectedAspectRatio"
@@ -1392,10 +1392,6 @@
     videoElement.value = element;
   }
 
-  function getCurrentPlayingClipId(): string | null {
-    return currentlyPlayingClipId.value;
-  }
-
   // Helper to measure watermark dimensions from file path
   async function measureWatermarkDimensions(
     filePath: string
@@ -1747,15 +1743,9 @@
     // Stop any existing playback first
     stopSegmentedPlayback();
 
-    // Clear all previous selection states when starting playback
-    hoveredClipId.value = null;
-    hoveredTimelineClipId.value = null;
-
-    // Force clear any lingering hover states
-    setTimeout(() => {
-      hoveredClipId.value = null;
-      hoveredTimelineClipId.value = null;
-    }, 10);
+    // Set hover states to the playing clip so it highlights in both panel and timeline
+    hoveredClipId.value = clip.id;
+    hoveredTimelineClipId.value = clip.id;
 
     // Track the currently playing clip - SET THIS FIRST so timeline highlights immediately
     currentlyPlayingClipId.value = clip.id;

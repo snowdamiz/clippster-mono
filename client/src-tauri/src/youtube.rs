@@ -48,6 +48,7 @@ struct YouTubeSegmentReadyPayload {
     streamer_id: String,
     session_id: String,
     channel_id: String,
+    mint_id: String,
     segment: u32,
     path: String,
     duration: f64,
@@ -58,6 +59,7 @@ struct YouTubeSegmentReadyPayload {
 struct YouTubeRecorderLogPayload {
     streamer_id: String,
     channel_id: String,
+    mint_id: String,
     message: String,
     level: String,
 }
@@ -68,6 +70,7 @@ struct YouTubeStreamEndedPayload {
     streamer_id: String,
     session_id: String,
     channel_id: String,
+    mint_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -76,6 +79,7 @@ struct YouTubeRecorderExitPayload {
     streamer_id: String,
     session_id: String,
     channel_id: String,
+    mint_id: String,
     code: Option<i32>,
 }
 
@@ -775,9 +779,10 @@ async fn run_youtube_recorder(
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 println!("[YouTubeRecorder] yt-dlp: {}", line);
-                let _ = app_log.emit("youtube-recorder-log", YouTubeRecorderLogPayload {
+                let _ = app_log.emit("recorder-log", YouTubeRecorderLogPayload {
                     streamer_id: streamer_log.clone(),
                     channel_id: channel_log.clone(),
+                    mint_id: channel_log.clone(),
                     message: line,
                     level: "info".to_string(),
                 });
@@ -800,7 +805,7 @@ async fn run_youtube_recorder(
         .arg("-f").arg("hls")
         .arg("-hls_time").arg(hls_segment_seconds.to_string())
         .arg("-hls_list_size").arg("0")
-        .arg("-hls_flags").arg("omit_endlist+temp_file")
+        .arg("-hls_flags").arg("append_list+omit_endlist+temp_file")
         .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
         .stdin(ytdlp_stdout_std)
@@ -810,23 +815,17 @@ async fn run_youtube_recorder(
     let mut ffmpeg_child = ffmpeg_cmd.spawn()
         .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
     
-    // Drain FFmpeg stderr
+    // Drain FFmpeg stderr in background - only log important lines to avoid flooding
     if let Some(ffmpeg_stderr) = ffmpeg_child.stderr.take() {
-        let channel_log = channel_id.clone();
-        let streamer_log = streamer_id.clone();
-        let app_log = app.clone();
-        
         tokio::spawn(async move {
             let reader = tokio::io::BufReader::new(ffmpeg_stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                println!("[YouTubeRecorder] FFmpeg: {}", line);
-                let _ = app_log.emit("youtube-recorder-log", YouTubeRecorderLogPayload {
-                    streamer_id: streamer_log.clone(),
-                    channel_id: channel_log.clone(),
-                    message: line,
-                    level: "info".to_string(),
-                });
+                // Only log important FFmpeg lines to avoid flooding server logs
+                let dominated = line.contains("Opening") || line.contains("Skip");
+                if !dominated {
+                    println!("[YouTubeRecorder] FFmpeg: {}", line);
+                }
             }
         });
     }
@@ -841,10 +840,11 @@ async fn run_youtube_recorder(
                 let _ = ytdlp_child.kill().await;
                 
                 let exit_status = status.ok();
-                let _ = app.emit("youtube-recorder-exit", YouTubeRecorderExitPayload {
+                let _ = app.emit("recorder-exit", YouTubeRecorderExitPayload {
                     streamer_id: streamer_id.clone(),
                     session_id: session_id.clone(),
                     channel_id: channel_id.clone(),
+                    mint_id: channel_id.clone(),
                     code: exit_status.as_ref().and_then(|s| s.code()),
                 });
                 
@@ -855,6 +855,7 @@ async fn run_youtube_recorder(
                             streamer_id: streamer_id.clone(),
                             session_id: session_id.clone(),
                             channel_id: channel_id.clone(),
+                            mint_id: channel_id.clone(),
                         });
                     }
                 }
@@ -870,24 +871,28 @@ async fn run_youtube_recorder(
             }
             
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
-                // Check for new segments
+                // Sequential segment detection: check for the next expected segment
+                // With +temp_file flag, FFmpeg writes to .tmp then renames to .ts when complete
                 let next_segment_index = last_emitted_segment;
                 let seg_path = PathBuf::from(&output_dir).join(format!("segment_{:04}.ts", next_segment_index));
                 
                 if seg_path.exists() {
-                    // Verify stability
+                    // Verify file is stable (not still being written)
                     let size1 = std::fs::metadata(&seg_path).ok().map(|m| m.len());
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     let size2 = std::fs::metadata(&seg_path).ok().map(|m| m.len());
                     
                     if let (Some(s1), Some(s2)) = (size1, size2) {
                         if s1 == s2 && s1 > 0 {
+                            println!("[YouTubeRecorder] Segment {} ready (size: {} bytes)", next_segment_index, s1);
+                            
                             let segment_number = next_segment_index + 1;
                             
-                            let _ = app.emit("youtube-segment-ready", YouTubeSegmentReadyPayload {
+                            let _ = app.emit("segment-ready", YouTubeSegmentReadyPayload {
                                 streamer_id: streamer_id.clone(),
                                 session_id: session_id.clone(),
                                 channel_id: channel_id.clone(),
+                                mint_id: channel_id.clone(),
                                 segment: segment_number,
                                 path: seg_path.to_string_lossy().to_string(),
                                 duration: hls_segment_seconds as f64,

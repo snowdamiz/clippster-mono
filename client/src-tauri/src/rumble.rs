@@ -60,6 +60,7 @@ struct RumbleSegmentReadyPayload {
     streamer_id: String,
     session_id: String,
     channel_name: String,
+    mint_id: String,
     segment: u32,
     path: String,
     duration: f64,
@@ -70,6 +71,7 @@ struct RumbleSegmentReadyPayload {
 struct RumbleRecorderLogPayload {
     streamer_id: String,
     channel_name: String,
+    mint_id: String,
     message: String,
     level: String,
 }
@@ -80,6 +82,7 @@ struct RumbleStreamEndedPayload {
     streamer_id: String,
     session_id: String,
     channel_name: String,
+    mint_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -88,6 +91,7 @@ struct RumbleRecorderExitPayload {
     streamer_id: String,
     session_id: String,
     channel_name: String,
+    mint_id: String,
     code: Option<i32>,
 }
 
@@ -754,8 +758,6 @@ async fn run_rumble_recorder(
     let segment_pattern = PathBuf::from(&output_dir).join("segment_%04d.ts");
     
     // Resolve the live video URL by scraping the channel page HTML.
-    // yt-dlp hangs on Rumble channel pages, so we use direct HTTP scraping
-    // to find the live stream's video page URL, then pass that to yt-dlp.
     let channel_url = channel_to_url(&channel_name);
     println!("[RumbleRecorder] Resolving live stream URL via HTML scrape: {}", channel_url);
 
@@ -767,52 +769,37 @@ async fn run_rumble_recorder(
 
     println!("[RumbleRecorder] Streaming from: {}", stream_url);
 
+    // Use yt-dlp to extract the actual playback URL (same approach as Kick/Twitch)
+    println!("[RumbleRecorder] Extracting playback URL via yt-dlp...");
     let mut ytdlp_cmd = tokio::process::Command::new(&ytdlp_path);
     no_window(&mut ytdlp_cmd);
-
+    
     ytdlp_cmd
         .arg(&stream_url)
-        .arg("-o").arg("-")
-        .arg("--quiet")
-        .arg("--no-part")
-        .arg("--ffmpeg-location").arg(&ffmpeg_path)
+        .arg("--get-url")
+        .arg("--no-warnings")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     
-    let mut ytdlp_child = ytdlp_cmd.spawn()
-        .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+    let ytdlp_output = ytdlp_cmd.output().await
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
     
-    let ytdlp_stdout = ytdlp_child.stdout.take()
-        .ok_or("Failed to get yt-dlp stdout")?;
+    let playback_url = String::from_utf8_lossy(&ytdlp_output.stdout).trim().to_string();
     
-    if let Some(ytdlp_stderr) = ytdlp_child.stderr.take() {
-        let channel_log = channel_name.clone();
-        let streamer_log = streamer_id.clone();
-        let app_log = app.clone();
-        
-        tokio::spawn(async move {
-            let reader = tokio::io::BufReader::new(ytdlp_stderr);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                println!("[RumbleRecorder] yt-dlp: {}", line);
-                let _ = app_log.emit("rumble-recorder-log", RumbleRecorderLogPayload {
-                    streamer_id: streamer_log.clone(),
-                    channel_name: channel_log.clone(),
-                    message: line,
-                    level: "info".to_string(),
-                });
-            }
-        });
+    if playback_url.is_empty() {
+        let stderr = String::from_utf8_lossy(&ytdlp_output.stderr);
+        println!("[RumbleRecorder] yt-dlp failed to extract playback URL. stderr: {}", stderr);
+        return Err(format!("Failed to extract playback URL from Rumble stream. yt-dlp stderr: {}", stderr));
     }
     
-    let ytdlp_stdout_std: std::process::Stdio = ytdlp_stdout.try_into()
-        .map_err(|e| format!("Failed to convert stdout: {}", e))?;
+    println!("[RumbleRecorder] Playback URL: {}", playback_url);
     
+    // Now use FFmpeg to record directly from the playback URL
     let mut ffmpeg_cmd = tokio::process::Command::new(&ffmpeg_path);
     no_window(&mut ffmpeg_cmd);
     
     ffmpeg_cmd
-        .arg("-i").arg("pipe:0")
+        .arg("-i").arg(&playback_url)
         .arg("-c:v").arg("copy")
         .arg("-c:a").arg("copy")
         .arg("-f").arg("hls")
@@ -821,7 +808,6 @@ async fn run_rumble_recorder(
         .arg("-hls_flags").arg("append_list+omit_endlist+temp_file")
         .arg("-hls_segment_filename").arg(segment_pattern.to_string_lossy().to_string())
         .arg(playlist_path.to_string_lossy().to_string())
-        .stdin(ytdlp_stdout_std)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped());
     
@@ -829,21 +815,15 @@ async fn run_rumble_recorder(
         .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
     
     if let Some(ffmpeg_stderr) = ffmpeg_child.stderr.take() {
-        let channel_log = channel_name.clone();
-        let streamer_log = streamer_id.clone();
-        let app_log = app.clone();
-        
         tokio::spawn(async move {
             let reader = tokio::io::BufReader::new(ffmpeg_stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                println!("[RumbleRecorder] FFmpeg: {}", line);
-                let _ = app_log.emit("rumble-recorder-log", RumbleRecorderLogPayload {
-                    streamer_id: streamer_log.clone(),
-                    channel_name: channel_log.clone(),
-                    message: line,
-                    level: "info".to_string(),
-                });
+                // Only log important FFmpeg lines to avoid flooding server logs
+                let dominated = line.contains("Opening") || line.contains("Skip");
+                if !dominated {
+                    println!("[RumbleRecorder] FFmpeg: {}", line);
+                }
             }
         });
     }
@@ -854,13 +834,13 @@ async fn run_rumble_recorder(
         tokio::select! {
             status = ffmpeg_child.wait() => {
                 println!("[RumbleRecorder] FFmpeg exited: {:?}", status);
-                let _ = ytdlp_child.kill().await;
                 
                 let exit_status = status.ok();
-                let _ = app.emit("rumble-recorder-exit", RumbleRecorderExitPayload {
+                let _ = app.emit("recorder-exit", RumbleRecorderExitPayload {
                     streamer_id: streamer_id.clone(),
                     session_id: session_id.clone(),
                     channel_name: channel_name.clone(),
+                    mint_id: channel_name.clone(),
                     code: exit_status.as_ref().and_then(|s| s.code()),
                 });
                 
@@ -871,6 +851,7 @@ async fn run_rumble_recorder(
                             streamer_id: streamer_id.clone(),
                             session_id: session_id.clone(),
                             channel_name: channel_name.clone(),
+                            mint_id: channel_name.clone(),
                         });
                     }
                 }
@@ -881,27 +862,32 @@ async fn run_rumble_recorder(
             _ = &mut stop_rx => {
                 println!("[RumbleRecorder] Stop signal received");
                 let _ = ffmpeg_child.kill().await;
-                let _ = ytdlp_child.kill().await;
                 break;
             }
             
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
+                // Sequential segment detection: check for the next expected segment
+                // With +temp_file flag, FFmpeg writes to .tmp then renames to .ts when complete
                 let next_segment_index = last_emitted_segment;
                 let seg_path = PathBuf::from(&output_dir).join(format!("segment_{:04}.ts", next_segment_index));
                 
                 if seg_path.exists() {
+                    // Verify file is stable (not still being written)
                     let size1 = std::fs::metadata(&seg_path).ok().map(|m| m.len());
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     let size2 = std::fs::metadata(&seg_path).ok().map(|m| m.len());
                     
                     if let (Some(s1), Some(s2)) = (size1, size2) {
                         if s1 == s2 && s1 > 0 {
+                            println!("[RumbleRecorder] Segment {} ready (size: {} bytes)", next_segment_index, s1);
+                            
                             let segment_number = next_segment_index + 1;
                             
-                            let _ = app.emit("rumble-segment-ready", RumbleSegmentReadyPayload {
+                            let _ = app.emit("segment-ready", RumbleSegmentReadyPayload {
                                 streamer_id: streamer_id.clone(),
                                 session_id: session_id.clone(),
                                 channel_name: channel_name.clone(),
+                                mint_id: channel_name.clone(),
                                 segment: segment_number,
                                 path: seg_path.to_string_lossy().to_string(),
                                 duration: hls_segment_seconds as f64,

@@ -44,6 +44,7 @@ struct TwitterSegmentReadyPayload {
     streamer_id: String,
     session_id: String,
     broadcast_id: String,
+    mint_id: String,
     segment: u32,
     path: String,
     duration: f64,
@@ -54,6 +55,7 @@ struct TwitterSegmentReadyPayload {
 struct TwitterRecorderLogPayload {
     streamer_id: String,
     broadcast_id: String,
+    mint_id: String,
     message: String,
     level: String,
 }
@@ -64,6 +66,7 @@ struct TwitterStreamEndedPayload {
     streamer_id: String,
     session_id: String,
     broadcast_id: String,
+    mint_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -72,6 +75,7 @@ struct TwitterRecorderExitPayload {
     streamer_id: String,
     session_id: String,
     broadcast_id: String,
+    mint_id: String,
     code: Option<i32>,
 }
 
@@ -211,9 +215,10 @@ async fn run_twitter_recorder(
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 println!("[TwitterRecorder] yt-dlp: {}", line);
-                let _ = app_log.emit("twitter-recorder-log", TwitterRecorderLogPayload {
+                let _ = app_log.emit("recorder-log", TwitterRecorderLogPayload {
                     streamer_id: streamer_log.clone(),
                     broadcast_id: broadcast_log.clone(),
+                    mint_id: broadcast_log.clone(),
                     message: line,
                     level: "info".to_string(),
                 });
@@ -244,22 +249,17 @@ async fn run_twitter_recorder(
     let mut ffmpeg_child = ffmpeg_cmd.spawn()
         .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
     
+    // Drain FFmpeg stderr in background - only log important lines to avoid flooding
     if let Some(ffmpeg_stderr) = ffmpeg_child.stderr.take() {
-        let broadcast_log = broadcast_id.clone();
-        let streamer_log = streamer_id.clone();
-        let app_log = app.clone();
-        
         tokio::spawn(async move {
             let reader = tokio::io::BufReader::new(ffmpeg_stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                println!("[TwitterRecorder] FFmpeg: {}", line);
-                let _ = app_log.emit("twitter-recorder-log", TwitterRecorderLogPayload {
-                    streamer_id: streamer_log.clone(),
-                    broadcast_id: broadcast_log.clone(),
-                    message: line,
-                    level: "info".to_string(),
-                });
+                // Only log important FFmpeg lines to avoid flooding server logs
+                let dominated = line.contains("Opening") || line.contains("Skip");
+                if !dominated {
+                    println!("[TwitterRecorder] FFmpeg: {}", line);
+                }
             }
         });
     }
@@ -273,10 +273,11 @@ async fn run_twitter_recorder(
                 let _ = ytdlp_child.kill().await;
                 
                 let exit_status = status.ok();
-                let _ = app.emit("twitter-recorder-exit", TwitterRecorderExitPayload {
+                let _ = app.emit("recorder-exit", TwitterRecorderExitPayload {
                     streamer_id: streamer_id.clone(),
                     session_id: session_id.clone(),
                     broadcast_id: broadcast_id.clone(),
+                    mint_id: broadcast_id.clone(),
                     code: exit_status.as_ref().and_then(|s| s.code()),
                 });
                 
@@ -287,6 +288,7 @@ async fn run_twitter_recorder(
                             streamer_id: streamer_id.clone(),
                             session_id: session_id.clone(),
                             broadcast_id: broadcast_id.clone(),
+                            mint_id: broadcast_id.clone(),
                         });
                     }
                 }
@@ -302,22 +304,28 @@ async fn run_twitter_recorder(
             }
             
             _ = tokio::time::sleep(tokio::time::Duration::from_secs(2)) => {
+                // Sequential segment detection: check for the next expected segment
+                // With +temp_file flag, FFmpeg writes to .tmp then renames to .ts when complete
                 let next_segment_index = last_emitted_segment;
                 let seg_path = PathBuf::from(&output_dir).join(format!("segment_{:04}.ts", next_segment_index));
                 
                 if seg_path.exists() {
+                    // Verify file is stable (not still being written)
                     let size1 = std::fs::metadata(&seg_path).ok().map(|m| m.len());
                     tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                     let size2 = std::fs::metadata(&seg_path).ok().map(|m| m.len());
                     
                     if let (Some(s1), Some(s2)) = (size1, size2) {
                         if s1 == s2 && s1 > 0 {
+                            println!("[TwitterRecorder] Segment {} ready (size: {} bytes)", next_segment_index, s1);
+                            
                             let segment_number = next_segment_index + 1;
                             
-                            let _ = app.emit("twitter-segment-ready", TwitterSegmentReadyPayload {
+                            let _ = app.emit("segment-ready", TwitterSegmentReadyPayload {
                                 streamer_id: streamer_id.clone(),
                                 session_id: session_id.clone(),
                                 broadcast_id: broadcast_id.clone(),
+                                mint_id: broadcast_id.clone(),
                                 segment: segment_number,
                                 path: seg_path.to_string_lossy().to_string(),
                                 duration: hls_segment_seconds as f64,
