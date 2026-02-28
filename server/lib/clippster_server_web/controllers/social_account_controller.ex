@@ -178,8 +178,6 @@ defmodule ClippsterServerWeb.SocialAccountController do
               %{
                 platform: platform,
                 external_id: session.external_id,
-                redirect_url_override:
-                  PostForMeConnectionSessions.callback_url() || params["redirect_url_override"],
                 permissions: permissions,
                 platform_data: params["platform_data"]
               }

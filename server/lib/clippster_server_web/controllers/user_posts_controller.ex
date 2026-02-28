@@ -8,9 +8,10 @@ defmodule ClippsterServerWeb.UserPostsController do
   require Logger
 
   alias ClippsterServer.Campaigns
-  alias ClippsterServer.Campaigns.{ClipperSocialAccount, UserPost}
-  alias ClippsterServer.Social.Platforms.Instagram
-  alias ClippsterServer.Social.Platforms.Twitter
+  alias ClippsterServer.Campaigns.UserPost
+  alias ClippsterServer.Organizations
+  alias ClippsterServer.Social
+  alias ClippsterServer.Social.Providers.PostForMe
 
   @doc """
   Publish a post to user's Instagram account.
@@ -18,60 +19,7 @@ defmodule ClippsterServerWeb.UserPostsController do
   POST /api/user/instagram/publish
   """
   def publish(conn, params) do
-    user = conn.assigns.current_user
-
-    with {:ok, account_id} <- get_required_param(params, "account_id"),
-         {:ok, media_url} <- get_required_param(params, "media_url"),
-         {:ok, account} <- get_user_account(user.id, account_id),
-         {:ok, post_data} <- publish_to_instagram(account, media_url, params) do
-      # Create post record
-      post_attrs = %{
-        user_id: user.id,
-        clipper_social_account_id: account.id,
-        platform: "instagram",
-        post_id: post_data.post_id,
-        post_url: post_data.post_url,
-        caption: params["caption"],
-        media_url: media_url,
-        thumbnail_url: params["thumbnail_url"],
-        media_type: params["media_type"] || "reel",
-        status: "published"
-      }
-
-      case Campaigns.create_user_post(user, post_attrs) do
-        {:ok, post} ->
-          conn
-          |> put_status(201)
-          |> json(%{
-            success: true,
-            post: serialize_post(post),
-            message: "Published successfully"
-          })
-
-        {:error, changeset} ->
-          conn
-          |> put_status(422)
-          |> json(%{
-            success: false,
-            error: extract_changeset_error(changeset)
-          })
-      end
-    else
-      {:error, :not_found} ->
-        conn
-        |> put_status(404)
-        |> json(%{success: false, error: "Account not found"})
-
-      {:error, :missing_param, param} ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: "Missing required parameter: #{param}"})
-
-      {:error, reason} ->
-        conn
-        |> put_status(500)
-        |> json(%{success: false, error: inspect(reason)})
-    end
+    publish_to_platform(conn, params, "instagram", "Instagram")
   end
 
   @doc """
@@ -80,17 +28,39 @@ defmodule ClippsterServerWeb.UserPostsController do
   POST /api/user/twitter/publish
   """
   def publish_twitter(conn, params) do
+    publish_to_platform(conn, params, "x", "X")
+  end
+
+  @doc """
+  Publish a post to user's TikTok account.
+
+  POST /api/user/tiktok/publish
+  """
+  def publish_tiktok(conn, params) do
+    publish_to_platform(conn, params, "tiktok", "TikTok")
+  end
+
+  @doc """
+  Publish a post to user's YouTube account.
+
+  POST /api/user/youtube/publish
+  """
+  def publish_youtube(conn, params) do
+    publish_to_platform(conn, params, "youtube", "YouTube")
+  end
+
+  defp publish_to_platform(conn, params, platform, platform_label) do
     user = conn.assigns.current_user
 
     with {:ok, account_id} <- get_required_param(params, "account_id"),
          {:ok, media_url} <- get_required_param(params, "media_url"),
          {:ok, account} <- get_user_account(user.id, account_id),
-         :ok <- validate_platform(account, "twitter"),
-         {:ok, post_data} <- publish_to_twitter(account, media_url, params) do
+         :ok <- validate_platform(account, platform),
+         {:ok, post_data} <- publish_via_post_for_me(account, media_url, params) do
       post_attrs = %{
         user_id: user.id,
         clipper_social_account_id: account.id,
-        platform: "x",
+        platform: platform,
         post_id: post_data.post_id,
         post_url: post_data.post_url,
         caption: params["caption"],
@@ -102,12 +72,16 @@ defmodule ClippsterServerWeb.UserPostsController do
 
       case Campaigns.create_user_post(user, post_attrs) do
         {:ok, post} ->
+          # Dual-track: if creator_profile_id or campaign_id is provided,
+          # also create a PostSubmission so the org sees this in analytics.
+          maybe_create_org_post_submission(user, account, post_data, params, platform)
+
           conn
           |> put_status(201)
           |> json(%{
             success: true,
             post: serialize_post(post),
-            message: "Published to X successfully"
+            message: "Published to #{platform_label} successfully"
           })
 
         {:error, changeset} ->
@@ -127,7 +101,7 @@ defmodule ClippsterServerWeb.UserPostsController do
       {:error, :wrong_platform} ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: "Account is not a Twitter/X account"})
+        |> json(%{success: false, error: "Account is not a #{platform_label} account"})
 
       {:error, :missing_param, param} ->
         conn
@@ -142,7 +116,7 @@ defmodule ClippsterServerWeb.UserPostsController do
   rescue
     e ->
       Logger.error(
-        "[UserPosts] publish_twitter crashed: #{Exception.message(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}"
+        "[UserPosts] publish_to_platform(#{platform}) crashed: #{Exception.message(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}"
       )
 
       conn
@@ -382,6 +356,10 @@ defmodule ClippsterServerWeb.UserPostsController do
        when actual in ["x", "twitter"] and expected in ["x", "twitter"],
        do: true
 
+  defp platforms_match?(actual, expected)
+       when actual in ["youtube", "youtube_shorts"] and expected in ["youtube", "youtube_shorts"],
+       do: true
+
   defp platforms_match?(_, _), do: false
 
   defp get_user_account(user_id, account_id) do
@@ -409,87 +387,33 @@ defmodule ClippsterServerWeb.UserPostsController do
     end
   end
 
-  defp publish_to_instagram(account, media_url, params) do
-    access_token = ClipperSocialAccount.get_access_token(account)
-
-    opts = %{
-      caption: params["caption"] || "",
-      media_type: params["media_type"] || "reel",
-      ig_user_id: account.platform_user_id
-    }
-
-    Instagram.publish_media(access_token, media_url, opts)
-  end
-
-  defp publish_to_twitter(account, media_url, params) do
-    {:ok, account} = maybe_refresh_twitter_token(account)
-    access_token = ClipperSocialAccount.get_access_token(account)
-    caption = params["caption"] || ""
-
-    opts = [
-      filename: "video.mp4",
-      media_type: params["media_type"] || "video"
-    ]
-
-    with {:ok, %{media_id: media_id}} <- Twitter.publish_media(access_token, media_url, opts),
-         {:ok, tweet_data} <- Twitter.create_tweet(access_token, caption, media_ids: [media_id]) do
-      {:ok, %{post_id: tweet_data.post_id, post_url: tweet_data.post_url}}
-    end
-  end
-
-  defp maybe_refresh_twitter_token(%ClipperSocialAccount{} = account) do
-    needs_refresh =
-      account.token_expires_at == nil or ClipperSocialAccount.token_needs_refresh?(account)
-
-    if needs_refresh do
-      Logger.info("[UserPosts] X token needs refresh for account #{account.id}")
-      refresh_token = ClipperSocialAccount.get_refresh_token(account)
-
-      case Twitter.refresh_tokens(refresh_token) do
-        {:ok, new_tokens} ->
-          expires_at =
-            if new_tokens[:expires_in] do
-              DateTime.utc_now()
-              |> DateTime.add(new_tokens[:expires_in], :second)
-              |> DateTime.truncate(:second)
-            else
-              nil
-            end
-
-          attrs = %{
-            access_token: new_tokens[:access_token],
-            token_expires_at: expires_at
-          }
-
-          attrs =
-            if new_tokens[:refresh_token] do
-              Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
-            else
-              attrs
-            end
-
-          case Campaigns.update_social_account_tokens(account, attrs) do
-            {:ok, updated_account} ->
-              Logger.info("[UserPosts] Successfully refreshed X token for account #{account.id}")
-              {:ok, updated_account}
-
-            {:error, reason} ->
-              Logger.warning("[UserPosts] Failed to save refreshed X token: #{inspect(reason)}")
-              {:ok, account}
-          end
-
-        {:error, reason} ->
-          Logger.error("[UserPosts] Failed to refresh X token: #{inspect(reason)}")
-          {:error, {:token_refresh_failed, reason}}
+  defp publish_via_post_for_me(account, media_url, params) do
+    media_url_resolved =
+      if String.contains?(media_url, ".r2.cloudflarestorage.com") do
+        case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7_200) do
+          {:ok, url} -> url
+          {:error, _} -> media_url
+        end
+      else
+        media_url
       end
-    else
-      {:ok, account}
+
+    case PostForMe.create_social_post(%{
+           caption: params["caption"] || "",
+           social_accounts: [account.provider_account_id],
+           media: [%{url: media_url_resolved}]
+         }) do
+      {:ok, post} ->
+        {:ok, %{post_id: post.id || "pfm_post", post_url: nil}}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
-  defp fetch_insights(account, post) do
-    access_token = ClipperSocialAccount.get_access_token(account)
-    Instagram.get_insights(access_token, post.post_id)
+  defp fetch_insights(_account, _post) do
+    # Insights are fetched via PostForMe feed API in the scheduling controller
+    {:error, :not_supported}
   end
 
   defp serialize_post(%UserPost{} = post) do
@@ -522,5 +446,108 @@ defmodule ClippsterServerWeb.UserPostsController do
     errors
     |> Enum.map(fn {field, msgs} -> "#{field}: #{Enum.join(msgs, ", ")}" end)
     |> Enum.join("; ")
+  end
+
+  # ---------------------------------------------------------------------------
+  # Dual-tracking: create a PostSubmission so the org sees personal-account
+  # posts in their analytics when the clip is tied to a creator profile/campaign.
+  # ---------------------------------------------------------------------------
+  defp maybe_create_org_post_submission(user, account, post_data, params, platform) do
+    creator_profile_id = params["creator_profile_id"]
+    campaign_id = params["campaign_id"]
+
+    # Only dual-track if there's an org linkage
+    cond do
+      not is_nil(creator_profile_id) ->
+        case Organizations.get_creator_profile(creator_profile_id) do
+          nil ->
+            Logger.warning("[UserPosts] Dual-track skipped: creator profile #{creator_profile_id} not found")
+
+          profile ->
+            create_org_submission(user, account, post_data, params, platform, profile, campaign_id)
+        end
+
+      not is_nil(campaign_id) ->
+        case Campaigns.get_campaign(campaign_id) do
+          nil ->
+            Logger.warning("[UserPosts] Dual-track skipped: campaign #{campaign_id} not found")
+
+          campaign ->
+            # Campaign belongs to an org; look up the creator profile if linked
+            creator_profile = if campaign.creator_profile_id,
+              do: Organizations.get_creator_profile(campaign.creator_profile_id),
+              else: nil
+
+            submission_attrs = %{
+              organization_id: campaign.organization_id,
+              organization_creator_profile_id: creator_profile && creator_profile.id,
+              campaign_id: campaign.id,
+              user_social_account_id: account.id,
+              submitted_by_user_id: user.id,
+              platform: platform,
+              provider: "post_for_me",
+              provider_post_id: post_data.post_id,
+              media_type: params["media_type"] || "video",
+              caption: params["caption"],
+              media_url: params["media_url"],
+              thumbnail_url: params["thumbnail_url"],
+              owner_type: "user",
+              post_id: post_data.post_id,
+              post_url: post_data.post_url,
+              posted_at: DateTime.utc_now() |> DateTime.truncate(:second),
+              status: "published"
+            }
+
+            case Social.create_immediate_post(submission_attrs, user) do
+              {:ok, submission} ->
+                # Mark it published immediately
+                Social.mark_post_published(submission, %{
+                  post_id: post_data.post_id,
+                  post_url: post_data.post_url
+                })
+                Logger.info("[UserPosts] Dual-tracked to org #{campaign.organization_id} via campaign #{campaign.id}")
+
+              {:error, reason} ->
+                Logger.warning("[UserPosts] Dual-track failed for campaign #{campaign_id}: #{inspect(reason)}")
+            end
+        end
+
+      true ->
+        :ok
+    end
+  end
+
+  defp create_org_submission(user, account, post_data, params, platform, profile, campaign_id) do
+    submission_attrs = %{
+      organization_id: profile.organization_id,
+      organization_creator_profile_id: profile.id,
+      campaign_id: campaign_id,
+      user_social_account_id: account.id,
+      submitted_by_user_id: user.id,
+      platform: platform,
+      provider: "post_for_me",
+      provider_post_id: post_data.post_id,
+      media_type: params["media_type"] || "video",
+      caption: params["caption"],
+      media_url: params["media_url"],
+      thumbnail_url: params["thumbnail_url"],
+      owner_type: "user",
+      post_id: post_data.post_id,
+      post_url: post_data.post_url,
+      posted_at: DateTime.utc_now() |> DateTime.truncate(:second),
+      status: "published"
+    }
+
+    case Social.create_immediate_post(submission_attrs, user) do
+      {:ok, submission} ->
+        Social.mark_post_published(submission, %{
+          post_id: post_data.post_id,
+          post_url: post_data.post_url
+        })
+        Logger.info("[UserPosts] Dual-tracked to org #{profile.organization_id} via creator profile #{profile.id}")
+
+      {:error, reason} ->
+        Logger.warning("[UserPosts] Dual-track failed for creator profile #{profile.id}: #{inspect(reason)}")
+    end
   end
 end
