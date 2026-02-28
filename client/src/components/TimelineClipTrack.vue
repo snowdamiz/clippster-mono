@@ -42,10 +42,10 @@
                     : 'cursor-grab hover:cursor-grab transition-all duration-200 ease-out',
             clip.run_number ? `run-${clip.run_number}` : '',
             !isCutToolActive && currentlyPlayingClipId === clip.id
-              ? 'shadow-lg z-20'
+              ? 'shadow-lg z-20 ring-2 ring-emerald-400/70 border border-emerald-400/50'
               : !isCutToolActive &&
-                  (hoveredClipId === clip.id || (hoveredTimelineClipId === clip.id && !currentlyPlayingClipId))
-                ? 'shadow-lg z-20'
+                  (hoveredClipId === clip.id || hoveredTimelineClipId === clip.id)
+                ? 'shadow-lg z-20 ring-1 ring-white/40'
                 : '',
             selectedSegmentKeys?.has(`${clip.id}_${segIndex}`)
               ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-transparent selected-segment'

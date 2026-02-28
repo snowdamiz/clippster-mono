@@ -47,7 +47,9 @@ function getPlatformFilter(platform: string): string {
     twitch:
       'brightness(0) saturate(100%) invert(37%) sepia(98%) saturate(1932%) hue-rotate(249deg) brightness(93%) contrast(109%)',
     youtube:
-      'brightness(0) saturate(100%) invert(22%) sepia(99%) saturate(3013%) hue-rotate(352deg) brightness(95%) contrast(91%)'
+      'brightness(0) saturate(100%) invert(22%) sepia(99%) saturate(3013%) hue-rotate(352deg) brightness(95%) contrast(91%)',
+    rumble:
+      'brightness(0) saturate(100%) invert(73%) sepia(21%) saturate(1015%) hue-rotate(45deg) brightness(95%) contrast(87%)'
   }
   return filters[platform] || 'none'
 }

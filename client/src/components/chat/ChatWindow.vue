@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { useMessagingStore } from '@/stores/messaging';
 import { useAuthStore } from '@/stores/auth';
 import { useChatPopout } from '@/composables/useChatPopout';
@@ -33,7 +33,18 @@ const props = defineProps<{
 const messagingStore = useMessagingStore();
 const authStore = useAuthStore();
 const router = useRouter();
+const route = useRoute();
 const { closeChat } = useChatPopout();
+
+// Draggable state
+const isDragging = ref(false);
+const dragOffset = ref({ x: 0, y: 0 });
+const bubblePosition = ref({ x: 0, y: 0 });
+
+// Check if on editor pages where bubbles should be draggable
+const isEditorPage = computed(() => {
+  return route.path === '/editor' || route.path === '/ai-video';
+});
 
 const messageInput = ref('');
 const messagesContainer = ref<HTMLElement | null>(null);
@@ -128,12 +139,110 @@ const typingUserNames = computed(() => {
 
 // Position offset based on index (stacked from right)
 const windowStyle = computed(() => {
-  // Each window is 360px wide + 12px gap, FAB area is ~68px
-  const rightOffset = 68 + props.index * 372;
-  return {
-    right: `${rightOffset}px`,
-  };
+  if (isEditorPage.value) {
+    // On editor pages, always use bubble position (whether minimized or expanded)
+    if (isMinimized.value) {
+      return {
+        left: `${bubblePosition.value.x}px`,
+        top: `${bubblePosition.value.y}px`,
+        right: 'auto',
+        bottom: 'auto',
+      };
+    } else {
+      // Expanded: position the window so it appears at the bubble location
+      // Calculate position with boundary checking
+      const windowWidth = 360;
+      const windowHeight = 480;
+      let leftPos = bubblePosition.value.x - windowWidth + 28;
+      let topPos = bubblePosition.value.y;
+      
+      // Prevent going off left edge
+      if (leftPos < 10) {
+        leftPos = 10;
+      }
+      
+      // Prevent going off right edge
+      if (leftPos + windowWidth > window.innerWidth - 10) {
+        leftPos = window.innerWidth - windowWidth - 10;
+      }
+      
+      // Prevent going off top edge
+      if (topPos < 10) {
+        topPos = 10;
+      }
+      
+      // Prevent going off bottom edge
+      if (topPos + windowHeight > window.innerHeight - 10) {
+        topPos = window.innerHeight - windowHeight - 10;
+      }
+      
+      return {
+        left: `${leftPos}px`,
+        top: `${topPos}px`,
+        right: 'auto',
+        bottom: 'auto',
+      };
+    }
+  } else if (isMinimized.value) {
+    // On other pages, position to the left of the FAB
+    // FAB is at bottom: 20px, right: 20px, size: 44px
+    // Position bubbles stacked vertically to the left of FAB
+    const leftOffset = 80; // 20px (FAB right) + 44px (FAB width) + 16px (gap)
+    const verticalOffset = 20 + props.index * 68; // 20px base + 68px per bubble (56px + 12px gap)
+    return {
+      right: `${leftOffset}px`,
+      bottom: `${verticalOffset}px`,
+    };
+  } else {
+    // Full window: stacked from right
+    const rightOffset = 68 + props.index * 372;
+    return {
+      right: `${rightOffset}px`,
+    };
+  }
 });
+
+// Drag handlers
+const hasDragged = ref(false);
+
+function startDrag(event: MouseEvent) {
+  if (!isEditorPage.value || !isMinimized.value) return;
+  
+  isDragging.value = true;
+  hasDragged.value = false;
+  dragOffset.value = {
+    x: event.clientX - bubblePosition.value.x,
+    y: event.clientY - bubblePosition.value.y,
+  };
+  
+  document.addEventListener('mousemove', onDrag);
+  document.addEventListener('mouseup', stopDrag);
+}
+
+function onDrag(event: MouseEvent) {
+  if (!isDragging.value) return;
+  
+  hasDragged.value = true;
+  bubblePosition.value = {
+    x: event.clientX - dragOffset.value.x,
+    y: event.clientY - dragOffset.value.y,
+  };
+}
+
+function stopDrag() {
+  isDragging.value = false;
+  document.removeEventListener('mousemove', onDrag);
+  document.removeEventListener('mouseup', stopDrag);
+}
+
+function handleBubbleClick() {
+  // Only toggle if we didn't drag
+  if (hasDragged.value) {
+    hasDragged.value = false;
+    return;
+  }
+  toggleMinimize();
+}
 
 function scrollToBottom(smooth = true) {
   nextTick(() => {
@@ -221,10 +330,13 @@ async function joinConversation() {
     // Mark as read
     messagingStore.markAsRead(props.conversationId);
 
+    // Wait for loading to finish and DOM to update before scrolling
+    await nextTick();
+    isLoadingLocal.value = false;
+    await nextTick();
     scrollToBottom(false);
   } catch (error) {
     console.error('[ChatWindow] Failed to join conversation:', error);
-  } finally {
     isLoadingLocal.value = false;
   }
 }
@@ -405,8 +517,17 @@ function formatMsgTime(dateString: string): string {
 // Scroll to bottom when new messages arrive
 watch(
   () => windowMessages.value.length,
-  () => {
-    if (isAtBottom.value && !isMinimized.value) {
+  (newLength, oldLength) => {
+    if (isMinimized.value) return;
+    
+    // On initial load (0 -> N messages), always scroll to bottom
+    if (oldLength === 0 && newLength > 0) {
+      scrollToBottom(false);
+      return;
+    }
+    
+    // For subsequent messages, only scroll if already at bottom
+    if (isAtBottom.value) {
       scrollToBottom();
     }
   }
@@ -421,6 +542,16 @@ watch(isMinimized, (minimized) => {
 
 onMounted(() => {
   joinConversation();
+  
+  // Initialize bubble position for editor pages
+  if (isEditorPage.value) {
+    // Start position: bottom right corner, matching FAB position
+    // FAB is at bottom: 20px, right: 20px
+    // Stack bubbles to the left of FAB
+    const startX = window.innerWidth - 80 - (props.index * 56); // 20px + 44px FAB + 16px gap + stacked left
+    const startY = window.innerHeight - 64; // 20px from bottom + 44px bubble
+    bubblePosition.value = { x: startX, y: startY };
+  }
 });
 
 onUnmounted(() => {
@@ -435,6 +566,37 @@ onUnmounted(() => {
     :class="{ 'chat-window--minimized': isMinimized }"
     :style="windowStyle"
   >
+    <!-- Minimized avatar bubble (only visible when minimized) -->
+    <div 
+      v-if="isMinimized" 
+      class="chat-window__minimized-bubble" 
+      :class="{ 'chat-window__minimized-bubble--draggable': isEditorPage, 'chat-window__minimized-bubble--dragging': isDragging }"
+      @mousedown="startDrag"
+      @click="handleBubbleClick"
+    >
+      <div class="chat-window__avatar" :class="conversation ? 'chat-window__avatar--' + conversation.type : ''">
+        <img
+          v-if="conversationAvatar"
+          :src="conversationAvatar"
+          :alt="conversationName"
+          class="chat-window__avatar-img"
+        />
+        <template v-else>
+          <Headset v-if="conversation?.type === 'support'" :size="20" />
+          <Users v-else-if="conversation?.type === 'group'" :size="20" />
+          <Megaphone v-else-if="conversation?.type === 'announcement'" :size="20" />
+          <span v-else class="chat-window__avatar-initial">
+            {{ conversationName.charAt(0).toUpperCase() }}
+          </span>
+        </template>
+      </div>
+      <span v-if="unreadCount > 0" class="chat-window__unread-badge">
+        {{ unreadCount > 99 ? '99+' : unreadCount }}
+      </span>
+    </div>
+
+    <!-- Full chat window (only visible when not minimized) -->
+    <template v-else>
     <!-- Header (always visible) -->
     <div class="chat-window__header" @click="toggleMinimize">
       <!-- Avatar -->
@@ -637,6 +799,7 @@ onUnmounted(() => {
         />
       </div>
     </template>
+    </template>
   </div>
 </template>
 
@@ -644,26 +807,61 @@ onUnmounted(() => {
 .chat-window {
   position: fixed;
   bottom: 80px;
+  z-index: 10001;
+}
+
+.chat-window:not(.chat-window--minimized) {
   width: 360px;
   min-width: 360px;
   max-width: 360px;
   height: 480px;
-  min-height: 480px;
-  max-height: 480px;
   background: var(--sidebar-surface, #141416);
   border: 1px solid var(--sidebar-border, #1f1f23);
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
-  z-index: 10001;
-  transition: none;
   overflow: hidden;
 }
 
 .chat-window--minimized {
-  max-height: 48px;
+  width: auto;
+  height: auto;
+}
+
+/* Minimized bubble */
+.chat-window__minimized-bubble {
+  position: relative;
+  width: 44px;
+  height: 44px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.chat-window__minimized-bubble--draggable {
+  cursor: move;
+}
+
+.chat-window__minimized-bubble--dragging {
+  cursor: grabbing;
+  opacity: 0.8;
+}
+
+.chat-window__minimized-bubble .chat-window__avatar {
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+  pointer-events: none;
+}
+
+.chat-window__minimized-bubble .chat-window__unread-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  pointer-events: none;
 }
 
 /* Header */
@@ -744,6 +942,12 @@ onUnmounted(() => {
   padding: 1px 6px;
   border-radius: 8px;
   flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--sidebar-bg, #0a0a0b);
 }
 
 .chat-window__header-actions {

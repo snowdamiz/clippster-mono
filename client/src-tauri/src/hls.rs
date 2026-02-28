@@ -42,7 +42,24 @@ pub struct HlsSegmentInfo {
     pub end_time: f64,
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecorderErrorPayload {
+    mint_id: String,
+    session_id: String,
+    exit_code: Option<i32>,
+    message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecorderLogPayload {
+    mint_id: String,
+    message: String,
+    level: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SegmentReadyPayload {
     streamer_id: String,
@@ -685,8 +702,19 @@ async fn run_hls_recorder(
                                         }
                                     }
                                     _ => {
-                                        println!("[HLS Recorder] Event: {}", recorder_event.event_type);
+                                        println!("[HLS Recorder] Event: {} msg={:?}", recorder_event.event_type, recorder_event.message);
                                     }
+                                }
+                            } else {
+                                // Non-JSON stdout line - log it directly
+                                let trimmed = chunk.trim();
+                                if !trimmed.is_empty() {
+                                    println!("[HLS Recorder raw] {}", trimmed);
+                                    let _ = app.emit("recorder-log", RecorderLogPayload {
+                                        mint_id: mint_id.clone(),
+                                        message: trimmed.to_string(),
+                                        level: "debug".to_string(),
+                                    });
                                 }
                             }
                         }

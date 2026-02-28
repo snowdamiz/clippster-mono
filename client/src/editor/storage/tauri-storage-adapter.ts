@@ -566,8 +566,8 @@ class TauriStorageService {
 			throw new Error(`Cannot determine file size for: ${filePath}`);
 		}
 
-		const MAX_SIMPLE_SIZE = 50 * 1024 * 1024; // 50MB
 		const mimeType = this.mimeFromPath(filePath);
+		const MAX_SIMPLE_SIZE = 50 * 1024 * 1024; // 50MB
 
 		// Small files: simple fetch
 		if (fileSize <= MAX_SIMPLE_SIZE) {

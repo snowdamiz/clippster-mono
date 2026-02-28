@@ -87,9 +87,9 @@ const availableTiers = [
 
 const createTierOptions = [
   { value: 'solo', label: 'Solo ($149.99)' },
-  { value: 'enterprise_base', label: 'Enterprise Base ($300)' },
-  { value: 'enterprise_ai', label: 'Enterprise AI ($500)' },
-  { value: 'enterprise_unlimited', label: 'Enterprise Unlimited ($1800)' },
+  { value: 'enterprise_base', label: 'Enterprise Base ($349.99)' },
+  { value: 'enterprise_ai', label: 'Enterprise AI ($549.99)' },
+  { value: 'enterprise_unlimited', label: 'Enterprise Unlimited ($2199.99)' },
 ]
 
 export function AdminOrganizationsPage() {

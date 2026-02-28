@@ -9,6 +9,7 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.Subscriptions
   alias ClippsterServer.OrganizationSubscriptions
   alias ClippsterServer.PromoCodes
+  alias ClippsterServer.ClipperProfiles.LeaderboardWorker
 
   def get_ai_usage_stats(conn, _params) do
     stats = AI.get_usage_stats()
@@ -694,52 +695,6 @@ defmodule ClippsterServerWeb.AdminController do
             conn
             |> put_status(400)
             |> json(%{success: false, error: reason})
-        end
-
-      {:error, _} ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: "Invalid user ID"})
-    end
-  end
-
-  @doc """
-  Extend a user's subscription.
-  Requires admin authentication.
-  """
-  def extend_subscription(conn, %{"user_id" => user_id_string} = params) do
-    case parse_integer(user_id_string) do
-      {:ok, user_id} ->
-        days = Map.get(params, "days", "30")
-        grant_credits = Map.get(params, "grant_credits", "false")
-
-        days_int = parse_days(days)
-        grant_credits_bool = parse_boolean(grant_credits)
-
-        case Subscriptions.admin_extend_subscription(user_id, days_int, grant_credits_bool) do
-          {:ok, _result} ->
-            subscription_info = Subscriptions.get_subscription_status(user_id)
-
-            json(conn, %{
-              success: true,
-              message: "Successfully extended subscription by #{days_int} days",
-              subscription: subscription_info
-            })
-
-          {:error, :no_tier} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "User has no subscription tier to extend"})
-
-          {:error, :invalid_tier} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "Invalid subscription tier"})
-
-          {:error, reason} ->
-            conn
-            |> put_status(500)
-            |> json(%{success: false, error: "Failed to extend subscription: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -2147,6 +2102,44 @@ defmodule ClippsterServerWeb.AdminController do
         conn |> put_status(400) |> json(%{success: false, error: "Invalid moderator ID"})
     end
   end
+
+  # ============================================================================
+  # Leaderboard Management
+  # ============================================================================
+
+  @doc """
+  Manually trigger leaderboard recalculation for a given period type.
+  Accepts period_type: "weekly" | "monthly" | "both" (default: "both")
+  """
+  def refresh_leaderboard(conn, params) do
+    period_type = Map.get(params, "period_type", "both")
+
+    results =
+      case period_type do
+        "weekly" ->
+          LeaderboardWorker.calculate_weekly_leaderboard()
+          %{weekly: true, monthly: false}
+
+        "monthly" ->
+          LeaderboardWorker.calculate_monthly_leaderboard()
+          %{weekly: false, monthly: true}
+
+        _ ->
+          LeaderboardWorker.calculate_weekly_leaderboard()
+          LeaderboardWorker.calculate_monthly_leaderboard()
+          %{weekly: true, monthly: true}
+      end
+
+    json(conn, %{
+      success: true,
+      message: "Leaderboard recalculated successfully",
+      recalculated: results
+    })
+  end
+
+  # ============================================================================
+  # Waitlist Management
+  # ============================================================================
 
   @doc """
   Manually adds a user to the waitlist (admin only).

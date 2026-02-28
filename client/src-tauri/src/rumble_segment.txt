@@ -1,0 +1,409 @@
+
+fn format_time_for_filename(seconds: f64) -> String {
+    let h = (seconds / 3600.0) as u32;
+    let m = ((seconds % 3600.0) / 60.0) as u32;
+    let s = (seconds % 60.0) as u32;
+    format!("{:02}{:02}{:02}", h, m, s)
+}
+
+/// Download a segment of a Rumble VOD using yt-dlp with time range
+#[tauri::command]
+pub async fn download_rumble_vod_segment(
+    app: tauri::AppHandle,
+    download_id: String,
+    title: String,
+    vod_url: String,
+    channel_name: String,
+    start_time: f64,
+    end_time: f64,
+) -> Result<(), String> {
+    println!("[Rumble] download_rumble_vod_segment called with:");
+    println!("[Rumble]   download_id: {}", download_id);
+    println!("[Rumble]   title: {}", title);
+    println!("[Rumble]   vod_url: {}", vod_url);
+    println!("[Rumble]   channel_name: {}", channel_name);
+    println!("[Rumble]   start_time: {}", start_time);
+    println!("[Rumble]   end_time: {}", end_time);
+
+    // Validate time range
+    if start_time < 0.0 || end_time <= start_time {
+        return Err("Invalid time range specified".to_string());
+    }
+
+    let segment_duration = end_time - start_time;
+    if segment_duration < 10.0 {
+        return Err("Segment too short (minimum 10 seconds)".to_string());
+    }
+
+    // Check if download already exists
+    {
+        let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+        if downloads.contains_key(&download_id) {
+            println!("[Rumble] Download already in progress: {}", download_id);
+            return Err("Download already in progress".to_string());
+        }
+        downloads.insert(download_id.clone(), true);
+        println!("[Rumble] Download registered: {}", download_id);
+    }
+
+    // Clean up when done
+    let cleanup_download = {
+        let download_id = download_id.clone();
+        let downloads = ACTIVE_DOWNLOADS.clone();
+        move || {
+            println!("[Rumble] Cleaning up download: {}", download_id);
+            let mut downloads = downloads.lock().unwrap();
+            downloads.remove(&download_id);
+        }
+    };
+
+    // Get storage paths
+    println!("[Rumble] Getting storage paths...");
+    let paths = storage::init_storage_dirs().map_err(|e| {
+        println!("[Rumble] Failed to get storage paths: {}", e);
+        format!("Failed to get storage paths: {}", e)
+    })?;
+
+    println!(
+        "[Rumble] Storage paths retrieved. Videos dir: {}",
+        paths.videos.display()
+    );
+
+    // Generate filename with segment info
+    let safe_title = title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    // Format times for filename
+    let start_formatted = format_time_for_filename(start_time);
+    let end_formatted = format_time_for_filename(end_time);
+
+    let filename = format!(
+        "rumble_{}_{}_{}_{}_{}.mp4",
+        channel_name, safe_title, start_formatted, end_formatted, timestamp
+    );
+    let video_path = paths.videos.join(&filename);
+
+    println!("[Rumble] Generated filename: {}", filename);
+    println!("[Rumble] Full video path: {}", video_path.display());
+
+    // Store download metadata
+    {
+        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+        metadata_map.insert(
+            download_id.clone(),
+            DownloadMetadata {
+                output_path: Some(video_path.to_string_lossy().to_string()),
+                thumbnail_path: None,
+                started_at: std::time::SystemTime::now(),
+                process_id: None,
+            },
+        );
+    }
+
+    // Send initial progress
+    let progress_result = app.emit(
+        "download-progress",
+        DownloadProgress {
+            download_id: download_id.clone(),
+            progress: 0.0,
+            current_time: Some(0.0),
+            total_time: Some(segment_duration),
+            status: "Starting Rumble segment download...".to_string(),
+        },
+    );
+
+    if let Err(e) = progress_result {
+        println!("[Rumble] Failed to emit initial progress: {}", e);
+    }
+
+    // Clone for async block
+    let app_clone = app.clone();
+    let download_id_clone = download_id.clone();
+    println!("[Rumble] Starting async segment download task...");
+
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
+    let result = tokio::spawn(async move {
+        println!("[Rumble] Async task started for segment download: {}", download_id_clone);
+
+        let ytdlp_path = resolve_ytdlp_binary()?;
+        let ffmpeg_path = resolve_ffmpeg_binary()?;
+        let video_path_str = video_path.to_string_lossy().to_string();
+
+        println!("[Rumble] Using yt-dlp: {}", ytdlp_path.display());
+        println!("[Rumble] Using ffmpeg: {}", ffmpeg_path.display());
+
+        // yt-dlp supports --download-sections for time-based downloads
+        let section_arg = format!("*{:.0}-{:.0}", start_time, end_time);
+
+        // Run yt-dlp to download the segment
+        let mut cmd = tokio::process::Command::new(&ytdlp_path);
+        no_window(&mut cmd);
+        let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
+        cmd.arg(&vod_url)
+            .arg("-o").arg(&video_path_str)
+            .arg("--ffmpeg-location").arg(&ffmpeg_dir)
+            .arg("--external-downloader").arg("ffmpeg")
+            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--download-sections").arg(&section_arg)
+            .arg("--force-keyframes-at-cuts")
+            .arg("--no-part")
+            .arg("--newline")
+            .arg("--progress")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        println!("[Rumble] Running yt-dlp command with section: {}", section_arg);
+
+        let mut child = cmd.spawn()
+            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        let app_for_progress = app_clone.clone();
+        let download_id_for_progress = download_id_clone.clone();
+        let segment_dur = segment_duration;
+        
+        let stdout_task = stdout.map(|stdout| tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+                let mut last_progress_time = std::time::Instant::now();
+                
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if line.contains("% of") || line.contains("100% of") {
+                        if let Some(pct_str) = line.split('%').next() {
+                            let pct_str = pct_str.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                            if let Ok(pct) = pct_str.trim().parse::<f64>() {
+                                if last_progress_time.elapsed().as_millis() >= 500 {
+                                    let current_time = (pct / 100.0) * segment_dur;
+                                    let _ = app_for_progress.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_for_progress.clone(),
+                                        progress: pct.min(99.0),
+                                        current_time: Some(current_time),
+                                        total_time: Some(segment_dur),
+                                        status: format!("Downloading segment: {:.1}%", pct),
+                                    });
+                                    last_progress_time = std::time::Instant::now();
+                                }
+                            }
+                        }
+                    } else if !line.is_empty() {
+                        println!("[Rumble] yt-dlp: {}", line);
+                    }
+                }
+            }));
+
+        let stderr_task = if let Some(stderr) = stderr {
+            Some(tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if !line.is_empty() {
+                        println!("[Rumble] yt-dlp stderr: {}", line);
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        let mut stdout_task = stdout_task;
+        let mut stderr_task = stderr_task;
+
+        let status = tokio::select! {
+            result = child.wait() => result
+                .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?,
+            _ = &mut cancel_rx => {
+                println!("[Rumble] Segment download cancelled");
+                let _ = child.kill().await;
+                if let Some(task) = stdout_task.take() {
+                    task.abort();
+                }
+                if let Some(task) = stderr_task.take() {
+                    task.abort();
+                }
+                return Err("Segment download cancelled".to_string());
+            }
+        };
+
+        if let Some(task) = stderr_task {
+            let _ = task.await;
+        }
+        if let Some(task) = stdout_task {
+            let _ = task.await;
+        }
+
+        if !status.success() {
+            return Err(format!("yt-dlp failed with exit code: {:?}", status.code()));
+        }
+
+        println!("[Rumble] yt-dlp segment download completed successfully");
+
+        if !video_path.exists() {
+            return Err("Download completed but file not found".to_string());
+        }
+
+        let metadata = std::fs::metadata(&video_path)
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+        let file_size = metadata.len();
+
+        println!("[Rumble] Generating thumbnail for segment...");
+        let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
+        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
+            .args([
+                "-hwaccel", "auto",
+                "-ss", "00:00:01",
+                "-i", &video_path_str,
+                "-vframes", "1",
+                "-vf", "scale=320:-1",
+                "-y",
+                thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
+            ]))
+            .output()
+            .await;
+
+        let thumbnail_path_str = match thumbnail_result {
+            Ok(output) if output.status.success() => {
+                println!("[Rumble] Thumbnail generated: {}", thumbnail_path.display());
+                Some(thumbnail_path.to_string_lossy().to_string())
+            }
+            _ => {
+                println!("[Rumble] Thumbnail generation failed");
+                None
+            }
+        };
+
+        println!("[Rumble] Getting segment video info...");
+        let video_info = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            crate::ffmpeg_utils::get_video_info(&app_clone, &video_path)
+        ).await;
+        
+        let (width, height, codec, actual_duration) = match video_info {
+            Ok(Ok(info)) => {
+                println!("[Rumble] Segment video info - width: {}, height: {}, codec: {}, duration: {:?}", 
+                    info.width, info.height, info.codec, info.duration);
+                (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
+            }
+            Ok(Err(e)) => {
+                println!("[Rumble] Failed to get segment video info: {}", e);
+                (None, None, None, None)
+            }
+            Err(_) => {
+                println!("[Rumble] Segment video info timed out");
+                (None, None, None, None)
+            }
+        };
+
+        let final_duration = actual_duration.unwrap_or(segment_duration);
+
+        println!("[Rumble] Segment download task completed successfully");
+        Ok(DownloadResult {
+            download_id: download_id_clone,
+            success: true,
+            file_path: Some(video_path_str),
+            thumbnail_path: thumbnail_path_str,
+            duration: Some(final_duration),
+            width,
+            height,
+            codec,
+            file_size: Some(file_size),
+            error: None,
+        })
+    }).await;
+
+    println!("[Rumble] Async segment download task completed");
+
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.remove(&download_id);
+    }
+
+    cleanup_download();
+
+    println!("[Rumble] Processing segment download result...");
+    match result {
+        Ok(Ok(download_result)) => {
+            println!("[Rumble] Segment download successful!");
+
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    progress: 100.0,
+                    current_time: None,
+                    total_time: None,
+                    status: "Segment download completed!".to_string(),
+                },
+            );
+
+            let _ = app.emit("download-complete", download_result);
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            let error_msg = format!("Segment download failed: {}", e);
+            println!("[Rumble] {}", error_msg);
+
+            let _ = app.emit(
+                "download-complete",
+                DownloadResult {
+                    download_id,
+                    success: false,
+                    file_path: None,
+                    thumbnail_path: None,
+                    duration: None,
+                    width: None,
+                    height: None,
+                    codec: None,
+                    file_size: None,
+                    error: Some(error_msg.clone()),
+                },
+            );
+            Err(e)
+        }
+        Err(e) => {
+            let error_msg = format!("Segment download task failed: {}", e);
+            println!("[Rumble] {}", error_msg);
+
+            let _ = app.emit(
+                "download-complete",
+                DownloadResult {
+                    download_id,
+                    success: false,
+                    file_path: None,
+                    thumbnail_path: None,
+                    duration: None,
+                    width: None,
+                    height: None,
+                    codec: None,
+                    file_size: None,
+                    error: Some(error_msg.clone()),
+                },
+            );
+            Err(error_msg)
+        }
+    }
+}

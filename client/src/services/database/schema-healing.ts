@@ -67,6 +67,9 @@ export async function healSchema(): Promise<void> {
     await addColumnIfMissing(db, 'video_editor_watermarks', 'layer', 'INTEGER DEFAULT 0');
     await addColumnIfMissing(db, 'clip_watermarks', 'layer', 'INTEGER DEFAULT 0');
 
+    // --- Migration 091: track_index on video_editor_sources ---
+    await addColumnIfMissing(db, 'video_editor_sources', 'track_index', 'INTEGER DEFAULT 0');
+
     // --- Migration 089: auto_dvr_enabled on creator_profiles ---
     await addColumnIfMissing(db, 'creator_profiles', 'auto_dvr_enabled', 'INTEGER DEFAULT 0');
 

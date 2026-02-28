@@ -6,7 +6,7 @@ export async function createProject(
   name: string,
   description?: string,
   parentId?: string,
-  platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual',
+  platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual',
   defaultWatermarkSettings?: string, // JSON string with watermark_id and watermark_settings from creator profile
   creatorProfileId?: string // Direct link to creator profile (for local video imports)
 ): Promise<string> {
@@ -64,7 +64,7 @@ export async function updateProject(
   name?: string,
   description?: string,
   thumbnailPath?: string,
-  platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual',
+  platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual',
   creatorProfileId?: string | null
 ): Promise<void> {
   const db = await getDatabase();

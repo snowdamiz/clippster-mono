@@ -101,6 +101,7 @@ jobs:
     needs: create-release
     permissions:
       contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -538,6 +539,99 @@ jobs:
           projectPath: client
           args: ${{ matrix.args }}
 
+      - name: Detect Azure Windows signing configuration
+        id: azure_windows_signing
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          AZURE_TRUSTED_SIGNING_CERT_PROFILE_NAME: ${{ vars.AZURE_TRUSTED_SIGNING_CERT_PROFILE_NAME }}
+        run: |
+          $required = @(
+            "AZURE_CLIENT_ID",
+            "AZURE_TENANT_ID",
+            "AZURE_SUBSCRIPTION_ID",
+            "AZURE_TRUSTED_SIGNING_ENDPOINT",
+            "AZURE_TRUSTED_SIGNING_ACCOUNT_NAME",
+            "AZURE_TRUSTED_SIGNING_CERT_PROFILE_NAME"
+          )
+
+          $missing = @()
+          foreach ($name in $required) {
+            $value = (Get-Item "env:$name").Value
+            if ([string]::IsNullOrWhiteSpace($value)) {
+              $missing += $name
+            }
+          }
+
+          if ($missing.Count -gt 0) {
+            "enabled=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "missing=$($missing -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Warning "Azure Windows code signing is not configured. Missing: $($missing -join ', ')"
+            exit 0
+          }
+
+          "enabled=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Azure Windows code signing configuration detected."
+
+      - name: Azure Login (OIDC)
+        if: matrix.platform == 'windows-latest' && steps.azure_windows_signing.outputs.enabled == 'true'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign Windows installers with Azure Artifact Signing
+        if: matrix.platform == 'windows-latest' && steps.azure_windows_signing.outputs.enabled == 'true'
+        uses: azure/artifact-signing-action@v1
+        with:
+          endpoint: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_TRUSTED_SIGNING_CERT_PROFILE_NAME }}
+          files-folder: ${{ github.workspace }}/client/src-tauri/target/release/bundle
+          files-folder-filter: exe,msi
+          files-folder-recurse: true
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: Clippster
+
+      - name: Verify Windows Authenticode signatures
+        if: matrix.platform == 'windows-latest' && steps.azure_windows_signing.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem -Path "client/src-tauri/target/release/bundle" -Recurse -File |
+            Where-Object { $_.Extension -in @(".exe", ".msi") }
+
+          if (-not $files) {
+            Write-Error "No .exe/.msi files found to verify in client/src-tauri/target/release/bundle"
+            exit 1
+          }
+
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature -FilePath $file.FullName
+            $subject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { "<none>" }
+            Write-Host "$($file.FullName)"
+            Write-Host "  Status: $($signature.Status)"
+            Write-Host "  Signer: $subject"
+            if ($signature.Status -ne "Valid") {
+              Write-Error "Invalid Authenticode signature for $($file.FullName): $($signature.Status)"
+              exit 1
+            }
+          }
+
+      - name: Windows code signing reminder
+        if: matrix.platform == 'windows-latest' && steps.azure_windows_signing.outputs.enabled != 'true'
+        shell: pwsh
+        run: |
+          Write-Warning "Windows artifacts were built without Azure code signing."
+          Write-Warning "Set repo secrets AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID and vars AZURE_TRUSTED_SIGNING_ENDPOINT, AZURE_TRUSTED_SIGNING_ACCOUNT_NAME, AZURE_TRUSTED_SIGNING_CERT_PROFILE_NAME."
+
       # Post-build: re-sign sidecars with entitlements, notarize, and re-package.
       # tauri-action signs everything but strips entitlements from sidecars.
       # We re-sign node and yt-dlp inside the .app with their entitlements,
@@ -585,23 +679,46 @@ jobs:
           NODE_ENTITLEMENTS="client/src-tauri/entitlements/node.entitlements.plist"
           YTDLP_ENTITLEMENTS="client/src-tauri/entitlements/yt-dlp.entitlements.plist"
 
-          # Re-sign native .node addons inside the bundled pumpfun-service
-          echo "=== Re-signing native .node addons ==="
+          # Apple-recommended inside-out signing order:
+          # Sign all inner binaries first (deepest first), then sign the outer .app last.
+          # NEVER use --deep on the outer .app after signing inner binaries with entitlements,
+          # because --deep re-signs inner binaries WITHOUT entitlements, breaking them.
+
+          # STEP 1: Sign all other executables/dylibs inside MacOS/ (no special entitlements)
+          echo "=== Signing inner binaries (no special entitlements) ==="
+          for bin in "$MACOS_DIR"/*; do
+            name=$(basename "$bin")
+            # Skip node and yt-dlp - they get signed with entitlements below
+            if [ "$name" = "node" ] || [ "$name" = "yt-dlp" ]; then
+              continue
+            fi
+            if [ -f "$bin" ] && [ -x "$bin" ]; then
+              echo "Signing: $bin"
+              codesign --force --options runtime --timestamp --sign "$IDENTITY" "$bin"
+            fi
+          done
+
+          # STEP 2: Sign native .node addons (need disable-library-validation)
+          echo "=== Signing native .node addons ==="
           find "$APP_BUNDLE/Contents/Resources" -name "*.node" -type f 2>/dev/null | while read file; do
-            echo "Signing with entitlements: $file"
+            echo "Signing with node entitlements: $file"
             codesign --force --options runtime --timestamp --entitlements "$NODE_ENTITLEMENTS" --sign "$IDENTITY" "$file"
           done
 
-          # Re-sign node with entitlements (needs disable-library-validation + allow-jit)
+          # STEP 3: Sign node with entitlements (allow-jit + disable-library-validation for V8 + native addons)
           if [ -f "$MACOS_DIR/node" ]; then
-            echo "Re-signing node with entitlements"
+            echo "Signing node with entitlements"
             codesign --force --options runtime --timestamp --entitlements "$NODE_ENTITLEMENTS" --sign "$IDENTITY" "$MACOS_DIR/node"
+          else
+            echo "WARNING: node binary not found at $MACOS_DIR/node"
           fi
 
-          # Re-sign yt-dlp with entitlements (PyInstaller binary needs disable-library-validation)
+          # STEP 4: Sign yt-dlp with entitlements (disable-library-validation for PyInstaller Python runtime)
           if [ -f "$MACOS_DIR/yt-dlp" ]; then
-            echo "Re-signing yt-dlp with entitlements"
+            echo "Signing yt-dlp with entitlements"
             codesign --force --options runtime --timestamp --entitlements "$YTDLP_ENTITLEMENTS" --sign "$IDENTITY" "$MACOS_DIR/yt-dlp"
+          else
+            echo "WARNING: yt-dlp binary not found at $MACOS_DIR/yt-dlp"
           fi
 
           # Re-sign the outer .app wrapper to update the seal after modifying inner binaries.
@@ -642,6 +759,8 @@ jobs:
             echo "ERROR: yt-dlp sidecar missing at $MACOS_DIR/yt-dlp"
             exit 1
           fi
+          echo "=== Verifying bundle signature ==="
+          codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE" 2>&1 || true
 
           # Notarize the .app bundle
           echo "=== Notarizing .app bundle ==="
