@@ -703,6 +703,7 @@ import {
 
 interface PostForMeConnectUrlResponse {
   success: boolean;
+  connection_id?: string;
   auth_url?: string;
   external_id?: string;
   platform?: string;
@@ -716,20 +717,28 @@ interface PostForMeCompleteConnectResponse {
   error?: string;
 }
 
-interface PostForMeAuthCallbackResult {
+interface PostForMeConnectStatusResponse {
   success: boolean;
-  account_id?: string;
+  connection_id?: string;
+  status?: 'pending' | 'callback_received' | 'synced' | 'failed' | 'expired';
+  session_success?: boolean | null;
   account_ids?: string[];
   external_id?: string;
   platform?: string;
   error?: string;
 }
 
+const POST_FOR_ME_STATUS_POLL_INTERVAL_MS = 1500;
+const POST_FOR_ME_STATUS_TIMEOUT_MS = 180000;
+
 /**
  * Get the API base URL
  */
 function getApiBase(): string {
-  return import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
+  return (
+    import.meta.env.VITE_API_URL ||
+    (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app')
+  );
 }
 
 /**
@@ -745,7 +754,6 @@ async function startPostForMeOrganizationOAuth(
   onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
 ): Promise<() => void> {
   const { invoke } = await import('@tauri-apps/api/core');
-  const { listen } = await import('@tauri-apps/api/event');
 
   const connectResponse = await api.post<PostForMeConnectUrlResponse>('/social/connect-url', {
     organization_id: organizationId,
@@ -756,29 +764,42 @@ async function startPostForMeOrganizationOAuth(
     throw new Error(connectResponse.data.error || 'Failed to create Post For Me auth URL');
   }
 
-  const externalId = connectResponse.data.external_id;
+  const connectionId = connectResponse.data.connection_id;
 
-  const unlisten = await listen<PostForMeAuthCallbackResult>('post-for-me-auth-complete', async (event) => {
-    if (!onResult) return;
+  if (!connectionId) {
+    throw new Error('Post For Me response did not include connection_id');
+  }
 
-    const callback = event.payload;
+  await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
 
-    if (!callback.success) {
-      onResult({
-        success: false,
-        error: callback.error || 'Social account connection failed',
-      });
-      return;
-    }
+  let cancelled = false;
 
+  void (async () => {
     try {
-      const completeResponse = await api.post<PostForMeCompleteConnectResponse>('/social/complete-connect', {
-        organization_id: organizationId,
-        platform,
-        external_id: callback.external_id || externalId,
-        account_id: callback.account_id,
-        account_ids: callback.account_ids || [],
-      });
+      const status = await pollOrganizationConnectStatus(
+        organizationId,
+        connectionId,
+        () => cancelled
+      );
+
+      if (cancelled || !onResult) return;
+
+      if (status.status !== 'synced') {
+        onResult({
+          success: false,
+          error: status.error || 'Social account connection failed',
+        });
+        return;
+      }
+
+      const completeResponse = await api.post<PostForMeCompleteConnectResponse>(
+        '/social/complete-connect',
+        {
+          organization_id: organizationId,
+          connection_id: connectionId,
+          platform,
+        }
+      );
 
       if (!completeResponse.data.success) {
         onResult({
@@ -795,16 +816,56 @@ async function startPostForMeOrganizationOAuth(
         account,
       });
     } catch (error: any) {
+      if (cancelled || !onResult) return;
+
       onResult({
         success: false,
-        error: error.response?.data?.error || error.message || 'Failed to finalize social account connection',
+        error:
+          error.response?.data?.error ||
+          error.message ||
+          'Failed to complete social account connection',
       });
     }
-  });
+  })();
 
-  await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
+  return () => {
+    cancelled = true;
+  };
+}
 
-  return unlisten;
+async function pollOrganizationConnectStatus(
+  organizationId: string | number,
+  connectionId: string,
+  isCancelled: () => boolean
+): Promise<PostForMeConnectStatusResponse> {
+  const startedAt = Date.now();
+
+  while (!isCancelled()) {
+    const response = await api.get<PostForMeConnectStatusResponse>('/social/connect-status', {
+      params: {
+        organization_id: organizationId,
+        connection_id: connectionId,
+      },
+    });
+
+    const status = response.data;
+
+    if (!status.success) {
+      throw new Error(status.error || 'Failed to fetch connection status');
+    }
+
+    if (status.status === 'synced' || status.status === 'failed' || status.status === 'expired') {
+      return status;
+    }
+
+    if (Date.now() - startedAt > POST_FOR_ME_STATUS_TIMEOUT_MS) {
+      throw new Error('Timed out waiting for account connection');
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, POST_FOR_ME_STATUS_POLL_INTERVAL_MS));
+  }
+
+  throw new Error('Connection polling cancelled');
 }
 
 /**
@@ -830,23 +891,21 @@ export async function startInstagramOAuthPopup(
   try {
     return await startPostForMeOrganizationOAuth(organizationId, 'instagram', onResult);
   } catch (postForMeError) {
-    console.warn('[SocialAccountsApi] Post For Me connect failed, falling back to legacy Instagram OAuth:', postForMeError);
+    console.warn(
+      '[SocialAccountsApi] Post For Me connect failed, falling back to legacy Instagram OAuth:',
+      postForMeError
+    );
   }
 
-  return startInstagramOAuth(
-    organizationId,
-    apiBase,
-    authToken,
-    (result: InstagramAuthResult) => {
-      if (onResult) {
-        onResult({
-          success: result.success,
-          account: result.account as SocialAccount | undefined,
-          error: result.error,
-        });
-      }
+  return startInstagramOAuth(organizationId, apiBase, authToken, (result: InstagramAuthResult) => {
+    if (onResult) {
+      onResult({
+        success: result.success,
+        account: result.account as SocialAccount | undefined,
+        error: result.error,
+      });
     }
-  );
+  });
 }
 
 /**
@@ -897,23 +956,21 @@ export async function startTwitterOAuthPopup(
   try {
     return await startPostForMeOrganizationOAuth(organizationId, 'x', onResult);
   } catch (postForMeError) {
-    console.warn('[SocialAccountsApi] Post For Me connect failed, falling back to legacy X OAuth:', postForMeError);
+    console.warn(
+      '[SocialAccountsApi] Post For Me connect failed, falling back to legacy X OAuth:',
+      postForMeError
+    );
   }
 
-  return startTwitterOAuth(
-    organizationId,
-    apiBase,
-    authToken,
-    (result: TwitterAuthResult) => {
-      if (onResult) {
-        onResult({
-          success: result.success,
-          account: result.account as SocialAccount | undefined,
-          error: result.error,
-        });
-      }
+  return startTwitterOAuth(organizationId, apiBase, authToken, (result: TwitterAuthResult) => {
+    if (onResult) {
+      onResult({
+        success: result.success,
+        account: result.account as SocialAccount | undefined,
+        error: result.error,
+      });
     }
-  );
+  });
 }
 
 /**

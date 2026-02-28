@@ -4,7 +4,6 @@ import { useOrganization } from '@/hooks/useOrganization'
 import { useToast } from '@/hooks/useToast'
 import { formatRelativeTime } from '@/utils/dateTimeUtils'
 import { useOAuthPopup } from '@/hooks/useOAuthPopup'
-import { useAuth } from '@/hooks/useAuth'
 import {
   listSocialAccounts,
   deleteSocialAccount,
@@ -448,7 +447,6 @@ function XIcon({ className }: { className?: string }) {
 
 export function OrgSocial() {
   const { loadOrganization, organizationId, isAdmin, members } = useOrganization()
-  const { token } = useAuth()
   const { openOAuth } = useOAuthPopup()
   const [accounts, setAccounts] = useState<SocialAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -481,12 +479,13 @@ export function OrgSocial() {
   }, [organizationId])
 
   const connectTwitter = () => {
-    if (!organizationId || !token) return
+    if (!organizationId) return
     setConnecting(true)
-    openOAuth('twitter', organizationId, token, (result) => {
+    openOAuth('twitter', organizationId, (result) => {
       setConnecting(false)
       if (result.success) {
-        toast.success(`X account @${result.username} connected!`)
+        const handle = result.username || result.account?.username || 'account'
+        toast.success(`X account @${handle} connected!`)
         loadAccounts()
         loadOrganization()
       } else {

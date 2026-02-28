@@ -177,13 +177,30 @@ post_for_me_max_retries =
     _ -> 3
   end
 
+post_for_me_connect_session_ttl_seconds =
+  case Integer.parse(System.get_env("POST_FOR_ME_CONNECT_SESSION_TTL_SECONDS") || "") do
+    {value, _} when value > 0 -> value
+    _ -> 900
+  end
+
+post_for_me_callback_url =
+  System.get_env("POST_FOR_ME_CALLBACK_URL") ||
+    if config_env() == :prod do
+      "https://#{System.get_env("PHX_HOST") || "api.clippster.app"}/api/auth/postforme/callback"
+    else
+      "http://localhost:4000/api/auth/postforme/callback"
+    end
+
 config :clippster_server, :social_provider_mode, social_provider_mode
 
 config :clippster_server, :post_for_me,
   api_key: System.get_env("POST_FOR_ME_API_KEY"),
   base_url: System.get_env("POST_FOR_ME_BASE_URL") || "https://api.postforme.dev",
   timeout_ms: post_for_me_timeout_ms,
-  max_retries: post_for_me_max_retries
+  max_retries: post_for_me_max_retries,
+  callback_url: post_for_me_callback_url,
+  project_id: System.get_env("POST_FOR_ME_PROJECT_ID"),
+  connect_session_ttl_seconds: post_for_me_connect_session_ttl_seconds
 
 # Freesound API (sound effects search proxy)
 config :clippster_server, :freesound, api_key: System.get_env("FREESOUND_API_KEY")

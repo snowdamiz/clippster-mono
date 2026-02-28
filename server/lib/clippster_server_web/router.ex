@@ -166,6 +166,7 @@ defmodule ClippsterServerWeb.Router do
     # Google OAuth routes
     get("/auth/google", AuthController, :google_request)
     get("/auth/google/callback", AuthController, :google_callback)
+    get("/auth/postforme/callback", PostForMeAuthController, :callback)
 
     # Instagram OAuth routes (for Tauri desktop app)
     get("/auth/instagram/start", InstagramAuthController, :start_oauth)
@@ -614,6 +615,7 @@ defmodule ClippsterServerWeb.Router do
     # Instagram OAuth - exchange code for tokens (admin only)
     post("/auth/instagram/exchange", InstagramAuthController, :exchange_code)
     post("/social/connect-url", SocialAccountController, :connect_url)
+    get("/social/connect-status", SocialAccountController, :connect_status)
     post("/social/complete-connect", SocialAccountController, :complete_connect)
 
     # Organization social accounts
@@ -776,6 +778,7 @@ defmodule ClippsterServerWeb.Router do
     put("/user/social-accounts/:id", ClipperProfileController, :update_social_account)
     delete("/user/social-accounts/:id", ClipperProfileController, :delete_social_account)
     post("/user/social/connect-url", ClipperProfileController, :connect_url)
+    get("/user/social/connect-status", ClipperProfileController, :connect_status)
     post("/user/social/complete-connect", ClipperProfileController, :complete_connect)
 
     # Clipper payment methods (for campaigns)

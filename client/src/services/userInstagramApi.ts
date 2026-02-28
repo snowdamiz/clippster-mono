@@ -95,6 +95,7 @@ export interface InstagramAuthResult {
 
 interface PostForMeConnectUrlResponse {
   success: boolean;
+  connection_id?: string;
   auth_url?: string;
   external_id?: string;
   platform?: string;
@@ -108,14 +109,19 @@ interface PostForMeCompleteConnectResponse {
   error?: string;
 }
 
-interface PostForMeAuthCallbackResult {
+interface PostForMeConnectStatusResponse {
   success: boolean;
-  account_id?: string;
+  connection_id?: string;
+  status?: 'pending' | 'callback_received' | 'synced' | 'failed' | 'expired';
+  session_success?: boolean | null;
   account_ids?: string[];
   external_id?: string;
   platform?: string;
   error?: string;
 }
+
+const POST_FOR_ME_STATUS_POLL_INTERVAL_MS = 1500;
+const POST_FOR_ME_STATUS_TIMEOUT_MS = 180000;
 
 // ============================================
 // OAuth Functions
@@ -156,64 +162,69 @@ export async function startUserInstagramOAuth(
       throw new Error(connectResponse.data.error || 'Failed to create Post For Me auth URL');
     }
 
-    const externalId = connectResponse.data.external_id;
+    const connectionId = connectResponse.data.connection_id;
 
-    const unlistenPostForMe = await listen<PostForMeAuthCallbackResult>(
-      'post-for-me-auth-complete',
-      async (event) => {
-        if (!onResult) return;
+    if (!connectionId) {
+      throw new Error('Post For Me response did not include connection_id');
+    }
 
-        const callback = event.payload;
+    await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
 
-        if (!callback.success) {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const status = await pollUserConnectStatus(connectionId, () => cancelled);
+
+        if (cancelled || !onResult) return;
+
+        if (status.status !== 'synced') {
           onResult({
             success: false,
-            error: callback.error || 'Social account connection failed',
+            error: status.error || 'Social account connection failed',
           });
           return;
         }
 
-        try {
-          const completeResponse = await api.post<PostForMeCompleteConnectResponse>(
-            '/user/social/complete-connect',
-            {
-              platform: 'instagram',
-              external_id: callback.external_id || externalId,
-              account_id: callback.account_id,
-              account_ids: callback.account_ids || [],
-            }
-          );
-
-          if (!completeResponse.data.success) {
-            onResult({
-              success: false,
-              error: completeResponse.data.error || 'Failed to finalize social account connection',
-            });
-            return;
+        const completeResponse = await api.post<PostForMeCompleteConnectResponse>(
+          '/user/social/complete-connect',
+          {
+            connection_id: connectionId,
+            platform: 'instagram',
           }
+        );
 
-          const account =
-            completeResponse.data.social_account || completeResponse.data.social_accounts?.[0];
-
-          onResult({
-            success: true,
-            account,
-          });
-        } catch (error: any) {
+        if (!completeResponse.data.success) {
           onResult({
             success: false,
-            error:
-              error.response?.data?.error ||
-              error.message ||
-              'Failed to finalize social account connection',
+            error: completeResponse.data.error || 'Failed to finalize social account connection',
           });
+          return;
         }
+
+        const account =
+          completeResponse.data.social_account || completeResponse.data.social_accounts?.[0];
+
+        onResult({
+          success: true,
+          account,
+        });
+      } catch (error: any) {
+        if (cancelled || !onResult) return;
+
+        onResult({
+          success: false,
+          error:
+            error.response?.data?.error ||
+            error.message ||
+            'Failed to complete social account connection',
+        });
       }
-    );
+    })();
 
-    await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
-
-    return unlistenPostForMe;
+    return () => {
+      cancelled = true;
+    };
   } catch (postForMeError) {
     console.warn(
       '[UserInstagramApi] Post For Me connect failed, falling back to legacy Instagram OAuth:',
@@ -223,7 +234,9 @@ export async function startUserInstagramOAuth(
 
   try {
     // Start OAuth - Tauri will open browser and handle callback
-    const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
+    const apiBase =
+      import.meta.env.VITE_API_URL ||
+      (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
     await invoke('start_user_instagram_oauth', { apiBase, authToken });
 
     // Listen for the result
@@ -239,6 +252,37 @@ export async function startUserInstagramOAuth(
     console.error('Failed to start Instagram OAuth:', error);
     throw error;
   }
+}
+
+async function pollUserConnectStatus(
+  connectionId: string,
+  isCancelled: () => boolean
+): Promise<PostForMeConnectStatusResponse> {
+  const startedAt = Date.now();
+
+  while (!isCancelled()) {
+    const response = await api.get<PostForMeConnectStatusResponse>('/user/social/connect-status', {
+      params: { connection_id: connectionId },
+    });
+
+    const status = response.data;
+
+    if (!status.success) {
+      throw new Error(status.error || 'Failed to fetch connection status');
+    }
+
+    if (status.status === 'synced' || status.status === 'failed' || status.status === 'expired') {
+      return status;
+    }
+
+    if (Date.now() - startedAt > POST_FOR_ME_STATUS_TIMEOUT_MS) {
+      throw new Error('Timed out waiting for account connection');
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, POST_FOR_ME_STATUS_POLL_INTERVAL_MS));
+  }
+
+  throw new Error('Connection polling cancelled');
 }
 
 // ============================================
@@ -296,15 +340,11 @@ export async function uploadUserMediaForPost(
       formData.append('thumbnail', thumbnail);
     }
 
-    const response = await api.post<UploadMediaResponse>(
-      '/user/posts/upload-media',
-      formData,
-      {
-        headers: {
-          'Content-Type': undefined,
-        },
-      }
-    );
+    const response = await api.post<UploadMediaResponse>('/user/posts/upload-media', formData, {
+      headers: {
+        'Content-Type': undefined,
+      },
+    });
     return response.data;
   } catch (error: any) {
     console.error('[UserInstagramApi] Failed to upload media:', error);
