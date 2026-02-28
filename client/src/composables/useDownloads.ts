@@ -658,34 +658,73 @@ export function useDownloads() {
         }
       } else if (provider === 'youtube') {
         // YouTube VODs use yt-dlp based download
-        invoke('download_youtube_vod', {
-          downloadId,
-          title: finalTitle,
-          vodUrl: videoUrl,
-          channelName: mintId,
-        }).catch((_error) => {
-          activeDownloads.delete(downloadId);
-        });
+        if (isSegmentDownload) {
+          invoke('download_youtube_vod_segment', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            channelName: mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        } else {
+          invoke('download_youtube_vod', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            channelName: mintId,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        }
       } else if (provider === 'rumble') {
         // Rumble VODs use yt-dlp based download
-        invoke('download_rumble_vod', {
-          downloadId,
-          title: finalTitle,
-          vodUrl: videoUrl,
-          channelName: mintId,
-        }).catch((_error) => {
-          activeDownloads.delete(downloadId);
-        });
+        if (isSegmentDownload) {
+          invoke('download_rumble_vod_segment', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            channelName: mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        } else {
+          invoke('download_rumble_vod', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            channelName: mintId,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        }
       } else if (provider === 'twitter') {
         // Twitter broadcasts use yt-dlp based download
-        invoke('download_twitter_vod', {
-          downloadId,
-          title: finalTitle,
-          vodUrl: videoUrl,
-          broadcastId: mintId,
-        }).catch((_error) => {
-          activeDownloads.delete(downloadId);
-        });
+        if (isSegmentDownload) {
+          invoke('download_twitter_vod_segment', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            broadcastId: mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        } else {
+          invoke('download_twitter_vod', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            broadcastId: mintId,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        }
       } else {
         // PumpFun (default)
         if (isSegmentDownload) {

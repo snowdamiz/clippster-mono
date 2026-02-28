@@ -446,10 +446,19 @@ pub async fn download_youtube_vod(
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
         no_window(&mut cmd);
         
-        cmd.arg("--ffmpeg-location").arg(&ffmpeg_path)
+        // yt-dlp --ffmpeg-location expects a DIRECTORY so it can find both ffmpeg and ffprobe
+        let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ffmpeg_path.clone());
+        
+        cmd.arg(&vod_url)
             .arg("-o").arg(&output_file_str)
+            .arg("--ffmpeg-location").arg(&ffmpeg_dir)
+            .arg("--external-downloader").arg("ffmpeg")
+            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
             .arg("--newline")
-            .arg(&vod_url)
+            .arg("--progress")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
         
@@ -472,29 +481,47 @@ pub async fn download_youtube_vod(
             }
         };
         
-        let _stdout = child.stdout.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
         
         // Monitor progress
         let app_progress = app_clone.clone();
         let download_id_progress = download_id_clone.clone();
         tokio::spawn(async move {
-            let reader = tokio::io::BufReader::new(stderr);
-            let mut lines = reader.lines();
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut stdout_reader = BufReader::new(stdout).lines();
+            let mut stderr_reader = BufReader::new(stderr).lines();
             
-            while let Ok(Some(line)) = lines.next_line().await {
-                if line.contains("[download]") && line.contains("%") {
-                    if let Some(percent_str) = line.split_whitespace()
-                        .find(|s| s.ends_with('%'))
-                        .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
-                    {
-                        let _ = app_progress.emit("download-progress", DownloadProgress {
-                            download_id: download_id_progress.clone(),
-                            progress: percent_str,
-                            current_time: None,
-                            total_time: None,
-                            status: "downloading".to_string(),
-                        });
+            loop {
+                tokio::select! {
+                    line = stdout_reader.next_line() => {
+                        match line {
+                            Ok(Some(line)) => {
+                                println!("[YouTube] yt-dlp: {}", line);
+                                
+                                if line.contains("[download]") && line.contains("%") {
+                                    if let Some(percent_str) = line.split_whitespace()
+                                        .find(|s| s.ends_with('%'))
+                                        .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
+                                    {
+                                        let _ = app_progress.emit("download-progress", DownloadProgress {
+                                            download_id: download_id_progress.clone(),
+                                            progress: percent_str,
+                                            current_time: None,
+                                            total_time: None,
+                                            status: format!("Downloading... {}%", percent_str as u32),
+                                        });
+                                    }
+                                }
+                            }
+                            Ok(None) => break,
+                            Err(_) => break,
+                        }
+                    }
+                    line = stderr_reader.next_line() => {
+                        if let Ok(Some(line)) = line {
+                            println!("[YouTube] yt-dlp stderr: {}", line);
+                        }
                     }
                 }
             }
@@ -510,16 +537,61 @@ pub async fn download_youtube_vod(
                 match status {
                     Ok(exit_status) if exit_status.success() => {
                         cleanup_download();
+                        
+                        // Get file metadata
+                        let file_size = std::fs::metadata(&output_file_str)
+                            .ok()
+                            .map(|m| m.len());
+                        
+                        // Generate thumbnail
+                        println!("[YouTube] Generating thumbnail...");
+                        let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
+                        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
+                            .args([
+                                "-hwaccel", "auto",
+                                "-ss", "00:00:05",
+                                "-i", &output_file_str,
+                                "-vframes", "1",
+                                "-vf", "scale=320:-1",
+                                "-y",
+                                thumbnail_path.to_str().unwrap_or(""),
+                            ]))
+                            .output()
+                            .await;
+                        
+                        let thumbnail_path_str = match thumbnail_result {
+                            Ok(output) if output.status.success() => {
+                                println!("[YouTube] Thumbnail generated: {}", thumbnail_path.display());
+                                Some(thumbnail_path.to_string_lossy().to_string())
+                            }
+                            _ => {
+                                println!("[YouTube] Thumbnail generation failed");
+                                None
+                            }
+                        };
+                        
+                        // Get video info
+                        println!("[YouTube] Getting video info...");
+                        let video_info = crate::ffmpeg_utils::get_video_info(&app_clone, &std::path::Path::new(&output_file_str)).await.ok();
+                        let (width, height, codec, duration) = if let Some(ref info) = video_info {
+                            println!("[YouTube] Video info - width: {}, height: {}, codec: {}, duration: {:?}", 
+                                info.width, info.height, info.codec, info.duration);
+                            (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
+                        } else {
+                            println!("[YouTube] Could not get video info");
+                            (None, None, None, None)
+                        };
+                        
                         let _ = app_clone.emit("download-complete", DownloadResult {
                             download_id: download_id_clone,
                             success: true,
                             file_path: Some(output_file_str),
-                            thumbnail_path: None,
-                            duration: None,
-                            width: None,
-                            height: None,
-                            codec: None,
-                            file_size: None,
+                            thumbnail_path: thumbnail_path_str,
+                            duration,
+                            width,
+                            height,
+                            codec,
+                            file_size,
                             error: None,
                         });
                     }
@@ -604,11 +676,16 @@ pub async fn start_youtube_recording(
     std::fs::create_dir_all(&session_dir)
         .map_err(|e| format!("Failed to create session directory: {}", e))?;
     
-    // Use 4-second segments by default (matching Kick/Twitch) for smooth live playback.
-    // If segment_duration_minutes is provided (persistent recording), convert to seconds.
-    let segment_duration_secs = segment_duration_minutes
-        .map(|m| m * 60)
-        .unwrap_or(4);
+    let segment_duration_minutes = segment_duration_minutes.unwrap_or(1);
+    
+    // HLS segment duration in seconds
+    // For Auto-Detect/Record: use user-configured segment duration (e.g., 5 minutes = 300 seconds)
+    // For Watch mode (segment_duration_minutes <= 1): use 4-second segments for low-latency playback
+    let segment_duration_secs = if segment_duration_minutes <= 1 {
+        4 // Low-latency mode for live watching
+    } else {
+        segment_duration_minutes * 60 // Convert minutes to seconds for recording
+    };
     let (stop_tx, stop_rx) = oneshot::channel();
     
     let channel_clone = channel_id.clone();
@@ -1029,5 +1106,489 @@ fn resolve_ffmpeg_binary() -> Result<PathBuf, String> {
         Ok(ffmpeg_path)
     } else {
         Err(format!("ffmpeg binary not found at: {}", ffmpeg_path.display()))
+    }
+}
+
+fn format_time_for_filename(seconds: f64) -> String {
+    let h = (seconds / 3600.0) as u32;
+    let m = ((seconds % 3600.0) / 60.0) as u32;
+    let s = (seconds % 60.0) as u32;
+    format!("{:02}{:02}{:02}", h, m, s)
+}
+
+/// Download a segment of a YouTube VOD using yt-dlp with time range
+#[tauri::command]
+pub async fn download_youtube_vod_segment(
+    app: tauri::AppHandle,
+    download_id: String,
+    title: String,
+    vod_url: String,
+    channel_name: String,
+    start_time: f64,
+    end_time: f64,
+) -> Result<(), String> {
+    println!("[YouTube] download_youtube_vod_segment called with:");
+    println!("[YouTube]   download_id: {}", download_id);
+    println!("[YouTube]   title: {}", title);
+    println!("[YouTube]   vod_url: {}", vod_url);
+    println!("[YouTube]   channel_name: {}", channel_name);
+    println!("[YouTube]   start_time: {}", start_time);
+    println!("[YouTube]   end_time: {}", end_time);
+
+    // Validate time range
+    if start_time < 0.0 || end_time <= start_time {
+        return Err("Invalid time range specified".to_string());
+    }
+
+    let segment_duration = end_time - start_time;
+    if segment_duration < 10.0 {
+        return Err("Segment too short (minimum 10 seconds)".to_string());
+    }
+
+    // Check if download already exists
+    {
+        let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+        if downloads.contains_key(&download_id) {
+            println!("[YouTube] Download already in progress: {}", download_id);
+            return Err("Download already in progress".to_string());
+        }
+        downloads.insert(download_id.clone(), true);
+        println!("[YouTube] Download registered: {}", download_id);
+    }
+
+    // Clean up when done
+    let cleanup_download = {
+        let download_id = download_id.clone();
+        let downloads = ACTIVE_DOWNLOADS.clone();
+        move || {
+            println!("[YouTube] Cleaning up download: {}", download_id);
+            let mut downloads = downloads.lock().unwrap();
+            downloads.remove(&download_id);
+        }
+    };
+
+    // Get storage paths
+    println!("[YouTube] Getting storage paths...");
+    let paths = storage::init_storage_dirs().map_err(|e| {
+        println!("[YouTube] Failed to get storage paths: {}", e);
+        format!("Failed to get storage paths: {}", e)
+    })?;
+
+    println!(
+        "[YouTube] Storage paths retrieved. Videos dir: {}",
+        paths.videos.display()
+    );
+
+    // Generate filename with segment info
+    let safe_title = title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    // Format times for filename
+    let start_formatted = format_time_for_filename(start_time);
+    let end_formatted = format_time_for_filename(end_time);
+
+    let filename = format!(
+        "youtube_{}_{}_{}_{}_{}.mp4",
+        channel_name, safe_title, start_formatted, end_formatted, timestamp
+    );
+    let video_path = paths.videos.join(&filename);
+
+    println!("[YouTube] Generated filename: {}", filename);
+    println!("[YouTube] Full video path: {}", video_path.display());
+
+    // Store download metadata
+    {
+        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+        metadata_map.insert(
+            download_id.clone(),
+            DownloadMetadata {
+                output_path: Some(video_path.to_string_lossy().to_string()),
+                thumbnail_path: None,
+                started_at: std::time::SystemTime::now(),
+                process_id: None,
+            },
+        );
+    }
+
+    // Send initial progress
+    let progress_result = app.emit(
+        "download-progress",
+        DownloadProgress {
+            download_id: download_id.clone(),
+            progress: 0.0,
+            current_time: Some(0.0),
+            total_time: Some(segment_duration),
+            status: "Starting YouTube segment download...".to_string(),
+        },
+    );
+
+    if let Err(e) = progress_result {
+        println!("[YouTube] Failed to emit initial progress: {}", e);
+    }
+
+    // Clone for async block
+    let app_clone = app.clone();
+    let download_id_clone = download_id.clone();
+    println!("[YouTube] Starting async segment download task...");
+
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
+    let result = tokio::spawn(async move {
+        println!("[YouTube] Async task started for segment download: {}", download_id_clone);
+
+        let ytdlp_path = resolve_ytdlp_binary()?;
+        let ffmpeg_path = resolve_ffmpeg_binary()?;
+        let video_path_str = video_path.to_string_lossy().to_string();
+
+        println!("[YouTube] Using yt-dlp: {}", ytdlp_path.display());
+        println!("[YouTube] Using ffmpeg: {}", ffmpeg_path.display());
+
+        // yt-dlp supports --download-sections for time-based downloads
+        // Format: "*start_time-end_time" where times are in seconds
+        let section_arg = format!("*{:.0}-{:.0}", start_time, end_time);
+
+        // Run yt-dlp to download the segment
+        let mut cmd = tokio::process::Command::new(&ytdlp_path);
+        no_window(&mut cmd);
+        // yt-dlp --ffmpeg-location expects a DIRECTORY so it can find both ffmpeg and ffprobe
+        let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
+        cmd.arg(&vod_url)
+            .arg("-o").arg(&video_path_str)
+            .arg("--ffmpeg-location").arg(&ffmpeg_dir)
+            .arg("--external-downloader").arg("ffmpeg")
+            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--download-sections").arg(&section_arg)
+            .arg("--force-keyframes-at-cuts")  // Ensure clean cuts
+            .arg("--no-part")  // Don't use .part files
+            .arg("--newline")  // Output progress on new lines
+            .arg("--progress")  // Show progress
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        println!("[YouTube] Running yt-dlp command with section: {}", section_arg);
+
+        let mut child = cmd.spawn()
+            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        // Read stdout for progress updates (yt-dlp outputs progress to stdout)
+        let app_for_progress = app_clone.clone();
+        let download_id_for_progress = download_id_clone.clone();
+        let app_for_stdout = app_for_progress.clone();
+        let download_id_for_stdout = download_id_for_progress.clone();
+        let app_for_stderr = app_for_progress.clone();
+        let download_id_for_stderr = download_id_for_progress.clone();
+        let segment_dur = segment_duration;
+        
+        let stdout_task = stdout.map(|stdout| tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stdout);
+                let mut lines = reader.lines();
+                let mut last_progress_time = std::time::Instant::now();
+                
+                while let Ok(Some(line)) = lines.next_line().await {
+                    // Parse yt-dlp progress output
+                    if line.contains("% of") || line.contains("100% of") {
+                        if let Some(pct_str) = line.split('%').next() {
+                            let pct_str = pct_str.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                            if let Ok(pct) = pct_str.trim().parse::<f64>() {
+                                if last_progress_time.elapsed().as_millis() >= 500 {
+                                    let current_time = (pct / 100.0) * segment_dur;
+                                    let _ = app_for_stdout.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_for_stdout.clone(),
+                                        progress: pct.min(99.0),
+                                        current_time: Some(current_time),
+                                        total_time: Some(segment_dur),
+                                        status: format!("Downloading segment: {:.1}%", pct),
+                                    });
+                                    last_progress_time = std::time::Instant::now();
+                                }
+                            }
+                        }
+                    } else if !line.is_empty() {
+                        println!("[YouTube] yt-dlp: {}", line);
+                    }
+                }
+            }));
+
+        // Drain stderr for warnings/errors + progress fallback
+        let stderr_task = if let Some(stderr) = stderr {
+            Some(tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+                let mut last_progress_time = std::time::Instant::now();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if let Some(time_str) = line.strip_prefix("out_time=") {
+                        if let Some(current_time) = crate::ffmpeg_utils::parse_ffmpeg_time(time_str) {
+                            if current_time >= 0.0 && last_progress_time.elapsed().as_millis() >= 500 {
+                                let progress = ((current_time / segment_dur) * 100.0).clamp(0.0, 99.0);
+                                let _ = app_for_stderr.emit("download-progress", DownloadProgress {
+                                    download_id: download_id_for_stderr.clone(),
+                                    progress,
+                                    current_time: Some(current_time),
+                                    total_time: Some(segment_dur),
+                                    status: format!("Downloading segment: {:.1}%", progress),
+                                });
+                                last_progress_time = std::time::Instant::now();
+                            }
+                        }
+                        continue;
+                    }
+                    if line.contains("% of") || line.contains("100% of") {
+                        if let Some(pct_str) = line.split('%').next() {
+                            let pct_str = pct_str.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                            if let Ok(pct) = pct_str.trim().parse::<f64>() {
+                                if last_progress_time.elapsed().as_millis() >= 500 {
+                                    let current_time = (pct / 100.0) * segment_dur;
+                                    let _ = app_for_stderr.emit("download-progress", DownloadProgress {
+                                        download_id: download_id_for_stderr.clone(),
+                                        progress: pct.min(99.0),
+                                        current_time: Some(current_time),
+                                        total_time: Some(segment_dur),
+                                        status: format!("Downloading segment: {:.1}%", pct),
+                                    });
+                                    last_progress_time = std::time::Instant::now();
+                                }
+                            }
+                        }
+                    } else if !line.is_empty() {
+                        println!("[YouTube] yt-dlp stderr: {}", line);
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        let mut stdout_task = stdout_task;
+        let mut stderr_task = stderr_task;
+
+        // Wait for yt-dlp to complete or cancellation
+        let status = tokio::select! {
+            result = child.wait() => result
+                .map_err(|e| format!("Failed to wait for yt-dlp: {}", e))?,
+            _ = &mut cancel_rx => {
+                println!("[YouTube] Segment download cancelled, terminating yt-dlp...");
+                let _ = child.kill().await;
+                if let Some(task) = stdout_task.take() {
+                    task.abort();
+                }
+                if let Some(task) = stderr_task.take() {
+                    task.abort();
+                }
+                return Err("Segment download cancelled".to_string());
+            }
+        };
+
+        // Wait for output tasks
+        if let Some(task) = stderr_task {
+            let _ = task.await;
+        }
+        if let Some(task) = stdout_task {
+            let _ = task.await;
+        }
+
+        if !status.success() {
+            return Err(format!("yt-dlp failed with exit code: {:?}", status.code()));
+        }
+
+        println!("[YouTube] yt-dlp segment download completed successfully");
+
+        // Verify the file exists
+        if !video_path.exists() {
+            return Err("Download completed but file not found".to_string());
+        }
+
+        // Get file metadata
+        let metadata = std::fs::metadata(&video_path)
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+        let file_size = metadata.len();
+
+        // Generate thumbnail
+        println!("[YouTube] Generating thumbnail for segment...");
+        let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
+        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
+            .args([
+                "-hwaccel", "auto",
+                "-ss", "00:00:01",
+                "-i", &video_path_str,
+                "-vframes", "1",
+                "-vf", "scale=320:-1",
+                "-y",
+                thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
+            ]))
+            .output()
+            .await;
+
+        let thumbnail_path_str = match thumbnail_result {
+            Ok(output) if output.status.success() => {
+                println!("[YouTube] Thumbnail generated: {}", thumbnail_path.display());
+                Some(thumbnail_path.to_string_lossy().to_string())
+            }
+            _ => {
+                println!("[YouTube] Thumbnail generation failed");
+                None
+            }
+        };
+
+        // Get video info with timeout to prevent hanging
+        println!("[YouTube] Getting segment video info...");
+        let video_info = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            crate::ffmpeg_utils::get_video_info(&app_clone, &video_path)
+        ).await;
+        
+        let (width, height, codec, actual_duration) = match video_info {
+            Ok(Ok(info)) => {
+                println!("[YouTube] Segment video info - width: {}, height: {}, codec: {}, duration: {:?}", 
+                    info.width, info.height, info.codec, info.duration);
+                (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
+            }
+            Ok(Err(e)) => {
+                println!("[YouTube] Failed to get segment video info: {}", e);
+                (None, None, None, None)
+            }
+            Err(_) => {
+                println!("[YouTube] Segment video info timed out after 30 seconds");
+                (None, None, None, None)
+            }
+        };
+
+        // Use actual duration from file if available
+        let final_duration = actual_duration.unwrap_or(segment_duration);
+
+        println!("[YouTube] Segment download task completed successfully");
+        Ok(DownloadResult {
+            download_id: download_id_clone,
+            success: true,
+            file_path: Some(video_path_str),
+            thumbnail_path: thumbnail_path_str,
+            duration: Some(final_duration),
+            width,
+            height,
+            codec,
+            file_size: Some(file_size),
+            error: None,
+        })
+    }).await;
+
+    println!("[YouTube] Async segment download task completed");
+
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.remove(&download_id);
+    }
+
+    cleanup_download();
+
+    println!("[YouTube] Processing segment download result...");
+    match result {
+        Ok(Ok(download_result)) => {
+            println!("[YouTube] Segment download successful!");
+
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    progress: 100.0,
+                    current_time: None,
+                    total_time: None,
+                    status: "Segment download completed!".to_string(),
+                },
+            );
+
+            let _ = app.emit("download-complete", download_result);
+
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            let error_msg = format!("Segment download failed: {}", e);
+            println!("[YouTube] Segment download failed: {}", error_msg);
+
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    progress: 0.0,
+                    current_time: None,
+                    total_time: None,
+                    status: error_msg.clone(),
+                },
+            );
+
+            let _ = app.emit(
+                "download-complete",
+                DownloadResult {
+                    download_id,
+                    success: false,
+                    file_path: None,
+                    thumbnail_path: None,
+                    duration: None,
+                    width: None,
+                    height: None,
+                    codec: None,
+                    file_size: None,
+                    error: Some(error_msg),
+                },
+            );
+
+            Err(e)
+        }
+        Err(e) => {
+            let error_msg = format!("Segment download task failed: {}", e);
+            println!("[YouTube] Segment download task failed: {}", error_msg);
+
+            let _ = app.emit(
+                "download-progress",
+                DownloadProgress {
+                    download_id: download_id.clone(),
+                    progress: 0.0,
+                    current_time: None,
+                    total_time: None,
+                    status: error_msg.clone(),
+                },
+            );
+
+            let _ = app.emit(
+                "download-complete",
+                DownloadResult {
+                    download_id,
+                    success: false,
+                    file_path: None,
+                    thumbnail_path: None,
+                    duration: None,
+                    width: None,
+                    height: None,
+                    codec: None,
+                    file_size: None,
+                    error: Some(error_msg.clone()),
+                },
+            );
+
+            Err(error_msg)
+        }
     }
 }

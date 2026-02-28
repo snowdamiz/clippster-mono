@@ -171,7 +171,15 @@ async fn run_twitter_recorder(
     let ytdlp_path = resolve_ytdlp_binary()?;
     let ffmpeg_path = resolve_ffmpeg_binary()?;
     
-    let hls_segment_seconds = segment_duration_minutes * 60;
+    // HLS segment duration in seconds
+    // For Auto-Detect/Record: use user-configured segment duration (e.g., 5 minutes = 300 seconds)
+    // For Watch mode (segment_duration_minutes <= 1): use 4-second segments for low-latency playback
+    let hls_segment_seconds = if segment_duration_minutes <= 1 {
+        4 // Low-latency mode for live watching
+    } else {
+        segment_duration_minutes * 60 // Convert minutes to seconds for recording
+    };
+    
     let playlist_path = PathBuf::from(&output_dir).join("playlist.m3u8");
     let segment_pattern = PathBuf::from(&output_dir).join("segment_%04d.ts");
     
@@ -579,10 +587,19 @@ pub async fn download_twitter_vod(
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
         no_window(&mut cmd);
         
-        cmd.arg("--ffmpeg-location").arg(&ffmpeg_path)
+        // yt-dlp --ffmpeg-location expects a DIRECTORY so it can find both ffmpeg and ffprobe
+        let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ffmpeg_path.clone());
+        
+        cmd.arg(&vod_url)
             .arg("-o").arg(&output_file_str)
+            .arg("--ffmpeg-location").arg(&ffmpeg_dir)
+            .arg("--external-downloader").arg("ffmpeg")
+            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
             .arg("--newline")
-            .arg(&vod_url)
+            .arg("--progress")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
         
@@ -674,20 +691,59 @@ pub async fn download_twitter_vod(
         
         match status {
             Ok(exit_status) if exit_status.success() => {
+                // Get file metadata
+                let file_size = std::fs::metadata(&output_file_str).ok().map(|m| m.len());
+                
+                // Generate thumbnail
+                println!("[Twitter] Generating thumbnail...");
+                let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
+                let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
+                    .args([
+                        "-hwaccel", "auto",
+                        "-ss", "00:00:05",
+                        "-i", &output_file_str,
+                        "-vframes", "1",
+                        "-vf", "scale=320:-1",
+                        "-y",
+                        thumbnail_path.to_str().unwrap_or(""),
+                    ]))
+                    .output()
+                    .await;
+                
+                let thumbnail_path_str = match thumbnail_result {
+                    Ok(output) if output.status.success() => {
+                        println!("[Twitter] Thumbnail generated: {}", thumbnail_path.display());
+                        Some(thumbnail_path.to_string_lossy().to_string())
+                    }
+                    _ => {
+                        println!("[Twitter] Thumbnail generation failed");
+                        None
+                    }
+                };
+                
                 // Get video info
+                println!("[Twitter] Getting video info...");
                 let video_path = std::path::Path::new(&output_file_str);
                 let video_info = crate::ffmpeg_utils::get_video_info(&app_clone, video_path).await.ok();
+                let (width, height, codec, duration) = if let Some(ref info) = video_info {
+                    println!("[Twitter] Video info - width: {}, height: {}, codec: {}, duration: {:?}", 
+                        info.width, info.height, info.codec, info.duration);
+                    (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration)
+                } else {
+                    println!("[Twitter] Could not get video info");
+                    (None, None, None, None)
+                };
                 
                 let _ = app_clone.emit("download-complete", DownloadResult {
                     download_id: download_id_clone,
                     success: true,
                     file_path: Some(output_file_str.clone()),
-                    thumbnail_path: None,
-                    duration: video_info.as_ref().and_then(|v| v.duration),
-                    width: video_info.as_ref().map(|v| v.width),
-                    height: video_info.as_ref().map(|v| v.height),
-                    codec: video_info.as_ref().map(|v| v.codec.clone()),
-                    file_size: std::fs::metadata(&output_file_str).ok().map(|m| m.len()),
+                    thumbnail_path: thumbnail_path_str,
+                    duration,
+                    width,
+                    height,
+                    codec,
+                    file_size,
                     error: None,
                 });
             }
@@ -794,5 +850,274 @@ fn resolve_ffprobe_binary() -> Result<PathBuf, String> {
         Ok(ffprobe_path)
     } else {
         Err(format!("ffprobe binary not found at: {}", ffprobe_path.display()))
+    }
+}
+fn format_time_for_filename(seconds: f64) -> String {
+    let h = (seconds / 3600.0) as u32;
+    let m = ((seconds % 3600.0) / 60.0) as u32;
+    let s = (seconds % 60.0) as u32;
+    format!("{:02}{:02}{:02}", h, m, s)
+}
+
+/// Download a segment of a Twitter VOD using yt-dlp with time range
+#[tauri::command]
+pub async fn download_twitter_vod_segment(
+    app: tauri::AppHandle,
+    download_id: String,
+    title: String,
+    vod_url: String,
+    broadcast_id: String,
+    start_time: f64,
+    end_time: f64,
+) -> Result<(), String> {
+    use crate::downloads::{ACTIVE_DOWNLOADS, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA, DownloadMetadata, DownloadResult, DownloadProgress};
+    
+    println!("[Twitter] download_twitter_vod_segment called");
+    
+    if start_time < 0.0 || end_time <= start_time {
+        return Err("Invalid time range specified".to_string());
+    }
+
+    let segment_duration = end_time - start_time;
+    if segment_duration < 10.0 {
+        return Err("Segment too short (minimum 10 seconds)".to_string());
+    }
+
+    {
+        let mut downloads = ACTIVE_DOWNLOADS.lock().unwrap();
+        if downloads.contains_key(&download_id) {
+            return Err("Download already in progress".to_string());
+        }
+        downloads.insert(download_id.clone(), true);
+    }
+
+    let cleanup_download = {
+        let download_id = download_id.clone();
+        let downloads = ACTIVE_DOWNLOADS.clone();
+        move || {
+            let mut downloads = downloads.lock().unwrap();
+            downloads.remove(&download_id);
+        }
+    };
+
+    let paths = crate::storage::init_storage_dirs()
+        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+
+    let safe_title = title.chars()
+        .map(|c| if c.is_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect::<String>();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Failed to get timestamp: {}", e))?
+        .as_secs();
+
+    let start_formatted = format_time_for_filename(start_time);
+    let end_formatted = format_time_for_filename(end_time);
+
+    let filename = format!("twitter_{}_{}_{}_{}_{}.mp4", broadcast_id, safe_title, start_formatted, end_formatted, timestamp);
+    let video_path = paths.videos.join(&filename);
+
+    {
+        let mut metadata_map = DOWNLOAD_METADATA.lock().unwrap();
+        metadata_map.insert(download_id.clone(), DownloadMetadata {
+            output_path: Some(video_path.to_string_lossy().to_string()),
+            thumbnail_path: None,
+            started_at: std::time::SystemTime::now(),
+            process_id: None,
+        });
+    }
+
+    let _ = app.emit("download-progress", DownloadProgress {
+        download_id: download_id.clone(),
+        progress: 0.0,
+        current_time: Some(0.0),
+        total_time: Some(segment_duration),
+        status: "Starting Twitter segment download...".to_string(),
+    });
+
+    let app_clone = app.clone();
+    let download_id_clone = download_id.clone();
+
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.insert(download_id.clone(), cancel_tx);
+    }
+
+    let result = tokio::spawn(async move {
+        let ytdlp_path = resolve_ytdlp_binary()?;
+        let ffmpeg_path = resolve_ffmpeg_binary()?;
+        let video_path_str = video_path.to_string_lossy().to_string();
+
+        let section_arg = format!("*{:.0}-{:.0}", start_time, end_time);
+
+        let mut cmd = tokio::process::Command::new(&ytdlp_path);
+        no_window(&mut cmd);
+        let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
+        cmd.arg(&vod_url)
+            .arg("-o").arg(&video_path_str)
+            .arg("--ffmpeg-location").arg(&ffmpeg_dir)
+            .arg("--external-downloader").arg("ffmpeg")
+            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--download-sections").arg(&section_arg)
+            .arg("--force-keyframes-at-cuts")
+            .arg("--no-part")
+            .arg("--newline")
+            .arg("--progress")
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+
+        let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        let app_for_progress = app_clone.clone();
+        let download_id_for_progress = download_id_clone.clone();
+        let segment_dur = segment_duration;
+        
+        let stdout_task = stdout.map(|stdout| tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+            let mut last_progress_time = std::time::Instant::now();
+            
+            while let Ok(Some(line)) = lines.next_line().await {
+                if line.contains("% of") {
+                    if let Some(pct_str) = line.split('%').next() {
+                        let pct_str = pct_str.trim_start_matches(|c: char| !c.is_ascii_digit() && c != '.');
+                        if let Ok(pct) = pct_str.trim().parse::<f64>() {
+                            if last_progress_time.elapsed().as_millis() >= 500 {
+                                let _ = app_for_progress.emit("download-progress", DownloadProgress {
+                                    download_id: download_id_for_progress.clone(),
+                                    progress: pct.min(99.0),
+                                    current_time: Some((pct / 100.0) * segment_dur),
+                                    total_time: Some(segment_dur),
+                                    status: format!("Downloading segment: {:.1}%", pct),
+                                });
+                                last_progress_time = std::time::Instant::now();
+                            }
+                        }
+                    }
+                }
+            }
+        }));
+
+        let stderr_task = stderr.map(|stderr| tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+            while let Ok(Some(_)) = lines.next_line().await {}
+        }));
+
+        let status = tokio::select! {
+            result = child.wait() => result.map_err(|e| format!("Failed to wait: {}", e))?,
+            _ = &mut cancel_rx => {
+                let _ = child.kill().await;
+                if let Some(task) = stdout_task { task.abort(); }
+                if let Some(task) = stderr_task { task.abort(); }
+                return Err("Cancelled".to_string());
+            }
+        };
+
+        if let Some(task) = stderr_task { let _ = task.await; }
+        if let Some(task) = stdout_task { let _ = task.await; }
+
+        if !status.success() {
+            return Err(format!("yt-dlp failed: {:?}", status.code()));
+        }
+
+        if !video_path.exists() {
+            return Err("File not found".to_string());
+        }
+
+        let file_size = std::fs::metadata(&video_path).ok().map(|m| m.len());
+
+        let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
+        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
+            .args(["-hwaccel", "auto", "-ss", "00:00:01", "-i", &video_path_str, "-vframes", "1", "-vf", "scale=320:-1", "-y", thumbnail_path.to_str().unwrap_or("")])
+            .output().await);
+
+        let thumbnail_path_str = match thumbnail_result {
+            Ok(output) if output.status.success() => Some(thumbnail_path.to_string_lossy().to_string()),
+            _ => None,
+        };
+
+        let video_info = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            crate::ffmpeg_utils::get_video_info(&app_clone, &video_path)
+        ).await;
+        
+        let (width, height, codec, actual_duration) = match video_info {
+            Ok(Ok(info)) => (Some(info.width), Some(info.height), Some(info.codec.clone()), info.duration),
+            _ => (None, None, None, None),
+        };
+
+        Ok(DownloadResult {
+            download_id: download_id_clone,
+            success: true,
+            file_path: Some(video_path_str),
+            thumbnail_path: thumbnail_path_str,
+            duration: Some(actual_duration.unwrap_or(segment_duration)),
+            width,
+            height,
+            codec,
+            file_size,
+            error: None,
+        })
+    }).await;
+
+    {
+        let mut cancellers = ACTIVE_DOWNLOAD_CANCELLERS.lock().unwrap();
+        cancellers.remove(&download_id);
+    }
+    cleanup_download();
+
+    match result {
+        Ok(Ok(download_result)) => {
+            let _ = app.emit("download-progress", DownloadProgress {
+                download_id: download_id.clone(),
+                progress: 100.0,
+                current_time: None,
+                total_time: None,
+                status: "Completed!".to_string(),
+            });
+            let _ = app.emit("download-complete", download_result);
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            let _ = app.emit("download-complete", DownloadResult {
+                download_id,
+                success: false,
+                file_path: None,
+                thumbnail_path: None,
+                duration: None,
+                width: None,
+                height: None,
+                codec: None,
+                file_size: None,
+                error: Some(e.clone()),
+            });
+            Err(e)
+        }
+        Err(e) => {
+            let error_msg = format!("Task failed: {}", e);
+            let _ = app.emit("download-complete", DownloadResult {
+                download_id,
+                success: false,
+                file_path: None,
+                thumbnail_path: None,
+                duration: None,
+                width: None,
+                height: None,
+                codec: None,
+                file_size: None,
+                error: Some(error_msg.clone()),
+            });
+            Err(error_msg)
+        }
     }
 }

@@ -496,7 +496,7 @@
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
   import { extractYouTubeChannel, getYouTubeChannelInfo } from '@/services/youtube';
   import { extractRumbleChannel, getRumbleChannelInfo } from '@/services/rumble';
-  import { extractTwitterUsername, extractTwitterBroadcastId } from '@/services/twitter';
+  import { extractTwitterUsername, extractTwitterBroadcastId, getTwitterBroadcastInfo } from '@/services/twitter';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
@@ -719,7 +719,8 @@
       (streamer.platform === 'Kick' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId)) ||
       (streamer.platform === 'Twitch' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId)) ||
       (streamer.platform === 'YouTube' && !streamer.profileImageUrl) ||
-      (streamer.platform === 'Rumble' && !streamer.profileImageUrl);
+      (streamer.platform === 'Rumble' && !streamer.profileImageUrl) ||
+      (streamer.platform === 'Twitter' && (streamer.mintId.includes('/i/broadcasts/') || streamer.mintId.includes('/i/spaces/')));
 
     if (!needsUpdate) return;
 
@@ -782,6 +783,31 @@
           if (updates.display_name) streamer.displayName = updates.display_name;
           if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
         }
+      } else if (streamer.platform === 'Twitter') {
+        // For Twitter broadcasts/spaces, fetch metadata to get username
+        if (streamer.mintId.includes('/i/broadcasts/') || streamer.mintId.includes('/i/spaces/')) {
+          const metadata = await getTwitterBroadcastInfo(streamer.mintId);
+          const updates: any = {};
+
+          // Extract username from metadata
+          const username = metadata.username || metadata.uploader;
+          if (username) {
+            updates.display_name = username.replace('@', '');
+          }
+          if (!streamer.profileImageUrl && metadata.avatarUrl) {
+            updates.profile_image_url = metadata.avatarUrl;
+          }
+          if (!streamer.streamThumbnailUrl && metadata.thumbnail) {
+            updates.stream_thumbnail_url = metadata.thumbnail;
+          }
+
+          if (Object.keys(updates).length > 0) {
+            await updateMonitoredStreamer(streamer.id, updates);
+            if (updates.display_name) streamer.displayName = updates.display_name;
+            if (updates.profile_image_url) streamer.profileImageUrl = updates.profile_image_url;
+            if (updates.stream_thumbnail_url) streamer.streamThumbnailUrl = updates.stream_thumbnail_url;
+          }
+        }
       } else {
         let match: TokenSearchResult | null = null;
 
@@ -825,7 +851,8 @@
         (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId)) ||
         (s.platform === 'Twitch' && (!s.profileImageUrl || s.displayName === s.mintId)) ||
         (s.platform === 'YouTube' && !s.profileImageUrl) ||
-        (s.platform === 'Rumble' && !s.profileImageUrl)
+        (s.platform === 'Rumble' && !s.profileImageUrl) ||
+        (s.platform === 'Twitter' && (s.mintId.includes('/i/broadcasts/') || s.mintId.includes('/i/spaces/')))
     );
 
     if (needsUpdate.length === 0) return;

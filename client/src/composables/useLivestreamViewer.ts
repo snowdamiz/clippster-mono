@@ -49,6 +49,12 @@ import {
   extractYouTubeChannel,
 } from '@/services/youtube';
 import {
+  checkTwitterLivestream,
+  startTwitterRecording,
+  stopTwitterRecording,
+  getTwitterSessionOutputDir,
+} from '@/services/twitter';
+import {
   checkRumbleLivestream,
   startRumbleRecording,
   stopRumbleRecording,
@@ -154,10 +160,13 @@ export function useLivestreamViewer() {
     dvrSessions,
     getKickDvrSession,
     getTwitchDvrSession,
+    getTwitterDvrSession,
     addKickDvrSession,
     addTwitchDvrSession,
+    addTwitterDvrSession,
     removeKickDvrSession,
     removeTwitchDvrSession,
+    removeTwitterDvrSession,
     registerViewerSession,
     updateViewerSession,
     unregisterViewerSession,
@@ -1190,6 +1199,143 @@ export function useLivestreamViewer() {
     }
   }
 
+  // Connect to Twitter broadcast using yt-dlp recording
+  async function connectToTwitter(
+    broadcastUrl: string,
+    streamerId: string,
+    displayName: string,
+    profileImageUrl?: string
+  ) {
+    try {
+      console.log('[LiveViewer] Connecting to Twitter broadcast:', broadcastUrl);
+
+      // Check if stream is live
+      const twitterStatus = await checkTwitterLivestream(broadcastUrl);
+
+      if (!twitterStatus.isLive) {
+        state.value.connectionState = 'failed';
+        state.value.connectionError = 'Stream is not live';
+        return;
+      }
+
+      state.value.viewerCount = twitterStatus.viewerCount || 0;
+      state.value.recordingStartTime = twitterStatus.startedAt
+        ? new Date(twitterStatus.startedAt).getTime()
+        : Date.now();
+
+      // Check if there's an existing recording for this streamer
+      // Priority: 1) Twitter DVR session, 2) Persistent recording from monitoring, 3) Start new
+      const existingDvrSession = getTwitterDvrSession(streamerId);
+      const existingPersistentSession = activeSessions.value.get(streamerId);
+      let outputDir: string;
+      let sessionId: string;
+
+      if (existingDvrSession) {
+        // Use existing DVR session - allows seeking back to beginning of stream
+        console.log('[LiveViewer] Found existing Twitter DVR session:', existingDvrSession.sessionId);
+        outputDir = existingDvrSession.outputDir;
+        sessionId = existingDvrSession.sessionId;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = false;
+      } else if (existingPersistentSession && existingPersistentSession.platform === 'Twitter') {
+        // Persistent auto-detect session exists with user-selected segments
+        // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
+        console.log('[LiveViewer] Found existing Twitter persistent session, starting separate viewer session');
+        sessionId = `twitter-view-${Date.now()}`;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = true;
+
+        try {
+          // Start with 1-minute segment duration (will use 4s segments internally)
+          await startTwitterRecording(broadcastUrl, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start Twitter recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+        
+        outputDir = await getTwitterSessionOutputDir(sessionId);
+        addTwitterDvrSession(streamerId, broadcastUrl, sessionId, outputDir);
+        console.log('[LiveViewer] Viewer session started in separate directory:', outputDir);
+      } else {
+        // No existing session - start a new temp recording with 4-second segments for DVR
+        sessionId = `twitter-view-${Date.now()}`;
+        state.value.tempSessionId = sessionId;
+        state.value.isTempRecording = true;
+
+        console.log('[LiveViewer] Starting new Twitter recording:', broadcastUrl);
+
+        try {
+          // Use 1-minute segment duration (4 seconds for smooth DVR playback)
+          await startTwitterRecording(broadcastUrl, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start Twitter recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+
+        outputDir = await getTwitterSessionOutputDir(sessionId);
+
+        // Track this temp recording so it can be reused if user closes and reopens
+        addTwitterDvrSession(streamerId, broadcastUrl, sessionId, outputDir);
+        console.log('[LiveViewer] Tracked temp Twitter DVR session for reuse:', sessionId);
+      }
+
+      console.log('[LiveViewer] Twitter HLS output dir:', outputDir);
+
+      // Initialize HLS playback with the local recording output
+      if (hlsVideoElement.value) {
+        state.value.dvrStartTime = Date.now();
+        state.value.kickEmbedUrl = null;
+
+        // Store the output dir for HLS playback
+        hlsOutputDir.value = outputDir;
+
+        const hlsInitSuccess = await hlsPlayback.initialize(hlsVideoElement.value, outputDir);
+
+        state.value.connectionState = 'connected';
+        state.value.playbackMode = 'hls';
+        reconnectAttempts = 0;
+        lastSegmentCount = 0;
+
+        startSegmentPolling();
+        await setupSegmentEventListeners();
+        startPlaybackSync();
+
+        if (hlsInitSuccess) {
+          hlsPlayback.play();
+          state.value.isPlaying = true;
+        }
+
+        if (streamerId) {
+          registerViewerSession(streamerId, state.value.isAtLiveEdge);
+        }
+
+        console.log(
+          '[LiveViewer] Connected to Twitter stream via yt-dlp',
+          existingDvrSession ? '(using existing DVR)' : '(new recording)'
+        );
+      } else {
+        throw new Error('HLS video element not available');
+      }
+    } catch (error) {
+      console.error('[LiveViewer] Failed to connect to Twitter:', error);
+      state.value.connectionState = 'failed';
+      state.value.connectionError = error instanceof Error ? error.message : 'Connection failed';
+
+      // Cleanup on failure
+      if (state.value.tempSessionId && state.value.isTempRecording) {
+        try {
+          await stopTwitterRecording(broadcastUrl);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    }
+  }
+
   // Connect to livestream
   async function connect(
     mintId: string,
@@ -1244,6 +1390,11 @@ export function useLivestreamViewer() {
 
     if (platform === 'Rumble') {
       await connectToRumble(mintId, streamerId, displayName, profileImageUrl);
+      return;
+    }
+
+    if (platform === 'Twitter') {
+      await connectToTwitter(mintId, streamerId, displayName, profileImageUrl);
       return;
     }
 
@@ -2063,11 +2214,14 @@ export function useLivestreamViewer() {
         const twitchStatus = await checkTwitchLivestream(mintId);
         isLive = twitchStatus.isLive;
       } else if (platform === 'YouTube' || platform === 'Youtube') {
-        const ytStatus = await checkYouTubeLivestream(mintId);
-        isLive = ytStatus.isLive;
+        const youtubeStatus = await checkYouTubeLivestream(mintId);
+        isLive = youtubeStatus.isLive;
       } else if (platform === 'Rumble') {
         const rumbleStatus = await checkRumbleLivestream(mintId);
         isLive = rumbleStatus.isLive;
+      } else if (platform === 'Twitter') {
+        const twitterStatus = await checkTwitterLivestream(mintId);
+        isLive = twitterStatus.isLive;
       } else {
         // PumpFun - use the existing fetchLiveStatus function
         const pumpFunStatus = await fetchLiveStatus(mintId);
@@ -2080,7 +2234,7 @@ export function useLivestreamViewer() {
         );
         state.value.isBuffering = true;
 
-        if (platform === 'Kick' || platform === 'Twitch' || platform === 'YouTube' || platform === 'Youtube' || platform === 'Rumble') {
+        if (platform === 'Kick' || platform === 'Twitch' || platform === 'YouTube' || platform === 'Youtube' || platform === 'Rumble' || platform === 'Twitter') {
           // yt-dlp based platforms: restart recorder in same directory to preserve DVR content
           const currentOutputDir = hlsOutputDir.value;
           const currentSessionId = state.value.tempSessionId;
@@ -2094,6 +2248,8 @@ export function useLivestreamViewer() {
               await stopYouTubeRecording(mintId);
             } else if (platform === 'Rumble') {
               await stopRumbleRecording(mintId);
+            } else if (platform === 'Twitter') {
+              await stopTwitterRecording(mintId);
             }
           } catch (stopError) {
             console.warn(`[LiveViewer] Error stopping old ${platform} recording:`, stopError);
@@ -2116,6 +2272,8 @@ export function useLivestreamViewer() {
               await startYouTubeRecording(mintId, streamerId, currentSessionId!, segmentDuration);
             } else if (platform === 'Rumble') {
               await startRumbleRecording(mintId, streamerId, currentSessionId!, segmentDuration);
+            } else if (platform === 'Twitter') {
+              await startTwitterRecording(mintId, streamerId, currentSessionId!, segmentDuration);
             }
 
             console.log(
@@ -2627,6 +2785,9 @@ export function useLivestreamViewer() {
           } else if (currentPlatform === 'Twitch') {
             await stopTwitchRecording(currentMintId!);
             removeTwitchDvrSession(currentStreamerId);
+          } else if (currentPlatform === 'Twitter') {
+            await stopTwitterRecording(currentMintId!);
+            removeTwitterDvrSession(currentStreamerId);
           }
         } catch (error) {
           console.warn('[LiveViewer] Failed to cleanup temp session:', error);

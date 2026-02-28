@@ -164,6 +164,53 @@ async function getTwitterUserAvatar(username: string): Promise<string | undefine
 }
 
 /**
+ * Twitter live status response
+ */
+export interface TwitterLiveStatus {
+  isLive: boolean;
+  displayName?: string;
+  profileImageUrl?: string;
+  viewerCount?: number;
+  startedAt?: string;
+  title?: string;
+}
+
+/**
+ * Check if a Twitter broadcast/space is currently live
+ */
+export async function checkTwitterLivestream(urlOrUsername: string): Promise<TwitterLiveStatus> {
+  try {
+    // If it's a broadcast/space URL, check if we can fetch metadata
+    if (urlOrUsername.includes('/i/broadcasts/') || urlOrUsername.includes('/i/spaces/')) {
+      const metadata = await getTwitterBroadcastInfo(urlOrUsername);
+      
+      // If we got metadata, the broadcast is accessible (likely live or recently ended)
+      // Twitter broadcasts that have ended are typically removed quickly
+      const isLive = !!(metadata.title || metadata.duration);
+      
+      return {
+        isLive,
+        displayName: metadata.username || metadata.uploader,
+        profileImageUrl: metadata.avatarUrl || metadata.thumbnail,
+        title: metadata.title,
+      };
+    }
+    
+    // For username-only tracking, we can't determine live status without a broadcast URL
+    // Return offline status
+    return {
+      isLive: false,
+      displayName: urlOrUsername.replace('@', ''),
+    };
+  } catch (error) {
+    console.warn('[Twitter] Failed to check live status:', error);
+    return {
+      isLive: false,
+    };
+  }
+}
+
+/**
  * Get metadata for a Twitter broadcast/space
  */
 export async function getTwitterBroadcastInfo(url: string): Promise<{
