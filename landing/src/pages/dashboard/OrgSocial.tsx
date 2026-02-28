@@ -443,6 +443,15 @@ function XIcon({ className }: { className?: string }) {
   )
 }
 
+type ConnectPlatform = 'instagram' | 'tiktok' | 'youtube' | 'x'
+
+const PLATFORM_LABELS: Record<ConnectPlatform, string> = {
+  instagram: 'Instagram',
+  tiktok: 'TikTok',
+  youtube: 'YouTube',
+  x: 'X'
+}
+
 /* ───── Main Component ───── */
 
 export function OrgSocial() {
@@ -450,7 +459,7 @@ export function OrgSocial() {
   const { openOAuth } = useOAuthPopup()
   const [accounts, setAccounts] = useState<SocialAccount[]>([])
   const [loading, setLoading] = useState(true)
-  const [connecting, setConnecting] = useState(false)
+  const [connectingPlatform, setConnectingPlatform] = useState<ConnectPlatform | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<SocialAccount | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [assignTarget, setAssignTarget] = useState<SocialAccount | null>(null)
@@ -478,18 +487,19 @@ export function OrgSocial() {
     loadAccounts()
   }, [organizationId])
 
-  const connectTwitter = () => {
+  const connectPlatform = (platform: ConnectPlatform) => {
     if (!organizationId) return
-    setConnecting(true)
-    openOAuth('twitter', organizationId, (result) => {
-      setConnecting(false)
+    setConnectingPlatform(platform)
+    openOAuth(platform, organizationId, (result) => {
+      setConnectingPlatform(null)
+      const platformLabel = PLATFORM_LABELS[platform]
       if (result.success) {
         const handle = result.username || result.account?.username || 'account'
-        toast.success(`X account @${handle} connected!`)
+        toast.success(`${platformLabel} account @${handle} connected!`)
         loadAccounts()
         loadOrganization()
       } else {
-        toast.error(result.error || 'Failed to connect X')
+        toast.error(result.error || `Failed to connect ${platformLabel}`)
       }
     })
   }
@@ -567,8 +577,8 @@ export function OrgSocial() {
           </div>
 
           <div className="flex flex-col gap-3 p-5 bg-zinc-900/50 border border-zinc-800 rounded-[10px]">
-            {/* Instagram - Coming Soon */}
-            <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/[0.02] border border-white/[0.06] rounded-[10px] opacity-50">
+            {/* Instagram */}
+            <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/[0.02] border border-white/[0.06] rounded-[10px] transition-all duration-200 hover:border-white/[0.12] hover:bg-white/[0.04]">
               <div className="flex items-center gap-4">
                 <div
                   className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0"
@@ -577,60 +587,87 @@ export function OrgSocial() {
                   <Instagram className="w-[22px] h-[22px] text-white" />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-[0.9375rem] font-semibold text-white m-0 flex items-center gap-2">
-                    Instagram
-                    <span className="text-[0.625rem] font-bold uppercase tracking-[0.05em] px-2 py-[3px] bg-purple-500/15 text-purple-400 rounded">
-                      Coming Soon
-                    </span>
-                  </h3>
+                  <h3 className="text-[0.9375rem] font-semibold text-white m-0">Instagram</h3>
                   <p className="text-[0.8125rem] text-zinc-500 m-0 leading-[1.4]">
                     Connect your Instagram Business or Creator account to publish Reels directly
                   </p>
                 </div>
               </div>
+              {isAdmin && (
+                <button
+                  className="flex items-center gap-2 h-10 px-5 bg-gradient-to-br from-cyan-400 to-cyan-600 text-black border-none rounded-lg text-sm font-semibold cursor-pointer transition-all duration-150 shrink-0 hover:opacity-90 hover:-translate-y-px disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
+                  onClick={() => connectPlatform('instagram')}
+                  disabled={connectingPlatform !== null}
+                >
+                  {connectingPlatform === 'instagram' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4" />
+                  )}
+                  {connectingPlatform === 'instagram' ? 'Connecting...' : 'Connect Account'}
+                </button>
+              )}
             </div>
 
-            {/* TikTok - Coming Soon */}
-            <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/[0.02] border border-white/[0.06] rounded-[10px] opacity-50">
+            {/* TikTok */}
+            <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/[0.02] border border-white/[0.06] rounded-[10px] transition-all duration-200 hover:border-white/[0.12] hover:bg-white/[0.04]">
               <div className="flex items-center gap-4">
                 <div className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0 bg-black">
                   <TikTokIcon className="w-6 h-6" />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-[0.9375rem] font-semibold text-white m-0 flex items-center gap-2">
-                    TikTok
-                    <span className="text-[0.625rem] font-bold uppercase tracking-[0.05em] px-2 py-[3px] bg-purple-500/15 text-purple-400 rounded">
-                      Coming Soon
-                    </span>
-                  </h3>
+                  <h3 className="text-[0.9375rem] font-semibold text-white m-0">TikTok</h3>
                   <p className="text-[0.8125rem] text-zinc-500 m-0 leading-[1.4]">
                     Share your clips directly to TikTok
                   </p>
                 </div>
               </div>
+              {isAdmin && (
+                <button
+                  className="flex items-center gap-2 h-10 px-5 bg-gradient-to-br from-cyan-400 to-cyan-600 text-black border-none rounded-lg text-sm font-semibold cursor-pointer transition-all duration-150 shrink-0 hover:opacity-90 hover:-translate-y-px disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
+                  onClick={() => connectPlatform('tiktok')}
+                  disabled={connectingPlatform !== null}
+                >
+                  {connectingPlatform === 'tiktok' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4" />
+                  )}
+                  {connectingPlatform === 'tiktok' ? 'Connecting...' : 'Connect Account'}
+                </button>
+              )}
             </div>
 
-            {/* YouTube Shorts - Coming Soon */}
-            <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/[0.02] border border-white/[0.06] rounded-[10px] opacity-50">
+            {/* YouTube Shorts */}
+            <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/[0.02] border border-white/[0.06] rounded-[10px] transition-all duration-200 hover:border-white/[0.12] hover:bg-white/[0.04]">
               <div className="flex items-center gap-4">
                 <div className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0 bg-gradient-to-br from-red-500 to-red-700">
                   <Youtube className="w-[22px] h-[22px] text-white" />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <h3 className="text-[0.9375rem] font-semibold text-white m-0 flex items-center gap-2">
-                    YouTube Shorts
-                    <span className="text-[0.625rem] font-bold uppercase tracking-[0.05em] px-2 py-[3px] bg-purple-500/15 text-purple-400 rounded">
-                      Coming Soon
-                    </span>
-                  </h3>
+                  <h3 className="text-[0.9375rem] font-semibold text-white m-0">YouTube Shorts</h3>
                   <p className="text-[0.8125rem] text-zinc-500 m-0 leading-[1.4]">
                     Upload clips as YouTube Shorts automatically
                   </p>
                 </div>
               </div>
+              {isAdmin && (
+                <button
+                  className="flex items-center gap-2 h-10 px-5 bg-gradient-to-br from-cyan-400 to-cyan-600 text-black border-none rounded-lg text-sm font-semibold cursor-pointer transition-all duration-150 shrink-0 hover:opacity-90 hover:-translate-y-px disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
+                  onClick={() => connectPlatform('youtube')}
+                  disabled={connectingPlatform !== null}
+                >
+                  {connectingPlatform === 'youtube' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4" />
+                  )}
+                  {connectingPlatform === 'youtube' ? 'Connecting...' : 'Connect Account'}
+                </button>
+              )}
             </div>
 
-            {/* X (Twitter) - Active */}
+            {/* X (Twitter) */}
             <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/[0.02] border border-white/[0.06] rounded-[10px] transition-all duration-200 hover:border-white/[0.12] hover:bg-white/[0.04]">
               <div className="flex items-center gap-4">
                 <div className="flex items-center justify-center w-11 h-11 rounded-xl shrink-0 bg-black">
@@ -644,11 +681,15 @@ export function OrgSocial() {
               {isAdmin && (
                 <button
                   className="flex items-center gap-2 h-10 px-5 bg-gradient-to-br from-cyan-400 to-cyan-600 text-black border-none rounded-lg text-sm font-semibold cursor-pointer transition-all duration-150 shrink-0 hover:opacity-90 hover:-translate-y-px disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
-                  onClick={connectTwitter}
-                  disabled={connecting}
+                  onClick={() => connectPlatform('x')}
+                  disabled={connectingPlatform !== null}
                 >
-                  {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  {connecting ? 'Connecting...' : 'Connect Account'}
+                  {connectingPlatform === 'x' ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Plus className="w-4 h-4" />
+                  )}
+                  {connectingPlatform === 'x' ? 'Connecting...' : 'Connect Account'}
                 </button>
               )}
             </div>

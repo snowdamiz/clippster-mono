@@ -48,7 +48,7 @@ export function useOAuthPopup() {
 
   const openOAuth = useCallback(
     (
-      platform: 'instagram' | 'twitter' | 'x',
+      platform: 'instagram' | 'tiktok' | 'youtube' | 'twitter' | 'x',
       organizationId: string | number,
       onResult: (result: OAuthResult) => void
     ) => {
@@ -132,12 +132,13 @@ export function useOAuthPopup() {
             account,
             username: account?.username
           })
-        } catch (error: any) {
+        } catch (error: unknown) {
           if (runIdRef.current !== runId) return
 
+          const errorMessage = error instanceof Error ? error.message : undefined
           onResult({
             success: false,
-            error: error?.message || 'Failed to connect social account'
+            error: errorMessage || 'Failed to connect social account'
           })
         } finally {
           if (popupRef.current && !popupRef.current.closed) {
