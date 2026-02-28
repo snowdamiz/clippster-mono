@@ -1,7 +1,7 @@
 defmodule ClippsterServer.Social.ExternalPostSubmission do
   @moduledoc """
   Schema for tracking external post submissions.
-  
+
   When clippers post to their personal Instagram accounts, they can submit 
   the post link to an organization/campaign for visibility and tracking.
   This allows orgs to see posts made via personal IG accounts.

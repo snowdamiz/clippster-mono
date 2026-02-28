@@ -98,7 +98,8 @@ defmodule ClippsterServer.AI.ReferenceAnalyzer do
             },
             %{
               "type" => "text",
-              "text" => "Analyze this reference image and extract the complete style profile as JSON."
+              "text" =>
+                "Analyze this reference image and extract the complete style profile as JSON."
             }
           ]
         }
@@ -122,33 +123,37 @@ defmodule ClippsterServer.AI.ReferenceAnalyzer do
     if is_nil(api_key) do
       {:error, "OPENROUTER_API_KEY not set"}
     else
-      image_parts = images
-      |> Enum.with_index()
-      |> Enum.flat_map(fn {{base64_data, mime_type, path}, idx} ->
-        [
-          %{
-            "type" => "image_url",
-            "image_url" => %{
-              "url" => "data:#{mime_type};base64,#{base64_data}"
+      image_parts =
+        images
+        |> Enum.with_index()
+        |> Enum.flat_map(fn {{base64_data, mime_type, path}, idx} ->
+          [
+            %{
+              "type" => "image_url",
+              "image_url" => %{
+                "url" => "data:#{mime_type};base64,#{base64_data}"
+              }
+            },
+            %{
+              "type" => "text",
+              "text" => "Image #{idx + 1} (#{Path.basename(path)}):"
             }
-          },
-          %{
-            "type" => "text",
-            "text" => "Image #{idx + 1} (#{Path.basename(path)}):"
-          }
-        ]
-      end)
+          ]
+        end)
 
       messages = [
         %{"role" => "system", "content" => @media_system_prompt},
         %{
           "role" => "user",
-          "content" => image_parts ++ [
-            %{
-              "type" => "text",
-              "text" => "Analyze all #{length(images)} images above and return the JSON array with analysis for each."
-            }
-          ]
+          "content" =>
+            image_parts ++
+              [
+                %{
+                  "type" => "text",
+                  "text" =>
+                    "Analyze all #{length(images)} images above and return the JSON array with analysis for each."
+                }
+              ]
         }
       ]
 
@@ -183,24 +188,30 @@ defmodule ClippsterServer.AI.ReferenceAnalyzer do
     ]
 
     case HTTPoison.post(
-      @openrouter_url,
-      Jason.encode!(payload),
-      headers,
-      recv_timeout: 90_000
-    ) do
+           @openrouter_url,
+           Jason.encode!(payload),
+           headers,
+           recv_timeout: 90_000
+         ) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
           {:ok, response} ->
             content = get_in(response, ["choices", Access.at(0), "message", "content"])
             if content, do: {:ok, content}, else: {:error, "No content in vision response"}
+
           {:error, reason} ->
             {:error, "Failed to parse vision response: #{inspect(reason)}"}
         end
 
-      {:ok, %HTTPoison.Response{status_code: status, body: body}} when status in [429, 500, 502, 503, 529] ->
+      {:ok, %HTTPoison.Response{status_code: status, body: body}}
+      when status in [429, 500, 502, 503, 529] ->
         if attempt < @max_retries do
           delay = :timer.seconds(attempt * 2)
-          Logger.warning("[ReferenceAnalyzer] Attempt #{attempt}/#{@max_retries} failed: #{status}. Retrying...")
+
+          Logger.warning(
+            "[ReferenceAnalyzer] Attempt #{attempt}/#{@max_retries} failed: #{status}. Retrying..."
+          )
+
           Process.sleep(delay)
           call_vision_with_retry(messages, api_key, attempt + 1)
         else
@@ -222,6 +233,7 @@ defmodule ClippsterServer.AI.ReferenceAnalyzer do
 
   defp parse_json_response(content) do
     cleaned = extract_json_object(content)
+
     case Jason.decode(cleaned) do
       {:ok, parsed} when is_map(parsed) -> {:ok, parsed}
       {:ok, _} -> {:error, "Expected JSON object, got other type"}
@@ -231,6 +243,7 @@ defmodule ClippsterServer.AI.ReferenceAnalyzer do
 
   defp parse_json_array_response(content) do
     cleaned = extract_json_array(content)
+
     case Jason.decode(cleaned) do
       {:ok, parsed} when is_list(parsed) -> {:ok, parsed}
       {:ok, _} -> {:error, "Expected JSON array, got other type"}
@@ -241,7 +254,9 @@ defmodule ClippsterServer.AI.ReferenceAnalyzer do
   defp extract_json_object(content) do
     # Try to find JSON in code fences first
     case Regex.run(~r/```(?:json)?\s*([\s\S]*?)\s*```/, content) do
-      [_, json] -> String.trim(json)
+      [_, json] ->
+        String.trim(json)
+
       nil ->
         # Find first { to last }
         case Regex.run(~r/(\{[\s\S]*\})/, content) do
@@ -253,7 +268,9 @@ defmodule ClippsterServer.AI.ReferenceAnalyzer do
 
   defp extract_json_array(content) do
     case Regex.run(~r/```(?:json)?\s*([\s\S]*?)\s*```/, content) do
-      [_, json] -> String.trim(json)
+      [_, json] ->
+        String.trim(json)
+
       nil ->
         case Regex.run(~r/(\[[\s\S]*\])/, content) do
           [_, json] -> json

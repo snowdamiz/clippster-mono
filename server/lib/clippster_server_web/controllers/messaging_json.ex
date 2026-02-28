@@ -3,7 +3,13 @@ defmodule ClippsterServerWeb.MessagingJSON do
   JSON rendering for messaging resources.
   """
 
-  alias ClippsterServer.Messaging.{Conversation, ConversationParticipant, Message, MessageAttachment}
+  alias ClippsterServer.Messaging.{
+    Conversation,
+    ConversationParticipant,
+    Message,
+    MessageAttachment
+  }
+
   alias ClippsterServer.Storage
 
   def conversation(%Conversation{} = conversation) do
@@ -37,8 +43,10 @@ defmodule ClippsterServerWeb.MessagingJSON do
 
   def conversations_with_unread(conversations, unread_counts) do
     Enum.map(conversations, fn conv ->
-      participant = Enum.find(conv.participants, &(&1.user_id == conv.created_by_user_id)) ||
-                    List.first(conv.participants)
+      participant =
+        Enum.find(conv.participants, &(&1.user_id == conv.created_by_user_id)) ||
+          List.first(conv.participants)
+
       muted = if participant, do: participant.muted, else: false
       unread = Map.get(unread_counts, conv.id, 0)
       conversation_with_unread(conv, unread, muted)
@@ -57,6 +65,7 @@ defmodule ClippsterServerWeb.MessagingJSON do
   end
 
   defp render_participants(nil), do: []
+
   defp render_participants(participants) when is_list(participants) do
     participants
     |> Enum.filter(&is_nil(&1.left_at))
@@ -112,6 +121,7 @@ defmodule ClippsterServerWeb.MessagingJSON do
 
   defp render_user(nil), do: nil
   defp render_user(%Ecto.Association.NotLoaded{}), do: nil
+
   defp render_user(user) do
     %{
       id: user.id,
@@ -126,12 +136,14 @@ defmodule ClippsterServerWeb.MessagingJSON do
 
   defp render_read_by(nil), do: []
   defp render_read_by(%Ecto.Association.NotLoaded{}), do: []
+
   defp render_read_by(read_statuses) do
     Enum.map(read_statuses, & &1.user_id)
   end
 
   defp render_attachments(nil), do: []
   defp render_attachments(%Ecto.Association.NotLoaded{}), do: []
+
   defp render_attachments(attachments) when is_list(attachments) do
     Enum.map(attachments, &attachment/1)
   end

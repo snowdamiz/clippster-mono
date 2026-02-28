@@ -748,7 +748,8 @@ defmodule ClippsterServer.Emails do
   end
 
   defp admin_broadcast_text(subject, body_html, app_name) do
-    plain = body_html
+    plain =
+      body_html
       |> String.replace(~r/<[^>]+>/, " ")
       |> String.replace(~r/\s+/, " ")
       |> String.trim()

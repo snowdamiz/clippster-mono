@@ -1,7 +1,7 @@
-use tauri::Emitter;
-use tauri_plugin_shell::ShellExt;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use tauri::Emitter;
+use tauri_plugin_shell::ShellExt;
 
 use super::encoder::{detect_hardware_encoder, run_ffmpeg_with_fallback};
 use super::types::WatermarkSettings;
@@ -28,7 +28,7 @@ pub struct SegmentInfo {
 }
 
 /// Extract a clip from recorded livestream segments
-/// 
+///
 /// This function:
 /// 1. Finds all segment files that cover the requested time range
 /// 2. Concatenates them if needed
@@ -40,13 +40,13 @@ pub struct SegmentInfo {
 pub async fn extract_livestream_clip(
     app: tauri::AppHandle,
     session_id: String,
-    clip_end_time: f64,      // Current playback position (seconds from stream start)
-    clip_duration: f64,      // How many seconds to capture (10-90)
+    clip_end_time: f64, // Current playback position (seconds from stream start)
+    clip_duration: f64, // How many seconds to capture (10-90)
     clip_name: String,
     segments: Vec<SegmentInfo>,
     project_id: Option<String>,
     watermark_id: Option<String>,
-    watermark_settings: Option<String>,  // JSON string of watermark settings
+    watermark_settings: Option<String>, // JSON string of watermark settings
 ) -> Result<String, String> {
     println!("[Rust] extract_livestream_clip called:");
     println!("[Rust]   session_id: {}", session_id);
@@ -66,13 +66,17 @@ pub async fn extract_livestream_clip(
     }
 
     // Emit progress
-    let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
-        progress: 5.0,
-        message: "Finding relevant segments...".to_string(),
-    });
+    let _ = app.emit(
+        "clip-extraction-progress",
+        ClipExtractionProgress {
+            progress: 5.0,
+            message: "Finding relevant segments...".to_string(),
+        },
+    );
 
     // Find segments that cover the requested time range
-    let relevant_segments: Vec<&SegmentInfo> = segments.iter()
+    let relevant_segments: Vec<&SegmentInfo> = segments
+        .iter()
         .filter(|seg| {
             // A segment is relevant if it overlaps with our clip range
             seg.end_time > clip_start_time && seg.start_time < clip_end_time
@@ -92,14 +96,17 @@ pub async fn extract_livestream_clip(
         }
     }
 
-    let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
-        progress: 10.0,
-        message: "Preparing clip extraction...".to_string(),
-    });
+    let _ = app.emit(
+        "clip-extraction-progress",
+        ClipExtractionProgress {
+            progress: 10.0,
+            message: "Preparing clip extraction...".to_string(),
+        },
+    );
 
     // Get storage paths for temp and output
-    let storage_paths = storage::init_storage_dirs()
-        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    let storage_paths =
+        storage::init_storage_dirs().map_err(|e| format!("Failed to get storage paths: {}", e))?;
 
     let temp_dir = storage_paths.temp.join("livestream_clips");
     std::fs::create_dir_all(&temp_dir)
@@ -120,10 +127,13 @@ pub async fn extract_livestream_clip(
     let output_filename = format!("{}_{}.mp4", safe_name, timestamp);
     let output_path = output_dir.join(&output_filename);
 
-    let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
-        progress: 15.0,
-        message: "Extracting clip from segments...".to_string(),
-    });
+    let _ = app.emit(
+        "clip-extraction-progress",
+        ClipExtractionProgress {
+            progress: 15.0,
+            message: "Extracting clip from segments...".to_string(),
+        },
+    );
 
     // If single segment, extract directly
     // If multiple segments, we need to concatenate first then extract
@@ -134,7 +144,8 @@ pub async fn extract_livestream_clip(
             clip_start_time,
             clip_duration,
             &temp_dir,
-        ).await?
+        )
+        .await?
     } else {
         extract_multi_segment_clip(
             &app,
@@ -143,13 +154,17 @@ pub async fn extract_livestream_clip(
             clip_end_time,
             clip_duration,
             &temp_dir,
-        ).await?
+        )
+        .await?
     };
 
-    let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
-        progress: 60.0,
-        message: "Processing video...".to_string(),
-    });
+    let _ = app.emit(
+        "clip-extraction-progress",
+        ClipExtractionProgress {
+            progress: 60.0,
+            message: "Processing video...".to_string(),
+        },
+    );
 
     // Parse watermark settings if provided
     let wm_settings: Option<WatermarkSettings> = if let Some(wm_json) = watermark_settings {
@@ -167,24 +182,30 @@ pub async fn extract_livestream_clip(
     // Apply watermark if settings are provided
     if let Some(ref wm) = wm_settings {
         if wm.enabled {
-            let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
-                progress: 70.0,
-                message: "Applying watermark...".to_string(),
-            });
+            let _ = app.emit(
+                "clip-extraction-progress",
+                ClipExtractionProgress {
+                    progress: 70.0,
+                    message: "Applying watermark...".to_string(),
+                },
+            );
 
             apply_watermark_to_clip(&app, &extracted_path, wm, "high").await?;
         }
     }
 
-    let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
-        progress: 90.0,
-        message: "Finalizing clip...".to_string(),
-    });
+    let _ = app.emit(
+        "clip-extraction-progress",
+        ClipExtractionProgress {
+            progress: 90.0,
+            message: "Finalizing clip...".to_string(),
+        },
+    );
 
     // Move to final output location
     std::fs::copy(&extracted_path, &output_path)
         .map_err(|e| format!("Failed to copy clip to output: {}", e))?;
-    
+
     // Cleanup temp file
     let _ = std::fs::remove_file(&extracted_path);
 
@@ -229,22 +250,31 @@ pub async fn extract_livestream_clip(
     }
 
     // Generate thumbnail at midpoint of the clip
-    let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
-        progress: 95.0,
-        message: "Generating thumbnail...".to_string(),
-    });
+    let _ = app.emit(
+        "clip-extraction-progress",
+        ClipExtractionProgress {
+            progress: 95.0,
+            message: "Generating thumbnail...".to_string(),
+        },
+    );
 
     let thumbnail_path = generate_clip_thumbnail(&app, &output_path, clip_duration).await;
     if let Some(ref thumb) = thumbnail_path {
         println!("[Rust] Generated thumbnail: {}", thumb);
     }
 
-    let _ = app.emit("clip-extraction-progress", ClipExtractionProgress {
-        progress: 100.0,
-        message: "Clip created successfully!".to_string(),
-    });
+    let _ = app.emit(
+        "clip-extraction-progress",
+        ClipExtractionProgress {
+            progress: 100.0,
+            message: "Clip created successfully!".to_string(),
+        },
+    );
 
-    println!("[Rust] Clip extracted successfully: {}", output_path.display());
+    println!(
+        "[Rust] Clip extracted successfully: {}",
+        output_path.display()
+    );
 
     // Return JSON with both clip path and thumbnail path
     let result = serde_json::json!({
@@ -274,7 +304,7 @@ async fn generate_clip_thumbnail(
 
     // Generate thumbnail at midpoint
     let midpoint = clip_duration / 2.0;
-    
+
     // Generate unique thumbnail filename based on clip name
     let clip_stem = clip_path
         .file_stem()
@@ -293,7 +323,8 @@ async fn generate_clip_thumbnail(
     let thumbnail_path_str = thumbnail_path.to_string_lossy().to_string();
 
     // Use ffmpeg to generate thumbnail
-    let output = match app.shell()
+    let output = match app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))
     {
@@ -301,11 +332,16 @@ async fn generate_clip_thumbnail(
             match cmd
                 .args([
                     "-nostdin",
-                    "-hwaccel", "auto",
-                    "-ss", &timestamp_str,
-                    "-i", &clip_path_str,
-                    "-vframes", "1",
-                    "-vf", "scale=320:-1",
+                    "-hwaccel",
+                    "auto",
+                    "-ss",
+                    &timestamp_str,
+                    "-i",
+                    &clip_path_str,
+                    "-vframes",
+                    "1",
+                    "-vf",
+                    "scale=320:-1",
                     "-y",
                     &thumbnail_path_str,
                 ])
@@ -349,20 +385,24 @@ async fn extract_single_segment_clip(
     temp_dir: &Path,
 ) -> Result<PathBuf, String> {
     let _shell = app.shell();
-    
+
     // Calculate seek position within this segment
     let seek_in_segment = clip_start_time - segment.start_time;
-    
+
     let output_path = temp_dir.join(format!("clip_{}.mp4", uuid::Uuid::new_v4()));
 
     // Detect hardware encoder
     let encoder = detect_hardware_encoder(app, "high").await;
 
     let mut args = vec![
-        "-ss".to_string(), seek_in_segment.to_string(),
-        "-i".to_string(), segment.file_path.clone(),
-        "-t".to_string(), clip_duration.to_string(),
-        "-c:v".to_string(), encoder.codec.clone(),
+        "-ss".to_string(),
+        seek_in_segment.to_string(),
+        "-i".to_string(),
+        segment.file_path.clone(),
+        "-t".to_string(),
+        clip_duration.to_string(),
+        "-c:v".to_string(),
+        encoder.codec.clone(),
     ];
 
     // Add preset if applicable
@@ -377,11 +417,16 @@ async fn extract_single_segment_clip(
 
     // Add common parameters
     args.extend_from_slice(&[
-        "-c:a".to_string(), "aac".to_string(),
-        "-b:a".to_string(), "192k".to_string(),
-        "-pix_fmt".to_string(), "yuv420p".to_string(),
-        "-movflags".to_string(), "+faststart".to_string(),
-        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
+        "-c:a".to_string(),
+        "aac".to_string(),
+        "-b:a".to_string(),
+        "192k".to_string(),
+        "-pix_fmt".to_string(),
+        "yuv420p".to_string(),
+        "-movflags".to_string(),
+        "+faststart".to_string(),
+        "-avoid_negative_ts".to_string(),
+        "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
@@ -389,7 +434,8 @@ async fn extract_single_segment_clip(
     println!("[Rust] Running FFmpeg for single segment extraction...");
 
     // Use fallback helper for hardware encoder resilience
-    run_ffmpeg_with_fallback(app, args, &encoder, "high", None).await
+    run_ffmpeg_with_fallback(app, args, &encoder, "high", None)
+        .await
         .map_err(|e| format!("FFmpeg extraction failed: {}", e))?;
 
     Ok(output_path)
@@ -421,20 +467,28 @@ async fn extract_multi_segment_clip(
     std::fs::write(&concat_list_path, &concat_content)
         .map_err(|e| format!("Failed to write concat list: {}", e))?;
 
-    println!("[Rust] Created concat list with {} segments", segments.len());
+    println!(
+        "[Rust] Created concat list with {} segments",
+        segments.len()
+    );
 
     // Concatenate segments
     let concat_args = vec![
         "-nostdin".to_string(),
-        "-f".to_string(), "concat".to_string(),
-        "-safe".to_string(), "0".to_string(),
-        "-i".to_string(), concat_list_path.to_string_lossy().to_string(),
-        "-c".to_string(), "copy".to_string(),
+        "-f".to_string(),
+        "concat".to_string(),
+        "-safe".to_string(),
+        "0".to_string(),
+        "-i".to_string(),
+        concat_list_path.to_string_lossy().to_string(),
+        "-c".to_string(),
+        "copy".to_string(),
         "-y".to_string(),
         concat_output_path.to_string_lossy().to_string(),
     ];
 
-    let concat_output = shell.sidecar("ffmpeg")
+    let concat_output = shell
+        .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args(concat_args)
         .output()
@@ -462,10 +516,14 @@ async fn extract_multi_segment_clip(
     let encoder = detect_hardware_encoder(app, "high").await;
 
     let mut args = vec![
-        "-ss".to_string(), seek_position.to_string(),
-        "-i".to_string(), concat_output_path.to_string_lossy().to_string(),
-        "-t".to_string(), clip_duration.to_string(),
-        "-c:v".to_string(), encoder.codec.clone(),
+        "-ss".to_string(),
+        seek_position.to_string(),
+        "-i".to_string(),
+        concat_output_path.to_string_lossy().to_string(),
+        "-t".to_string(),
+        clip_duration.to_string(),
+        "-c:v".to_string(),
+        encoder.codec.clone(),
     ];
 
     // Add preset if applicable
@@ -480,16 +538,24 @@ async fn extract_multi_segment_clip(
 
     // Add common parameters
     args.extend_from_slice(&[
-        "-c:a".to_string(), "aac".to_string(),
-        "-b:a".to_string(), "192k".to_string(),
-        "-pix_fmt".to_string(), "yuv420p".to_string(),
-        "-movflags".to_string(), "+faststart".to_string(),
-        "-avoid_negative_ts".to_string(), "make_zero".to_string(),
+        "-c:a".to_string(),
+        "aac".to_string(),
+        "-b:a".to_string(),
+        "192k".to_string(),
+        "-pix_fmt".to_string(),
+        "yuv420p".to_string(),
+        "-movflags".to_string(),
+        "+faststart".to_string(),
+        "-avoid_negative_ts".to_string(),
+        "make_zero".to_string(),
         "-y".to_string(),
         output_path.to_string_lossy().to_string(),
     ]);
 
-    println!("[Rust] Running FFmpeg for multi-segment extraction (seek: {}s, duration: {}s)...", seek_position, clip_duration);
+    println!(
+        "[Rust] Running FFmpeg for multi-segment extraction (seek: {}s, duration: {}s)...",
+        seek_position, clip_duration
+    );
 
     // Use fallback helper for hardware encoder resilience
     let result = run_ffmpeg_with_fallback(app, args, &encoder, "high", None).await;
@@ -518,8 +584,9 @@ async fn apply_watermark_to_clip(
     // Get video info to calculate watermark position
     let video_info = crate::clips::video_info::get_video_info(
         app,
-        clip_path.to_str().ok_or("Invalid clip path")?
-    ).await?;
+        clip_path.to_str().ok_or("Invalid clip path")?,
+    )
+    .await?;
 
     let video_width = video_info.width;
     let video_height = video_info.height;
@@ -545,7 +612,7 @@ async fn apply_watermark_to_clip(
     } else {
         // Calculate watermark width based on scale percentage
         let scaled_wm_width = (video_width as f32 * (scale_pct as f32 / 100.0)) as u32;
-        
+
         // Calculate position
         let x_pos = format!("(W-w)*{}/100", pos_x);
         let y_pos = format!("(H-h)*{}/100", pos_y);
@@ -563,10 +630,14 @@ async fn apply_watermark_to_clip(
     let temp_output = clip_path.with_extension("watermarked.mp4");
 
     let mut args = vec![
-        "-i".to_string(), clip_path.to_string_lossy().to_string(),
-        "-i".to_string(), watermark.file_path.clone(),
-        "-filter_complex".to_string(), filter_complex,
-        "-c:v".to_string(), encoder.codec.clone(),
+        "-i".to_string(),
+        clip_path.to_string_lossy().to_string(),
+        "-i".to_string(),
+        watermark.file_path.clone(),
+        "-filter_complex".to_string(),
+        filter_complex,
+        "-c:v".to_string(),
+        encoder.codec.clone(),
     ];
 
     // Add preset if applicable
@@ -581,9 +652,12 @@ async fn apply_watermark_to_clip(
 
     // Add common parameters
     args.extend_from_slice(&[
-        "-c:a".to_string(), "copy".to_string(),
-        "-pix_fmt".to_string(), "yuv420p".to_string(),
-        "-movflags".to_string(), "+faststart".to_string(),
+        "-c:a".to_string(),
+        "copy".to_string(),
+        "-pix_fmt".to_string(),
+        "yuv420p".to_string(),
+        "-movflags".to_string(),
+        "+faststart".to_string(),
         "-y".to_string(),
         temp_output.to_string_lossy().to_string(),
     ]);
@@ -591,7 +665,8 @@ async fn apply_watermark_to_clip(
     println!("[Rust] Applying watermark to clip...");
 
     // Use fallback helper for hardware encoder resilience
-    run_ffmpeg_with_fallback(app, args, &encoder, quality, None).await
+    run_ffmpeg_with_fallback(app, args, &encoder, quality, None)
+        .await
         .map_err(|e| format!("FFmpeg watermark failed: {}", e))?;
 
     // Replace original with watermarked version
@@ -615,4 +690,3 @@ fn sanitize_filename(name: &str) -> String {
     // Trim whitespace and limit length
     result.trim().chars().take(100).collect()
 }
-

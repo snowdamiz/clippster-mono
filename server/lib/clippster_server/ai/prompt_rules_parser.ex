@@ -49,19 +49,24 @@ defmodule ClippsterServer.AI.PromptRulesParser do
       ~r/(\d+)\+\s*(?:s(?:ec(?:ond)?s?)?)?/i
     ]
 
-    result = Enum.find_value(patterns, fn pattern ->
-      case Regex.run(pattern, prompt_lower) do
-        [_full_match, duration_str] ->
-          case Integer.parse(duration_str) do
-            {duration, _} when duration > 0 -> duration
-            _ -> nil
-          end
-        _ -> nil
-      end
-    end)
+    result =
+      Enum.find_value(patterns, fn pattern ->
+        case Regex.run(pattern, prompt_lower) do
+          [_full_match, duration_str] ->
+            case Integer.parse(duration_str) do
+              {duration, _} when duration > 0 -> duration
+              _ -> nil
+            end
+
+          _ ->
+            nil
+        end
+      end)
 
     if result do
-      Logger.info("[PromptRulesParser] Detected minimum duration rule: #{result} seconds from prompt")
+      Logger.info(
+        "[PromptRulesParser] Detected minimum duration rule: #{result} seconds from prompt"
+      )
     end
 
     result

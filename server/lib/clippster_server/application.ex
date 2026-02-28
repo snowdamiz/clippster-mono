@@ -26,35 +26,34 @@ defmodule ClippsterServer.Application do
       {Phoenix.PubSub, name: ClippsterServer.PubSub},
       # Start Finch HTTP client with optimized settings for reliability
       {Finch,
-        name: ClippsterFinch,
-        pools: %{
-          # Use HTTP/1.1 for Whisper API - more reliable for large file uploads
-          # and avoids HTTP/2 connection reuse issues (Mint.TransportError :closed)
-          "https://api.lemonfox.ai" => [
-            protocols: [:http1],
-            # Multiple pools for better isolation (if one pool has issues, others still work)
-            count: 4,
-            # Connections per pool
-            size: 5,
-            # Close idle connections after 30 seconds to prevent server-side closure
-            # Most servers close idle connections after 60-120s, so 30s is safe
-            conn_max_idle_time: 30_000,
-            conn_opts: [
-              # Connection establishment timeout
-              transport_opts: [timeout: 30_000]
-            ]
-          ],
-          # Default pool for other requests (OpenRouter, etc.)
-          :default => [
-            size: 10,
-            count: 2,
-            conn_max_idle_time: 60_000,
-            conn_opts: [
-              transport_opts: [timeout: 30_000]
-            ]
-          ]
-        }
-      },
+       name: ClippsterFinch,
+       pools: %{
+         # Use HTTP/1.1 for Whisper API - more reliable for large file uploads
+         # and avoids HTTP/2 connection reuse issues (Mint.TransportError :closed)
+         "https://api.lemonfox.ai" => [
+           protocols: [:http1],
+           # Multiple pools for better isolation (if one pool has issues, others still work)
+           count: 4,
+           # Connections per pool
+           size: 5,
+           # Close idle connections after 30 seconds to prevent server-side closure
+           # Most servers close idle connections after 60-120s, so 30s is safe
+           conn_max_idle_time: 30_000,
+           conn_opts: [
+             # Connection establishment timeout
+             transport_opts: [timeout: 30_000]
+           ]
+         ],
+         # Default pool for other requests (OpenRouter, etc.)
+         :default => [
+           size: 10,
+           count: 2,
+           conn_max_idle_time: 60_000,
+           conn_opts: [
+             transport_opts: [timeout: 30_000]
+           ]
+         ]
+       }},
       # Start a worker by calling: ClippsterServer.Worker.start_link(arg)
       # {ClippsterServer.Worker, arg},
       # Wallet authentication challenge store
@@ -65,6 +64,8 @@ defmodule ClippsterServer.Application do
       ClippsterServer.Social.AnalyticsSyncWorker,
       # Social media token refresh worker
       ClippsterServer.Social.TokenRefreshWorker,
+      # Post For Me connection session cleanup worker
+      ClippsterServer.Social.PostForMeConnectionSessionCleanupWorker,
       # Scheduled post publishing worker
       ClippsterServer.Social.ScheduledPostWorker,
       # Shared clips cleanup worker (deletes expired clips daily)

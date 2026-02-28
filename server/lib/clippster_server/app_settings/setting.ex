@@ -21,4 +21,3 @@ defmodule ClippsterServer.AppSettings.Setting do
     |> validate_required([:key, :value])
   end
 end
-

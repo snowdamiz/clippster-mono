@@ -97,51 +97,6 @@ pub struct GoogleAuthResult {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InstagramAuthResult {
-    pub success: bool,
-    #[serde(default)]
-    pub account: Option<InstagramAccount>,
-    #[serde(default)]
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InstagramAccount {
-    pub id: i64,
-    pub platform: String,
-    pub platform_user_id: String,
-    pub username: String,
-    #[serde(default)]
-    pub display_name: Option<String>,
-    #[serde(default)]
-    pub profile_image_url: Option<String>,
-    pub is_active: bool,
-    pub connected_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TwitterAuthResult {
-    pub success: bool,
-    #[serde(default)]
-    pub account: Option<TwitterAccount>,
-    #[serde(default)]
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TwitterAccount {
-    pub id: i64,
-    pub platform: String,
-    pub platform_user_id: String,
-    pub username: String,
-    #[serde(default)]
-    pub display_name: Option<String>,
-    #[serde(default)]
-    pub profile_image_url: Option<String>,
-    pub is_active: bool,
-    pub connected_at: String,
-}
 
 pub static AUTH_RESULT: Lazy<Arc<Mutex<Option<AuthResult>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
@@ -151,16 +106,10 @@ pub static GOOGLE_AUTH_RESULT: Lazy<Arc<Mutex<Option<GoogleAuthResult>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static EMAIL_VERIFICATION_RESULT: Lazy<Arc<Mutex<Option<EmailVerificationResult>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
-pub static INSTAGRAM_AUTH_RESULT: Lazy<Arc<Mutex<Option<InstagramAuthResult>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
-pub static TWITTER_AUTH_RESULT: Lazy<Arc<Mutex<Option<TwitterAuthResult>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
 pub static AUTH_SERVER_PORT: u16 = 48274;
 pub static PAYMENT_SERVER_PORT: u16 = 48275;
 pub static GOOGLE_AUTH_SERVER_PORT: u16 = 54321;
 pub static EMAIL_VERIFICATION_SERVER_PORT: u16 = 54322;
-pub static INSTAGRAM_AUTH_SERVER_PORT: u16 = 54323;
-pub static TWITTER_AUTH_SERVER_PORT: u16 = 54324;
 
 const WALLET_AUTH_HTML: &str = include_str!("../../public/wallet-auth.html");
 const WALLET_PAYMENT_HTML: &str = include_str!("../../public/wallet-payment.html");
@@ -354,108 +303,10 @@ pub async fn open_google_auth_window(
 }
 
 #[tauri::command]
-pub async fn open_instagram_auth_window(
-    app: tauri::AppHandle,
-    api_base: String,
-    organization_id: String,
-    auth_token: String,
+pub async fn start_post_for_me_oauth(
+    _app: tauri::AppHandle,
+    auth_url: String,
 ) -> Result<(), String> {
-    // Clear any previous auth result
-    *INSTAGRAM_AUTH_RESULT.lock().unwrap() = None;
-
-    // Start local callback server
-    start_instagram_callback_server(app.clone());
-
-    // Build the Instagram OAuth initiation URL
-    // The backend will redirect to Instagram and handle the OAuth flow
-    let auth_url = format!(
-        "{}?organization_id={}&callback_port={}&auth_token={}",
-        build_api_url(&api_base, "/auth/instagram/start"),
-        urlencoding::encode(&organization_id),
-        INSTAGRAM_AUTH_SERVER_PORT,
-        urlencoding::encode(&auth_token)
-    );
-
-    tauri_plugin_opener::open_url(auth_url, None::<&str>)
-        .map_err(|e| format!("Failed to open browser: {}", e))?;
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn start_user_instagram_oauth(
-    app: tauri::AppHandle,
-    api_base: String,
-    auth_token: String,
-) -> Result<(), String> {
-    // Clear any previous auth result
-    *INSTAGRAM_AUTH_RESULT.lock().unwrap() = None;
-
-    // Start local callback server (reuse the same server)
-    start_instagram_callback_server(app.clone());
-
-    // Build the user Instagram OAuth initiation URL
-    let auth_url = format!(
-        "{}?callback_port={}&auth_token={}",
-        build_api_url(&api_base, "/auth/user-instagram/start"),
-        INSTAGRAM_AUTH_SERVER_PORT,
-        urlencoding::encode(&auth_token)
-    );
-
-    tauri_plugin_opener::open_url(auth_url, None::<&str>)
-        .map_err(|e| format!("Failed to open browser: {}", e))?;
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn open_twitter_auth_window(
-    app: tauri::AppHandle,
-    api_base: String,
-    organization_id: String,
-    auth_token: String,
-) -> Result<(), String> {
-    // Clear any previous auth result
-    *TWITTER_AUTH_RESULT.lock().unwrap() = None;
-
-    // Start local callback server
-    start_twitter_callback_server(app.clone());
-
-    // Build the Twitter OAuth initiation URL for organizations
-    let auth_url = format!(
-        "{}?organization_id={}&callback_port={}&auth_token={}",
-        build_api_url(&api_base, "/auth/twitter/start"),
-        urlencoding::encode(&organization_id),
-        TWITTER_AUTH_SERVER_PORT,
-        urlencoding::encode(&auth_token)
-    );
-
-    tauri_plugin_opener::open_url(auth_url, None::<&str>)
-        .map_err(|e| format!("Failed to open browser: {}", e))?;
-
-    Ok(())
-}
-
-#[tauri::command]
-pub async fn start_user_twitter_oauth(
-    app: tauri::AppHandle,
-    api_base: String,
-    auth_token: String,
-) -> Result<(), String> {
-    // Clear any previous auth result
-    *TWITTER_AUTH_RESULT.lock().unwrap() = None;
-
-    // Start local callback server
-    start_twitter_callback_server(app.clone());
-
-    // Build the user Twitter OAuth initiation URL
-    let auth_url = format!(
-        "{}?callback_port={}&auth_token={}",
-        build_api_url(&api_base, "/auth/user-twitter/start"),
-        TWITTER_AUTH_SERVER_PORT,
-        urlencoding::encode(&auth_token)
-    );
-
     tauri_plugin_opener::open_url(auth_url, None::<&str>)
         .map_err(|e| format!("Failed to open browser: {}", e))?;
 
@@ -594,7 +445,10 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                         status: subscription_status,
                         tier: parse_optional_string(&params, "subscription_tier"),
                         tier_name: parse_optional_string(&params, "subscription_tier_name"),
-                        needs_subscription: parse_bool(params.get("subscription_needs_subscription"), false),
+                        needs_subscription: parse_bool(
+                            params.get("subscription_needs_subscription"),
+                            false,
+                        ),
                         days_remaining: parse_i32(params.get("subscription_days_remaining"), 0),
                     });
 
@@ -608,7 +462,9 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                         avatar_url: parse_optional_string(&params, "avatar_url"),
                         is_admin: parse_bool(params.get("is_admin"), false),
                         account_type: parse_optional_string(&params, "account_type"),
-                        owned_organization_id: parse_optional_i64(params.get("owned_organization_id")),
+                        owned_organization_id: parse_optional_i64(
+                            params.get("owned_organization_id"),
+                        ),
                         created_by_organization_id: parse_optional_i64(
                             params.get("created_by_organization_id"),
                         ),
@@ -625,7 +481,9 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                         token: parse_optional_string(&params, "token"),
                         provider: Some("google".to_string()),
                         user: Some(user),
-                        is_new_user: params.get("is_new_user").map(|v| parse_bool(Some(v), false)),
+                        is_new_user: params
+                            .get("is_new_user")
+                            .map(|v| parse_bool(Some(v), false)),
                         error: None,
                     }
                 } else {
@@ -640,7 +498,10 @@ pub fn start_google_callback_server(app: tauri::AppHandle) {
                     }
                 };
 
-                println!("[Google Auth] Callback received: success={}", result.success);
+                println!(
+                    "[Google Auth] Callback received: success={}",
+                    result.success
+                );
 
                 *google_auth_result.lock().unwrap() = Some(result.clone());
                 let _ = app_handle.emit("google-auth-complete", result.clone());
@@ -790,223 +651,3 @@ pub async fn clear_email_verification_result() -> Result<(), String> {
     Ok(())
 }
 
-pub fn start_instagram_callback_server(app: tauri::AppHandle) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
-
-    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
-        return; // Server already running
-    }
-
-    tokio::spawn(async move {
-        let instagram_auth_result = INSTAGRAM_AUTH_RESULT.clone();
-        let app_handle = app.clone();
-
-        let instagram_callback = warp::path("instagram-callback")
-            .and(warp::get())
-            .and(warp::query::<HashMap<String, String>>())
-            .map(move |params: HashMap<String, String>| {
-                let success = parse_bool(params.get("success"), false);
-                let error = parse_optional_string(&params, "error");
-
-                let account = if success {
-                    Some(InstagramAccount {
-                        id: parse_i64(params.get("account_id"), 0),
-                        platform: parse_optional_string(&params, "platform")
-                            .unwrap_or_else(|| "instagram".to_string()),
-                        platform_user_id: parse_optional_string(&params, "platform_user_id")
-                            .unwrap_or_default(),
-                        username: parse_optional_string(&params, "username").unwrap_or_default(),
-                        display_name: parse_optional_string(&params, "display_name"),
-                        profile_image_url: parse_optional_string(&params, "profile_image_url"),
-                        is_active: true,
-                        connected_at: parse_optional_string(&params, "connected_at")
-                            .unwrap_or_default(),
-                    })
-                } else {
-                    None
-                };
-
-                let result = InstagramAuthResult {
-                    success,
-                    account,
-                    error: error.clone(),
-                };
-
-                println!("[Instagram Auth] Callback received: success={}", result.success);
-
-                *instagram_auth_result.lock().unwrap() = Some(result.clone());
-                let _ = app_handle.emit("instagram-auth-complete", result.clone());
-
-                let (title, message, color) = if result.success {
-                    (
-                        "Instagram Connected",
-                        "You can close this tab and return to the app.",
-                        "#22c55e",
-                    )
-                } else {
-                    (
-                        "Instagram Connection Failed",
-                        result
-                            .error
-                            .as_deref()
-                            .unwrap_or("Authentication failed. You can close this tab."),
-                        "#ef4444",
-                    )
-                };
-
-                warp::reply::html(oauth_result_html(title, message, color))
-            });
-
-        let cors = warp::cors()
-            .allow_any_origin()
-            .allow_methods(vec!["GET", "OPTIONS"])
-            .allow_headers(vec!["Content-Type"]);
-
-        println!(
-            "Starting Instagram auth callback server on port {}",
-            INSTAGRAM_AUTH_SERVER_PORT
-        );
-
-        warp::serve(instagram_callback.with(cors))
-            .run(([127, 0, 0, 1], INSTAGRAM_AUTH_SERVER_PORT))
-            .await;
-    });
-}
-
-#[tauri::command]
-pub async fn poll_instagram_auth_result() -> Result<Option<InstagramAuthResult>, String> {
-    let result = INSTAGRAM_AUTH_RESULT.lock().unwrap().clone();
-    Ok(result)
-}
-
-#[tauri::command]
-pub async fn clear_instagram_auth_result() -> Result<(), String> {
-    *INSTAGRAM_AUTH_RESULT.lock().unwrap() = None;
-    Ok(())
-}
-
-pub fn start_twitter_callback_server(app: tauri::AppHandle) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
-
-    if SERVER_STARTED.swap(true, Ordering::SeqCst) {
-        return; // Server already running
-    }
-
-    tokio::spawn(async move {
-        let twitter_auth_result = TWITTER_AUTH_RESULT.clone();
-        let app_handle = app.clone();
-
-        // POST callback endpoint for Twitter OAuth result
-        let twitter_auth_result_post = twitter_auth_result.clone();
-        let app_handle_post = app_handle.clone();
-        let twitter_callback_post = warp::path("twitter-callback")
-            .and(warp::post())
-            .and(warp::body::json())
-            .map(move |result: TwitterAuthResult| {
-                println!("[Twitter Auth] Received callback result: {:?}", result);
-
-                // Store the result
-                *twitter_auth_result_post.lock().unwrap() = Some(result.clone());
-
-                // Emit event to frontend
-                let _ = app_handle_post.emit("twitter-auth-complete", result);
-
-                warp::reply::json(&serde_json::json!({
-                    "success": true,
-                    "message": "Twitter authentication received. You can close this tab."
-                }))
-            });
-
-        // GET callback endpoint for redirect from backend (shows success/error page)
-        let twitter_auth_result_get = twitter_auth_result.clone();
-        let app_handle_get = app_handle.clone();
-        let twitter_callback_get = warp::path("twitter-callback")
-            .and(warp::get())
-            .and(warp::query::<HashMap<String, String>>())
-            .map(move |params: HashMap<String, String>| {
-                let success = parse_bool(params.get("success"), false);
-                let error = parse_optional_string(&params, "error");
-
-                // Parse account data from query params if present
-                let account = if success {
-                    Some(TwitterAccount {
-                        id: parse_i64(params.get("account_id"), 0),
-                        platform: parse_optional_string(&params, "platform")
-                            .unwrap_or_else(|| "twitter".to_string()),
-                        platform_user_id: parse_optional_string(&params, "platform_user_id")
-                            .unwrap_or_default(),
-                        username: parse_optional_string(&params, "username").unwrap_or_default(),
-                        display_name: parse_optional_string(&params, "display_name"),
-                        profile_image_url: parse_optional_string(&params, "profile_image_url"),
-                        is_active: true,
-                        connected_at: parse_optional_string(&params, "connected_at")
-                            .unwrap_or_default(),
-                    })
-                } else {
-                    None
-                };
-
-                let result = TwitterAuthResult {
-                    success,
-                    account,
-                    error: error.clone(),
-                };
-
-                println!("[Twitter Auth] Received GET callback: {:?}", result);
-
-                // Store the result
-                *twitter_auth_result_get.lock().unwrap() = Some(result.clone());
-
-                // Emit event to frontend
-                let _ = app_handle_get.emit("twitter-auth-complete", result);
-
-                let (title, message, color) = if success {
-                    (
-                        "X Connected",
-                        "You can close this tab and return to the app.",
-                        "#22c55e",
-                    )
-                } else {
-                    (
-                        "X Connection Failed",
-                        error
-                            .as_deref()
-                            .unwrap_or("Authentication failed. You can close this tab."),
-                        "#ef4444",
-                    )
-                };
-
-                warp::reply::html(oauth_result_html(title, message, color))
-            });
-
-        // CORS configuration
-        let cors = warp::cors()
-            .allow_any_origin()
-            .allow_methods(vec!["GET", "POST", "OPTIONS"])
-            .allow_headers(vec!["Content-Type"]);
-
-        let routes = twitter_callback_post.or(twitter_callback_get).with(cors);
-
-        println!(
-            "Starting Twitter auth callback server on port {}",
-            TWITTER_AUTH_SERVER_PORT
-        );
-        warp::serve(routes)
-            .run(([127, 0, 0, 1], TWITTER_AUTH_SERVER_PORT))
-            .await;
-    });
-}
-
-#[tauri::command]
-pub async fn poll_twitter_auth_result() -> Result<Option<TwitterAuthResult>, String> {
-    let result = TWITTER_AUTH_RESULT.lock().unwrap().clone();
-    Ok(result)
-}
-
-#[tauri::command]
-pub async fn clear_twitter_auth_result() -> Result<(), String> {
-    *TWITTER_AUTH_RESULT.lock().unwrap() = None;
-    Ok(())
-}

@@ -21,7 +21,16 @@ defmodule ClippsterServer.Announcements.Announcement do
 
   def changeset(announcement, attrs) do
     announcement
-    |> cast(attrs, [:title, :body, :type, :audience, :is_active, :published_at, :expires_at, :created_by])
+    |> cast(attrs, [
+      :title,
+      :body,
+      :type,
+      :audience,
+      :is_active,
+      :published_at,
+      :expires_at,
+      :created_by
+    ])
     |> validate_required([:title, :body, :type, :audience])
     |> validate_inclusion(:type, @valid_types)
     |> validate_inclusion(:audience, @valid_audiences)

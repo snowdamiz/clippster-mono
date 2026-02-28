@@ -7,7 +7,7 @@ defmodule ClippsterServer.ModLogs.ModActionLog do
     field :target_type, :string
     field :target_id, :integer
     field :details, :map, default: %{}
-    
+
     belongs_to :moderator, ClippsterServer.Accounts.User
 
     timestamps(type: :utc_datetime, updated_at: false)

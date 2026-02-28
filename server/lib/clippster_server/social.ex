@@ -7,6 +7,7 @@ defmodule ClippsterServer.Social do
   alias ClippsterServer.Repo
   alias ClippsterServer.Organizations
   alias ClippsterServer.Accounts.User
+
   alias ClippsterServer.Social.{
     SocialAccount,
     SocialAccountAssignment,
@@ -23,16 +24,18 @@ defmodule ClippsterServer.Social do
   def list_organization_social_accounts(organization_id, opts \\ []) do
     include_inactive = Keyword.get(opts, :include_inactive, false)
 
-    query = from a in SocialAccount,
-      where: a.organization_id == ^organization_id,
-      order_by: [desc: a.connected_at],
-      preload: [assignments: :user]
+    query =
+      from a in SocialAccount,
+        where: a.organization_id == ^organization_id,
+        order_by: [desc: a.connected_at],
+        preload: [assignments: :user]
 
-    query = if include_inactive do
-      query
-    else
-      where(query, [a], a.is_active == true)
-    end
+    query =
+      if include_inactive do
+        query
+      else
+        where(query, [a], a.is_active == true)
+      end
 
     Repo.all(query)
   end
@@ -42,7 +45,7 @@ defmodule ClippsterServer.Social do
   """
   def get_social_account(id) do
     SocialAccount
-    |> preload([assignments: :user])
+    |> preload(assignments: :user)
     |> Repo.get(id)
   end
 
@@ -52,7 +55,7 @@ defmodule ClippsterServer.Social do
   def get_social_account(organization_id, account_id) do
     SocialAccount
     |> where([a], a.organization_id == ^organization_id and a.id == ^account_id)
-    |> preload([assignments: :user])
+    |> preload(assignments: :user)
     |> Repo.one()
   end
 
@@ -61,7 +64,24 @@ defmodule ClippsterServer.Social do
   """
   def get_social_account_by_platform(organization_id, platform, platform_user_id) do
     SocialAccount
-    |> where([a], a.organization_id == ^organization_id and a.platform == ^platform and a.platform_user_id == ^platform_user_id)
+    |> where(
+      [a],
+      a.organization_id == ^organization_id and a.platform == ^platform and
+        a.platform_user_id == ^platform_user_id
+    )
+    |> Repo.one()
+  end
+
+  @doc """
+  Gets a social account by provider + provider account ID within an organization.
+  """
+  def get_social_account_by_provider(organization_id, provider, provider_account_id) do
+    SocialAccount
+    |> where(
+      [a],
+      a.organization_id == ^organization_id and a.provider == ^provider and
+        a.provider_account_id == ^provider_account_id
+    )
     |> Repo.one()
   end
 
@@ -98,6 +118,7 @@ defmodule ClippsterServer.Social do
       case get_social_account_by_platform(organization_id, platform, platform_user_id) do
         nil ->
           {:error, :not_found}
+
         account ->
           update_social_account(account, attrs)
       end
@@ -162,28 +183,31 @@ defmodule ClippsterServer.Social do
   Assigns a social account to one or more users.
   Admin only. Users must be members of the organization.
   """
-  def assign_social_account(organization_id, account_id, user_ids, %User{} = admin) when is_list(user_ids) do
+  def assign_social_account(organization_id, account_id, user_ids, %User{} = admin)
+      when is_list(user_ids) do
     with true <- Organizations.is_admin?(organization_id, admin.id),
          account when not is_nil(account) <- get_social_account(organization_id, account_id) do
-
       # Filter to only users who are members
-      valid_user_ids = user_ids
-      |> Enum.filter(fn uid -> Organizations.is_member?(organization_id, uid) end)
+      valid_user_ids =
+        user_ids
+        |> Enum.filter(fn uid -> Organizations.is_member?(organization_id, uid) end)
 
-      results = Enum.map(valid_user_ids, fn user_id ->
-        %SocialAccountAssignment{}
-        |> SocialAccountAssignment.changeset(%{
-          organization_social_account_id: account.id,
-          user_id: user_id,
-          assigned_by_user_id: admin.id
-        })
-        |> Repo.insert(on_conflict: :nothing)
-      end)
+      results =
+        Enum.map(valid_user_ids, fn user_id ->
+          %SocialAccountAssignment{}
+          |> SocialAccountAssignment.changeset(%{
+            organization_social_account_id: account.id,
+            user_id: user_id,
+            assigned_by_user_id: admin.id
+          })
+          |> Repo.insert(on_conflict: :nothing)
+        end)
 
-      successful = Enum.count(results, fn
-        {:ok, _} -> true
-        _ -> false
-      end)
+      successful =
+        Enum.count(results, fn
+          {:ok, _} -> true
+          _ -> false
+        end)
 
       {:ok, %{assigned: successful, total: length(user_ids)}}
     else
@@ -199,11 +223,11 @@ defmodule ClippsterServer.Social do
   def unassign_social_account(organization_id, account_id, user_id, %User{} = admin) do
     with true <- Organizations.is_admin?(organization_id, admin.id),
          account when not is_nil(account) <- get_social_account(organization_id, account_id) do
-
-      assignment = Repo.get_by(SocialAccountAssignment,
-        organization_social_account_id: account.id,
-        user_id: user_id
-      )
+      assignment =
+        Repo.get_by(SocialAccountAssignment,
+          organization_social_account_id: account.id,
+          user_id: user_id
+        )
 
       case assignment do
         nil -> {:error, :not_assigned}
@@ -220,8 +244,7 @@ defmodule ClippsterServer.Social do
   """
   def list_account_assignments(organization_id, account_id) do
     SocialAccountAssignment
-    |> join(:inner, [a], s in SocialAccount,
-      on: a.organization_social_account_id == s.id)
+    |> join(:inner, [a], s in SocialAccount, on: a.organization_social_account_id == s.id)
     |> where([a, s], s.organization_id == ^organization_id and s.id == ^account_id)
     |> preload([:user, :assigned_by_user])
     |> Repo.all()
@@ -233,7 +256,8 @@ defmodule ClippsterServer.Social do
   def get_user_assigned_accounts(organization_id, user_id) do
     SocialAccount
     |> join(:inner, [s], a in SocialAccountAssignment,
-      on: a.organization_social_account_id == s.id)
+      on: a.organization_social_account_id == s.id
+    )
     |> where([s, a], s.organization_id == ^organization_id and a.user_id == ^user_id)
     |> where([s], s.is_active == true)
     |> Repo.all()
@@ -249,9 +273,11 @@ defmodule ClippsterServer.Social do
     else
       # Check if assigned
       SocialAccountAssignment
-      |> join(:inner, [a], s in SocialAccount,
-        on: a.organization_social_account_id == s.id)
-      |> where([a, s], s.organization_id == ^organization_id and s.id == ^account_id and a.user_id == ^user_id)
+      |> join(:inner, [a], s in SocialAccount, on: a.organization_social_account_id == s.id)
+      |> where(
+        [a, s],
+        s.organization_id == ^organization_id and s.id == ^account_id and a.user_id == ^user_id
+      )
       |> Repo.exists?()
     end
   end
@@ -273,31 +299,59 @@ defmodule ClippsterServer.Social do
     limit = Keyword.get(opts, :limit, 50)
     offset = Keyword.get(opts, :offset, 0)
 
-    query = from p in PostSubmission,
-      where: p.organization_id == ^organization_id,
-      order_by: [desc: p.posted_at, desc: p.inserted_at],
-      limit: ^limit,
-      offset: ^offset,
-      preload: [:organization_social_account, :organization_creator_profile, :submitted_by_user]
+    query =
+      from p in PostSubmission,
+        where: p.organization_id == ^organization_id,
+        order_by: [desc: p.posted_at, desc: p.inserted_at],
+        limit: ^limit,
+        offset: ^offset,
+        preload: [:organization_social_account, :organization_creator_profile, :submitted_by_user]
 
-    query = if creator_profile_id, do: where(query, [p], p.organization_creator_profile_id == ^creator_profile_id), else: query
-    query = if account_id, do: where(query, [p], p.organization_social_account_id == ^account_id), else: query
+    query =
+      if creator_profile_id,
+        do: where(query, [p], p.organization_creator_profile_id == ^creator_profile_id),
+        else: query
+
+    query =
+      if account_id,
+        do: where(query, [p], p.organization_social_account_id == ^account_id),
+        else: query
+
     query = if platform, do: where(query, [p], p.platform == ^platform), else: query
     query = if status, do: where(query, [p], p.status == ^status), else: query
-    query = if submitted_by_user_id, do: where(query, [p], p.submitted_by_user_id == ^submitted_by_user_id), else: query
+
+    query =
+      if submitted_by_user_id,
+        do: where(query, [p], p.submitted_by_user_id == ^submitted_by_user_id),
+        else: query
 
     posts = Repo.all(query)
 
     # Get total count
-    count_query = from p in PostSubmission,
-      where: p.organization_id == ^organization_id,
-      select: count(p.id)
+    count_query =
+      from p in PostSubmission,
+        where: p.organization_id == ^organization_id,
+        select: count(p.id)
 
-    count_query = if creator_profile_id, do: where(count_query, [p], p.organization_creator_profile_id == ^creator_profile_id), else: count_query
-    count_query = if account_id, do: where(count_query, [p], p.organization_social_account_id == ^account_id), else: count_query
-    count_query = if platform, do: where(count_query, [p], p.platform == ^platform), else: count_query
+    count_query =
+      if creator_profile_id,
+        do: where(count_query, [p], p.organization_creator_profile_id == ^creator_profile_id),
+        else: count_query
+
+    count_query =
+      if account_id,
+        do: where(count_query, [p], p.organization_social_account_id == ^account_id),
+        else: count_query
+
+    count_query =
+      if platform, do: where(count_query, [p], p.platform == ^platform), else: count_query
+
     count_query = if status, do: where(count_query, [p], p.status == ^status), else: count_query
-    count_query = if submitted_by_user_id, do: where(count_query, [p], p.submitted_by_user_id == ^submitted_by_user_id), else: count_query
+
+    count_query =
+      if submitted_by_user_id,
+        do: where(count_query, [p], p.submitted_by_user_id == ^submitted_by_user_id),
+        else: count_query
 
     total = Repo.one(count_query)
 
@@ -347,6 +401,15 @@ defmodule ClippsterServer.Social do
   def mark_post_published(%PostSubmission{} = submission, attrs) do
     submission
     |> PostSubmission.publish_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
+  Updates provider metadata for a submission without changing publication state.
+  """
+  def update_post_provider_metadata(%PostSubmission{} = submission, attrs) do
+    submission
+    |> PostSubmission.provider_metadata_changeset(attrs)
     |> Repo.update()
   end
 
@@ -425,21 +488,25 @@ defmodule ClippsterServer.Social do
 
     since = DateTime.utc_now() |> DateTime.add(-days, :day)
 
-    query = from p in PostSubmission,
-      where: p.organization_id == ^organization_id,
-      where: p.status == "published",
-      where: p.posted_at >= ^since,
-      select: %{
-        total_posts: count(p.id),
-        total_views: sum(p.view_count),
-        total_likes: sum(p.like_count),
-        total_comments: sum(p.comment_count),
-        total_saves: sum(p.save_count),
-        total_reach: sum(p.reach_count),
-        total_impressions: sum(p.impressions_count)
-      }
+    query =
+      from p in PostSubmission,
+        where: p.organization_id == ^organization_id,
+        where: p.status == "published",
+        where: p.posted_at >= ^since,
+        select: %{
+          total_posts: count(p.id),
+          total_views: sum(p.view_count),
+          total_likes: sum(p.like_count),
+          total_comments: sum(p.comment_count),
+          total_saves: sum(p.save_count),
+          total_reach: sum(p.reach_count),
+          total_impressions: sum(p.impressions_count)
+        }
 
-    query = if creator_profile_id, do: where(query, [p], p.organization_creator_profile_id == ^creator_profile_id), else: query
+    query =
+      if creator_profile_id,
+        do: where(query, [p], p.organization_creator_profile_id == ^creator_profile_id),
+        else: query
 
     Repo.one(query)
   end
@@ -569,7 +636,14 @@ defmodule ClippsterServer.Social do
         where: p.submitted_by_user_id == ^user_id,
         order_by: [desc: p.scheduled_at],
         limit: ^limit,
-        preload: [:user_social_account, :organization_social_account, :organization, :organization_creator_profile, :submitted_by_user, :campaign]
+        preload: [
+          :user_social_account,
+          :organization_social_account,
+          :organization,
+          :organization_creator_profile,
+          :submitted_by_user,
+          :campaign
+        ]
 
     query = if status, do: where(query, [p], p.status == ^status), else: query
 
@@ -591,7 +665,13 @@ defmodule ClippsterServer.Social do
         order_by: [desc: p.scheduled_at, desc: p.inserted_at],
         limit: ^limit,
         offset: ^offset,
-        preload: [:organization_social_account, :organization_creator_profile, :submitted_by_user, :campaign, :organization]
+        preload: [
+          :organization_social_account,
+          :organization_creator_profile,
+          :submitted_by_user,
+          :campaign,
+          :organization
+        ]
 
     query = if status, do: where(query, [p], p.status == ^status), else: query
 
@@ -668,7 +748,11 @@ defmodule ClippsterServer.Social do
         preload: [:submitted_by_user, :organization_creator_profile, :campaign]
 
     query = if status, do: where(query, [e], e.status == ^status), else: query
-    query = if creator_profile_id, do: where(query, [e], e.organization_creator_profile_id == ^creator_profile_id), else: query
+
+    query =
+      if creator_profile_id,
+        do: where(query, [e], e.organization_creator_profile_id == ^creator_profile_id),
+        else: query
 
     posts = Repo.all(query)
 
@@ -678,7 +762,11 @@ defmodule ClippsterServer.Social do
         select: count(e.id)
 
     count_query = if status, do: where(count_query, [e], e.status == ^status), else: count_query
-    count_query = if creator_profile_id, do: where(count_query, [e], e.organization_creator_profile_id == ^creator_profile_id), else: count_query
+
+    count_query =
+      if creator_profile_id,
+        do: where(count_query, [e], e.organization_creator_profile_id == ^creator_profile_id),
+        else: count_query
 
     total = Repo.one(count_query)
 
@@ -721,7 +809,12 @@ defmodule ClippsterServer.Social do
         preload: [:submitted_by_user, :reviewed_by_user, :organization_creator_profile, :campaign]
 
     query = if status, do: where(query, [e], e.status == ^status), else: query
-    query = if creator_profile_id, do: where(query, [e], e.organization_creator_profile_id == ^creator_profile_id), else: query
+
+    query =
+      if creator_profile_id,
+        do: where(query, [e], e.organization_creator_profile_id == ^creator_profile_id),
+        else: query
+
     query = if campaign_id, do: where(query, [e], e.campaign_id == ^campaign_id), else: query
 
     posts = Repo.all(query)
@@ -733,8 +826,16 @@ defmodule ClippsterServer.Social do
         select: count(e.id)
 
     count_query = if status, do: where(count_query, [e], e.status == ^status), else: count_query
-    count_query = if creator_profile_id, do: where(count_query, [e], e.organization_creator_profile_id == ^creator_profile_id), else: count_query
-    count_query = if campaign_id, do: where(count_query, [e], e.campaign_id == ^campaign_id), else: count_query
+
+    count_query =
+      if creator_profile_id,
+        do: where(count_query, [e], e.organization_creator_profile_id == ^creator_profile_id),
+        else: count_query
+
+    count_query =
+      if campaign_id,
+        do: where(count_query, [e], e.campaign_id == ^campaign_id),
+        else: count_query
 
     total = Repo.one(count_query)
 
@@ -769,7 +870,11 @@ defmodule ClippsterServer.Social do
   Rejects an external post submission.
   Admin only.
   """
-  def reject_external_post_submission(%ExternalPostSubmission{} = submission, %User{} = admin, notes \\ nil) do
+  def reject_external_post_submission(
+        %ExternalPostSubmission{} = submission,
+        %User{} = admin,
+        notes \\ nil
+      ) do
     if Organizations.is_admin?(submission.organization_id, admin.id) do
       submission
       |> ExternalPostSubmission.reject_changeset(admin.id, notes)
@@ -782,9 +887,14 @@ defmodule ClippsterServer.Social do
   @doc """
   Updates analytics for an external post submission.
   """
-  def update_external_post_analytics(%ExternalPostSubmission{} = submission, attrs, %User{} = user) do
+  def update_external_post_analytics(
+        %ExternalPostSubmission{} = submission,
+        attrs,
+        %User{} = user
+      ) do
     # Allow the submitter or admins to update
-    if submission.submitted_by_user_id == user.id or Organizations.is_admin?(submission.organization_id, user.id) do
+    if submission.submitted_by_user_id == user.id or
+         Organizations.is_admin?(submission.organization_id, user.id) do
       submission
       |> ExternalPostSubmission.update_analytics_changeset(attrs)
       |> Repo.update()

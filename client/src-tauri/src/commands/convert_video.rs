@@ -3,12 +3,9 @@ use std::process::Command;
 use tauri::{AppHandle, Manager};
 
 #[tauri::command]
-pub async fn convert_video_to_mp4(
-    app: AppHandle,
-    input_path: String,
-) -> Result<String, String> {
+pub async fn convert_video_to_mp4(app: AppHandle, input_path: String) -> Result<String, String> {
     let input = Path::new(&input_path);
-    
+
     // Validate input file exists
     if !input.exists() {
         return Err(format!("Input file does not exist: {}", input_path));
@@ -121,7 +118,7 @@ fn get_ffmpeg_path(app: &AppHandle) -> Result<PathBuf, String> {
                 return Ok(bundled_ffmpeg);
             }
         }
-        
+
         // Fall back to system FFmpeg
         Ok(PathBuf::from("ffmpeg.exe"))
     }
@@ -135,7 +132,7 @@ fn get_ffmpeg_path(app: &AppHandle) -> Result<PathBuf, String> {
                 return Ok(bundled_ffmpeg);
             }
         }
-        
+
         // Fall back to system FFmpeg
         Ok(PathBuf::from("ffmpeg"))
     }

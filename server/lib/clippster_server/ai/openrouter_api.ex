@@ -28,7 +28,16 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         IO.puts("[OpenRouterAPI] Using Responses API with high reasoning effort")
 
         # Start with the initial request
-        generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, 0, [], project_id)
+        generate_clips_with_retry(
+          transcript,
+          system_prompt,
+          user_prompt_input,
+          model,
+          api_key,
+          0,
+          [],
+          project_id
+        )
     end
   rescue
     reason ->
@@ -37,11 +46,25 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       {:error, "Rescue exception: #{inspect(reason)}"}
   end
 
-  defp generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt, missing_fields, project_id) do
+  defp generate_clips_with_retry(
+         transcript,
+         system_prompt,
+         user_prompt_input,
+         model,
+         api_key,
+         attempt,
+         missing_fields,
+         project_id
+       ) do
     max_attempts = 3
-    
+
     if attempt > 0 and project_id do
-      ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "AI request failed, retrying (Attempt #{attempt + 1}/#{max_attempts})...")
+      ProgressChannel.broadcast_progress(
+        project_id,
+        "analyzing",
+        50,
+        "AI request failed, retrying (Attempt #{attempt + 1}/#{max_attempts})..."
+      )
     end
 
     IO.puts("[OpenRouterAPI] Attempt #{attempt + 1}/#{max_attempts}")
@@ -85,7 +108,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
     json_payload = Jason.encode!(payload)
     # Increase timeout to 120s (120000ms) to avoid premature timeouts
     options = [recv_timeout: 120_000, timeout: 120_000]
-    
+
     case HTTPoison.post(@openrouter_api_url, json_payload, build_headers(api_key), options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         IO.puts("[OpenRouterAPI] Received response from API")
@@ -107,14 +130,29 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
                     {:ok, clips, usage}
 
                   {:error, new_missing_fields} when attempt < max_attempts - 1 ->
-                    IO.puts("[OpenRouterAPI] Validation failed, missing fields: #{inspect(new_missing_fields)}")
+                    IO.puts(
+                      "[OpenRouterAPI] Validation failed, missing fields: #{inspect(new_missing_fields)}"
+                    )
+
                     IO.puts("[OpenRouterAPI] Retrying with field-specific guidance...")
 
                     # Retry with field-specific guidance
-                    generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, new_missing_fields, project_id)
+                    generate_clips_with_retry(
+                      transcript,
+                      system_prompt,
+                      user_prompt_input,
+                      model,
+                      api_key,
+                      attempt + 1,
+                      new_missing_fields,
+                      project_id
+                    )
 
                   {:error, new_missing_fields} ->
-                    IO.puts("[OpenRouterAPI] Validation failed after #{max_attempts} attempts, missing fields: #{inspect(new_missing_fields)}")
+                    IO.puts(
+                      "[OpenRouterAPI] Validation failed after #{max_attempts} attempts, missing fields: #{inspect(new_missing_fields)}"
+                    )
+
                     {:error, "Missing required fields: #{Enum.join(new_missing_fields, ", ")}"}
                 end
 
@@ -130,27 +168,56 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
 
       {:ok, %HTTPoison.Response{status_code: status_code, body: body}} ->
         IO.puts("[OpenRouterAPI] API returned error status: #{status_code}")
-        
+
         # Retry on server errors (5xx) if we have attempts left
         if status_code >= 500 and attempt < max_attempts - 1 do
           IO.puts("[OpenRouterAPI] Server error #{status_code}, retrying...")
-          :timer.sleep(2000 * (attempt + 1)) # Exponential backoff
-          generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, missing_fields, project_id)
+          # Exponential backoff
+          :timer.sleep(2000 * (attempt + 1))
+
+          generate_clips_with_retry(
+            transcript,
+            system_prompt,
+            user_prompt_input,
+            model,
+            api_key,
+            attempt + 1,
+            missing_fields,
+            project_id
+          )
         else
           {:error, "OpenRouter API error (#{status_code}): #{body}"}
         end
 
       {:error, %HTTPoison.Error{reason: reason}} ->
         IO.puts("[OpenRouterAPI] HTTP request failed: #{inspect(reason)}")
-        
+
         # Retry on network errors if we have attempts left
         if attempt < max_attempts - 1 do
           IO.puts("[OpenRouterAPI] Network error, retrying...")
+
           if project_id do
-             ProgressChannel.broadcast_progress(project_id, "analyzing", 50, "Network error: #{inspect(reason)}. Retrying (Attempt #{attempt + 1}/#{max_attempts})...")
+            ProgressChannel.broadcast_progress(
+              project_id,
+              "analyzing",
+              50,
+              "Network error: #{inspect(reason)}. Retrying (Attempt #{attempt + 1}/#{max_attempts})..."
+            )
           end
-          :timer.sleep(2000 * (attempt + 1)) # Exponential backoff
-          generate_clips_with_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, missing_fields, project_id)
+
+          # Exponential backoff
+          :timer.sleep(2000 * (attempt + 1))
+
+          generate_clips_with_retry(
+            transcript,
+            system_prompt,
+            user_prompt_input,
+            model,
+            api_key,
+            attempt + 1,
+            missing_fields,
+            project_id
+          )
         else
           {:error, "Network error: #{inspect(reason)}"}
         end
@@ -158,6 +225,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
   end
 
   defp missing_fields_prompt(system_prompt, []), do: system_prompt
+
   defp missing_fields_prompt(system_prompt, missing_fields) do
     # Build field-specific retry prompt
     field_guidance = build_field_guidance(missing_fields)
@@ -180,14 +248,15 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
     try do
       transcript_json = Jason.encode!(transcript, pretty: true)
 
-      retry_message = if attempt > 0 do
-        """
+      retry_message =
+        if attempt > 0 do
+          """
 
-        **⚠️ RETRY NOTICE:** Previous response was missing required fields. Please ensure ALL required fields are included in your response, especially the socialMediaPost field for each clip.
-        """
-      else
-        ""
-      end
+          **⚠️ RETRY NOTICE:** Previous response was missing required fields. Please ensure ALL required fields are included in your response, especially the socialMediaPost field for each clip.
+          """
+        else
+          ""
+        end
 
       """
       **USER INSTRUCTIONS:**
@@ -209,7 +278,8 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
           "duration" => Map.get(transcript, "duration"),
           "language" => Map.get(transcript, "language"),
           "text" => Map.get(transcript, "text"),
-          "segments" => Map.get(transcript, "segments", [])
+          "segments" =>
+            Map.get(transcript, "segments", [])
             |> Enum.map(fn segment ->
               %{
                 "id" => Map.get(segment, "id"),
@@ -223,14 +293,15 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
 
         transcript_json = Jason.encode!(simplified_transcript, pretty: true)
 
-        retry_message = if attempt > 0 do
-          """
+        retry_message =
+          if attempt > 0 do
+            """
 
-          **⚠️ RETRY NOTICE:** Previous response was missing required fields. Please ensure ALL required fields are included in your response, especially the socialMediaPost field for each clip.
-          """
-        else
-          ""
-        end
+            **⚠️ RETRY NOTICE:** Previous response was missing required fields. Please ensure ALL required fields are included in your response, especially the socialMediaPost field for each clip.
+            """
+          else
+            ""
+          end
 
         """
         **USER INSTRUCTIONS:**
@@ -251,7 +322,8 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
     case Map.get(response, "output") do
       output when is_list(output) ->
         # Find the message component with output_text
-        message_content = output
+        message_content =
+          output
           |> Enum.find_value(fn
             %{"type" => "message", "content" => content} when is_list(content) ->
               # Find the first output_text part
@@ -259,7 +331,9 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
                 %{"type" => "output_text", "text" => text} -> text
                 _ -> nil
               end)
-            _ -> nil
+
+            _ ->
+              nil
           end)
 
         if message_content do
@@ -273,28 +347,37 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
               case Regex.run(~r/```(?:json)?\s*([\s\S]*?)\s*```/, message_content) do
                 [_, json_block] ->
                   case Jason.decode(json_block) do
-                    {:ok, clips_data} -> {:ok, clips_data}
+                    {:ok, clips_data} ->
+                      {:ok, clips_data}
+
                     {:error, _} ->
-                      IO.puts("[OpenRouterAPI] Failed to parse extracted JSON block, trying truncated recovery...")
+                      IO.puts(
+                        "[OpenRouterAPI] Failed to parse extracted JSON block, trying truncated recovery..."
+                      )
+
                       recover_truncated_clips_json(message_content)
                   end
+
                 nil ->
-                  IO.puts("[OpenRouterAPI] Failed to parse AI response as JSON: #{inspect(reason)}")
+                  IO.puts(
+                    "[OpenRouterAPI] Failed to parse AI response as JSON: #{inspect(reason)}"
+                  )
+
                   IO.puts("[OpenRouterAPI] Attempting truncated JSON recovery...")
                   recover_truncated_clips_json(message_content)
               end
           end
         else
-           {:error, "No output text found in response"}
+          {:error, "No output text found in response"}
         end
 
       # Handle possible error structure or unexpected format
       _ ->
         # Check for top-level error
         if Map.has_key?(response, "error") do
-           {:error, "API Error: #{inspect(response["error"])}"}
+          {:error, "API Error: #{inspect(response["error"])}"}
         else
-           {:error, "Unexpected response format (missing 'output')"}
+          {:error, "Unexpected response format (missing 'output')"}
         end
     end
   end
@@ -307,10 +390,11 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
     case Regex.run(~r/"clips"\s*:\s*\[/, content) do
       [match] ->
         # Find where the clips array starts
-        array_start = case :binary.match(content, match) do
-          {pos, len} -> pos + len
-          :nomatch -> nil
-        end
+        array_start =
+          case :binary.match(content, match) do
+            {pos, len} -> pos + len
+            :nomatch -> nil
+          end
 
         if array_start do
           # Extract the portion after "clips": [
@@ -320,10 +404,16 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
           complete_clips = extract_complete_json_objects(rest)
 
           if length(complete_clips) > 0 do
-            IO.puts("[OpenRouterAPI] Truncated JSON recovery: salvaged #{length(complete_clips)} complete clips")
+            IO.puts(
+              "[OpenRouterAPI] Truncated JSON recovery: salvaged #{length(complete_clips)} complete clips"
+            )
+
             {:ok, %{"clips" => complete_clips}}
           else
-            IO.puts("[OpenRouterAPI] Truncated JSON recovery failed: no complete clip objects found")
+            IO.puts(
+              "[OpenRouterAPI] Truncated JSON recovery failed: no complete clip objects found"
+            )
+
             {:error, "AI response is truncated and no complete clips could be recovered"}
           end
         else
@@ -353,7 +443,9 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
             case Jason.decode(json_str) do
               {:ok, parsed} when is_map(parsed) ->
                 # Successfully parsed a complete object, continue looking for more
-                remaining = String.slice(content, start_pos + chars_consumed, String.length(content))
+                remaining =
+                  String.slice(content, start_pos + chars_consumed, String.length(content))
+
                 extract_complete_json_objects(remaining, acc ++ [parsed])
 
               _ ->
@@ -377,36 +469,46 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
   defp extract_single_json_object(content) do
     graphemes = String.graphemes(content)
 
-    result = Enum.reduce_while(graphemes, {0, false, false, []}, fn char, {depth, in_string, escaped, acc} ->
-      new_acc = acc ++ [char]
+    result =
+      Enum.reduce_while(graphemes, {0, false, false, []}, fn char,
+                                                             {depth, in_string, escaped, acc} ->
+        new_acc = acc ++ [char]
 
-      cond do
-        escaped ->
-          {:cont, {depth, in_string, false, new_acc}}
-        char == "\\" and in_string ->
-          {:cont, {depth, in_string, true, new_acc}}
-        char == "\"" ->
-          {:cont, {depth, !in_string, false, new_acc}}
-        in_string ->
-          {:cont, {depth, in_string, false, new_acc}}
-        char == "{" ->
-          {:cont, {depth + 1, in_string, false, new_acc}}
-        char == "}" ->
-          new_depth = depth - 1
-          if new_depth == 0 do
-            {:halt, {:complete, new_acc}}
-          else
-            {:cont, {new_depth, in_string, false, new_acc}}
-          end
-        true ->
-          {:cont, {depth, in_string, false, new_acc}}
-      end
-    end)
+        cond do
+          escaped ->
+            {:cont, {depth, in_string, false, new_acc}}
+
+          char == "\\" and in_string ->
+            {:cont, {depth, in_string, true, new_acc}}
+
+          char == "\"" ->
+            {:cont, {depth, !in_string, false, new_acc}}
+
+          in_string ->
+            {:cont, {depth, in_string, false, new_acc}}
+
+          char == "{" ->
+            {:cont, {depth + 1, in_string, false, new_acc}}
+
+          char == "}" ->
+            new_depth = depth - 1
+
+            if new_depth == 0 do
+              {:halt, {:complete, new_acc}}
+            else
+              {:cont, {new_depth, in_string, false, new_acc}}
+            end
+
+          true ->
+            {:cont, {depth, in_string, false, new_acc}}
+        end
+      end)
 
     case result do
       {:complete, chars} ->
         json_str = Enum.join(chars)
         {:ok, json_str, String.length(json_str)}
+
       _ ->
         :incomplete
     end
@@ -422,28 +524,40 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
 
       %{"clips" => clips_array} when is_list(clips_array) and length(clips_array) > 0 ->
         required_clip_fields = [
-          "id", "title", "filename", "type", "segments",
-          "total_duration", "combined_transcript", "virality_score",
-          "reason", "socialMediaPost"
+          "id",
+          "title",
+          "filename",
+          "type",
+          "segments",
+          "total_duration",
+          "combined_transcript",
+          "virality_score",
+          "reason",
+          "socialMediaPost"
         ]
 
         # Check each clip for required fields
-        missing_fields = clips_array
-        |> Enum.with_index()
-        |> Enum.reduce([], fn {clip, index}, acc ->
-          clip_missing = Enum.filter(required_clip_fields, fn field ->
-            not Map.has_key?(clip, field) or is_nil(Map.get(clip, field)) or Map.get(clip, field) == ""
-          end)
+        missing_fields =
+          clips_array
+          |> Enum.with_index()
+          |> Enum.reduce([], fn {clip, index}, acc ->
+            clip_missing =
+              Enum.filter(required_clip_fields, fn field ->
+                not Map.has_key?(clip, field) or is_nil(Map.get(clip, field)) or
+                  Map.get(clip, field) == ""
+              end)
 
-          if length(clip_missing) > 0 do
-            formatted_missing = Enum.map(clip_missing, fn field ->
-              "#{field} (clip #{index + 1})"
-            end)
-            acc ++ formatted_missing
-          else
-            acc
-          end
-        end)
+            if length(clip_missing) > 0 do
+              formatted_missing =
+                Enum.map(clip_missing, fn field ->
+                  "#{field} (clip #{index + 1})"
+                end)
+
+              acc ++ formatted_missing
+            else
+              acc
+            end
+          end)
 
         if length(missing_fields) == 0 do
           :ok
@@ -462,64 +576,65 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
 
   # Build field-specific guidance for missing fields
   defp build_field_guidance(missing_fields) do
-    field_guidance = Enum.map(missing_fields, fn field ->
-      case field do
-        "socialMediaPost" ->
-          """
-          **socialMediaPost (REQUIRED):** Each clip MUST include a "socialMediaPost" field with:
-          - An engaging caption (15-30 words)
-          - 2-4 relevant hashtags (e.g., #trading, #crypto, #memes)
-          - 2-3 appropriate emojis
-          - Example: "🚀 Just made the most insane market call of my life! Could this be the next 100x? 📈 #trading #crypto #investing #memes"
-          """
+    field_guidance =
+      Enum.map(missing_fields, fn field ->
+        case field do
+          "socialMediaPost" ->
+            """
+            **socialMediaPost (REQUIRED):** Each clip MUST include a "socialMediaPost" field with:
+            - An engaging caption (15-30 words)
+            - 2-4 relevant hashtags (e.g., #trading, #crypto, #memes)
+            - 2-3 appropriate emojis
+            - Example: "🚀 Just made the most insane market call of my life! Could this be the next 100x? 📈 #trading #crypto #investing #memes"
+            """
 
-        "reason" ->
-          """
-          **reason (REQUIRED):** Each clip MUST include a "reason" field explaining:
-          - Why this clip could go viral
-          - What makes it engaging or noteworthy
-          - The key emotional hook or moment
-          - Example: "Perfect timing on a controversial market prediction with high conviction"
-          """
+          "reason" ->
+            """
+            **reason (REQUIRED):** Each clip MUST include a "reason" field explaining:
+            - Why this clip could go viral
+            - What makes it engaging or noteworthy
+            - The key emotional hook or moment
+            - Example: "Perfect timing on a controversial market prediction with high conviction"
+            """
 
-        "virality_score" ->
-          """
-          **virality_score (REQUIRED):** Each clip MUST include a "virality_score" field:
-          - Number from 0-100
-          - Based on engagement potential
-          - Consider emotional impact, timing, content density
-          - Higher scores for more engaging content
-          """
+          "virality_score" ->
+            """
+            **virality_score (REQUIRED):** Each clip MUST include a "virality_score" field:
+            - Number from 0-100
+            - Based on engagement potential
+            - Consider emotional impact, timing, content density
+            - Higher scores for more engaging content
+            """
 
-        "combined_transcript" ->
-          """
-          **combined_transcript (REQUIRED):** Each clip MUST include a "combined_transcript" field:
-          - Full text of all segments concatenated
-          - Proper spacing between segments
-          - Exact transcript from the video
-          """
+          "combined_transcript" ->
+            """
+            **combined_transcript (REQUIRED):** Each clip MUST include a "combined_transcript" field:
+            - Full text of all segments concatenated
+            - Proper spacing between segments
+            - Exact transcript from the video
+            """
 
-        "total_duration" ->
-          """
-          **total_duration (REQUIRED):** Each clip MUST include a "total_duration" field:
-          - Number (decimal) in seconds
-          - Sum of all segment durations
-          - Calculate from segments array
-          """
+          "total_duration" ->
+            """
+            **total_duration (REQUIRED):** Each clip MUST include a "total_duration" field:
+            - Number (decimal) in seconds
+            - Sum of all segment durations
+            - Calculate from segments array
+            """
 
-        "filename" ->
-          """
-          **filename (REQUIRED):** Each clip MUST include a "filename" field:
-          - Descriptive filename (2-6 words)
-          - Lowercase letters, numbers, underscores only
-          - Must end with .mp4
-          - Example: "epic_market_prediction_100x.mp4"
-          """
+          "filename" ->
+            """
+            **filename (REQUIRED):** Each clip MUST include a "filename" field:
+            - Descriptive filename (2-6 words)
+            - Lowercase letters, numbers, underscores only
+            - Must end with .mp4
+            - Example: "epic_market_prediction_100x.mp4"
+            """
 
-        _ ->
-          "**#{field} (REQUIRED):** Please ensure this field is included and properly formatted."
-      end
-    end)
+          _ ->
+            "**#{field} (REQUIRED):** Please ensure this field is included and properly formatted."
+        end
+      end)
 
     Enum.join(field_guidance, "\n\n")
   end
@@ -528,7 +643,13 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
   Generate clips using a specific model. Used by multimodal detection.
   Returns {:ok, ai_response, usage} or {:error, reason}.
   """
-  def generate_clips_with_model(transcript, system_prompt, user_prompt_input, model, project_id \\ nil) do
+  def generate_clips_with_model(
+        transcript,
+        system_prompt,
+        user_prompt_input,
+        model,
+        project_id \\ nil
+      ) do
     IO.puts("[OpenRouterAPI] Starting clip generation with model: #{model}")
 
     api_key = System.get_env("OPENROUTER_API_KEY")
@@ -536,7 +657,16 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
     if is_nil(api_key) do
       {:error, "OPENROUTER_API_KEY environment variable not set"}
     else
-      generate_clips_with_model_retry(transcript, system_prompt, user_prompt_input, model, api_key, 0, [], project_id)
+      generate_clips_with_model_retry(
+        transcript,
+        system_prompt,
+        user_prompt_input,
+        model,
+        api_key,
+        0,
+        [],
+        project_id
+      )
     end
   rescue
     reason ->
@@ -544,8 +674,18 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       {:error, "Exception: #{inspect(reason)}"}
   end
 
-  defp generate_clips_with_model_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt, missing_fields, project_id) do
-    max_attempts = 2  # Fewer retries for multimodal since we have multiple models
+  defp generate_clips_with_model_retry(
+         transcript,
+         system_prompt,
+         user_prompt_input,
+         model,
+         api_key,
+         attempt,
+         missing_fields,
+         project_id
+       ) do
+    # Fewer retries for multimodal since we have multiple models
+    max_attempts = 2
 
     IO.puts("[OpenRouterAPI] Model #{model} - Attempt #{attempt + 1}/#{max_attempts}")
 
@@ -555,7 +695,8 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
     payload = build_chat_payload(model, system_prompt, user_prompt, missing_fields)
 
     json_payload = Jason.encode!(payload)
-    options = [recv_timeout: 150_000, timeout: 150_000]  # 2.5 min timeout
+    # 2.5 min timeout
+    options = [recv_timeout: 150_000, timeout: 150_000]
 
     # Use chat completions endpoint for broader compatibility
     api_url = "https://openrouter.ai/api/v1/chat/completions"
@@ -574,7 +715,17 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
                   {:error, new_missing_fields} when attempt < max_attempts - 1 ->
                     IO.puts("[OpenRouterAPI] Model #{model} validation failed, retrying...")
                     :timer.sleep(1000)
-                    generate_clips_with_model_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, new_missing_fields, project_id)
+
+                    generate_clips_with_model_retry(
+                      transcript,
+                      system_prompt,
+                      user_prompt_input,
+                      model,
+                      api_key,
+                      attempt + 1,
+                      new_missing_fields,
+                      project_id
+                    )
 
                   {:error, new_missing_fields} ->
                     {:error, "Missing fields after retries: #{inspect(new_missing_fields)}"}
@@ -591,7 +742,17 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       {:ok, %HTTPoison.Response{status_code: status_code, body: body}} when status_code >= 500 ->
         if attempt < max_attempts - 1 do
           :timer.sleep(2000 * (attempt + 1))
-          generate_clips_with_model_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, missing_fields, project_id)
+
+          generate_clips_with_model_retry(
+            transcript,
+            system_prompt,
+            user_prompt_input,
+            model,
+            api_key,
+            attempt + 1,
+            missing_fields,
+            project_id
+          )
         else
           {:error, "Server error #{status_code}: #{String.slice(body, 0, 200)}"}
         end
@@ -602,7 +763,17 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       {:error, %HTTPoison.Error{reason: reason}} ->
         if attempt < max_attempts - 1 do
           :timer.sleep(2000 * (attempt + 1))
-          generate_clips_with_model_retry(transcript, system_prompt, user_prompt_input, model, api_key, attempt + 1, missing_fields, project_id)
+
+          generate_clips_with_model_retry(
+            transcript,
+            system_prompt,
+            user_prompt_input,
+            model,
+            api_key,
+            attempt + 1,
+            missing_fields,
+            project_id
+          )
         else
           {:error, "Network error: #{inspect(reason)}"}
         end
@@ -639,11 +810,13 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         }
       ],
       "max_tokens" => 4000,
-      "temperature" => 0.3  # Lower temperature for more consistent synthesis
+      # Lower temperature for more consistent synthesis
+      "temperature" => 0.3
     }
 
     json_payload = Jason.encode!(payload)
-    options = [recv_timeout: 180_000, timeout: 180_000]  # 3 min for decider
+    # 3 min for decider
+    options = [recv_timeout: 180_000, timeout: 180_000]
 
     api_url = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -710,6 +883,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
                   {:ok, clips_data} -> {:ok, clips_data}
                   {:error, _} -> {:error, "Invalid JSON in code block"}
                 end
+
               nil ->
                 # Try to find raw JSON object
                 case Regex.run(~r/\{[\s\S]*"clips"[\s\S]*\}/, content) do
@@ -718,6 +892,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
                       {:ok, clips_data} -> {:ok, clips_data}
                       {:error, _} -> {:error, "Could not parse JSON from response"}
                     end
+
                   nil ->
                     {:error, "No JSON found in response"}
                 end
@@ -735,5 +910,4 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         end
     end
   end
-
 end

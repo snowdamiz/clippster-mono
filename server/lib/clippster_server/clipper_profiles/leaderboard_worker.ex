@@ -69,7 +69,9 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
   end
 
   defp calculate_leaderboard(period_type, period_start, period_end) do
-    Logger.info("[LeaderboardWorker] Calculating #{period_type} leaderboard for #{period_start} to #{period_end}")
+    Logger.info(
+      "[LeaderboardWorker] Calculating #{period_type} leaderboard for #{period_start} to #{period_end}"
+    )
 
     # Get all public clipper profiles
     profiles = ClipperProfiles.list_all_public_profiles()
@@ -102,18 +104,23 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
       })
     end)
 
-    Logger.info("[LeaderboardWorker] Created #{length(scored_profiles)} leaderboard entries for #{period_type}")
+    Logger.info(
+      "[LeaderboardWorker] Created #{length(scored_profiles)} leaderboard entries for #{period_type}"
+    )
   end
 
   defp calculate_period_stats(profile, period_start, period_end) do
     # Get clips delivered in period
-    clips_delivered = ClipperProfiles.count_clips_in_period(profile.user_id, period_start, period_end)
+    clips_delivered =
+      ClipperProfiles.count_clips_in_period(profile.user_id, period_start, period_end)
 
     # Get campaigns active in period
-    campaigns_active = ClipperProfiles.count_campaigns_in_period(profile.user_id, period_start, period_end)
+    campaigns_active =
+      ClipperProfiles.count_campaigns_in_period(profile.user_id, period_start, period_end)
 
     # Get endorsements received in period
-    endorsements_received = ClipperProfiles.count_endorsements_in_period(profile.id, period_start, period_end)
+    endorsements_received =
+      ClipperProfiles.count_endorsements_in_period(profile.id, period_start, period_end)
 
     # Get total views from campaign submissions in period
     total_views = ClipperProfiles.count_views_in_period(profile.user_id, period_start, period_end)

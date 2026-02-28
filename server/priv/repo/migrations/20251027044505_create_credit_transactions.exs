@@ -4,13 +4,16 @@ defmodule ClippsterServer.Repo.Migrations.CreateCreditTransactions do
   def change do
     create table(:credit_transactions) do
       add :user_id, references(:users, on_delete: :restrict), null: false
-      add :pack_type, :string, null: false # 'starter', 'creator', 'pro', 'studio'
+      # 'starter', 'creator', 'pro', 'studio'
+      add :pack_type, :string, null: false
       add :hours_purchased, :decimal, precision: 10, scale: 2, null: false
       add :amount_usd, :decimal, precision: 10, scale: 2, null: false
       add :amount_sol, :decimal, precision: 18, scale: 9, null: false
       add :sol_usd_rate, :decimal, precision: 10, scale: 2, null: false
-      add :tx_signature, :string, null: false # Solana transaction signature (88 chars)
-      add :status, :string, null: false # 'pending', 'confirmed', 'failed'
+      # Solana transaction signature (88 chars)
+      add :tx_signature, :string, null: false
+      # 'pending', 'confirmed', 'failed'
+      add :status, :string, null: false
 
       timestamps(type: :utc_datetime)
     end

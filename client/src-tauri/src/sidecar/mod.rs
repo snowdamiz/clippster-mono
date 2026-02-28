@@ -27,12 +27,10 @@ fn get_target_triple() -> &'static str {
 
 /// Resolve the bundled node binary path using Tauri's sidecar naming convention.
 fn resolve_node_binary() -> Result<String, String> {
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
 
-    let exe_dir = exe_path
-        .parent()
-        .ok_or("Failed to get parent directory")?;
+    let exe_dir = exe_path.parent().ok_or("Failed to get parent directory")?;
 
     let target_triple = get_target_triple();
 
@@ -56,7 +54,10 @@ fn resolve_node_binary() -> Result<String, String> {
 
     let bare_path = exe_dir.join(&bare_name);
     if bare_path.exists() {
-        println!("[RemotionSidecar] Found node at (bundle): {}", bare_path.display());
+        println!(
+            "[RemotionSidecar] Found node at (bundle): {}",
+            bare_path.display()
+        );
         return Ok(bare_path.to_string_lossy().to_string());
     }
 
@@ -77,7 +78,10 @@ fn resolve_node_binary() -> Result<String, String> {
     #[cfg(not(target_os = "windows"))]
     let fallback = "node".to_string();
 
-    println!("[RemotionSidecar] node not found in bundle, falling back to PATH: {}", fallback);
+    println!(
+        "[RemotionSidecar] node not found in bundle, falling back to PATH: {}",
+        fallback
+    );
     Ok(fallback)
 }
 
@@ -134,16 +138,21 @@ impl RemotionSidecar {
     pub fn spawn(app: &AppHandle) -> Result<Self, String> {
         // In development, use the bundle.js from the sidecars directory
         // In production, this would be bundled with the app
-        
+
         // Development path: resolve from executable location
         // Exe is at: client/src-tauri/target/debug/clippster.exe
         // Bundle is at: client/src-tauri/sidecars/remotion-renderer/dist/bundle.js
         let dev_bundle_path = std::env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(|p| p.to_path_buf())) // target/debug/
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))     // target/
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))     // src-tauri/
-            .map(|p| p.join("sidecars").join("remotion-renderer").join("dist").join("bundle.js"))
+            .and_then(|p| p.parent().map(|p| p.to_path_buf())) // target/
+            .and_then(|p| p.parent().map(|p| p.to_path_buf())) // src-tauri/
+            .map(|p| {
+                p.join("sidecars")
+                    .join("remotion-renderer")
+                    .join("dist")
+                    .join("bundle.js")
+            })
             .ok_or("Failed to construct dev bundle path")?;
 
         let bundle_path = if dev_bundle_path.exists() {
@@ -154,7 +163,11 @@ impl RemotionSidecar {
                 .path()
                 .resource_dir()
                 .map_err(|e| format!("Failed to get resource dir: {}", e))?;
-            resource_path.join("sidecars").join("remotion-renderer").join("dist").join("bundle.js")
+            resource_path
+                .join("sidecars")
+                .join("remotion-renderer")
+                .join("dist")
+                .join("bundle.js")
         };
 
         if !bundle_path.exists() {
@@ -165,8 +178,8 @@ impl RemotionSidecar {
         }
 
         // Resolve the bundled node binary (same pattern as kick.rs/twitch.rs)
-        let node_path = resolve_node_binary()
-            .map_err(|e| format!("Failed to resolve node binary: {}", e))?;
+        let node_path =
+            resolve_node_binary().map_err(|e| format!("Failed to resolve node binary: {}", e))?;
 
         // Run with bundled Node.js
         let mut process = Command::new(&node_path)
@@ -177,15 +190,9 @@ impl RemotionSidecar {
             .spawn()
             .map_err(|e| format!("Failed to spawn sidecar (node={}): {}", node_path, e))?;
 
-        let stdin = process
-            .stdin
-            .take()
-            .ok_or("Failed to get stdin")?;
+        let stdin = process.stdin.take().ok_or("Failed to get stdin")?;
 
-        let stdout = process
-            .stdout
-            .take()
-            .ok_or("Failed to get stdout")?;
+        let stdout = process.stdout.take().ok_or("Failed to get stdout")?;
 
         let stdin = Arc::new(Mutex::new(stdin));
 
@@ -221,8 +228,7 @@ impl RemotionSidecar {
             .lock()
             .map_err(|e| format!("Failed to lock stdin: {}", e))?;
 
-        writeln!(stdin, "{}", json)
-            .map_err(|e| format!("Failed to write to stdin: {}", e))?;
+        writeln!(stdin, "{}", json).map_err(|e| format!("Failed to write to stdin: {}", e))?;
 
         stdin
             .flush()

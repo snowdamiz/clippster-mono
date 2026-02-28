@@ -17,7 +17,15 @@ defmodule ClippsterServer.Support.BugReport do
   @doc false
   def changeset(bug_report, attrs) do
     bug_report
-    |> cast(attrs, [:title, :description, :severity, :expected_behavior, :actual_behavior, :user_wallet_address, :status])
+    |> cast(attrs, [
+      :title,
+      :description,
+      :severity,
+      :expected_behavior,
+      :actual_behavior,
+      :user_wallet_address,
+      :status
+    ])
     |> validate_required([:title, :description, :user_wallet_address])
     |> validate_inclusion(:severity, ["low", "medium", "high", "critical"])
     |> validate_inclusion(:status, ["open", "in_progress", "resolved", "closed"])

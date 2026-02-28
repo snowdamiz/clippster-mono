@@ -11,7 +11,7 @@ defmodule ClippsterServerWeb.TwitchController do
 
   defp do_get_channel_with_retry(conn, channel_name, retries_left) when retries_left > 0 do
     url = "https://gql.twitch.tv/gql"
-    
+
     # GraphQL query to get user and stream info
     query = %{
       query: """
@@ -45,11 +45,11 @@ defmodule ClippsterServerWeb.TwitchController do
       {:ok, %Req.Response{status: 200, body: body}} ->
         # Extract user data from GraphQL response
         user = get_in(body, ["data", "user"])
-        
+
         if user do
           stream = user["stream"]
           is_live = stream != nil
-          
+
           response = %{
             isLive: is_live,
             channelId: user["id"],
@@ -61,7 +61,7 @@ defmodule ClippsterServerWeb.TwitchController do
             gameName: get_in(stream || %{}, ["game", "name"]),
             startedAt: stream && stream["createdAt"]
           }
-          
+
           json(conn, response)
         else
           # User not found
@@ -73,24 +73,33 @@ defmodule ClippsterServerWeb.TwitchController do
         end
 
       {:ok, %Req.Response{status: status, body: _body}} when status >= 500 and retries_left > 1 ->
-        Logger.warning("Twitch GQL returned #{status} for channel #{channel_name}, retrying... (#{retries_left - 1} retries left)")
+        Logger.warning(
+          "Twitch GQL returned #{status} for channel #{channel_name}, retrying... (#{retries_left - 1} retries left)"
+        )
+
         Process.sleep(500 * (4 - retries_left))
         do_get_channel_with_retry(conn, channel_name, retries_left - 1)
 
       {:ok, %Req.Response{status: status, body: body}} ->
-        Logger.error("Twitch GQL returned #{status} for channel #{channel_name}. Body: #{inspect(body)}")
-        
+        Logger.error(
+          "Twitch GQL returned #{status} for channel #{channel_name}. Body: #{inspect(body)}"
+        )
+
         conn
         |> put_status(:bad_gateway)
         |> json(%{isLive: false, error: "Twitch API returned #{status}"})
 
       {:error, exception} when retries_left > 1 ->
-        Logger.warning("Twitch GQL request failed for #{channel_name}, retrying... (#{retries_left - 1} retries left): #{inspect(exception)}")
+        Logger.warning(
+          "Twitch GQL request failed for #{channel_name}, retrying... (#{retries_left - 1} retries left): #{inspect(exception)}"
+        )
+
         Process.sleep(500 * (4 - retries_left))
         do_get_channel_with_retry(conn, channel_name, retries_left - 1)
 
       {:error, exception} ->
         Logger.error("Twitch GQL request failed after retries: #{inspect(exception)}")
+
         conn
         |> put_status(:internal_server_error)
         |> json(%{isLive: false, error: "Twitch API request failed"})
@@ -99,6 +108,7 @@ defmodule ClippsterServerWeb.TwitchController do
 
   defp do_get_channel_with_retry(conn, channel_name, 0) do
     Logger.error("Twitch GQL exhausted all retries for channel #{channel_name}")
+
     conn
     |> put_status(:internal_server_error)
     |> json(%{isLive: false, error: "Twitch API request failed after retries"})

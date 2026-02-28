@@ -18,10 +18,11 @@ defmodule ClippsterServer.Affiliates.Affiliate do
     field :solana_usdc_address, :string
     field :paypal_email, :string
     field :notes, :string
-    
+
     # Discount settings
     field :discount_enabled, :boolean, default: false
-    field :discount_type, :string # "one_time", "recurring", "tiered"
+    # "one_time", "recurring", "tiered"
+    field :discount_type, :string
     field :first_month_discount_pct, :decimal
     field :recurring_discount_pct, :decimal
 
@@ -54,9 +55,18 @@ defmodule ClippsterServer.Affiliates.Affiliate do
     ])
     |> validate_required([:user_id, :referral_code])
     |> validate_inclusion(:status, @statuses)
-    |> validate_number(:signup_commission_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
-    |> validate_number(:recurring_commission_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
-    |> validate_number(:credit_pack_commission_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
+    |> validate_number(:signup_commission_pct,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
+    |> validate_number(:recurring_commission_pct,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
+    |> validate_number(:credit_pack_commission_pct,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
     |> validate_payout_method()
     |> normalize_referral_code()
     |> unique_constraint(:user_id)
@@ -87,11 +97,26 @@ defmodule ClippsterServer.Affiliates.Affiliate do
       :recurring_discount_pct
     ])
     |> validate_inclusion(:status, @statuses)
-    |> validate_number(:signup_commission_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
-    |> validate_number(:recurring_commission_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
-    |> validate_number(:credit_pack_commission_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
-    |> validate_number(:first_month_discount_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
-    |> validate_number(:recurring_discount_pct, greater_than_or_equal_to: 0, less_than_or_equal_to: 100)
+    |> validate_number(:signup_commission_pct,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
+    |> validate_number(:recurring_commission_pct,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
+    |> validate_number(:credit_pack_commission_pct,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
+    |> validate_number(:first_month_discount_pct,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
+    |> validate_number(:recurring_discount_pct,
+      greater_than_or_equal_to: 0,
+      less_than_or_equal_to: 100
+    )
     |> validate_discount_type()
     |> validate_payout_method()
     |> maybe_normalize_referral_code()

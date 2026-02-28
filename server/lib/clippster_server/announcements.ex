@@ -79,6 +79,7 @@ defmodule ClippsterServer.Announcements do
         if !was_active && updated.is_active do
           broadcast_new_announcement(updated)
         end
+
         {:ok, updated}
 
       error ->

@@ -8,9 +8,9 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
+use crate::storage;
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
-use crate::storage;
 
 #[derive(Debug, Deserialize)]
 struct RecorderEvent {
@@ -110,12 +110,15 @@ fn emit_hls_recorder_log(
     message: impl Into<String>,
     level: &str,
 ) {
-    let _ = app.emit("recorder-log", HlsRecorderLogPayload {
-        streamer_id: streamer_id.to_string(),
-        mint_id: mint_id.to_string(),
-        message: message.into(),
-        level: level.to_string(),
-    });
+    let _ = app.emit(
+        "recorder-log",
+        HlsRecorderLogPayload {
+            streamer_id: streamer_id.to_string(),
+            mint_id: mint_id.to_string(),
+            message: message.into(),
+            level: level.to_string(),
+        },
+    );
 }
 
 fn emit_hls_recorder_exit(
@@ -125,36 +128,44 @@ fn emit_hls_recorder_exit(
     mint_id: &str,
     code: Option<i32>,
 ) {
-    let _ = app.emit("recorder-exit", HlsRecorderExitPayload {
-        streamer_id: streamer_id.to_string(),
-        session_id: session_id.to_string(),
-        mint_id: mint_id.to_string(),
-        code,
-    });
+    let _ = app.emit(
+        "recorder-exit",
+        HlsRecorderExitPayload {
+            streamer_id: streamer_id.to_string(),
+            session_id: session_id.to_string(),
+            mint_id: mint_id.to_string(),
+            code,
+        },
+    );
 }
 
 fn resolve_service_script(app: &tauri::AppHandle, script_name: &str) -> Result<String, String> {
     use tauri::path::BaseDirectory;
-    
+
     // Try resolving via Tauri resource API first (Production & Correct Dev)
-    if let Ok(path) = app.path().resolve(format!("pumpfun-service/{}", script_name), BaseDirectory::Resource) {
+    if let Ok(path) = app.path().resolve(
+        format!("pumpfun-service/{}", script_name),
+        BaseDirectory::Resource,
+    ) {
         if path.exists() {
             return Ok(path.to_string_lossy().to_string());
         }
     }
 
     // Fallback: Try locating relative to executable (Old Dev Logic)
-    let exe_path = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?;
-    
-    let exe_dir = exe_path
-        .parent()
-        .ok_or("Failed to get parent directory")?;
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
+
+    let exe_dir = exe_path.parent().ok_or("Failed to get parent directory")?;
 
     // Try various dev paths
     let candidate_paths = vec![
         exe_dir.join("pumpfun-service").join(script_name),
-        exe_dir.parent().and_then(|p| p.parent()).map(|p| p.join("pumpfun-service").join(script_name)).unwrap_or(PathBuf::from("")),
+        exe_dir
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("pumpfun-service").join(script_name))
+            .unwrap_or(PathBuf::from("")),
         PathBuf::from("pumpfun-service").join(script_name),
     ];
 
@@ -192,18 +203,26 @@ pub async fn start_hls_recording(
         }
     }
 
-    let storage_paths = storage::init_storage_dirs()
-        .map_err(|e| format!("Failed to initialize storage: {}", e))?;
+    let storage_paths =
+        storage::init_storage_dirs().map_err(|e| format!("Failed to initialize storage: {}", e))?;
 
     // Use resume_dir if provided, otherwise create a new unique session
     let (session_id, output_dir) = if let Some(ref resume_path) = resume_dir {
         // Extract session_id from the resume path (last component)
         let path = std::path::Path::new(resume_path);
-        let session = path.file_name()
+        let session = path
+            .file_name()
             .and_then(|n| n.to_str())
-            .unwrap_or(&format!("hls_{}_{}", mint_id, chrono::Utc::now().timestamp()))
+            .unwrap_or(&format!(
+                "hls_{}_{}",
+                mint_id,
+                chrono::Utc::now().timestamp()
+            ))
             .to_string();
-        println!("[HLS] Resuming recording in existing directory: {}", resume_path);
+        println!(
+            "[HLS] Resuming recording in existing directory: {}",
+            resume_path
+        );
         (session, std::path::PathBuf::from(resume_path))
     } else {
         // Create unique session ID and new directory
@@ -215,7 +234,7 @@ pub async fn start_hls_recording(
             .join(&session);
         (session, dir)
     };
-    
+
     std::fs::create_dir_all(&output_dir)
         .map_err(|e| format!("Failed to create output directory: {}", e))?;
 
@@ -321,16 +340,16 @@ pub async fn cleanup_hls_recordings(mint_id: String) -> Result<(), String> {
     }
 
     // Delete all HLS files for this mint
-    let storage_paths = storage::init_storage_dirs()
-        .map_err(|e| format!("Failed to initialize storage: {}", e))?;
-    
+    let storage_paths =
+        storage::init_storage_dirs().map_err(|e| format!("Failed to initialize storage: {}", e))?;
+
     let hls_dir = storage_paths.videos.join("hls_live").join(&mint_id);
-    
+
     if hls_dir.exists() {
         tokio::fs::remove_dir_all(&hls_dir)
             .await
             .map_err(|e| format!("Failed to delete HLS recordings: {}", e))?;
-        
+
         println!("[HLS] Cleaned up recordings for mint: {}", mint_id);
     }
 
@@ -342,13 +361,13 @@ pub async fn cleanup_hls_recordings(mint_id: String) -> Result<(), String> {
 pub fn get_recording_output_dir(session_id: String) -> Result<String, String> {
     // Look through active recordings to find matching session
     let recordings = HLS_RECORDINGS.lock().unwrap();
-    
+
     for (_, entry) in recordings.iter() {
         if entry.output_dir.to_string_lossy().contains(&session_id) {
             return Ok(entry.output_dir.to_string_lossy().to_string());
         }
     }
-    
+
     Err(format!("No recording found for session: {}", session_id))
 }
 
@@ -356,19 +375,19 @@ pub fn get_recording_output_dir(session_id: String) -> Result<String, String> {
 #[tauri::command]
 pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>, String> {
     let output_path = PathBuf::from(&output_dir);
-    
+
     // Check if output directory exists
     if !output_path.exists() {
         return Ok(Vec::new());
     }
-    
+
     // Try multiple playlist locations in order of preference:
     // 1. playlist.m3u8 (finalized)
     // 2. playlist.m3u8.tmp (being written by FFmpeg with +temp_file flag)
     // 3. Direct segment scanning if no playlist exists yet
     let playlist_path = output_path.join("playlist.m3u8");
     let playlist_tmp_path = output_path.join("playlist.m3u8.tmp");
-    
+
     let playlist_to_use = if playlist_path.exists() {
         Some(playlist_path)
     } else if playlist_tmp_path.exists() {
@@ -377,21 +396,19 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
         // No playlist file found yet - this is normal during initial FFmpeg startup
         // Check if any segments exist to determine if recording has started
         if let Ok(entries) = std::fs::read_dir(&output_path) {
-            let has_segments = entries
-                .filter_map(|e| e.ok())
-                .any(|e| {
-                    if let Ok(name) = e.file_name().into_string() {
-                        if !(name.starts_with("segment_") && name.ends_with(".ts")) {
-                            return false;
-                        }
-                        e.metadata()
-                            .map(|m| m.len() >= MIN_VALID_SEGMENT_BYTES)
-                            .unwrap_or(false)
-                    } else {
-                        false
+            let has_segments = entries.filter_map(|e| e.ok()).any(|e| {
+                if let Ok(name) = e.file_name().into_string() {
+                    if !(name.starts_with("segment_") && name.ends_with(".ts")) {
+                        return false;
                     }
-                });
-            
+                    e.metadata()
+                        .map(|m| m.len() >= MIN_VALID_SEGMENT_BYTES)
+                        .unwrap_or(false)
+                } else {
+                    false
+                }
+            });
+
             if has_segments {
                 // Segments exist but no playlist - fall through to direct scanning
                 None
@@ -418,75 +435,75 @@ pub async fn get_hls_segments(output_dir: String) -> Result<Vec<HlsSegmentInfo>,
             .map_err(|e| format!("Failed to read playlist: {}", e))?;
 
         for line in content.lines() {
-        let line = line.trim();
-        
-        // Handle sliding window playlists by tracking media sequence
-        if line.starts_with("#EXT-X-MEDIA-SEQUENCE:") {
-            if let Some(seq_str) = line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:") {
-                media_sequence = seq_str.parse().unwrap_or(0);
-            }
-            continue;
-        }
+            let line = line.trim();
 
-        // Parse duration from EXTINF tag
-        if line.starts_with("#EXTINF:") {
-            if let Some(duration_str) = line.strip_prefix("#EXTINF:") {
-                // Remove trailing comma and any title
-                let duration_str = duration_str.split(',').next().unwrap_or("0");
-                let parsed_duration = duration_str.parse().unwrap_or(0.0);
-                // Ignore zero/negative durations from partially-written playlists.
-                if parsed_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
-                    current_duration = parsed_duration;
-                    if first_duration == 0.0 {
-                        first_duration = parsed_duration;
-                    }
+            // Handle sliding window playlists by tracking media sequence
+            if line.starts_with("#EXT-X-MEDIA-SEQUENCE:") {
+                if let Some(seq_str) = line.strip_prefix("#EXT-X-MEDIA-SEQUENCE:") {
+                    media_sequence = seq_str.parse().unwrap_or(0);
                 }
-            }
-            continue;
-        }
-        
-        // Skip other tags
-        if line.starts_with('#') || line.is_empty() {
-            continue;
-        }
-        
-        // This is a segment filename
-        if line.ends_with(".ts") {
-            let segment_path = PathBuf::from(&output_dir).join(line);
-            // Ignore empty or tiny TS files while FFmpeg is still writing startup artifacts.
-            let segment_size = match std::fs::metadata(&segment_path) {
-                Ok(meta) => meta.len(),
-                Err(_) => continue,
-            };
-            if segment_size < MIN_VALID_SEGMENT_BYTES {
                 continue;
             }
 
-            let duration = if current_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
-                current_duration
-            } else if first_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
-                first_duration
-            } else {
-                DEFAULT_SEGMENT_DURATION_SECS
-            };
-            
-            // Seed cumulative_time using media_sequence for sliding playlists
-            if segment_number == 0 && media_sequence > 0 && cumulative_time == 0.0 {
-                let dur = duration.max(0.001);
-                cumulative_time = dur * media_sequence as f64;
+            // Parse duration from EXTINF tag
+            if line.starts_with("#EXTINF:") {
+                if let Some(duration_str) = line.strip_prefix("#EXTINF:") {
+                    // Remove trailing comma and any title
+                    let duration_str = duration_str.split(',').next().unwrap_or("0");
+                    let parsed_duration = duration_str.parse().unwrap_or(0.0);
+                    // Ignore zero/negative durations from partially-written playlists.
+                    if parsed_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
+                        current_duration = parsed_duration;
+                        if first_duration == 0.0 {
+                            first_duration = parsed_duration;
+                        }
+                    }
+                }
+                continue;
             }
 
-            segments.push(HlsSegmentInfo {
-                segment_number: media_sequence + segment_number,
-                file_path: segment_path.to_string_lossy().to_string(),
-                start_time: cumulative_time,
-                duration,
-                end_time: cumulative_time + duration,
-            });
-            
-            cumulative_time += duration;
-            segment_number += 1;
-        }
+            // Skip other tags
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+
+            // This is a segment filename
+            if line.ends_with(".ts") {
+                let segment_path = PathBuf::from(&output_dir).join(line);
+                // Ignore empty or tiny TS files while FFmpeg is still writing startup artifacts.
+                let segment_size = match std::fs::metadata(&segment_path) {
+                    Ok(meta) => meta.len(),
+                    Err(_) => continue,
+                };
+                if segment_size < MIN_VALID_SEGMENT_BYTES {
+                    continue;
+                }
+
+                let duration = if current_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
+                    current_duration
+                } else if first_duration >= MIN_VALID_SEGMENT_DURATION_SECS {
+                    first_duration
+                } else {
+                    DEFAULT_SEGMENT_DURATION_SECS
+                };
+
+                // Seed cumulative_time using media_sequence for sliding playlists
+                if segment_number == 0 && media_sequence > 0 && cumulative_time == 0.0 {
+                    let dur = duration.max(0.001);
+                    cumulative_time = dur * media_sequence as f64;
+                }
+
+                segments.push(HlsSegmentInfo {
+                    segment_number: media_sequence + segment_number,
+                    file_path: segment_path.to_string_lossy().to_string(),
+                    start_time: cumulative_time,
+                    duration,
+                    end_time: cumulative_time + duration,
+                });
+
+                cumulative_time += duration;
+                segment_number += 1;
+            }
         }
     }
 
@@ -579,23 +596,23 @@ async fn run_hls_recorder(
         "0", // Special value: 0 means HLS mode with short segments (4 seconds)
     ];
     println!("[HLS Recorder] Spawning with args: {:?}", args);
-    
-    let mut sidecar = app
-        .shell()
-        .sidecar("node")
-        .map_err(|e| {
-            let msg = format!("Failed to create node sidecar: {}", e);
-            emit_hls_recorder_log(&app, &streamer_id, &mint_id, msg.clone(), "error");
-            msg
-        })?;
+
+    let mut sidecar = app.shell().sidecar("node").map_err(|e| {
+        let msg = format!("Failed to create node sidecar: {}", e);
+        emit_hls_recorder_log(&app, &streamer_id, &mint_id, msg.clone(), "error");
+        msg
+    })?;
     sidecar = sidecar.args(args);
     let (mut rx, mut child) = sidecar.spawn().map_err(|e| {
         let msg = format!("Failed to spawn recorder: {}", e);
         emit_hls_recorder_log(&app, &streamer_id, &mint_id, msg.clone(), "error");
         msg
     })?;
-    
-    println!("[HLS Recorder] Process spawned successfully, PID: {:?}", child.pid());
+
+    println!(
+        "[HLS Recorder] Process spawned successfully, PID: {:?}",
+        child.pid()
+    );
     emit_hls_recorder_log(
         &app,
         &streamer_id,
@@ -606,7 +623,9 @@ async fn run_hls_recorder(
 
     let mint_for_cleanup = mint_id.clone();
     let mut stopping = false;
-    let mut kill_timer = Box::pin(tokio::time::sleep(tokio::time::Duration::from_secs(3600 * 24)));
+    let mut kill_timer = Box::pin(tokio::time::sleep(tokio::time::Duration::from_secs(
+        3600 * 24,
+    )));
 
     loop {
         tokio::select! {
@@ -614,10 +633,10 @@ async fn run_hls_recorder(
                 match event {
                     Some(CommandEvent::Stdout(line)) => {
                         let line_str = String::from_utf8_lossy(&line);
-                        
+
                         // Log ALL stdout for debugging
                         println!("[HLS Recorder stdout] {}", line_str.trim());
-                        
+
                         // Try to parse as JSON event
                         for chunk in line_str.split('\n') {
                             if chunk.trim().is_empty() {
@@ -627,8 +646,8 @@ async fn run_hls_recorder(
                                 match recorder_event.event_type.as_str() {
                                     "segment_complete" => {
                                         println!("[HLS Recorder] Segment complete: {:?}", recorder_event.segment);
-                                        if let (Some(segment), Some(path), Some(duration)) = 
-                                            (recorder_event.segment, recorder_event.path, recorder_event.duration) 
+                                        if let (Some(segment), Some(path), Some(duration)) =
+                                            (recorder_event.segment, recorder_event.path, recorder_event.duration)
                                         {
                                             let payload = SegmentReadyPayload {
                                                 streamer_id: streamer_id.clone(),
@@ -638,7 +657,7 @@ async fn run_hls_recorder(
                                                 path: path.clone(),
                                                 duration,
                                             };
-                                            
+
                                             match app.emit("hls-segment-ready", payload) {
                                                 Ok(_) => println!("[HLS Recorder] Emitted hls-segment-ready event for segment {}", segment),
                                                 Err(e) => eprintln!("[HLS Recorder] Failed to emit hls-segment-ready: {:?}", e),
@@ -765,7 +784,7 @@ async fn run_hls_recorder(
             // Handle stop signal
             _ = &mut stop_rx, if !stopping => {
                 println!("[HLS Recorder] Stop signal received, sending graceful STOP command...");
-                
+
                 // Try to write to stdin for graceful shutdown
                 if let Err(e) = child.write(b"STOP\n") {
                     eprintln!("[HLS Recorder] Failed to write to stdin: {}, falling back to kill", e);
@@ -781,7 +800,7 @@ async fn run_hls_recorder(
                     }
                     break;
                 }
-                
+
                 stopping = true;
                 // Set kill timer to 15 seconds for graceful shutdown
                 kill_timer = Box::pin(tokio::time::sleep(tokio::time::Duration::from_secs(15)));

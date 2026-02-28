@@ -6,7 +6,13 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
   import Ecto.Changeset
 
   alias ClippsterServer.Accounts.User
-  alias ClippsterServer.Campaigns.{Campaign, CampaignParticipant, CampaignPayment, ClipperSocialAccount}
+
+  alias ClippsterServer.Campaigns.{
+    Campaign,
+    CampaignParticipant,
+    CampaignPayment,
+    ClipperSocialAccount
+  }
 
   @statuses ~w(pending verified rejected paid)
   @platforms ~w(tiktok instagram x youtube)
@@ -117,6 +123,7 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
       case URI.parse(value) do
         %URI{scheme: scheme, host: host} when scheme in ["http", "https"] and not is_nil(host) ->
           []
+
         _ ->
           [{field, "must be a valid URL"}]
       end
@@ -125,19 +132,23 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
 
   defp detect_platform_from_url(changeset) do
     case get_change(changeset, :clip_url) do
-      nil -> changeset
+      nil ->
+        changeset
+
       url ->
         detected = detect_platform(url)
         current_platform = get_change(changeset, :platform)
 
-        changeset = if is_nil(current_platform) and detected do
-          put_change(changeset, :platform, detected)
-        else
-          changeset
-        end
+        changeset =
+          if is_nil(current_platform) and detected do
+            put_change(changeset, :platform, detected)
+          else
+            changeset
+          end
 
         # Extract post ID if we have a platform
         platform = get_field(changeset, :platform) || detected
+
         if platform && is_nil(get_change(changeset, :platform_post_id)) do
           case extract_post_id(url, platform) do
             {:ok, post_id} -> put_change(changeset, :platform_post_id, post_id)
@@ -156,11 +167,20 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
     url_lower = String.downcase(url)
 
     cond do
-      String.contains?(url_lower, "tiktok.com") -> "tiktok"
-      String.contains?(url_lower, "instagram.com") -> "instagram"
-      String.contains?(url_lower, "x.com") or String.contains?(url_lower, "twitter.com") -> "x"
-      String.contains?(url_lower, "youtube.com") or String.contains?(url_lower, "youtu.be") -> "youtube"
-      true -> nil
+      String.contains?(url_lower, "tiktok.com") ->
+        "tiktok"
+
+      String.contains?(url_lower, "instagram.com") ->
+        "instagram"
+
+      String.contains?(url_lower, "x.com") or String.contains?(url_lower, "twitter.com") ->
+        "x"
+
+      String.contains?(url_lower, "youtube.com") or String.contains?(url_lower, "youtu.be") ->
+        "youtube"
+
+      true ->
+        nil
     end
   end
 
@@ -200,7 +220,9 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
           [_, _, post_id] -> {:ok, post_id}
           _ -> {:error, :parse_failed}
         end
-      true -> {:error, :invalid_url}
+
+      true ->
+        {:error, :invalid_url}
     end
   end
 
@@ -220,12 +242,15 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
           [_, post_id] -> {:ok, post_id}
           _ -> {:error, :parse_failed}
         end
+
       Regex.match?(~r/youtu\.be\/([A-Za-z0-9_-]+)/, url) ->
         case Regex.run(~r/youtu\.be\/([A-Za-z0-9_-]+)/, url) do
           [_, post_id] -> {:ok, post_id}
           _ -> {:error, :parse_failed}
         end
-      true -> {:error, :invalid_url}
+
+      true ->
+        {:error, :invalid_url}
     end
   end
 

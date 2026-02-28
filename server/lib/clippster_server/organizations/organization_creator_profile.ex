@@ -102,4 +102,3 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
     |> foreign_key_constraint(:watermark_id)
   end
 end
-

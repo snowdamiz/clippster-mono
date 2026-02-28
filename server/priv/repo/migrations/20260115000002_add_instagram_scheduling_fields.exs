@@ -11,20 +11,20 @@ defmodule ClippsterServer.Repo.Migrations.AddInstagramSchedulingFields do
       add :started_at, :utc_datetime
       add :completed_at, :utc_datetime
       add :locked_at, :utc_datetime
-      
+
       # Retry tracking
       add :attempts, :integer, default: 0, null: false
       add :max_attempts, :integer, default: 3, null: false
-      
+
       # Link to source clip
       add :clip_id, :string
-      
+
       # Campaign context
       add :campaign_id, references(:clipping_campaigns, on_delete: :nilify_all)
-      
+
       # User social account for personal posts (nullable - org posts use organization_social_account_id)
       add :user_social_account_id, references(:clipper_social_accounts, on_delete: :nilify_all)
-      
+
       # Owner type to distinguish org vs personal posts
       add :owner_type, :string, default: "org", null: false
     end
@@ -54,7 +54,10 @@ defmodule ClippsterServer.Repo.Migrations.AddInstagramSchedulingFields do
     create table(:external_post_submissions) do
       add :organization_id, references(:organizations, on_delete: :delete_all), null: false
       add :campaign_id, references(:clipping_campaigns, on_delete: :nilify_all)
-      add :organization_creator_profile_id, references(:organization_creator_profiles, on_delete: :nilify_all)
+
+      add :organization_creator_profile_id,
+          references(:organization_creator_profiles, on_delete: :nilify_all)
+
       add :submitted_by_user_id, references(:users, on_delete: :nilify_all), null: false
       add :clip_id, :string
 
@@ -92,7 +95,9 @@ defmodule ClippsterServer.Repo.Migrations.AddInstagramSchedulingFields do
     create index(:external_post_submissions, [:submitted_by_user_id])
     create index(:external_post_submissions, [:status])
     create index(:external_post_submissions, [:platform])
+
     create unique_index(:external_post_submissions, [:platform, :post_url],
-      name: :external_post_submissions_platform_url_unique)
+             name: :external_post_submissions_platform_url_unique
+           )
   end
 end

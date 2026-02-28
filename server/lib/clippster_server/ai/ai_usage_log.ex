@@ -37,4 +37,3 @@ defmodule ClippsterServer.AI.AiUsageLog do
     |> foreign_key_constraint(:user_id)
   end
 end
-

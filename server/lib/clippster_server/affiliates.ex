@@ -50,7 +50,9 @@ defmodule ClippsterServer.Affiliates do
   """
   def deactivate_affiliate(id) do
     case get_affiliate(id) do
-      nil -> {:error, :not_found}
+      nil ->
+        {:error, :not_found}
+
       affiliate ->
         affiliate
         |> Affiliate.update_changeset(%{status: "deactivated"})
@@ -63,7 +65,9 @@ defmodule ClippsterServer.Affiliates do
   """
   def activate_affiliate(id) do
     case get_affiliate(id) do
-      nil -> {:error, :not_found}
+      nil ->
+        {:error, :not_found}
+
       affiliate ->
         affiliate
         |> Affiliate.update_changeset(%{status: "active"})
@@ -236,7 +240,9 @@ defmodule ClippsterServer.Affiliates do
     {count, _} =
       AffiliateReferral
       |> where([r], r.referred_user_id == ^referred_user_id and r.status == "confirmed")
-      |> Repo.update_all(set: [status: "cancelled", updated_at: DateTime.utc_now() |> DateTime.truncate(:second)])
+      |> Repo.update_all(
+        set: [status: "cancelled", updated_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+      )
 
     {:ok, count}
   end
@@ -370,7 +376,8 @@ defmodule ClippsterServer.Affiliates do
         ) || Decimal.new("0")
 
       # Allow manual amount for testing or manual payouts
-      total = if attrs[:manual_amount], do: Decimal.new(to_string(attrs[:manual_amount])), else: total
+      total =
+        if attrs[:manual_amount], do: Decimal.new(to_string(attrs[:manual_amount])), else: total
 
       if Decimal.equal?(total, Decimal.new("0")) do
         Repo.rollback(:no_pending_commissions)
@@ -417,7 +424,9 @@ defmodule ClippsterServer.Affiliates do
             r.period_year == ^period_year and
             r.status == "confirmed"
         )
-        |> Repo.update_all(set: [status: "paid", updated_at: DateTime.utc_now() |> DateTime.truncate(:second)])
+        |> Repo.update_all(
+          set: [status: "paid", updated_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+        )
 
       payout
     end)
@@ -433,10 +442,17 @@ defmodule ClippsterServer.Affiliates do
 
     content_type =
       cond do
-        String.ends_with?(filename, ".png") -> "image/png"
-        String.ends_with?(filename, ".jpg") or String.ends_with?(filename, ".jpeg") -> "image/jpeg"
-        String.ends_with?(filename, ".webp") -> "image/webp"
-        true -> "application/octet-stream"
+        String.ends_with?(filename, ".png") ->
+          "image/png"
+
+        String.ends_with?(filename, ".jpg") or String.ends_with?(filename, ".jpeg") ->
+          "image/jpeg"
+
+        String.ends_with?(filename, ".webp") ->
+          "image/webp"
+
+        true ->
+          "application/octet-stream"
       end
 
     Storage.upload_file(file_binary, key, content_type: content_type)

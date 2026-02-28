@@ -10,6 +10,16 @@ const router = createRouter({
       redirect: () => {
         const authStore = useAuthStore();
         const user = authStore.user;
+        console.log('[Router] Root redirect logic:', {
+          isAuthenticated: authStore.isAuthenticated,
+          userId: user?.id,
+          accountType: user?.account_type,
+          ownedOrgId: user?.owned_organization_id,
+          createdByOrgId: user?.created_by_organization_id,
+          hasSelectedPlan: !!localStorage.getItem('has_selected_plan'),
+          subStatus: (user as any)?.subscription?.status,
+        });
+        
         // New users without a plan go to billing
         if (
           user &&
@@ -21,12 +31,15 @@ const router = createRouter({
         ) {
           const subStatus = (user as any).subscription?.status;
           if (subStatus !== 'active' && subStatus !== 'cancelled') {
+            console.log('[Router] Redirecting to billing (new user)');
             return '/billing?new_user=true';
           }
         }
         const isOrgOwner =
           user?.account_type === 'organization' && user?.owned_organization_id;
-        return isOrgOwner ? '/organizations' : '/creators';
+        const destination = isOrgOwner ? '/organizations' : '/creators';
+        console.log('[Router] Redirecting to:', destination);
+        return destination;
       },
     },
     {

@@ -34,7 +34,7 @@ defmodule ClippsterServer.Organizations.SharedClipRecipient do
   """
   def mark_viewed_changeset(recipient) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
-    
+
     case recipient.viewed_at do
       nil -> change(recipient, viewed_at: now)
       _ -> change(recipient)

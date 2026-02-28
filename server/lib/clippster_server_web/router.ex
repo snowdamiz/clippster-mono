@@ -166,15 +166,7 @@ defmodule ClippsterServerWeb.Router do
     # Google OAuth routes
     get("/auth/google", AuthController, :google_request)
     get("/auth/google/callback", AuthController, :google_callback)
-
-    # Instagram OAuth routes (for Tauri desktop app)
-    get("/auth/instagram/start", InstagramAuthController, :start_oauth)
-    get("/auth/instagram/callback", InstagramAuthController, :oauth_callback)
-
-    # User Instagram OAuth routes (for individual users/clippers)
-    get("/auth/user-instagram/start", UserInstagramAuthController, :start_oauth)
-    get("/auth/user-instagram/callback", UserInstagramAuthController, :oauth_callback)
-    # The client obtains tokens via FB.login() and sends them to POST /social-accounts
+    get("/auth/postforme/callback", PostForMeAuthController, :callback)
 
     # X (Twitter) OAuth routes (for Tauri desktop app)
     get("/auth/twitter/start", TwitterAuthController, :start_oauth)
@@ -611,8 +603,9 @@ defmodule ClippsterServerWeb.Router do
       :user_assigned_profiles
     )
 
-    # Instagram OAuth - exchange code for tokens (admin only)
-    post("/auth/instagram/exchange", InstagramAuthController, :exchange_code)
+    post("/social/connect-url", SocialAccountController, :connect_url)
+    get("/social/connect-status", SocialAccountController, :connect_status)
+    post("/social/complete-connect", SocialAccountController, :complete_connect)
 
     # Organization social accounts
     get("/organizations/:organization_id/social-accounts", SocialAccountController, :index)
@@ -733,7 +726,7 @@ defmodule ClippsterServerWeb.Router do
     delete("/conversations/:id/participants/:user_id", MessagingController, :remove_participant)
     post("/conversations/:id/leave", MessagingController, :leave_conversation)
     delete("/conversations/:id", MessagingController, :delete_conversation)
-    
+
     # Message attachments
     post("/conversations/:conversation_id/attachments", MessagingController, :upload_attachments)
     get("/attachments/:id/download", MessagingController, :download_attachment)
@@ -773,6 +766,9 @@ defmodule ClippsterServerWeb.Router do
     post("/user/social-accounts", ClipperProfileController, :create_social_account)
     put("/user/social-accounts/:id", ClipperProfileController, :update_social_account)
     delete("/user/social-accounts/:id", ClipperProfileController, :delete_social_account)
+    post("/user/social/connect-url", ClipperProfileController, :connect_url)
+    get("/user/social/connect-status", ClipperProfileController, :connect_status)
+    post("/user/social/complete-connect", ClipperProfileController, :complete_connect)
 
     # Clipper payment methods (for campaigns)
     get("/user/payment-methods", ClipperProfileController, :list_payment_methods)
@@ -788,6 +784,8 @@ defmodule ClippsterServerWeb.Router do
     post("/user/posts/upload-media", UserPostsController, :upload_media)
     post("/user/instagram/publish", UserPostsController, :publish)
     post("/user/twitter/publish", UserPostsController, :publish_twitter)
+    post("/user/tiktok/publish", UserPostsController, :publish_tiktok)
+    post("/user/youtube/publish", UserPostsController, :publish_youtube)
     get("/user/posts", UserPostsController, :index)
     get("/user/posts/analytics", UserPostsController, :analytics_summary)
     get("/user/posts/:id", UserPostsController, :show)
@@ -1150,7 +1148,7 @@ defmodule ClippsterServerWeb.Router do
     delete("/admin/users/:user_id/moderator", AdminController, :demote_moderator)
     post("/admin/users/:user_id/mod-discount", AdminController, :enable_mod_discount)
     delete("/admin/users/:user_id/mod-discount", AdminController, :disable_mod_discount)
-    
+
     # AI editor access management
     post("/admin/users/:user_id/ai-editor", AdminController, :enable_ai_editor)
     delete("/admin/users/:user_id/ai-editor", AdminController, :disable_ai_editor)

@@ -5,7 +5,8 @@ defmodule ClippsterServer.Repo.Migrations.AddAffiliateDiscountSettings do
     alter table(:affiliates) do
       # Discount settings
       add :discount_enabled, :boolean, default: false
-      add :discount_type, :string # "one_time", "recurring", "tiered"
+      # "one_time", "recurring", "tiered"
+      add :discount_type, :string
       add :first_month_discount_pct, :decimal, precision: 5, scale: 2
       add :recurring_discount_pct, :decimal, precision: 5, scale: 2
     end

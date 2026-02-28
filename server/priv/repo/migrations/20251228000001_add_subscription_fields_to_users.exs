@@ -17,8 +17,11 @@ defmodule ClippsterServer.Repo.Migrations.AddSubscriptionFieldsToUsers do
 
     # Create indexes if they don't exist
     execute "CREATE INDEX IF NOT EXISTS users_subscription_status_index ON users (subscription_status)"
+
     execute "CREATE INDEX IF NOT EXISTS users_subscription_end_date_index ON users (subscription_end_date)"
+
     execute "CREATE INDEX IF NOT EXISTS users_stripe_subscription_id_index ON users (stripe_subscription_id)"
+
     execute "CREATE INDEX IF NOT EXISTS users_stripe_customer_id_index ON users (stripe_customer_id)"
   end
 
