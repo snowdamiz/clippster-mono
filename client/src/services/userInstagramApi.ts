@@ -149,7 +149,6 @@ export async function startUserInstagramOAuth(
 
   // Dynamic import to handle Tauri-specific code
   const { invoke } = await import('@tauri-apps/api/core');
-  const { listen } = await import('@tauri-apps/api/event');
 
   try {
     // Preferred flow: Post For Me generic OAuth
@@ -225,32 +224,14 @@ export async function startUserInstagramOAuth(
     return () => {
       cancelled = true;
     };
-  } catch (postForMeError) {
-    console.warn(
-      '[UserInstagramApi] Post For Me connect failed, falling back to legacy Instagram OAuth:',
-      postForMeError
-    );
-  }
+  } catch (postForMeError: any) {
+    const message =
+      postForMeError?.response?.data?.error ||
+      postForMeError?.message ||
+      'Failed to create Post For Me auth URL';
 
-  try {
-    // Start OAuth - Tauri will open browser and handle callback
-    const apiBase =
-      import.meta.env.VITE_API_URL ||
-      (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
-    await invoke('start_user_instagram_oauth', { apiBase, authToken });
-
-    // Listen for the result
-    const unlisten = await listen<InstagramAuthResult>('instagram-auth-complete', (event) => {
-      if (onResult) {
-        onResult(event.payload);
-      }
-    });
-
-    // Return cleanup function
-    return unlisten;
-  } catch (error) {
-    console.error('Failed to start Instagram OAuth:', error);
-    throw error;
+    console.error('[UserInstagramApi] Post For Me connect failed:', message);
+    throw new Error(message);
   }
 }
 

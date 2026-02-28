@@ -852,9 +852,10 @@ defmodule ClippsterServerWeb.SchedulingController do
   defp validate_instagram_account_if_needed("instagram", user) do
     case ClippsterServer.Campaigns.list_user_social_accounts(user.id) do
       accounts when is_list(accounts) ->
-        instagram_account = Enum.find(accounts, fn acc -> acc.platform == "instagram" end)
+        instagram_account =
+          Enum.find(accounts, fn acc -> acc.platform == "instagram" and acc.is_active end)
 
-        if instagram_account && instagram_account.access_token do
+        if instagram_account do
           :ok
         else
           {:error, :instagram_not_connected}

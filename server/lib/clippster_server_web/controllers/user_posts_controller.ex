@@ -11,6 +11,8 @@ defmodule ClippsterServerWeb.UserPostsController do
   alias ClippsterServer.Campaigns.{ClipperSocialAccount, UserPost}
   alias ClippsterServer.Social.Platforms.Instagram
   alias ClippsterServer.Social.Platforms.Twitter
+  alias ClippsterServer.Social.ProviderMode
+  alias ClippsterServer.Social.Providers.PostForMe
 
   @doc """
   Publish a post to user's Instagram account.
@@ -410,15 +412,44 @@ defmodule ClippsterServerWeb.UserPostsController do
   end
 
   defp publish_to_instagram(account, media_url, params) do
-    access_token = ClipperSocialAccount.get_access_token(account)
+    if ProviderMode.post_for_me_enabled?() and is_binary(account.provider_account_id) and
+         account.provider_account_id != "" do
+      publish_to_instagram_via_post_for_me(account, media_url, params)
+    else
+      access_token = ClipperSocialAccount.get_access_token(account)
 
-    opts = %{
-      caption: params["caption"] || "",
-      media_type: params["media_type"] || "reel",
-      ig_user_id: account.platform_user_id
-    }
+      opts = %{
+        caption: params["caption"] || "",
+        media_type: params["media_type"] || "reel",
+        ig_user_id: account.platform_user_id
+      }
 
-    Instagram.publish_media(access_token, media_url, opts)
+      Instagram.publish_media(access_token, media_url, opts)
+    end
+  end
+
+  defp publish_to_instagram_via_post_for_me(account, media_url, params) do
+    media_url_resolved =
+      if String.contains?(media_url, ".r2.cloudflarestorage.com") do
+        case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7_200) do
+          {:ok, url} -> url
+          {:error, _} -> media_url
+        end
+      else
+        media_url
+      end
+
+    case PostForMe.create_social_post(%{
+           caption: params["caption"] || "",
+           social_accounts: [account.provider_account_id],
+           media: [%{url: media_url_resolved}]
+         }) do
+      {:ok, post} ->
+        {:ok, %{post_id: post.id || "pfm_post", post_url: nil}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp publish_to_twitter(account, media_url, params) do

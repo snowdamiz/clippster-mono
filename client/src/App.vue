@@ -182,6 +182,12 @@
   watch(
     [requiresSubscriptionGate, () => authStore.user],
     ([needsGate]) => {
+      console.log('[App] Subscription gate watch triggered:', {
+        needsGate,
+        currentPath: currentRoute.path,
+        isAuthenticated: authStore.isAuthenticated,
+        userId: authStore.user?.id,
+      });
       if (needsGate && currentRoute.path !== '/billing') {
         console.log('[App] Subscription gate active, redirecting to billing');
         router.push('/billing?subscription_required=true');
@@ -355,9 +361,11 @@
     // - Auth check + announcements (announcements depend on auth, but both are independent of DB)
     // - Feature flags (independent of everything)
     // - Database init + schema healing + seeds (independent of network)
+    console.log('[App] Starting parallel initialization tasks...');
     await Promise.allSettled([
       // Auth path: check auth, then start tracker + fetch announcements if authenticated
       (async () => {
+        console.log('[App] Starting auth check...');
         await authStore.checkAuth();
         console.log('[App] Auth check complete:', {
           isAuthenticated: authStore.isAuthenticated,
@@ -384,23 +392,32 @@
       }),
 
       // Feature flags (independent)
-      fetchFeatureFlags().catch((error) => {
+      (async () => {
+        console.log('[App] Starting feature flags fetch...');
+        await fetchFeatureFlags();
+        console.log('[App] Feature flags fetch complete');
+      })().catch((error) => {
         console.error('[App] Failed to fetch feature flags:', error);
       }),
 
       // Database init (local only, no network)
       (async () => {
+        console.log('[App] Starting database initialization...');
         await initDatabase();
+        console.log('[App] Database initialized, starting schema healing...');
         await healSchema();
+        console.log('[App] Schema healing complete, seeding prompts...');
         await seedDefaultPrompt();
         await seedGamingPrompt();
         await seedGamblingPrompt();
         await seedBreakingNewsPrompt();
         await ensureOrganizationAssetColumns();
+        console.log('[App] Database initialization complete');
       })().catch((error) => {
         console.error('[App] Failed to initialize database:', error);
       }),
     ]);
+    console.log('[App] All parallel initialization tasks completed');
 
     // These are fast local operations, run them after the parallel batch
     try {

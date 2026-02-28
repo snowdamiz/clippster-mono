@@ -32,7 +32,7 @@ defmodule ClippsterServer.Social.Providers.PostForMe do
     @moduledoc false
 
     @enforce_keys [:platform]
-    defstruct [:platform, :platform_data, :external_id, :redirect_url_override, :permissions]
+    defstruct [:platform, :platform_data, :external_id, :permissions]
   end
 
   defmodule AuthUrlResponse do
@@ -111,7 +111,7 @@ defmodule ClippsterServer.Social.Providers.PostForMe do
   """
   def list_social_accounts(filters \\ %{}) when is_map(filters) do
     with {:ok, payload} <- request(:get, "/v1/social-accounts", query: filters) do
-      {:ok, map_paginated(payload, &map_social_account/1)}
+      map_paginated(payload, &map_social_account/1)
     end
   end
 
@@ -162,7 +162,7 @@ defmodule ClippsterServer.Social.Providers.PostForMe do
   """
   def list_social_post_results(filters \\ %{}) when is_map(filters) do
     with {:ok, payload} <- request(:get, "/v1/social-post-results", query: filters) do
-      {:ok, map_paginated(payload, &map_social_post_result/1)}
+      map_paginated(payload, &map_social_post_result/1)
     end
   end
 
@@ -183,7 +183,7 @@ defmodule ClippsterServer.Social.Providers.PostForMe do
       when is_binary(social_account_id) and is_map(opts) do
     with {:ok, payload} <-
            request(:get, "/v1/social-account-feeds/#{social_account_id}", query: opts) do
-      {:ok, map_paginated(payload, & &1)}
+      map_paginated(payload, & &1)
     end
   end
 
@@ -516,8 +516,6 @@ defmodule ClippsterServer.Social.Providers.PostForMe do
         |> ProviderMode.normalize_platform(),
       platform_data: Map.get(attrs, :platform_data, Map.get(attrs, "platform_data")),
       external_id: Map.get(attrs, :external_id, Map.get(attrs, "external_id")),
-      redirect_url_override:
-        Map.get(attrs, :redirect_url_override, Map.get(attrs, "redirect_url_override")),
       permissions: permissions
     }
   end
@@ -532,7 +530,6 @@ defmodule ClippsterServer.Social.Providers.PostForMe do
       "platform" => request.platform,
       "platform_data" => request.platform_data,
       "external_id" => request.external_id,
-      "redirect_url_override" => request.redirect_url_override,
       "permissions" => request.permissions
     }
     |> Enum.reject(fn {_k, v} -> is_nil(v) end)

@@ -153,6 +153,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
   import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
+  import { listSocialAccounts } from '@/services/socialAccountsApi';
 
   interface Organization {
     id: string | number;
@@ -197,14 +198,28 @@
     try {
       // Load organizations
       const orgResult = await authStore.getOrganizations();
+      let allOrgs: Organization[] = [];
       if (orgResult.success && orgResult.organizations) {
-        organizations.value = orgResult.organizations;
-      } else {
-        organizations.value = [];
+        allOrgs = orgResult.organizations;
       }
 
+      // Filter orgs to only those with an active account for this platform
+      const platform = activePlatform.value;
+      const orgsWithAccounts: Organization[] = [];
+      await Promise.all(
+        allOrgs.map(async (org) => {
+          try {
+            const res = await listSocialAccounts(org.id);
+            if (res.success && res.accounts.some((a) => a.is_active && a.platform === platform)) {
+              orgsWithAccounts.push(org);
+            }
+          } catch {}
+        })
+      );
+      organizations.value = orgsWithAccounts;
+
       // Load personal accounts based on platform
-      if (activePlatform.value === 'twitter') {
+      if (platform === 'twitter') {
         const accountsResult = await listUserTwitterAccounts();
         if (accountsResult.success) {
           personalAccounts.value = accountsResult.accounts.filter((a) => a.is_active);
