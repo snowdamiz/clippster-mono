@@ -34,6 +34,26 @@ defmodule ClippsterServer.Social.PostForMeConnectionSessions do
 
   def get_session_by_external_id(_), do: nil
 
+  @doc """
+  Fallback: find the most recent pending/callback_received session matching the given platform.
+  Used when Post For Me doesn't include connection_id or external_id in the callback URL.
+  Only returns non-expired sessions to avoid stale matches.
+  """
+  def get_most_recent_pending_session(platform) when is_binary(platform) and platform != "" do
+    now = DateTime.utc_now()
+
+    from(s in PostForMeConnectionSession,
+      where: s.status in ["pending", "callback_received"],
+      where: s.platform == ^platform,
+      where: s.expires_at > ^now,
+      order_by: [desc: s.inserted_at],
+      limit: 1
+    )
+    |> Repo.one()
+  end
+
+  def get_most_recent_pending_session(_), do: nil
+
   def mark_callback_received(%PostForMeConnectionSession{} = session, attrs \\ %{})
       when is_map(attrs) do
     update_session(session, %{

@@ -204,6 +204,9 @@ defmodule ClippsterServerWeb.PostForMeAuthController do
       is_binary(parsed.external_id) and parsed.external_id != "" ->
         PostForMeConnectionSessions.get_session_by_external_id(parsed.external_id)
 
+      is_binary(parsed.platform) and parsed.platform != "" ->
+        PostForMeConnectionSessions.get_most_recent_pending_session(parsed.platform)
+
       true ->
         nil
     end

@@ -1278,6 +1278,20 @@
     isTwitterTokenExpiringSoon,
     type UserTwitterAccount,
   } from '@/services/userTwitterApi';
+  import {
+    startUserTiktokOAuth,
+    listUserTiktokAccounts,
+    disconnectUserTiktokAccount,
+    isTiktokTokenExpiringSoon,
+    type UserTiktokAccount,
+  } from '@/services/userTiktokApi';
+  import {
+    startUserYoutubeOAuth,
+    listUserYoutubeAccounts,
+    disconnectUserYoutubeAccount,
+    isYoutubeTokenExpiringSoon,
+    type UserYoutubeAccount,
+  } from '@/services/userYoutubeApi';
   import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
   import {
     listPublicHiringPosts, applyToHiringPost, listMyHiringApplications,
@@ -1633,17 +1647,21 @@
 
   const connectingInstagram = ref(false);
   const connectingTwitter = ref(false);
-  const connectingPlatform = computed(() => connectingInstagram.value || connectingTwitter.value);
+  const connectingTiktok = ref(false);
+  const connectingYoutube = ref(false);
+  const connectingPlatform = computed(() => connectingInstagram.value || connectingTwitter.value || connectingTiktok.value || connectingYoutube.value);
   const selectedPlatform = ref<string | null>(null);
   const selectedAccountForPosts = ref<UserInstagramAccount | null>(null);
   const editingPaymentMethod = ref<ClipperPaymentMethod | null>(null);
   const savingPaymentMethod = ref(false);
   const deleting = ref(false);
   const deleteType = ref<'social account' | 'payment method'>('social account');
-  const deleteTarget = ref<UserInstagramAccount | UserTwitterAccount | ClipperPaymentMethod | null>(null);
+  const deleteTarget = ref<UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount | ClipperPaymentMethod | null>(null);
 
   let cleanupInstagramAuth: (() => void) | null = null;
   let cleanupTwitterAuth: (() => void) | null = null;
+  let cleanupTiktokAuth: (() => void) | null = null;
+  let cleanupYoutubeAuth: (() => void) | null = null;
 
   const XLogo = markRaw({
     render() {
@@ -1659,14 +1677,14 @@
       name: 'Instagram',
       icon: markRaw(Instagram),
       iconClass: 'platform-card__icon--instagram',
-      available: false,
+      available: true,
     },
     {
       id: 'tiktok',
       name: 'TikTok',
       icon: markRaw(Music2),
       iconClass: 'platform-card__icon--tiktok',
-      available: false,
+      available: true,
     },
     {
       id: 'x',
@@ -1680,7 +1698,7 @@
       name: 'YouTube Shorts',
       icon: markRaw(Youtube),
       iconClass: 'platform-card__icon--youtube',
-      available: false,
+      available: true,
     },
   ];
 
@@ -1761,13 +1779,17 @@
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
     try {
-      const [igResponse, twResponse] = await Promise.all([
+      const [igResponse, twResponse, tkResponse, ytResponse] = await Promise.all([
         listUserInstagramAccounts(),
         listUserTwitterAccounts(),
+        listUserTiktokAccounts(),
+        listUserYoutubeAccounts(),
       ]);
       const accounts: any[] = [];
       if (igResponse.success) accounts.push(...igResponse.accounts);
       if (twResponse.success) accounts.push(...twResponse.accounts);
+      if (tkResponse.success) accounts.push(...tkResponse.accounts);
+      if (ytResponse.success) accounts.push(...ytResponse.accounts);
       socialAccounts.value = accounts;
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to load social accounts' });
@@ -1817,6 +1839,46 @@
         console.error('Failed to connect X:', error);
         toast({ title: 'Error', description: 'Failed to connect X' });
         connectingTwitter.value = false;
+        selectedPlatform.value = null;
+      }
+    } else if (platformId === 'tiktok') {
+      connectingTiktok.value = true;
+      try {
+        cleanupTiktokAuth = await startUserTiktokOAuth((result) => {
+          if (result.success && result.account) {
+            toast({ title: 'Success', description: `TikTok account @${result.account.username} connected` });
+            loadSocialAccounts();
+            showPlatformSelectionDialog.value = false;
+          } else if (result.error) {
+            toast({ title: 'Error', description: result.error });
+          }
+          connectingTiktok.value = false;
+          selectedPlatform.value = null;
+        });
+      } catch (error) {
+        console.error('Failed to connect TikTok:', error);
+        toast({ title: 'Error', description: 'Failed to connect TikTok' });
+        connectingTiktok.value = false;
+        selectedPlatform.value = null;
+      }
+    } else if (platformId === 'youtube') {
+      connectingYoutube.value = true;
+      try {
+        cleanupYoutubeAuth = await startUserYoutubeOAuth((result) => {
+          if (result.success && result.account) {
+            toast({ title: 'Success', description: `YouTube account @${result.account.username} connected` });
+            loadSocialAccounts();
+            showPlatformSelectionDialog.value = false;
+          } else if (result.error) {
+            toast({ title: 'Error', description: result.error });
+          }
+          connectingYoutube.value = false;
+          selectedPlatform.value = null;
+        });
+      } catch (error) {
+        console.error('Failed to connect YouTube:', error);
+        toast({ title: 'Error', description: 'Failed to connect YouTube' });
+        connectingYoutube.value = false;
         selectedPlatform.value = null;
       }
     } else {
@@ -1935,9 +1997,15 @@
       let response;
       if (deleteType.value === 'social account') {
         const account = deleteTarget.value as any;
-        response = (account.platform === 'x' || account.platform === 'twitter')
-          ? await disconnectUserTwitterAccount(account.id)
-          : await disconnectUserInstagramAccount(account.id);
+        if (account.platform === 'x' || account.platform === 'twitter') {
+          response = await disconnectUserTwitterAccount(account.id);
+        } else if (account.platform === 'tiktok') {
+          response = await disconnectUserTiktokAccount(account.id);
+        } else if (account.platform === 'youtube') {
+          response = await disconnectUserYoutubeAccount(account.id);
+        } else {
+          response = await disconnectUserInstagramAccount(account.id);
+        }
       } else {
         response = await deletePaymentMethod((deleteTarget.value as ClipperPaymentMethod).id);
       }
@@ -2022,9 +2090,10 @@
   });
 
   onUnmounted(() => {
-    if (cleanupInstagramAuth) {
-      cleanupInstagramAuth();
-    }
+    if (cleanupInstagramAuth) cleanupInstagramAuth();
+    if (cleanupTwitterAuth) cleanupTwitterAuth();
+    if (cleanupTiktokAuth) cleanupTiktokAuth();
+    if (cleanupYoutubeAuth) cleanupYoutubeAuth();
   });
 </script>
 
