@@ -4,7 +4,7 @@ import ChatFab from './ChatFab.vue';
 import ChatPopover from './ChatPopover.vue';
 import ChatWindow from './ChatWindow.vue';
 
-const { isVisible, isPopoverOpen, openChatWindowIds } = useChatPopout();
+const { isVisible, showFab, isPopoverOpen, openChatWindowIds } = useChatPopout();
 </script>
 
 <template>
@@ -22,8 +22,8 @@ const { isVisible, isPopoverOpen, openChatWindowIds } = useChatPopout();
       <ChatPopover v-if="isPopoverOpen" class="floating-chat__popover" />
     </Transition>
 
-    <!-- FAB -->
-    <ChatFab class="floating-chat__fab" />
+    <!-- FAB (only show if not on a page with header FAB) -->
+    <ChatFab v-if="showFab" class="floating-chat__fab" />
   </div>
 </template>
 

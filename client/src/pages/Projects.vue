@@ -59,12 +59,11 @@
 
         <!-- Fix Stream Info Button -->
         <button 
-          v-if="hasVideosWithoutDuration" 
           @click="fixVideoMetadata" 
           :disabled="fixingMetadata"
           class="projects-create-btn" 
           :style="{ marginRight: '0.5rem', background: fixingMetadata ? '#9ca3af' : '#f59e0b', cursor: fixingMetadata ? 'not-allowed' : 'pointer' }" 
-          title="Extract metadata for videos with missing information"
+          title="Extract metadata and generate thumbnails for videos with missing information"
         >
           <Loader2 v-if="fixingMetadata" class="projects-create-btn__icon" style="animation: spin 1s linear infinite;" />
           <Clock v-else class="projects-create-btn__icon" />
@@ -1821,11 +1820,29 @@
       const { getAllRawVideos, updateRawVideo } = await import('@/services/database');
       const allVideos = await getAllRawVideos();
       
-      // Find videos with missing or zero duration
-      const videosToFix = allVideos.filter(v => !v.duration || v.duration === 0);
+      // Find videos with missing duration or thumbnail, but only if the file exists
+      console.log(`[Projects] Checking ${allVideos.length} videos for missing metadata...`);
+      const videosToFix = [];
+      
+      for (const video of allVideos) {
+        // Skip if video already has complete metadata
+        if (video.duration && video.duration > 0 && video.thumbnail_path) {
+          continue;
+        }
+        
+        // Check if file exists - skip orphaned videos silently
+        const fileExists = await invoke('check_file_exists', { path: video.file_path }) as boolean;
+        if (!fileExists) {
+          console.log(`[Projects] Skipping orphaned video (file doesn't exist): ${video.original_filename}`);
+          continue;
+        }
+        
+        // File exists and needs metadata - add to fix list
+        videosToFix.push(video);
+      }
       
       if (videosToFix.length === 0) {
-        success('No videos need fixing', 'All videos have duration metadata');
+        success('No videos need fixing', 'All videos have complete metadata');
         fixingMetadata.value = false;
         return;
       }
@@ -1833,6 +1850,7 @@
       console.log(`[Projects] Fixing metadata for ${videosToFix.length} videos...`);
       let fixed = 0;
       let failed = 0;
+      let thumbnailsGenerated = 0;
       
       for (let i = 0; i < videosToFix.length; i++) {
         const video = videosToFix[i];
@@ -1840,37 +1858,66 @@
         console.log(`[Projects] Video path: ${video.file_path}`);
         
         try {
-          // Extract metadata using Tauri backend
-          console.log(`[Projects] Calling get_video_metadata for: ${video.file_path}`);
-          const metadata = await invoke('get_video_metadata', { 
-            videoPath: video.file_path 
-          }) as any;
           
-          console.log(`[Projects] Received metadata:`, metadata);
+          const updates: any = {};
           
-          if (metadata && metadata.duration) {
-            await updateRawVideo(video.id, {
-              duration: metadata.duration,
-              width: metadata.width,
-              height: metadata.height,
-              codec: metadata.codec,
-            });
+          // Extract metadata if missing duration
+          if (!video.duration || video.duration === 0) {
+            console.log(`[Projects] Calling get_video_metadata for: ${video.file_path}`);
+            const metadata = await invoke('get_video_metadata', { 
+              videoPath: video.file_path 
+            }) as any;
+            
+            console.log(`[Projects] Received metadata:`, metadata);
+            
+            if (metadata && metadata.duration) {
+              updates.duration = metadata.duration;
+              updates.width = metadata.width;
+              updates.height = metadata.height;
+              updates.codec = metadata.codec;
+              console.log(`[Projects] ✓ Extracted metadata: ${metadata.duration}s`);
+            } else {
+              console.warn(`[Projects] ✗ No duration in metadata for: ${video.original_filename}`);
+            }
+          }
+          
+          // Generate thumbnail if missing
+          if (!video.thumbnail_path) {
+            console.log(`[Projects] Generating thumbnail for: ${video.file_path}`);
+            try {
+              const thumbnailPath = await invoke('generate_video_thumbnail', {
+                videoPath: video.file_path,
+                timestamp: 5.0
+              }) as string;
+              
+              if (thumbnailPath) {
+                updates.thumbnail_path = thumbnailPath;
+                thumbnailsGenerated++;
+                console.log(`[Projects] ✓ Generated thumbnail: ${thumbnailPath}`);
+              }
+            } catch (thumbErr) {
+              console.warn(`[Projects] Failed to generate thumbnail:`, thumbErr);
+            }
+          }
+          
+          // Update database if we have any updates
+          if (Object.keys(updates).length > 0) {
+            await updateRawVideo(video.id, updates);
             fixed++;
-            console.log(`[Projects] ✓ Fixed metadata for: ${video.original_filename} (${metadata.duration}s)`);
-          } else {
-            console.warn(`[Projects] ✗ No duration in metadata for: ${video.original_filename}`);
-            failed++;
+            console.log(`[Projects] ✓ Updated video: ${video.original_filename}`);
           }
         } catch (err) {
-          console.error(`[Projects] ✗ Failed to fix metadata for ${video.original_filename}:`, err);
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          console.error(`[Projects] ✗ Failed to fix metadata for ${video.original_filename}:`, errorMsg);
           failed++;
         }
       }
       
-      console.log(`[Projects] Metadata extraction complete. Fixed: ${fixed}, Failed: ${failed}`);
-      success('Metadata Updated', `Fixed ${fixed} videos${failed > 0 ? `, ${failed} failed` : ''}`);
+      console.log(`[Projects] Metadata extraction complete. Fixed: ${fixed}, Thumbnails: ${thumbnailsGenerated}, Failed: ${failed}`);
+      const message = `Fixed ${fixed} videos${thumbnailsGenerated > 0 ? `, generated ${thumbnailsGenerated} thumbnails` : ''}${failed > 0 ? `, ${failed} failed` : ''}`;
+      success('Metadata Updated', message);
       
-      // Reload projects to show updated durations
+      // Reload projects to show updated durations and thumbnails
       await loadProjects();
     } catch (err) {
       console.error('[Projects] Error in fixVideoMetadata:', err);
@@ -1880,12 +1927,30 @@
     }
   }
 
-  // Check if any videos need metadata fixing
+  // Check if any videos need metadata fixing (duration or thumbnail)
+  // Only counts videos whose files actually exist on disk
   async function checkForVideosWithoutDuration() {
     try {
       const { getAllRawVideos } = await import('@/services/database');
       const allVideos = await getAllRawVideos();
-      hasVideosWithoutDuration.value = allVideos.some(v => !v.duration || v.duration === 0);
+      
+      // Check each video with missing metadata to see if file exists
+      let hasFixableVideos = false;
+      for (const video of allVideos) {
+        // Skip if video already has complete metadata
+        if (video.duration && video.duration > 0 && video.thumbnail_path) {
+          continue;
+        }
+        
+        // Check if file exists - only count it if file exists
+        const fileExists = await invoke('check_file_exists', { path: video.file_path }) as boolean;
+        if (fileExists) {
+          hasFixableVideos = true;
+          break; // Found at least one fixable video
+        }
+      }
+      
+      hasVideosWithoutDuration.value = hasFixableVideos;
     } catch (err) {
       console.warn('[Projects] Failed to check for videos without duration:', err);
     }

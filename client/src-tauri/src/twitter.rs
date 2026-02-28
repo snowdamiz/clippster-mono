@@ -591,7 +591,7 @@ pub async fn download_twitter_vod(
         let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
             .parent()
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| ffmpeg_path.clone());
+            .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
         
         cmd.arg(&vod_url)
             .arg("-o").arg(&output_file_str)
@@ -1037,9 +1037,11 @@ pub async fn download_twitter_vod_segment(
         let file_size = std::fs::metadata(&video_path).ok().map(|m| m.len());
 
         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
+        let mut thumb_cmd = tokio::process::Command::new(&ffmpeg_path);
+        let thumbnail_result = no_window(&mut thumb_cmd)
             .args(["-hwaccel", "auto", "-ss", "00:00:01", "-i", &video_path_str, "-vframes", "1", "-vf", "scale=320:-1", "-y", thumbnail_path.to_str().unwrap_or("")])
-            .output().await);
+            .output()
+            .await;
 
         let thumbnail_path_str = match thumbnail_result {
             Ok(output) if output.status.success() => Some(thumbnail_path.to_string_lossy().to_string()),

@@ -450,7 +450,7 @@ pub async fn download_youtube_vod(
         let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
             .parent()
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| ffmpeg_path.clone());
+            .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
         
         cmd.arg(&vod_url)
             .arg("-o").arg(&output_file_str)
