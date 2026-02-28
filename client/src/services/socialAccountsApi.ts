@@ -974,6 +974,48 @@ export async function startTwitterOAuthPopup(
 }
 
 /**
+ * Start TikTok OAuth flow.
+ * Uses Post For Me provider flow.
+ */
+export async function startTiktokOAuthPopup(
+  organizationId: string | number,
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): Promise<() => void> {
+  if (!isTauri()) {
+    throw new Error('TikTok OAuth is only supported in the Tauri desktop app');
+  }
+
+  const authToken = getAuthToken();
+
+  if (!authToken) {
+    throw new Error('You must be logged in to connect TikTok');
+  }
+
+  return startPostForMeOrganizationOAuth(organizationId, 'tiktok', onResult);
+}
+
+/**
+ * Start YouTube OAuth flow.
+ * Uses Post For Me provider flow.
+ */
+export async function startYoutubeOAuthPopup(
+  organizationId: string | number,
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): Promise<() => void> {
+  if (!isTauri()) {
+    throw new Error('YouTube OAuth is only supported in the Tauri desktop app');
+  }
+
+  const authToken = getAuthToken();
+
+  if (!authToken) {
+    throw new Error('You must be logged in to connect YouTube');
+  }
+
+  return startPostForMeOrganizationOAuth(organizationId, 'youtube', onResult);
+}
+
+/**
  * Listen for X (Twitter) OAuth completion events.
  * Returns cleanup function to remove listener.
  */
