@@ -1740,15 +1740,18 @@
       segments: clip.segments,
     });
 
+    // Track the currently playing clip
+    currentlyPlayingClipId.value = clip.id;
+
+    // Set guard flag so the segmentPlaybackEnded watcher doesn't clear currentlyPlayingClipId
+    skipPlaybackEndedClear = true;
+
     // Stop any existing playback first
     stopSegmentedPlayback();
 
     // Set hover states to the playing clip so it highlights in both panel and timeline
     hoveredClipId.value = clip.id;
     hoveredTimelineClipId.value = clip.id;
-
-    // Track the currently playing clip - SET THIS FIRST so timeline highlights immediately
-    currentlyPlayingClipId.value = clip.id;
     console.log('[ProjectWorkspaceDialog] Set currentlyPlayingClipId to:', clip.id);
 
     // Reveal the clip in the timeline (makes it visible if hidden)
@@ -2401,10 +2404,18 @@
     }
   });
 
+  // Guard flag to prevent the segmented-playback-ended watcher from clearing
+  // currentlyPlayingClipId when stopSegmentedPlayback is called inside onPlayClip
+  let skipPlaybackEndedClear = false;
+
   // Watch for segmented playback state changes
   watch([isPlayingSegments, segmentPlaybackEnded], ([isPlaying, ended]) => {
     if (!isPlaying && ended) {
-      // Clear the currently playing clip when playback ends
+      if (skipPlaybackEndedClear) {
+        skipPlaybackEndedClear = false;
+        return;
+      }
+      // Clear the currently playing clip when playback ends naturally
       currentlyPlayingClipId.value = null;
     }
   });
