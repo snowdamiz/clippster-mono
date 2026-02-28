@@ -1,4 +1,4 @@
-export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
+export type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
 
 export interface PlatformConfig {
   id: PlatformId;
@@ -19,6 +19,32 @@ export interface PlatformConfig {
 }
 
 export const platformConfigs: Record<PlatformId, PlatformConfig> = {
+  twitter: {
+    id: 'twitter',
+    name: 'X (Twitter)',
+    description: 'Download videos from X/Twitter broadcasts and spaces',
+    icon: '/x.svg',
+    searchPlaceholder: 'Exact broadcast or space URL',
+    searchLabel: 'Broadcast/Space URL',
+    emptyStateTitle: 'Enter Broadcast URL',
+    emptyStateDescription: 'Paste the exact URL of an X/Twitter broadcast or space to download.',
+    isComingSoon: false,
+    provider: 'twitter',
+    localStorageKey: 'twitter_recent_searches',
+  },
+  rumble: {
+    id: 'rumble',
+    name: 'Rumble',
+    description: 'Download VODs directly from Rumble',
+    icon: '/rumble.svg',
+    searchPlaceholder: 'Channel name or Rumble URL',
+    searchLabel: 'Channel',
+    emptyStateTitle: 'Search for VODs',
+    emptyStateDescription: 'Paste a Rumble channel URL or name to find VODs.',
+    isComingSoon: false,
+    provider: 'rumble',
+    localStorageKey: 'rumble_recent_searches',
+  },
   pumpfun: {
     id: 'pumpfun',
     name: 'PumpFun',
@@ -62,18 +88,16 @@ export const platformConfigs: Record<PlatformId, PlatformConfig> = {
     provider: 'twitch',
     localStorageKey: 'twitch_recent_searches',
   },
-  youtube: {
-    id: 'youtube',
+  YouTube: {
+    id: 'YouTube',
     name: 'YouTube',
     description: 'Download videos directly from YouTube',
     icon: '/youtube.svg',
-    searchPlaceholder: 'Video URL or Channel URL',
-    searchLabel: 'URL',
-    emptyStateTitle: 'Search for Videos',
-    emptyStateDescription: 'Search for videos by URL or channel.',
-    isComingSoon: true,
-    comingSoonMessage:
-      "We're working hard to bring YouTube video content management to Clippster. This feature will allow you to import, organize, and create clips from your YouTube videos and streams.",
+    searchPlaceholder: 'Channel URL or @handle',
+    searchLabel: 'Channel',
+    emptyStateTitle: 'Search for VODs',
+    emptyStateDescription: 'Paste a YouTube channel URL or @handle to find VODs.',
+    isComingSoon: false,
     provider: 'youtube',
     localStorageKey: 'youtube_recent_searches',
   },

@@ -33,13 +33,13 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   # Base subscription tiers
   @org_subscription_tiers %{
     "solo" => %{name: "Solo", seats: 0, monthly_credits: 0, usd: 149.99},
-    "enterprise_base" => %{name: "Enterprise Base", seats: 5, monthly_credits: 0, usd: 299.99},
-    "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 499.99},
+    "enterprise_base" => %{name: "Enterprise Base", seats: 5, monthly_credits: 0, usd: 349.99},
+    "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 549.99},
     "enterprise_unlimited" => %{
       name: "Enterprise Unlimited",
       seats: nil,
       monthly_credits: 100_000,
-      usd: 1899.99
+      usd: 2199.99
     }
   }
 
@@ -50,27 +50,27 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       name: "5 Seats + AI",
       seats: 5,
       monthly_credits: 10_000,
-      usd: 250,
+      usd: 299,
       requires_ai: true
     },
     "seats_10_ai" => %{
       name: "10 Seats + AI",
       seats: 10,
       monthly_credits: 20_000,
-      usd: 400,
+      usd: 479,
       requires_ai: true
     },
     "seats_20_ai" => %{
       name: "20 Seats + AI",
       seats: 20,
       monthly_credits: 40_000,
-      usd: 575,
+      usd: 689,
       requires_ai: true
     },
     # Without AI
-    "seats_5" => %{name: "5 Seats", seats: 5, monthly_credits: 0, usd: 150, requires_ai: false},
-    "seats_10" => %{name: "10 Seats", seats: 10, monthly_credits: 0, usd: 200, requires_ai: false},
-    "seats_20" => %{name: "20 Seats", seats: 20, monthly_credits: 0, usd: 350, requires_ai: false}
+    "seats_5" => %{name: "5 Seats", seats: 5, monthly_credits: 0, usd: 179, requires_ai: false},
+    "seats_10" => %{name: "10 Seats", seats: 10, monthly_credits: 0, usd: 239, requires_ai: false},
+    "seats_20" => %{name: "20 Seats", seats: 20, monthly_credits: 0, usd: 419, requires_ai: false}
   }
 
   @doc """
@@ -1100,37 +1100,105 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   end
 
   defp apply_tier_upgrade(org, new_tier, new_tier_info) do
-    Repo.transaction(fn ->
-      # If org has Stripe subscription, update it with proration
-      if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
-        # Stripe proration would be handled here via Stripe API
-        # For now, just update the tier locally
-        :ok
+    if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
+      # Retrieve current Stripe subscription to get the item ID
+      case Stripe.Subscription.retrieve(org.stripe_subscription_id) do
+        {:ok, stripe_sub} ->
+          item = List.first(stripe_sub.items.data)
+
+          if item do
+            new_amount_cents = trunc(new_tier_info.usd * 100)
+
+            # Update the subscription item with new price, prorate immediately
+            update_params = %{
+              items: [
+                %{
+                  id: item.id,
+                  price_data: %{
+                    currency: "usd",
+                    product: item.price.product,
+                    unit_amount: new_amount_cents,
+                    recurring: %{interval: item.price.recurring.interval}
+                  }
+                }
+              ],
+              proration_behavior: "create_prorations",
+              metadata: %{
+                organization_id: to_string(org.id),
+                subscription_tier: new_tier,
+                subscription_type: "base",
+                monthly_credits: to_string(new_tier_info.monthly_credits)
+              }
+            }
+
+            case Stripe.Subscription.update(org.stripe_subscription_id, update_params) do
+              {:ok, _updated_sub} ->
+                # Update DB immediately for upgrades
+                Repo.transaction(fn ->
+                  {:ok, updated_org} =
+                    org
+                    |> Organization.subscription_changeset(%{
+                      subscription_tier: new_tier,
+                      max_seats: new_tier_info.seats,
+                      monthly_credits: new_tier_info.monthly_credits,
+                      pending_subscription_tier: nil
+                    })
+                    |> Repo.update()
+
+                  # Grant additional credits if upgrading to a tier with more credits
+                  current_credits = org.monthly_credits || 0
+                  new_credits = new_tier_info.monthly_credits
+
+                  if new_credits > current_credits do
+                    credit_diff = new_credits - current_credits
+                    {:ok, _} = Organizations.add_organization_credits(org.id, credit_diff)
+                  end
+
+                  IO.puts(
+                    "[OrgSubscriptions] Upgraded org #{org.id} to #{new_tier} with Stripe proration"
+                  )
+
+                  updated_org
+                end)
+
+              {:error, %Stripe.Error{message: message}} ->
+                IO.puts("[OrgSubscriptions] Stripe upgrade error for org #{org.id}: #{message}")
+                {:error, "Stripe error: #{message}"}
+            end
+          else
+            {:error, :no_subscription_items}
+          end
+
+        {:error, %Stripe.Error{message: message}} ->
+          {:error, "Failed to retrieve subscription: #{message}"}
       end
+    else
+      # Non-Stripe subscription (admin/crypto) — just update tier directly
+      Repo.transaction(fn ->
+        {:ok, updated_org} =
+          org
+          |> Organization.subscription_changeset(%{
+            subscription_tier: new_tier,
+            max_seats: new_tier_info.seats,
+            monthly_credits: new_tier_info.monthly_credits,
+            pending_subscription_tier: nil
+          })
+          |> Repo.update()
 
-      {:ok, updated_org} =
-        org
-        |> Organization.subscription_changeset(%{
-          subscription_tier: new_tier,
-          max_seats: new_tier_info.seats,
-          monthly_credits: new_tier_info.monthly_credits,
-          pending_subscription_tier: nil
-        })
-        |> Repo.update()
+        # Grant additional credits if upgrading to a tier with more credits
+        current_credits = org.monthly_credits || 0
+        new_credits = new_tier_info.monthly_credits
 
-      # Grant additional credits if upgrading to a tier with more credits
-      current_credits = org.monthly_credits || 0
-      new_credits = new_tier_info.monthly_credits
+        if new_credits > current_credits do
+          credit_diff = new_credits - current_credits
+          {:ok, _} = Organizations.add_organization_credits(org.id, credit_diff)
+        end
 
-      if new_credits > current_credits do
-        credit_diff = new_credits - current_credits
-        {:ok, _} = Organizations.add_organization_credits(org.id, credit_diff)
-      end
+        IO.puts("[OrgSubscriptions] Upgraded org #{org.id} to #{new_tier} (non-Stripe)")
 
-      IO.puts("[OrgSubscriptions] Upgraded org #{org.id} to #{new_tier}")
-
-      updated_org
-    end)
+        updated_org
+      end)
+    end
   end
 
   defp schedule_tier_downgrade(org, new_tier) do

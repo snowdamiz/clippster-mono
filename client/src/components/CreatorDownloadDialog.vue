@@ -375,6 +375,8 @@
       kick: '/kick.svg',
       twitch: '/twitch.svg',
       youtube: '/youtube.svg',
+      rumble: '/rumble.svg',
+      twitter: '/x.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -385,6 +387,8 @@
       kick: '#53FC18',
       twitch: '#9146FF',
       youtube: '#dc2626',
+      rumble: '#85C742',
+      twitter: '#000000',
     };
     return colors[platform] || '#6b7280';
   }
@@ -395,6 +399,8 @@
       kick: 'Kick',
       twitch: 'Twitch',
       youtube: 'YouTube',
+      rumble: 'Rumble',
+      twitter: 'X (Twitter)',
     };
     return names[platform] || platform;
   }
@@ -551,7 +557,7 @@
         {
           autoSegment: shouldAutoSegment,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: currentPlatformLink.value.platform as 'pumpfun' | 'kick' | 'twitch',
+          provider: currentPlatformLink.value.platform as 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble' | 'twitter',
           creatorWatermarkSettings,
         }
       );

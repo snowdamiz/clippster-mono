@@ -924,6 +924,9 @@ export function OrgBilling() {
                             <span>Includes AI</span>
                           </div>
                         )}
+                        <div className={`absolute ${tier.monthly_credits > 0 ? 'top-[2.75rem]' : 'top-3'} right-3 flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-br from-emerald-500 to-emerald-600 text-[#0a0a0b] text-[0.625rem] font-bold uppercase tracking-[0.03em] rounded shadow-[0_2px_8px_rgba(16,185,129,0.3)]`}>
+                          <span>0% Fees</span>
+                        </div>
                         <h3 className="text-lg font-bold text-white m-0 mb-2">{tier.name}</h3>
                         <div className="flex items-baseline mb-6">
                           <span className="text-xl font-semibold text-white">$</span>
@@ -933,7 +936,7 @@ export function OrgBilling() {
                         <ul className="list-none m-0 mb-6 p-0 flex flex-col gap-3">
                           <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
                             <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
-                            <span>{tier.seats === null ? 'Unlimited team seats' : `${tier.seats} team seats`}</span>
+                            <span>{tier.seats === null ? 'Unlimited team seats' : tier.seats === 0 ? 'Owner only (no team seats)' : `${tier.seats} team seats`}</span>
                           </li>
                           {tier.monthly_credits > 0 && (
                             <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
@@ -948,6 +951,18 @@ export function OrgBilling() {
                           <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
                             <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
                             <span>Shared assets & profiles</span>
+                          </li>
+                          <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
+                            <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
+                            <span>Unlimited marketing campaigns</span>
+                          </li>
+                          <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
+                            <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
+                            <span>Browse clipper talent directory</span>
+                          </li>
+                          <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
+                            <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
+                            <span>Post job listings for clippers & video editors</span>
                           </li>
                         </ul>
                         <Button

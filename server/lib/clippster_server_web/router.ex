@@ -209,6 +209,12 @@ defmodule ClippsterServerWeb.Router do
     # Twitch routes
     get("/twitch/channels/:channel_name", TwitchController, :get_channel)
 
+    # YouTube routes
+    get("/youtube/channels/:channel_id", YouTubeController, :get_channel)
+
+    # Rumble routes
+    get("/rumble/channels/:channel_name", RumbleController, :get_channel)
+
     # Organization invitation (public - for viewing invitation details)
     get("/invitations/:token", OrganizationController, :get_invitation)
 
@@ -1230,6 +1236,9 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/promos", AdminController, :create_promo)
     patch("/admin/promos/:id", AdminController, :update_promo)
     post("/admin/promos/:id/toggle", AdminController, :toggle_promo_active)
+
+    # Admin leaderboard management
+    post("/admin/leaderboard/refresh", AdminController, :refresh_leaderboard)
 
     # Admin waitlist management
     get("/admin/waitlist", WaitlistController, :index)

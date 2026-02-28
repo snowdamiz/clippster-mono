@@ -114,7 +114,7 @@
                   :project-id="project?.id"
                   :hovered-timeline-clip-id="hoveredTimelineClipId"
                   :is-playing-segments="isPlayingSegments"
-                  :playing-clip-id="getCurrentPlayingClipId()"
+                  :playing-clip-id="currentlyPlayingClipId"
                   :video-duration="duration"
                   :current-time="currentTime"
                   :aspect-ratio="selectedAspectRatio"
@@ -464,7 +464,7 @@
     error: backendError,
     setProjectId: setProgressProjectId,
     reset: resetProgress,
-  } = useProgressSocket(props.project?.id || null);
+  } = useProgressSocket(null);
 
   // Frontend progress tracking (for chunked detection preparation)
   const frontendProgress = ref(0);
@@ -1392,10 +1392,6 @@
     videoElement.value = element;
   }
 
-  function getCurrentPlayingClipId(): string | null {
-    return currentlyPlayingClipId.value;
-  }
-
   // Helper to measure watermark dimensions from file path
   async function measureWatermarkDimensions(
     filePath: string
@@ -1744,21 +1740,18 @@
       segments: clip.segments,
     });
 
+    // Track the currently playing clip
+    currentlyPlayingClipId.value = clip.id;
+
+    // Set guard flag so the segmentPlaybackEnded watcher doesn't clear currentlyPlayingClipId
+    skipPlaybackEndedClear = true;
+
     // Stop any existing playback first
     stopSegmentedPlayback();
 
-    // Clear all previous selection states when starting playback
-    hoveredClipId.value = null;
-    hoveredTimelineClipId.value = null;
-
-    // Force clear any lingering hover states
-    setTimeout(() => {
-      hoveredClipId.value = null;
-      hoveredTimelineClipId.value = null;
-    }, 10);
-
-    // Track the currently playing clip - SET THIS FIRST so timeline highlights immediately
-    currentlyPlayingClipId.value = clip.id;
+    // Set hover states to the playing clip so it highlights in both panel and timeline
+    hoveredClipId.value = clip.id;
+    hoveredTimelineClipId.value = clip.id;
     console.log('[ProjectWorkspaceDialog] Set currentlyPlayingClipId to:', clip.id);
 
     // Reveal the clip in the timeline (makes it visible if hidden)
@@ -2411,10 +2404,18 @@
     }
   });
 
+  // Guard flag to prevent the segmented-playback-ended watcher from clearing
+  // currentlyPlayingClipId when stopSegmentedPlayback is called inside onPlayClip
+  let skipPlaybackEndedClear = false;
+
   // Watch for segmented playback state changes
   watch([isPlayingSegments, segmentPlaybackEnded], ([isPlaying, ended]) => {
     if (!isPlaying && ended) {
-      // Clear the currently playing clip when playback ends
+      if (skipPlaybackEndedClear) {
+        skipPlaybackEndedClear = false;
+        return;
+      }
+      // Clear the currently playing clip when playback ends naturally
       currentlyPlayingClipId.value = null;
     }
   });

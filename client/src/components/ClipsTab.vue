@@ -178,18 +178,18 @@
                 :class="[
                   'clips-tab-card group relative rounded-lg cursor-pointer transition-all duration-200',
                   // Playing clip gets green styling
-                  props.isPlayingSegments && props.playingClipId === clip.id ? 'clips-tab-card--playing' : '',
+                  props.playingClipId === clip.id ? 'clips-tab-card--playing' : '',
                 ]"
                 :style="{
                   // Prioritize playing state over all other states
                   borderColor:
-                    props.isPlayingSegments && props.playingClipId === clip.id
+                    props.playingClipId === clip.id
                       ? undefined
-                      : !props.isPlayingSegments && (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id)
+                      : (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id)
                         ? clip.session_run_color || '#8B5CF6'
                         : undefined,
                   borderWidth:
-                    !props.isPlayingSegments && (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id)
+                    !props.playingClipId && (hoveredTimelineClipId === clip.id || hoveredClipId === clip.id)
                       ? '1px'
                       : undefined,
                 }"
@@ -201,7 +201,7 @@
                   class="absolute left-0 top-0 bottom-0 w-1 transition-all duration-200 rounded-l-lg"
                   :style="{
                     backgroundColor: clip.session_run_color || '#8B5CF6',
-                    opacity: props.isPlayingSegments && props.playingClipId === clip.id ? '1' : '0.6',
+                    opacity: props.playingClipId === clip.id ? '1' : '0.6',
                   }"
                 ></div>
 

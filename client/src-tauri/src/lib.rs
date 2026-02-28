@@ -18,16 +18,19 @@ mod hls;
 mod hls_proxy;
 mod kick;
 mod pumpfun;
+mod rumble;
 mod sidecar;
 mod storage;
 mod stripe_callback;
 mod twitch;
+mod twitter;
 mod ui_utils;
 mod utils;
 mod video;
 mod video_editor_export;
 mod video_server;
 mod waveform;
+mod youtube;
 
 // Import items from modules
 use downloads::ACTIVE_DOWNLOADS;
@@ -823,7 +826,7 @@ pub fn run() {
                         tauri_plugin_sql::Migration {
                             version: 89,
                             description: "add_project_media",
-                            sql: include_str!("../migrations/069_add_project_media.sql"),
+                            sql: include_str!("../migrations/089_add_project_media.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
                         tauri_plugin_sql::Migration {
@@ -832,10 +835,17 @@ pub fn run() {
                             sql: include_str!("../migrations/090_fix_monitored_streamers_user_unique.sql"),
                             kind: tauri_plugin_sql::MigrationKind::Up,
                         },
+                        tauri_plugin_sql::Migration {
+                            version: 91,
+                            description: "add_source_start_time_to_audio_tracks",
+                            sql: include_str!("../migrations/091_add_source_start_time_to_audio_tracks.sql"),
+                            kind: tauri_plugin_sql::MigrationKind::Up,
+                        },
                     ],
                 )
                 .build(),
         )
+        .plugin(tauri_plugin_localhost::Builder::new(1420).build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
@@ -1076,6 +1086,44 @@ commands::file_utils::generate_video_thumbnail,
             twitch::get_twitch_session_output_dir,
             twitch::get_active_twitch_recordings,
 
+            // YouTube commands
+            youtube::check_youtube_livestream,
+            youtube::get_youtube_channel_info,
+            youtube::get_youtube_vods,
+            youtube::get_youtube_videos,
+            youtube::download_youtube_vod,
+            youtube::download_youtube_vod_segment,
+            youtube::start_youtube_recording,
+            youtube::stop_youtube_recording,
+            youtube::stop_all_youtube_recordings,
+            youtube::get_youtube_session_output_dir,
+            youtube::get_active_youtube_recordings,
+
+            // Rumble commands
+            rumble::check_rumble_livestream,
+            rumble::get_rumble_channel_info,
+            rumble::get_rumble_vods,
+            rumble::download_rumble_vod,
+            rumble::download_rumble_vod_segment,
+            rumble::start_rumble_recording,
+            rumble::stop_rumble_recording,
+            rumble::stop_all_rumble_recordings,
+            rumble::get_rumble_session_output_dir,
+            rumble::get_active_rumble_recordings,
+
+            // Twitter commands
+            twitter::validate_twitter_url,
+            twitter::get_twitter_broadcast_info,
+            twitter::get_twitter_broadcast_duration,
+            twitter::download_twitter_thumbnail,
+            twitter::download_twitter_vod,
+            twitter::download_twitter_vod_segment,
+            twitter::start_twitter_recording,
+            twitter::stop_twitter_recording,
+            twitter::stop_all_twitter_recordings,
+            twitter::get_twitter_session_output_dir,
+            twitter::get_active_twitter_recordings,
+
             // Download commands
             downloads::download_pumpfun_vod,
             downloads::download_pumpfun_vod_segment,
@@ -1232,12 +1280,12 @@ hls_proxy::check_hls_playlist_exists,
 avatar_proxy::fetch_avatar_image,
 
 // Remotion export commands
-remotion_export::start_remotion_export,
-remotion_export::cancel_remotion_export,
-remotion_export::stop_remotion_sidecar,
+commands::remotion_export::start_remotion_export,
+commands::remotion_export::cancel_remotion_export,
+commands::remotion_export::stop_remotion_sidecar,
 
 ])
-.manage(remotion_export::SidecarState::new())
+.manage(commands::remotion_export::SidecarState::new())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
 }

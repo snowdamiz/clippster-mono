@@ -128,30 +128,35 @@ function resolveFfmpegBinary() {
   const isWindows = process.platform === 'win32';
   const bareName = isWindows ? 'ffmpeg.exe' : 'ffmpeg';
   const binName = FFMPEG_BINARIES[process.platform];
+
+  // Build candidate list - ordered from most likely to least likely
   const candidates = [];
 
   if (binName) {
-    candidates.push(
-      path.join(execDir, binName),
-      path.resolve(__dirname, '../binaries', binName),
-      path.resolve(__dirname, '..', binName),
-      path.resolve(__dirname, binName),
-      // Bundle layout: Resources/pumpfun-service -> ../../MacOS/<binary>
-      path.resolve(__dirname, '../../MacOS', binName),
-    );
+    // 1. Triple-suffixed name next to node binary (dev mode / pre-bundle)
+    candidates.push(path.join(execDir, binName));
+    // 2. Relative to script (dev binaries dir)
+    candidates.push(path.resolve(__dirname, '../binaries', binName));
+    candidates.push(path.resolve(__dirname, '..', binName));
+    candidates.push(path.resolve(__dirname, binName));
+    // 3. Bundle layout: Resources/pumpfun-service -> ../../MacOS/<binary> (macOS production)
+    candidates.push(path.resolve(__dirname, '../../MacOS', binName));
 
+    // 4. x86_64 fallback on arm64 macOS (Rosetta / universal builds)
     if (process.platform === 'darwin' && process.arch === 'arm64') {
-       const x86Name = 'ffmpeg-x86_64-apple-darwin';
-       candidates.push(
-          path.join(execDir, x86Name),
-          path.resolve(__dirname, '../binaries', x86Name),
-          path.resolve(__dirname, '..', x86Name),
-          path.resolve(__dirname, '../../MacOS', x86Name),
-       );
+      const x86Name = 'ffmpeg-x86_64-apple-darwin';
+      candidates.push(
+        path.join(execDir, x86Name),
+        path.resolve(__dirname, '../binaries', x86Name),
+        path.resolve(__dirname, '..', x86Name),
+        path.resolve(__dirname, '../../MacOS', x86Name),
+      );
     }
   }
 
-  // Tauri macOS bundles strip sidecar target-triple suffixes (e.g. "ffmpeg").
+  // 5. BARE name next to node binary - CRITICAL for macOS production bundle.
+  //    Tauri strips the target triple suffix when bundling sidecars into .app/Contents/MacOS/.
+  //    So 'ffmpeg-aarch64-apple-darwin' becomes just 'ffmpeg' in the bundle.
   candidates.push(
     path.join(execDir, bareName),
     path.resolve(__dirname, '../binaries', bareName),
@@ -160,13 +165,23 @@ function resolveFfmpegBinary() {
     path.resolve(__dirname, '../../MacOS', bareName),
   );
 
+  // 6. Also check one level up from execDir (some bundle layouts)
+  candidates.push(path.join(execDir, '..', bareName));
+
+  console.log(JSON.stringify({ type: 'info', message: `[FFmpeg] Resolving binary. execDir=${execDir}, platform=${process.platform}, arch=${process.arch}` }));
+
+  // Deduplicate candidates to avoid redundant checks
   const uniqueCandidates = [...new Set(candidates)];
+
   for (const candidate of uniqueCandidates) {
-    if (fs.existsSync(candidate)) {
+    if (candidate && fs.existsSync(candidate)) {
+      console.log(JSON.stringify({ type: 'info', message: `[FFmpeg] Found binary at: ${candidate}` }));
       return candidate;
     }
   }
 
+  // Log all tried paths before falling back
+  console.log(JSON.stringify({ type: 'error', message: `[FFmpeg] Binary not found in any candidate path. Tried: ${uniqueCandidates.join(', ')}. Falling back to system PATH 'ffmpeg'.` }));
   return 'ffmpeg';
 }
 

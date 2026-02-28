@@ -1,4 +1,4 @@
-use crate::sidecar::{RemotionSidecar, RenderCommand};
+﻿use crate::sidecar::{RemotionSidecar, RenderCommand};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use tauri::{command, AppHandle, State};
