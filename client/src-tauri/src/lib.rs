@@ -1088,6 +1088,7 @@ commands::file_utils::generate_video_thumbnail,
 
             // YouTube commands
             youtube::check_youtube_livestream,
+            youtube::get_youtube_channel_info,
             youtube::get_youtube_vods,
             youtube::get_youtube_videos,
             youtube::download_youtube_vod,
@@ -1099,6 +1100,7 @@ commands::file_utils::generate_video_thumbnail,
 
             // Rumble commands
             rumble::check_rumble_livestream,
+            rumble::get_rumble_channel_info,
             rumble::get_rumble_vods,
             rumble::download_rumble_vod,
             rumble::start_rumble_recording,

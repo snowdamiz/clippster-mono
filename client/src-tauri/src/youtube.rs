@@ -87,6 +87,8 @@ pub struct YouTubeLiveStatus {
     pub is_live: bool,
     pub channel_id: Option<String>,
     pub channel_name: Option<String>,
+    pub display_name: Option<String>,
+    pub profile_image_url: Option<String>,
     pub stream_title: Option<String>,
     pub viewer_count: Option<String>,
     pub thumbnail_url: Option<String>,
@@ -143,11 +145,17 @@ pub async fn check_youtube_livestream(channel: String) -> Result<String, String>
         let is_live = json["is_live"].as_bool().unwrap_or(false)
             || json["live_status"].as_str() == Some("is_live");
 
+        let channel_name = json["uploader"].as_str().map(String::from)
+            .or_else(|| json["channel"].as_str().map(String::from));
+        let display_name = json["uploader"].as_str().map(String::from)
+            .or_else(|| json["channel"].as_str().map(String::from));
+
         let status = YouTubeLiveStatus {
             is_live,
-            channel_id: Some(channel_id),
-            channel_name: json["uploader"].as_str().map(String::from)
-                .or_else(|| json["channel"].as_str().map(String::from)),
+            channel_id: Some(channel_id.clone()),
+            channel_name,
+            display_name,
+            profile_image_url: None,
             stream_title: json["title"].as_str().map(String::from),
             viewer_count: json["concurrent_view_count"].as_i64()
                 .map(|v| v.to_string())
@@ -164,6 +172,8 @@ pub async fn check_youtube_livestream(channel: String) -> Result<String, String>
         is_live: false,
         channel_id: Some(channel_id),
         channel_name: None,
+        display_name: None,
+        profile_image_url: None,
         stream_title: None,
         viewer_count: None,
         thumbnail_url: None,
@@ -868,6 +878,94 @@ pub fn get_youtube_session_output_dir(session_id: String) -> Result<String, Stri
 pub fn get_active_youtube_recordings() -> Result<Vec<String>, String> {
     let recordings = YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap();
     Ok(recordings.keys().cloned().collect())
+}
+
+/// Get YouTube channel information including profile image
+/// This fetches channel metadata regardless of live status
+#[tauri::command]
+pub async fn get_youtube_channel_info(channel: String) -> Result<String, String> {
+    let channel_id = normalize_channel_input(&channel);
+    let ytdlp_path = resolve_ytdlp_binary()?;
+
+    // Build channel URL
+    let channel_url = if channel_id.starts_with('@') {
+        format!("https://www.youtube.com/{}", channel_id)
+    } else if channel_id.starts_with("UC") {
+        format!("https://www.youtube.com/channel/{}", channel_id)
+    } else {
+        format!("https://www.youtube.com/@{}", channel_id)
+    };
+
+    println!("[YouTube] Fetching channel info for: {}", channel_url);
+
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut cmd);
+
+    // Use --dump-json with --playlist-items 0 to get channel metadata only
+    cmd.arg("--dump-json")
+        .arg("--skip-download")
+        .arg("--playlist-items").arg("0")
+        .arg("--no-warnings")
+        .arg(&channel_url)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let output = cmd.output().await
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(stdout.trim()) {
+        // Extract profile image from various possible fields
+        let profile_image_url = json["thumbnail"].as_str()
+            .or_else(|| json["avatar"].as_str())
+            .or_else(|| json["thumbnails"].as_array().and_then(|arr| {
+                arr.iter()
+                    .filter_map(|t| t["url"].as_str())
+                    .last()
+            }))
+            .or_else(|| json["channel"]["avatar"].as_str())
+            .or_else(|| json["uploader_thumbnails"].as_array().and_then(|arr| {
+                arr.iter()
+                    .filter_map(|t| t["url"].as_str())
+                    .last()
+            }))
+            .map(String::from);
+
+        let channel_name = json["uploader"].as_str()
+            .or_else(|| json["channel"].as_str())
+            .or_else(|| json["title"].as_str())
+            .map(String::from);
+
+        let display_name = channel_name.clone();
+
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct ChannelInfo {
+            channel_id: String,
+            channel_name: Option<String>,
+            display_name: Option<String>,
+            profile_image_url: Option<String>,
+        }
+
+        let info = ChannelInfo {
+            channel_id: channel_id.clone(),
+            channel_name,
+            display_name,
+            profile_image_url,
+        };
+
+        println!("[YouTube] Channel info: profile_image={:?}", info.profile_image_url);
+        return Ok(serde_json::to_string(&info).unwrap());
+    }
+
+    // If JSON parsing failed, try stderr for errors
+    if !stderr.is_empty() {
+        println!("[YouTube] yt-dlp stderr: {}", &stderr[..stderr.len().min(300)]);
+    }
+
+    Err(format!("Failed to fetch channel info. stderr: {}", &stderr[..stderr.len().min(200)]))
 }
 
 // Helper functions

@@ -494,8 +494,8 @@
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer, type TokenSearchResult } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
-  import { extractYouTubeChannel } from '@/services/youtube';
-  import { extractRumbleChannel } from '@/services/rumble';
+  import { extractYouTubeChannel, getYouTubeChannelInfo } from '@/services/youtube';
+  import { extractRumbleChannel, getRumbleChannelInfo } from '@/services/rumble';
   import { extractTwitterUsername, extractTwitterBroadcastId } from '@/services/twitter';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
@@ -717,12 +717,40 @@
     const needsUpdate = 
       (streamer.platform === 'PumpFun' && (streamer.displayName === streamer.mintId || !streamer.profileImageUrl)) ||
       (streamer.platform === 'Kick' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId)) ||
-      (streamer.platform === 'Twitch' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId));
+      (streamer.platform === 'Twitch' && (!streamer.profileImageUrl || streamer.displayName === streamer.mintId)) ||
+      (streamer.platform === 'YouTube' && !streamer.profileImageUrl) ||
+      (streamer.platform === 'Rumble' && !streamer.profileImageUrl);
 
     if (!needsUpdate) return;
 
     try {
-      if (streamer.platform === 'Kick') {
+      if (streamer.platform === 'YouTube') {
+        const channelInfo = await getYouTubeChannelInfo(streamer.mintId);
+        if (channelInfo?.profileImageUrl) {
+          const updates: any = {
+            profile_image_url: channelInfo.profileImageUrl,
+          };
+          if (channelInfo.displayName && streamer.displayName === streamer.mintId) {
+            updates.display_name = channelInfo.displayName;
+          }
+          await updateMonitoredStreamer(streamer.id, updates);
+          streamer.profileImageUrl = channelInfo.profileImageUrl;
+          if (updates.display_name) streamer.displayName = updates.display_name;
+        }
+      } else if (streamer.platform === 'Rumble') {
+        const channelInfo = await getRumbleChannelInfo(streamer.mintId);
+        if (channelInfo?.profileImageUrl) {
+          const updates: any = {
+            profile_image_url: channelInfo.profileImageUrl,
+          };
+          if (channelInfo.displayName && streamer.displayName === streamer.mintId) {
+            updates.display_name = channelInfo.displayName;
+          }
+          await updateMonitoredStreamer(streamer.id, updates);
+          streamer.profileImageUrl = channelInfo.profileImageUrl;
+          if (updates.display_name) streamer.displayName = updates.display_name;
+        }
+      } else if (streamer.platform === 'Kick') {
         const status = await checkKickLivestream(streamer.mintId);
         const updates: any = {};
 
@@ -795,7 +823,9 @@
       (s) =>
         (s.platform === 'PumpFun' && (s.displayName === s.mintId || !s.profileImageUrl)) ||
         (s.platform === 'Kick' && (!s.profileImageUrl || s.displayName === s.mintId)) ||
-        (s.platform === 'Twitch' && (!s.profileImageUrl || s.displayName === s.mintId))
+        (s.platform === 'Twitch' && (!s.profileImageUrl || s.displayName === s.mintId)) ||
+        (s.platform === 'YouTube' && !s.profileImageUrl) ||
+        (s.platform === 'Rumble' && !s.profileImageUrl)
     );
 
     if (needsUpdate.length === 0) return;

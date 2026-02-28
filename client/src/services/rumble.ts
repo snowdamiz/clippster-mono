@@ -3,11 +3,12 @@ import { invoke } from '@tauri-apps/api/core';
 export interface RumbleLiveStatus {
   isLive: boolean;
   channelName?: string;
+  displayName?: string;
+  profileImageUrl?: string;
   streamTitle?: string;
   viewerCount?: number;
   thumbnailUrl?: string;
   startedAt?: string;
-  profileImageUrl?: string;
 }
 
 export interface RumbleVod {
@@ -96,6 +97,23 @@ export async function checkRumbleLivestream(channel: string): Promise<RumbleLive
     return {
       isLive: false,
     };
+  }
+}
+
+export interface RumbleChannelInfo {
+  channelName: string;
+  displayName?: string;
+  profileImageUrl?: string;
+}
+
+export async function getRumbleChannelInfo(channel: string): Promise<RumbleChannelInfo | null> {
+  try {
+    const channelName = extractRumbleChannel(channel) || channel.trim();
+    const result = await invoke<string>('get_rumble_channel_info', { channel: channelName });
+    return JSON.parse(result);
+  } catch (error: unknown) {
+    console.error('[Rumble] Failed to fetch channel info:', error);
+    return null;
   }
 }
 

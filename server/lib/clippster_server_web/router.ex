@@ -209,6 +209,12 @@ defmodule ClippsterServerWeb.Router do
     # Twitch routes
     get("/twitch/channels/:channel_name", TwitchController, :get_channel)
 
+    # YouTube routes
+    get("/youtube/channels/:channel_id", YouTubeController, :get_channel)
+
+    # Rumble routes
+    get("/rumble/channels/:channel_name", RumbleController, :get_channel)
+
     # Organization invitation (public - for viewing invitation details)
     get("/invitations/:token", OrganizationController, :get_invitation)
 

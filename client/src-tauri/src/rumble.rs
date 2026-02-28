@@ -144,24 +144,31 @@ pub async fn check_rumble_livestream(channel: String) -> Result<String, String> 
             let body = resp.text().await
                 .map_err(|e| format!("Failed to read Rumble response: {}", e))?;
 
-            // Extract profile image from channel page
-            // Look for profile image in various possible locations
+            // Extract profile image from channel page using multiple fallback patterns
             let profile_image = extract_html_attr(&body, r#"class="listing-header--thumb"[^>]*src="([^"]+)""#)
                 .or_else(|| extract_html_attr(&body, r#"<img[^>]+class="listing-header--thumb"[^>]+src="([^"]+)""#))
-                .or_else(|| extract_html_attr(&body, r#"<img[^>]+src="(https://[^"]*rumble\.com[^"]*profile[^"]*\.(jpg|png|webp)[^"]*)""#))
-                .or_else(|| extract_html_attr(&body, r#"<meta\s+property="og:image"\s+content="([^"]+)""#))
+                // Try to find any img with "thumb" in class within listing-header
                 .or_else(|| {
-                    // Try to find any image in the listing-header section
                     if let Some(header_section) = body.split("listing-header").nth(1) {
                         if let Some(img_section) = header_section.split("</header>").next() {
-                            extract_html_attr(img_section, r#"<img[^>]+src="([^"]+)""#)
+                            extract_html_attr(img_section, r#"class="[^"]*thumb[^"]*"[^>]*src="([^"]+)""#)
+                                .or_else(|| extract_html_attr(img_section, r#"<img[^>]+src="([^"]+)""#))
                         } else {
                             None
                         }
                     } else {
                         None
                     }
-                });
+                })
+                // Profile images in URL
+                .or_else(|| extract_html_attr(&body, r#"src="(https://[^"]*rumble\.com[^"]*profile[^"]*\.(jpg|png|webp)[^"]*)""#))
+                .or_else(|| extract_html_attr(&body, r#"src="(https://[^"]*\.rumble\.com[^"]*\.(jpg|png|webp)[^"]*)""#))
+                // OpenGraph and meta tags
+                .or_else(|| extract_html_attr(&body, r#"<meta\s+property="og:image"\s+content="([^"]+)""#))
+                .or_else(|| extract_html_attr(&body, r#"<meta[^>]+property="og:image"[^>]+content="([^"]+)""#))
+                .or_else(|| extract_html_attr(&body, r#"<link[^>]+rel="image_src"[^>]+href="([^"]+)""#))
+                // Rumble CDN images
+                .or_else(|| extract_html_attr(&body, r#"src="(https://sp\.rmbl\.ws/[^"]+)""#));
             
             if let Some(ref img_url) = profile_image {
                 println!("[Rumble] Found profile image: {}", img_url);
@@ -884,6 +891,89 @@ pub fn get_rumble_session_output_dir(session_id: String) -> Result<String, Strin
 pub fn get_active_rumble_recordings() -> Result<Vec<String>, String> {
     let recordings = RUMBLE_ACTIVE_RECORDINGS.lock().unwrap();
     Ok(recordings.keys().cloned().collect())
+}
+
+/// Get Rumble channel information including profile image
+/// This fetches channel metadata regardless of live status
+#[tauri::command]
+pub async fn get_rumble_channel_info(channel: String) -> Result<String, String> {
+    let channel_name = normalize_channel_name(&channel);
+    let channel_url = channel_to_url(&channel_name);
+    
+    println!("[Rumble] Fetching channel info for: {}", channel_url);
+
+    let response = RUMBLE_HTTP_CLIENT
+        .get(&channel_url)
+        .header("Accept", "text/html,application/xhtml+xml")
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let body = resp.text().await
+                .map_err(|e| format!("Failed to read Rumble response: {}", e))?;
+
+            // Extract profile image using multiple fallback patterns
+            // Pattern 1: listing-header--thumb class (most common)
+            let profile_image_url = extract_html_attr(&body, r#"class="listing-header--thumb"[^>]*src="([^"]+)""#)
+                .or_else(|| extract_html_attr(&body, r#"<img[^>]+class="listing-header--thumb"[^>]+src="([^"]+)""#))
+                // Pattern 2: Any img with "thumb" in class within listing-header
+                .or_else(|| {
+                    if let Some(header_section) = body.split("listing-header").nth(1) {
+                        if let Some(img_section) = header_section.split("</header>").next() {
+                            extract_html_attr(img_section, r#"class="[^"]*thumb[^"]*"[^>]*src="([^"]+)""#)
+                                .or_else(|| extract_html_attr(img_section, r#"<img[^>]+src="([^"]+)""#))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                // Pattern 3: Profile images in URL
+                .or_else(|| extract_html_attr(&body, r#"src="(https://[^"]*rumble\.com[^"]*profile[^"]*\.(jpg|png|webp)[^"]*)""#))
+                .or_else(|| extract_html_attr(&body, r#"src="(https://[^"]*\.rumble\.com[^"]*\.(jpg|png|webp)[^"]*)""#))
+                // Pattern 4: OpenGraph and meta tags
+                .or_else(|| extract_html_attr(&body, r#"<meta\s+property="og:image"\s+content="([^"]+)""#))
+                .or_else(|| extract_html_attr(&body, r#"<meta[^>]+property="og:image"[^>]+content="([^"]+)""#))
+                .or_else(|| extract_html_attr(&body, r#"<link[^>]+rel="image_src"[^>]+href="([^"]+)""#))
+                // Pattern 5: Look for any rumble CDN image
+                .or_else(|| extract_html_attr(&body, r#"src="(https://sp\.rmbl\.ws/[^"]+)""#));
+
+            // Extract channel display name from page title or header
+            let display_name = extract_html_text(&body, r#"<title>([^<]+)</title>"#)
+                .map(|t| t.replace(" - Rumble", "").trim().to_string())
+                .or_else(|| extract_html_text(&body, r#"<h1[^>]*class="[^"]*listing-header--title[^"]*"[^>]*>([^<]+)</h1>"#))
+                .or_else(|| Some(channel_name.clone()));
+
+            #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
+            struct ChannelInfo {
+                channel_name: String,
+                display_name: Option<String>,
+                profile_image_url: Option<String>,
+            }
+
+            let info = ChannelInfo {
+                channel_name: channel_name.clone(),
+                display_name,
+                profile_image_url: profile_image_url.clone(),
+            };
+
+            println!("[Rumble] Channel info: profile_image={:?}, display_name={:?}", 
+                info.profile_image_url, info.display_name);
+            
+            Ok(serde_json::to_string(&info).unwrap())
+        }
+        Ok(resp) => {
+            println!("[Rumble] Channel page returned {} for {}", resp.status(), channel_name);
+            Err(format!("Channel page returned status: {}", resp.status()))
+        }
+        Err(e) => {
+            println!("[Rumble] HTTP request failed for {}: {}", channel_name, e);
+            Err(format!("Failed to fetch channel info: {}", e))
+        }
+    }
 }
 
 // Helper functions

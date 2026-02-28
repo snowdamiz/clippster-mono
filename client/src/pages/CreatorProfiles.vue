@@ -791,6 +791,8 @@
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { checkKickLivestream } from '@/services/kick';
   import { checkTwitchLivestream } from '@/services/twitch';
+  import { getYouTubeChannelInfo } from '@/services/youtube';
+  import { getRumbleChannelInfo } from '@/services/rumble';
   import { type PlatformId } from '@/config/platforms';
   import {
     Users,
@@ -1099,6 +1101,24 @@
       organizationId?: number;
       profileId?: number;
     }[] = [];
+    const youtubeLinksToCheck: {
+      linkId: string;
+      platformId: string;
+      channelId: string;
+      hasProfileImage: boolean;
+      isOrgLink: boolean;
+      organizationId?: number;
+      profileId?: number;
+    }[] = [];
+    const rumbleLinksToCheck: {
+      linkId: string;
+      platformId: string;
+      channelName: string;
+      hasProfileImage: boolean;
+      isOrgLink: boolean;
+      organizationId?: number;
+      profileId?: number;
+    }[] = [];
 
     for (const creator of creators.value) {
       for (const link of creator.platform_links) {
@@ -1123,6 +1143,28 @@
         } else if (link.platform === 'twitch') {
           const isOrgLink = link.id.startsWith('org-link-');
           twitchLinksToCheck.push({
+            linkId: link.id,
+            platformId: link.platform_id,
+            channelName: link.platform_id,
+            hasProfileImage: Boolean(link.profile_image_url),
+            isOrgLink,
+            organizationId: isOrgLink ? creator.organization_id : undefined,
+            profileId: isOrgLink ? creator.server_id : undefined,
+          });
+        } else if (link.platform === 'youtube') {
+          const isOrgLink = link.id.startsWith('org-link-');
+          youtubeLinksToCheck.push({
+            linkId: link.id,
+            platformId: link.platform_id,
+            channelId: link.platform_id,
+            hasProfileImage: Boolean(link.profile_image_url),
+            isOrgLink,
+            organizationId: isOrgLink ? creator.organization_id : undefined,
+            profileId: isOrgLink ? creator.server_id : undefined,
+          });
+        } else if (link.platform === 'rumble') {
+          const isOrgLink = link.id.startsWith('org-link-');
+          rumbleLinksToCheck.push({
             linkId: link.id,
             platformId: link.platform_id,
             channelName: link.platform_id,
@@ -1280,7 +1322,77 @@
       }
     );
 
-    await Promise.all([...pumpfunPromises, ...kickPromises, ...twitchPromises]);
+    const youtubePromises = youtubeLinksToCheck.map(
+      async ({ linkId, platformId, channelId, hasProfileImage, isOrgLink, organizationId, profileId }) => {
+        // Only fetch profile image if we don't have one
+        if (hasProfileImage) return;
+
+        try {
+          const channelInfo = await getYouTubeChannelInfo(channelId);
+          if (channelInfo?.profileImageUrl) {
+            try {
+              if (isOrgLink && organizationId && profileId) {
+                const serverLinkId = parseInt(linkId.replace('org-link-', ''), 10);
+                await updateOrgPlatformLink(organizationId, profileId, serverLinkId, {
+                  profile_image_url: channelInfo.profileImageUrl,
+                });
+              } else {
+                await updatePlatformLink(linkId, { profile_image_url: channelInfo.profileImageUrl });
+              }
+              // Update local state
+              for (const creator of creators.value) {
+                const link = creator.platform_links.find((l) => l.id === linkId);
+                if (link) {
+                  link.profile_image_url = channelInfo.profileImageUrl;
+                  break;
+                }
+              }
+            } catch (updateError) {
+              console.warn('[CreatorProfiles] Failed to persist YouTube profile image:', updateError);
+            }
+          }
+        } catch (error) {
+          console.error('[CreatorProfiles] Failed to fetch YouTube channel info for', channelId, error);
+        }
+      }
+    );
+
+    const rumblePromises = rumbleLinksToCheck.map(
+      async ({ linkId, platformId, channelName, hasProfileImage, isOrgLink, organizationId, profileId }) => {
+        // Only fetch profile image if we don't have one
+        if (hasProfileImage) return;
+
+        try {
+          const channelInfo = await getRumbleChannelInfo(channelName);
+          if (channelInfo?.profileImageUrl) {
+            try {
+              if (isOrgLink && organizationId && profileId) {
+                const serverLinkId = parseInt(linkId.replace('org-link-', ''), 10);
+                await updateOrgPlatformLink(organizationId, profileId, serverLinkId, {
+                  profile_image_url: channelInfo.profileImageUrl,
+                });
+              } else {
+                await updatePlatformLink(linkId, { profile_image_url: channelInfo.profileImageUrl });
+              }
+              // Update local state
+              for (const creator of creators.value) {
+                const link = creator.platform_links.find((l) => l.id === linkId);
+                if (link) {
+                  link.profile_image_url = channelInfo.profileImageUrl;
+                  break;
+                }
+              }
+            } catch (updateError) {
+              console.warn('[CreatorProfiles] Failed to persist Rumble profile image:', updateError);
+            }
+          }
+        } catch (error) {
+          console.error('[CreatorProfiles] Failed to fetch Rumble channel info for', channelName, error);
+        }
+      }
+    );
+
+    await Promise.all([...pumpfunPromises, ...kickPromises, ...twitchPromises, ...youtubePromises, ...rumblePromises]);
   }
 
   async function loadCreators() {

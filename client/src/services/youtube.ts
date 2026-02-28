@@ -4,6 +4,8 @@ export interface YouTubeLiveStatus {
   isLive: boolean;
   channelId?: string;
   channelName?: string;
+  displayName?: string;
+  profileImageUrl?: string;
   streamTitle?: string;
   viewerCount?: string;
   thumbnailUrl?: string;
@@ -94,6 +96,24 @@ export async function checkYouTubeLivestream(channel: string): Promise<YouTubeLi
     return {
       isLive: false,
     };
+  }
+}
+
+export interface YouTubeChannelInfo {
+  channelId: string;
+  channelName?: string;
+  displayName?: string;
+  profileImageUrl?: string;
+}
+
+export async function getYouTubeChannelInfo(channel: string): Promise<YouTubeChannelInfo | null> {
+  try {
+    const channelId = extractYouTubeChannel(channel) || channel.trim();
+    const result = await invoke<string>('get_youtube_channel_info', { channel: channelId });
+    return JSON.parse(result);
+  } catch (error: unknown) {
+    console.error('[YouTube] Failed to fetch channel info:', error);
+    return null;
   }
 }
 

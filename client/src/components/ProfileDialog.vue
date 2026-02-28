@@ -762,6 +762,8 @@
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
+  import { extractYouTubeChannel, getYouTubeChannelInfo } from '@/services/youtube';
+  import { extractRumbleChannel, getRumbleChannelInfo } from '@/services/rumble';
   import { readFile } from '@tauri-apps/plugin-fs';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
@@ -775,7 +777,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { useSubscription } from '@/composables/useSubscription';
 
-  type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
+  type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble';
 
   interface PlatformLinkInput {
     platform: PlatformId;
@@ -864,7 +866,8 @@
     { id: 'pumpfun' as PlatformId, name: 'PumpFun', disabled: false },
     { id: 'kick' as PlatformId, name: 'Kick', disabled: false },
     { id: 'twitch' as PlatformId, name: 'Twitch', disabled: false },
-    { id: 'youtube' as PlatformId, name: 'YouTube', disabled: true },
+    { id: 'youtube' as PlatformId, name: 'YouTube', disabled: false },
+    { id: 'rumble' as PlatformId, name: 'Rumble', disabled: false },
   ];
 
   const formData = ref<{
@@ -1148,8 +1151,8 @@
     link.platform = platformId;
     openPlatformDropdown.value = null;
 
-    // If switching to PumpFun, Kick, or Twitch and we have a platform ID, extract metadata
-    if ((platformId === 'pumpfun' || platformId === 'kick' || platformId === 'twitch') && link.platform_id.trim()) {
+    // If switching platforms and we have a platform ID, extract metadata
+    if ((platformId === 'pumpfun' || platformId === 'kick' || platformId === 'twitch' || platformId === 'youtube' || platformId === 'rumble') && link.platform_id.trim()) {
       await extractPlatformId(link);
     }
   }
@@ -1276,6 +1279,78 @@
           fetchingProfileImage.value = false;
         }
       }
+    } else if (link.platform === 'youtube') {
+      const channelId = extractYouTubeChannel(input);
+      if (channelId) {
+        link.platform_id = channelId;
+
+        // Check if we already have a profile image from another link
+        const existingProfileImage = formData.value.platformLinks.find(
+          (l) => l !== link && l.profile_image_url
+        )?.profile_image_url;
+
+        if (existingProfileImage) {
+          link.profile_image_url = existingProfileImage;
+          return;
+        }
+
+        // Fetch profile image from YouTube via Tauri command
+        fetchingProfileImage.value = true;
+        try {
+          const channelInfo = await getYouTubeChannelInfo(channelId);
+          if (channelInfo) {
+            // Update display name if not already set
+            const displayName = channelInfo.displayName || channelInfo.channelName;
+            if (!link.display_name && displayName) {
+              link.display_name = displayName;
+            }
+            // Store the profile image URL
+            if (channelInfo.profileImageUrl) {
+              link.profile_image_url = channelInfo.profileImageUrl;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to fetch YouTube channel metadata:', e);
+        } finally {
+          fetchingProfileImage.value = false;
+        }
+      }
+    } else if (link.platform === 'rumble') {
+      const channelName = extractRumbleChannel(input);
+      if (channelName) {
+        link.platform_id = channelName;
+
+        // Check if we already have a profile image from another link
+        const existingProfileImage = formData.value.platformLinks.find(
+          (l) => l !== link && l.profile_image_url
+        )?.profile_image_url;
+
+        if (existingProfileImage) {
+          link.profile_image_url = existingProfileImage;
+          return;
+        }
+
+        // Fetch profile image from Rumble via Tauri command
+        fetchingProfileImage.value = true;
+        try {
+          const channelInfo = await getRumbleChannelInfo(channelName);
+          if (channelInfo) {
+            // Update display name if not already set
+            const displayName = channelInfo.displayName || channelInfo.channelName;
+            if (!link.display_name && displayName) {
+              link.display_name = displayName;
+            }
+            // Store the profile image URL
+            if (channelInfo.profileImageUrl) {
+              link.profile_image_url = channelInfo.profileImageUrl;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to fetch Rumble channel metadata:', e);
+        } finally {
+          fetchingProfileImage.value = false;
+        }
+      }
     }
   }
 
@@ -1289,6 +1364,7 @@
       kick: '/kick.svg',
       twitch: '/twitch.svg',
       youtube: '/youtube.svg',
+      rumble: '/rumble.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -1299,6 +1375,7 @@
       kick: '#53FC18',
       twitch: '#9146FF',
       youtube: '#dc2626',
+      rumble: '#85c742',
     };
     return colors[platform] || '#6b7280';
   }
@@ -1314,6 +1391,7 @@
       kick: 'Kick',
       twitch: 'Twitch',
       youtube: 'YouTube',
+      rumble: 'Rumble',
     };
     return names[platform] || platform;
   }
@@ -2096,7 +2174,7 @@
       let monitoredStreamerId: string | null = null;
 
       // Resolve monitored streamer for supported platforms
-      if (link.platform === 'pumpfun' || link.platform === 'kick' || link.platform === 'twitch') {
+      if (link.platform === 'pumpfun' || link.platform === 'kick' || link.platform === 'twitch' || link.platform === 'youtube' || link.platform === 'rumble') {
         try {
           const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
           if (existing) {

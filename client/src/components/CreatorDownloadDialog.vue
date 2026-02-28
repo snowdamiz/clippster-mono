@@ -375,6 +375,7 @@
       kick: '/kick.svg',
       twitch: '/twitch.svg',
       youtube: '/youtube.svg',
+      rumble: '/rumble.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -385,6 +386,7 @@
       kick: '#53FC18',
       twitch: '#9146FF',
       youtube: '#dc2626',
+      rumble: '#85C742',
     };
     return colors[platform] || '#6b7280';
   }
@@ -395,6 +397,7 @@
       kick: 'Kick',
       twitch: 'Twitch',
       youtube: 'YouTube',
+      rumble: 'Rumble',
     };
     return names[platform] || platform;
   }
