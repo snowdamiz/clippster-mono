@@ -220,6 +220,45 @@ export async function disconnectUserTiktokAccount(
   return response.data;
 }
 
+// ============================================
+// Publishing API
+// ============================================
+
+export interface PublishToUserTiktokData {
+  account_id: number;
+  media_url: string;
+  caption?: string;
+  media_type?: string;
+  thumbnail_url?: string;
+  creator_profile_id?: number;
+  campaign_id?: number;
+}
+
+export interface PublishToUserTiktokResponse {
+  success: boolean;
+  post?: any;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Publish a post to user's personal TikTok account.
+ */
+export async function publishToUserTiktok(
+  data: PublishToUserTiktokData
+): Promise<PublishToUserTiktokResponse> {
+  try {
+    const response = await api.post<PublishToUserTiktokResponse>('/user/tiktok/publish', data);
+    return response.data;
+  } catch (error: any) {
+    console.error('[UserTiktokApi] Failed to publish to TikTok:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to publish to TikTok',
+    };
+  }
+}
+
 /**
  * Check if account token is expiring soon
  */

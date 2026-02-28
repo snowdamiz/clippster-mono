@@ -220,6 +220,45 @@ export async function disconnectUserYoutubeAccount(
   return response.data;
 }
 
+// ============================================
+// Publishing API
+// ============================================
+
+export interface PublishToUserYoutubeData {
+  account_id: number;
+  media_url: string;
+  caption?: string;
+  media_type?: string;
+  thumbnail_url?: string;
+  creator_profile_id?: number;
+  campaign_id?: number;
+}
+
+export interface PublishToUserYoutubeResponse {
+  success: boolean;
+  post?: any;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Publish a post to user's personal YouTube account.
+ */
+export async function publishToUserYoutube(
+  data: PublishToUserYoutubeData
+): Promise<PublishToUserYoutubeResponse> {
+  try {
+    const response = await api.post<PublishToUserYoutubeResponse>('/user/youtube/publish', data);
+    return response.data;
+  } catch (error: any) {
+    console.error('[UserYoutubeApi] Failed to publish to YouTube:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to publish to YouTube',
+    };
+  }
+}
+
 /**
  * Check if account token is expiring soon
  */

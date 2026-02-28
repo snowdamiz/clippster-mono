@@ -52,6 +52,8 @@ export interface PublishPostData {
   caption?: string;
   thumbnail_url?: string;
   media_type?: 'image' | 'video' | 'reel';
+  creator_profile_id?: number;
+  campaign_id?: number;
 }
 
 export interface UploadMediaResponse {
@@ -346,6 +348,8 @@ export async function publishToUserInstagram(data: PublishPostData): Promise<Pos
     caption: data.caption || '',
     thumbnail_url: data.thumbnail_url,
     media_type: data.media_type || 'reel',
+    creator_profile_id: data.creator_profile_id,
+    campaign_id: data.campaign_id,
   });
   return response.data;
 }

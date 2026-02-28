@@ -179,9 +179,13 @@
 
   // Watch for subscription gate and redirect to billing
   // Also watch authStore.user to re-evaluate when user data loads
+  // Only start watching AFTER the app is initialized (isLoading = false)
   watch(
-    [requiresSubscriptionGate, () => authStore.user],
-    ([needsGate]) => {
+    [requiresSubscriptionGate, () => authStore.user, isLoading],
+    ([needsGate, _user, loading]) => {
+      // Don't run during initialization to avoid redirect loops
+      if (loading) return;
+      
       console.log('[App] Subscription gate watch triggered:', {
         needsGate,
         currentPath: currentRoute.path,
@@ -192,8 +196,7 @@
         console.log('[App] Subscription gate active, redirecting to billing');
         router.push('/billing?subscription_required=true');
       }
-    },
-    { immediate: true }
+    }
   );
 
   // Clear plan selection flag on logout

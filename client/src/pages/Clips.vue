@@ -184,7 +184,7 @@
                       @delete="confirmDeleteBuild"
                       @openProject="(build) => openProjectForClip(build, item.clip)"
                       @publish="
-                        (build, filePath) => initiatePublish(build, filePath || item.filePath, item.thumbnailUrl)
+                        (build, filePath) => initiatePublish(build, filePath || item.filePath, item.thumbnailUrl, item.clip)
                       "
                     />
                   </div>
@@ -552,7 +552,7 @@
                               <button
                                 class="folder-dialog-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
                                 @click.stop="
-                                  initiatePublish(item.build, item.filePath, item.thumbnailUrl);
+                                  initiatePublish(item.build, item.filePath, item.thumbnailUrl, item.clip);
                                   closeFolderDialogActionMenu();
                                 "
                               >
@@ -664,16 +664,7 @@
       @selectPlatform="onPlatformSelected"
     />
 
-    <!-- Dialog 2: Publish Destination (personal vs org) -->
-    <PublishDestinationDialog
-      :open="showOrgSelectDialog"
-      :platform="selectedPlatform"
-      @close="showOrgSelectDialog = false"
-      @selectPersonal="onPersonalAccountSelected"
-      @selectOrganization="onOrganizationSelected"
-    />
-
-    <!-- Dialog 3a: Instagram Publish -->
+    <!-- Dialog 2: Instagram Publish -->
     <InstagramPublishDialog
       :open="showPublishDialog"
       :organization-id="selectedOrganization?.id"
@@ -683,6 +674,7 @@
       :media-type="'video'"
       :is-admin="isAdminOfSelectedOrg"
       :creator-profiles="publishCreatorProfiles"
+      :campaign-id="publishCampaignId"
       @close="onPublishDialogClose"
       @published="onPublished"
     />
@@ -697,6 +689,37 @@
       :media-type="'video'"
       :is-admin="isAdminOfSelectedOrg"
       :creator-profiles="publishCreatorProfiles"
+      :campaign-id="publishCampaignId"
+      @close="onPublishDialogClose"
+      @published="onPublished"
+    />
+
+    <!-- Dialog 3c: TikTok Publish -->
+    <TiktokPublishDialog
+      :open="showTiktokPublishDialog"
+      :organization-id="selectedOrganization?.id"
+      :organization-name="selectedOrganization?.name"
+      :media-url="publishMediaUrl"
+      :thumbnail-url="publishThumbnailUrl"
+      :media-type="'video'"
+      :is-admin="isAdminOfSelectedOrg"
+      :creator-profiles="publishCreatorProfiles"
+      :campaign-id="publishCampaignId"
+      @close="onPublishDialogClose"
+      @published="onPublished"
+    />
+
+    <!-- Dialog 3d: YouTube Publish -->
+    <YoutubePublishDialog
+      :open="showYoutubePublishDialog"
+      :organization-id="selectedOrganization?.id"
+      :organization-name="selectedOrganization?.name"
+      :media-url="publishMediaUrl"
+      :thumbnail-url="publishThumbnailUrl"
+      :media-type="'video'"
+      :is-admin="isAdminOfSelectedOrg"
+      :creator-profiles="publishCreatorProfiles"
+      :campaign-id="publishCampaignId"
       @close="onPublishDialogClose"
       @published="onPublished"
     />
@@ -949,9 +972,10 @@
   import BuildCard from '@/components/BuildCard.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
   import PlatformSelectDialog from '@/components/PlatformSelectDialog.vue';
-  import PublishDestinationDialog from '@/components/PublishDestinationDialog.vue';
   import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
   import TwitterPublishDialog from '@/components/TwitterPublishDialog.vue';
+  import TiktokPublishDialog from '@/components/TiktokPublishDialog.vue';
+  import YoutubePublishDialog from '@/components/YoutubePublishDialog.vue';
   import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
@@ -1055,15 +1079,18 @@
   const authStore = useAuthStore();
   const router = useRouter();
   const showPlatformSelectDialog = ref(false);
-  const showOrgSelectDialog = ref(false);
   const showPublishDialog = ref(false);
   const showTwitterPublishDialog = ref(false);
-  const selectedPlatform = ref<'instagram' | 'twitter'>('instagram');
-  const publishingBuild = ref<{ build: ClipBuild; filePath: string; thumbnailUrl: string | null } | null>(null);
+  const showTiktokPublishDialog = ref(false);
+  const showYoutubePublishDialog = ref(false);
+  const selectedPlatform = ref<'instagram' | 'twitter' | 'tiktok' | 'youtube'>('instagram');
+  const publishingBuild = ref<{ build: ClipBuild; clip: ClipWithBuilds | null; filePath: string; thumbnailUrl: string | null } | null>(null);
   const selectedOrganization = ref<{ id: string | number; name: string; role: string } | null>(null);
   const publishMediaUrl = ref('');
   const publishThumbnailUrl = ref('');
   const publishCreatorProfiles = ref<{ id: number; name: string }[]>([]);
+  const publishCreatorProfileId = ref<number | undefined>(undefined);
+  const publishCampaignId = ref<number | undefined>(undefined);
   const isUploadingMedia = ref(false);
 
   // Filter state
@@ -2630,20 +2657,122 @@
   // ============================================================================
 
   /**
-   * Initiate the publish flow. Step 1: Show platform selection dialog.
+   * Initiate the publish flow.
+   * Looks up the clip's creator profile to auto-detect org/campaign context,
+   * then shows the platform selection dialog.
    */
-  function initiatePublish(build: ClipBuild, filePath: string, thumbnailUrl: string | null) {
-    publishingBuild.value = { build, filePath, thumbnailUrl };
+  async function initiatePublish(build: ClipBuild, filePath: string, thumbnailUrl: string | null, clip?: ClipWithBuilds) {
+    publishingBuild.value = { build, clip: clip || null, filePath, thumbnailUrl };
+    publishCreatorProfileId.value = undefined;
+    publishCampaignId.value = undefined;
+    selectedOrganization.value = null;
+    publishCreatorProfiles.value = [];
+
+    // Auto-detect org context from clip's project creator profile
+    const projectId = clip?.project_id || build.clip_id;
+    if (projectId) {
+      try {
+        const creatorProfile = await getCreatorProfileByProjectId(projectId);
+        if (creatorProfile) {
+          // Local creator profile found — look up its server-side org linkage
+          const assignedResult = await getMyAssignedCreatorProfiles();
+          if (assignedResult.success) {
+            // Match by name since local profile IDs differ from server IDs
+            const matchingProfiles = assignedResult.profiles.filter(
+              (p) => p.name === creatorProfile.name
+            );
+            if (matchingProfiles.length === 1) {
+              // Single org match — auto-select
+              const matched = matchingProfiles[0];
+              publishCreatorProfileId.value = matched.id;
+              selectedOrganization.value = {
+                id: matched.organization_id,
+                name: matched.organization_name || 'Organization',
+                role: 'member',
+              };
+              publishCreatorProfiles.value = matchingProfiles.map((p) => ({ id: p.id, name: p.name }));
+            } else if (matchingProfiles.length > 1) {
+              // Multiple org matches — store all for the publish dialog to show
+              publishCreatorProfiles.value = matchingProfiles.map((p) => ({ id: p.id, name: p.name }));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Clips] Failed to lookup creator profile for publish:', err);
+      }
+    }
+
+    // Also check clip's campaign_id
+    if (clip?.campaign_id) {
+      publishCampaignId.value = clip.campaign_id;
+    }
+
     showPlatformSelectDialog.value = true;
   }
 
   /**
-   * Handle platform selection from Dialog 1. Step 2: Show destination dialog.
+   * Handle platform selection. Go directly to media upload + publish dialog.
+   * No more personal-vs-org destination picker — context is auto-detected.
    */
-  function onPlatformSelected(platform: 'instagram' | 'twitter') {
+  async function onPlatformSelected(platform: 'instagram' | 'twitter' | 'tiktok' | 'youtube') {
     selectedPlatform.value = platform;
     showPlatformSelectDialog.value = false;
-    showOrgSelectDialog.value = true;
+
+    if (!publishingBuild.value) return;
+
+    isUploadingMedia.value = true;
+
+    try {
+      const { filePath, thumbnailUrl } = publishingBuild.value;
+      const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath });
+      const fileName = filePath.split(/[/\\]/).pop() || 'video.mp4';
+      const videoFile = dataUrlToFile(videoDataUrl, fileName);
+
+      let thumbnailFile: File | undefined;
+      if (thumbnailUrl) {
+        try {
+          const thumbPath = thumbnailUrl.startsWith('file://') ? thumbnailUrl.replace('file://', '') : thumbnailUrl;
+          if (!thumbPath.startsWith('data:') && !thumbPath.startsWith('http')) {
+            const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
+            thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
+          }
+        } catch (thumbError) {
+          console.warn('Could not read thumbnail:', thumbError);
+        }
+      }
+
+      // Upload via org endpoint if org context exists, otherwise personal
+      let uploadResult;
+      if (selectedOrganization.value) {
+        uploadResult = await uploadMediaForPost(selectedOrganization.value.id, videoFile, thumbnailFile);
+      } else {
+        uploadResult = await uploadUserMediaForPost(videoFile, thumbnailFile);
+      }
+
+      if (!uploadResult.success || !uploadResult.media_url) {
+        throw new Error(uploadResult.error || 'Failed to upload media');
+      }
+
+      publishMediaUrl.value = uploadResult.media_url;
+      publishThumbnailUrl.value = uploadResult.thumbnail_url || thumbnailUrl || '';
+
+      // If org context, also fetch assignable creator profiles for the publish dialog
+      if (selectedOrganization.value && publishCreatorProfiles.value.length === 0) {
+        const profilesResult = await getMyAssignedCreatorProfiles();
+        if (profilesResult.success) {
+          publishCreatorProfiles.value = profilesResult.profiles
+            .filter((p) => String(p.organization_id) === String(selectedOrganization.value!.id))
+            .map((p) => ({ id: p.id, name: p.name }));
+        }
+      }
+
+      openPlatformPublishDialog();
+    } catch (error) {
+      console.error('Failed to prepare for publishing:', error);
+      showErrorToast('Upload Failed', error instanceof Error ? error.message : 'Failed to upload video');
+    } finally {
+      isUploadingMedia.value = false;
+    }
   }
 
   /**
@@ -2668,129 +2797,29 @@
   }
 
   /**
-   * Handle personal account selection from the dialog
-   */
-  async function onPersonalAccountSelected() {
-    showOrgSelectDialog.value = false;
-    selectedOrganization.value = null;
-
-    if (!publishingBuild.value) return;
-
-    isUploadingMedia.value = true;
-
-    try {
-      const { filePath, thumbnailUrl } = publishingBuild.value;
-      const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath });
-      const fileName = filePath.split(/[/\\]/).pop() || 'video.mp4';
-      const videoFile = dataUrlToFile(videoDataUrl, fileName);
-
-      let thumbnailFile: File | undefined;
-      if (thumbnailUrl) {
-        try {
-          const thumbPath = thumbnailUrl.startsWith('file://') ? thumbnailUrl.replace('file://', '') : thumbnailUrl;
-          if (!thumbPath.startsWith('data:') && !thumbPath.startsWith('http')) {
-            const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
-            thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
-          }
-        } catch (thumbError) {
-          console.warn('Could not read thumbnail:', thumbError);
-        }
-      }
-
-      const uploadResult = await uploadUserMediaForPost(videoFile, thumbnailFile);
-
-      if (!uploadResult.success || !uploadResult.media_url) {
-        throw new Error(uploadResult.error || 'Failed to upload media');
-      }
-
-      publishMediaUrl.value = uploadResult.media_url;
-      publishThumbnailUrl.value = uploadResult.thumbnail_url || thumbnailUrl || '';
-      publishCreatorProfiles.value = [];
-
-      if (selectedPlatform.value === 'twitter') {
-        showTwitterPublishDialog.value = true;
-      } else {
-        showPublishDialog.value = true;
-      }
-    } catch (error) {
-      console.error('Failed to prepare for publishing:', error);
-      showErrorToast('Upload Failed', error instanceof Error ? error.message : 'Failed to upload video');
-    } finally {
-      isUploadingMedia.value = false;
-    }
-  }
-
-  /**
-   * Handle organization selection from the dialog
-   */
-  async function onOrganizationSelected(org: { id: string | number; name: string; role: string }) {
-    selectedOrganization.value = org;
-    showOrgSelectDialog.value = false;
-
-    if (!publishingBuild.value) return;
-
-    isUploadingMedia.value = true;
-
-    try {
-      const { filePath, thumbnailUrl } = publishingBuild.value;
-      const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath });
-      const fileName = filePath.split(/[/\\]/).pop() || 'video.mp4';
-      const videoFile = dataUrlToFile(videoDataUrl, fileName);
-
-      let thumbnailFile: File | undefined;
-      if (thumbnailUrl) {
-        try {
-          const thumbPath = thumbnailUrl.startsWith('file://') ? thumbnailUrl.replace('file://', '') : thumbnailUrl;
-          if (!thumbPath.startsWith('data:') && !thumbPath.startsWith('http')) {
-            const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
-            thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
-          }
-        } catch (thumbError) {
-          console.warn('Could not read thumbnail:', thumbError);
-        }
-      }
-
-      const uploadResult = await uploadMediaForPost(org.id, videoFile, thumbnailFile);
-
-      if (!uploadResult.success || !uploadResult.media_url) {
-        throw new Error(uploadResult.error || 'Failed to upload media');
-      }
-
-      publishMediaUrl.value = uploadResult.media_url;
-      publishThumbnailUrl.value = uploadResult.thumbnail_url || thumbnailUrl || '';
-
-      const profilesResult = await getMyAssignedCreatorProfiles();
-      if (profilesResult.success) {
-        publishCreatorProfiles.value = profilesResult.profiles
-          .filter((p) => String(p.organization_id) === String(org.id))
-          .map((p) => ({ id: p.id, name: p.name }));
-      } else {
-        publishCreatorProfiles.value = [];
-      }
-
-      if (selectedPlatform.value === 'twitter') {
-        showTwitterPublishDialog.value = true;
-      } else {
-        showPublishDialog.value = true;
-      }
-    } catch (error) {
-      console.error('Failed to prepare for publishing:', error);
-      showErrorToast('Upload Failed', error instanceof Error ? error.message : 'Failed to upload video');
-    } finally {
-      isUploadingMedia.value = false;
-    }
-  }
-
-  /**
    * Handle publish dialog close
    */
+  function openPlatformPublishDialog() {
+    switch (selectedPlatform.value) {
+      case 'twitter': showTwitterPublishDialog.value = true; break;
+      case 'tiktok': showTiktokPublishDialog.value = true; break;
+      case 'youtube': showYoutubePublishDialog.value = true; break;
+      default: showPublishDialog.value = true; break;
+    }
+  }
+
   function onPublishDialogClose() {
     showPublishDialog.value = false;
     showTwitterPublishDialog.value = false;
+    showTiktokPublishDialog.value = false;
+    showYoutubePublishDialog.value = false;
     publishingBuild.value = null;
     publishMediaUrl.value = '';
     publishThumbnailUrl.value = '';
     publishCreatorProfiles.value = [];
+    publishCreatorProfileId.value = undefined;
+    publishCampaignId.value = undefined;
+    selectedOrganization.value = null;
   }
 
   /**

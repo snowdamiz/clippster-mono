@@ -1171,6 +1171,30 @@
       @published="onPostPublished"
     />
 
+    <TwitterPublishDialog
+      :open="showTwitterPublishDialog"
+      :media-url="publishMediaUrl"
+      :thumbnail-url="publishThumbnailUrl"
+      @close="closePublishDialog"
+      @published="onPostPublished"
+    />
+
+    <TiktokPublishDialog
+      :open="showTiktokPublishDialog"
+      :media-url="publishMediaUrl"
+      :thumbnail-url="publishThumbnailUrl"
+      @close="closePublishDialog"
+      @published="onPostPublished"
+    />
+
+    <YoutubePublishDialog
+      :open="showYoutubePublishDialog"
+      :media-url="publishMediaUrl"
+      :thumbnail-url="publishThumbnailUrl"
+      @close="closePublishDialog"
+      @published="onPostPublished"
+    />
+
     <ClipperProfileOnboardingWizard
       :show="showOnboardingWizard"
       @close="showOnboardingWizard = false"
@@ -1231,6 +1255,9 @@
   import EditProfileDialog from '@/components/EditProfileDialog.vue';
   import UserPostsList from '@/components/UserPostsList.vue';
   import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
+  import TwitterPublishDialog from '@/components/TwitterPublishDialog.vue';
+  import TiktokPublishDialog from '@/components/TiktokPublishDialog.vue';
+  import YoutubePublishDialog from '@/components/YoutubePublishDialog.vue';
   import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
   import AddPostDialog from '@/components/AddPostDialog.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
@@ -1640,6 +1667,9 @@
   const showDeleteDialog = ref(false);
   const showEditProfileDialog = ref(false);
   const showPublishDialog = ref(false);
+  const showTwitterPublishDialog = ref(false);
+  const showTiktokPublishDialog = ref(false);
+  const showYoutubePublishDialog = ref(false);
   const showPlatformSelectionDialog = ref(false);
   const showOnboardingWizard = ref(false);
   const publishMediaUrl = ref('');
@@ -1896,6 +1926,9 @@
 
   const closePublishDialog = () => {
     showPublishDialog.value = false;
+    showTwitterPublishDialog.value = false;
+    showTiktokPublishDialog.value = false;
+    showYoutubePublishDialog.value = false;
     publishMediaUrl.value = '';
     publishThumbnailUrl.value = '';
   };

@@ -148,12 +148,18 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Instagram, Building, ChevronRight, X, User } from 'lucide-vue-next';
+  import { Instagram, Youtube, Building, ChevronRight, X, User } from 'lucide-vue-next';
   import XLogo from '@/components/icons/XLogo.vue';
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services/userInstagramApi';
   import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
+  import { listUserTiktokAccounts, type UserTiktokAccount } from '@/services/userTiktokApi';
+  import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
   import { listSocialAccounts } from '@/services/socialAccountsApi';
+
+  const TiktokIcon = {
+    template: '<svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V9.01a8.16 8.16 0 004.76 1.52v-3.4a4.85 4.85 0 01-1-.44z"/></svg>',
+  };
 
   interface Organization {
     id: string | number;
@@ -164,7 +170,7 @@
 
   const props = defineProps<{
     open: boolean;
-    platform?: 'instagram' | 'twitter';
+    platform?: 'instagram' | 'twitter' | 'tiktok' | 'youtube';
   }>();
 
   const emit = defineEmits<{
@@ -176,11 +182,25 @@
   const authStore = useAuthStore();
   const loading = ref(false);
   const organizations = ref<Organization[]>([]);
-  const personalAccounts = ref<(UserInstagramAccount | UserTwitterAccount)[]>([]);
+  const personalAccounts = ref<(UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount)[]>([]);
 
   const activePlatform = computed(() => props.platform || 'instagram');
-  const platformIcon = computed(() => activePlatform.value === 'twitter' ? XLogo : Instagram);
-  const platformLabel = computed(() => activePlatform.value === 'twitter' ? 'X (Twitter)' : 'Instagram');
+  const platformIcon = computed(() => {
+    switch (activePlatform.value) {
+      case 'twitter': return XLogo;
+      case 'tiktok': return TiktokIcon;
+      case 'youtube': return Youtube;
+      default: return Instagram;
+    }
+  });
+  const platformLabel = computed(() => {
+    switch (activePlatform.value) {
+      case 'twitter': return 'X (Twitter)';
+      case 'tiktok': return 'TikTok';
+      case 'youtube': return 'YouTube';
+      default: return 'Instagram';
+    }
+  });
 
   // Load both organizations and personal accounts when dialog opens
   watch(
@@ -210,7 +230,7 @@
         allOrgs.map(async (org) => {
           try {
             const res = await listSocialAccounts(org.id);
-            if (res.success && res.accounts.some((a) => a.is_active && a.platform === platform)) {
+            if (res.success && res.accounts.some((a) => a.is_active && matchesPlatform(a.platform, platform))) {
               orgsWithAccounts.push(org);
             }
           } catch {}
@@ -219,20 +239,18 @@
       organizations.value = orgsWithAccounts;
 
       // Load personal accounts based on platform
-      if (platform === 'twitter') {
-        const accountsResult = await listUserTwitterAccounts();
-        if (accountsResult.success) {
-          personalAccounts.value = accountsResult.accounts.filter((a) => a.is_active);
-        } else {
-          personalAccounts.value = [];
-        }
+      const loaders: Record<string, () => Promise<any>> = {
+        instagram: () => listUserInstagramAccounts(),
+        twitter: () => listUserTwitterAccounts(),
+        tiktok: () => listUserTiktokAccounts(),
+        youtube: () => listUserYoutubeAccounts(),
+      };
+      const loader = loaders[platform] || loaders.instagram;
+      const accountsResult = await loader();
+      if (accountsResult.success) {
+        personalAccounts.value = (accountsResult.accounts || []).filter((a: any) => a.is_active);
       } else {
-        const accountsResult = await listUserInstagramAccounts();
-        if (accountsResult.success) {
-          personalAccounts.value = accountsResult.accounts.filter((a) => a.is_active);
-        } else {
-          personalAccounts.value = [];
-        }
+        personalAccounts.value = [];
       }
     } catch (error) {
       console.error('Failed to load publishing destinations:', error);
@@ -241,6 +259,13 @@
     } finally {
       loading.value = false;
     }
+  }
+
+  function matchesPlatform(accountPlatform: string, target: string): boolean {
+    if (accountPlatform === target) return true;
+    if ((accountPlatform === 'x' || accountPlatform === 'twitter') && (target === 'x' || target === 'twitter')) return true;
+    if ((accountPlatform === 'youtube' || accountPlatform === 'youtube_shorts') && (target === 'youtube' || target === 'youtube_shorts')) return true;
+    return false;
   }
 
   function selectPersonal() {
