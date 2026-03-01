@@ -1094,7 +1094,7 @@
                     // Try to extract channel name from URL if it's a full URL
                     const extractedChannel = extractRumbleChannel(storedId);
                     if (extractedChannel) storedId = extractedChannel;
-                  } else if (link.platform === 'YouTube') {
+                  } else if (link.platform === 'youtube') {
                     // Try to extract channel ID from URL if it's a full URL
                     const extractedChannel = extractYouTubeChannel(storedId);
                     if (extractedChannel) storedId = extractedChannel;
@@ -2273,6 +2273,7 @@
     margin: 0 0 0.375rem;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     line-height: 1.4;

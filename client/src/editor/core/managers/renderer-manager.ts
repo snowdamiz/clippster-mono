@@ -875,7 +875,7 @@ export class RendererManager {
 		sourceProjectId: string;
 	}): Promise<void> {
 		try {
-			const { getDatabase, generateId, timestamp } = await import("@/services/database/core");
+			const { getDatabase, generateId, timestamp, getCurrentUserId } = await import("@/services/database/core");
 			const { invoke } = await import("@tauri-apps/api/core");
 
 			// Validate that the project_id exists in the projects table
@@ -886,11 +886,25 @@ export class RendererManager {
 				[sourceProjectId]
 			);
 
+			// If project doesn't exist (e.g., video editor project), create it
 			if (!projectExists || projectExists.length === 0) {
-				console.warn(
-					`[RendererManager] Cannot create clip: project_id '${sourceProjectId}' does not exist in projects table. Skipping clip creation.`
+				console.log(
+					`[RendererManager] Project '${sourceProjectId}' not found in projects table, creating it for video editor export`
 				);
-				return;
+				
+				const userId = getCurrentUserId();
+				const now = timestamp();
+				
+				try {
+					await db.execute(
+						`INSERT INTO projects (id, name, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?)`,
+						[sourceProjectId, projectName, now, now, userId]
+					);
+					console.log(`[RendererManager] Created project entry for video editor project: ${sourceProjectId}`);
+				} catch (err) {
+					console.error(`[RendererManager] Failed to create project entry:`, err);
+					return;
+				}
 			}
 
 			// Generate thumbnail from the exported video at 1 second
@@ -922,13 +936,14 @@ export class RendererManager {
 			// This ensures it appears in the Built Clips page
 			const clipId = generateId();
 			const now = timestamp();
+			const userId = getCurrentUserId();
 
 			await db.execute(
 				`INSERT INTO clips (
 					id, project_id, name, file_path, duration, start_time, end_time,
 					status, build_status, built_file_path, built_thumbnail_path,
-					built_duration, built_file_size, built_at, created_at, updated_at
-				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+					built_duration, built_file_size, built_at, created_at, updated_at, user_id, source
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 				[
 					clipId,
 					sourceProjectId,
@@ -946,6 +961,8 @@ export class RendererManager {
 					now,
 					now,
 					now,
+					userId,
+					'video_editor', // Label as video editor export
 				]
 			);
 

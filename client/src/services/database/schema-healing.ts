@@ -47,6 +47,9 @@ export async function healSchema(): Promise<void> {
     // --- Migration 085: campaign_id on clips ---
     await addColumnIfMissing(db, 'clips', 'campaign_id', 'INTEGER');
 
+    // --- Migration 092: source on clips (to identify video editor exports) ---
+    await addColumnIfMissing(db, 'clips', 'source', "TEXT DEFAULT 'clip_detection'");
+
     // --- Migration 086: source_start_time on audio tracks ---
     await addColumnIfMissing(
       db,
