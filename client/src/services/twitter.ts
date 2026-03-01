@@ -119,10 +119,19 @@ export async function startTwitterRecording(
 }
 
 /**
- * Stop recording a Twitter broadcast or Space
+ * Stop recording a Twitter broadcast or Space (stops ALL sessions for this broadcast)
  */
 export async function stopTwitterRecording(url: string): Promise<void> {
   await invoke('stop_twitter_recording', { url });
+}
+
+/**
+ * Stop a specific Twitter recording session by session_id
+ * Unlike stopTwitterRecording which stops ALL sessions for a broadcast,
+ * this only stops the one specific session, leaving others untouched.
+ */
+export async function stopTwitterRecordingSession(sessionId: string): Promise<void> {
+  await invoke('stop_twitter_recording_session', { sessionId });
 }
 
 /**

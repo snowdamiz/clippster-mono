@@ -102,9 +102,9 @@
               @click="connectYoutube"
               :disabled="connectingPlatform !== null"
             >
-              <Loader2 v-if="connectingPlatform === 'youtube'" class="social-accounts__connect-spinner" />
+              <Loader2 v-if="connectingPlatform === 'YouTube'" class="social-accounts__connect-spinner" />
               <Plus v-else class="social-accounts__connect-icon" />
-              {{ connectingPlatform === 'youtube' ? 'Connecting...' : 'Connect Account' }}
+              {{ connectingPlatform === 'YouTube' ? 'Connecting...' : 'Connect Account' }}
             </button>
           </div>
 
@@ -465,12 +465,12 @@
     type SocialAccount,
   } from '@/services/socialAccountsApi';
 
-  type ConnectPlatform = 'instagram' | 'tiktok' | 'youtube' | 'x';
+  type ConnectPlatform = 'instagram' | 'tiktok' | 'YouTube' | 'x';
 
   const CONNECT_PLATFORM_LABELS: Record<ConnectPlatform, string> = {
     instagram: 'Instagram',
     tiktok: 'TikTok',
-    youtube: 'YouTube',
+    YouTube: 'YouTube',
     x: 'X',
   };
 
@@ -604,7 +604,7 @@
         return;
       }
 
-      if (platform === 'youtube') {
+      if (platform === 'YouTube') {
         cleanupAuthListener = await startYoutubeOAuthPopup(organizationId.value, handleAuthResult);
         return;
       }
@@ -627,7 +627,7 @@
   }
 
   async function connectYoutube() {
-    await connectPlatform('youtube');
+    await connectPlatform('YouTube');
   }
 
   async function connectTwitter() {

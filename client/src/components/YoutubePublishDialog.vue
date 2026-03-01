@@ -202,7 +202,7 @@
           if (orgRes.data.success) { allowPersonal.value = orgRes.data.organization.allow_personal_instagram ?? true; }
         } catch {}
         const res = props.isAdmin ? await listSocialAccounts(props.organizationId) : await getMyAssignedAccounts(props.organizationId);
-        if (res.success) { orgAccounts.value = res.accounts.filter((a) => a.is_active && (a.platform === 'youtube' || a.platform === 'youtube_shorts')); }
+        if (res.success) { orgAccounts.value = res.accounts.filter((a) => a.is_active && a.platform === 'youtube'); }
       }
       const pRes = await listUserYoutubeAccounts();
       if (pRes.success) { personalAccounts.value = pRes.accounts.filter((a) => a.is_active); }

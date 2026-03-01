@@ -409,9 +409,9 @@ async function handleCopyError() {
 												{{ copied ? 'Copied' : 'Copy Error' }}
 											</button>
 											<button class="export-dialog__error-btn export-dialog__error-btn--retry" @click="handleExport">
-												<RotateCcw :size="14" />
-												Retry Export
-											</button>
+								<RotateCcw :size="14" />
+								Retry Export
+							</button>
 										</div>
 									</div>
 								</div>
@@ -700,13 +700,13 @@ async function handleCopyError() {
 										<span>Next</span>
 									</button>
 									<button
-										v-if="!isExporting && !exportError && isLastStep"
-										@click="handleExport"
-										class="export-dialog__btn export-dialog__btn--primary"
-									>
-										<Download :size="16" />
-										<span>Export Video</span>
-									</button>
+						v-if="!isExporting && !exportError && isLastStep"
+						@click="handleExport"
+						class="export-dialog__btn export-dialog__btn--primary"
+					>
+						<Download :size="16" />
+						Export Video
+					</button>
 									<button
 										v-if="exportError && !isExporting"
 										@click="handleClose"
@@ -734,6 +734,7 @@ async function handleCopyError() {
 			:clip-end-time="projectDuration"
 			@confirm="onManualConfigConfirm"
 		/>
+
 	</div>
 </template>
 

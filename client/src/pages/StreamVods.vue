@@ -98,7 +98,7 @@
                 <img src="/twitch.svg" class="streamvods-search__platform-icon" />
               </div>
               <div
-                v-else-if="detectedPlatform === 'youtube'"
+                v-else-if="detectedPlatform === 'YouTube'"
                 class="streamvods-search__platform streamvods-search__platform--youtube"
                 key="yt"
               >
@@ -145,7 +145,7 @@
         :class="{ 'streamvods__content--empty': platformStore.clips.length === 0 && !platformStore.loading }"
       >
         <!-- YouTube Tabs -->
-        <div v-if="detectedPlatform === 'youtube' && (platformStore.clips.length > 0 || platformStore.loading)" class="streamvods__youtube-tabs">
+        <div v-if="detectedPlatform === 'YouTube' && (platformStore.clips.length > 0 || platformStore.loading)" class="streamvods__youtube-tabs">
           <button
             :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': youtubeTab === 'streams' }]"
             @click="switchYouTubeTab('streams')"
@@ -573,7 +573,7 @@
 
     // Check for YouTube
     if (lowerVal.includes('youtube.com') || lowerVal.includes('youtu.be')) {
-      detectedPlatform.value = 'youtube';
+      detectedPlatform.value = 'YouTube';
       return;
     }
 
@@ -645,7 +645,7 @@
 
     if (queryPlatform && querySearch) {
       // Set the platform and search from query params
-      const validPlatforms = ['pumpfun', 'kick', 'twitch', 'youtube', 'rumble', 'twitter'] as const;
+      const validPlatforms = ['pumpfun', 'kick', 'twitch', 'YouTube', 'rumble', 'twitter'] as const;
       if (validPlatforms.includes(queryPlatform as any)) {
         detectedPlatform.value = queryPlatform as PlatformId;
         searchInput.value = querySearch;
@@ -668,7 +668,7 @@
         let displayValue = platformStore.currentSearchId;
         if (platformStore.activePlatform === 'rumble') {
           displayValue = displayValue.replace(/^(c\/|user\/)/, '');
-        } else if (platformStore.activePlatform === 'youtube') {
+        } else if (platformStore.activePlatform === 'YouTube') {
           displayValue = displayValue.replace(/^@/, '');
         }
         searchInput.value = displayValue;
@@ -724,7 +724,7 @@
       pumpfun: '/capsule.svg',
       kick: '/kick.svg',
       twitch: '/twitch.svg',
-      youtube: '/youtube.svg',
+      YouTube: '/youtube.svg',
       rumble: '/rumble.svg',
       twitter: '/x.svg',
     };
@@ -736,7 +736,7 @@
       pumpfun: 'PumpFun',
       kick: 'Kick',
       twitch: 'Twitch',
-      youtube: 'YouTube',
+      YouTube: 'YouTube',
       rumble: 'Rumble',
       twitter: 'X (Twitter)',
     };
@@ -759,7 +759,7 @@
         return id.substring(5);
       }
     }
-    if (platform === 'youtube') {
+    if (platform === 'YouTube') {
       // Remove '@' prefix from YouTube handles if present
       if (id.startsWith('@')) {
         return id.substring(1);
@@ -838,9 +838,9 @@
     
     // Refetch with the new tab
     const input = searchInput.value.trim();
-    if (input && detectedPlatform.value === 'youtube') {
+    if (input && detectedPlatform.value === 'YouTube') {
       // Ensure platform is set before searching
-      platformStore.setActivePlatform('youtube');
+      platformStore.setActivePlatform('YouTube');
       
       try {
         console.log('[StreamVods] Calling searchClips with tab:', youtubeTab.value);
@@ -926,7 +926,7 @@
     }
 
     // Reset YouTube tab to streams (default) when doing a new search
-    if (detectedPlatform.value === 'youtube') {
+    if (detectedPlatform.value === 'YouTube') {
       youtubeTab.value = 'streams';
     }
 
@@ -940,7 +940,7 @@
 
     try {
       // Pass tab parameter for YouTube and Rumble
-      const tabParam = detectedPlatform.value === 'youtube' ? youtubeTab.value 
+      const tabParam = detectedPlatform.value === 'YouTube' ? youtubeTab.value 
                      : detectedPlatform.value === 'rumble' ? rumbleTab.value 
                      : undefined;
       const result = await platformStore.searchClips(input, 20, tabParam);
@@ -1094,7 +1094,7 @@
                     // Try to extract channel name from URL if it's a full URL
                     const extractedChannel = extractRumbleChannel(storedId);
                     if (extractedChannel) storedId = extractedChannel;
-                  } else if (link.platform === 'youtube') {
+                  } else if (link.platform === 'YouTube') {
                     // Try to extract channel ID from URL if it's a full URL
                     const extractedChannel = extractYouTubeChannel(storedId);
                     if (extractedChannel) storedId = extractedChannel;
@@ -1164,7 +1164,7 @@
         {
           autoSegment: autoSegment.value,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: detectedPlatform.value === 'kick' ? 'kick' : detectedPlatform.value === 'twitch' ? 'twitch' : detectedPlatform.value === 'youtube' ? 'youtube' : detectedPlatform.value === 'rumble' ? 'rumble' : detectedPlatform.value === 'twitter' ? 'twitter' : 'pumpfun',
+          provider: detectedPlatform.value === 'kick' ? 'kick' : detectedPlatform.value === 'twitch' ? 'twitch' : detectedPlatform.value === 'YouTube' ? 'YouTube' : detectedPlatform.value === 'rumble' ? 'rumble' : detectedPlatform.value === 'twitter' ? 'twitter' : 'pumpfun',
           creatorWatermarkSettings,
         }
       );

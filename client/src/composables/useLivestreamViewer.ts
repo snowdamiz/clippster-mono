@@ -31,6 +31,7 @@ import {
   checkKickLivestream,
   startKickRecording,
   stopKickRecording,
+  stopKickRecordingSession,
   isKickRecordingActive,
   extractChannelSlug,
 } from '@/services/kick';
@@ -38,6 +39,7 @@ import {
   checkTwitchLivestream,
   startTwitchRecording,
   stopTwitchRecording,
+  stopTwitchRecordingSession,
   extractChannelName as extractTwitchChannelName,
   getTwitchSessionOutputDir,
 } from '@/services/twitch';
@@ -45,6 +47,7 @@ import {
   checkYouTubeLivestream,
   startYouTubeRecording,
   stopYouTubeRecording,
+  stopYouTubeRecordingSession,
   getYouTubeSessionOutputDir,
   extractYouTubeChannel,
 } from '@/services/youtube';
@@ -52,12 +55,14 @@ import {
   checkTwitterLivestream,
   startTwitterRecording,
   stopTwitterRecording,
+  stopTwitterRecordingSession,
   getTwitterSessionOutputDir,
 } from '@/services/twitter';
 import {
   checkRumbleLivestream,
   startRumbleRecording,
   stopRumbleRecording,
+  stopRumbleRecordingSession,
   getRumbleSessionOutputDir,
   extractRumbleChannel,
 } from '@/services/rumble';
@@ -792,8 +797,7 @@ export function useLivestreamViewer() {
       // Clean up recording if it was started (only for temp recordings)
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
-          const cleanupSlug = extractChannelSlug(channelInput) || channelInput;
-          await stopKickRecording(cleanupSlug);
+          await stopKickRecordingSession(state.value.tempSessionId);
         } catch {
           // Ignore cleanup errors
         }
@@ -963,9 +967,7 @@ export function useLivestreamViewer() {
       // Clean up recording if it was started
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
-          const cleanupName =
-            extractTwitchChannelName(channelInput) || channelInput.toLowerCase().trim();
-          await stopTwitchRecording(cleanupName);
+          await stopTwitchRecordingSession(state.value.tempSessionId);
         } catch {
           // Ignore cleanup errors
         }
@@ -1002,13 +1004,27 @@ export function useLivestreamViewer() {
       let sessionId: string;
 
       if (existingPersistentSession && (existingPersistentSession.platform === 'YouTube')) {
-        console.log('[LiveViewer] Found existing YouTube persistent session:', existingPersistentSession.sessionId);
-        sessionId = existingPersistentSession.sessionId;
+        // Persistent auto-detect session exists with user-configured segments (e.g., 5-min)
+        // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
+        // The two sessions will write to different directories and won't conflict
+        console.log('[LiveViewer] Found existing YouTube persistent session (long segments):', existingPersistentSession.sessionId);
+        console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
+
+        sessionId = `youtube-view-${channelId}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
-        state.value.sessionId = existingPersistentSession.sessionId;
-        state.value.projectId = existingPersistentSession.projectId;
-        state.value.isTempRecording = false;
+        state.value.isTempRecording = true;
+
+        try {
+          await startYouTubeRecording(channelId, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start YouTube viewer recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+
         outputDir = await getYouTubeSessionOutputDir(sessionId);
+        console.log('[LiveViewer] YouTube viewer HLS output dir:', outputDir);
       } else {
         sessionId = `youtube-view-${channelId}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
@@ -1017,7 +1033,7 @@ export function useLivestreamViewer() {
         console.log('[LiveViewer] Starting new YouTube recording:', channelId);
 
         try {
-          await startYouTubeRecording(channelId, streamerId, sessionId, undefined);
+          await startYouTubeRecording(channelId, streamerId, sessionId, 1);
         } catch (recordingError) {
           console.error('[LiveViewer] Failed to start YouTube recording:', recordingError);
           state.value.connectionState = 'failed';
@@ -1077,8 +1093,7 @@ export function useLivestreamViewer() {
 
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
-          const cleanupId = extractYouTubeChannel(channelInput) || channelInput.trim();
-          await stopYouTubeRecording(cleanupId);
+          await stopYouTubeRecordingSession(state.value.tempSessionId);
         } catch {
           // Ignore cleanup errors
         }
@@ -1115,13 +1130,27 @@ export function useLivestreamViewer() {
       let sessionId: string;
 
       if (existingPersistentSession && existingPersistentSession.platform === 'Rumble') {
-        console.log('[LiveViewer] Found existing Rumble persistent session:', existingPersistentSession.sessionId);
-        sessionId = existingPersistentSession.sessionId;
+        // Persistent auto-detect session exists with user-configured segments (e.g., 5-min)
+        // Start a SEPARATE temp viewer session with 4-second segments for smooth playback
+        // The two sessions will write to different directories and won't conflict
+        console.log('[LiveViewer] Found existing Rumble persistent session (long segments):', existingPersistentSession.sessionId);
+        console.log('[LiveViewer] Starting separate viewer session with 4-sec segments for smooth playback');
+
+        sessionId = `rumble-view-${channelId}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
-        state.value.sessionId = existingPersistentSession.sessionId;
-        state.value.projectId = existingPersistentSession.projectId;
-        state.value.isTempRecording = false;
+        state.value.isTempRecording = true;
+
+        try {
+          await startRumbleRecording(channelId, streamerId, sessionId, 1);
+        } catch (recordingError) {
+          console.error('[LiveViewer] Failed to start Rumble viewer recording:', recordingError);
+          state.value.connectionState = 'failed';
+          state.value.connectionError = 'Failed to start stream capture';
+          return;
+        }
+
         outputDir = await getRumbleSessionOutputDir(sessionId);
+        console.log('[LiveViewer] Rumble viewer HLS output dir:', outputDir);
       } else {
         sessionId = `rumble-view-${channelId}-${Date.now()}`;
         state.value.tempSessionId = sessionId;
@@ -1130,7 +1159,7 @@ export function useLivestreamViewer() {
         console.log('[LiveViewer] Starting new Rumble recording:', channelId);
 
         try {
-          await startRumbleRecording(channelId, streamerId, sessionId, undefined);
+          await startRumbleRecording(channelId, streamerId, sessionId, 1);
         } catch (recordingError) {
           console.error('[LiveViewer] Failed to start Rumble recording:', recordingError);
           state.value.connectionState = 'failed';
@@ -1190,8 +1219,7 @@ export function useLivestreamViewer() {
 
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
-          const cleanupId = extractRumbleChannel(channelInput) || channelInput.trim();
-          await stopRumbleRecording(cleanupId);
+          await stopRumbleRecordingSession(state.value.tempSessionId);
         } catch {
           // Ignore cleanup errors
         }
@@ -1328,7 +1356,7 @@ export function useLivestreamViewer() {
       // Cleanup on failure
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
-          await stopTwitterRecording(broadcastUrl);
+          await stopTwitterRecordingSession(state.value.tempSessionId);
         } catch {
           // Ignore cleanup errors
         }
@@ -2239,17 +2267,20 @@ export function useLivestreamViewer() {
           const currentOutputDir = hlsOutputDir.value;
           const currentSessionId = state.value.tempSessionId;
 
+          // Use session-specific stop to avoid killing concurrent auto-detect sessions
           try {
-            if (platform === 'Kick') {
-              await stopKickRecording(mintId);
-            } else if (platform === 'Twitch') {
-              await stopTwitchRecording(mintId);
-            } else if (platform === 'YouTube') {
-              await stopYouTubeRecording(mintId);
-            } else if (platform === 'Rumble') {
-              await stopRumbleRecording(mintId);
-            } else if (platform === 'Twitter') {
-              await stopTwitterRecording(mintId);
+            if (currentSessionId) {
+              if (platform === 'Kick') {
+                await stopKickRecordingSession(currentSessionId);
+              } else if (platform === 'Twitch') {
+                await stopTwitchRecordingSession(currentSessionId);
+              } else if (platform === 'YouTube') {
+                await stopYouTubeRecordingSession(currentSessionId);
+              } else if (platform === 'Rumble') {
+                await stopRumbleRecordingSession(currentSessionId);
+              } else if (platform === 'Twitter') {
+                await stopTwitterRecordingSession(currentSessionId);
+              }
             }
           } catch (stopError) {
             console.warn(`[LiveViewer] Error stopping old ${platform} recording:`, stopError);
@@ -2776,17 +2807,22 @@ export function useLivestreamViewer() {
       
       // If this was a temp viewer session and stream has ended, trigger cleanup
       // This will stop the temp recording and clean up files
-      if (state.value.isTempRecording && streamHasEnded) {
+      // Use session-specific stop to avoid killing concurrent auto-detect sessions
+      if (state.value.isTempRecording && streamHasEnded && state.value.tempSessionId) {
         console.log('[LiveViewer] Stream ended and viewer closed, triggering temp session cleanup');
         try {
           if (currentPlatform === 'Kick') {
-            await stopKickRecording(currentMintId!);
+            await stopKickRecordingSession(state.value.tempSessionId);
             removeKickDvrSession(currentStreamerId);
           } else if (currentPlatform === 'Twitch') {
-            await stopTwitchRecording(currentMintId!);
+            await stopTwitchRecordingSession(state.value.tempSessionId);
             removeTwitchDvrSession(currentStreamerId);
+          } else if (currentPlatform === 'YouTube') {
+            await stopYouTubeRecordingSession(state.value.tempSessionId);
+          } else if (currentPlatform === 'Rumble') {
+            await stopRumbleRecordingSession(state.value.tempSessionId);
           } else if (currentPlatform === 'Twitter') {
-            await stopTwitterRecording(currentMintId!);
+            await stopTwitterRecordingSession(state.value.tempSessionId);
             removeTwitterDvrSession(currentStreamerId);
           }
         } catch (error) {
