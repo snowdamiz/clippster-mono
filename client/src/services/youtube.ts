@@ -180,10 +180,19 @@ export async function startYouTubeRecording(
 }
 
 /**
- * Stop recording a YouTube livestream
+ * Stop recording a YouTube livestream (stops ALL sessions for this channel)
  */
 export async function stopYouTubeRecording(channel: string): Promise<void> {
   await invoke('stop_youtube_recording', { channel });
+}
+
+/**
+ * Stop a specific YouTube recording session by session_id
+ * Unlike stopYouTubeRecording which stops ALL sessions for a channel,
+ * this only stops the one specific session, leaving others untouched.
+ */
+export async function stopYouTubeRecordingSession(sessionId: string): Promise<void> {
+  await invoke('stop_youtube_recording_session', { sessionId });
 }
 
 /**

@@ -32,8 +32,12 @@ fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command 
 struct TwitterRecordingEntry {
     stop_tx: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<()>,
+    broadcast_id: String, // Store broadcast_id to allow lookup by broadcast
 }
 
+// Track recordings by session_id instead of broadcast_id to allow multiple sessions per broadcast
+// This enables both temp viewer sessions (4-sec segments) and persistent auto-detect sessions
+// to record the same broadcast simultaneously in different directories
 static TWITTER_ACTIVE_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, TwitterRecordingEntry>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
@@ -114,9 +118,10 @@ pub async fn start_twitter_recording(
     // Extract broadcast/space ID for tracking
     let broadcast_id = extract_broadcast_id(&normalized_url)?;
     
-    // Check if already recording this broadcast
-    if TWITTER_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&broadcast_id) {
-        println!("[Twitter] Recording already active for {}, sharing existing session", broadcast_id);
+    // Check if this specific session is already recording
+    // Allow multiple sessions per broadcast (e.g., temp viewer + persistent auto-detect)
+    if TWITTER_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&session_id) {
+        println!("[Twitter] Session {} already recording, skipping duplicate start", session_id);
         return Ok(());
     }
     
@@ -134,6 +139,7 @@ pub async fn start_twitter_recording(
     let output_str = session_dir.to_string_lossy().to_string();
     let app_handle = app.clone();
     
+    let session_for_cleanup = session_id.clone();
     let task = tokio::spawn(async move {
         if let Err(err) = run_twitter_recorder(
             app_handle,
@@ -148,14 +154,17 @@ pub async fn start_twitter_recording(
             eprintln!("[TwitterRecorder] {}", err);
         }
         
-        TWITTER_ACTIVE_RECORDINGS.lock().unwrap().remove(&broadcast_clone);
+        // Cleanup by session_id (not broadcast_id) since we track by session now
+        TWITTER_ACTIVE_RECORDINGS.lock().unwrap().remove(&session_for_cleanup);
     });
     
+    // Insert by session_id (not broadcast_id) to allow multiple sessions per broadcast
     TWITTER_ACTIVE_RECORDINGS.lock().unwrap().insert(
-        broadcast_id,
+        session_id.clone(),
         TwitterRecordingEntry {
             stop_tx: Some(stop_tx),
             task,
+            broadcast_id,
         },
     );
     
@@ -343,40 +352,81 @@ async fn run_twitter_recorder(
 }
 
 /// Stop recording a Twitter broadcast or Space
+/// Stops ALL sessions recording this broadcast (both temp viewer and persistent auto-detect)
 #[tauri::command]
 pub async fn stop_twitter_recording(url: String) -> Result<(), String> {
     let normalized_url = normalize_twitter_url(&url);
     let broadcast_id = extract_broadcast_id(&normalized_url)?;
     
-    let entry_opt = {
+    // Find all sessions recording this broadcast and collect their entries
+    let entries: Vec<(String, TwitterRecordingEntry)> = {
         let mut recordings = TWITTER_ACTIVE_RECORDINGS.lock().unwrap();
-        recordings.remove(&broadcast_id)
+        let session_ids: Vec<String> = recordings
+            .iter()
+            .filter(|(_, entry)| entry.broadcast_id == broadcast_id)
+            .map(|(session_id, _)| session_id.clone())
+            .collect();
+
+        session_ids
+            .into_iter()
+            .filter_map(|session_id| {
+                recordings.remove(&session_id).map(|entry| (session_id, entry))
+            })
+            .collect()
     };
     
+    for (session_id, mut entry) in entries {
+        if let Some(stop_tx) = entry.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        if let Err(err) = entry.task.await {
+            eprintln!("[TwitterRecorder] Join error for session {}: {}", session_id, err);
+        }
+    }
+    
+    Ok(())
+}
+
+/// Stop a specific Twitter recording session by session_id
+/// Unlike stop_twitter_recording which stops ALL sessions for a broadcast,
+/// this only stops the one specific session, leaving others untouched.
+#[tauri::command]
+pub async fn stop_twitter_recording_session(session_id: String) -> Result<(), String> {
+    let entry_opt = {
+        let mut recordings = TWITTER_ACTIVE_RECORDINGS.lock().unwrap();
+        recordings.remove(&session_id)
+    };
+
     if let Some(mut entry) = entry_opt {
         if let Some(stop_tx) = entry.stop_tx.take() {
             let _ = stop_tx.send(());
         }
-        
-        let _ = entry.task.await;
-        println!("[Twitter] Stopped recording for {}", broadcast_id);
-        Ok(())
+        if let Err(err) = entry.task.await {
+            eprintln!("[TwitterRecorder] Join error for session {}: {}", session_id, err);
+        }
+        println!("[TwitterRecorder] Stopped session: {}", session_id);
     } else {
-        Err(format!("No active recording for broadcast: {}", broadcast_id))
+        println!("[TwitterRecorder] No active session found for: {}", session_id);
     }
+
+    Ok(())
 }
 
 /// Stop all active Twitter recordings
 #[tauri::command]
 pub async fn stop_all_twitter_recordings() -> Result<(), String> {
-    let broadcast_ids: Vec<String> = {
-        let recordings = TWITTER_ACTIVE_RECORDINGS.lock().unwrap();
-        recordings.keys().cloned().collect()
+    let entries: Vec<(String, TwitterRecordingEntry)> = {
+        let mut recordings = TWITTER_ACTIVE_RECORDINGS.lock().unwrap();
+        recordings.drain().collect()
     };
     
-    for broadcast_id in broadcast_ids {
-        let url = format!("https://twitter.com/i/broadcasts/{}", broadcast_id);
-        let _ = stop_twitter_recording(url).await;
+    for (session_id, mut entry) in entries {
+        if let Some(stop_tx) = entry.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        if let Err(err) = entry.task.await {
+            eprintln!("[TwitterRecorder] Join error for session {}: {}", session_id, err);
+        }
     }
     
     Ok(())
@@ -390,11 +440,26 @@ pub fn get_twitter_session_output_dir(session_id: String) -> Result<String, Stri
     Ok(session_dir.to_string_lossy().to_string())
 }
 
-/// Get list of active Twitter recordings
+/// Get list of active Twitter recording session IDs
 #[tauri::command]
 pub fn get_active_twitter_recordings() -> Result<Vec<String>, String> {
     let recordings = TWITTER_ACTIVE_RECORDINGS.lock().unwrap();
     Ok(recordings.keys().cloned().collect())
+}
+
+/// Check if a Twitter recording is currently active for a broadcast
+#[tauri::command]
+pub fn is_twitter_recording_active(url: String) -> bool {
+    let normalized_url = normalize_twitter_url(&url);
+    if let Ok(broadcast_id) = extract_broadcast_id(&normalized_url) {
+        TWITTER_ACTIVE_RECORDINGS
+            .lock()
+            .unwrap()
+            .values()
+            .any(|entry| entry.broadcast_id == broadcast_id)
+    } else {
+        false
+    }
 }
 
 /// Get metadata for a Twitter broadcast/space using yt-dlp

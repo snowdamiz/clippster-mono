@@ -36,8 +36,12 @@ fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Command 
 struct YouTubeRecordingEntry {
     stop_tx: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<()>,
+    channel_id: String, // Store channel_id to allow lookup by channel
 }
 
+// Track recordings by session_id instead of channel_id to allow multiple sessions per channel
+// This enables both temp viewer sessions (4-sec segments) and persistent auto-detect sessions
+// to record the same channel simultaneously in different directories
 static YOUTUBE_ACTIVE_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, YouTubeRecordingEntry>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
@@ -454,7 +458,7 @@ pub async fn download_youtube_vod(
         let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
             .parent()
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
+            .unwrap_or_else(|| ffmpeg_path.clone());
         
         cmd.arg(&vod_url)
             .arg("-o").arg(&output_file_str)
@@ -669,9 +673,10 @@ pub async fn start_youtube_recording(
 ) -> Result<(), String> {
     let channel_id = normalize_channel_input(&channel);
     
-    // Check if already recording this channel
-    if YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&channel_id) {
-        println!("[YouTube] Recording already active for {}, sharing existing session", channel_id);
+    // Check if this specific session is already recording
+    // Allow multiple sessions per channel (e.g., temp viewer + persistent auto-detect)
+    if YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&session_id) {
+        println!("[YouTube] Session {} already recording, skipping duplicate start", session_id);
         return Ok(());
     }
     
@@ -698,6 +703,7 @@ pub async fn start_youtube_recording(
     let output_str = session_dir.to_string_lossy().to_string();
     let app_handle = app.clone();
     
+    let session_for_cleanup = session_id.clone();
     let task = tokio::spawn(async move {
         if let Err(err) = run_youtube_recorder(
             app_handle,
@@ -711,15 +717,17 @@ pub async fn start_youtube_recording(
             eprintln!("[YouTubeRecorder] {}", err);
         }
         
-        // Cleanup
-        YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap().remove(&channel_clone);
+        // Cleanup by session_id (not channel_id) since we track by session now
+        YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap().remove(&session_for_cleanup);
     });
     
+    // Insert by session_id (not channel_id) to allow multiple sessions per channel
     YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap().insert(
-        channel_id,
+        session_id.clone(),
         YouTubeRecordingEntry {
             stop_tx: Some(stop_tx),
             task,
+            channel_id,
         },
     );
     
@@ -910,38 +918,80 @@ async fn run_youtube_recorder(
 }
 
 /// Stop recording a YouTube livestream
+/// Stops ALL sessions recording this channel (both temp viewer and persistent auto-detect)
 #[tauri::command]
 pub async fn stop_youtube_recording(channel: String) -> Result<(), String> {
     let channel_id = normalize_channel_input(&channel);
     
-    let entry_opt = {
+    // Find all sessions recording this channel and collect their entries
+    let entries: Vec<(String, YouTubeRecordingEntry)> = {
         let mut recordings = YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap();
-        recordings.remove(&channel_id)
+        let session_ids: Vec<String> = recordings
+            .iter()
+            .filter(|(_, entry)| entry.channel_id == channel_id)
+            .map(|(session_id, _)| session_id.clone())
+            .collect();
+
+        session_ids
+            .into_iter()
+            .filter_map(|session_id| {
+                recordings.remove(&session_id).map(|entry| (session_id, entry))
+            })
+            .collect()
     };
     
+    for (session_id, mut entry) in entries {
+        if let Some(stop_tx) = entry.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        if let Err(err) = entry.task.await {
+            eprintln!("[YouTubeRecorder] Join error for session {}: {}", session_id, err);
+        }
+    }
+    
+    Ok(())
+}
+
+/// Stop a specific YouTube recording session by session_id
+/// Unlike stop_youtube_recording which stops ALL sessions for a channel,
+/// this only stops the one specific session, leaving others untouched.
+#[tauri::command]
+pub async fn stop_youtube_recording_session(session_id: String) -> Result<(), String> {
+    let entry_opt = {
+        let mut recordings = YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap();
+        recordings.remove(&session_id)
+    };
+
     if let Some(mut entry) = entry_opt {
         if let Some(stop_tx) = entry.stop_tx.take() {
             let _ = stop_tx.send(());
         }
-        
-        let _ = entry.task.await;
-        println!("[YouTube] Stopped recording for {}", channel_id);
-        Ok(())
+        if let Err(err) = entry.task.await {
+            eprintln!("[YouTubeRecorder] Join error for session {}: {}", session_id, err);
+        }
+        println!("[YouTubeRecorder] Stopped session: {}", session_id);
     } else {
-        Err(format!("No active recording for channel: {}", channel_id))
+        println!("[YouTubeRecorder] No active session found for: {}", session_id);
     }
+
+    Ok(())
 }
 
 /// Stop all active YouTube recordings
 #[tauri::command]
 pub async fn stop_all_youtube_recordings() -> Result<(), String> {
-    let channels: Vec<String> = {
-        let recordings = YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap();
-        recordings.keys().cloned().collect()
+    let entries: Vec<(String, YouTubeRecordingEntry)> = {
+        let mut recordings = YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap();
+        recordings.drain().collect()
     };
     
-    for channel in channels {
-        let _ = stop_youtube_recording(channel).await;
+    for (session_id, mut entry) in entries {
+        if let Some(stop_tx) = entry.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        if let Err(err) = entry.task.await {
+            eprintln!("[YouTubeRecorder] Join error for session {}: {}", session_id, err);
+        }
     }
     
     Ok(())
@@ -955,11 +1005,22 @@ pub fn get_youtube_session_output_dir(session_id: String) -> Result<String, Stri
     Ok(session_dir.to_string_lossy().to_string())
 }
 
-/// Get list of active YouTube recordings
+/// Get list of active YouTube recording session IDs
 #[tauri::command]
 pub fn get_active_youtube_recordings() -> Result<Vec<String>, String> {
     let recordings = YOUTUBE_ACTIVE_RECORDINGS.lock().unwrap();
     Ok(recordings.keys().cloned().collect())
+}
+
+/// Check if a YouTube recording is currently active for a channel
+#[tauri::command]
+pub fn is_youtube_recording_active(channel: String) -> bool {
+    let channel_id = normalize_channel_input(&channel);
+    YOUTUBE_ACTIVE_RECORDINGS
+        .lock()
+        .unwrap()
+        .values()
+        .any(|entry| entry.channel_id == channel_id)
 }
 
 /// Get YouTube channel information including profile image
@@ -1070,48 +1131,102 @@ fn normalize_channel_input(input: &str) -> String {
     trimmed.to_string()
 }
 
-fn resolve_ytdlp_binary() -> Result<PathBuf, String> {
+/// Resolve a sidecar binary path using Tauri's naming convention.
+/// Tauri places sidecars next to the executable with -{target_triple} suffix.
+/// In dev mode, they're in src-tauri/binaries/ with the same naming.
+fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
+    let exe_path =
+        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
+
+    let exe_dir = exe_path.parent().ok_or("Failed to get parent directory")?;
+
+    let target_triple = get_target_triple();
+
     #[cfg(target_os = "windows")]
-    let binary_name = "yt-dlp.exe";
-    
+    let binary_name = format!("{}-{}.exe", base_name, target_triple);
+
     #[cfg(not(target_os = "windows"))]
-    let binary_name = "yt-dlp";
-    
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable directory: {}", e))?
-        .parent()
-        .ok_or("Failed to get parent directory")?
-        .to_path_buf();
-    
-    let ytdlp_path = exe_dir.join(binary_name);
-    
-    if ytdlp_path.exists() {
-        Ok(ytdlp_path)
-    } else {
-        Err(format!("yt-dlp binary not found at: {}", ytdlp_path.display()))
+    let binary_name = format!("{}-{}", base_name, target_triple);
+
+    // Production: sidecar is next to the executable
+    let prod_path = exe_dir.join(&binary_name);
+    if prod_path.exists() {
+        println!(
+            "[YouTube] Found {} at (prod): {}",
+            base_name,
+            prod_path.display()
+        );
+        return Ok(prod_path.to_string_lossy().to_string());
     }
+
+    // macOS production bundle: Tauri strips the target triple from sidecar names
+    #[cfg(target_os = "windows")]
+    let bare_name = format!("{}.exe", base_name);
+    #[cfg(not(target_os = "windows"))]
+    let bare_name = base_name.to_string();
+
+    let bare_path = exe_dir.join(&bare_name);
+    if bare_path.exists() {
+        println!(
+            "[YouTube] Found {} at (bundle): {}",
+            base_name,
+            bare_path.display()
+        );
+        return Ok(bare_path.to_string_lossy().to_string());
+    }
+
+    // Development mode: check src-tauri/binaries/
+    // In dev, exe is in target/debug/, binaries are in src-tauri/binaries/
+    if let Some(target_dir) = exe_dir.parent() {
+        if let Some(target_parent) = target_dir.parent() {
+            let dev_path = target_parent.join("binaries").join(&binary_name);
+            if dev_path.exists() {
+                println!(
+                    "[YouTube] Found {} at (dev): {}",
+                    base_name,
+                    dev_path.display()
+                );
+                return Ok(dev_path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Fallback to system PATH
+    #[cfg(target_os = "windows")]
+    let fallback = format!("{}.exe", base_name);
+
+    #[cfg(not(target_os = "windows"))]
+    let fallback = base_name.to_string();
+
+    println!(
+        "[YouTube] {} not found in bundle, falling back to PATH: {}",
+        base_name, fallback
+    );
+    Ok(fallback)
 }
 
-fn resolve_ffmpeg_binary() -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    let binary_name = "ffmpeg.exe";
-    
-    #[cfg(not(target_os = "windows"))]
-    let binary_name = "ffmpeg";
-    
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable directory: {}", e))?
-        .parent()
-        .ok_or("Failed to get parent directory")?
-        .to_path_buf();
-    
-    let ffmpeg_path = exe_dir.join(binary_name);
-    
-    if ffmpeg_path.exists() {
-        Ok(ffmpeg_path)
-    } else {
-        Err(format!("ffmpeg binary not found at: {}", ffmpeg_path.display()))
-    }
+fn get_target_triple() -> &'static str {
+    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+    return "x86_64-pc-windows-msvc";
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    return "x86_64-apple-darwin";
+
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    return "aarch64-apple-darwin";
+
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    return "x86_64-unknown-linux-gnu";
+
+    "unknown"
+}
+
+fn resolve_ytdlp_binary() -> Result<String, String> {
+    resolve_sidecar_binary("yt-dlp")
+}
+
+fn resolve_ffmpeg_binary() -> Result<String, String> {
+    resolve_sidecar_binary("ffmpeg")
 }
 
 fn format_time_for_filename(seconds: f64) -> String {
@@ -1262,8 +1377,8 @@ pub async fn download_youtube_vod_segment(
         let ffmpeg_path = resolve_ffmpeg_binary()?;
         let video_path_str = video_path.to_string_lossy().to_string();
 
-        println!("[YouTube] Using yt-dlp: {}", ytdlp_path.display());
-        println!("[YouTube] Using ffmpeg: {}", ffmpeg_path.display());
+        println!("[YouTube] Using yt-dlp: {}", ytdlp_path);
+        println!("[YouTube] Using ffmpeg: {}", ffmpeg_path);
 
         // yt-dlp supports --download-sections for time-based downloads
         // Format: "*start_time-end_time" where times are in seconds
@@ -1276,7 +1391,7 @@ pub async fn download_youtube_vod_segment(
         let ffmpeg_dir = std::path::Path::new(&ffmpeg_path)
             .parent()
             .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
+            .unwrap_or_else(|| ffmpeg_path.clone());
         cmd.arg(&vod_url)
             .arg("-o").arg(&video_path_str)
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)

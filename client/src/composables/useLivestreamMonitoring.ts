@@ -27,12 +27,14 @@ import {
   checkKickLivestream,
   startKickRecording,
   stopKickRecording,
+  stopKickRecordingSession,
   type KickLiveStatus,
 } from '@/services/kick';
 import {
   checkTwitchLivestream,
   startTwitchRecording,
   stopTwitchRecording,
+  stopTwitchRecordingSession,
   getTwitchSessionOutputDir,
   type TwitchLiveStatus,
 } from '@/services/twitch';
@@ -40,6 +42,7 @@ import {
   checkYouTubeLivestream,
   startYouTubeRecording,
   stopYouTubeRecording,
+  stopYouTubeRecordingSession,
   getYouTubeSessionOutputDir,
   type YouTubeLiveStatus,
 } from '@/services/youtube';
@@ -47,6 +50,7 @@ import {
   checkRumbleLivestream,
   startRumbleRecording,
   stopRumbleRecording,
+  stopRumbleRecordingSession,
   getRumbleSessionOutputDir,
   type RumbleLiveStatus,
 } from '@/services/rumble';
@@ -54,6 +58,7 @@ import {
   validateTwitterUrl,
   startTwitterRecording,
   stopTwitterRecording,
+  stopTwitterRecordingSession,
   getTwitterSessionOutputDir,
   checkTwitterLivestream,
   type TwitterLiveStatus,
@@ -405,17 +410,18 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   if (!session) return;
 
   try {
-    // Stop platform-specific recording
+    // Stop platform-specific recording using session-specific stop
+    // This ensures we only kill the auto-detect session, not any concurrent DVR viewer session
     if (streamer.platform === 'Kick') {
-      await stopKickRecording(streamer.mintId);
+      await stopKickRecordingSession(session.sessionId);
     } else if (streamer.platform === 'Twitch') {
-      await stopTwitchRecording(streamer.mintId);
+      await stopTwitchRecordingSession(session.sessionId);
     } else if (streamer.platform === 'YouTube') {
-      await stopYouTubeRecording(streamer.mintId);
+      await stopYouTubeRecordingSession(session.sessionId);
     } else if (streamer.platform === 'Rumble') {
-      await stopRumbleRecording(streamer.mintId);
+      await stopRumbleRecordingSession(session.sessionId);
     } else if (streamer.platform === 'Twitter') {
-      await stopTwitterRecording(streamer.mintId);
+      await stopTwitterRecordingSession(session.sessionId);
     } else {
       // PumpFun - process any remaining DVR chunks before stopping
       const state = chunkAggregationState.get(streamer.id);
@@ -740,10 +746,11 @@ async function stopKickDvrRecording(streamerId: string): Promise<void> {
   if (!session) return;
 
   try {
-    await stopKickRecording(session.mintId);
-    console.log('[LiveMonitor] Stopped Kick DVR recording for', session.mintId);
+    // Use session-specific stop to avoid killing concurrent auto-detect sessions
+    await stopKickRecordingSession(session.sessionId);
+    console.log('[LiveMonitor] Stopped Kick DVR session:', session.sessionId);
   } catch (error) {
-    console.warn('[LiveMonitor] Failed to stop Kick DVR', error);
+    console.warn('[LiveMonitor] Failed to stop Kick DVR session', error);
   }
 
   // Remove from tracking
@@ -833,10 +840,11 @@ async function stopTwitchDvrRecording(streamerId: string): Promise<void> {
   if (!session) return;
 
   try {
-    await stopTwitchRecording(session.mintId);
-    console.log('[LiveMonitor] Stopped Twitch DVR recording for', session.mintId);
+    // Use session-specific stop to avoid killing concurrent auto-detect sessions
+    await stopTwitchRecordingSession(session.sessionId);
+    console.log('[LiveMonitor] Stopped Twitch DVR session:', session.sessionId);
   } catch (error) {
-    console.warn('[LiveMonitor] Failed to stop Twitch DVR', error);
+    console.warn('[LiveMonitor] Failed to stop Twitch DVR session', error);
   }
 
   // Remove from tracking
@@ -926,10 +934,11 @@ async function stopTwitterDvrRecording(streamerId: string): Promise<void> {
   if (!session) return;
 
   try {
-    await stopTwitterRecording(session.mintId);
-    console.log('[LiveMonitor] Stopped Twitter DVR recording for', session.mintId);
+    // Use session-specific stop to avoid killing concurrent auto-detect sessions
+    await stopTwitterRecordingSession(session.sessionId);
+    console.log('[LiveMonitor] Stopped Twitter DVR session:', session.sessionId);
   } catch (error) {
-    console.warn('[LiveMonitor] Failed to stop Twitter DVR', error);
+    console.warn('[LiveMonitor] Failed to stop Twitter DVR session', error);
   }
 
   // Remove from tracking
@@ -1089,6 +1098,17 @@ async function initializeListeners() {
     if (!isMonitoring.value && activeSessions.value.size === 0) return;
 
     const payload = event.payload;
+
+    // CRITICAL: Only process segments that belong to an active auto-detect session.
+    // DVR viewer sessions (4-sec segments) have different session IDs (e.g., kick-dvr-*, kick-view-*)
+    // that won't match any activeSessions entry. Without this filter, DVR segments would
+    // leak into the auto-detect clip detection pipeline.
+    const activeSession = activeSessions.value.get(payload.streamerId);
+    if (!activeSession || activeSession.sessionId !== payload.sessionId) {
+      // This segment belongs to a DVR/viewer session, not an auto-detect session - skip it
+      return;
+    }
+
     const info = await getStreamerInfo(payload.streamerId);
 
     // 1. Update previous segment log (use streamerId-segment as key to avoid collisions)
@@ -1439,17 +1459,18 @@ export function useLivestreamMonitoring() {
         }, 35000); // 35 seconds (Rust process timeout is 30s)
 
         try {
-          // Stop platform-specific recording
+          // Stop platform-specific recording using session-specific stop
+          // This ensures we only kill the auto-detect session, not any concurrent DVR viewer session
           if (session.platform === 'Kick') {
-            await invoke('stop_kick_recording', { channelSlug: session.mintId });
+            await stopKickRecordingSession(session.sessionId);
           } else if (session.platform === 'Twitch') {
-            await stopTwitchRecording(session.mintId);
+            await stopTwitchRecordingSession(session.sessionId);
           } else if (session.platform === 'YouTube') {
-            await stopYouTubeRecording(session.mintId);
+            await stopYouTubeRecordingSession(session.sessionId);
           } else if (session.platform === 'Rumble') {
-            await stopRumbleRecording(session.mintId);
+            await stopRumbleRecordingSession(session.sessionId);
           } else if (session.platform === 'Twitter') {
-            await stopTwitterRecording(session.mintId);
+            await stopTwitterRecordingSession(session.sessionId);
           } else {
             // PumpFun - process any remaining DVR chunks before stopping
             const state = chunkAggregationState.get(id);
