@@ -259,7 +259,7 @@
                   <div class="project-card__meta">
                     <!-- Platform Icon -->
                     <div
-                      v-if="getProjectPlatform(project) === 'Youtube'"
+                      v-if="getProjectPlatform(project) === 'YouTube'"
                       class="project-card__platform project-card__platform--youtube"
                       title="YouTube"
                     >
@@ -1956,11 +1956,9 @@
     }
   }
 
-  function getProjectPlatform(project: Project): 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual' | null {
+  function getProjectPlatform(project: Project): 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual' | null {
     // 0. Check explicit platform field
     if (project.platform) {
-      // Normalize YouTube to Youtube for consistency
-      if (project.platform === 'YouTube') return 'Youtube';
       return project.platform;
     }
 
@@ -1969,7 +1967,7 @@
       const desc = project.description.toLowerCase();
       if (desc.includes('kick')) return 'Kick';
       if (desc.includes('pumpfun')) return 'PumpFun';
-      if (desc.includes('youtube')) return 'Youtube';
+      if (desc.includes('youtube')) return 'YouTube';
       if (desc.includes('twitch')) return 'Twitch';
       if (desc.includes('rumble')) return 'Rumble';
       if (desc.includes('twitter')) return 'Twitter';

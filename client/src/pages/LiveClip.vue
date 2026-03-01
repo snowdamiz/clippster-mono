@@ -6,7 +6,7 @@
           <div class="liveclip-search">
             <transition name="scale" mode="out-in">
               <div
-                v-if="detectedPlatform === 'Youtube'"
+                v-if="detectedPlatform === 'YouTube'"
                 class="liveclip-search__platform liveclip-search__platform--youtube"
                 key="yt"
               >
@@ -501,7 +501,7 @@
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
 
-  type Platform = 'Youtube' | 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter' | 'PumpFun';
+  type Platform = 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter' | 'PumpFun';
 
   interface PendingMetadataFetch {
     streamerId: string;
@@ -950,7 +950,7 @@
           pumpfun: 'PumpFun',
           kick: 'Kick',
           twitch: 'Twitch',
-          youtube: 'Youtube',
+          youtube: 'YouTube',
           rumble: 'Rumble',
           twitter: 'Twitter',
         };
@@ -1000,7 +1000,7 @@
 
     const lowerVal = val.toLowerCase();
     if (lowerVal.includes('youtube.com') || lowerVal.includes('youtu.be')) {
-      detectedPlatform.value = 'Youtube';
+      detectedPlatform.value = 'YouTube';
     } else if (lowerVal.includes('twitch.tv')) {
       detectedPlatform.value = 'Twitch';
     } else if (lowerVal.includes('kick.com')) {
@@ -1016,7 +1016,7 @@
 
   function getPlatformIcon(platform: Platform) {
     switch (platform) {
-      case 'Youtube':
+      case 'YouTube':
         return '/youtube.svg';
       case 'Twitch':
         return '/twitch.svg';
@@ -1035,7 +1035,7 @@
 
   function getPlatformBgClass(platform: Platform) {
     switch (platform) {
-      case 'Youtube':
+      case 'YouTube':
         return 'monitor-card__avatar-fallback--youtube';
       case 'Twitch':
         return 'monitor-card__avatar-fallback--twitch';
@@ -1054,7 +1054,7 @@
 
   function getPlatformIconClasses(platform: Platform) {
     switch (platform) {
-      case 'Youtube':
+      case 'YouTube':
       case 'Twitch':
       case 'Rumble':
       case 'PumpFun':
@@ -1069,7 +1069,7 @@
 
   function getPlatformTextClass(platform: Platform) {
     switch (platform) {
-      case 'Youtube':
+      case 'YouTube':
         return 'monitor-card__platform--youtube';
       case 'Twitch':
         return 'monitor-card__platform--twitch';
@@ -1088,7 +1088,7 @@
 
   function getPlatformDotClass(platform: Platform) {
     switch (platform) {
-      case 'Youtube':
+      case 'YouTube':
         return 'activity-log__dot--youtube';
       case 'Twitch':
         return 'activity-log__dot--twitch';
@@ -1132,13 +1132,13 @@
     if (!inputValue.value) return;
 
     // Handle YouTube
-    if (detectedPlatform.value === 'Youtube') {
+    if (detectedPlatform.value === 'YouTube') {
       const channelId = extractYouTubeChannel(inputValue.value);
       if (channelId) {
         addActivityLog({
           streamerId: 'system',
           streamerName: 'System',
-          platform: 'Youtube',
+          platform: 'YouTube',
           message: `Adding YouTube channel "${channelId}"...`,
           status: 'loading',
         });
@@ -1327,7 +1327,7 @@
     platform: string = 'pumpfun'
   ) {
     const platformDisplay = 
-      platform === 'youtube' ? 'Youtube' : 
+      platform === 'youtube' ? 'YouTube' : 
       platform === 'rumble' ? 'Rumble' :
       platform === 'twitter' ? 'Twitter' :
       platform === 'kick' ? 'Kick' : 

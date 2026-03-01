@@ -94,7 +94,7 @@ export async function createMonitoredStreamer(
       id,
       mintId,
       displayName,
-      platform.toLowerCase(),
+      platform,
       profileImageUrl || null,
       segmentDurationMinutes,
       autoDvr ? 1 : 0,
