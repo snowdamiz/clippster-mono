@@ -777,7 +777,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { useSubscription } from '@/composables/useSubscription';
 
-  type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble';
+  type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble';
 
   interface PlatformLinkInput {
     platform: PlatformId;
@@ -866,7 +866,7 @@
     { id: 'pumpfun' as PlatformId, name: 'PumpFun', disabled: false },
     { id: 'kick' as PlatformId, name: 'Kick', disabled: false },
     { id: 'twitch' as PlatformId, name: 'Twitch', disabled: false },
-    { id: 'youtube' as PlatformId, name: 'YouTube', disabled: false },
+    { id: 'YouTube' as PlatformId, name: 'YouTube', disabled: false },
     { id: 'rumble' as PlatformId, name: 'Rumble', disabled: false },
   ];
 
@@ -1152,7 +1152,7 @@
     openPlatformDropdown.value = null;
 
     // If switching platforms and we have a platform ID, extract metadata
-    if ((platformId === 'pumpfun' || platformId === 'kick' || platformId === 'twitch' || platformId === 'youtube' || platformId === 'rumble') && link.platform_id.trim()) {
+    if ((platformId === 'pumpfun' || platformId === 'kick' || platformId === 'twitch' || platformId === 'YouTube' || platformId === 'rumble') && link.platform_id.trim()) {
       await extractPlatformId(link);
     }
   }
@@ -1279,7 +1279,7 @@
           fetchingProfileImage.value = false;
         }
       }
-    } else if (link.platform === 'youtube') {
+    } else if (link.platform === 'YouTube') {
       const channelId = extractYouTubeChannel(input);
       if (channelId) {
         link.platform_id = channelId;
@@ -2174,7 +2174,7 @@
       let monitoredStreamerId: string | null = null;
 
       // Resolve monitored streamer for supported platforms
-      if (link.platform === 'pumpfun' || link.platform === 'kick' || link.platform === 'twitch' || link.platform === 'youtube' || link.platform === 'rumble') {
+      if (link.platform === 'pumpfun' || link.platform === 'kick' || link.platform === 'twitch' || link.platform === 'YouTube' || link.platform === 'rumble') {
         try {
           const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
           if (existing) {

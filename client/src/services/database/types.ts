@@ -553,12 +553,12 @@ export interface CreatorProfile {
 export interface CreatorPlatformLink {
   id: string;
   creator_profile_id: string;
-  platform: 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble' | 'twitter';
+  platform: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
   platform_id: string;
   display_name: string | null;
   profile_image_url: string | null;
   monitored_streamer_id: string | null;
-  is_primary: number | boolean;
+  is_primary: boolean;
   created_at: number;
 }
 

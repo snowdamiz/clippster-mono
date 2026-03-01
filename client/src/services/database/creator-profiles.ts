@@ -762,7 +762,7 @@ export async function getCreatorProfileByProjectId(
     PumpFun: 'pumpfun',
     Kick: 'kick',
     Twitch: 'twitch',
-    Youtube: 'youtube',
+    Youtube: 'YouTube',
   };
 
   const linkPlatform = platformMap[projectPlatform];
