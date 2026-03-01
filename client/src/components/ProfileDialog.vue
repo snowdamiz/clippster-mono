@@ -1363,7 +1363,7 @@
       pumpfun: '/capsule.svg',
       kick: '/kick.svg',
       twitch: '/twitch.svg',
-      youtube: '/youtube.svg',
+      YouTube: '/youtube.svg',
       rumble: '/rumble.svg',
     };
     return icons[platform] || '/capsule.svg';
@@ -1374,7 +1374,7 @@
       pumpfun: '#10b981',
       kick: '#53FC18',
       twitch: '#9146FF',
-      youtube: '#dc2626',
+      YouTube: '#dc2626',
       rumble: '#85c742',
     };
     return colors[platform] || '#6b7280';
@@ -1390,7 +1390,7 @@
       pumpfun: 'PumpFun',
       kick: 'Kick',
       twitch: 'Twitch',
-      youtube: 'YouTube',
+      YouTube: 'YouTube',
       rumble: 'Rumble',
     };
     return names[platform] || platform;

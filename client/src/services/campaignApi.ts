@@ -754,7 +754,7 @@ export function getPlatformIcon(platform: string): string {
     tiktok: 'Music2',
     instagram: 'Instagram',
     x: 'Twitter',
-    youtube: 'Youtube',
+    youtube: 'YouTube',
   };
   return icons[platform] || 'Globe';
 }

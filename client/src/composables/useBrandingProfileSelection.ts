@@ -122,12 +122,12 @@ function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProf
     platform_links: (sp.platform_links || []).map((link): CreatorPlatformLink => ({
       id: String(link.id),
       creator_profile_id: String(sp.id),
-      platform: link.platform,
+      platform: link.platform === 'youtube' ? 'YouTube' : link.platform as CreatorPlatformLink['platform'],
       platform_id: link.platform_id,
       display_name: link.display_name || null,
       profile_image_url: link.profile_image_url || null,
       monitored_streamer_id: null,
-      is_primary: link.is_primary ? 1 : 0,
+      is_primary: Boolean(link.is_primary),
       created_at: new Date(link.inserted_at).getTime(),
     })),
   };
@@ -163,7 +163,7 @@ function campaignProfileToLocal(cp: CampaignCreatorProfile): CreatorProfileWithL
       display_name: link.display_name || null,
       profile_image_url: link.profile_image_url || null,
       monitored_streamer_id: null,
-      is_primary: link.is_primary ? 1 : 0,
+      is_primary: Boolean(link.is_primary),
       created_at: Date.now(),
     })),
   };
@@ -173,7 +173,7 @@ function campaignProfileToLocal(cp: CampaignCreatorProfile): CreatorProfileWithL
  * Platform name mapping from project platform to link platform values.
  */
 const PLATFORM_MAP: Record<string, string> = {
-  PumpFun: 'pumpfun', Kick: 'kick', Twitch: 'twitch', Youtube: 'youtube',
+  PumpFun: 'pumpfun', Kick: 'kick', Twitch: 'twitch', YouTube: 'YouTube',
 };
 
 /**
