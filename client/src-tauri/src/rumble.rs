@@ -789,10 +789,29 @@ async fn run_rumble_recorder(
     if playback_url.is_empty() {
         let stderr = String::from_utf8_lossy(&ytdlp_output.stderr);
         println!("[RumbleRecorder] yt-dlp failed to extract playback URL. stderr: {}", stderr);
+        
+        // Emit error log to frontend
+        let _ = app.emit("recorder-log", RumbleRecorderLogPayload {
+            streamer_id: streamer_id.clone(),
+            channel_name: channel_name.clone(),
+            mint_id: channel_name.clone(),
+            message: format!("yt-dlp failed to extract playback URL: {}", stderr),
+            level: "error".to_string(),
+        });
+        
         return Err(format!("Failed to extract playback URL from Rumble stream. yt-dlp stderr: {}", stderr));
     }
     
     println!("[RumbleRecorder] Playback URL: {}", playback_url);
+    
+    // Emit success log to frontend
+    let _ = app.emit("recorder-log", RumbleRecorderLogPayload {
+        streamer_id: streamer_id.clone(),
+        channel_name: channel_name.clone(),
+        mint_id: channel_name.clone(),
+        message: format!("Successfully extracted playback URL from Rumble stream"),
+        level: "info".to_string(),
+    });
     
     // Now use FFmpeg to record directly from the playback URL
     let mut ffmpeg_cmd = tokio::process::Command::new(&ffmpeg_path);
@@ -814,15 +833,46 @@ async fn run_rumble_recorder(
     let mut ffmpeg_child = ffmpeg_cmd.spawn()
         .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
     
+    // Emit log that FFmpeg started successfully
+    let _ = app.emit("recorder-log", RumbleRecorderLogPayload {
+        streamer_id: streamer_id.clone(),
+        channel_name: channel_name.clone(),
+        mint_id: channel_name.clone(),
+        message: format!("FFmpeg recorder started for Rumble stream ({}s segments)", hls_segment_seconds),
+        level: "info".to_string(),
+    });
+    
+    // Forward FFmpeg stderr to frontend via recorder-log events
     if let Some(ffmpeg_stderr) = ffmpeg_child.stderr.take() {
+        let app_log = app.clone();
+        let streamer_log = streamer_id.clone();
+        let channel_log = channel_name.clone();
+        
         tokio::spawn(async move {
             let reader = tokio::io::BufReader::new(ffmpeg_stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                // Only log important FFmpeg lines to avoid flooding server logs
-                let dominated = line.contains("Opening") || line.contains("Skip");
-                if !dominated {
+                // Only log important FFmpeg lines to avoid flooding
+                let is_noise = line.contains("Opening") || line.contains("Skip");
+                if !is_noise {
                     println!("[RumbleRecorder] FFmpeg: {}", line);
+                    
+                    // Determine log level based on content
+                    let level = if line.contains("error") || line.contains("Error") || line.contains("ERROR") {
+                        "error"
+                    } else if line.contains("warning") || line.contains("Warning") || line.contains("WARN") {
+                        "warn"
+                    } else {
+                        "info"
+                    };
+                    
+                    let _ = app_log.emit("recorder-log", RumbleRecorderLogPayload {
+                        streamer_id: streamer_log.clone(),
+                        channel_name: channel_log.clone(),
+                        mint_id: channel_log.clone(),
+                        message: line,
+                        level: level.to_string(),
+                    });
                 }
             }
         });
@@ -836,12 +886,33 @@ async fn run_rumble_recorder(
                 println!("[RumbleRecorder] FFmpeg exited: {:?}", status);
                 
                 let exit_status = status.ok();
+                let exit_code = exit_status.as_ref().and_then(|s| s.code());
+                
+                // Emit log about FFmpeg exit
+                let exit_message = if let Some(code) = exit_code {
+                    if code == 0 {
+                        format!("FFmpeg recorder stopped normally (exit code: {})", code)
+                    } else {
+                        format!("FFmpeg recorder exited with error code: {}", code)
+                    }
+                } else {
+                    "FFmpeg recorder terminated".to_string()
+                };
+                
+                let _ = app.emit("recorder-log", RumbleRecorderLogPayload {
+                    streamer_id: streamer_id.clone(),
+                    channel_name: channel_name.clone(),
+                    mint_id: channel_name.clone(),
+                    message: exit_message,
+                    level: if exit_code == Some(0) { "info" } else { "error" }.to_string(),
+                });
+                
                 let _ = app.emit("recorder-exit", RumbleRecorderExitPayload {
                     streamer_id: streamer_id.clone(),
                     session_id: session_id.clone(),
                     channel_name: channel_name.clone(),
                     mint_id: channel_name.clone(),
-                    code: exit_status.as_ref().and_then(|s| s.code()),
+                    code: exit_code,
                 });
                 
                 // If FFmpeg exited unsuccessfully, stream likely ended
