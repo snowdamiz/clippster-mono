@@ -226,37 +226,119 @@
           </div>
 
           <div class="admin-settings__branding-fields">
-            <!-- Watermark URL -->
-            <div class="admin-settings__branding-field">
-              <label class="admin-settings__branding-field-label">Watermark Image URL</label>
-              <input
-                v-model="freeTierBranding.watermark_url"
-                type="text"
-                placeholder="https://... (PNG or SVG recommended)"
-                class="admin-settings__input"
-              />
+            <!-- Watermark Selection -->
+            <div class="admin-settings__asset-row">
+              <label class="admin-settings__asset-label">Watermark</label>
+              <div class="admin-settings__asset-controls">
+                <div class="admin-settings__asset-info">
+                  <div class="admin-settings__asset-icon admin-settings__asset-icon--watermark">
+                    <ImageIconLucide :size="14" />
+                  </div>
+                  <span class="admin-settings__asset-name">
+                    {{ selectedWatermark?.name || 'No watermark selected' }}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  @click="openWatermarkPositionPicker"
+                  :disabled="!freeTierBranding.watermark_id"
+                  class="admin-settings__asset-btn"
+                  :class="{ 'admin-settings__asset-btn--active': watermarkConfiguredRatios > 0 }"
+                  title="Configure watermark position"
+                >
+                  <Settings2 :size="16" />
+                </button>
+                <button
+                  type="button"
+                  @click="handleWatermarkUpload"
+                  :disabled="uploadingWatermark"
+                  class="admin-settings__asset-btn"
+                  title="Upload new watermark"
+                >
+                  <Loader2 v-if="uploadingWatermark" :size="16" class="admin-settings__flag-loading-icon" />
+                  <Upload v-else :size="16" />
+                </button>
+              </div>
+              <p v-if="watermarkConfiguredRatios > 0" class="admin-settings__asset-hint">
+                <Settings2 :size="12" />
+                Position configured for {{ watermarkConfiguredRatios }} aspect ratio(s)
+              </p>
             </div>
 
-            <!-- Intro Video URL -->
-            <div class="admin-settings__branding-field">
-              <label class="admin-settings__branding-field-label">Intro Video URL</label>
-              <input
-                v-model="freeTierBranding.intro_url"
-                type="text"
-                placeholder="https://... (MP4 recommended)"
-                class="admin-settings__input"
-              />
+            <!-- Intro Selection -->
+            <div class="admin-settings__asset-row">
+              <label class="admin-settings__asset-label">Intro</label>
+              <div class="admin-settings__asset-controls">
+                <div class="admin-settings__asset-info">
+                  <div class="admin-settings__asset-icon admin-settings__asset-icon--intro">
+                    <Play :size="14" />
+                  </div>
+                  <span class="admin-settings__asset-name">
+                    {{ introConfiguredRatios > 0 ? `${introConfiguredRatios} intro(s) configured` : 'No intro configured' }}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  @click="showIntroRatioPicker = true"
+                  class="admin-settings__asset-btn"
+                  :class="{ 'admin-settings__asset-btn--active': introConfiguredRatios > 0 }"
+                  title="Configure intro per aspect ratio"
+                >
+                  <Settings2 :size="16" />
+                </button>
+                <button
+                  type="button"
+                  @click="handleIntroUpload"
+                  :disabled="uploadingIntro"
+                  class="admin-settings__asset-btn"
+                  title="Upload new intro"
+                >
+                  <Loader2 v-if="uploadingIntro" :size="16" class="admin-settings__flag-loading-icon" />
+                  <Upload v-else :size="16" />
+                </button>
+              </div>
+              <p v-if="introConfiguredRatios > 0" class="admin-settings__asset-hint">
+                <Settings2 :size="12" />
+                Per-ratio intros configured
+              </p>
             </div>
 
-            <!-- Outro Video URL -->
-            <div class="admin-settings__branding-field">
-              <label class="admin-settings__branding-field-label">Outro Video URL</label>
-              <input
-                v-model="freeTierBranding.outro_url"
-                type="text"
-                placeholder="https://... (MP4 recommended)"
-                class="admin-settings__input"
-              />
+            <!-- Outro Selection -->
+            <div class="admin-settings__asset-row">
+              <label class="admin-settings__asset-label">Outro</label>
+              <div class="admin-settings__asset-controls">
+                <div class="admin-settings__asset-info">
+                  <div class="admin-settings__asset-icon admin-settings__asset-icon--outro">
+                    <SkipForward :size="14" />
+                  </div>
+                  <span class="admin-settings__asset-name">
+                    {{ outroConfiguredRatios > 0 ? `${outroConfiguredRatios} outro(s) configured` : 'No outro configured' }}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  @click="showOutroRatioPicker = true"
+                  class="admin-settings__asset-btn"
+                  :class="{ 'admin-settings__asset-btn--active': outroConfiguredRatios > 0 }"
+                  title="Configure outro per aspect ratio"
+                >
+                  <Settings2 :size="16" />
+                </button>
+                <button
+                  type="button"
+                  @click="handleOutroUpload"
+                  :disabled="uploadingOutro"
+                  class="admin-settings__asset-btn"
+                  title="Upload new outro"
+                >
+                  <Loader2 v-if="uploadingOutro" :size="16" class="admin-settings__flag-loading-icon" />
+                  <Upload v-else :size="16" />
+                </button>
+              </div>
+              <p v-if="outroConfiguredRatios > 0" class="admin-settings__asset-hint">
+                <Settings2 :size="12" />
+                Per-ratio outros configured
+              </p>
             </div>
           </div>
 
@@ -271,15 +353,49 @@
         </div>
       </div>
     </div>
+
+    <!-- Watermark Position Picker -->
+    <WatermarkPositionPicker
+      :show="showWatermarkPositionPicker"
+      :watermark-id="freeTierBranding.watermark_id"
+      :settings="freeTierBranding.watermark_settings || undefined"
+      @close="showWatermarkPositionPicker = false"
+      @save="saveWatermarkPosition"
+    />
+
+    <!-- Intro Ratio Picker -->
+    <IntroOutroRatioPicker
+      :show="showIntroRatioPicker"
+      mode="intro"
+      :initial-settings="freeTierBranding.intro_settings || undefined"
+      @close="showIntroRatioPicker = false"
+      @save="saveIntroSettings"
+    />
+
+    <!-- Outro Ratio Picker -->
+    <IntroOutroRatioPicker
+      :show="showOutroRatioPicker"
+      mode="outro"
+      :initial-settings="freeTierBranding.outro_settings || undefined"
+      @close="showOutroRatioPicker = false"
+      @save="saveOutroSettings"
+    />
   </PageLayout>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
-  import { Settings, Radio, KeyRound, Check, Loader2, ImageIcon, Trophy, RefreshCw } from 'lucide-vue-next';
+  import { Settings, Radio, KeyRound, Check, Loader2, ImageIcon, Trophy, RefreshCw, Upload, Play, SkipForward, Settings2, Image as ImageIconLucide } from 'lucide-vue-next';
   import api from '@/services/api';
   import PageLayout from '@/components/PageLayout.vue';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
+  import { useToast } from '@/composables/useToast';
+  import WatermarkPositionPicker, { type CreatorWatermarkSettings } from '@/components/WatermarkPositionPicker.vue';
+  import IntroOutroRatioPicker from '@/components/IntroOutroRatioPicker.vue';
+  import type { RatioAssetMap } from '@/services/database/types';
+  import { getAllWatermarkImages, getAllIntroOutros } from '@/services/database';
+  import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
+  import { useAssetOperations } from '@/composables/useAssetOperations';
 
   const {
     isLiveClipEnabled,
@@ -289,6 +405,8 @@
     setLiveClipEnabled,
     setBetaModeEnabled,
   } = useFeatureFlags();
+
+  const { success, error } = useToast();
 
   const updatingLiveClipFlag = ref(false);
   const updatingBetaModeFlag = ref(false);
@@ -356,12 +474,39 @@
   };
 
   // Free tier branding
-  const freeTierBranding = ref<{ watermark_url: string; intro_url: string; outro_url: string }>({
-    watermark_url: '',
-    intro_url: '',
-    outro_url: '',
+  const freeTierBranding = ref<{
+    watermark_id: string | null;
+    watermark_settings: CreatorWatermarkSettings | null;
+    intro_settings: RatioAssetMap | null;
+    outro_settings: RatioAssetMap | null;
+  }>({
+    watermark_id: null,
+    watermark_settings: null,
+    intro_settings: null,
+    outro_settings: null,
   });
   const savingBranding = ref(false);
+  const uploadingWatermark = ref(false);
+  const uploadingIntro = ref(false);
+  const uploadingOutro = ref(false);
+  
+  // Watermark picker state
+  const showWatermarkPositionPicker = ref(false);
+  const watermarkAssets = ref<any[]>([]);
+  const selectedWatermark = computed(() => {
+    if (!freeTierBranding.value.watermark_id) return null;
+    return watermarkAssets.value.find(w => w.id === freeTierBranding.value.watermark_id);
+  });
+  
+  // Intro/Outro picker state
+  const showIntroRatioPicker = ref(false);
+  const showOutroRatioPicker = ref(false);
+  const introAssets = ref<any[]>([]);
+  const outroAssets = ref<any[]>([]);
+  
+  // Watermark operations
+  const { uploadWatermark } = useWatermarkOperations();
+  const { uploadAsset } = useAssetOperations();
 
   const refreshingLeaderboard = ref<'weekly' | 'monthly' | 'both' | null>(null);
   const leaderboardRefreshResult = ref<{ success: boolean; message: string } | null>(null);
@@ -387,7 +532,25 @@
   }
 
   const freeTierBrandingConfigured = computed(() => {
-    return !!(freeTierBranding.value.watermark_url || freeTierBranding.value.intro_url || freeTierBranding.value.outro_url);
+    const hasWatermark = !!freeTierBranding.value.watermark_id;
+    const hasIntro = !!freeTierBranding.value.intro_settings && Object.values(freeTierBranding.value.intro_settings).some(v => v !== null);
+    const hasOutro = !!freeTierBranding.value.outro_settings && Object.values(freeTierBranding.value.outro_settings).some(v => v !== null);
+    return hasWatermark || hasIntro || hasOutro;
+  });
+  
+  const watermarkConfiguredRatios = computed(() => {
+    if (!freeTierBranding.value.watermark_settings) return 0;
+    return Object.values(freeTierBranding.value.watermark_settings).filter(v => v !== null).length;
+  });
+  
+  const introConfiguredRatios = computed(() => {
+    if (!freeTierBranding.value.intro_settings) return 0;
+    return Object.values(freeTierBranding.value.intro_settings).filter(v => v !== null).length;
+  });
+  
+  const outroConfiguredRatios = computed(() => {
+    if (!freeTierBranding.value.outro_settings) return 0;
+    return Object.values(freeTierBranding.value.outro_settings).filter(v => v !== null).length;
   });
 
   async function loadFreeTierBranding() {
@@ -396,22 +559,110 @@
       if (response.data.success && response.data.branding) {
         const b = response.data.branding;
         freeTierBranding.value = {
-          watermark_url: b.watermark_url || '',
-          intro_url: b.intro_url || '',
-          outro_url: b.outro_url || '',
+          watermark_id: b.watermark_id || null,
+          watermark_settings: b.watermark_settings || null,
+          intro_settings: b.intro_settings || null,
+          outro_settings: b.outro_settings || null,
         };
       }
     } catch (err) {
       console.warn('[AdminSettings] Failed to load free tier branding:', err);
     }
   }
+  
+  async function loadAssets() {
+    try {
+      watermarkAssets.value = await getAllWatermarkImages();
+      const allIntros = await getAllIntroOutros('intro');
+      const allOutros = await getAllIntroOutros('outro');
+      introAssets.value = allIntros;
+      outroAssets.value = allOutros;
+    } catch (err) {
+      console.warn('[AdminSettings] Failed to load assets:', err);
+    }
+  }
+  
+  function openWatermarkPositionPicker() {
+    if (!freeTierBranding.value.watermark_id) return;
+    showWatermarkPositionPicker.value = true;
+  }
+  
+  function saveWatermarkPosition(settings: CreatorWatermarkSettings) {
+    freeTierBranding.value.watermark_settings = settings;
+    showWatermarkPositionPicker.value = false;
+  }
+  
+  function saveIntroSettings(settings: RatioAssetMap) {
+    freeTierBranding.value.intro_settings = settings;
+    showIntroRatioPicker.value = false;
+  }
+  
+  function saveOutroSettings(settings: RatioAssetMap) {
+    freeTierBranding.value.outro_settings = settings;
+    showOutroRatioPicker.value = false;
+  }
+  
+  async function handleWatermarkUpload() {
+    if (uploadingWatermark.value) return;
+    uploadingWatermark.value = true;
+    try {
+      const result = await uploadWatermark();
+      if (result.success && result.watermarkId) {
+        await loadAssets();
+        freeTierBranding.value.watermark_id = result.watermarkId;
+      }
+    } catch (err) {
+      console.error('[AdminSettings] Watermark upload failed:', err);
+    } finally {
+      uploadingWatermark.value = false;
+    }
+  }
+  
+  async function handleIntroUpload() {
+    if (uploadingIntro.value) return;
+    uploadingIntro.value = true;
+    try {
+      const result = await uploadAsset('intro');
+      if (result.success) {
+        await loadAssets();
+      }
+    } catch (err) {
+      console.error('[AdminSettings] Intro upload failed:', err);
+    } finally {
+      uploadingIntro.value = false;
+    }
+  }
+  
+  async function handleOutroUpload() {
+    if (uploadingOutro.value) return;
+    uploadingOutro.value = true;
+    try {
+      const result = await uploadAsset('outro');
+      if (result.success) {
+        await loadAssets();
+      }
+    } catch (err) {
+      console.error('[AdminSettings] Outro upload failed:', err);
+    } finally {
+      uploadingOutro.value = false;
+    }
+  }
 
   async function saveFreeTierBranding() {
     savingBranding.value = true;
     try {
-      await api.put('/admin/free-tier-branding', { branding: freeTierBranding.value });
+      await api.put('/admin/free-tier-branding', {
+        branding: {
+          watermark_id: freeTierBranding.value.watermark_id,
+          watermark_settings: freeTierBranding.value.watermark_settings,
+          intro_settings: freeTierBranding.value.intro_settings,
+          outro_settings: freeTierBranding.value.outro_settings,
+        }
+      });
+      success('Branding saved', 'Free tier branding settings have been updated');
     } catch (err) {
       console.error('[AdminSettings] Failed to save free tier branding:', err);
+      error('Save failed', 'Failed to save free tier branding settings');
     } finally {
       savingBranding.value = false;
     }
@@ -421,6 +672,7 @@
     fetchFeatureFlags();
     loadPlatformOverride();
     loadFreeTierBranding();
+    loadAssets();
   });
 </script>
 
@@ -892,39 +1144,113 @@
   .admin-settings__branding-fields {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 1rem;
   }
 
-  .admin-settings__branding-field {
+  .admin-settings__asset-row {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.5rem;
+    padding: 0.875rem;
+    background: rgba(24, 24, 27, 0.4);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
   }
 
-  .admin-settings__branding-field-label {
+  .admin-settings__asset-label {
     font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
+    font-weight: 600;
+    color: var(--sidebar-text);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
-  .admin-settings__input {
-    padding: 0.5rem 0.75rem;
-    background: var(--sidebar-surface);
+  .admin-settings__asset-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .admin-settings__asset-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .admin-settings__asset-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .admin-settings__asset-icon--watermark {
+    background: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .admin-settings__asset-icon--intro {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+  }
+
+  .admin-settings__asset-icon--outro {
+    background: rgba(168, 85, 247, 0.15);
+    color: #a78bfa;
+  }
+
+  .admin-settings__asset-name {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .admin-settings__asset-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
     border-radius: 6px;
-    color: var(--sidebar-text);
-    font-size: 0.8125rem;
-    outline: none;
-    transition: border-color 0.15s;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
   }
 
-  .admin-settings__input:focus {
+  .admin-settings__asset-btn:hover:not(:disabled) {
+    background: var(--sidebar-active);
+    color: var(--sidebar-text);
     border-color: var(--sidebar-accent);
   }
 
-  .admin-settings__input::placeholder {
-    color: var(--sidebar-text-muted);
+  .admin-settings__asset-btn--active {
+    background: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    border-color: rgba(6, 182, 212, 0.3);
+  }
+
+  .admin-settings__asset-btn:disabled {
     opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .admin-settings__asset-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    color: var(--sidebar-accent);
+    margin: 0;
   }
 
   .admin-settings__branding-save {
