@@ -293,6 +293,13 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
     put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
 
+    # Image editor projects
+    get("/image-editor/projects", ImageEditorController, :list_projects)
+    post("/image-editor/projects", ImageEditorController, :create_project)
+    get("/image-editor/projects/:id", ImageEditorController, :get_project)
+    put("/image-editor/projects/:id", ImageEditorController, :update_project)
+    delete("/image-editor/projects/:id", ImageEditorController, :delete_project)
+
     # Speaker detection and framing strategy
     post("/clips/:clip_id/analyze-speakers", SpeakerDetectionController, :analyze)
     post("/clips/:clip_id/classify-video", SpeakerDetectionController, :classify)
