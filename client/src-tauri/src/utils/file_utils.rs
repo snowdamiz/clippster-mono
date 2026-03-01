@@ -10,4 +10,3 @@ pub fn delete_file(path: &str) -> Result<(), Box<dyn std::error::Error>> {
 pub fn file_exists(path: &str) -> bool {
     Path::new(path).exists()
 }
-

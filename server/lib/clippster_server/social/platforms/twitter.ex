@@ -28,7 +28,8 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
   @tweets_url "https://api.x.com/2/tweets"
 
   # HTTP timeout configuration - X API can be slow
-  @http_timeout 30_000  # 30 seconds
+  # 30 seconds
+  @http_timeout 30_000
   @http_options [timeout: @http_timeout, recv_timeout: @http_timeout]
 
   # ============================================================================
@@ -77,13 +78,14 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
     code_verifier = opts[:code_verifier] || raise "code_verifier required"
 
     # Build request body
-    body = URI.encode_query(%{
-      "code" => code,
-      "grant_type" => "authorization_code",
-      "client_id" => client_id,
-      "redirect_uri" => redirect_uri,
-      "code_verifier" => code_verifier
-    })
+    body =
+      URI.encode_query(%{
+        "code" => code,
+        "grant_type" => "authorization_code",
+        "client_id" => client_id,
+        "redirect_uri" => redirect_uri,
+        "code_verifier" => code_verifier
+      })
 
     # Build Basic Auth header
     auth_string = "#{client_id}:#{client_secret}"
@@ -94,15 +96,19 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
       {"Authorization", auth_header}
     ]
 
-    case TwitterApiClient.post(@x_token_url, body, headers, endpoint: "/2/oauth2/token", http_options: @http_options) do
+    case TwitterApiClient.post(@x_token_url, body, headers,
+           endpoint: "/2/oauth2/token",
+           http_options: @http_options
+         ) do
       {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
         case Jason.decode(response_body) do
           {:ok, %{"access_token" => access_token} = data} ->
-            {:ok, %{
-              access_token: access_token,
-              refresh_token: data["refresh_token"],
-              expires_in: data["expires_in"] || 7200
-            }}
+            {:ok,
+             %{
+               access_token: access_token,
+               refresh_token: data["refresh_token"],
+               expires_in: data["expires_in"] || 7200
+             }}
 
           {:ok, %{"error" => error}} ->
             {:error, error}
@@ -131,11 +137,12 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
       {:error, :oauth_not_configured}
     else
       # Build request body
-      body = URI.encode_query(%{
-        "refresh_token" => refresh_token,
-        "grant_type" => "refresh_token",
-        "client_id" => client_id
-      })
+      body =
+        URI.encode_query(%{
+          "refresh_token" => refresh_token,
+          "grant_type" => "refresh_token",
+          "client_id" => client_id
+        })
 
       # Build Basic Auth header
       auth_string = "#{client_id}:#{client_secret}"
@@ -146,16 +153,20 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
         {"Authorization", auth_header}
       ]
 
-      case TwitterApiClient.post(@x_token_url, body, headers, endpoint: "/2/oauth2/token", http_options: @http_options) do
+      case TwitterApiClient.post(@x_token_url, body, headers,
+             endpoint: "/2/oauth2/token",
+             http_options: @http_options
+           ) do
         {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
           case Jason.decode(response_body) do
             {:ok, %{"access_token" => access_token} = data} ->
               # CRITICAL: X uses single-use refresh tokens, must return new refresh_token
-              {:ok, %{
-                access_token: access_token,
-                refresh_token: data["refresh_token"],
-                expires_in: data["expires_in"] || 7200
-              }}
+              {:ok,
+               %{
+                 access_token: access_token,
+                 refresh_token: data["refresh_token"],
+                 expires_in: data["expires_in"] || 7200
+               }}
 
             {:ok, %{"error" => _error}} ->
               {:error, :refresh_failed}
@@ -189,12 +200,13 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
           {:ok, %{"data" => user_data}} ->
-            {:ok, %{
-              user_id: user_data["id"],
-              username: user_data["username"],
-              display_name: user_data["name"],
-              profile_image_url: user_data["profile_image_url"]
-            }}
+            {:ok,
+             %{
+               user_id: user_data["id"],
+               username: user_data["username"],
+               display_name: user_data["name"],
+               profile_image_url: user_data["profile_image_url"]
+             }}
 
           {:ok, %{"errors" => errors}} ->
             error_message = extract_error_from_errors(errors)
@@ -246,12 +258,16 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
     Logger.info("[Twitter] Creating tweet...")
 
     body = build_tweet_body(text, opts)
+
     headers = [
       {"Authorization", "Bearer #{access_token}"},
       {"Content-Type", "application/json"}
     ]
 
-    case TwitterApiClient.post(@tweets_url, body, headers, endpoint: "/2/tweets", http_options: @http_options) do
+    case TwitterApiClient.post(@tweets_url, body, headers,
+           endpoint: "/2/tweets",
+           http_options: @http_options
+         ) do
       {:ok, %HTTPoison.Response{status_code: 201, body: response_body}} ->
         handle_tweet_success(response_body, access_token)
 
@@ -300,6 +316,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
       _ -> default_error
     end
   end
+
   defp extract_error(_, default_error), do: default_error
 
   defp extract_error_from_errors(errors) when is_list(errors) do
@@ -309,6 +326,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
       _ -> "Profile fetch failed"
     end
   end
+
   defp extract_error_from_errors(_), do: "Profile fetch failed"
 
   # ============================================================================
@@ -326,7 +344,10 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
           {:ok, presigned_url}
 
         {:error, reason} ->
-          Logger.warning("[Twitter] Presigned URL generation failed: #{inspect(reason)}, trying original URL")
+          Logger.warning(
+            "[Twitter] Presigned URL generation failed: #{inspect(reason)}, trying original URL"
+          )
+
           {:ok, media_url}
       end
     else
@@ -362,9 +383,10 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
 
   # Upload video via TwitterChunkedUpload
   defp upload_video(access_token, video_binary, opts) do
-    upload_opts = []
-    |> maybe_add_opt(:filename, opts[:filename])
-    |> maybe_add_opt(:duration_seconds, opts[:duration_seconds])
+    upload_opts =
+      []
+      |> maybe_add_opt(:filename, opts[:filename])
+      |> maybe_add_opt(:duration_seconds, opts[:duration_seconds])
 
     Logger.info("[Twitter] Starting chunked upload...")
     TwitterChunkedUpload.upload_video(access_token, video_binary, upload_opts)

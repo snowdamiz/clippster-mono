@@ -6,6 +6,9 @@
     :icon="Share2"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Shared Clips' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <template #actions>
       <button v-if="isAdmin" class="shared-clips__header-btn" @click="showShareClipDialog = true">
         <Plus class="shared-clips__header-btn-icon" />
@@ -496,6 +499,7 @@
   } from 'lucide-vue-next';
   import ShareClipDialog from '@/components/organization/ShareClipDialog.vue';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import { useToast } from '@/composables/useToast';
   import { useOrganization } from '@/composables/useOrganization';
   import {

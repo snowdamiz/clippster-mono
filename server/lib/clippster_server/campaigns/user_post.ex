@@ -8,13 +8,19 @@ defmodule ClippsterServer.Campaigns.UserPost do
 
   alias ClippsterServer.Accounts.User
   alias ClippsterServer.Campaigns.ClipperSocialAccount
+  alias ClippsterServer.Social.ProviderMode
 
-  @platforms ~w(tiktok instagram x youtube)
+  @known_platforms ~w(
+    instagram facebook x twitter tiktok tiktok_business youtube linkedin threads pinterest bluesky
+  )
   @statuses ~w(published failed)
   @media_types ~w(image video reel)
 
   schema "user_posts" do
     field :platform, :string
+    field :provider, :string
+    field :provider_post_id, :string
+    field :provider_payload, :map
     field :post_id, :string
     field :post_url, :string
     field :caption, :string
@@ -47,6 +53,9 @@ defmodule ClippsterServer.Campaigns.UserPost do
       :user_id,
       :clipper_social_account_id,
       :platform,
+      :provider,
+      :provider_post_id,
+      :provider_payload,
       :post_id,
       :post_url,
       :caption,
@@ -56,12 +65,13 @@ defmodule ClippsterServer.Campaigns.UserPost do
       :status
     ])
     |> validate_required([:user_id, :clipper_social_account_id, :platform, :post_id, :media_url])
-    |> validate_inclusion(:platform, @platforms)
+    |> normalize_platform()
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:media_type, @media_types)
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:clipper_social_account_id)
     |> unique_constraint([:platform, :post_id], name: :user_posts_platform_post_unique)
+    |> unique_constraint([:provider, :provider_post_id], name: :user_posts_provider_post_unique)
   end
 
   @doc """
@@ -90,7 +100,13 @@ defmodule ClippsterServer.Campaigns.UserPost do
     |> validate_inclusion(:status, @statuses)
   end
 
+  def platforms, do: @known_platforms
+
   # Private functions
+
+  defp normalize_platform(changeset) do
+    update_change(changeset, :platform, &ProviderMode.normalize_platform/1)
+  end
 
   defp put_synced_at(changeset) do
     put_change(changeset, :synced_at, DateTime.utc_now() |> DateTime.truncate(:second))

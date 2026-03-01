@@ -97,10 +97,12 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
       case Social.get_post_submission(post_id) do
         nil ->
           Logger.warning("[AnalyticsSyncWorker] Post not found: #{post_id}")
+
         post ->
           sync_single_post(post)
       end
     end)
+
     {:noreply, state}
   end
 
@@ -141,7 +143,9 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
       errors: state.stats.errors + result.errors
     }
 
-    Logger.info("[AnalyticsSyncWorker] Sync complete - synced: #{result.synced}, errors: #{result.errors}")
+    Logger.info(
+      "[AnalyticsSyncWorker] Sync complete - synced: #{result.synced}, errors: #{result.errors}"
+    )
 
     {:noreply, %{state | syncing: false, stats: new_stats}}
   end
@@ -165,22 +169,26 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
     Logger.info("[AnalyticsSyncWorker] Found #{length(user_posts)} user posts to sync")
 
     # Sync org posts
-    org_results = Enum.reduce(org_posts, %{synced: 0, errors: 0}, fn post, acc ->
-      Process.sleep(@rate_limit_delay)
-      case sync_single_post(post) do
-        :ok -> %{acc | synced: acc.synced + 1}
-        {:error, _reason} -> %{acc | errors: acc.errors + 1}
-      end
-    end)
+    org_results =
+      Enum.reduce(org_posts, %{synced: 0, errors: 0}, fn post, acc ->
+        Process.sleep(@rate_limit_delay)
+
+        case sync_single_post(post) do
+          :ok -> %{acc | synced: acc.synced + 1}
+          {:error, _reason} -> %{acc | errors: acc.errors + 1}
+        end
+      end)
 
     # Sync user posts
-    user_results = Enum.reduce(user_posts, %{synced: 0, errors: 0}, fn post, acc ->
-      Process.sleep(@rate_limit_delay)
-      case sync_user_post(post) do
-        :ok -> %{acc | synced: acc.synced + 1}
-        {:error, _reason} -> %{acc | errors: acc.errors + 1}
-      end
-    end)
+    user_results =
+      Enum.reduce(user_posts, %{synced: 0, errors: 0}, fn post, acc ->
+        Process.sleep(@rate_limit_delay)
+
+        case sync_user_post(post) do
+          :ok -> %{acc | synced: acc.synced + 1}
+          {:error, _reason} -> %{acc | errors: acc.errors + 1}
+        end
+      end)
 
     %{
       synced: org_results.synced + user_results.synced,
@@ -193,13 +201,16 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
          {:ok, platform_module} <- Platform.get_platform_module(post.platform),
          access_token <- SocialAccount.get_access_token(account),
          {:ok, insights} <- fetch_insights_with_retry(platform_module, access_token, post.post_id) do
-
       case Social.sync_post_analytics(post, insights) do
         {:ok, _updated} ->
           Logger.debug("[AnalyticsSyncWorker] Synced post #{post.id}")
           :ok
+
         {:error, reason} ->
-          Logger.warning("[AnalyticsSyncWorker] Failed to update post #{post.id}: #{inspect(reason)}")
+          Logger.warning(
+            "[AnalyticsSyncWorker] Failed to update post #{post.id}: #{inspect(reason)}"
+          )
+
           {:error, reason}
       end
     else
@@ -217,27 +228,36 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
     end
   end
 
-  defp get_account_with_token(%PostSubmission{organization_social_account: nil}), do: {:error, :no_account}
-  defp get_account_with_token(%PostSubmission{organization_social_account: %Ecto.Association.NotLoaded{}} = post) do
+  defp get_account_with_token(%PostSubmission{organization_social_account: nil}),
+    do: {:error, :no_account}
+
+  defp get_account_with_token(
+         %PostSubmission{organization_social_account: %Ecto.Association.NotLoaded{}} = post
+       ) do
     case Social.get_post_submission(post.id) do
       nil -> {:error, :no_account}
       loaded_post -> get_account_with_token(loaded_post)
     end
   end
-  defp get_account_with_token(%PostSubmission{organization_social_account: account}), do: {:ok, account}
+
+  defp get_account_with_token(%PostSubmission{organization_social_account: account}),
+    do: {:ok, account}
 
   defp sync_user_post(%UserPost{} = post) do
     with {:ok, account} <- get_user_account_with_token(post),
          {:ok, platform_module} <- Platform.get_platform_module(post.platform),
          access_token <- ClipperSocialAccount.get_access_token(account),
          {:ok, insights} <- fetch_insights_with_retry(platform_module, access_token, post.post_id) do
-
       case Campaigns.update_user_post_analytics(post, insights) do
         {:ok, _updated} ->
           Logger.debug("[AnalyticsSyncWorker] Synced user post #{post.id}")
           :ok
+
         {:error, reason} ->
-          Logger.warning("[AnalyticsSyncWorker] Failed to update user post #{post.id}: #{inspect(reason)}")
+          Logger.warning(
+            "[AnalyticsSyncWorker] Failed to update user post #{post.id}: #{inspect(reason)}"
+          )
+
           {:error, reason}
       end
     else
@@ -250,18 +270,26 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
         {:error, :not_implemented}
 
       {:error, reason} ->
-        Logger.warning("[AnalyticsSyncWorker] Failed to sync user post #{post.id}: #{inspect(reason)}")
+        Logger.warning(
+          "[AnalyticsSyncWorker] Failed to sync user post #{post.id}: #{inspect(reason)}"
+        )
+
         {:error, reason}
     end
   end
 
-  defp get_user_account_with_token(%UserPost{clipper_social_account: nil}), do: {:error, :no_account}
-  defp get_user_account_with_token(%UserPost{clipper_social_account: %Ecto.Association.NotLoaded{}} = post) do
+  defp get_user_account_with_token(%UserPost{clipper_social_account: nil}),
+    do: {:error, :no_account}
+
+  defp get_user_account_with_token(
+         %UserPost{clipper_social_account: %Ecto.Association.NotLoaded{}} = post
+       ) do
     case Campaigns.get_user_post(post.id) do
       nil -> {:error, :no_account}
       loaded_post -> get_user_account_with_token(loaded_post)
     end
   end
+
   defp get_user_account_with_token(%UserPost{clipper_social_account: account}), do: {:ok, account}
 
   defp fetch_insights_with_retry(platform_module, access_token, post_id, attempt \\ 1) do
@@ -272,7 +300,11 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
       {:error, _reason} when attempt < @max_retries ->
         # Exponential backoff
         delay = :math.pow(2, attempt) |> round() |> Kernel.*(@rate_limit_delay)
-        Logger.debug("[AnalyticsSyncWorker] Retry #{attempt} after #{delay}ms for post #{post_id}")
+
+        Logger.debug(
+          "[AnalyticsSyncWorker] Retry #{attempt} after #{delay}ms for post #{post_id}"
+        )
+
         Process.sleep(delay)
         fetch_insights_with_retry(platform_module, access_token, post_id, attempt + 1)
 

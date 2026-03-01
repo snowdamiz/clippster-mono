@@ -20,7 +20,14 @@ defmodule ClippsterServer.Social.RateLimitState do
   @doc false
   def changeset(rate_limit_state, attrs) do
     rate_limit_state
-    |> cast(attrs, [:endpoint, :social_account_id, :limit_value, :remaining, :reset_at, :last_checked_at])
+    |> cast(attrs, [
+      :endpoint,
+      :social_account_id,
+      :limit_value,
+      :remaining,
+      :reset_at,
+      :last_checked_at
+    ])
     |> validate_required([:endpoint, :limit_value, :remaining, :reset_at, :last_checked_at])
   end
 end

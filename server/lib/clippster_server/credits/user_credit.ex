@@ -27,7 +27,7 @@ defmodule ClippsterServer.Credits.UserCredit do
   """
   def add_hours_changeset(user_credit, hours) do
     new_remaining = Decimal.add(user_credit.hours_remaining, Decimal.new(to_string(hours)))
-    
+
     user_credit
     |> change(hours_remaining: new_remaining)
   end
@@ -39,7 +39,7 @@ defmodule ClippsterServer.Credits.UserCredit do
     hours_decimal = Decimal.new(to_string(hours))
     new_remaining = Decimal.sub(user_credit.hours_remaining, hours_decimal)
     new_used = Decimal.add(user_credit.hours_used, hours_decimal)
-    
+
     user_credit
     |> change(hours_remaining: new_remaining, hours_used: new_used)
     |> validate_number(:hours_remaining, greater_than_or_equal_to: 0)

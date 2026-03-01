@@ -6,7 +6,7 @@ export interface Project {
   description: string | null;
   thumbnail_path: string | null;
   parent_id: string | null;
-  platform: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null;
+  platform: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual' | null;
   audio_settings: string | null; // JSON string of AudioSettings
   default_watermark_settings: string | null; // JSON string with watermark_id and watermark_settings from creator profile
   creator_profile_id: string | null; // Direct link to creator profile (for local video imports)
@@ -568,12 +568,12 @@ export interface CreatorProfile {
 export interface CreatorPlatformLink {
   id: string;
   creator_profile_id: string;
-  platform: 'pumpfun' | 'kick' | 'twitch' | 'youtube';
+  platform: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
   platform_id: string;
   display_name: string | null;
   profile_image_url: string | null;
   monitored_streamer_id: string | null;
-  is_primary: number | boolean;
+  is_primary: boolean;
   created_at: number;
 }
 

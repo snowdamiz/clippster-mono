@@ -1,6 +1,6 @@
+use base64::{engine::general_purpose, Engine as _};
 use std::fs;
 use std::path::PathBuf;
-use base64::{Engine as _, engine::general_purpose};
 
 /// Read HLS playlist file (.m3u8)
 #[tauri::command]
@@ -19,9 +19,11 @@ pub async fn read_hls_playlist(encoded_dir: String, filename: String) -> Result<
     path.push(&filename);
 
     // Security: Ensure the path is within the decoded directory
-    let canonical_path = path.canonicalize()
+    let canonical_path = path
+        .canonicalize()
         .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
-    let canonical_dir = PathBuf::from(&dir_str).canonicalize()
+    let canonical_dir = PathBuf::from(&dir_str)
+        .canonicalize()
         .map_err(|e| format!("Failed to canonicalize directory: {}", e))?;
 
     if !canonical_path.starts_with(&canonical_dir) {
@@ -29,8 +31,8 @@ pub async fn read_hls_playlist(encoded_dir: String, filename: String) -> Result<
     }
 
     // Read the playlist file
-    let content = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read playlist: {}", e))?;
+    let content =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read playlist: {}", e))?;
 
     Ok(content)
 }
@@ -57,9 +59,11 @@ pub async fn read_hls_segment(encoded_dir: String, filename: String) -> Result<V
     path.push(&filename);
 
     // Security: Ensure the path is within the decoded directory
-    let canonical_path = path.canonicalize()
+    let canonical_path = path
+        .canonicalize()
         .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
-    let canonical_dir = PathBuf::from(&dir_str).canonicalize()
+    let canonical_dir = PathBuf::from(&dir_str)
+        .canonicalize()
         .map_err(|e| format!("Failed to canonicalize directory: {}", e))?;
 
     if !canonical_path.starts_with(&canonical_dir) {
@@ -67,15 +71,17 @@ pub async fn read_hls_segment(encoded_dir: String, filename: String) -> Result<V
     }
 
     // Read the segment file
-    let content = fs::read(&path)
-        .map_err(|e| format!("Failed to read segment: {}", e))?;
+    let content = fs::read(&path).map_err(|e| format!("Failed to read segment: {}", e))?;
 
     Ok(content)
 }
 
 /// Check if HLS playlist exists
 #[tauri::command]
-pub async fn check_hls_playlist_exists(encoded_dir: String, filename: String) -> Result<bool, String> {
+pub async fn check_hls_playlist_exists(
+    encoded_dir: String,
+    filename: String,
+) -> Result<bool, String> {
     // Decode the base64-encoded directory path
     let decoded = general_purpose::STANDARD
         .decode(&encoded_dir)

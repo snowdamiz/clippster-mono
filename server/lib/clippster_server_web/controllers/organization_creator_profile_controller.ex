@@ -26,6 +26,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
         case params["scope"] do
           scope when scope in ["streamer", "global"] ->
             Organizations.list_creator_profiles_by_scope(org_id, scope)
+
           _ ->
             Organizations.list_creator_profiles(org_id)
         end
@@ -76,19 +77,20 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
   def create(conn, %{"organization_id" => org_id} = params) do
     user = conn.assigns.current_user
 
-    attrs = %{
-      name: params["name"],
-      description: params["description"],
-      profile_image_url: params["profile_image_url"],
-      intro_id: parse_integer(params["intro_id"]),
-      outro_id: parse_integer(params["outro_id"]),
-      watermark_id: parse_integer(params["watermark_id"]),
-      watermark_settings: params["watermark_settings"],
-      layout_overlays: params["layout_overlays"],
-      scope: params["scope"]
-    }
-    |> Enum.reject(fn {_, v} -> is_nil(v) end)
-    |> Enum.into(%{})
+    attrs =
+      %{
+        name: params["name"],
+        description: params["description"],
+        profile_image_url: params["profile_image_url"],
+        intro_id: parse_integer(params["intro_id"]),
+        outro_id: parse_integer(params["outro_id"]),
+        watermark_id: parse_integer(params["watermark_id"]),
+        watermark_settings: params["watermark_settings"],
+        layout_overlays: params["layout_overlays"],
+        scope: params["scope"]
+      }
+      |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      |> Enum.into(%{})
 
     case Organizations.create_creator_profile(org_id, attrs, user) do
       {:ok, profile} ->
@@ -128,18 +130,25 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
         |> json(%{success: false, error: "Profile not found"})
 
       profile ->
-        attrs = Map.take(params, [
-          "name", "description", "profile_image_url",
-          "intro_id", "outro_id", "watermark_id", "watermark_settings",
-          "layout_overlays", "scope"
-        ])
-        |> Enum.map(fn
-          {"intro_id", v} -> {:intro_id, parse_integer(v)}
-          {"outro_id", v} -> {:outro_id, parse_integer(v)}
-          {"watermark_id", v} -> {:watermark_id, parse_integer(v)}
-          {k, v} -> {String.to_existing_atom(k), v}
-        end)
-        |> Enum.into(%{})
+        attrs =
+          Map.take(params, [
+            "name",
+            "description",
+            "profile_image_url",
+            "intro_id",
+            "outro_id",
+            "watermark_id",
+            "watermark_settings",
+            "layout_overlays",
+            "scope"
+          ])
+          |> Enum.map(fn
+            {"intro_id", v} -> {:intro_id, parse_integer(v)}
+            {"outro_id", v} -> {:outro_id, parse_integer(v)}
+            {"watermark_id", v} -> {:watermark_id, parse_integer(v)}
+            {k, v} -> {String.to_existing_atom(k), v}
+          end)
+          |> Enum.into(%{})
 
         case Organizations.update_creator_profile(profile, attrs, user) do
           {:ok, updated} ->
@@ -252,15 +261,26 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
 
             case File.read(temp_path) do
               {:ok, binary} ->
-                case Organizations.upload_creator_profile_image(org_id, profile_id, binary, filename) do
+                case Organizations.upload_creator_profile_image(
+                       org_id,
+                       profile_id,
+                       binary,
+                       filename
+                     ) do
                   {:ok, url} ->
                     # Update the profile with the new image URL
-                    {:ok, updated} = Organizations.update_creator_profile(
-                      profile,
-                      %{profile_image_url: url},
-                      user
-                    )
-                    json(conn, %{success: true, url: Storage.presigned_url!(url), profile: serialize_profile(updated)})
+                    {:ok, updated} =
+                      Organizations.update_creator_profile(
+                        profile,
+                        %{profile_image_url: url},
+                        user
+                      )
+
+                    json(conn, %{
+                      success: true,
+                      url: Storage.presigned_url!(url),
+                      profile: serialize_profile(updated)
+                    })
 
                   {:error, reason} ->
                     conn
@@ -289,15 +309,16 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
   def add_platform_link(conn, %{"organization_id" => org_id, "profile_id" => profile_id} = params) do
     user = conn.assigns.current_user
 
-    attrs = %{
-      platform: params["platform"],
-      platform_id: params["platform_id"],
-      display_name: params["display_name"],
-      profile_image_url: params["profile_image_url"],
-      is_primary: params["is_primary"] == true || params["is_primary"] == "true"
-    }
-    |> Enum.reject(fn {_, v} -> is_nil(v) end)
-    |> Enum.into(%{})
+    attrs =
+      %{
+        platform: params["platform"],
+        platform_id: params["platform_id"],
+        display_name: params["display_name"],
+        profile_image_url: params["profile_image_url"],
+        is_primary: params["is_primary"] == true || params["is_primary"] == "true"
+      }
+      |> Enum.reject(fn {_, v} -> is_nil(v) end)
+      |> Enum.into(%{})
 
     case Organizations.add_creator_platform_link(org_id, profile_id, attrs, user) do
       {:ok, link} ->
@@ -335,12 +356,13 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
   def update_platform_link(conn, %{"organization_id" => org_id, "link_id" => link_id} = params) do
     user = conn.assigns.current_user
 
-    attrs = Map.take(params, ["display_name", "profile_image_url", "is_primary"])
-    |> Enum.map(fn
-      {"is_primary", v} -> {:is_primary, v == true || v == "true"}
-      {k, v} -> {String.to_existing_atom(k), v}
-    end)
-    |> Enum.into(%{})
+    attrs =
+      Map.take(params, ["display_name", "profile_image_url", "is_primary"])
+      |> Enum.map(fn
+        {"is_primary", v} -> {:is_primary, v == true || v == "true"}
+        {k, v} -> {String.to_existing_atom(k), v}
+      end)
+      |> Enum.into(%{})
 
     case Organizations.update_creator_platform_link(org_id, link_id, attrs, user) do
       {:ok, link} ->
@@ -429,7 +451,10 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
   Admin only.
   Body: { "user_ids": [1, 2, 3] }
   """
-  def create_assignments(conn, %{"organization_id" => org_id, "profile_id" => profile_id} = params) do
+  def create_assignments(
+        conn,
+        %{"organization_id" => org_id, "profile_id" => profile_id} = params
+      ) do
     user = conn.assigns.current_user
     user_ids = params["user_ids"] || []
 
@@ -461,7 +486,11 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
   DELETE /organizations/:organization_id/creator-profiles/:profile_id/assignments/:user_id
   Admin only.
   """
-  def delete_assignment(conn, %{"organization_id" => org_id, "profile_id" => profile_id, "user_id" => user_id}) do
+  def delete_assignment(conn, %{
+        "organization_id" => org_id,
+        "profile_id" => profile_id,
+        "user_id" => user_id
+      }) do
     user = conn.assigns.current_user
 
     case Organizations.unassign_creator_profile(org_id, profile_id, user_id, user) do
@@ -539,6 +568,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
     cond do
       Ecto.assoc_loaded?(profile.organization) and profile.organization ->
         profile.organization.name
+
       true ->
         nil
     end
@@ -547,6 +577,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
   defp serialize_platform_links(links) when is_list(links) do
     Enum.map(links, &serialize_platform_link/1)
   end
+
   defp serialize_platform_links(_), do: []
 
   defp serialize_platform_link(link) do
@@ -586,6 +617,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
       avatar_url: user.avatar_url
     }
   end
+
   defp serialize_user(_), do: nil
 
   defp count_assignments(profile) do
@@ -597,6 +629,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
   end
 
   defp serialize_asset(nil), do: nil
+
   defp serialize_asset(asset) do
     %{
       id: asset.id,
@@ -614,6 +647,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
   # For profile images that may be external URLs (e.g., from DexScreener)
   # Don't presign external URLs, only presign S3 storage URLs
   defp maybe_presign_url(nil), do: nil
+
   defp maybe_presign_url(url) when is_binary(url) do
     if String.starts_with?(url, "http://") or String.starts_with?(url, "https://") do
       # External URL - return as-is
@@ -636,6 +670,7 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
 
   defp parse_integer(nil), do: nil
   defp parse_integer(value) when is_integer(value), do: value
+
   defp parse_integer(value) when is_binary(value) do
     case Integer.parse(value) do
       {int, _} -> int
@@ -643,4 +678,3 @@ defmodule ClippsterServerWeb.OrganizationCreatorProfileController do
     end
   end
 end
-

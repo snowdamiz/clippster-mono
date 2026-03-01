@@ -101,7 +101,7 @@ const isProjectLandscape = computed(() => {
 
 // Multi-select aspect ratios (like ClipBuildSettingsDialog)
 const selectedRatios = ref<string[]>(["16:9"]);
-const framingMode = ref<"auto" | "manual">("auto");
+const framingMode = ref<"auto" | "manual">("manual");
 
 // Manual framing configs per aspect ratio
 const manualFramingConfigs = ref<ManualFramingConfigs>({});
@@ -231,7 +231,7 @@ watch(isOpen, async (open) => {
 		copied.value = false;
 		cancelRequested.value = false;
 		selectedRatios.value = ["16:9"];
-		framingMode.value = "auto";
+		framingMode.value = "manual";
 		manualFramingConfigs.value = {};
 		videoFrameUrl.value = null;
 		firstVideoPath.value = null;
@@ -409,9 +409,9 @@ async function handleCopyError() {
 												{{ copied ? 'Copied' : 'Copy Error' }}
 											</button>
 											<button class="export-dialog__error-btn export-dialog__error-btn--retry" @click="handleExport">
-												<RotateCcw :size="14" />
-												Retry Export
-											</button>
+								<RotateCcw :size="14" />
+								Retry Export
+							</button>
 										</div>
 									</div>
 								</div>
@@ -556,17 +556,16 @@ async function handleCopyError() {
 										<!-- Mode Toggle -->
 										<div class="export-dialog__framing-grid">
 											<button
-												@click="framingMode = 'auto'"
-												class="export-dialog__framing-mode"
-												:class="{ 'export-dialog__framing-mode--active': framingMode === 'auto' }"
+												disabled
+												class="export-dialog__framing-mode export-dialog__framing-mode--disabled"
 											>
 												<div class="export-dialog__framing-mode-header">
-													<div class="export-dialog__framing-mode-icon" :class="{ 'export-dialog__framing-mode-icon--active': framingMode === 'auto' }">
+													<div class="export-dialog__framing-mode-icon">
 														<Sparkles class="export-dialog__framing-icon" />
 													</div>
 													<span class="export-dialog__framing-mode-label">Auto</span>
 												</div>
-												<p class="export-dialog__framing-mode-desc">Center-crop to fit the target aspect ratio</p>
+												<p class="export-dialog__framing-mode-desc">Coming soon - Use manual configuration</p>
 											</button>
 											<button
 												@click="framingMode = 'manual'"
@@ -701,13 +700,13 @@ async function handleCopyError() {
 										<span>Next</span>
 									</button>
 									<button
-										v-if="!isExporting && !exportError && isLastStep"
-										@click="handleExport"
-										class="export-dialog__btn export-dialog__btn--primary"
-									>
-										<Download :size="16" />
-										<span>Export Video</span>
-									</button>
+						v-if="!isExporting && !exportError && isLastStep"
+						@click="handleExport"
+						class="export-dialog__btn export-dialog__btn--primary"
+					>
+						<Download :size="16" />
+						Export Video
+					</button>
 									<button
 										v-if="exportError && !isExporting"
 										@click="handleClose"
@@ -735,6 +734,7 @@ async function handleCopyError() {
 			:clip-end-time="projectDuration"
 			@confirm="onManualConfigConfirm"
 		/>
+
 	</div>
 </template>
 
@@ -1303,6 +1303,12 @@ async function handleCopyError() {
 .export-dialog__framing-mode--active {
 	border-color: var(--sidebar-accent);
 	background-color: rgba(6, 182, 212, 0.08);
+}
+
+.export-dialog__framing-mode--disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+	pointer-events: none;
 }
 
 .export-dialog__framing-mode-header {

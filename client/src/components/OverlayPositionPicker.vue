@@ -57,6 +57,17 @@
                 ></span>
               </button>
 
+              <!-- Upload Overlay Button -->
+              <button
+                @click="uploadOverlayForCurrentRatio"
+                :disabled="uploadingRatioOverlay"
+                class="px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 bg-[var(--sidebar-hover)] text-[var(--sidebar-text)] hover:bg-[var(--sidebar-active)] border border-[var(--sidebar-border)] disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Upload overlay for this aspect ratio"
+              >
+                <Upload class="w-3 h-3" />
+                {{ uploadingRatioOverlay ? 'Uploading...' : 'Upload' }}
+              </button>
+
               <!-- Enable Toggle -->
               <div class="ml-auto flex items-center gap-2">
                 <span class="text-[10px] text-[var(--sidebar-text-muted)]">
@@ -114,6 +125,18 @@
                   <div class="text-amber-400 text-xs">Loading...</div>
                 </div>
 
+                <!-- Watermark preview (rendered behind overlay for reference) -->
+                <div
+                  v-if="watermarkDataUrl && hasWatermarkForCurrentRatio"
+                  class="absolute pointer-events-none z-[1]"
+                  :style="watermarkStyle"
+                >
+                  <MediaPreview
+                    :src="watermarkDataUrl"
+                    class-name="drop-shadow-lg select-none max-w-full max-h-full object-contain"
+                  />
+                </div>
+
                 <!-- Overlay preview -->
                 <div
                   v-if="overlayDataUrl && enabledRatios[currentAspectRatio]"
@@ -123,6 +146,7 @@
                     'transition-all duration-75': !resizeState.isResizing && !justFinishedResize
                   }"
                   :style="overlayStyle"
+                  @mounted="console.log('[OverlayPositionPicker] Overlay div mounted')"
                 >
                   <MediaPreview
                     :src="overlayDataUrl"
@@ -134,6 +158,7 @@
                     ]"
                     :style="{ opacity: currentSettings.opacity / 100 }"
                     @error="handleImageError"
+                    @load="console.log('[OverlayPositionPicker] MediaPreview loaded successfully')"
                   />
                   <!-- Resize Handles -->
                   <div
@@ -281,6 +306,7 @@
 </template>
 
 <script setup lang="ts">
+  defineOptions({ inheritAttrs: false });
   import { ref, computed, watch, reactive, onUnmounted } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import {
@@ -291,25 +317,40 @@
     Smartphone,
     Square,
     RectangleVertical,
+    Upload,
   } from 'lucide-vue-next';
   import type { OverlayRatioPosition, PerRatioOverlaySettings } from '@/types';
   import MediaPreview from '@/components/MediaPreview.vue';
 
   type AspectRatioId = '16:9' | '9:16' | '1:1' | '4:5';
 
+  interface OrgAsset {
+    id: number;
+    url: string;
+    asset_type?: string;
+    [key: string]: any;
+  }
+
   interface Props {
     show: boolean;
     overlayImagePath: string;
+    overlayImageUrl?: string; // Server URL for organization mode
+    overlayAssetId?: string | number | null; // Parent overlay's assetId for org-asset resolution
     overlayLabel?: string;
     settings?: PerRatioOverlaySettings | null;
+    watermarkSettings?: any; // Watermark settings to render watermark in background
+    watermarkUrl?: string; // Watermark URL for organization mode
+    watermarkFilePath?: string; // Watermark file path for local mode
+    orgAssets?: OrgAsset[]; // Organization assets for resolving per-ratio assetId to URL
   }
 
   const props = withDefaults(defineProps<Props>(), {
+    overlayImageUrl: '',
     overlayLabel: '',
     settings: null,
   });
 
-  const defaultPosition: OverlayRatioPosition = { x: 50, y: 50, width: 100, height: 10, opacity: 100, rotation: 0, scale: 20, isFullFrameOverlay: false };
+  const defaultPosition: OverlayRatioPosition = { x: 50, y: 50, width: 100, height: 10, opacity: 100, rotation: 0, scale: 100, isFullFrameOverlay: false };
 
   const emit = defineEmits<{
     (e: 'close'): void;
@@ -334,6 +375,19 @@
   const measuredWidth = ref<number | null>(null);
   const measuredHeight = ref<number | null>(null);
   const currentAspectRatio = ref<AspectRatioId>('16:9');
+  const uploadingRatioOverlay = ref(false);
+
+  // Per-aspect-ratio overlay data URLs for preview
+  const perRatioOverlayDataUrls = reactive<Record<AspectRatioId, string | null>>({
+    '16:9': null,
+    '9:16': null,
+    '1:1': null,
+    '4:5': null,
+  });
+
+  // Watermark state for rendering watermark in background
+  const watermarkDataUrl = ref<string | null>(null);
+  const loadingWatermark = ref(false);
 
   // Auto-detect full-frame overlay (1920x1080)
   const isFullFrameOverlay = computed(() => {
@@ -381,6 +435,18 @@
     return ar?.label || '16:9';
   });
 
+  // Debug: Log overlay rendering state
+  const shouldShowOverlay = computed(() => {
+    const show = !!(overlayDataUrl.value && enabledRatios[currentAspectRatio.value]);
+    console.log('[OverlayPositionPicker] Overlay render check:', {
+      overlayDataUrl: overlayDataUrl.value ? `${overlayDataUrl.value.substring(0, 50)}...` : null,
+      enabled: enabledRatios[currentAspectRatio.value],
+      shouldShow: show,
+      currentAspectRatio: currentAspectRatio.value,
+    });
+    return show;
+  });
+
   // Preview container style based on aspect ratio
   const previewContainerStyle = computed(() => {
     const ar = aspectRatios.find((a) => a.id === currentAspectRatio.value);
@@ -408,13 +474,22 @@
 
     // Full-frame overlay mode: position at 0,0 with 100% scale
     if (isFullFrame || isFullFrameOverlay.value) {
-      return {
+      const style = {
         left: '0%',
         top: '0%',
         transform: 'none',
         width: '100%',
         height: '100%',
       };
+      console.log('[OverlayPositionPicker] Overlay style (full-frame):', {
+        style,
+        isFullFrame,
+        isFullFrameOverlay: isFullFrameOverlay.value,
+        measuredWidth: measuredWidth.value,
+        measuredHeight: measuredHeight.value,
+        fullFrameOverlayRatios: { ...fullFrameOverlayRatios },
+      });
+      return style;
     }
 
     return {
@@ -428,7 +503,65 @@
 
   // Load overlay image and measure dimensions
   async function loadOverlayImage() {
-    if (!props.overlayImagePath) {
+    // Check if current aspect ratio has its own overlay
+    const currentSettings = localSettings[currentAspectRatio.value];
+    const hasPerRatioOverlay = currentSettings.imagePath || currentSettings.assetId;
+
+    // Priority: per-ratio overlay > parent overlay
+    let imagePath = hasPerRatioOverlay ? currentSettings.imagePath : props.overlayImagePath;
+    let imageUrl = '';
+    if (hasPerRatioOverlay) {
+      // Per-ratio overlay: resolve assetId to URL from orgAssets
+      if (currentSettings.assetId && props.orgAssets?.length) {
+        const asset = props.orgAssets.find(a => a.id === currentSettings.assetId);
+        if (asset?.url) imageUrl = asset.url;
+      }
+    } else {
+      imageUrl = props.overlayImageUrl || '';
+    }
+
+    console.log('[OverlayPositionPicker] Loading overlay:', {
+      currentAspectRatio: currentAspectRatio.value,
+      hasPerRatioOverlay,
+      imagePath,
+      imageUrl,
+      propsImagePath: props.overlayImagePath,
+      propsImageUrl: props.overlayImageUrl,
+    });
+
+    // If no imagePath and no imageUrl, try resolving org-asset assetId to a local cached file
+    const assetIdStr = currentSettings.assetId != null ? String(currentSettings.assetId) : null;
+    if (!imageUrl && !imagePath && assetIdStr) {
+      try {
+        const { resolveOverlayImagePath } = await import('@/services/database/watermarks');
+        const resolved = await resolveOverlayImagePath(null, assetIdStr);
+        if (resolved) {
+          imagePath = resolved;
+          console.log('[OverlayPositionPicker] Resolved org asset to local path:', resolved);
+        }
+      } catch (err) {
+        console.warn('[OverlayPositionPicker] Failed to resolve org asset:', err);
+      }
+    }
+    // Also try parent overlay's assetId if no per-ratio overlay and no image yet
+    if (!imageUrl && !imagePath && !hasPerRatioOverlay) {
+      const parentAssetId = props.overlayAssetId != null ? String(props.overlayAssetId) : null;
+      if (parentAssetId) {
+        try {
+          const { resolveOverlayImagePath } = await import('@/services/database/watermarks');
+          const resolved = await resolveOverlayImagePath(null, parentAssetId);
+          if (resolved) {
+            imagePath = resolved;
+            console.log('[OverlayPositionPicker] Resolved parent org asset to local path:', resolved);
+          }
+        } catch (err) {
+          console.warn('[OverlayPositionPicker] Failed to resolve parent org asset:', err);
+        }
+      }
+    }
+
+    if (!imageUrl && !imagePath) {
+      console.log('[OverlayPositionPicker] No image URL or path provided');
       overlayDataUrl.value = null;
       measuredWidth.value = null;
       measuredHeight.value = null;
@@ -437,17 +570,70 @@
 
     loadingOverlay.value = true;
     try {
-      const dataUrl = await invoke<string>('read_file_as_data_url', {
-        filePath: props.overlayImagePath,
-      });
-      overlayDataUrl.value = dataUrl;
+      let dataUrl: string;
 
-      // Measure image dimensions
+      if (imageUrl && imageUrl.startsWith('http')) {
+        // Organization mode: download through Tauri to bypass CORS
+        try {
+          dataUrl = await invoke<string>('download_url_as_data_url', { url: imageUrl });
+        } catch (downloadErr) {
+          console.warn('[OverlayPositionPicker] Tauri download failed, using URL directly:', downloadErr);
+          dataUrl = imageUrl;
+        }
+      } else if (imageUrl) {
+        dataUrl = imageUrl;
+      } else if (imagePath) {
+        // Local mode: read from file system
+        dataUrl = await invoke<string>('read_file_as_data_url', {
+          filePath: imagePath,
+        });
+      } else {
+        overlayDataUrl.value = null;
+        measuredWidth.value = null;
+        measuredHeight.value = null;
+        return;
+      }
+
+      overlayDataUrl.value = dataUrl;
+      perRatioOverlayDataUrls[currentAspectRatio.value] = dataUrl;
+
+      console.log('[OverlayPositionPicker] Data URL generated, length:', dataUrl.length);
+      console.log('[OverlayPositionPicker] Data URL preview:', dataUrl.substring(0, 100));
+      console.log('[OverlayPositionPicker] Render state:', {
+        overlayDataUrlSet: !!overlayDataUrl.value,
+        currentAspectRatio: currentAspectRatio.value,
+        isEnabled: enabledRatios[currentAspectRatio.value],
+        enabledRatios: { ...enabledRatios },
+        shouldRender: !!(overlayDataUrl.value && enabledRatios[currentAspectRatio.value]),
+      });
+      
+      // Force a re-render by logging the actual overlay style
+      console.log('[OverlayPositionPicker] Current overlay style:', overlayStyle.value);
+
+      // For remote URLs (organization assets), skip dimension measurement
+      // The MediaPreview component will handle display correctly
+      if (imageUrl && imageUrl.startsWith('http')) {
+        console.log('[OverlayPositionPicker] Remote URL detected, skipping dimension measurement');
+        measuredWidth.value = null;
+        measuredHeight.value = null;
+        loadingOverlay.value = false;
+        return;
+      }
+
+      // Measure image dimensions for local files
       const img = new Image();
       img.onload = () => {
         measuredWidth.value = img.naturalWidth;
         measuredHeight.value = img.naturalHeight;
         console.log(`[OverlayPositionPicker] Image dimensions: ${img.naturalWidth}x${img.naturalHeight}`);
+      };
+      img.onerror = (e) => {
+        console.error('[OverlayPositionPicker] Failed to load image for measurement', {
+          dataUrlPrefix: dataUrl.substring(0, 100),
+          error: e,
+        });
+        measuredWidth.value = null;
+        measuredHeight.value = null;
       };
       img.src = dataUrl;
     } catch (err) {
@@ -467,6 +653,7 @@
       if (show) {
         // Initialize local settings from props
         const incoming = props.settings;
+        let hasAnyEnabled = false;
 
         for (const ar of aspectRatios) {
           const id = ar.id;
@@ -476,6 +663,7 @@
             enabledRatios[id] = true;
             localSettings[id] = { ...defaultPosition, ...incomingConfig };
             fullFrameOverlayRatios[id] = incomingConfig.isFullFrameOverlay ?? false;
+            hasAnyEnabled = true;
           } else {
             enabledRatios[id] = false;
             localSettings[id] = { ...defaultPosition };
@@ -483,17 +671,170 @@
           }
         }
 
+        // If no ratios are enabled from settings, enable 16:9 by default
+        if (!hasAnyEnabled) {
+          enabledRatios['16:9'] = true;
+          console.log('[OverlayPositionPicker] No settings found, enabled 16:9 by default');
+        }
+        
+        console.log('[OverlayPositionPicker] Initialized enabledRatios:', { ...enabledRatios });
+
         // Start on the first enabled ratio, or default to 16:9
         const firstEnabled = aspectRatios.find((ar) => enabledRatios[ar.id]);
         currentAspectRatio.value = firstEnabled?.id || '16:9';
+        
+        console.log('[OverlayPositionPicker] Initialized enabledRatios:', { ...enabledRatios });
 
+        await loadOverlayImage();
+        await loadWatermarkImage();
+      }
+    }
+  );
+
+  // Watch for changes to overlay path/URL and reload image
+  watch(
+    () => [props.overlayImagePath, props.overlayImageUrl],
+    async () => {
+      if (props.show) {
         await loadOverlayImage();
       }
     }
   );
 
-  function selectAspectRatio(id: AspectRatioId) {
+  // Load watermark image for background rendering
+  async function loadWatermarkImage() {
+    console.log('[OverlayPositionPicker] loadWatermarkImage called:', {
+      watermarkUrl: props.watermarkUrl?.substring(0, 80),
+      watermarkFilePath: props.watermarkFilePath,
+      watermarkSettings: props.watermarkSettings,
+    });
+
+    if (!props.watermarkUrl && !props.watermarkFilePath) {
+      console.log('[OverlayPositionPicker] No watermark URL or file path');
+      watermarkDataUrl.value = null;
+      return;
+    }
+
+    loadingWatermark.value = true;
+    try {
+      if (props.watermarkUrl) {
+        // For R2 URLs, download through Tauri to bypass CORS
+        if (props.watermarkUrl.startsWith('http')) {
+          console.log('[OverlayPositionPicker] Downloading watermark through Tauri to bypass CORS');
+          watermarkDataUrl.value = await invoke<string>('download_url_as_data_url', { url: props.watermarkUrl });
+        } else {
+          watermarkDataUrl.value = props.watermarkUrl;
+        }
+      } else if (props.watermarkFilePath) {
+        watermarkDataUrl.value = await invoke<string>('read_file_as_data_url', {
+          filePath: props.watermarkFilePath,
+        });
+      }
+      console.log('[OverlayPositionPicker] Watermark loaded, dataUrl length:', watermarkDataUrl.value?.length);
+    } catch (err) {
+      console.error('[OverlayPositionPicker] Failed to load watermark:', err);
+      watermarkDataUrl.value = null;
+    } finally {
+      loadingWatermark.value = false;
+    }
+  }
+
+  // Check if watermark is configured for current aspect ratio
+  const hasWatermarkForCurrentRatio = computed(() => {
+    const settings = props.watermarkSettings?.[currentAspectRatio.value];
+    const has = !!(settings?.position);
+    console.log('[OverlayPositionPicker] hasWatermarkForCurrentRatio:', {
+      ratio: currentAspectRatio.value,
+      settings,
+      has,
+      watermarkDataUrl: !!watermarkDataUrl.value,
+    });
+    return has;
+  });
+
+  // Computed watermark style for rendering watermark in background
+  const watermarkStyle = computed(() => {
+    const settings = props.watermarkSettings?.[currentAspectRatio.value];
+    if (!settings?.position) return {};
+
+    const pos = settings.position;
+    if (pos.isFullFrameOverlay) {
+      return {
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+        width: '100%',
+        height: '100%',
+        opacity: (pos.opacity || 100) / 100,
+      };
+    }
+
+    return {
+      left: `${pos.x}%`,
+      top: `${pos.y}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${pos.scale}%`,
+      height: 'auto',
+      opacity: (pos.opacity || 100) / 100,
+    };
+  });
+
+  async function selectAspectRatio(id: AspectRatioId) {
     currentAspectRatio.value = id;
+    await loadOverlayImage();
+  }
+
+  async function uploadOverlayForCurrentRatio() {
+    if (uploadingRatioOverlay.value) return;
+    uploadingRatioOverlay.value = true;
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const result = await open({
+        multiple: false,
+        filters: [{ name: 'Images & Videos', extensions: ['png', 'svg', 'webp', 'jpg', 'jpeg', 'mp4', 'mov', 'webm'] }],
+      });
+      if (!result) return;
+      let filePath = result as string;
+
+      // Check if it's a video file that needs conversion
+      const videoExtensions = ['mov', 'webm', 'avi', 'mkv'];
+      const extension = filePath.split('.').pop()?.toLowerCase() || '';
+      
+      if (videoExtensions.includes(extension)) {
+        console.log('[OverlayPositionPicker] Converting video to MP4:', filePath);
+        try {
+          // Convert video to browser-compatible MP4
+          filePath = await invoke<string>('convert_video_to_mp4', { inputPath: filePath });
+          console.log('[OverlayPositionPicker] Video converted successfully:', filePath);
+        } catch (conversionError) {
+          console.error('[OverlayPositionPicker] Video conversion failed:', conversionError);
+          // Continue with original file - it might still work
+        }
+      }
+
+      // Store the file path in the current aspect ratio settings
+      localSettings[currentAspectRatio.value].imagePath = filePath;
+      localSettings[currentAspectRatio.value].assetId = null;
+
+      console.log('[OverlayPositionPicker] Uploaded overlay for ratio:', currentAspectRatio.value, 'filePath:', filePath);
+
+      // Enable this ratio if not already enabled
+      if (!enabledRatios[currentAspectRatio.value]) {
+        enabledRatios[currentAspectRatio.value] = true;
+        console.log('[OverlayPositionPicker] Enabled ratio:', currentAspectRatio.value);
+      }
+
+      console.log('[OverlayPositionPicker] Current enabledRatios after upload:', { ...enabledRatios });
+
+      // Reload the overlay image
+      await loadOverlayImage();
+      
+      console.log('[OverlayPositionPicker] After loadOverlayImage, overlayDataUrl length:', overlayDataUrl.value?.length || 0);
+    } catch (err: any) {
+      console.error('[OverlayPositionPicker] Failed to upload overlay:', err);
+    } finally {
+      uploadingRatioOverlay.value = false;
+    }
   }
 
   function toggleCurrentRatio() {
@@ -724,8 +1065,12 @@
   }
 
   function handleImageError(event: Event) {
-    const img = event.target as HTMLImageElement;
-    img.style.display = 'none';
+    console.error('[OverlayPositionPicker] MediaPreview error:', {
+      target: event.target,
+      overlayDataUrl: overlayDataUrl.value?.substring(0, 100),
+    });
+    // Don't hide the element - let it show as a broken video/image
+    // The user can still adjust position/scale even if preview doesn't work
   }
 
   function savePosition() {
@@ -734,6 +1079,8 @@
       return {
         ...localSettings[ratio],
         isFullFrameOverlay: fullFrameOverlayRatios[ratio] || isFullFrameOverlay.value,
+        imagePath: localSettings[ratio].imagePath,
+        assetId: localSettings[ratio].assetId,
       };
     };
 

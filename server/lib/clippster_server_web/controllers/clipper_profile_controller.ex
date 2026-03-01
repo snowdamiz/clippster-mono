@@ -2,6 +2,12 @@ defmodule ClippsterServerWeb.ClipperProfileController do
   use ClippsterServerWeb, :controller
 
   alias ClippsterServer.Campaigns
+  alias ClippsterServer.Social.ProviderMode
+  alias ClippsterServer.Social.PostForMeConnectionSession
+  alias ClippsterServer.Social.PostForMeConnectionSessions
+  alias ClippsterServer.Social.PostForMeConnectionSync
+  alias ClippsterServer.Social.Providers.PostForMe
+  alias ClippsterServerWeb.OAuthCallbackTarget
 
   plug ClippsterServerWeb.AuthPlug
 
@@ -20,6 +26,213 @@ defmodule ClippsterServerWeb.ClipperProfileController do
       success: true,
       social_accounts: Enum.map(accounts, &serialize_social_account/1)
     })
+  end
+
+  @doc """
+  Generate a generic Post For Me connect URL for the current user.
+  """
+  def connect_url(conn, params) do
+    user = conn.assigns.current_user
+
+    cond do
+      not ProviderMode.post_for_me_enabled?() ->
+        conn
+        |> put_status(400)
+        |> json(%{
+          success: false,
+          error: "SOCIAL_PROVIDER_MODE must be post_for_me or dual to use this endpoint"
+        })
+
+      true ->
+        platform = ProviderMode.normalize_platform(params["platform"] || "")
+
+        if platform == "" do
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: "platform is required"})
+        else
+          permissions = parse_permissions(params["permissions"])
+          return_mode = normalize_return_mode(params["return_mode"], "tauri")
+
+          with {:ok, return_url} <- normalize_return_url(return_mode, params["return_url"]),
+               {:ok, session} <-
+                 PostForMeConnectionSessions.create_session(%{
+                   scope: "user",
+                   user_id: user.id,
+                   platform: platform,
+                   return_mode: return_mode,
+                   return_url: return_url
+                 }) do
+            payload =
+              %{
+                platform: platform,
+                external_id: session.external_id,
+                permissions: permissions,
+                platform_data: params["platform_data"]
+              }
+              |> Enum.reject(fn {_, value} -> is_nil(value) end)
+              |> Enum.into(%{})
+
+            case PostForMe.create_social_account_auth_url(payload) do
+              {:ok, auth_data} ->
+                json(conn, %{
+                  success: true,
+                  provider: "post_for_me",
+                  platform: auth_data.platform,
+                  external_id: session.external_id,
+                  connection_id: session.id,
+                  auth_url: auth_data.url
+                })
+
+              {:error, error} ->
+                _ =
+                  PostForMeConnectionSessions.mark_failed(
+                    session,
+                    format_provider_error(error)
+                  )
+
+                conn
+                |> put_status(400)
+                |> json(%{success: false, error: format_provider_error(error)})
+            end
+          else
+            {:error, :return_url_required} ->
+              conn
+              |> put_status(422)
+              |> json(%{success: false, error: "return_url is required when return_mode=web"})
+
+            {:error, :invalid_return_url} ->
+              conn
+              |> put_status(422)
+              |> json(%{success: false, error: "return_url is invalid or not allowed"})
+
+            {:error, changeset} ->
+              conn
+              |> put_status(422)
+              |> json(%{success: false, error: format_errors(changeset)})
+          end
+        end
+    end
+  end
+
+  @doc """
+  Get status for a Post For Me connection session (user scope).
+  GET /user/social/connect-status?connection_id=...
+  """
+  def connect_status(conn, %{"connection_id" => connection_id}) do
+    user = conn.assigns.current_user
+
+    case PostForMeConnectionSessions.get_session(connection_id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Connection session not found"})
+
+      %PostForMeConnectionSession{scope: "user", user_id: user_id} = session
+      when user_id == user.id ->
+        session = maybe_expire_session(session)
+
+        json(conn, %{
+          success: true,
+          connection_id: session.id,
+          status: session.status,
+          session_success: session.success,
+          error: session.error_message,
+          external_id: session.external_id,
+          platform: session.platform,
+          account_ids: session.account_ids || []
+        })
+
+      _ ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Not authorized to access this connection session"})
+    end
+  end
+
+  def connect_status(conn, _params) do
+    conn
+    |> put_status(422)
+    |> json(%{success: false, error: "connection_id is required"})
+  end
+
+  @doc """
+  Complete a Post For Me connection and upsert local user social accounts.
+  """
+  def complete_connect(conn, params) do
+    user = conn.assigns.current_user
+
+    cond do
+      not ProviderMode.post_for_me_enabled?() ->
+        conn
+        |> put_status(400)
+        |> json(%{
+          success: false,
+          error: "SOCIAL_PROVIDER_MODE must be post_for_me or dual to use this endpoint"
+        })
+
+      true ->
+        with {:ok, session} <- load_user_session(params["connection_id"], user),
+             :ok <- ensure_session_not_expired(session),
+             platform <- resolved_platform(params, session),
+             external_id <- resolved_external_id(params, session),
+             account_ids <- resolved_account_ids(params, session),
+             {:ok, result} <-
+               PostForMeConnectionSync.complete_user_connect(
+                 user,
+                 account_ids,
+                 external_id,
+                 platform
+               ) do
+          _ =
+            maybe_mark_user_session_synced(session, %{
+              callback_payload: session && session.callback_payload,
+              account_ids: result.account_ids
+            })
+
+          json(conn, %{
+            success: true,
+            provider: "post_for_me",
+            platform: result.platform,
+            social_account:
+              result.primary_account && serialize_social_account(result.primary_account),
+            social_accounts: Enum.map(result.accounts, &serialize_social_account/1)
+          })
+        else
+          {:error, :connection_not_found} ->
+            conn
+            |> put_status(404)
+            |> json(%{success: false, error: "Connection session not found"})
+
+          {:error, :forbidden_connection} ->
+            conn
+            |> put_status(403)
+            |> json(%{success: false, error: "Not authorized to complete this connection"})
+
+          {:error, :expired_connection} ->
+            conn
+            |> put_status(408)
+            |> json(%{success: false, error: "Connection session expired"})
+
+          {:error, :missing_identifiers} ->
+            conn
+            |> put_status(422)
+            |> json(%{
+              success: false,
+              error: "Provide at least one of: account_id/account_ids or external_id"
+            })
+
+          {:error, {:provider, reason}} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: format_provider_error(reason)})
+
+          {:error, reason} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: format_provider_error(reason)})
+        end
+    end
   end
 
   @doc """
@@ -168,8 +381,16 @@ defmodule ClippsterServerWeb.ClipperProfileController do
 
       method ->
         attrs = %{}
-        attrs = if Map.has_key?(params, "details"), do: Map.put(attrs, :details, encode_details(Map.get(params, "details"))), else: attrs
-        attrs = if Map.has_key?(params, "is_default"), do: Map.put(attrs, :is_default, Map.get(params, "is_default")), else: attrs
+
+        attrs =
+          if Map.has_key?(params, "details"),
+            do: Map.put(attrs, :details, encode_details(Map.get(params, "details"))),
+            else: attrs
+
+        attrs =
+          if Map.has_key?(params, "is_default"),
+            do: Map.put(attrs, :is_default, Map.get(params, "is_default")),
+            else: attrs
 
         case Campaigns.update_payment_method(method, attrs, user) do
           {:ok, updated} ->
@@ -224,6 +445,9 @@ defmodule ClippsterServerWeb.ClipperProfileController do
     %{
       id: account.id,
       platform: account.platform,
+      provider: account.provider,
+      provider_platform: account.provider_platform,
+      provider_account_id: account.provider_account_id,
       platform_user_id: account.platform_user_id,
       username: account.username,
       display_name: account.display_name,
@@ -265,18 +489,138 @@ defmodule ClippsterServerWeb.ClipperProfileController do
   defp format_errors(error) when is_binary(error), do: error
   defp format_errors(error), do: inspect(error)
 
+  defp format_provider_error(%PostForMe.ApiError{message: message}), do: message
+  defp format_provider_error(other) when is_binary(other), do: other
+  defp format_provider_error(other), do: inspect(other)
+
+  defp parse_permissions(nil), do: ["posts"]
+
+  defp parse_permissions(permissions) when is_list(permissions) do
+    permissions
+    |> Enum.filter(&is_binary/1)
+    |> case do
+      [] -> ["posts"]
+      list -> list
+    end
+  end
+
+  defp parse_permissions(permission) when is_binary(permission), do: [permission]
+  defp parse_permissions(_), do: ["posts"]
+
+  defp parse_account_ids(params) do
+    PostForMeConnectionSync.parse_account_ids(params)
+  end
+
+  defp normalize_return_mode(nil, default), do: default
+
+  defp normalize_return_mode(mode, default) when is_binary(mode) do
+    normalized = mode |> String.trim() |> String.downcase()
+    if normalized in PostForMeConnectionSession.return_modes(), do: normalized, else: default
+  end
+
+  defp normalize_return_mode(_, default), do: default
+
+  defp normalize_return_url("web", nil), do: {:error, :return_url_required}
+
+  defp normalize_return_url("web", return_url) when is_binary(return_url) do
+    case OAuthCallbackTarget.normalize_web_redirect_uri(return_url) do
+      {:ok, safe_url} -> {:ok, safe_url}
+      {:error, _reason} -> {:error, :invalid_return_url}
+    end
+  end
+
+  defp normalize_return_url(_return_mode, _return_url), do: {:ok, nil}
+
+  defp load_user_session(nil, _user), do: {:ok, nil}
+  defp load_user_session("", _user), do: {:ok, nil}
+
+  defp load_user_session(connection_id, user) do
+    case PostForMeConnectionSessions.get_session(connection_id) do
+      nil ->
+        {:error, :connection_not_found}
+
+      %PostForMeConnectionSession{scope: "user", user_id: user_id} = session
+      when user_id == user.id ->
+        {:ok, session}
+
+      _ ->
+        {:error, :forbidden_connection}
+    end
+  end
+
+  defp ensure_session_not_expired(nil), do: :ok
+
+  defp ensure_session_not_expired(%PostForMeConnectionSession{} = session) do
+    if PostForMeConnectionSessions.expired?(session) and
+         session.status in ["pending", "callback_received"] do
+      _ = PostForMeConnectionSessions.mark_expired(session)
+      {:error, :expired_connection}
+    else
+      :ok
+    end
+  end
+
+  defp resolved_platform(params, nil) do
+    PostForMeConnectionSync.normalize_optional_platform(params["platform"])
+  end
+
+  defp resolved_platform(params, session) do
+    PostForMeConnectionSync.normalize_optional_platform(params["platform"] || session.platform)
+  end
+
+  defp resolved_external_id(params, nil), do: params["external_id"]
+  defp resolved_external_id(params, session), do: params["external_id"] || session.external_id
+
+  defp resolved_account_ids(params, nil), do: parse_account_ids(params)
+
+  defp resolved_account_ids(params, session) do
+    parsed = parse_account_ids(params)
+
+    if parsed == [] do
+      session.account_ids ||
+        PostForMeConnectionSync.extract_account_ids_from_payload(session.callback_payload)
+    else
+      parsed
+    end
+  end
+
+  defp maybe_expire_session(%PostForMeConnectionSession{} = session) do
+    if PostForMeConnectionSessions.expired?(session) and
+         session.status in ["pending", "callback_received"] do
+      case PostForMeConnectionSessions.mark_expired(session) do
+        {:ok, updated} -> updated
+        {:error, _} -> session
+      end
+    else
+      session
+    end
+  end
+
+  defp maybe_mark_user_session_synced(nil, _attrs), do: :ok
+
+  defp maybe_mark_user_session_synced(%PostForMeConnectionSession{} = session, attrs) do
+    case PostForMeConnectionSessions.mark_synced(session, attrs) do
+      {:ok, _updated} -> :ok
+      {:error, _reason} -> :ok
+    end
+  end
+
   defp encode_details(nil), do: nil
+
   defp encode_details(details) when is_map(details) do
     Jason.encode!(details)
   end
+
   defp encode_details(details) when is_binary(details), do: details
 
   defp decode_details(nil), do: nil
+
   defp decode_details(details) when is_binary(details) do
     case Jason.decode(details) do
       {:ok, decoded} -> decoded
       _ -> %{}
     end
   end
+
   defp decode_details(_), do: %{}
 end

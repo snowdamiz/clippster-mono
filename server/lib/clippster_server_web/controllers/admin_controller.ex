@@ -9,6 +9,7 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.Subscriptions
   alias ClippsterServer.OrganizationSubscriptions
   alias ClippsterServer.PromoCodes
+  alias ClippsterServer.ClipperProfiles.LeaderboardWorker
 
   def get_ai_usage_stats(conn, _params) do
     stats = AI.get_usage_stats()
@@ -81,6 +82,7 @@ defmodule ClippsterServerWeb.AdminController do
           is_moderator: user.is_moderator,
           is_affiliate: is_affiliate,
           affiliate_status: affiliate_status,
+          created_by_organization_id: user.created_by_organization_id,
           created_at: user.inserted_at,
           updated_at: user.updated_at,
           credits: credits_info,
@@ -418,7 +420,11 @@ defmodule ClippsterServerWeb.AdminController do
             if org.subscription_status == "active" do
               conn
               |> put_status(400)
-              |> json(%{success: false, error: "Cannot delete an organization with an active subscription. Cancel the subscription first."})
+              |> json(%{
+                success: false,
+                error:
+                  "Cannot delete an organization with an active subscription. Cancel the subscription first."
+              })
             else
               case Organizations.delete_organization_as_admin(org) do
                 {:ok, _} ->
@@ -427,7 +433,10 @@ defmodule ClippsterServerWeb.AdminController do
                 {:error, reason} ->
                   conn
                   |> put_status(500)
-                  |> json(%{success: false, error: "Failed to delete organization: #{inspect(reason)}"})
+                  |> json(%{
+                    success: false,
+                    error: "Failed to delete organization: #{inspect(reason)}"
+                  })
               end
             end
         end
@@ -686,52 +695,6 @@ defmodule ClippsterServerWeb.AdminController do
             conn
             |> put_status(400)
             |> json(%{success: false, error: reason})
-        end
-
-      {:error, _} ->
-        conn
-        |> put_status(400)
-        |> json(%{success: false, error: "Invalid user ID"})
-    end
-  end
-
-  @doc """
-  Extend a user's subscription.
-  Requires admin authentication.
-  """
-  def extend_subscription(conn, %{"user_id" => user_id_string} = params) do
-    case parse_integer(user_id_string) do
-      {:ok, user_id} ->
-        days = Map.get(params, "days", "30")
-        grant_credits = Map.get(params, "grant_credits", "false")
-
-        days_int = parse_days(days)
-        grant_credits_bool = parse_boolean(grant_credits)
-
-        case Subscriptions.admin_extend_subscription(user_id, days_int, grant_credits_bool) do
-          {:ok, _result} ->
-            subscription_info = Subscriptions.get_subscription_status(user_id)
-
-            json(conn, %{
-              success: true,
-              message: "Successfully extended subscription by #{days_int} days",
-              subscription: subscription_info
-            })
-
-          {:error, :no_tier} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "User has no subscription tier to extend"})
-
-          {:error, :invalid_tier} ->
-            conn
-            |> put_status(400)
-            |> json(%{success: false, error: "Invalid subscription tier"})
-
-          {:error, reason} ->
-            conn
-            |> put_status(500)
-            |> json(%{success: false, error: "Failed to extend subscription: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1273,12 +1236,18 @@ defmodule ClippsterServerWeb.AdminController do
         {:error, :user_create_error} ->
           conn
           |> put_status(400)
-          |> json(%{success: false, error: "Failed to create user account. Please check email and password."})
+          |> json(%{
+            success: false,
+            error: "Failed to create user account. Please check email and password."
+          })
 
         {:error, :org_create_error} ->
           conn
           |> put_status(400)
-          |> json(%{success: false, error: "Failed to create organization. Please check organization name."})
+          |> json(%{
+            success: false,
+            error: "Failed to create organization. Please check organization name."
+          })
 
         {:error, :member_error} ->
           conn
@@ -1466,13 +1435,22 @@ defmodule ClippsterServerWeb.AdminController do
             conn |> put_status(404) |> json(%{success: false, error: "User not found"})
 
           {:error, :already_moderator} ->
-            conn |> put_status(400) |> json(%{success: false, error: "User is already a moderator"})
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "User is already a moderator"})
 
           {:error, :must_have_active_subscription} ->
-            conn |> put_status(400) |> json(%{success: false, error: "User must have an active subscription to become a moderator"})
+            conn
+            |> put_status(400)
+            |> json(%{
+              success: false,
+              error: "User must have an active subscription to become a moderator"
+            })
 
           {:error, reason} ->
-            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1501,7 +1479,9 @@ defmodule ClippsterServerWeb.AdminController do
             conn |> put_status(400) |> json(%{success: false, error: "User is not a moderator"})
 
           {:error, reason} ->
-            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1527,7 +1507,9 @@ defmodule ClippsterServerWeb.AdminController do
             conn |> put_status(404) |> json(%{success: false, error: "User not found"})
 
           {:error, reason} ->
-            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1553,7 +1535,65 @@ defmodule ClippsterServerWeb.AdminController do
             conn |> put_status(404) |> json(%{success: false, error: "User not found"})
 
           {:error, reason} ->
-            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Enables AI editor access for a user.
+  """
+  def enable_ai_editor(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.enable_ai_editor(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "AI editor access enabled",
+              user: %{id: user.id, ai_editor_enabled: user.ai_editor_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Disables AI editor access for a user.
+  """
+  def disable_ai_editor(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.disable_ai_editor(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "AI editor access disabled",
+              user: %{id: user.id, ai_editor_enabled: user.ai_editor_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1578,14 +1618,20 @@ defmodule ClippsterServerWeb.AdminController do
             json(conn, %{
               success: true,
               message: "User restricted",
-              user: %{id: user.id, is_restricted: user.is_restricted, restricted_reason: user.restricted_reason}
+              user: %{
+                id: user.id,
+                is_restricted: user.is_restricted,
+                restricted_reason: user.restricted_reason
+              }
             })
 
           {:error, :user_not_found} ->
             conn |> put_status(404) |> json(%{success: false, error: "User not found"})
 
           {:error, reason} ->
-            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1611,7 +1657,9 @@ defmodule ClippsterServerWeb.AdminController do
             conn |> put_status(404) |> json(%{success: false, error: "User not found"})
 
           {:error, reason} ->
-            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1649,20 +1697,32 @@ defmodule ClippsterServerWeb.AdminController do
               conn |> put_status(404) |> json(%{success: false, error: "User not found"})
 
             {:error, :no_stripe_subscription} ->
-              conn |> put_status(422) |> json(%{success: false, error: "User does not have an active Stripe subscription. Use 'Grant Subscription' to give them access instead."})
+              conn
+              |> put_status(422)
+              |> json(%{
+                success: false,
+                error:
+                  "User does not have an active Stripe subscription. Use 'Grant Subscription' to give them access instead."
+              })
 
             {:error, {:stripe_error, reason}} ->
-              conn |> put_status(502) |> json(%{success: false, error: "Stripe error: #{inspect(reason)}"})
+              conn
+              |> put_status(502)
+              |> json(%{success: false, error: "Stripe error: #{inspect(reason)}"})
 
             {:error, reason} ->
-              conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+              conn
+              |> put_status(500)
+              |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
           end
         else
           {:error, msg} ->
             conn |> put_status(400) |> json(%{success: false, error: msg})
 
           _ ->
-            conn |> put_status(400) |> json(%{success: false, error: "Invalid percent_off or months value"})
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: "Invalid percent_off or months value"})
         end
 
       {:error, _} ->
@@ -1689,13 +1749,23 @@ defmodule ClippsterServerWeb.AdminController do
             conn |> put_status(404) |> json(%{success: false, error: "User not found"})
 
           {:error, :no_stripe_subscription} ->
-            conn |> put_status(422) |> json(%{success: false, error: "User does not have an active Stripe subscription. Use 'Grant Subscription' to give them a free month of access instead."})
+            conn
+            |> put_status(422)
+            |> json(%{
+              success: false,
+              error:
+                "User does not have an active Stripe subscription. Use 'Grant Subscription' to give them a free month of access instead."
+            })
 
           {:error, {:stripe_error, reason}} ->
-            conn |> put_status(502) |> json(%{success: false, error: "Stripe error: #{inspect(reason)}"})
+            conn
+            |> put_status(502)
+            |> json(%{success: false, error: "Stripe error: #{inspect(reason)}"})
 
           {:error, reason} ->
-            conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
         end
 
       {:error, _} ->
@@ -1729,7 +1799,9 @@ defmodule ClippsterServerWeb.AdminController do
                 })
 
               {:error, reason} ->
-                conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
             end
           else
             # No active subscription - delete immediately
@@ -1741,7 +1813,9 @@ defmodule ClippsterServerWeb.AdminController do
                 })
 
               {:error, reason} ->
-                conn |> put_status(500) |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+                conn
+                |> put_status(500)
+                |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
             end
           end
         end
@@ -1773,16 +1847,17 @@ defmodule ClippsterServerWeb.AdminController do
           subscription_info = Subscriptions.get_subscription_status(user_id)
 
           # Get organization memberships
-          org_memberships = Organizations.list_user_organizations(user_id)
-          |> Enum.map(fn %{organization: org, role: role} ->
-            %{
-              id: org.id,
-              name: org.name,
-              slug: org.slug,
-              logo_url: org.logo_url,
-              role: role
-            }
-          end)
+          org_memberships =
+            Organizations.list_user_organizations(user_id)
+            |> Enum.map(fn %{organization: org, role: role} ->
+              %{
+                id: org.id,
+                name: org.name,
+                slug: org.slug,
+                logo_url: org.logo_url,
+                role: role
+              }
+            end)
 
           json(conn, %{
             success: true,
@@ -1841,42 +1916,46 @@ defmodule ClippsterServerWeb.AdminController do
           member_count = Organizations.count_members(org_id)
 
           # Get members list with user details
-          members = Organizations.list_members(org_id)
-          |> Enum.map(fn member ->
-            %{
-              id: member.id,
-              user_id: member.user_id,
-              role: member.role,
-              user: if member.user do
-                %{
-                  id: member.user.id,
-                  name: member.user.name,
-                  email: member.user.email,
-                  avatar_url: member.user.avatar_url
-                }
-              else
-                nil
-              end
-            }
-          end)
+          members =
+            Organizations.list_members(org_id)
+            |> Enum.map(fn member ->
+              %{
+                id: member.id,
+                user_id: member.user_id,
+                role: member.role,
+                user:
+                  if member.user do
+                    %{
+                      id: member.user.id,
+                      name: member.user.name,
+                      email: member.user.email,
+                      avatar_url: member.user.avatar_url
+                    }
+                  else
+                    nil
+                  end
+              }
+            end)
 
           # Get owner details
-          owner = if org.owner_id do
-            Accounts.get_user(org.owner_id)
-          else
-            nil
-          end
+          owner =
+            if org.owner_id do
+              Accounts.get_user(org.owner_id)
+            else
+              nil
+            end
 
-          owner_info = if owner do
-            %{
-              id: owner.id,
-              name: owner.name,
-              email: owner.email,
-              avatar_url: owner.avatar_url
-            }
-          else
-            nil
-          end
+          owner_info =
+            if owner do
+              %{
+                id: owner.id,
+                name: owner.name,
+                email: owner.email,
+                avatar_url: owner.avatar_url
+              }
+            else
+              nil
+            end
 
           json(conn, %{
             success: true,
@@ -1926,10 +2005,14 @@ defmodule ClippsterServerWeb.AdminController do
           {:error, :not_email_account} ->
             conn
             |> put_status(400)
-            |> json(%{success: false, error: "Cannot reset password for non-email accounts (wallet/OAuth)"})
+            |> json(%{
+              success: false,
+              error: "Cannot reset password for non-email accounts (wallet/OAuth)"
+            })
 
           {:error, changeset} ->
             errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
+
             conn
             |> put_status(400)
             |> json(%{success: false, error: "Invalid password", details: errors})
@@ -1990,7 +2073,9 @@ defmodule ClippsterServerWeb.AdminController do
         page = Map.get(params, "page", "1") |> String.to_integer()
         per_page = Map.get(params, "per_page", "50") |> String.to_integer()
 
-        logs = ClippsterServer.ModLogs.list_logs_for_moderator(mod_id, page: page, per_page: per_page)
+        logs =
+          ClippsterServer.ModLogs.list_logs_for_moderator(mod_id, page: page, per_page: per_page)
+
         total = ClippsterServer.ModLogs.count_logs_for_moderator(mod_id)
 
         logs_data =
@@ -2018,6 +2103,70 @@ defmodule ClippsterServerWeb.AdminController do
     end
   end
 
+  # ============================================================================
+  # Leaderboard Management
+  # ============================================================================
+
+  @doc """
+  Manually trigger leaderboard recalculation for a given period type.
+  Accepts period_type: "weekly" | "monthly" | "both" (default: "both")
+  """
+  def refresh_leaderboard(conn, params) do
+    period_type = Map.get(params, "period_type", "both")
+
+    results =
+      case period_type do
+        "weekly" ->
+          LeaderboardWorker.calculate_weekly_leaderboard()
+          %{weekly: true, monthly: false}
+
+        "monthly" ->
+          LeaderboardWorker.calculate_monthly_leaderboard()
+          %{weekly: false, monthly: true}
+
+        _ ->
+          LeaderboardWorker.calculate_weekly_leaderboard()
+          LeaderboardWorker.calculate_monthly_leaderboard()
+          %{weekly: true, monthly: true}
+      end
+
+    json(conn, %{
+      success: true,
+      message: "Leaderboard recalculated successfully",
+      recalculated: results
+    })
+  end
+
+  # ============================================================================
+  # Waitlist Management
+  # ============================================================================
+
+  @doc """
+  Manually adds a user to the waitlist (admin only).
+  """
+  def add_to_waitlist(conn, %{"email" => email}) do
+    case ClippsterServer.Waitlist.admin_create_entry(%{email: email}) do
+      {:ok, entry} ->
+        json(conn, %{
+          success: true,
+          entry: %{
+            id: entry.id,
+            email: entry.email,
+            inserted_at: entry.inserted_at
+          }
+        })
+
+      {:error, changeset} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{
+          success: false,
+          error: "Failed to add user to waitlist",
+          details: format_changeset_errors(changeset)
+        })
+    end
+  end
+
   @doc """
   Invites all uninvited waitlist entries.
   """
@@ -2031,7 +2180,7 @@ defmodule ClippsterServerWeb.AdminController do
     }
 
     {:ok, results} = ClippsterServer.Waitlist.invite_all_uninvited(admin_id, discount_config)
-    
+
     json(conn, %{
       success: true,
       invited_count: results.invited_count,
@@ -2090,6 +2239,137 @@ defmodule ClippsterServerWeb.AdminController do
         |> put_status(:bad_request)
         |> json(%{success: false, error: "Invalid entry ID"})
     end
+  end
+
+  @doc """
+  Diagnostic endpoint to check org membership state.
+  GET /admin/diagnostic/org-membership?org_id=2&email=noah@yeet.com
+  """
+  def diagnose_org_membership(conn, params) do
+    alias ClippsterServer.Repo
+    alias ClippsterServer.Organizations.{Organization, OrganizationMember}
+    import Ecto.Query
+
+    org_id = params["org_id"]
+    email = params["email"]
+
+    result = %{}
+
+    # 1. Check if org exists
+    org = if org_id, do: Repo.get(Organization, org_id), else: nil
+    result = Map.put(result, :org_exists, org != nil)
+
+    result =
+      if org do
+        Map.merge(result, %{
+          org_name: org.name,
+          org_owner_id: org.owner_id,
+          org_subscription_status: org.subscription_status,
+          org_setup_completed: org.setup_completed
+        })
+      else
+        result
+      end
+
+    # 2. Check if user exists
+    user = if email, do: Accounts.get_user_by_email(email), else: nil
+    result = Map.put(result, :user_exists, user != nil)
+
+    result =
+      if user do
+        Map.merge(result, %{
+          user_id: user.id,
+          user_email: user.email,
+          user_account_type: user.account_type,
+          user_owned_organization_id: user.owned_organization_id,
+          user_created_by_organization_id: user.created_by_organization_id,
+          user_email_verified_at: user.email_verified_at
+        })
+      else
+        result
+      end
+
+    # 3. Check membership directly via raw SQL
+    result =
+      if org && user do
+        members =
+          OrganizationMember
+          |> where([m], m.organization_id == ^org.id)
+          |> Repo.all()
+          |> Enum.map(fn m ->
+            %{id: m.id, user_id: m.user_id, role: m.role, org_id: m.organization_id}
+          end)
+
+        specific_member =
+          OrganizationMember
+          |> where([m], m.organization_id == ^org.id and m.user_id == ^user.id)
+          |> Repo.one()
+
+        Map.merge(result, %{
+          all_members_for_org: members,
+          specific_member_found: specific_member != nil,
+          specific_member:
+            if(specific_member,
+              do: %{
+                id: specific_member.id,
+                role: specific_member.role,
+                user_id: specific_member.user_id
+              },
+              else: nil
+            ),
+          owner_id_matches_user_id: org.owner_id == user.id
+        })
+      else
+        result
+      end
+
+    # 4. Try the backfill
+    result =
+      if org && user && org.owner_id == user.id do
+        IO.puts("[DIAGNOSTIC] Attempting backfill for org=#{org.id}, user=#{user.id}")
+
+        backfill_result =
+          try do
+            %OrganizationMember{}
+            |> OrganizationMember.create_changeset(%{
+              organization_id: org.id,
+              user_id: user.id,
+              role: "owner"
+            })
+            |> Repo.insert(
+              on_conflict: [set: [role: "owner"]],
+              conflict_target: [:organization_id, :user_id]
+            )
+          rescue
+            e -> {:error, Exception.message(e)}
+          end
+
+        case backfill_result do
+          {:ok, member} ->
+            Map.put(result, :backfill_result, %{
+              success: true,
+              member_id: member.id,
+              role: member.role
+            })
+
+          {:error, %Ecto.Changeset{} = cs} ->
+            Map.put(result, :backfill_result, %{
+              success: false,
+              errors: inspect(cs.errors),
+              valid: cs.valid?
+            })
+
+          {:error, msg} when is_binary(msg) ->
+            Map.put(result, :backfill_result, %{success: false, error: msg})
+
+          other ->
+            Map.put(result, :backfill_result, %{success: false, error: inspect(other)})
+        end
+      else
+        Map.put(result, :backfill_result, "skipped - not owner or missing data")
+      end
+
+    json(conn, %{success: true, diagnostic: result})
   end
 
   defp format_invite_errors(errors) do

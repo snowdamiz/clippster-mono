@@ -1,40 +1,52 @@
-use std::sync::{Arc, Mutex};
 use futures::future::join_all;
+use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 
-use super::types::{SubtitleSettings, SubtitleOverrides, WordInfo, WhisperSegment, ClipBuildProgress, ClipBuildResult, WatermarkSettings, AudioSettings, FramingStrategy, VideoFilterSegment, TextOverlaySettings, StickerSettings, ClipWatermarkSettings, ManualFramingConfig, SegmentFramingConfigs, LayoutOverlaySettings, IntroOutroPerRatioConfig};
-use super::effect_renderer::{ClipEffectSettings, build_effects_filter_chain};
-use super::audio_effect_renderer::{AudioEffectSettings, build_audio_effects_filter_chain};
-use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
-use super::subtitle::{generate_ass_file, generate_text_overlay_ass_file, merge_text_overlays_into_ass};
-use super::video_processor::{build_single_segment_clip_with_settings, build_multi_segment_clip_with_settings, build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy, apply_stickers_to_video, apply_clip_watermarks_to_video, apply_layout_overlays_to_video, apply_rendered_text_overlays_to_video};
+use super::audio_effect_renderer::{build_audio_effects_filter_chain, AudioEffectSettings};
+use super::effect_renderer::{build_effects_filter_chain, ClipEffectSettings};
 use super::font_manager::get_fonts_dir;
-use super::text_renderer::{render_text_overlay_to_png, partition_overlays};
-use super::{CancellationToken, is_build_cancelled};
+use super::subtitle::{
+    generate_ass_file, generate_text_overlay_ass_file, merge_text_overlays_into_ass,
+};
+use super::text_renderer::{partition_overlays, render_text_overlay_to_png};
+use super::types::{
+    AudioSettings, ClipBuildProgress, ClipBuildResult, ClipWatermarkSettings, FramingStrategy,
+    IntroOutroPerRatioConfig, LayoutOverlaySettings, ManualFramingConfig, SegmentFramingConfigs,
+    StickerSettings, SubtitleOverrides, SubtitleSettings, TextOverlaySettings, VideoFilterSegment,
+    WatermarkSettings, WhisperSegment, WordInfo,
+};
+use super::video_info::{get_video_info, parse_aspect_ratio, IntroOutroCache};
+use super::video_processor::{
+    apply_clip_watermarks_to_video, apply_layout_overlays_to_video,
+    apply_rendered_text_overlays_to_video, apply_stickers_to_video,
+    build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy,
+    build_multi_segment_clip_with_settings, build_single_segment_clip_with_settings,
+};
+use super::{is_build_cancelled, CancellationToken};
 
 // Helper function to sanitize a clip name for use as a folder name
 fn sanitize_clip_name(name: &str) -> String {
     // Replace invalid filesystem characters with underscores
     let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
     let mut sanitized = name.to_string();
-    
+
     for ch in invalid_chars {
         sanitized = sanitized.replace(ch, "_");
     }
-    
+
     // Trim whitespace and dots from start/end (invalid on Windows)
     sanitized = sanitized.trim().trim_matches('.').to_string();
-    
+
     // Limit length to avoid filesystem issues (keeping it reasonable)
     if sanitized.len() > 100 {
         sanitized.truncate(100);
     }
-    
+
     // If empty after sanitization, use a default name
     if sanitized.is_empty() {
         sanitized = "clip".to_string();
     }
-    
+
     sanitized
 }
 
@@ -44,37 +56,37 @@ fn clip_name_to_snake_case(name: &str) -> String {
     // First, sanitize for filesystem
     let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '.'];
     let mut result = name.to_lowercase();
-    
+
     for ch in invalid_chars {
         result = result.replace(ch, "");
     }
-    
+
     // Replace spaces and multiple underscores/hyphens with single underscore
     result = result
         .chars()
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
         .collect::<String>();
-    
+
     // Collapse multiple underscores into one
     while result.contains("__") {
         result = result.replace("__", "_");
     }
-    
+
     // Trim underscores from start/end
     result = result.trim_matches('_').to_string();
-    
+
     // Limit length to avoid filesystem issues
     if result.len() > 80 {
         result.truncate(80);
         // Make sure we don't end with an underscore after truncation
         result = result.trim_end_matches('_').to_string();
     }
-    
+
     // If empty after sanitization, use a default name
     if result.is_empty() {
         result = "clip".to_string();
     }
-    
+
     result
 }
 
@@ -82,7 +94,7 @@ fn clip_name_to_snake_case(name: &str) -> String {
 // If run_number is None (manually generated clips), uses a special "manual" folder
 fn get_or_create_run_folder(
     project_clips_dir: &std::path::Path,
-    run_number: Option<u32>
+    run_number: Option<u32>,
 ) -> Result<std::path::PathBuf, String> {
     let run_folder = if let Some(run_num) = run_number {
         // Use the run number from the detection session
@@ -91,10 +103,10 @@ fn get_or_create_run_folder(
         // For manually generated clips without a detection session, use a manual builds folder
         project_clips_dir.join("manual-builds")
     };
-    
+
     std::fs::create_dir_all(&run_folder)
         .map_err(|e| format!("Failed to create run folder: {}", e))?;
-    
+
     println!("[Rust] Using run folder: {}", run_folder.display());
     Ok(run_folder)
 }
@@ -102,14 +114,14 @@ fn get_or_create_run_folder(
 // Helper function to get or create the clip-specific folder within a run
 fn get_or_create_clip_folder(
     run_folder: &std::path::Path,
-    clip_name: &str
+    clip_name: &str,
 ) -> Result<std::path::PathBuf, String> {
     let sanitized_name = sanitize_clip_name(clip_name);
     let clip_folder = run_folder.join(&sanitized_name);
-    
+
     std::fs::create_dir_all(&clip_folder)
         .map_err(|e| format!("Failed to create clip folder: {}", e))?;
-    
+
     println!("[Rust] Using clip folder: {}", clip_folder.display());
     Ok(clip_folder)
 }
@@ -123,47 +135,62 @@ async fn concatenate_videos(
     outro_path: Option<&str>,
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
-    
+
     // Create a concat list file
     let concat_list_path = output_path.with_extension("concat.txt");
     let mut concat_content = String::new();
-    
+
     // Add intro if present
     if let Some(intro) = intro_path {
         concat_content.push_str(&format!("file '{}'\n", intro.replace("\\", "/")));
     }
-    
+
     // Add all segments
     for segment_path in segment_paths {
         let path_str = segment_path.to_string_lossy().replace("\\", "/");
         concat_content.push_str(&format!("file '{}'\n", path_str));
     }
-    
+
     // Add outro if present
     if let Some(outro) = outro_path {
         concat_content.push_str(&format!("file '{}'\n", outro.replace("\\", "/")));
     }
-    
+
     std::fs::write(&concat_list_path, concat_content)
         .map_err(|e| format!("Failed to write concat list: {}", e))?;
-    
+
     // Run FFmpeg concat
-    let output = app.shell()
+    let output = app
+        .shell()
         .sidecar("ffmpeg")
         .unwrap()
-        .args(["-nostdin", "-f", "concat", "-safe", "0", "-i", &concat_list_path.to_string_lossy(), "-c", "copy", "-movflags", "+faststart", "-y", &output_path.to_string_lossy()])
+        .args([
+            "-nostdin",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            &concat_list_path.to_string_lossy(),
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            "-y",
+            &output_path.to_string_lossy(),
+        ])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("FFmpeg concat failed: {}", stderr));
     }
-    
+
     // Clean up concat list
     let _ = std::fs::remove_file(&concat_list_path);
-    
+
     Ok(())
 }
 
@@ -175,22 +202,39 @@ async fn apply_subtitles_to_video(
     subtitle_path: &std::path::Path,
 ) -> Result<(), String> {
     use tauri_plugin_shell::ShellExt;
-    
-    let subtitle_filter = format!("ass={}", subtitle_path.to_string_lossy().replace("\\", "/").replace(":", "\\\\:"));
-    
-    let output = app.shell()
+
+    let subtitle_filter = format!(
+        "ass={}",
+        subtitle_path
+            .to_string_lossy()
+            .replace("\\", "/")
+            .replace(":", "\\\\:")
+    );
+
+    let output = app
+        .shell()
         .sidecar("ffmpeg")
         .unwrap()
-        .args(["-nostdin", "-i", &input_path.to_string_lossy(), "-vf", &subtitle_filter, "-c:a", "copy", "-y", &output_path.to_string_lossy()])
+        .args([
+            "-nostdin",
+            "-i",
+            &input_path.to_string_lossy(),
+            "-vf",
+            &subtitle_filter,
+            "-c:a",
+            "copy",
+            "-y",
+            &output_path.to_string_lossy(),
+        ])
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
-    
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("FFmpeg subtitle application failed: {}", stderr));
     }
-    
+
     Ok(())
 }
 
@@ -206,28 +250,38 @@ fn get_framing_for_segment(
 ) -> Option<FramingStrategy> {
     // Try to get segment ID from the segment JSON
     let segment_id = segment.get("id").and_then(|v| v.as_str());
-    
+
     // Check for segment-specific framing config
     if let (Some(seg_id), Some(seg_configs)) = (segment_id, segment_framing_configs) {
         if let Some(configs_for_ratio) = seg_configs.get(aspect_ratio) {
             // Find config that applies to this segment
             for seg_config in configs_for_ratio {
                 if seg_config.segment_ids.contains(&seg_id.to_string()) {
-                    println!("[Rust] Using segment-specific framing for segment {} in {}", seg_id, aspect_ratio);
-                    return Some(seg_config.config.to_framing_strategy(video_width, video_height));
+                    println!(
+                        "[Rust] Using segment-specific framing for segment {} in {}",
+                        seg_id, aspect_ratio
+                    );
+                    return Some(
+                        seg_config
+                            .config
+                            .to_framing_strategy(video_width, video_height),
+                    );
                 }
             }
         }
     }
-    
+
     // Fallback to global manual config
     if let Some(configs) = manual_framing_configs {
         if let Some(config) = configs.get(aspect_ratio) {
-            println!("[Rust] Using global manual framing config for {}", aspect_ratio);
+            println!(
+                "[Rust] Using global manual framing config for {}",
+                aspect_ratio
+            );
             return Some(config.to_framing_strategy(video_width, video_height));
         }
     }
-    
+
     None
 }
 
@@ -269,9 +323,8 @@ pub async fn build_clip_internal_simple(
     clip_effects: Option<Vec<ClipEffectSettings>>,
     audio_effects: Option<Vec<AudioEffectSettings>>,
     layout_overlays: Option<Vec<LayoutOverlaySettings>>,
-    cancel_rx: CancellationToken
+    cancel_rx: CancellationToken,
 ) -> Result<ClipBuildResult, String> {
-
     // Helper to check cancellation
     let check_cancelled = || -> Result<(), String> {
         if is_build_cancelled(&cancel_rx) {
@@ -285,14 +338,17 @@ pub async fn build_clip_internal_simple(
     check_cancelled()?;
 
     // Emit progress
-    let _ = app.emit("clip-build-progress", ClipBuildProgress {
-        clip_id: clip_id.to_string(),
-        project_id: project_id.to_string(),
-        progress: 0.0,
-        stage: "initializing".to_string(),
-        message: "Preparing to build clip...".to_string(),
-        error: None,
-    });
+    let _ = app.emit(
+        "clip-build-progress",
+        ClipBuildProgress {
+            clip_id: clip_id.to_string(),
+            project_id: project_id.to_string(),
+            progress: 0.0,
+            stage: "initializing".to_string(),
+            message: "Preparing to build clip...".to_string(),
+            error: None,
+        },
+    );
 
     // Get storage paths
     let paths = crate::storage::init_storage_dirs()
@@ -314,12 +370,18 @@ pub async fn build_clip_internal_simple(
 
     // Get video dimensions for proper subtitle rendering
     let video_info = get_video_info(app, video_path).await?;
-    println!("[Rust] Video dimensions: {}x{}", video_info.width, video_info.height);
+    println!(
+        "[Rust] Video dimensions: {}x{}",
+        video_info.width, video_info.height
+    );
 
     // Build effects filter chain if effects are provided
     let effects_filter_chain = if let Some(ref effects) = clip_effects {
         if !effects.is_empty() {
-            println!("[Rust] Building effects filter chain for {} effects", effects.len());
+            println!(
+                "[Rust] Building effects filter chain for {} effects",
+                effects.len()
+            );
             match build_effects_filter_chain(effects, video_info.width, video_info.height) {
                 Ok(filter) => {
                     if let Some(ref f) = filter {
@@ -328,7 +390,10 @@ pub async fn build_clip_internal_simple(
                     filter
                 }
                 Err(e) => {
-                    println!("[Rust] Warning: Failed to build effects filter chain: {}", e);
+                    println!(
+                        "[Rust] Warning: Failed to build effects filter chain: {}",
+                        e
+                    );
                     None
                 }
             }
@@ -342,7 +407,10 @@ pub async fn build_clip_internal_simple(
     // Build audio effects filter chain if audio effects are provided
     let audio_effects_filter_chain = if let Some(ref effects) = audio_effects {
         if !effects.is_empty() {
-            println!("[Rust] Building audio effects filter chain for {} effects", effects.len());
+            println!(
+                "[Rust] Building audio effects filter chain for {} effects",
+                effects.len()
+            );
             match build_audio_effects_filter_chain(effects) {
                 Ok(filter) => {
                     if let Some(ref f) = filter {
@@ -351,7 +419,10 @@ pub async fn build_clip_internal_simple(
                     filter
                 }
                 Err(e) => {
-                    println!("[Rust] Warning: Failed to build audio effects filter chain: {}", e);
+                    println!(
+                        "[Rust] Warning: Failed to build audio effects filter chain: {}",
+                        e
+                    );
                     None
                 }
             }
@@ -370,20 +441,23 @@ pub async fn build_clip_internal_simple(
     let mut first_output_path: Option<String> = None;
     let mut total_file_size: u64 = 0;
     let mut clip_duration: Option<f64> = None;
-    
+
     // Create intro/outro cache for this build session (thread-safe for parallel builds)
     let intro_outro_cache = Arc::new(Mutex::new(IntroOutroCache::new()));
 
     // Build clips for all aspect ratios IN PARALLEL for maximum speed
     let total_ratios = aspect_ratios.len();
-    println!("[Rust] Building {} aspect ratios in parallel...", total_ratios);
-    
+    println!(
+        "[Rust] Building {} aspect ratios in parallel...",
+        total_ratios
+    );
+
     // Convert clip name to snake_case for the filename (e.g., "Epic Victory" -> "epic_victory")
     let snake_case_clip_name = clip_name_to_snake_case(clip_name);
-    
+
     // Get the build number for the filename (default to 1 if not provided)
     let build_num = build_number.unwrap_or(1);
-    
+
     let build_tasks: Vec<_> = aspect_ratios.iter().enumerate().map(|(ratio_idx, aspect_ratio_str)| {
         let app = app.clone();
         let video_path = video_path.to_string();
@@ -908,29 +982,32 @@ pub async fn build_clip_internal_simple(
 
     // Wait for all aspect ratios to complete in parallel
     let build_results = join_all(build_tasks).await;
-    
+
     // Process results
     for result in build_results {
         match result {
             Ok((output_path_str, file_size, duration, ratio_idx)) => {
                 all_output_paths.push(output_path_str.clone());
                 total_file_size += file_size;
-                
+
                 if ratio_idx == 0 {
                     first_output_path = Some(output_path_str);
                     clip_duration = duration;
                 }
-            },
+            }
             Err(e) => return Err(format!("Aspect ratio build failed: {}", e)),
         }
     }
-    
-    println!("[Rust] All {} aspect ratios built successfully in parallel!", total_ratios);
+
+    println!(
+        "[Rust] All {} aspect ratios built successfully in parallel!",
+        total_ratios
+    );
 
     // Final cancellation check - if cancelled after builds completed, clean up and return error
     if is_build_cancelled(&cancel_rx) {
         println!("[Rust] Build was cancelled after completion - cleaning up output files...");
-        
+
         // Delete all built files
         for output_path in &all_output_paths {
             if let Err(e) = std::fs::remove_file(output_path) {
@@ -939,10 +1016,10 @@ pub async fn build_clip_internal_simple(
                 println!("[Rust] Cleaned up: {}", output_path);
             }
         }
-        
+
         // Try to clean up the clip folder if empty
         let _ = std::fs::remove_dir(&clip_base_dir);
-        
+
         return Err("Build cancelled by user".to_string());
     }
 
@@ -960,16 +1037,21 @@ pub async fn build_clip_internal_simple(
         error: None,
     };
 
-    let _ = app.emit("clip-build-progress", ClipBuildProgress {
-        clip_id: clip_id.to_string(),
-        project_id: project_id.to_string(),
-        progress: 100.0,
-        stage: "completed".to_string(),
-        message: format!("Built {} clip(s) successfully!", total_ratios),
-        error: None,
-    });
+    let _ = app.emit(
+        "clip-build-progress",
+        ClipBuildProgress {
+            clip_id: clip_id.to_string(),
+            project_id: project_id.to_string(),
+            progress: 100.0,
+            stage: "completed".to_string(),
+            message: format!("Built {} clip(s) successfully!", total_ratios),
+            error: None,
+        },
+    );
 
-    println!("[Rust] Built {} clips at: {:?}", total_ratios, all_output_paths);
+    println!(
+        "[Rust] Built {} clips at: {:?}",
+        total_ratios, all_output_paths
+    );
     Ok(result)
 }
-

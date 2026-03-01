@@ -7,13 +7,16 @@ defmodule ClippsterServer.Subscriptions.Subscription do
   import Ecto.Changeset
 
   schema "subscriptions" do
-    field :status, :string  # active, expired, cancelled
-    field :subscription_tier, :string  # starter, creator, pro
+    # active, expired, cancelled
+    field :status, :string
+    # starter, creator, pro
+    field :subscription_tier, :string
     field :start_date, :utc_datetime
     field :end_date, :utc_datetime
     field :hours_included, :decimal
     field :credits_granted, :decimal
-    field :payment_method, :string  # stripe, crypto
+    # stripe, crypto
+    field :payment_method, :string
     field :stripe_subscription_id, :string
     field :amount_usd, :decimal
 

@@ -10,7 +10,12 @@ export async function uploadOrganizationLogo(orgId: number, file: File) {
 
 // Creator profiles
 export async function listOrganizationCreatorProfiles(orgId: number) {
-  return api.get<{ success: boolean; profiles: ServerOrganizationCreatorProfile[]; error?: string }>(`/organizations/${orgId}/creator-profiles`)
+  const response = await api.get<{ success: boolean; profiles: ServerOrganizationCreatorProfile[]; error?: string }>(`/organizations/${orgId}/creator-profiles`)
+  console.log('[organizationApi] listOrganizationCreatorProfiles response:', response)
+  if (response.profiles) {
+    console.log('[organizationApi] First profile:', response.profiles[0])
+  }
+  return response
 }
 
 export async function getOrganizationCreatorProfile(orgId: number, profileId: number) {
@@ -26,6 +31,8 @@ export async function createOrganizationCreatorProfile(orgId: number, data: {
   watermark_id?: number | null
   watermark_settings?: Record<string, unknown> | null
   intro_outro_settings?: Record<string, unknown> | null
+  intro_ratio_settings?: string | null
+  outro_ratio_settings?: string | null
   layout_overlays?: LayoutOverlay[] | null
   scope?: 'streamer' | 'global'
 }) {
@@ -41,6 +48,8 @@ export async function updateOrganizationCreatorProfile(orgId: number, profileId:
   watermark_id?: number | null
   watermark_settings?: Record<string, unknown> | null
   intro_outro_settings?: Record<string, unknown> | null
+  intro_ratio_settings?: string | null
+  outro_ratio_settings?: string | null
   layout_overlays?: LayoutOverlay[] | null
   scope?: 'streamer' | 'global'
 }) {

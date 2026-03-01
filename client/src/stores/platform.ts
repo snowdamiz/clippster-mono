@@ -8,13 +8,16 @@ import {
 } from '@/services/pumpfun';
 import { getKickClips, extractChannelSlug, checkKickLivestream } from '@/services/kick';
 import { getTwitchVods, extractChannelName, checkTwitchLivestream, type TwitchVod } from '@/services/twitch';
+import { getYouTubeVods, extractYouTubeChannel, type YouTubeVod } from '@/services/youtube';
+import { getRumbleVods, extractRumbleChannel, checkRumbleLivestream, type RumbleVod } from '@/services/rumble';
+import { extractTwitterBroadcastId, validateTwitterUrl, getTwitterBroadcastInfo } from '@/services/twitter';
 
 // Unified clip type that works across platforms
 export interface PlatformClip {
   clipId: string;
   sessionId?: string;
   title: string;
-  duration: number;
+  duration?: number; // Optional - may not be available for all platforms (e.g., Twitter live broadcasts)
   thumbnailUrl?: string;
   playlistUrl?: string;
   mp4Url?: string;
@@ -24,6 +27,7 @@ export interface PlatformClip {
   createdAt?: string;
   isLive?: boolean;
   views?: number;
+  uploader?: string; // Channel name or username
 }
 
 export interface RecentSearch {
@@ -68,12 +72,14 @@ function loadRecentSearches(): RecentSearch[] {
 // Migrate old per-platform searches to unified format
 function migrateOldSearches(): RecentSearch[] {
   const allSearches: RecentSearch[] = [];
-  const platforms: PlatformId[] = ['pumpfun', 'kick', 'twitch', 'youtube'];
+  const platforms: PlatformId[] = ['pumpfun', 'kick', 'twitch', 'YouTube', 'rumble', 'twitter'];
   const oldKeys: Record<PlatformId, string> = {
     pumpfun: 'pumpfun_recent_searches',
     kick: 'kick_recent_searches',
     twitch: 'twitch_recent_searches',
-    youtube: 'youtube_recent_searches',
+    YouTube: 'youtube_recent_searches',
+    rumble: 'rumble_recent_searches',
+    twitter: 'twitter_recent_searches',
   };
 
   for (const platform of platforms) {
@@ -252,6 +258,68 @@ export const usePlatformStore = defineStore('platform', {
       }
     },
 
+    // Background metadata fetch for Rumble (channel name and avatar from livestream check)
+    async fetchRumbleMetadata(channelId: string) {
+      try {
+        console.log('[Platform] Fetching Rumble metadata for:', channelId);
+        const status = await checkRumbleLivestream(channelId);
+        console.log('[Platform] Rumble status response:', status);
+        
+        let profileImageUrl = status?.profileImageUrl;
+        
+        // If no profile image from livestream check, try to get from VODs
+        if (!profileImageUrl) {
+          console.log('[Platform] No profile image from livestream check, trying VODs...');
+          try {
+            const vods = await getRumbleVods(channelId, 1);
+            if (vods.length > 0 && vods[0].thumbnailUrl) {
+              // Use the first VOD's thumbnail as a fallback
+              profileImageUrl = vods[0].thumbnailUrl;
+              console.log('[Platform] Using VOD thumbnail as fallback:', profileImageUrl);
+            }
+          } catch (vodError) {
+            console.warn('[Platform] Failed to fetch VODs for avatar fallback:', vodError);
+          }
+        }
+        
+        if (status?.channelName || profileImageUrl) {
+          const metadata = {
+            name: status?.channelName || channelId.replace(/^(c\/|user\/)/, ''),
+            imageUrl: profileImageUrl,
+          };
+          console.log('[Platform] Updating Rumble metadata with:', metadata);
+          this.updateRecentSearchMetadata(channelId, 'rumble', metadata);
+          console.log('[Platform] Recent searches after update:', this.recentSearches);
+        } else {
+          console.warn('[Platform] No Rumble metadata available');
+        }
+      } catch (error) {
+        console.error('[Platform] Failed to fetch Rumble metadata for:', channelId, error);
+      }
+    },
+
+    // Background metadata fetch for YouTube (channel name and avatar from VODs)
+    async fetchYouTubeMetadata(channelId: string) {
+      try {
+        console.log('[Platform] Fetching YouTube metadata for:', channelId);
+        const vods = await getYouTubeVods(channelId, 1);
+        
+        if (vods.length > 0) {
+          // Use the first VOD's thumbnail as avatar
+          const metadata = {
+            name: channelId.replace(/^@/, ''), // Remove @ prefix if present
+            imageUrl: vods[0].thumbnailUrl,
+          };
+          console.log('[Platform] Updating YouTube metadata with:', metadata);
+          this.updateRecentSearchMetadata(channelId, 'YouTube', metadata);
+        } else {
+          console.warn('[Platform] No YouTube VODs found for:', channelId);
+        }
+      } catch (error) {
+        console.error('[Platform] Failed to fetch YouTube metadata for:', channelId, error);
+      }
+    },
+
     // Refresh missing metadata (avatars) for recent searches
     async refreshRecentSearchMetadata() {
       // Process sequentially to avoid burst requests
@@ -260,6 +328,10 @@ export const usePlatformStore = defineStore('platform', {
           await this.fetchKickMetadata(search.id);
         } else if (search.platform === 'twitch' && !search.imageUrl) {
           await this.fetchTwitchMetadata(search.id);
+        } else if (search.platform === 'rumble' && (!search.name || !search.imageUrl)) {
+          await this.fetchRumbleMetadata(search.id);
+        } else if (search.platform === 'YouTube' && (!search.name || !search.imageUrl)) {
+          await this.fetchYouTubeMetadata(search.id);
         }
       }
     },
@@ -339,7 +411,7 @@ export const usePlatformStore = defineStore('platform', {
     },
 
     // Universal search function that handles different platforms
-    async searchClips(input: string, limit: number = 20) {
+    async searchClips(input: string, limit: number = 20, tab?: 'streams' | 'videos') {
       const trimmedInput = input.trim();
       const config = platformConfigs[this.activePlatform];
 
@@ -395,6 +467,57 @@ export const usePlatformStore = defineStore('platform', {
             result = await this.getTwitchClips(extractedId, limit);
             break;
 
+          case 'YouTube': {
+            extractedId = extractYouTubeChannel(trimmedInput) || trimmedInput.trim();
+            if (!extractedId) {
+              this.error = 'Invalid YouTube channel URL or @handle';
+              this.loading = false;
+              return { success: false, error: this.error };
+            }
+            this.currentSearchId = extractedId;
+            const tabToUse = tab || 'streams';
+            console.log('[Platform Store] YouTube search - tab:', tabToUse);
+            result = await this.getYouTubeClips(extractedId, limit, tabToUse);
+            break;
+          }
+
+          case 'rumble': {
+            // If it's a full URL, use it directly to preserve /livestreams or /videos paths
+            // Otherwise, extract the channel name
+            let channelInput: string;
+            if (trimmedInput.includes('rumble.com/')) {
+              channelInput = trimmedInput;
+              // Extract channel name for currentSearchId (for display purposes)
+              extractedId = extractRumbleChannel(trimmedInput) || trimmedInput.trim();
+            } else {
+              extractedId = extractRumbleChannel(trimmedInput) || trimmedInput.trim();
+              channelInput = extractedId;
+            }
+            
+            if (!extractedId) {
+              this.error = 'Invalid Rumble channel URL or name';
+              this.loading = false;
+              return { success: false, error: this.error };
+            }
+            this.currentSearchId = extractedId;
+            const tabToUse = tab || 'streams';
+            result = await this.getRumbleClips(channelInput, limit, tabToUse);
+            break;
+          }
+
+          case 'twitter': {
+            // Twitter requires exact broadcast/space URL
+            const broadcastId = extractTwitterBroadcastId(trimmedInput);
+            if (!broadcastId) {
+              this.error = 'Invalid X/Twitter URL. Must be a broadcast (/i/broadcasts/) or space (/i/spaces/) URL.';
+              this.loading = false;
+              return { success: false, error: this.error };
+            }
+            this.currentSearchId = broadcastId;
+            result = await this.getTwitterClip(trimmedInput);
+            break;
+          }
+
           default:
             this.error = 'Platform not supported yet';
             this.loading = false;
@@ -406,7 +529,7 @@ export const usePlatformStore = defineStore('platform', {
           let filteredClips = result.clips;
           if (config.filterMinDuration) {
             filteredClips = result.clips.filter(
-              (clip) => clip.duration >= config.filterMinDuration!
+              (clip) => (clip.duration ?? 0) >= config.filterMinDuration!
             );
           }
 
@@ -416,15 +539,22 @@ export const usePlatformStore = defineStore('platform', {
           this.lastSearchTime = Date.now();
 
           // Save to recent searches with platform
-          this.addToRecentSearches(extractedId!, trimmedInput, this.activePlatform, undefined);
+          // Skip for Twitter - it's handled in getTwitterClip with full metadata
+          if (this.activePlatform !== 'twitter') {
+            this.addToRecentSearches(extractedId!, trimmedInput, this.activePlatform, undefined);
+          }
 
-          // Fetch metadata for PumpFun, Kick, or Twitch searches
+          // Fetch metadata for PumpFun, Kick, Twitch, Rumble, or YouTube searches
           if (this.activePlatform === 'pumpfun') {
             this.fetchPumpFunMetadata(extractedId!);
           } else if (this.activePlatform === 'kick') {
             this.fetchKickMetadata(extractedId!);
           } else if (this.activePlatform === 'twitch') {
             this.fetchTwitchMetadata(extractedId!);
+          } else if (this.activePlatform === 'rumble') {
+            this.fetchRumbleMetadata(extractedId!);
+          } else if (this.activePlatform === 'YouTube') {
+            this.fetchYouTubeMetadata(extractedId!);
           }
 
           return {
@@ -479,6 +609,234 @@ export const usePlatformStore = defineStore('platform', {
           hasMore: false,
           total: 0,
           error: error instanceof Error ? error.message : 'Failed to fetch Twitch VODs',
+        };
+      }
+    },
+
+    // Helper to convert Rumble VODs to PlatformClip format
+    async getRumbleClips(channelName: string, limit: number = 20, tab: 'streams' | 'videos' = 'streams'): Promise<{
+      success: boolean;
+      clips: PlatformClip[];
+      hasMore: boolean;
+      total: number;
+      error?: string;
+    }> {
+      try {
+        // Construct URL with /livestreams or /videos path based on tab
+        let urlToFetch = channelName;
+        
+        // If it's already a full URL, extract the base and reconstruct with the correct path
+        if (channelName.includes('rumble.com/')) {
+          // Extract base channel URL and add the appropriate path
+          const baseUrl = channelName.split(/\/(livestreams|videos)/)[0];
+          urlToFetch = `${baseUrl}/${tab === 'streams' ? 'livestreams' : 'videos'}`;
+        } else {
+          // Construct URL from channel name
+          const channelPath = channelName.startsWith('c/') || channelName.startsWith('user/') 
+            ? channelName 
+            : `c/${channelName}`;
+          urlToFetch = `https://rumble.com/${channelPath}/${tab === 'streams' ? 'livestreams' : 'videos'}`;
+        }
+        
+        console.log('[Platform Store] Fetching Rumble', tab, 'from:', urlToFetch);
+        const vods = await getRumbleVods(urlToFetch, limit);
+        
+        // Filter VODs based on tab selection using was_live field
+        // Note: Rumble's /livestreams and /videos URLs return the same content,
+        // so we must filter client-side based on the was_live field from yt-dlp
+        const filteredVods = tab === 'streams' 
+          ? vods.filter(vod => vod.isLive)  // isLive = is_live || was_live from backend
+          : vods.filter(vod => !vod.isLive);
+        
+        console.log('[Platform Store] Filtered', filteredVods.length, 'out of', vods.length, 'VODs for tab:', tab);
+        const clips: PlatformClip[] = filteredVods.map((vod: RumbleVod) => {
+          // upload_date from yt-dlp is YYYYMMDD — convert to ISO
+          let createdAt: string | undefined;
+          if (vod.uploadDate) {
+            const raw = vod.uploadDate;
+            if (/^\d{8}$/.test(raw)) {
+              createdAt = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+            } else if (/^\d{9,13}$/.test(raw)) {
+              const ms = raw.length <= 10 ? Number(raw) * 1000 : Number(raw);
+              createdAt = new Date(ms).toISOString();
+            } else {
+              createdAt = raw;
+            }
+          }
+          return {
+            clipId: vod.videoId,
+            title: vod.title || `Video ${vod.videoId}`,
+            duration: vod.duration || 0,
+            thumbnailUrl: vod.thumbnailUrl,
+            playlistUrl: vod.url,
+            mp4Url: vod.url,
+            clipType: 'COMPLETE' as const,
+            createdAt,
+            views: vod.viewCount ?? undefined,
+          };
+        });
+        return {
+          success: true,
+          clips,
+          hasMore: clips.length >= limit,
+          total: clips.length,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          clips: [],
+          hasMore: false,
+          total: 0,
+          error: error instanceof Error ? error.message : 'Failed to fetch Rumble VODs',
+        };
+      }
+    },
+
+    // Helper to convert YouTube VODs to PlatformClip format
+    async getYouTubeClips(channelId: string, limit: number = 20, tab: 'streams' | 'videos' = 'streams'): Promise<{
+      success: boolean;
+      clips: PlatformClip[];
+      hasMore: boolean;
+      total: number;
+      error?: string;
+    }> {
+      try {
+        console.log('[Platform Store] getYouTubeClips - channelId:', channelId, 'tab:', tab);
+        // Import getYouTubeVideos dynamically
+        const { getYouTubeVideos } = await import('@/services/youtube');
+        const vods = tab === 'videos' 
+          ? await getYouTubeVideos(channelId, limit)
+          : await getYouTubeVods(channelId, limit);
+        console.log('[Platform Store] Fetched', vods.length, tab === 'videos' ? 'videos' : 'streams');
+        const clips: PlatformClip[] = vods.map((vod: YouTubeVod, index: number) => {
+          // Log first item to debug date fields
+          if (index === 0) {
+            console.log('[Platform Store] First VOD data:', vod);
+          }
+          
+          // yt-dlp flat-playlist returns timestamp as Unix epoch string (e.g. "1737014400")
+          // or upload_date as "YYYYMMDD" — normalize both to ISO 8601
+          let createdAt: string | undefined;
+          if (vod.uploadDate) {
+            const raw = vod.uploadDate;
+            if (/^\d{8}$/.test(raw)) {
+              // YYYYMMDD → YYYY-MM-DD
+              createdAt = `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+              if (index === 0) {
+                console.log('[Platform Store] Parsed YYYYMMDD date:', raw, '→', createdAt);
+              }
+            } else if (/^\d{9,13}$/.test(raw)) {
+              // Unix epoch seconds or milliseconds → ISO string
+              const ms = raw.length <= 10 ? Number(raw) * 1000 : Number(raw);
+              createdAt = new Date(ms).toISOString();
+              if (index === 0) {
+                console.log('[Platform Store] Parsed epoch date:', raw, '→', createdAt);
+              }
+            } else {
+              createdAt = raw;
+              if (index === 0) {
+                console.log('[Platform Store] Using raw date:', raw);
+              }
+            }
+          }
+          return {
+            clipId: vod.videoId,
+            title: vod.title || `Video ${vod.videoId}`,
+            duration: vod.duration || 0,
+            thumbnailUrl: vod.thumbnailUrl,
+            playlistUrl: vod.url,
+            mp4Url: vod.url,
+            clipType: 'COMPLETE' as const,
+            createdAt,
+            views: vod.viewCount ?? undefined,
+          };
+        });
+        return {
+          success: true,
+          clips,
+          hasMore: clips.length >= limit,
+          total: clips.length,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          clips: [],
+          hasMore: false,
+          total: 0,
+          error: error instanceof Error ? error.message : 'Failed to fetch YouTube VODs',
+        };
+      }
+    },
+
+    // Helper to get a single Twitter broadcast/space as a clip
+    async getTwitterClip(url: string): Promise<{
+      success: boolean;
+      clips: PlatformClip[];
+      hasMore: boolean;
+      total: number;
+      error?: string;
+    }> {
+      try {
+        // Validate the URL
+        const validatedUrl = await validateTwitterUrl(url);
+        const broadcastId = extractTwitterBroadcastId(validatedUrl);
+        
+        if (!broadcastId) {
+          return {
+            success: false,
+            clips: [],
+            hasMore: false,
+            total: 0,
+            error: 'Invalid Twitter broadcast/space URL',
+          };
+        }
+
+        // Fetch metadata from yt-dlp
+        console.log('[Platform] Fetching Twitter metadata for:', validatedUrl);
+        const metadata = await getTwitterBroadcastInfo(validatedUrl);
+        console.log('[Platform] Twitter metadata received:', metadata);
+
+        // For Twitter, we return a single "clip" representing the broadcast/space
+        const clip: PlatformClip = {
+          clipId: broadcastId,
+          title: metadata.title || `X Broadcast ${broadcastId}`,
+          duration: metadata.duration, // Don't default to 0, keep undefined if not available
+          thumbnailUrl: metadata.thumbnail,
+          playlistUrl: validatedUrl,
+          mp4Url: validatedUrl,
+          clipType: 'COMPLETE' as const,
+          createdAt: new Date().toISOString(),
+          uploader: metadata.username || metadata.uploader,
+        };
+        
+        // Add to recent searches with avatar
+        // Store the full URL as both id and displayText so clicking works correctly
+        if (metadata.username) {
+          this.addToRecentSearches(
+            validatedUrl,
+            validatedUrl, // displayText is the URL for searching
+            'twitter',
+            metadata.username, // label is the username shown below avatar
+            {
+              name: metadata.title || `X Broadcast ${broadcastId}`, // name is the title shown in bold
+              imageUrl: metadata.avatarUrl,
+            }
+          );
+        }
+
+        return {
+          success: true,
+          clips: [clip],
+          hasMore: false,
+          total: 1,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          clips: [],
+          hasMore: false,
+          total: 0,
+          error: error instanceof Error ? error.message : 'Failed to fetch Twitter broadcast info',
         };
       }
     },

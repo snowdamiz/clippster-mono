@@ -1,5 +1,6 @@
-use std::path::PathBuf;
 use reqwest;
+#[allow(unused_imports)]
+use std::path::PathBuf;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 

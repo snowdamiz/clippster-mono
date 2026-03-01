@@ -49,10 +49,21 @@ defmodule ClippsterServer.Hiring do
 
   defp apply_filters(query, filters) do
     query
-    |> maybe_filter_array(:content_types, Map.get(filters, "content_types") || Map.get(filters, :content_types))
-    |> maybe_filter_array(:languages, Map.get(filters, "languages") || Map.get(filters, :languages))
-    |> maybe_filter_array(:platforms, Map.get(filters, "platforms") || Map.get(filters, :platforms))
-    |> maybe_filter_payment_type(Map.get(filters, "payment_type") || Map.get(filters, :payment_type))
+    |> maybe_filter_array(
+      :content_types,
+      Map.get(filters, "content_types") || Map.get(filters, :content_types)
+    )
+    |> maybe_filter_array(
+      :languages,
+      Map.get(filters, "languages") || Map.get(filters, :languages)
+    )
+    |> maybe_filter_array(
+      :platforms,
+      Map.get(filters, "platforms") || Map.get(filters, :platforms)
+    )
+    |> maybe_filter_payment_type(
+      Map.get(filters, "payment_type") || Map.get(filters, :payment_type)
+    )
   end
 
   defp maybe_filter_array(query, _field, nil), do: query
@@ -190,7 +201,8 @@ defmodule ClippsterServer.Hiring do
           # Add user as org member
           case Organizations.add_member(organization_id, application.user_id, "member") do
             {:ok, _member} -> :ok
-            {:error, %Ecto.Changeset{errors: [organization_id_user_id: _]}} -> :ok  # Already a member
+            # Already a member
+            {:error, %Ecto.Changeset{errors: [organization_id_user_id: _]}} -> :ok
             {:error, :seat_limit_reached} -> Repo.rollback(:seat_limit_reached)
             {:error, reason} -> Repo.rollback(reason)
           end

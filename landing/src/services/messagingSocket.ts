@@ -1,6 +1,7 @@
 import { Socket, Channel } from 'phoenix'
 import type { Message, Conversation } from './messagingApi'
 import { normalizeMessage, normalizeConversation } from './messagingApi'
+import { API_ORIGIN } from '@/lib/apiBase'
 
 // ============================================================================
 // Types
@@ -46,8 +47,7 @@ class MessagingSocket {
   > = new Map()
 
   private getSocketUrl(): string {
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://clippster-server.fly.dev'
-    const url = new URL(apiUrl)
+    const url = new URL(API_ORIGIN)
     const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${protocol}//${url.host}/messaging`
   }
@@ -252,15 +252,21 @@ class MessagingSocket {
     }
   }
 
-  sendMessage(conversationId: number, content: string): Promise<Message> {
+  sendMessage(conversationId: number, content: string, attachmentData?: any[]): Promise<Message> {
     return new Promise((resolve, reject) => {
       const channel = this.conversationChannels.get(conversationId)
       if (!channel) {
         reject(new Error('Not joined to conversation'))
         return
       }
+
+      const payload: any = { content }
+      if (attachmentData && attachmentData.length > 0) {
+        payload.attachment_data = attachmentData
+      }
+
       channel
-        .push('new_message', { content })
+        .push('new_message', payload)
         .receive('ok', (response: any) => resolve(normalizeMessage(response)))
         .receive('error', (reason: unknown) =>
           reject(new Error(`Failed to send: ${JSON.stringify(reason)}`))

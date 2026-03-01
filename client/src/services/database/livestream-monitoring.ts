@@ -94,7 +94,7 @@ export async function createMonitoredStreamer(
       id,
       mintId,
       displayName,
-      platform.toLowerCase(),
+      platform,
       profileImageUrl || null,
       segmentDurationMinutes,
       autoDvr ? 1 : 0,
@@ -201,7 +201,7 @@ export async function createLivestreamSession(
   mintId: string,
   displayName: string,
   streamStartTime?: number,
-  platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual'
+  platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual'
 ): Promise<{ sessionId: string; projectId: string }> {
   const db = await getDatabase();
   const id = generateId();
@@ -483,7 +483,7 @@ export async function updateSegmentStatus(
 export async function createLivestreamClipProject(
   displayName: string,
   mintId: string,
-  platform?: 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual'
+  platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual'
 ): Promise<string> {
   // Format date as YYYY-MM-DD
   const date = new Date();

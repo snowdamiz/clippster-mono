@@ -81,6 +81,12 @@ export interface OrganizationResult {
   organization_id?: string
   transactions?: any[]
   total?: number
+  allocation?: {
+    hours_allocated: string
+    hours_used: string
+    allow_pool_fallback: boolean
+  }
+  org_pool_remaining?: string
 }
 
 export interface AuthActions {

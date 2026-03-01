@@ -3,6 +3,8 @@ import { useParams } from 'react-router-dom'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { HubToolSection, type HubTool } from '@/components/dashboard/HubToolSection'
 import { useOrganization } from '@/hooks/useOrganization'
+import { OrganizationSelector } from '@/components/dashboard/OrganizationSelector'
+import { useOrganizationSelector } from '@/hooks/useOrganizationSelector'
 import {
   Building2,
   Users,
@@ -78,6 +80,7 @@ export function OrgHub() {
     assetsLoaded,
     loadOrgAssets,
   } = useOrganization()
+  const { hasMultipleOrgs } = useOrganizationSelector()
   const [unreadMessages, setUnreadMessages] = useState(0)
 
   useEffect(() => {
@@ -137,6 +140,7 @@ export function OrgHub() {
       description: 'Run and track clipping campaigns',
       icon: Target,
       route: `/dashboard/org/${id}/campaigns`,
+      comingSoon: true,
     },
     {
       id: 'clippers',
@@ -226,7 +230,8 @@ export function OrgHub() {
   return (
     <PageLayout
       icon={Building2}
-      title={organization?.name || 'Organization'}
+      title={!hasMultipleOrgs ? (organization?.name || 'Organization') : undefined}
+      titleComponent={hasMultipleOrgs ? <OrganizationSelector /> : undefined}
       badge={roleBadge}
       actions={headerActions}
     >

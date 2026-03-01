@@ -24,12 +24,12 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  messagingStore.cleanup();
+  messagingStore.cleanupPageOnly();
 });
 
 watch(() => props.organizationId, async (newOrgId) => {
   if (newOrgId && authStore.isAuthenticated) {
-    messagingStore.cleanup();
+    messagingStore.cleanupPageOnly();
     await messagingStore.initialize(newOrgId);
   }
 });

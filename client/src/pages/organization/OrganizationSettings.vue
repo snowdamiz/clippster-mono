@@ -6,6 +6,9 @@
     :icon="Settings"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Settings' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <template #actions>
       <button
         v-if="hasChanges"
@@ -461,6 +464,7 @@
     Upload,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import { useOrganization } from '@/composables/useOrganization';
 
   const { organization, isOwner, updateOrganization, deleteOrganization, uploadLogo } = useOrganization();
@@ -541,7 +545,8 @@
       editData.value.restriction_defaults.allow_clip_deletion !== (orgRestrictionDefaults.allow_clip_deletion === true) ||
       editData.value.restriction_defaults.allow_hiring_browse !== (orgRestrictionDefaults.allow_hiring_browse !== false) ||
       editData.value.restriction_defaults.force_org_watermark !== (orgRestrictionDefaults.force_org_watermark !== false) ||
-      editData.value.restriction_defaults.require_clip_approval !== (orgRestrictionDefaults.require_clip_approval === true);
+      editData.value.restriction_defaults.require_clip_approval !== (orgRestrictionDefaults.require_clip_approval === true) ||
+      editData.value.restriction_defaults.clips_visible_to_admins !== (orgRestrictionDefaults.clips_visible_to_admins !== false);
     
     return (
       editData.value.name !== organization.value.name ||

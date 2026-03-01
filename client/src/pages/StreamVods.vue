@@ -1,7 +1,7 @@
 <template>
   <div class="streamvods">
     <PageLayout
-      title="Stream VODs"
+      title="Search VODs"
       description="Download VODs from your favorite streaming platforms"
       :show-header="true"
       :icon="Video"
@@ -53,7 +53,7 @@
                   <span class="streamvods-recent__name">
                     <template v-if="search.symbol">{{ search.symbol }}</template>
                     <template v-else-if="search.label">{{ search.label }}</template>
-                    <template v-else>{{ truncateId(search.id) }}</template>
+                    <template v-else>{{ getCleanChannelName(search.id, search.platform) }}</template>
                   </span>
                   <span class="streamvods-recent__detail">
                     <template v-if="search.name">{{ search.name }}</template>
@@ -98,11 +98,25 @@
                 <img src="/twitch.svg" class="streamvods-search__platform-icon" />
               </div>
               <div
-                v-else-if="detectedPlatform === 'youtube'"
+                v-else-if="detectedPlatform === 'YouTube'"
                 class="streamvods-search__platform streamvods-search__platform--youtube"
                 key="yt"
               >
                 <img src="/youtube.svg" class="streamvods-search__platform-icon" />
+              </div>
+              <div
+                v-else-if="detectedPlatform === 'rumble'"
+                class="streamvods-search__platform streamvods-search__platform--rumble"
+                key="rumble"
+              >
+                <img src="/rumble.svg" class="streamvods-search__platform-icon" />
+              </div>
+              <div
+                v-else-if="detectedPlatform === 'twitter'"
+                class="streamvods-search__platform streamvods-search__platform--twitter"
+                key="twitter"
+              >
+                <img src="/x.svg" class="streamvods-search__platform-icon" />
               </div>
               <Search v-else class="streamvods-search__icon" key="search" />
             </transition>
@@ -130,6 +144,42 @@
         class="streamvods__content"
         :class="{ 'streamvods__content--empty': platformStore.clips.length === 0 && !platformStore.loading }"
       >
+        <!-- YouTube Tabs -->
+        <div v-if="detectedPlatform === 'YouTube' && (platformStore.clips.length > 0 || platformStore.loading)" class="streamvods__youtube-tabs">
+          <button
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': youtubeTab === 'streams' }]"
+            @click="switchYouTubeTab('streams')"
+            :disabled="platformStore.loading"
+          >
+            Live Streams
+          </button>
+          <button
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': youtubeTab === 'videos' }]"
+            @click="switchYouTubeTab('videos')"
+            :disabled="platformStore.loading"
+          >
+            Videos
+          </button>
+        </div>
+
+        <!-- Rumble Tabs -->
+        <div v-if="detectedPlatform === 'rumble' && (platformStore.clips.length > 0 || platformStore.loading)" class="streamvods__youtube-tabs">
+          <button
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': rumbleTab === 'streams' }]"
+            @click="switchRumbleTab('streams')"
+            :disabled="platformStore.loading"
+          >
+            Live Streams
+          </button>
+          <button
+            :class="['streamvods__youtube-tab', { 'streamvods__youtube-tab--active': rumbleTab === 'videos' }]"
+            @click="switchRumbleTab('videos')"
+            :disabled="platformStore.loading"
+          >
+            Videos
+          </button>
+        </div>
+
         <!-- Page Heading -->
         <div v-if="platformStore.clips.length > 0 || platformStore.loading" class="streamvods__heading">
           <h1 class="streamvods__title">Stream VOD Library</h1>
@@ -233,7 +283,7 @@
                 <span v-if="detectedPlatform" class="vod-card__badge" :class="`vod-card__badge--${detectedPlatform}`">
                   <img :src="getPlatformIcon(detectedPlatform)" class="vod-card__badge-icon" />
                 </span>
-                <span class="vod-card__badge vod-card__badge--duration">
+                <span v-if="clip.duration !== undefined && clip.duration > 0" class="vod-card__badge vod-card__badge--duration">
                   <Clock class="vod-card__badge-icon-svg" />
                   {{ formatDuration(clip.duration) }}
                 </span>
@@ -255,6 +305,10 @@
               <div class="vod-card__bottom">
                 <h3 class="vod-card__name" :title="clip.title">{{ clip.title }}</h3>
                 <div class="vod-card__meta">
+                  <template v-if="clip.uploader">
+                    <span>{{ clip.uploader }}</span>
+                    <span class="vod-card__meta-dot"></span>
+                  </template>
                   <span>{{ clip.createdAt ? formatAbsoluteDate(clip.createdAt) : 'No timestamp' }}</span>
                   <template v-if="clip.createdAt">
                     <span class="vod-card__meta-dot"></span>
@@ -449,6 +503,8 @@
   import { platformConfigs, type PlatformId } from '@/config/platforms';
   import { extractMintId } from '@/services/pumpfun';
   import { extractChannelSlug } from '@/services/kick';
+  import { extractRumbleChannel } from '@/services/rumble';
+  import { extractYouTubeChannel } from '@/services/youtube';
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
   import { getNextSegmentNumber, getDownloadedVodIds } from '@/services/database';
@@ -492,6 +548,12 @@
   // Auto-detected platform from input
   const detectedPlatform = ref<PlatformId | null>(null);
   const currentPlatformConfig = computed(() => platformConfigs[detectedPlatform.value || platformStore.activePlatform]);
+  
+  // YouTube tab state (Live Streams vs Videos)
+  const youtubeTab = ref<'streams' | 'videos'>('streams');
+  
+  // Rumble tab state (Live Streams vs Videos)
+  const rumbleTab = ref<'streams' | 'videos'>('streams');
 
   function detectPlatform() {
     const val = searchInput.value?.trim();
@@ -511,7 +573,7 @@
 
     // Check for YouTube
     if (lowerVal.includes('youtube.com') || lowerVal.includes('youtu.be')) {
-      detectedPlatform.value = 'youtube';
+      detectedPlatform.value = 'YouTube';
       return;
     }
 
@@ -524,6 +586,19 @@
     // Check for Kick URLs
     if (lowerVal.includes('kick.com')) {
       detectedPlatform.value = 'kick';
+      return;
+    }
+
+    // Check for Rumble
+    if (lowerVal.includes('rumble.com')) {
+      detectedPlatform.value = 'rumble';
+      return;
+    }
+
+    // Check for X/Twitter (requires exact broadcast/space URL)
+    if ((lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) && 
+        (lowerVal.includes('/i/broadcasts/') || lowerVal.includes('/i/spaces/'))) {
+      detectedPlatform.value = 'twitter';
       return;
     }
 
@@ -570,7 +645,7 @@
 
     if (queryPlatform && querySearch) {
       // Set the platform and search from query params
-      const validPlatforms = ['pumpfun', 'kick', 'twitch', 'youtube'] as const;
+      const validPlatforms = ['pumpfun', 'kick', 'twitch', 'YouTube', 'rumble', 'twitter'] as const;
       if (validPlatforms.includes(queryPlatform as any)) {
         detectedPlatform.value = queryPlatform as PlatformId;
         searchInput.value = querySearch;
@@ -589,7 +664,14 @@
       detectedPlatform.value = platformStore.activePlatform;
       // Restore the search input to show what's currently loaded
       if (platformStore.currentSearchId) {
-        searchInput.value = platformStore.currentSearchId;
+        // Clean up the display for Rumble and YouTube
+        let displayValue = platformStore.currentSearchId;
+        if (platformStore.activePlatform === 'rumble') {
+          displayValue = displayValue.replace(/^(c\/|user\/)/, '');
+        } else if (platformStore.activePlatform === 'YouTube') {
+          displayValue = displayValue.replace(/^@/, '');
+        }
+        searchInput.value = displayValue;
       }
     }
   });
@@ -642,7 +724,9 @@
       pumpfun: '/capsule.svg',
       kick: '/kick.svg',
       twitch: '/twitch.svg',
-      youtube: '/youtube.svg',
+      YouTube: '/youtube.svg',
+      rumble: '/rumble.svg',
+      twitter: '/x.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -652,7 +736,9 @@
       pumpfun: 'PumpFun',
       kick: 'Kick',
       twitch: 'Twitch',
-      youtube: 'YouTube',
+      YouTube: 'YouTube',
+      rumble: 'Rumble',
+      twitter: 'X (Twitter)',
     };
     return names[platform] || platform;
   }
@@ -660,6 +746,26 @@
   function getPlatformFallbackIcon(_platform: PlatformId) {
     // Return a component or default to Clock
     return Clock;
+  }
+
+  function getCleanChannelName(id: string, platform: PlatformId): string {
+    // Clean up channel names for display
+    if (platform === 'rumble') {
+      // Remove 'c/' or 'user/' prefix from Rumble channels
+      if (id.startsWith('c/')) {
+        return id.substring(2);
+      }
+      if (id.startsWith('user/')) {
+        return id.substring(5);
+      }
+    }
+    if (platform === 'YouTube') {
+      // Remove '@' prefix from YouTube handles if present
+      if (id.startsWith('@')) {
+        return id.substring(1);
+      }
+    }
+    return truncateId(id);
   }
 
   const formatDuration = (duration?: number) => {
@@ -723,6 +829,66 @@
     handleSearch();
   }
 
+  // Switch YouTube tab and refetch content
+  async function switchYouTubeTab(tab: 'streams' | 'videos') {
+    if (youtubeTab.value === tab || platformStore.loading) return;
+    
+    console.log('[StreamVods] Switching YouTube tab to:', tab);
+    youtubeTab.value = tab;
+    
+    // Refetch with the new tab
+    const input = searchInput.value.trim();
+    if (input && detectedPlatform.value === 'YouTube') {
+      // Ensure platform is set before searching
+      platformStore.setActivePlatform('YouTube');
+      
+      try {
+        console.log('[StreamVods] Calling searchClips with tab:', youtubeTab.value);
+        const result = await platformStore.searchClips(input, 20, youtubeTab.value);
+        if (result.success) {
+          await loadDownloadedVodIds();
+          if (result.total === 0) {
+            showError('No Content Found', `No ${tab === 'streams' ? 'live streams' : 'videos'} found for this channel`);
+          }
+        } else {
+          showError('Search Failed', result.error || 'Failed to fetch content');
+        }
+      } catch (err) {
+        showError('Error', err instanceof Error ? err.message : 'An unexpected error occurred');
+      }
+    }
+  }
+
+  // Switch Rumble tab and refetch content
+  async function switchRumbleTab(tab: 'streams' | 'videos') {
+    if (rumbleTab.value === tab || platformStore.loading) return;
+    
+    console.log('[StreamVods] Switching Rumble tab to:', tab);
+    rumbleTab.value = tab;
+    
+    // Refetch with the new tab
+    const input = searchInput.value.trim();
+    if (input && detectedPlatform.value === 'rumble') {
+      // Ensure platform is set before searching
+      platformStore.setActivePlatform('rumble');
+      
+      try {
+        console.log('[StreamVods] Calling searchClips with tab:', rumbleTab.value);
+        const result = await platformStore.searchClips(input, 20, rumbleTab.value);
+        if (result.success) {
+          await loadDownloadedVodIds();
+          if (result.total === 0) {
+            showError('No Content Found', `No ${tab === 'streams' ? 'live streams' : 'videos'} found for this channel`);
+          }
+        } else {
+          showError('Search Failed', result.error || 'Failed to fetch content');
+        }
+      } catch (err) {
+        showError('Error', err instanceof Error ? err.message : 'An unexpected error occurred');
+      }
+    }
+  }
+
   async function handleSearch() {
     const input = searchInput.value.trim();
     if (!input) {
@@ -744,7 +910,7 @@
     if (!detectedPlatform.value) {
       showError(
         'Unknown Platform',
-        'Could not detect the platform. Please enter a valid PumpFun link/mint ID, Kick link/username, or Twitch link/channel name.'
+        'Could not detect the platform. Please enter a valid link or username from PumpFun, Kick, Twitch, YouTube, Rumble, or X/Twitter (broadcast/space URLs only).'
       );
       return;
     }
@@ -759,11 +925,25 @@
       return;
     }
 
+    // Reset YouTube tab to streams (default) when doing a new search
+    if (detectedPlatform.value === 'YouTube') {
+      youtubeTab.value = 'streams';
+    }
+
+    // Reset Rumble tab to streams (default) when doing a new search
+    if (detectedPlatform.value === 'rumble') {
+      rumbleTab.value = 'streams';
+    }
+
     // Set the active platform in the store
     platformStore.setActivePlatform(detectedPlatform.value);
 
     try {
-      const result = await platformStore.searchClips(input, 20);
+      // Pass tab parameter for YouTube and Rumble
+      const tabParam = detectedPlatform.value === 'YouTube' ? youtubeTab.value 
+                     : detectedPlatform.value === 'rumble' ? rumbleTab.value 
+                     : undefined;
+      const result = await platformStore.searchClips(input, 20, tabParam);
       if (result.success) {
         // Reload downloaded VOD IDs after search to ensure we have latest data
         await loadDownloadedVodIds();
@@ -869,7 +1049,7 @@
         try {
           // Try local profiles first
           const localProfile = await getCreatorProfileByPlatformId(
-            detectedPlatform.value,
+            detectedPlatform.value as any,
             platformStore.currentSearchId
           );
           if (localProfile?.watermark_id && localProfile?.watermark_settings) {
@@ -910,6 +1090,14 @@
                     // Try to extract mint ID from URL if it's a full URL
                     const extractedMint = extractMintId(storedId);
                     if (extractedMint) storedId = extractedMint;
+                  } else if (link.platform === 'rumble') {
+                    // Try to extract channel name from URL if it's a full URL
+                    const extractedChannel = extractRumbleChannel(storedId);
+                    if (extractedChannel) storedId = extractedChannel;
+                  } else if (link.platform === 'YouTube') {
+                    // Try to extract channel ID from URL if it's a full URL
+                    const extractedChannel = extractYouTubeChannel(storedId);
+                    if (extractedChannel) storedId = extractedChannel;
                   }
 
                   return storedId.toLowerCase() === platformStore.currentSearchId.toLowerCase();
@@ -965,13 +1153,18 @@
         clip.title,
         videoUrl,
         platformStore.currentSearchId,
-        segmentRange,
+        selectedTimeRange.value.startTime > 0 || selectedTimeRange.value.endTime < clip.duration!
+          ? {
+              startTime: selectedTimeRange.value.startTime,
+              endTime: selectedTimeRange.value.endTime,
+            }
+          : undefined,
         clip.clipId,
         clip.duration,
         {
-          autoSegment: shouldAutoSegment,
+          autoSegment: autoSegment.value,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: currentPlatformConfig.value.provider as 'pumpfun' | 'kick' | 'twitch',
+          provider: detectedPlatform.value === 'kick' ? 'kick' : detectedPlatform.value === 'twitch' ? 'twitch' : detectedPlatform.value === 'YouTube' ? 'YouTube' : detectedPlatform.value === 'rumble' ? 'rumble' : detectedPlatform.value === 'twitter' ? 'twitter' : 'pumpfun',
           creatorWatermarkSettings,
         }
       );
@@ -1062,6 +1255,50 @@
   .streamvods__content--empty {
     justify-content: center;
     align-items: center;
+  }
+
+  /* ===== YouTube Tabs ===== */
+  .streamvods__youtube-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    padding: 0.25rem;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    width: fit-content;
+  }
+
+  .streamvods__youtube-tab {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods__youtube-tab:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .streamvods__youtube-tab--active {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+  }
+
+  .streamvods__youtube-tab--active:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: white;
+  }
+
+  .streamvods__youtube-tab:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* ===== Page Heading ===== */

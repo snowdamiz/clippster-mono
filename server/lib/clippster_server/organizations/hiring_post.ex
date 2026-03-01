@@ -29,9 +29,19 @@ defmodule ClippsterServer.Organizations.HiringPost do
   def create_changeset(hiring_post, attrs) do
     hiring_post
     |> cast(attrs, [
-      :organization_id, :title, :description, :content_types, :languages,
-      :platforms, :payment_type, :payment_details, :streamer_count,
-      :clipper_slots, :experience_level, :status, :is_public
+      :organization_id,
+      :title,
+      :description,
+      :content_types,
+      :languages,
+      :platforms,
+      :payment_type,
+      :payment_details,
+      :streamer_count,
+      :clipper_slots,
+      :experience_level,
+      :status,
+      :is_public
     ])
     |> nilify_blank(:payment_type)
     |> nilify_blank(:experience_level)
@@ -49,9 +59,18 @@ defmodule ClippsterServer.Organizations.HiringPost do
   def update_changeset(hiring_post, attrs) do
     hiring_post
     |> cast(attrs, [
-      :title, :description, :content_types, :languages, :platforms,
-      :payment_type, :payment_details, :streamer_count, :clipper_slots,
-      :experience_level, :status, :is_public
+      :title,
+      :description,
+      :content_types,
+      :languages,
+      :platforms,
+      :payment_type,
+      :payment_details,
+      :streamer_count,
+      :clipper_slots,
+      :experience_level,
+      :status,
+      :is_public
     ])
     |> nilify_blank(:payment_type)
     |> nilify_blank(:experience_level)

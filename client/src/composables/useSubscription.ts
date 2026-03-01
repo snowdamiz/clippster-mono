@@ -140,7 +140,10 @@ export function useSubscription() {
     error.value = null;
 
     try {
-      const response = await api.post('/subscription/checkout', { tier });
+      const response = await api.post('/subscription/checkout', {
+        tier,
+        return_context: 'desktop',
+      });
 
       if (response.data.success) {
         return { success: true, url: response.data.url };

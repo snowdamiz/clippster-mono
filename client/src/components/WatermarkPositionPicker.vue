@@ -223,6 +223,23 @@
                   <div class="text-[var(--sidebar-accent)] text-xs">Loading...</div>
                 </div>
 
+                <!-- Overlays preview (rendered behind watermark) -->
+                <template v-if="overlays && overlays.length > 0">
+                  <div
+                    v-for="ovl in overlays"
+                    :key="ovl.id"
+                    v-show="ovl.perRatioSettings?.[currentAspectRatio]"
+                    class="absolute pointer-events-none"
+                    :style="getOverlayStyle(ovl)"
+                  >
+                    <MediaPreview
+                      :src="overlayPreviews?.[ovl.id] || ''"
+                      class-name="drop-shadow-lg select-none max-w-full max-h-full object-contain"
+                      :style="{ opacity: (ovl.perRatioSettings?.[currentAspectRatio]?.opacity ?? 100) / 100 }"
+                    />
+                  </div>
+                </template>
+
                 <!-- Watermark preview -->
                 <div
                   v-if="watermarkDataUrl && enabledRatios[currentAspectRatio]"
@@ -362,6 +379,7 @@
 </template>
 
 <script setup lang="ts">
+  defineOptions({ inheritAttrs: false });
   import { ref, computed, watch, reactive, onUnmounted } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import {
@@ -416,6 +434,8 @@
     watermarkHeight?: number | null;
     settings?: CreatorWatermarkSettings;
     readOnly?: boolean;
+    overlays?: Array<any>; // Layout overlays to render in background
+    overlayPreviews?: Record<string, string>; // Overlay preview URLs
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -554,6 +574,32 @@
       aspectRatio: `${ar.width}/${ar.height}`,
     };
   });
+
+  // Computed overlay style for rendering overlays in watermark picker
+  function getOverlayStyle(overlay: any) {
+    const ratioSettings = overlay.perRatioSettings?.[currentAspectRatio.value];
+    if (!ratioSettings) return { display: 'none' };
+
+    const isFullFrame = ratioSettings.isFullFrameOverlay;
+    
+    if (isFullFrame) {
+      return {
+        left: '0%',
+        top: '0%',
+        transform: 'none',
+        width: '100%',
+        height: '100%',
+      };
+    }
+
+    return {
+      left: `${ratioSettings.x}%`,
+      top: `${ratioSettings.y}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${ratioSettings.scale}%`,
+      height: 'auto',
+    };
+  }
 
   // Computed watermark style
   const watermarkStyle = computed(() => {

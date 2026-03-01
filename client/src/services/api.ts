@@ -2,7 +2,7 @@ import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig, AxiosResp
 import { useAuthStore } from '../stores/auth';
 
 const getBaseUrl = () => {
-  let url = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+  let url = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : 'https://api.clippster.app/api');
 
   // Remove trailing slash if present
   if (url.endsWith('/')) {
@@ -15,6 +15,12 @@ const getBaseUrl = () => {
   }
 
   return url;
+};
+
+const isDesktopRuntime = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const candidate = window as unknown as Record<string, unknown>;
+  return '__TAURI_INTERNALS__' in candidate || '__TAURI__' in candidate;
 };
 
 const api: AxiosInstance = axios.create({
@@ -34,6 +40,11 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    if (isDesktopRuntime()) {
+      config.headers['X-Client-Platform'] = 'desktop';
+    }
+
     // Let the browser set Content-Type for FormData (needs multipart boundary)
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];

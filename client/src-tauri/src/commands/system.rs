@@ -1,7 +1,8 @@
 use once_cell::sync::Lazy;
 use std::sync::{Arc, Mutex};
 
-static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> = Lazy::new(|| Arc::new(Mutex::new(false)));
+static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> =
+    Lazy::new(|| Arc::new(Mutex::new(false)));
 
 /// Greets the user with a personalized message
 ///

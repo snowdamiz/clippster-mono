@@ -2,6 +2,8 @@ import { useEffect, useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useOrganization } from '@/hooks/useOrganization'
+import { OrganizationSelector } from '@/components/dashboard/OrganizationSelector'
+import { useOrganizationSelector } from '@/hooks/useOrganizationSelector'
 
 import { Skeleton } from '@/components/ui/Skeleton'
 import { InviteMemberDialog } from '@/components/organization/InviteMemberDialog'
@@ -32,6 +34,7 @@ import {
 import type { OrganizationMember, OrganizationInvitation } from '@/types/organization'
 
 export function OrgMembers() {
+  const { hasMultipleOrgs } = useOrganizationSelector()
   const {
     loading,
     members,
@@ -237,7 +240,8 @@ export function OrgMembers() {
   return (
     <PageLayout
       icon={Users}
-      title="Members"
+      title={!hasMultipleOrgs ? "Members" : undefined}
+      titleComponent={hasMultipleOrgs ? <OrganizationSelector /> : undefined}
       description="Manage team members and invitations"
       actions={
         isAdmin && (

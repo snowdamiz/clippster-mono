@@ -6,9 +6,11 @@ defmodule ClippsterServer.Repo.Migrations.CreateProcessingJobs do
       add :user_id, references(:users, on_delete: :restrict), null: false
       add :video_duration_hours, :decimal, precision: 10, scale: 2, null: false
       add :credits_deducted, :decimal, precision: 10, scale: 2, null: false
-      add :status, :string, null: false # 'processing', 'completed', 'failed'
+      # 'processing', 'completed', 'failed'
+      add :status, :string, null: false
       add :video_url, :text
-      add :result_data, :map # JSONB for clip results
+      # JSONB for clip results
+      add :result_data, :map
 
       timestamps(type: :utc_datetime)
     end

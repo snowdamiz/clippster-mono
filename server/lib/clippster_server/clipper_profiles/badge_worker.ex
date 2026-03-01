@@ -52,7 +52,7 @@ defmodule ClippsterServer.ClipperProfiles.BadgeWorker do
   """
   def check_all_badges do
     profiles = ClipperProfiles.list_all_profiles()
-    
+
     Enum.each(profiles, fn profile ->
       check_badges_for_profile(profile)
     end)
@@ -96,6 +96,7 @@ defmodule ClippsterServer.ClipperProfiles.BadgeWorker do
           Logger.info("[BadgeWorker] Awarding top_clipper badge to profile #{profile.id}")
           ClipperProfiles.award_badge(profile.id, "top_clipper")
         end
+
       _ ->
         # Revoke if no longer in top 10
         if has_badge?(profile, "top_clipper") do
@@ -120,7 +121,10 @@ defmodule ClippsterServer.ClipperProfiles.BadgeWorker do
     else
       # Revoke if no longer eligible (profile is now > 3 months old)
       if has_badge?(profile, "rising_star") and not is_new do
-        Logger.info("[BadgeWorker] Revoking rising_star badge from profile #{profile.id} (no longer new)")
+        Logger.info(
+          "[BadgeWorker] Revoking rising_star badge from profile #{profile.id} (no longer new)"
+        )
+
         ClipperProfiles.revoke_badge(profile.id, "rising_star")
       end
     end

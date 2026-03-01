@@ -11,6 +11,7 @@ defmodule ClippsterServer.Accounts.User do
     field :provider_id, :string
     field :is_admin, :boolean, default: false
     field :is_moderator, :boolean, default: false
+    field :ai_editor_enabled, :boolean, default: false
 
     # Email auth fields
     field :password, :string, virtual: true
@@ -24,22 +25,28 @@ defmodule ClippsterServer.Accounts.User do
     field :password_reset_sent_at, :utc_datetime
 
     # Organization fields
-    field :account_type, :string  # "personal" | "organization" | nil (pending)
+    # "personal" | "organization" | nil (pending)
+    field :account_type, :string
     field :owned_organization_id, :integer
-    field :created_by_organization_id, :integer  # Set when account is created by an org admin
+    # Set when account is created by an org admin
+    field :created_by_organization_id, :integer
 
     # Beta activation
     field :beta_activated, :boolean, default: false
 
     # Subscription fields
-    field :subscription_status, :string, default: "none"  # none, active, cancelled, expired
-    field :subscription_tier, :string  # starter, creator, pro
+    # none, active, cancelled, expired
+    field :subscription_status, :string, default: "none"
+    # starter, creator, pro
+    field :subscription_tier, :string
     field :subscription_start_date, :utc_datetime
     field :subscription_end_date, :utc_datetime
-    field :subscription_renewal_method, :string  # stripe, crypto
+    # stripe, crypto
+    field :subscription_renewal_method, :string
     field :stripe_subscription_id, :string
     field :stripe_customer_id, :string
-    field :pending_subscription_tier, :string  # set when downgrading, applied at next renewal
+    # set when downgrading, applied at next renewal
+    field :pending_subscription_tier, :string
 
     # Affiliate referral tracking
     field :referred_by_affiliate_id, :integer
@@ -102,10 +109,19 @@ defmodule ClippsterServer.Accounts.User do
   """
   def oauth_changeset(user, attrs) do
     user
-    |> cast(attrs, [:email, :name, :avatar_url, :provider, :provider_id, :is_admin, :email_verified])
+    |> cast(attrs, [
+      :email,
+      :name,
+      :avatar_url,
+      :provider,
+      :provider_id,
+      :is_admin,
+      :email_verified
+    ])
     |> validate_required([:provider, :provider_id])
     |> validate_inclusion(:provider, ["google", "wallet", "email"])
-    |> put_change(:email_verified, true)  # OAuth users are automatically verified
+    # OAuth users are automatically verified
+    |> put_change(:email_verified, true)
     |> unique_constraint(:email)
     |> unique_constraint([:provider, :provider_id])
   end
@@ -333,7 +349,9 @@ defmodule ClippsterServer.Accounts.User do
 
   defp put_wallet_provider(changeset) do
     case get_change(changeset, :wallet_address) do
-      nil -> changeset
+      nil ->
+        changeset
+
       wallet_address ->
         changeset
         |> put_change(:provider, "wallet")
@@ -343,7 +361,9 @@ defmodule ClippsterServer.Accounts.User do
 
   defp put_email_provider_id(changeset) do
     case get_change(changeset, :email) do
-      nil -> changeset
+      nil ->
+        changeset
+
       email ->
         changeset
         |> put_change(:provider_id, email)
@@ -352,7 +372,9 @@ defmodule ClippsterServer.Accounts.User do
 
   defp validate_email(changeset) do
     changeset
-    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/, message: "must be a valid email address")
+    |> validate_format(:email, ~r/^[^\s]+@[^\s]+\.[^\s]+$/,
+      message: "must be a valid email address"
+    )
     |> validate_length(:email, max: 160)
   end
 
@@ -410,7 +432,12 @@ defmodule ClippsterServer.Accounts.User do
     user
     |> cast(attrs, @preference_fields)
     |> validate_inclusion(:time_format_preference, ["12hr", "24hr"])
-    |> validate_inclusion(:toast_position, ["top-right", "top-left", "bottom-right", "bottom-left"])
+    |> validate_inclusion(:toast_position, [
+      "top-right",
+      "top-left",
+      "bottom-right",
+      "bottom-left"
+    ])
     |> validate_inclusion(:toast_duration, [3000, 5000, 7000, 10000, 0])
   end
 end

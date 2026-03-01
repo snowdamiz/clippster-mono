@@ -3,7 +3,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { setCurrentUserId, clearCurrentUserId } from '../services/database/core';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+function normalizeApiOrigin(value) {
+  const trimmed = value.endsWith('/') ? value.slice(0, -1) : value;
+  return trimmed.toLowerCase().endsWith('/api') ? trimmed.slice(0, -4) : trimmed;
+}
+
+const API_BASE = normalizeApiOrigin(import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app'));
 
 // Lazy load api to avoid circular dependency (api.ts imports useAuthStore)
 let apiInstance = null;
@@ -112,7 +117,7 @@ export const useAuthStore = defineStore('auth', {
 
       try {
         // Open wallet auth in browser, passing the API base URL
-        const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+        const apiBase = API_BASE;
         await invoke('open_wallet_auth_window', { apiBase });
 
         // Listen for auth result via Tauri event or polling
@@ -220,9 +225,10 @@ export const useAuthStore = defineStore('auth', {
 
       try {
         // Open Google OAuth in browser via Tauri, passing referral code if present
-        const googleApiBase = referralCode
-          ? `${API_BASE}?referral_code=${encodeURIComponent(referralCode)}`
-          : API_BASE;
+        const referralQuery = referralCode
+          ? `?referral_code=${encodeURIComponent(referralCode)}`
+          : '';
+        const googleApiBase = `${API_BASE}${referralQuery}`;
         await invoke('open_google_auth_window', { apiBase: googleApiBase });
 
         // Listen for auth result via Tauri event or polling
@@ -772,7 +778,6 @@ export const useAuthStore = defineStore('auth', {
           const parsedUser = JSON.parse(userJson);
 
           // Verify token is still valid before setting authenticated state
-          const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
           const authController = new AbortController();
           const authTimeout = setTimeout(() => authController.abort(), 10_000);
           const response = await fetch(`${API_BASE}/api/auth/me`, {

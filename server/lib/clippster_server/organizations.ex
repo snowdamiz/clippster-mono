@@ -195,14 +195,16 @@ defmodule ClippsterServer.Organizations do
   @doc """
   Adds a user as a member to an organization.
   Enforces seat limits if organization has an active subscription.
+  Owner role bypasses seat limit checks.
   """
   def add_member(organization_id, user_id, role \\ "member") do
-    # Check seat limit
-    case ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id) do
-      {:error, :seat_limit_reached} ->
-        {:error, :seat_limit_reached}
+    IO.puts(
+      "[Organizations] add_member called: org_id=#{organization_id}, user_id=#{user_id}, role=#{role}"
+    )
 
-      {:ok, _} ->
+    # Skip seat limit check for owner role
+    if role == "owner" do
+      result =
         %OrganizationMember{}
         |> OrganizationMember.create_changeset(%{
           organization_id: organization_id,
@@ -210,6 +212,31 @@ defmodule ClippsterServer.Organizations do
           role: role
         })
         |> Repo.insert()
+
+      case result do
+        {:ok, member} ->
+          IO.puts("[Organizations] add_member SUCCESS: created member id=#{member.id}")
+          {:ok, member}
+
+        {:error, changeset} ->
+          IO.puts("[Organizations] add_member FAILED: #{inspect(changeset.errors)}")
+          {:error, changeset}
+      end
+    else
+      # Check seat limit for non-owner members
+      case ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id) do
+        {:error, :seat_limit_reached} ->
+          {:error, :seat_limit_reached}
+
+        {:ok, _} ->
+          %OrganizationMember{}
+          |> OrganizationMember.create_changeset(%{
+            organization_id: organization_id,
+            user_id: user_id,
+            role: role
+          })
+          |> Repo.insert()
+      end
     end
   end
 
@@ -260,18 +287,30 @@ defmodule ClippsterServer.Organizations do
   Gets a specific member record.
   """
   def get_member(organization_id, user_id) do
+    IO.puts(
+      "[Organizations] get_member called: org_id=#{inspect(organization_id)}, user_id=#{inspect(user_id)}"
+    )
+
     with org_id when is_integer(org_id) <- normalize_id(organization_id),
          user_id_int when is_integer(user_id_int) <- normalize_id(user_id) do
+      IO.puts("[Organizations] get_member normalized: org_id=#{org_id}, user_id=#{user_id_int}")
+
       case fetch_member(org_id, user_id_int) do
         nil ->
+          IO.puts("[Organizations] get_member: member not found, attempting backfill")
           maybe_backfill_owner_membership(org_id, user_id_int)
-          fetch_member(org_id, user_id_int)
+          result = fetch_member(org_id, user_id_int)
+          IO.puts("[Organizations] get_member after backfill: #{inspect(result)}")
+          result
 
         member ->
+          IO.puts("[Organizations] get_member: found member with role=#{member.role}")
           member
       end
     else
-      _ -> nil
+      _ ->
+        IO.puts("[Organizations] get_member: normalization failed")
+        nil
     end
   end
 
@@ -314,7 +353,13 @@ defmodule ClippsterServer.Organizations do
   Checks if a user is a member of an organization (any role).
   """
   def is_member?(organization_id, user_id) do
-    get_member(organization_id, user_id) != nil
+    result = get_member(organization_id, user_id) != nil
+
+    IO.puts(
+      "[Organizations] is_member? org_id=#{organization_id}, user_id=#{user_id} => #{result}"
+    )
+
+    result
   end
 
   defp fetch_member(organization_id, user_id) do
@@ -343,17 +388,37 @@ defmodule ClippsterServer.Organizations do
   end
 
   defp maybe_backfill_owner_membership(organization_id, user_id) do
+    IO.puts(
+      "[Organizations] maybe_backfill_owner_membership: org_id=#{organization_id}, user_id=#{user_id}"
+    )
+
     case Repo.get(Organization, organization_id) do
-      %Organization{owner_id: ^user_id} ->
+      %Organization{owner_id: ^user_id} = org ->
+        IO.puts(
+          "[Organizations] User #{user_id} IS the owner of org #{organization_id} (owner_id=#{org.owner_id}), backfilling..."
+        )
+
         ensure_owner_membership(organization_id, user_id)
 
-      _ ->
+      %Organization{owner_id: actual_owner_id} ->
+        IO.puts(
+          "[Organizations] User #{user_id} is NOT the owner of org #{organization_id} (owner_id=#{inspect(actual_owner_id)})"
+        )
+
+        :ok
+
+      nil ->
+        IO.puts("[Organizations] Organization #{organization_id} not found!")
         :ok
     end
   end
 
   defp ensure_owner_membership(organization_id, owner_id) do
     if is_nil(fetch_member(organization_id, owner_id)) do
+      IO.puts(
+        "[Organizations] ensure_owner_membership: inserting member for org=#{organization_id}, user=#{owner_id}"
+      )
+
       %OrganizationMember{}
       |> OrganizationMember.create_changeset(%{
         organization_id: organization_id,
@@ -365,10 +430,20 @@ defmodule ClippsterServer.Organizations do
         conflict_target: [:organization_id, :user_id]
       )
       |> case do
-        {:ok, _} -> :ok
-        {:error, _} -> :ok
+        {:ok, member} ->
+          IO.puts("[Organizations] ensure_owner_membership SUCCESS: member id=#{member.id}")
+          :ok
+
+        {:error, changeset} ->
+          IO.puts("[Organizations] ensure_owner_membership FAILED: #{inspect(changeset.errors)}")
+          IO.puts("[Organizations] ensure_owner_membership changeset: #{inspect(changeset)}")
+          :ok
       end
     else
+      IO.puts(
+        "[Organizations] ensure_owner_membership: member already exists for org=#{organization_id}, user=#{owner_id}"
+      )
+
       :ok
     end
   end
@@ -415,11 +490,8 @@ defmodule ClippsterServer.Organizations do
     with {:ok, _} <- verify_admin(organization_id, inviter.id),
          {:ok, _} <- ClippsterServer.OrganizationSubscriptions.can_add_member?(organization_id),
          organization when not is_nil(organization) <- get_organization(organization_id),
-         nil <-
-           Accounts.get_user_by_email(email)
-           |> then(fn user ->
-             if user && is_member?(organization_id, user.id), do: :already_member, else: nil
-           end),
+         user when not is_nil(user) <- Accounts.get_user_by_email(email),
+         false <- is_member?(organization_id, user.id),
          nil <- get_pending_invitation(organization_id, email) do
       # Generate plain token first
       plain_token = OrganizationInvitation.generate_token()
@@ -455,8 +527,8 @@ defmodule ClippsterServer.Organizations do
           {:error, changeset}
       end
     else
-      nil -> {:error, :organization_not_found}
-      :already_member -> {:error, :already_member}
+      nil -> {:error, :user_not_found}
+      true -> {:error, :already_member}
       %OrganizationInvitation{} -> {:error, :invitation_pending}
       {:error, :seat_limit_reached} -> {:error, :seat_limit_reached}
       {:error, reason} -> {:error, reason}
@@ -509,32 +581,44 @@ defmodule ClippsterServer.Organizations do
 
       is_member?(invitation.organization_id, user.id) ->
         # Already a member, just mark invitation as accepted
-        invitation
-        |> OrganizationInvitation.accept_changeset()
-        |> Repo.update()
+        case invitation
+             |> OrganizationInvitation.accept_changeset()
+             |> Repo.update() do
+          {:ok, updated_invitation} ->
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
 
       true ->
-        Repo.transaction(fn ->
-          # Add as member
-          {:ok, _member} = add_member(invitation.organization_id, user.id, invitation.role)
+        case Repo.transaction(fn ->
+               # Add as member
+               {:ok, _member} = add_member(invitation.organization_id, user.id, invitation.role)
 
-          # Initialize credit allocation
-          {:ok, _allocation} =
-            %MemberCreditAllocation{}
-            |> MemberCreditAllocation.changeset(%{
-              organization_id: invitation.organization_id,
-              user_id: user.id
-            })
-            |> Repo.insert()
+               # Initialize credit allocation
+               {:ok, _allocation} =
+                 %MemberCreditAllocation{}
+                 |> MemberCreditAllocation.changeset(%{
+                   organization_id: invitation.organization_id,
+                   user_id: user.id
+                 })
+                 |> Repo.insert()
 
-          # Mark invitation as accepted
-          {:ok, updated_invitation} =
-            invitation
-            |> OrganizationInvitation.accept_changeset()
-            |> Repo.update()
+               # Mark invitation as accepted
+               {:ok, updated_invitation} =
+                 invitation
+                 |> OrganizationInvitation.accept_changeset()
+                 |> Repo.update()
 
-          updated_invitation
-        end)
+               updated_invitation
+             end) do
+          {:ok, updated_invitation} ->
+            {:ok, Repo.preload(updated_invitation, [:organization, :invited_by_user])}
+
+          error ->
+            error
+        end
     end
   end
 
@@ -962,49 +1046,51 @@ defmodule ClippsterServer.Organizations do
 
   @doc """
   Deducts credits from a member's org allocation.
-  If allow_pool_fallback is true and member allocation is insufficient,
-  will try to deduct from org pool directly.
+  If member has allow_pool_fallback enabled and allocation is insufficient,
+  will deduct from org pool and track usage on member.
   """
-  def deduct_member_credits(organization_id, user_id, hours, allow_pool_fallback \\ false) do
+  def deduct_member_credits(organization_id, user_id, hours) do
     allocation = get_member_allocation(organization_id, user_id)
 
     case MemberCreditAllocation.deduct_hours_changeset(allocation, hours) do
       {:ok, changeset} ->
         changeset |> Repo.update()
 
-      {:error, :insufficient_allocation} when allow_pool_fallback ->
-        # Try to deduct from org pool directly but still track user usage
-        case Repo.get(OrganizationCredit, organization_id) do
-          nil ->
-            {:error, :insufficient_credits}
-
-          org_credit ->
-            hours_decimal = Decimal.new(to_string(hours))
-            # Check org pool has enough
-            if Decimal.compare(org_credit.hours_remaining, hours_decimal) == :lt do
+      {:error, :insufficient_allocation} ->
+        # Check if this member has pool fallback enabled
+        if allocation && allocation.allow_pool_fallback do
+          # Try to deduct from org pool directly but still track user usage
+          case Repo.get(OrganizationCredit, organization_id) do
+            nil ->
               {:error, :insufficient_credits}
-            else
-              # Deduct from org pool AND track the usage for this user
-              Repo.transaction(fn ->
-                {:ok, _updated_credit} =
-                  org_credit
-                  |> OrganizationCredit.deduct_hours_changeset(hours)
-                  |> Repo.update()
 
-                # Get or create allocation for tracking usage (even if no hours allocated)
-                member_allocation = get_or_create_member_allocation(organization_id, user_id)
+            org_credit ->
+              hours_decimal = Decimal.new(to_string(hours))
+              # Check org pool has enough
+              if Decimal.compare(org_credit.hours_remaining, hours_decimal) == :lt do
+                {:error, :insufficient_credits}
+              else
+                # Deduct from org pool AND track the usage for this user
+                Repo.transaction(fn ->
+                  {:ok, _updated_credit} =
+                    org_credit
+                    |> OrganizationCredit.deduct_hours_changeset(hours)
+                    |> Repo.update()
 
-                # Track the usage (this may result in negative remaining, but that's ok for tracking)
-                new_used = Decimal.add(member_allocation.hours_used, hours_decimal)
+                  # Track the usage (this may result in negative remaining, but that's ok for tracking)
+                  new_used = Decimal.add(allocation.hours_used, hours_decimal)
 
-                {:ok, updated_allocation} =
-                  member_allocation
-                  |> Ecto.Changeset.change(hours_used: new_used)
-                  |> Repo.update()
+                  {:ok, updated_allocation} =
+                    allocation
+                    |> Ecto.Changeset.change(hours_used: new_used)
+                    |> Repo.update()
 
-                updated_allocation
-              end)
-            end
+                  updated_allocation
+                end)
+              end
+          end
+        else
+          {:error, :insufficient_credits}
         end
 
       {:error, reason} ->

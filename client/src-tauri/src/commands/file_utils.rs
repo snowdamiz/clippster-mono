@@ -28,8 +28,8 @@ pub async fn get_file_info(path: String) -> Result<FileInfo, String> {
         return Err(format!("File does not exist: {}", path));
     }
 
-    let metadata = std::fs::metadata(p)
-        .map_err(|e| format!("Failed to read file metadata: {}", e))?;
+    let metadata =
+        std::fs::metadata(p).map_err(|e| format!("Failed to read file metadata: {}", e))?;
 
     let name = p
         .file_name()
@@ -93,15 +93,19 @@ pub async fn generate_video_thumbnail(
         return Err(format!("Video file does not exist: {}", video_path));
     }
 
-    let paths = storage::init_storage_dirs()
-        .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+    let paths =
+        storage::init_storage_dirs().map_err(|e| format!("Failed to get storage paths: {}", e))?;
     let thumb_dir = paths.temp.join("thumbnails");
     std::fs::create_dir_all(&thumb_dir)
         .map_err(|e| format!("Failed to create thumbnail dir: {}", e))?;
 
     // Generate a unique filename based on source path hash + timestamp
     let hash = simple_hash(&video_path);
-    let thumb_path = thumb_dir.join(format!("thumb_{}_{}.png", hash, (timestamp * 1000.0) as u64));
+    let thumb_path = thumb_dir.join(format!(
+        "thumb_{}_{}.png",
+        hash,
+        (timestamp * 1000.0) as u64
+    ));
 
     // Return existing thumbnail if it exists
     if thumb_path.exists() {

@@ -39,12 +39,14 @@ defmodule ClippsterServer.ClipperProfiles.ResponseTimeWorker do
   """
   def calculate_all_response_times do
     profiles = ClipperProfiles.list_all_profiles()
-    
+
     Enum.each(profiles, fn profile ->
       calculate_response_time_for_profile(profile)
     end)
 
-    Logger.info("[ResponseTimeWorker] Finished calculating response times for #{length(profiles)} profiles")
+    Logger.info(
+      "[ResponseTimeWorker] Finished calculating response times for #{length(profiles)} profiles"
+    )
   end
 
   @doc """

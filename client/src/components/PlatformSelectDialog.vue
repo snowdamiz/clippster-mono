@@ -90,14 +90,17 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
-  import { Instagram, Share2, ChevronRight, X } from 'lucide-vue-next';
+  import { Instagram, Youtube, Share2, ChevronRight, X } from 'lucide-vue-next';
   import XLogo from '@/components/icons/XLogo.vue';
+  import TiktokLogo from '@/components/icons/TiktokLogo.vue';
   import { useAuthStore } from '@/stores/auth';
   import { listUserInstagramAccounts } from '@/services/userInstagramApi';
   import { listUserTwitterAccounts } from '@/services/userTwitterApi';
+  import { listUserTiktokAccounts } from '@/services/userTiktokApi';
+  import { listUserYoutubeAccounts } from '@/services/userYoutubeApi';
   import { listSocialAccounts } from '@/services/socialAccountsApi';
 
-  type PlatformId = 'instagram' | 'twitter';
+  type PlatformId = 'instagram' | 'twitter' | 'tiktok' | 'youtube';
 
   interface PlatformOption {
     id: PlatformId;
@@ -120,7 +123,10 @@
   const loading = ref(false);
   const instagramCount = ref(0);
   const twitterCount = ref(0);
+  const tiktokCount = ref(0);
+  const youtubeCount = ref(0);
 
+  
   const availablePlatforms = computed((): PlatformOption[] => {
     const platforms: PlatformOption[] = [];
 
@@ -144,6 +150,26 @@
       });
     }
 
+    if (tiktokCount.value > 0) {
+      platforms.push({
+        id: 'tiktok',
+        name: 'TikTok',
+        description: 'Post as TikTok',
+        icon: TiktokLogo,
+        accountCount: tiktokCount.value,
+      });
+    }
+
+    if (youtubeCount.value > 0) {
+      platforms.push({
+        id: 'youtube',
+        name: 'YouTube',
+        description: 'Publish as Short',
+        icon: Youtube,
+        accountCount: youtubeCount.value,
+      });
+    }
+
     return platforms;
   });
 
@@ -161,17 +187,23 @@
     loading.value = true;
     instagramCount.value = 0;
     twitterCount.value = 0;
+    tiktokCount.value = 0;
+    youtubeCount.value = 0;
 
     try {
       // Load personal accounts
-      const [igResult, twResult, orgResult] = await Promise.all([
+      const [igResult, twResult, tkResult, ytResult, orgResult] = await Promise.all([
         listUserInstagramAccounts(),
         listUserTwitterAccounts(),
+        listUserTiktokAccounts(),
+        listUserYoutubeAccounts(),
         authStore.getOrganizations(),
       ]);
 
       let personalIg = 0;
       let personalTw = 0;
+      let personalTk = 0;
+      let personalYt = 0;
 
       if (igResult.success) {
         personalIg = igResult.accounts.filter((a) => a.is_active).length;
@@ -179,10 +211,18 @@
       if (twResult.success) {
         personalTw = twResult.accounts.filter((a) => a.is_active).length;
       }
+      if (tkResult.success) {
+        personalTk = tkResult.accounts.filter((a) => a.is_active).length;
+      }
+      if (ytResult.success) {
+        personalYt = ytResult.accounts.filter((a) => a.is_active).length;
+      }
 
       // Load org social accounts to count platform availability
       let orgIg = 0;
       let orgTw = 0;
+      let orgTk = 0;
+      let orgYt = 0;
 
       if (orgResult.success && orgResult.organizations) {
         const orgAccountPromises = orgResult.organizations.map((org: any) =>
@@ -195,6 +235,8 @@
             for (const account of result.accounts) {
               if (account.platform === 'instagram') orgIg++;
               if (account.platform === 'twitter' || account.platform === 'x') orgTw++;
+              if (account.platform === 'tiktok') orgTk++;
+              if (account.platform === 'youtube' || account.platform === 'youtube_shorts') orgYt++;
             }
           }
         }
@@ -202,6 +244,8 @@
 
       instagramCount.value = personalIg + orgIg;
       twitterCount.value = personalTw + orgTw;
+      tiktokCount.value = personalTk + orgTk;
+      youtubeCount.value = personalYt + orgYt;
     } catch (error) {
       console.error('Failed to load platform availability:', error);
     } finally {
@@ -373,6 +417,18 @@
   .plat-dialog__platform-icon--twitter {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     border-color: rgba(255, 255, 255, 0.15);
+    color: white;
+  }
+
+  .plat-dialog__platform-icon--tiktok {
+    background: linear-gradient(135deg, #00f2ea 0%, #ff0050 100%);
+    border-color: rgba(0, 242, 234, 0.3);
+    color: white;
+  }
+
+  .plat-dialog__platform-icon--youtube {
+    background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
+    border-color: rgba(255, 0, 0, 0.3);
     color: white;
   }
 

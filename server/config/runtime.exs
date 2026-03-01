@@ -41,12 +41,6 @@ if stripe_secret_key do
     api_key: stripe_secret_key
 end
 
-# Store webhook secret in application config for access in controllers
-config :clippster_server, :stripe,
-  webhook_secret: stripe_webhook_secret,
-  success_url: System.get_env("STRIPE_SUCCESS_URL") || "http://localhost:48276/stripe-success",
-  cancel_url: System.get_env("STRIPE_CANCEL_URL") || "http://localhost:48276/stripe-cancel"
-
 # Frontend base URL used for redirects from server-driven browser flows (e.g. Stripe checkout)
 frontend_base_url =
   System.get_env("FRONTEND_URL") ||
@@ -56,7 +50,50 @@ frontend_base_url =
       "http://localhost:1420"
     end
 
+stripe_success_url =
+  System.get_env("STRIPE_SUCCESS_URL") || frontend_base_url <> "/stripe-success"
+
+stripe_cancel_url = System.get_env("STRIPE_CANCEL_URL") || frontend_base_url <> "/stripe-cancel"
+
+# Desktop checkout redirects return to a local Tauri callback server.
+stripe_desktop_callback_base_url =
+  System.get_env("STRIPE_DESKTOP_CALLBACK_BASE_URL") || "http://localhost:48277"
+
 config :clippster_server, :frontend_base_url, frontend_base_url
+config :clippster_server, :stripe_desktop_callback_base_url, stripe_desktop_callback_base_url
+
+if config_env() == :prod do
+  ensure_https_url = fn env_name, value ->
+    case URI.parse(value || "") do
+      %URI{scheme: "https", host: host} when is_binary(host) and host != "" ->
+        :ok
+
+      _ ->
+        raise """
+        #{env_name} must be an https URL in production.
+        Current value: #{inspect(value)}
+        """
+    end
+  end
+
+  ensure_https_url.("FRONTEND_URL", frontend_base_url)
+  ensure_https_url.("STRIPE_SUCCESS_URL", stripe_success_url)
+  ensure_https_url.("STRIPE_CANCEL_URL", stripe_cancel_url)
+
+  if is_nil(stripe_webhook_secret) or stripe_webhook_secret == "" do
+    raise """
+    environment variable STRIPE_WEBHOOK_SECRET is required in production.
+    """
+  end
+end
+
+# Store webhook secret in application config for access in controllers
+config :clippster_server, :stripe,
+  webhook_secret: stripe_webhook_secret,
+  success_url: stripe_success_url,
+  cancel_url: stripe_cancel_url
+
+config :clippster_server, :allow_unverified_stripe_webhooks, config_env() != :prod
 
 # Resend email configuration (all environments)
 resend_api_key = System.get_env("RESEND_API_KEY")
@@ -106,8 +143,7 @@ config :clippster_server,
   social_token_encryption_key: System.get_env("SOCIAL_TOKEN_ENCRYPTION_KEY")
 
 # Twitter API configuration (twitterapi.io - read-only API for tweet analytics)
-config :clippster_server, :twitter,
-  api_key: System.get_env("TWITTER_API_IO_KEY")
+config :clippster_server, :twitter, api_key: System.get_env("TWITTER_API_IO_KEY")
 
 # X (Twitter) OAuth 2.0 configuration (official X API for posting)
 config :clippster_server, :twitter_oauth,
@@ -115,9 +151,59 @@ config :clippster_server, :twitter_oauth,
   client_secret: System.get_env("TWITTER_CLIENT_SECRET"),
   redirect_uri: System.get_env("TWITTER_REDIRECT_URI")
 
+# Social provider mode switch:
+# - legacy: current direct platform integrations only
+# - post_for_me: Post For Me only
+# - dual: write to both, legacy remains read source during rollout
+social_provider_mode =
+  (System.get_env("SOCIAL_PROVIDER_MODE") || "legacy")
+  |> String.trim()
+  |> String.downcase()
+
+social_provider_mode =
+  if social_provider_mode in ["legacy", "post_for_me", "dual"],
+    do: social_provider_mode,
+    else: "legacy"
+
+post_for_me_timeout_ms =
+  case Integer.parse(System.get_env("POST_FOR_ME_TIMEOUT_MS") || "") do
+    {value, _} when value > 0 -> value
+    _ -> 30_000
+  end
+
+post_for_me_max_retries =
+  case Integer.parse(System.get_env("POST_FOR_ME_MAX_RETRIES") || "") do
+    {value, _} when value > 0 -> value
+    _ -> 3
+  end
+
+post_for_me_connect_session_ttl_seconds =
+  case Integer.parse(System.get_env("POST_FOR_ME_CONNECT_SESSION_TTL_SECONDS") || "") do
+    {value, _} when value > 0 -> value
+    _ -> 900
+  end
+
+post_for_me_callback_url =
+  System.get_env("POST_FOR_ME_CALLBACK_URL") ||
+    if config_env() == :prod do
+      "https://#{System.get_env("PHX_HOST") || "api.clippster.app"}/api/auth/postforme/callback"
+    else
+      "http://localhost:4000/api/auth/postforme/callback"
+    end
+
+config :clippster_server, :social_provider_mode, social_provider_mode
+
+config :clippster_server, :post_for_me,
+  api_key: System.get_env("POST_FOR_ME_API_KEY"),
+  base_url: System.get_env("POST_FOR_ME_BASE_URL") || "https://api.postforme.dev",
+  timeout_ms: post_for_me_timeout_ms,
+  max_retries: post_for_me_max_retries,
+  callback_url: post_for_me_callback_url,
+  project_id: System.get_env("POST_FOR_ME_PROJECT_ID"),
+  connect_session_ttl_seconds: post_for_me_connect_session_ttl_seconds
+
 # Freesound API (sound effects search proxy)
-config :clippster_server, :freesound,
-  api_key: System.get_env("FREESOUND_API_KEY")
+config :clippster_server, :freesound, api_key: System.get_env("FREESOUND_API_KEY")
 
 # PulseKit error tracking and event monitoring
 pulsekit_key = System.get_env("PULSEKIT_CLIPPSTER_SERVER_KEY")

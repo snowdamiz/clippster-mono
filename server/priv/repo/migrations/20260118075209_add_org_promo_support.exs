@@ -15,8 +15,8 @@ defmodule ClippsterServer.Repo.Migrations.AddOrgPromoSupport do
 
     # Create unique index to ensure each organization can only redeem a promo code once
     create unique_index(:promo_redemptions, [:promo_code_id, :organization_id],
-      where: "organization_id IS NOT NULL",
-      name: :promo_redemptions_org_unique
-    )
+             where: "organization_id IS NOT NULL",
+             name: :promo_redemptions_org_unique
+           )
   end
 end

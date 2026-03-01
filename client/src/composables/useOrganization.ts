@@ -31,6 +31,7 @@ export interface OrganizationMember {
     hours_allocated: string;
     hours_used: string;
     hours_remaining: string;
+    allow_pool_fallback?: boolean;
   };
 }
 
@@ -553,13 +554,63 @@ export function useOrganization(orgIdOverride?: string) {
       const result = await authStore.allocateOrganizationCredits(orgId, userId, minutes);
       if (result.success) {
         showSuccess('Credits allocated', `${minutes} minutes allocated successfully`);
-        await loadOrganization();
+        
+        // Update local state immediately with response data
+        if (result.allocation && result.org_pool_remaining) {
+          // Update the member's allocation
+          const member = members.value.find(m => m.user_id === userId);
+          if (member && member.allocation) {
+            member.allocation.hours_allocated = result.allocation.hours_allocated;
+            member.allocation.hours_used = result.allocation.hours_used;
+            member.allocation.hours_remaining = (
+              parseFloat(result.allocation.hours_allocated) - parseFloat(result.allocation.hours_used)
+            ).toString();
+            member.allocation.allow_pool_fallback = result.allocation.allow_pool_fallback;
+          }
+          
+          // Update org pool balance
+          credits.value.hoursRemaining = result.org_pool_remaining;
+        }
       } else {
         showError('Allocation failed', result.error || 'Failed to allocate credits');
       }
       return result;
     } catch (err: any) {
       showError('Allocation failed', err.message || 'An error occurred while allocating credits');
+      return { success: false, error: err.message };
+    }
+  }
+
+  // Toggle pool fallback for a member
+  async function togglePoolFallback(userId: number, allowFallback: boolean) {
+    const orgId = organizationId.value;
+    if (!orgId) return { success: false };
+
+    try {
+      const response = await api.post(
+        `/organizations/${orgId}/credits/toggle-pool-fallback`,
+        { user_id: userId, allow_pool_fallback: allowFallback }
+      );
+      
+      if (response.data.success) {
+        showSuccess(
+          'Setting updated',
+          `Pool fallback ${allowFallback ? 'enabled' : 'disabled'} for member`
+        );
+        
+        // Update local state immediately
+        const member = members.value.find(m => m.user_id === userId);
+        if (member && member.allocation) {
+          member.allocation.allow_pool_fallback = allowFallback;
+        }
+        
+        return { success: true };
+      } else {
+        showError('Update failed', response.data.error || 'Failed to update setting');
+        return { success: false, error: response.data.error };
+      }
+    } catch (err: any) {
+      showError('Update failed', err.message || 'An error occurred while updating the setting');
       return { success: false, error: err.message };
     }
   }
@@ -727,6 +778,7 @@ export function useOrganization(orgIdOverride?: string) {
     updateMemberRole,
     updateMemberAccount,
     allocateCredits,
+    togglePoolFallback,
     deleteOrganization,
     uploadLogo,
     fetchPricing,

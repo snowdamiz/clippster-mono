@@ -9,6 +9,7 @@ import {
   getMonitoredStreamer,
   getAutoDvrStreamers,
   deleteProject,
+  deleteMonitoredStreamer,
   hasRawVideosForProject,
   hasClipsForProject,
   hasChildProjects,
@@ -26,15 +27,42 @@ import {
   checkKickLivestream,
   startKickRecording,
   stopKickRecording,
+  stopKickRecordingSession,
   type KickLiveStatus,
 } from '@/services/kick';
 import {
   checkTwitchLivestream,
   startTwitchRecording,
   stopTwitchRecording,
+  stopTwitchRecordingSession,
   getTwitchSessionOutputDir,
   type TwitchLiveStatus,
 } from '@/services/twitch';
+import {
+  checkYouTubeLivestream,
+  startYouTubeRecording,
+  stopYouTubeRecording,
+  stopYouTubeRecordingSession,
+  getYouTubeSessionOutputDir,
+  type YouTubeLiveStatus,
+} from '@/services/youtube';
+import {
+  checkRumbleLivestream,
+  startRumbleRecording,
+  stopRumbleRecording,
+  stopRumbleRecordingSession,
+  getRumbleSessionOutputDir,
+  type RumbleLiveStatus,
+} from '@/services/rumble';
+import {
+  validateTwitterUrl,
+  startTwitterRecording,
+  stopTwitterRecording,
+  stopTwitterRecordingSession,
+  getTwitterSessionOutputDir,
+  checkTwitterLivestream,
+  type TwitterLiveStatus,
+} from '@/services/twitter';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useCreditBalance } from './useCreditBalance';
 import { useDvrRecording } from './useDvrRecording';
@@ -90,6 +118,11 @@ const unlistenFunctions: UnlistenFn[] = [];
 // Instantiate segment processing once to maintain queue state if needed
 const { handleSegmentReady } = useLivestreamSegmentProcessing();
 const { success: showSuccess } = useToast();
+
+/** Returns true if the user is currently on the Live Streams page */
+function isOnLivePage(): boolean {
+  return window.location.pathname.startsWith('/live-clip');
+}
 
 function updateActiveSessionsMap(mutator: (map: ActiveSessionsMap) => void) {
   const next = new Map(activeSessions.value);
@@ -177,6 +210,65 @@ async function fetchTwitchLiveStatus(channelName: string): Promise<LiveStatus> {
   }
 }
 
+async function fetchYouTubeLiveStatus(channel: string): Promise<LiveStatus> {
+  try {
+    const youtubeStatus: YouTubeLiveStatus = await checkYouTubeLivestream(channel);
+    return {
+      isLive: youtubeStatus.isLive,
+      streamId: youtubeStatus.channelId,
+      streamStartTimestamp: youtubeStatus.startedAt
+        ? new Date(youtubeStatus.startedAt).getTime()
+        : undefined,
+      numParticipants: youtubeStatus.viewerCount
+        ? parseInt(youtubeStatus.viewerCount.replace(/,/g, ''))
+        : undefined,
+      profileImageUrl: youtubeStatus.thumbnailUrl,
+      raw: youtubeStatus,
+    };
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to check YouTube live status', error);
+    return { isLive: false };
+  }
+}
+
+async function fetchRumbleLiveStatus(channel: string): Promise<LiveStatus> {
+  try {
+    const rumbleStatus: RumbleLiveStatus = await checkRumbleLivestream(channel);
+    return {
+      isLive: rumbleStatus.isLive,
+      streamId: rumbleStatus.channelName,
+      streamStartTimestamp: rumbleStatus.startedAt
+        ? new Date(rumbleStatus.startedAt).getTime()
+        : undefined,
+      numParticipants: rumbleStatus.viewerCount,
+      profileImageUrl: rumbleStatus.thumbnailUrl,
+      raw: rumbleStatus,
+    };
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to check Rumble live status', error);
+    return { isLive: false };
+  }
+}
+
+async function fetchTwitterLiveStatus(urlOrUsername: string): Promise<LiveStatus> {
+  try {
+    const twitterStatus: TwitterLiveStatus = await checkTwitterLivestream(urlOrUsername);
+    return {
+      isLive: twitterStatus.isLive,
+      streamId: urlOrUsername,
+      streamStartTimestamp: twitterStatus.startedAt
+        ? new Date(twitterStatus.startedAt).getTime()
+        : undefined,
+      numParticipants: twitterStatus.viewerCount,
+      profileImageUrl: twitterStatus.profileImageUrl,
+      raw: twitterStatus,
+    };
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to check Twitter live status', error);
+    return { isLive: false };
+  }
+}
+
 async function fetchLiveStatus(
   platformId: string,
   platform: SupportedLivestreamPlatform = 'PumpFun'
@@ -186,6 +278,12 @@ async function fetchLiveStatus(
       return fetchKickLiveStatus(platformId);
     case 'Twitch':
       return fetchTwitchLiveStatus(platformId);
+    case 'YouTube':
+      return fetchYouTubeLiveStatus(platformId);
+    case 'Rumble':
+      return fetchRumbleLiveStatus(platformId);
+    case 'Twitter':
+      return fetchTwitterLiveStatus(platformId);
     case 'PumpFun':
     default:
       return fetchPumpFunLiveStatus(platformId);
@@ -312,11 +410,18 @@ async function handleStreamEnd(streamer: MonitoredStreamer) {
   if (!session) return;
 
   try {
-    // Stop platform-specific recording
+    // Stop platform-specific recording using session-specific stop
+    // This ensures we only kill the auto-detect session, not any concurrent DVR viewer session
     if (streamer.platform === 'Kick') {
-      await stopKickRecording(streamer.mintId);
+      await stopKickRecordingSession(session.sessionId);
     } else if (streamer.platform === 'Twitch') {
-      await stopTwitchRecording(streamer.mintId);
+      await stopTwitchRecordingSession(session.sessionId);
+    } else if (streamer.platform === 'YouTube') {
+      await stopYouTubeRecordingSession(session.sessionId);
+    } else if (streamer.platform === 'Rumble') {
+      await stopRumbleRecordingSession(session.sessionId);
+    } else if (streamer.platform === 'Twitter') {
+      await stopTwitterRecordingSession(session.sessionId);
     } else {
       // PumpFun - process any remaining DVR chunks before stopping
       const state = chunkAggregationState.get(streamer.id);
@@ -429,6 +534,19 @@ async function handleDvrStreamEnd(streamerId: string, mintId: string) {
     return;
   }
 
+  // Check for Twitter DVR session
+  const twitterSession = twitterDvrSessions.value.get(streamerId);
+  if (twitterSession) {
+    console.log('[LiveMonitor] Cleaning up Twitter DVR session for', mintId);
+    await stopTwitterDvrRecording(streamerId);
+
+    // Also remove from general DVR sessions
+    updateDvrSessionsMap((map) => {
+      map.delete(streamerId);
+    });
+    return;
+  }
+
   // Handle PumpFun DVR session
   const dvrSession = dvrSessions.value.get(streamerId);
   if (!dvrSession) return;
@@ -504,6 +622,11 @@ const kickDvrSessions = ref<Map<string, { mintId: string; channelSlug: string; s
 type TwitchDvrSession = { mintId: string; sessionId: string; outputDir: string };
 const twitchDvrSessions = ref<Map<string, { mintId: string; channelName: string; sessionId: string; outputDir: string }>>(new Map());
 
+// Track Twitter DVR sessions separately (they use yt-dlp, not LiveKit)
+// Key: streamerId, Value: { mintId (broadcast URL), sessionId, outputDir }
+type TwitterDvrSession = { mintId: string; sessionId: string; outputDir: string };
+const twitterDvrSessions = ref<Map<string, { mintId: string; broadcastUrl: string; sessionId: string; outputDir: string }>>(new Map());
+
 // Track active viewer sessions to prevent cleanup when user is watching
 const activeViewerSessions = ref<Map<string, ActiveViewerSession>>(new Map());
 
@@ -549,6 +672,13 @@ async function cleanupStreamerDvr(streamerId: string, mintId: string): Promise<v
     return;
   }
   
+  // Check for Twitter DVR session
+  const twitterSession = twitterDvrSessions.value.get(streamerId);
+  if (twitterSession) {
+    await stopTwitterDvrRecording(streamerId);
+    return;
+  }
+  
   // Check for PumpFun DVR session
   const dvrSession = dvrSessions.value.get(streamerId);
   if (dvrSession) {
@@ -576,12 +706,12 @@ async function startKickDvrRecording(streamer: MonitoredStreamer): Promise<boole
     // Generate a DVR session ID
     const sessionId = `kick-dvr-${streamer.mintId}-${Date.now()}`;
 
-    // Start yt-dlp recording via Rust backend
+    // Start yt-dlp recording via Rust backend with 4-second segments for DVR
     await startKickRecording(
       streamer.mintId, // channel slug
       streamer.id, // streamer ID
       sessionId,
-      5 // 5 minute segments (doesn't matter much for DVR)
+      1 // 1 minute triggers 4-second segments in backend for smooth DVR playback
     );
 
     // Get the output directory
@@ -616,10 +746,11 @@ async function stopKickDvrRecording(streamerId: string): Promise<void> {
   if (!session) return;
 
   try {
-    await stopKickRecording(session.mintId);
-    console.log('[LiveMonitor] Stopped Kick DVR recording for', session.mintId);
+    // Use session-specific stop to avoid killing concurrent auto-detect sessions
+    await stopKickRecordingSession(session.sessionId);
+    console.log('[LiveMonitor] Stopped Kick DVR session:', session.sessionId);
   } catch (error) {
-    console.warn('[LiveMonitor] Failed to stop Kick DVR', error);
+    console.warn('[LiveMonitor] Failed to stop Kick DVR session', error);
   }
 
   // Remove from tracking
@@ -669,12 +800,12 @@ async function startTwitchDvrRecording(streamer: MonitoredStreamer): Promise<boo
     // Generate a DVR session ID
     const sessionId = `twitch-dvr-${streamer.mintId}-${Date.now()}`;
 
-    // Start yt-dlp recording via Rust backend
+    // Start yt-dlp recording via Rust backend with 4-second segments for DVR
     await startTwitchRecording(
       streamer.mintId, // channel name
       streamer.id, // streamer ID
       sessionId,
-      5 // 5 minute segments (doesn't matter much for DVR)
+      1 // 1 minute triggers 4-second segments in backend for smooth DVR playback
     );
 
     // Get the output directory
@@ -709,10 +840,11 @@ async function stopTwitchDvrRecording(streamerId: string): Promise<void> {
   if (!session) return;
 
   try {
-    await stopTwitchRecording(session.mintId);
-    console.log('[LiveMonitor] Stopped Twitch DVR recording for', session.mintId);
+    // Use session-specific stop to avoid killing concurrent auto-detect sessions
+    await stopTwitchRecordingSession(session.sessionId);
+    console.log('[LiveMonitor] Stopped Twitch DVR session:', session.sessionId);
   } catch (error) {
-    console.warn('[LiveMonitor] Failed to stop Twitch DVR', error);
+    console.warn('[LiveMonitor] Failed to stop Twitch DVR session', error);
   }
 
   // Remove from tracking
@@ -743,6 +875,100 @@ function removeTwitchDvrSession(streamerId: string): void {
   const newMap = new Map(twitchDvrSessions.value);
   newMap.delete(streamerId);
   twitchDvrSessions.value = newMap;
+
+  // Also remove from general DVR sessions
+  updateDvrSessionsMap((map) => {
+    map.delete(streamerId);
+  });
+}
+
+// Start Twitter DVR recording using yt-dlp
+async function startTwitterDvrRecording(streamer: MonitoredStreamer): Promise<boolean> {
+  // Check if already has Twitter DVR recording
+  if (twitterDvrSessions.value.has(streamer.id)) {
+    console.log('[LiveMonitor] Twitter DVR already active for:', streamer.id);
+    return true;
+  }
+
+  try {
+    // Generate a DVR session ID
+    const sessionId = `twitter-dvr-${Date.now()}`;
+
+    // Start yt-dlp recording via Rust backend with 4-second segments for DVR
+    await startTwitterRecording(
+      streamer.mintId, // broadcast URL
+      streamer.id, // streamer ID
+      sessionId,
+      undefined // Use default 5-minute segments (will be overridden to 4s in viewer)
+    );
+
+    // Get the output directory
+    const outputDir = await getTwitterSessionOutputDir(sessionId);
+
+    // Track the Twitter DVR session
+    const newMap = new Map(twitterDvrSessions.value);
+    newMap.set(streamer.id, { mintId: streamer.mintId, broadcastUrl: streamer.mintId, sessionId, outputDir });
+    twitterDvrSessions.value = newMap;
+
+    // Also track in general DVR sessions for compatibility
+    updateDvrSessionsMap((map) => {
+      map.set(streamer.id, { mintId: streamer.mintId });
+    });
+
+    console.log(
+      '[LiveMonitor] Started Twitter DVR recording for',
+      streamer.mintId,
+      'output:',
+      outputDir
+    );
+    return true;
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to start Twitter DVR for', streamer.mintId, error);
+    return false;
+  }
+}
+
+// Stop Twitter DVR recording
+async function stopTwitterDvrRecording(streamerId: string): Promise<void> {
+  const session = twitterDvrSessions.value.get(streamerId);
+  if (!session) return;
+
+  try {
+    // Use session-specific stop to avoid killing concurrent auto-detect sessions
+    await stopTwitterRecordingSession(session.sessionId);
+    console.log('[LiveMonitor] Stopped Twitter DVR session:', session.sessionId);
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to stop Twitter DVR session', error);
+  }
+
+  // Remove from tracking
+  const newMap = new Map(twitterDvrSessions.value);
+  newMap.delete(streamerId);
+  twitterDvrSessions.value = newMap;
+}
+
+// Get Twitter DVR session info
+function getTwitterDvrSession(streamerId: string): TwitterDvrSession | null {
+  return twitterDvrSessions.value.get(streamerId) || null;
+}
+
+// Manually add a Twitter DVR session (for temp recordings started outside monitoring)
+function addTwitterDvrSession(streamerId: string, mintId: string, sessionId: string, outputDir: string): void {
+  const newMap = new Map(twitterDvrSessions.value);
+  newMap.set(streamerId, { mintId, broadcastUrl: mintId, sessionId, outputDir });
+  twitterDvrSessions.value = newMap;
+
+  // Also track in general DVR sessions for compatibility
+  updateDvrSessionsMap((map) => {
+    map.set(streamerId, { mintId });
+  });
+}
+
+// Manually remove a Twitter DVR session
+function removeTwitterDvrSession(streamerId: string): void {
+  const newMap = new Map(twitterDvrSessions.value);
+  newMap.delete(streamerId);
+  twitterDvrSessions.value = newMap;
 
   // Also remove from general DVR sessions
   updateDvrSessionsMap((map) => {
@@ -872,6 +1098,17 @@ async function initializeListeners() {
     if (!isMonitoring.value && activeSessions.value.size === 0) return;
 
     const payload = event.payload;
+
+    // CRITICAL: Only process segments that belong to an active auto-detect session.
+    // DVR viewer sessions (4-sec segments) have different session IDs (e.g., kick-dvr-*, kick-view-*)
+    // that won't match any activeSessions entry. Without this filter, DVR segments would
+    // leak into the auto-detect clip detection pipeline.
+    const activeSession = activeSessions.value.get(payload.streamerId);
+    if (!activeSession || activeSession.sessionId !== payload.sessionId) {
+      // This segment belongs to a DVR/viewer session, not an auto-detect session - skip it
+      return;
+    }
+
     const info = await getStreamerInfo(payload.streamerId);
 
     // 1. Update previous segment log (use streamerId-segment as key to avoid collisions)
@@ -1222,11 +1459,18 @@ export function useLivestreamMonitoring() {
         }, 35000); // 35 seconds (Rust process timeout is 30s)
 
         try {
-          // Stop platform-specific recording
+          // Stop platform-specific recording using session-specific stop
+          // This ensures we only kill the auto-detect session, not any concurrent DVR viewer session
           if (session.platform === 'Kick') {
-            await invoke('stop_kick_recording', { channelSlug: session.mintId });
+            await stopKickRecordingSession(session.sessionId);
           } else if (session.platform === 'Twitch') {
-            await stopTwitchRecording(session.mintId);
+            await stopTwitchRecordingSession(session.sessionId);
+          } else if (session.platform === 'YouTube') {
+            await stopYouTubeRecordingSession(session.sessionId);
+          } else if (session.platform === 'Rumble') {
+            await stopRumbleRecordingSession(session.sessionId);
+          } else if (session.platform === 'Twitter') {
+            await stopTwitterRecordingSession(session.sessionId);
           } else {
             // PumpFun - process any remaining DVR chunks before stopping
             const state = chunkAggregationState.get(id);
@@ -1347,6 +1591,36 @@ export function useLivestreamMonitoring() {
       // Cleanup DVR recording when stream ends (and no persistent session)
       if (!status.isLive && !sessionActive && hasDvrRecording) {
         await handleDvrStreamEnd(streamer.id, streamer.mintId);
+        
+        // For Twitter: Auto-remove from database when stream ends AND user is not watching
+        // Each Twitter broadcast has a unique URL that becomes worthless after the stream ends
+        // Only delete if handleDvrStreamEnd actually cleaned up (meaning user is not watching)
+        const viewerSession = activeViewerSessions.value.get(streamer.id);
+        const stillHasDvr = twitterDvrSessions.value.has(streamer.id);
+        
+        if (streamer.platform === 'Twitter' && 
+            streamer.mintId.includes('/i/broadcasts/') && 
+            !viewerSession?.isWatching && 
+            !stillHasDvr) {
+          console.log('[LiveMonitor] Twitter broadcast ended and not in use - auto-removing from database:', streamer.mintId);
+          try {
+            await deleteMonitoredStreamer(streamer.id);
+            // Remove from local state
+            monitoredStreamers.value.delete(streamer.id);
+            
+            addActivityLog({
+              streamerId: streamer.id,
+              streamerName: streamer.displayName,
+              platform: streamer.platform,
+              mintId: streamer.mintId,
+              profileImageUrl: streamer.profileImageUrl,
+              message: 'Twitter broadcast ended - auto-removed (no longer accessible)',
+              status: 'info',
+            });
+          } catch (error) {
+            console.warn('[LiveMonitor] Failed to auto-remove Twitter broadcast:', error);
+          }
+        }
       }
     }
   }
@@ -1374,6 +1648,28 @@ export function useLivestreamMonitoring() {
       const segmentDuration = requestedDuration > 0 ? requestedDuration : 5;
       const isInfiniteSegment = options.segmentDurationMinutes === 0;
 
+      // CRITICAL: Add to activeSessions IMMEDIATELY after getting sessionInfo
+      // This prevents race conditions where viewer checks for existing sessions
+      // before they're tracked, which would cause both to use the same session ID
+      activeSessions.value.set(streamer.id, {
+        sessionId: sessionInfo.sessionId,
+        streamerId: streamer.id,
+        mintId: streamer.mintId,
+        startedAt: Date.now(),
+        streamStartTime: status.streamStartTimestamp || Date.now(),
+        totalSegments: 0,
+        processedSegments: 0,
+        isRecording: true,
+        projectId: sessionInfo.projectId,
+        displayName: streamer.displayName,
+        platform: streamer.platform,
+        profileImageUrl: streamer.profileImageUrl,
+        detectClips: options.detectClips,
+        segmentDurationMinutes: segmentDuration,
+        promptId: options.promptId,
+        promptContent: options.promptContent,
+      });
+
       // Start platform-specific recording
       if (streamer.platform === 'Kick') {
         await startKickRecording(
@@ -1388,6 +1684,31 @@ export function useLivestreamMonitoring() {
         console.log('[LiveMonitor] Starting Twitch recording via yt-dlp/FFmpeg');
         await startTwitchRecording(
           streamer.mintId, // For Twitch, mintId is the channel name
+          streamer.id,
+          sessionInfo.sessionId,
+          segmentDuration
+        );
+      } else if (streamer.platform === 'YouTube') {
+        console.log('[LiveMonitor] Starting YouTube recording via yt-dlp/FFmpeg');
+        await startYouTubeRecording(
+          streamer.mintId, // For YouTube, mintId is the channel ID or handle
+          streamer.id,
+          sessionInfo.sessionId,
+          segmentDuration
+        );
+      } else if (streamer.platform === 'Rumble') {
+        console.log('[LiveMonitor] Starting Rumble recording via yt-dlp/FFmpeg');
+        await startRumbleRecording(
+          streamer.mintId, // For Rumble, mintId is the channel name
+          streamer.id,
+          sessionInfo.sessionId,
+          segmentDuration
+        );
+      } else if (streamer.platform === 'Twitter') {
+        console.log('[LiveMonitor] Starting Twitter recording via yt-dlp/FFmpeg');
+        // For Twitter, mintId should be the broadcast/Space URL
+        await startTwitterRecording(
+          streamer.mintId, // For Twitter, mintId is the broadcast/Space URL
           streamer.id,
           sessionInfo.sessionId,
           segmentDuration
@@ -1497,26 +1818,6 @@ export function useLivestreamMonitoring() {
         });
       }
 
-      // Update activeSessions immediately so UI shows LIVE status
-      activeSessions.value.set(streamer.id, {
-        sessionId: sessionInfo.sessionId,
-        streamerId: streamer.id,
-        mintId: streamer.mintId,
-        startedAt: Date.now(),
-        streamStartTime: status.streamStartTimestamp || Date.now(),
-        totalSegments: 0,
-        processedSegments: 0,
-        isRecording: true,
-        projectId: sessionInfo.projectId,
-        displayName: streamer.displayName,
-        platform: streamer.platform,
-        profileImageUrl: streamer.profileImageUrl,
-        detectClips: options.detectClips,
-        segmentDurationMinutes: segmentDuration,
-        promptId: options.promptId,
-        promptContent: options.promptContent,
-      });
-
       // Add log
       addActivityLog({
         streamerId: streamer.id,
@@ -1528,12 +1829,14 @@ export function useLivestreamMonitoring() {
         profileImageUrl: streamer.profileImageUrl,
       });
 
-      showSuccess(
-        `${streamer.displayName} is live`,
-        options.detectClips ? 'Auto-detect recording started.' : 'Recording started.',
-        undefined,
-        'livestream'
-      );
+      if (!isOnLivePage()) {
+        showSuccess(
+          `${streamer.displayName} is live`,
+          options.detectClips ? 'Auto-detect recording started.' : 'Recording started.',
+          undefined,
+          'livestream'
+        );
+      }
 
       // Initial segment start log (use streamerId-1 as key)
       const id = addActivityLog({
@@ -1634,8 +1937,10 @@ export function useLivestreamMonitoring() {
           // Stream is live and no DVR recording - start one
           console.log(`[LiveMonitor] Auto DVR: Starting DVR for live streamer ${streamer.displayName}`);
           
-          // Show toast notification that streamer went live
-          showSuccess(`${streamer.displayName} is now live!`, undefined, 7000, 'livestream');
+          // Show toast notification that streamer went live (skip on Live page)
+          if (!isOnLivePage()) {
+            showSuccess(`${streamer.displayName} is now live!`, undefined, 7000, 'livestream');
+          }
           
           const started = await startDvrRecordingForStreamer(streamer);
           if (started) {
@@ -1704,6 +2009,13 @@ export function useLivestreamMonitoring() {
     stopTwitchDvrRecording,
     addTwitchDvrSession,
     removeTwitchDvrSession,
+    // Twitter DVR exports
+    twitterDvrSessions,
+    getTwitterDvrSession,
+    startTwitterDvrRecording,
+    stopTwitterDvrRecording,
+    addTwitterDvrSession,
+    removeTwitterDvrSession,
     // Auto DVR exports
     initAutoDvrPolling,
     stopAutoDvrPolling,
@@ -1774,7 +2086,8 @@ export async function initGlobalLiveStatusPolling(): Promise<void> {
 
           // Show toast if went live (offline → online transition)
           // BUT skip toasts on initial poll to avoid spam when app first opens
-          if (!wasLive && status.isLive && !isInitialPoll) {
+          // Also skip on Live page where live status is already visible
+          if (!wasLive && status.isLive && !isInitialPoll && !isOnLivePage()) {
             showSuccess(`${record.display_name} is now live!`, undefined, 7000, 'livestream');
 
             // Dispatch global event

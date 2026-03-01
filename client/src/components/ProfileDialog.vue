@@ -681,6 +681,8 @@
     :watermark-width="selectedWatermarkDimensions.width"
     :watermark-height="selectedWatermarkDimensions.height"
     :settings="formData.watermark_settings || undefined"
+    :overlays="formData.layout_overlays"
+    :overlay-previews="overlayPreviews"
     @close="showWatermarkPositionPicker = false"
     @save="handleWatermarkSettingsSave"
   />
@@ -689,8 +691,13 @@
   <OverlayPositionPicker
     :show="showOverlayPositionPicker"
     :overlay-image-path="activeOverlayForPosition?.imagePath || ''"
+    :overlay-image-url="activeOverlayForPosition ? overlayPreviews[activeOverlayForPosition.id] : ''"
     :overlay-label="activeOverlayForPosition?.label || ''"
     :settings="activeOverlayForPosition?.perRatioSettings || undefined"
+    :watermark-settings="formData.watermark_settings"
+    :watermark-url="mode === 'organization' ? selectedWatermarkAsset?.url : undefined"
+    :watermark-file-path="mode === 'local' ? selectedWatermarkFilePath : undefined"
+    :org-assets="orgAssets"
     @close="showOverlayPositionPicker = false"
     @save="handleOverlayPositionSave"
   />
@@ -755,6 +762,8 @@
   import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer } from '@/services/pumpfun';
   import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
   import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
+  import { extractYouTubeChannel, getYouTubeChannelInfo } from '@/services/youtube';
+  import { extractRumbleChannel, getRumbleChannelInfo } from '@/services/rumble';
   import { readFile } from '@tauri-apps/plugin-fs';
   import { useToast } from '@/composables/useToast';
   import { useAssetOperations } from '@/composables/useAssetOperations';
@@ -768,7 +777,7 @@
   import { useAuthStore } from '@/stores/auth';
   import { useSubscription } from '@/composables/useSubscription';
 
-  type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube';
+  type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble';
 
   interface PlatformLinkInput {
     platform: PlatformId;
@@ -857,7 +866,8 @@
     { id: 'pumpfun' as PlatformId, name: 'PumpFun', disabled: false },
     { id: 'kick' as PlatformId, name: 'Kick', disabled: false },
     { id: 'twitch' as PlatformId, name: 'Twitch', disabled: false },
-    { id: 'youtube' as PlatformId, name: 'YouTube', disabled: true },
+    { id: 'YouTube' as PlatformId, name: 'YouTube', disabled: false },
+    { id: 'rumble' as PlatformId, name: 'Rumble', disabled: false },
   ];
 
   const formData = ref<{
@@ -1141,8 +1151,8 @@
     link.platform = platformId;
     openPlatformDropdown.value = null;
 
-    // If switching to PumpFun, Kick, or Twitch and we have a platform ID, extract metadata
-    if ((platformId === 'pumpfun' || platformId === 'kick' || platformId === 'twitch') && link.platform_id.trim()) {
+    // If switching platforms and we have a platform ID, extract metadata
+    if ((platformId === 'pumpfun' || platformId === 'kick' || platformId === 'twitch' || platformId === 'YouTube' || platformId === 'rumble') && link.platform_id.trim()) {
       await extractPlatformId(link);
     }
   }
@@ -1269,6 +1279,78 @@
           fetchingProfileImage.value = false;
         }
       }
+    } else if (link.platform === 'YouTube') {
+      const channelId = extractYouTubeChannel(input);
+      if (channelId) {
+        link.platform_id = channelId;
+
+        // Check if we already have a profile image from another link
+        const existingProfileImage = formData.value.platformLinks.find(
+          (l) => l !== link && l.profile_image_url
+        )?.profile_image_url;
+
+        if (existingProfileImage) {
+          link.profile_image_url = existingProfileImage;
+          return;
+        }
+
+        // Fetch profile image from YouTube via Tauri command
+        fetchingProfileImage.value = true;
+        try {
+          const channelInfo = await getYouTubeChannelInfo(channelId);
+          if (channelInfo) {
+            // Update display name if not already set
+            const displayName = channelInfo.displayName || channelInfo.channelName;
+            if (!link.display_name && displayName) {
+              link.display_name = displayName;
+            }
+            // Store the profile image URL
+            if (channelInfo.profileImageUrl) {
+              link.profile_image_url = channelInfo.profileImageUrl;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to fetch YouTube channel metadata:', e);
+        } finally {
+          fetchingProfileImage.value = false;
+        }
+      }
+    } else if (link.platform === 'rumble') {
+      const channelName = extractRumbleChannel(input);
+      if (channelName) {
+        link.platform_id = channelName;
+
+        // Check if we already have a profile image from another link
+        const existingProfileImage = formData.value.platformLinks.find(
+          (l) => l !== link && l.profile_image_url
+        )?.profile_image_url;
+
+        if (existingProfileImage) {
+          link.profile_image_url = existingProfileImage;
+          return;
+        }
+
+        // Fetch profile image from Rumble via Tauri command
+        fetchingProfileImage.value = true;
+        try {
+          const channelInfo = await getRumbleChannelInfo(channelName);
+          if (channelInfo) {
+            // Update display name if not already set
+            const displayName = channelInfo.displayName || channelInfo.channelName;
+            if (!link.display_name && displayName) {
+              link.display_name = displayName;
+            }
+            // Store the profile image URL
+            if (channelInfo.profileImageUrl) {
+              link.profile_image_url = channelInfo.profileImageUrl;
+            }
+          }
+        } catch (e) {
+          console.warn('Failed to fetch Rumble channel metadata:', e);
+        } finally {
+          fetchingProfileImage.value = false;
+        }
+      }
     }
   }
 
@@ -1281,7 +1363,8 @@
       pumpfun: '/capsule.svg',
       kick: '/kick.svg',
       twitch: '/twitch.svg',
-      youtube: '/youtube.svg',
+      YouTube: '/youtube.svg',
+      rumble: '/rumble.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -1291,7 +1374,8 @@
       pumpfun: '#10b981',
       kick: '#53FC18',
       twitch: '#9146FF',
-      youtube: '#dc2626',
+      YouTube: '#dc2626',
+      rumble: '#85c742',
     };
     return colors[platform] || '#6b7280';
   }
@@ -1306,7 +1390,8 @@
       pumpfun: 'PumpFun',
       kick: 'Kick',
       twitch: 'Twitch',
-      youtube: 'YouTube',
+      YouTube: 'YouTube',
+      rumble: 'Rumble',
     };
     return names[platform] || platform;
   }
@@ -1389,8 +1474,17 @@
     if (overlay.assetId && props.mode === 'organization') {
       const asset = orgAssets.value.find(a => a.id === overlay.assetId);
       if (asset?.url) {
-        overlayPreviews.value[overlay.id] = asset.url;
-        return;
+        // Download all R2 assets through Tauri to bypass CORS
+        try {
+          console.log('[ProfileDialog] Downloading overlay through Tauri:', asset.url.substring(0, 80));
+          const dataUrl = await invoke<string>('download_url_as_data_url', { url: asset.url });
+          overlayPreviews.value[overlay.id] = dataUrl;
+          return;
+        } catch (err) {
+          console.warn('[ProfileDialog] Failed to download overlay via Tauri, falling back to direct URL:', err);
+          overlayPreviews.value[overlay.id] = asset.url;
+          return;
+        }
       }
     }
     // For local overlays, read from disk
@@ -1420,20 +1514,38 @@
         filters: [{ name: 'Images & Videos', extensions: ['png', 'svg', 'webp', 'jpg', 'jpeg', 'mp4', 'mov', 'webm'] }],
       });
       if (!result) return;
-      const filePath = result as string;
-      const fileName = filePath.split(/[\\\/]/).pop() || 'overlay';
+      let filePath = result as string;
+      let fileName = filePath.split(/[\\\/]/).pop() || 'overlay';
       const assetName = fileName.replace(/\.[^/.]+$/, '');
 
       if (props.mode === 'organization' && props.organizationId) {
+        // Convert video to MP4 if needed (for browser compatibility)
+        const videoExtensions = ['mov', 'webm', 'avi', 'mkv'];
+        const ext = fileName.split('.').pop()?.toLowerCase() || '';
+        
+        if (videoExtensions.includes(ext)) {
+          console.log('[ProfileDialog] Converting video to MP4:', filePath);
+          try {
+            // Convert video - output will be in temp directory
+            filePath = await invoke<string>('convert_video_to_mp4', { inputPath: filePath });
+            fileName = filePath.split(/[\\\/]/).pop() || 'overlay.mp4';
+            console.log('[ProfileDialog] Video converted successfully:', filePath);
+          } catch (conversionError) {
+            console.error('[ProfileDialog] Video conversion failed:', conversionError);
+            showError('Conversion Failed', 'Failed to convert video to browser-compatible format');
+            return;
+          }
+        }
+
         // Org mode: upload as org asset, store assetId + server URL
-        const ext = fileName.split('.').pop()?.toLowerCase() || 'png';
+        const finalExt = fileName.split('.').pop()?.toLowerCase() || 'png';
         const mimeMap: Record<string, string> = {
           png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
           webp: 'image/webp', svg: 'image/svg+xml', gif: 'image/gif',
           mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
         };
         const bytes = await readFile(filePath);
-        const file = new File([bytes], fileName, { type: mimeMap[ext] || 'image/png' });
+        const file = new File([bytes], fileName, { type: mimeMap[finalExt] || 'image/png' });
         const dimensions = await extractImageDimensions(file);
         const response = await uploadOrganizationAsset(props.organizationId, file, 'overlay', {
           name: assetName,
@@ -1499,11 +1611,69 @@
     showOverlayPositionPicker.value = true;
   }
 
-  function handleOverlayPositionSave(settings: PerRatioOverlaySettings) {
+  async function handleOverlayPositionSave(settings: PerRatioOverlaySettings) {
     if (activeOverlayIndex.value < 0 || activeOverlayIndex.value >= formData.value.layout_overlays.length) return;
 
     const overlay = formData.value.layout_overlays[activeOverlayIndex.value];
-    overlay.perRatioSettings = settings;
+    
+    // For organization mode, upload any per-ratio overlays that have imagePath to R2
+    if (props.mode === 'organization' && props.organizationId) {
+      const cleanedSettings: Partial<PerRatioOverlaySettings> = {};
+      for (const [ratio, config] of Object.entries(settings)) {
+        if (config) {
+          // If this ratio has a local imagePath (uploaded in position picker), upload to R2
+          if (config.imagePath && !config.assetId) {
+            try {
+              console.log(`[ProfileDialog] Uploading per-ratio overlay for ${ratio}:`, config.imagePath);
+              const filePath = config.imagePath;
+              const fileName = filePath.split(/[\\\/]/).pop() || 'overlay.mp4';
+              const finalExt = fileName.split('.').pop()?.toLowerCase() || 'png';
+              const mimeMap: Record<string, string> = {
+                png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+                webp: 'image/webp', svg: 'image/svg+xml', gif: 'image/gif',
+                mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
+              };
+              const bytes = await readFile(filePath);
+              const file = new File([bytes], fileName, { type: mimeMap[finalExt] || 'image/png' });
+              const assetName = fileName.replace(/\.[^/.]+$/, '');
+              const dimensions = await extractImageDimensions(file);
+              const response = await uploadOrganizationAsset(props.organizationId, file, 'overlay', {
+                name: `${assetName}_${ratio.replace(':', 'x')}`,
+                width: dimensions.width ?? undefined,
+                height: dimensions.height ?? undefined,
+              });
+
+              if (response.success && response.asset) {
+                orgAssets.value.push(response.asset);
+                const { imagePath, ...rest } = config;
+                cleanedSettings[ratio as keyof PerRatioOverlaySettings] = {
+                  ...rest,
+                  assetId: response.asset.id,
+                } as any;
+                // Update overlay preview with the R2 URL
+                overlayPreviews.value[overlay.id] = response.asset.url;
+                console.log(`[ProfileDialog] Per-ratio overlay uploaded for ${ratio}, assetId:`, response.asset.id);
+              } else {
+                console.error(`[ProfileDialog] Failed to upload per-ratio overlay for ${ratio}:`, response.error);
+                cleanedSettings[ratio as keyof PerRatioOverlaySettings] = null;
+              }
+            } catch (uploadErr) {
+              console.error(`[ProfileDialog] Error uploading per-ratio overlay for ${ratio}:`, uploadErr);
+              cleanedSettings[ratio as keyof PerRatioOverlaySettings] = null;
+            }
+          } else {
+            // Already has assetId or no imagePath — just strip imagePath
+            const { imagePath, ...rest } = config;
+            cleanedSettings[ratio as keyof PerRatioOverlaySettings] = rest as any;
+          }
+        } else {
+          cleanedSettings[ratio as keyof PerRatioOverlaySettings] = null;
+        }
+      }
+      overlay.perRatioSettings = cleanedSettings as PerRatioOverlaySettings;
+    } else {
+      overlay.perRatioSettings = settings;
+    }
 
     const firstEnabled = settings['16:9'] || settings['9:16'] || settings['1:1'] || settings['4:5'];
     if (firstEnabled) {
@@ -1516,6 +1686,27 @@
     }
 
     showOverlayPositionPicker.value = false;
+  }
+
+  // Clean layout overlays for server submission: strip local-only fields
+  function cleanOverlaysForServer(): Record<string, unknown>[] | null {
+    if (formData.value.layout_overlays.length === 0) return null;
+    return formData.value.layout_overlays.map(overlay => {
+      const { imagePath, ...cleanOverlay } = overlay as any;
+      if (cleanOverlay.perRatioSettings) {
+        const cleanRatios: Record<string, any> = {};
+        for (const [ratio, config] of Object.entries(cleanOverlay.perRatioSettings)) {
+          if (config) {
+            const { imagePath: _ip, imageUrl: _iu, ...cleanConfig } = config as any;
+            cleanRatios[ratio] = cleanConfig;
+          } else {
+            cleanRatios[ratio] = null;
+          }
+        }
+        cleanOverlay.perRatioSettings = cleanRatios;
+      }
+      return cleanOverlay;
+    });
   }
 
   // Check if intro ratio settings are configured
@@ -1878,9 +2069,7 @@
         watermark_id: formData.value.watermark_id as number | null,
         watermark_settings: formData.value.watermark_settings,
         intro_outro_settings: formData.value.intro_outro_settings ? JSON.parse(formData.value.intro_outro_settings) : null,
-        layout_overlays: formData.value.layout_overlays.length > 0
-          ? (formData.value.layout_overlays as unknown as Record<string, unknown>[])
-          : null,
+        layout_overlays: cleanOverlaysForServer(),
         scope: formData.value.scope,
       });
 
@@ -1926,9 +2115,7 @@
         outro_id: formData.value.outro_id as number | null,
         watermark_id: formData.value.watermark_id as number | null,
         watermark_settings: formData.value.watermark_settings || undefined,
-        layout_overlays: formData.value.layout_overlays.length > 0
-          ? (formData.value.layout_overlays as unknown as Record<string, unknown>[])
-          : null,
+        layout_overlays: cleanOverlaysForServer(),
         scope: formData.value.scope,
       });
 
@@ -1987,7 +2174,7 @@
       let monitoredStreamerId: string | null = null;
 
       // Resolve monitored streamer for supported platforms
-      if (link.platform === 'pumpfun' || link.platform === 'kick' || link.platform === 'twitch') {
+      if (link.platform === 'pumpfun' || link.platform === 'kick' || link.platform === 'twitch' || link.platform === 'YouTube' || link.platform === 'rumble') {
         try {
           const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
           if (existing) {

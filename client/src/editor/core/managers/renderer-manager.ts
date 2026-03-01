@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { save } from "@tauri-apps/plugin-dialog";
 import type { EditorCore } from "../../core";
 import type { RootNode } from "../../renderer/nodes/root-node";
 import type { ExportOptions, ExportResult } from "../../types/export";
@@ -212,22 +211,17 @@ export class RendererManager {
 			}
 
 			const canvasSize = options.canvasSize ?? activeProject.settings.canvasSize;
-
-			// Prompt user for save location
 			const extension = options.format === "webm" ? "webm" : "mp4";
-			const outputPath = await save({
-				defaultPath: `${activeProject.metadata.name}.${extension}`,
-				filters: [
-					{
-						name: extension.toUpperCase(),
-						extensions: [extension],
-					},
-				],
-			});
 
-			if (!outputPath) {
-				return { success: false, cancelled: true };
-			}
+			// Always save to Built Clips directory
+			const appDataDir = await invoke<string>("get_app_data_dir");
+			const timestamp = Date.now();
+			const sanitizedName = activeProject.metadata.name.replace(/[^a-zA-Z0-9-_]/g, "_");
+			const fileName = `${sanitizedName}_${timestamp}.${extension}`;
+			const outputPath = `${appDataDir}/built_clips/${fileName}`;
+
+			// Ensure the built_clips directory exists
+			await invoke("create_directory", { path: `${appDataDir}/built_clips` });
 
 			onProgress?.({ progress: 0.05 });
 
@@ -271,7 +265,7 @@ export class RendererManager {
 
 			onProgress?.({ progress: 0.95 });
 
-			// Create clip in database for Built clips section
+			// Always create clip in database for Built Clips page
 			await this.createClipFromExport({
 				outputPath,
 				duration,
@@ -881,31 +875,79 @@ export class RendererManager {
 		sourceProjectId: string;
 	}): Promise<void> {
 		try {
-			const { createClip } = await import("@/services/database/clips");
+			const { getDatabase, generateId, timestamp } = await import("@/services/database/core");
 			const { invoke } = await import("@tauri-apps/api/core");
+
+			// Validate that the project_id exists in the projects table
+			// The clips table has a FOREIGN KEY constraint on project_id
+			const db = await getDatabase();
+			const projectExists = await db.select<{ id: string }[]>(
+				'SELECT id FROM projects WHERE id = ?',
+				[sourceProjectId]
+			);
+
+			if (!projectExists || projectExists.length === 0) {
+				console.warn(
+					`[RendererManager] Cannot create clip: project_id '${sourceProjectId}' does not exist in projects table. Skipping clip creation.`
+				);
+				return;
+			}
 
 			// Generate thumbnail from the exported video at 1 second
 			const thumbnailTimestamp = Math.min(1.0, duration / 2);
 			let thumbnailPath: string | null = null;
 
 			try {
-				thumbnailPath = await invoke<string>("generate_thumbnail", {
+				thumbnailPath = await invoke<string>("generate_thumbnail_at_timestamp", {
 					videoPath: outputPath,
-					timestamp: thumbnailTimestamp,
+					timestampSeconds: thumbnailTimestamp,
 				});
 			} catch (err) {
 				console.warn("[RendererManager] Failed to generate thumbnail:", err);
 				// Non-fatal - clip will be created without thumbnail
 			}
 
-			// Create clip in database
-			await createClip(sourceProjectId, outputPath, {
-				name: projectName,
-				duration,
-				thumbnailPath: thumbnailPath ?? undefined,
-				startTime: 0,
-				endTime: duration,
-			});
+			// Get file size
+			let fileSize: number | null = null;
+			try {
+				const metadata = await invoke<{ size: number }>("get_video_metadata", {
+					videoPath: outputPath,
+				});
+				fileSize = metadata.size;
+			} catch (err) {
+				console.warn("[RendererManager] Failed to get file size:", err);
+			}
+
+			// Create clip in database with status='generated' and build_status='completed'
+			// This ensures it appears in the Built Clips page
+			const clipId = generateId();
+			const now = timestamp();
+
+			await db.execute(
+				`INSERT INTO clips (
+					id, project_id, name, file_path, duration, start_time, end_time,
+					status, build_status, built_file_path, built_thumbnail_path,
+					built_duration, built_file_size, built_at, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				[
+					clipId,
+					sourceProjectId,
+					projectName,
+					outputPath,
+					duration,
+					0,
+					duration,
+					'generated', // Mark as generated so it shows in Built Clips
+					'completed', // Mark build as completed
+					outputPath,
+					thumbnailPath,
+					duration,
+					fileSize,
+					now,
+					now,
+					now,
+				]
+			);
 
 			console.log("[RendererManager] Created clip in database:", outputPath);
 		} catch (err) {

@@ -8,7 +8,14 @@ defmodule ClippsterServer.Messaging do
   import Ecto.Query, warn: false
   alias ClippsterServer.Repo
   alias ClippsterServer.Organizations
-  alias ClippsterServer.Messaging.{Conversation, ConversationParticipant, Message, MessageReadStatus}
+
+  alias ClippsterServer.Messaging.{
+    Conversation,
+    ConversationParticipant,
+    Message,
+    MessageReadStatus,
+    MessageAttachment
+  }
 
   # ============================================================================
   # Conversations
@@ -265,7 +272,7 @@ defmodule ClippsterServer.Messaging do
       |> where([m], m.conversation_id == ^conversation_id)
       |> order_by([m], desc: m.inserted_at)
       |> limit(^limit)
-      |> preload([:sender, :read_statuses])
+      |> preload([:sender, :read_statuses, :attachments])
 
     query =
       if before_id do
@@ -287,7 +294,7 @@ defmodule ClippsterServer.Messaging do
     |> order_by([m], desc: m.inserted_at)
     |> limit(^limit)
     |> offset(^offset)
-    |> preload([:sender, :read_statuses])
+    |> preload([:sender, :read_statuses, :attachments])
     |> Repo.all()
   end
 
@@ -792,8 +799,10 @@ defmodule ClippsterServer.Messaging do
         # Calculate time difference in minutes
         DateTime.diff(curr.inserted_at, prev.inserted_at, :minute)
       end)
-      |> Enum.filter(fn minutes -> minutes > 0 and minutes < 60 * 24 * 7 end) # Filter out > 1 week
-      |> Enum.take(-limit) # Take most recent
+      # Filter out > 1 week
+      |> Enum.filter(fn minutes -> minutes > 0 and minutes < 60 * 24 * 7 end)
+      # Take most recent
+      |> Enum.take(-limit)
     end
   end
 
@@ -811,11 +820,11 @@ defmodule ClippsterServer.Messaging do
   def search_messageable_users(current_user_id, query, opts \\ []) do
     limit = Keyword.get(opts, :limit, 20)
     current_user = Repo.get(ClippsterServer.Accounts.User, current_user_id)
-    
+
     if is_nil(current_user) do
       []
     else
-      base_query = 
+      base_query =
         ClippsterServer.Accounts.User
         |> where([u], u.id != ^current_user_id)
         |> where([u], is_nil(u.deactivated_at))
@@ -824,52 +833,57 @@ defmodule ClippsterServer.Messaging do
         |> join(:left, [u], cp in ClippsterServer.ClipperProfiles.ClipperProfile,
           on: cp.user_id == u.id
         )
-      
+
       # Apply search filter if query provided
-      filtered_query = if query && String.trim(query) != "" do
-        search_term = "%#{String.downcase(query)}%"
-        base_query
-        |> where([u, cp], 
-          fragment("LOWER(COALESCE(?, ?)) LIKE ?", cp.display_name, u.name, ^search_term) or
-          fragment("LOWER(?) LIKE ?", u.email, ^search_term)
-        )
-      else
-        base_query
-      end
-      
+      filtered_query =
+        if query && String.trim(query) != "" do
+          search_term = "%#{String.downcase(query)}%"
+
+          base_query
+          |> where(
+            [u, cp],
+            fragment("LOWER(COALESCE(?, ?)) LIKE ?", cp.display_name, u.name, ^search_term) or
+              fragment("LOWER(?) LIKE ?", u.email, ^search_term)
+          )
+        else
+          base_query
+        end
+
       # Apply role-based filtering
-      final_query = cond do
-        # Admins and moderators can see all users
-        current_user.is_admin or current_user.is_moderator ->
-          filtered_query
-        
-        # Organization owners can see all users
-        current_user.account_type == "organization" and not is_nil(current_user.owned_organization_id) ->
-          filtered_query
-        
-        # Regular users can only see users in their organizations
-        true ->
-          # Get all organization IDs where current user is a member
-          org_ids = 
-            ClippsterServer.Organizations.OrganizationMember
-            |> where([m], m.user_id == ^current_user_id)
-            |> select([m], m.organization_id)
-            |> Repo.all()
-          
-          if Enum.empty?(org_ids) do
-            # No organizations, return empty
-            filtered_query |> where([u, cp], false)
-          else
-            # Return users who are members of the same organizations
+      final_query =
+        cond do
+          # Admins and moderators can see all users
+          current_user.is_admin or current_user.is_moderator ->
             filtered_query
-            |> join(:inner, [u, cp], m in ClippsterServer.Organizations.OrganizationMember,
-              on: m.user_id == u.id
-            )
-            |> where([u, cp, m], m.organization_id in ^org_ids)
-            |> distinct([u, cp], u.id)
-          end
-      end
-      
+
+          # Organization owners can see all users
+          current_user.account_type == "organization" and
+              not is_nil(current_user.owned_organization_id) ->
+            filtered_query
+
+          # Regular users can only see users in their organizations
+          true ->
+            # Get all organization IDs where current user is a member
+            org_ids =
+              ClippsterServer.Organizations.OrganizationMember
+              |> where([m], m.user_id == ^current_user_id)
+              |> select([m], m.organization_id)
+              |> Repo.all()
+
+            if Enum.empty?(org_ids) do
+              # No organizations, return empty
+              filtered_query |> where([u, cp], false)
+            else
+              # Return users who are members of the same organizations
+              filtered_query
+              |> join(:inner, [u, cp], m in ClippsterServer.Organizations.OrganizationMember,
+                on: m.user_id == u.id
+              )
+              |> where([u, cp, m], m.organization_id in ^org_ids)
+              |> distinct([u, cp], u.id)
+            end
+        end
+
       final_query
       |> select([u, cp], %{
         id: u.id,
@@ -893,7 +907,9 @@ defmodule ClippsterServer.Messaging do
   """
   def check_support_conversation(user_id) do
     case get_user_support_conversation(user_id) do
-      nil -> {:ok, nil}
+      nil ->
+        {:ok, nil}
+
       conversation ->
         if conversation.status == "archived" do
           {:ok, nil}
@@ -911,13 +927,16 @@ defmodule ClippsterServer.Messaging do
     case get_user_support_conversation(user_id) do
       nil ->
         create_support_conversation(user_id)
+
       conversation ->
         # If archived, reopen it
         if conversation.status == "archived" do
           case reopen_support_conversation(conversation.id) do
             {:ok, reopened_conversation} ->
-              {:ok, Repo.preload(reopened_conversation, [participants: :user])}
-            error -> error
+              {:ok, Repo.preload(reopened_conversation, participants: :user)}
+
+            error ->
+              error
           end
         else
           {:ok, conversation}
@@ -938,7 +957,7 @@ defmodule ClippsterServer.Messaging do
     |> Repo.one()
     |> case do
       nil -> nil
-      conversation -> Repo.preload(conversation, [participants: :user])
+      conversation -> Repo.preload(conversation, participants: :user)
     end
   end
 
@@ -1036,27 +1055,27 @@ defmodule ClippsterServer.Messaging do
     case get_user_support_conversation(user_id) do
       nil ->
         {:error, :conversation_not_found}
-      
+
       conversation ->
         # Reopen if archived
         if conversation.status == "archived" do
           reopen_support_conversation(conversation.id)
         end
-        
+
         # Check if this is the first user message (no messages from this user yet)
-        user_message_count = 
+        user_message_count =
           Message
           |> where([m], m.conversation_id == ^conversation.id)
           |> where([m], m.sender_id == ^user_id)
           |> Repo.aggregate(:count, :id)
-        
+
         # Send user's message first
         result = send_message(conversation.id, user_id, content)
-        
+
         # If this was the first message, send automated welcome response
         if user_message_count == 0 do
           auto_message_content = get_support_auto_message()
-          
+
           %Message{}
           |> Message.changeset(%{
             conversation_id: conversation.id,
@@ -1066,7 +1085,7 @@ defmodule ClippsterServer.Messaging do
           })
           |> Repo.insert!()
         end
-        
+
         result
     end
   end
@@ -1084,15 +1103,16 @@ defmodule ClippsterServer.Messaging do
   """
   def archive_support_conversation(conversation_id, moderator_id) do
     conversation = Repo.get(Conversation, conversation_id)
-    
+
     if is_nil(conversation) do
       {:error, :not_found}
     else
       # Schedule deletion for 24 hours from now
-      scheduled_deletion = DateTime.utc_now() 
-        |> DateTime.add(24 * 60 * 60, :second) 
+      scheduled_deletion =
+        DateTime.utc_now()
+        |> DateTime.add(24 * 60 * 60, :second)
         |> DateTime.truncate(:second)
-      
+
       conversation
       |> Conversation.changeset(%{
         status: "archived",
@@ -1109,7 +1129,7 @@ defmodule ClippsterServer.Messaging do
   """
   def reopen_support_conversation(conversation_id) do
     conversation = Repo.get(Conversation, conversation_id)
-    
+
     if is_nil(conversation) do
       {:error, :not_found}
     else
@@ -1128,7 +1148,7 @@ defmodule ClippsterServer.Messaging do
   """
   def list_support_conversations(status \\ "open", page \\ 1, per_page \\ 50) do
     offset = (page - 1) * per_page
-    
+
     Conversation
     |> where([c], c.type == "support")
     |> where([c], c.status == ^status)
@@ -1189,7 +1209,7 @@ defmodule ClippsterServer.Messaging do
           },
           [user1_id, user2_id]
         )
-      
+
       conversation ->
         {:ok, conversation}
     end
@@ -1200,7 +1220,7 @@ defmodule ClippsterServer.Messaging do
   """
   def create_staff_group_conversation(creator_id, name, participant_ids) do
     all_participant_ids = Enum.uniq([creator_id | participant_ids])
-    
+
     create_conversation_with_participants(
       %{
         type: "staff",
@@ -1235,5 +1255,46 @@ defmodule ClippsterServer.Messaging do
     |> where([c, p1, p2], is_nil(p1.left_at) and is_nil(p2.left_at))
     |> limit(1)
     |> Repo.one()
+  end
+
+  # ============================================================================
+  # Message Attachments
+  # ============================================================================
+
+  @doc """
+  Creates a message attachment record.
+  """
+  def create_message_attachment(message_id, attrs) do
+    %MessageAttachment{message_id: message_id}
+    |> MessageAttachment.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Lists all attachments for a message.
+  """
+  def list_message_attachments(message_id) do
+    MessageAttachment
+    |> where([a], a.message_id == ^message_id)
+    |> order_by([a], asc: a.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets a single message attachment by ID.
+  """
+  def get_message_attachment(attachment_id) do
+    Repo.get(MessageAttachment, attachment_id)
+  end
+
+  @doc """
+  Preloads attachments for a list of messages.
+  """
+  def preload_attachments(messages) when is_list(messages) do
+    Repo.preload(messages, :attachments)
+  end
+
+  def preload_attachments(message) do
+    Repo.preload(message, :attachments)
   end
 end

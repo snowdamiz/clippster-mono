@@ -1,4 +1,4 @@
-use crate::sidecar::{RemotionSidecar, RenderCommand};
+﻿use crate::sidecar::{RemotionSidecar, RenderCommand};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use tauri::{command, AppHandle, State};
@@ -37,9 +37,7 @@ pub async fn start_remotion_export(
         *sidecar_lock = Some(sidecar);
     }
 
-    let sidecar = sidecar_lock
-        .as_ref()
-        .ok_or("Sidecar not initialized")?;
+    let sidecar = sidecar_lock.as_ref().ok_or("Sidecar not initialized")?;
 
     // Send render command
     let command = RenderCommand::Render {

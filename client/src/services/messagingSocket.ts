@@ -57,7 +57,7 @@ class MessagingSocket {
    * Get the WebSocket URL based on the API URL.
    */
   private getSocketUrl(): string {
-    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+    const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : 'https://api.clippster.app/api');
     // Convert http(s)://host:port/api to ws(s)://host:port/messaging
     const url = new URL(apiUrl);
     const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -284,7 +284,7 @@ class MessagingSocket {
   /**
    * Send a message via WebSocket.
    */
-  sendMessage(conversationId: number, content: string): Promise<Message> {
+  sendMessage(conversationId: number, content: string, attachmentData?: any[]): Promise<Message> {
     return new Promise((resolve, reject) => {
       const channel = this.conversationChannels.get(conversationId);
       if (!channel) {
@@ -292,8 +292,13 @@ class MessagingSocket {
         return;
       }
 
+      const payload: any = { content };
+      if (attachmentData && attachmentData.length > 0) {
+        payload.attachment_data = attachmentData;
+      }
+
       channel
-        .push('new_message', { content })
+        .push('new_message', payload)
         .receive('ok', (response: Message) => resolve(response))
         .receive('error', (reason: unknown) => reject(new Error(`Failed to send message: ${JSON.stringify(reason)}`)));
     });

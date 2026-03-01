@@ -101,6 +101,23 @@ export function OrgBilling() {
     loadOrganization()
   }, [loadOrganization])
 
+  // Auto-refresh after Stripe checkout success
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const sessionId = params.get('session_id')
+    
+    if (sessionId) {
+      // Remove session_id from URL without reload
+      const url = new URL(window.location.href)
+      url.searchParams.delete('session_id')
+      window.history.replaceState({}, '', url.toString())
+      
+      // Refresh organization data to show updated subscription/credits
+      loadOrganization()
+      toast.success('Payment successful! Your account has been updated.')
+    }
+  }, [])
+
   useEffect(() => {
     if (organizationId) {
       api
@@ -119,8 +136,13 @@ export function OrgBilling() {
 
   const availableAddons = (() => {
     if (!subscription) return []
-    const hasAiPlan = subscription.tier === 'enterprise_ai'
-    return addonTiers.filter((addon) => hasAiPlan || !addon.requires_ai)
+    // Show all add-ons sorted by seat count (smallest to largest)
+    // null seats = unlimited, should come last
+    return [...addonTiers].sort((a, b) => {
+      if (a.seats === null) return 1
+      if (b.seats === null) return -1
+      return a.seats - b.seats
+    })
   })()
 
   function getMemberInitials(member: any): string {
@@ -902,6 +924,9 @@ export function OrgBilling() {
                             <span>Includes AI</span>
                           </div>
                         )}
+                        <div className={`absolute ${tier.monthly_credits > 0 ? 'top-[2.75rem]' : 'top-3'} right-3 flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-br from-emerald-500 to-emerald-600 text-[#0a0a0b] text-[0.625rem] font-bold uppercase tracking-[0.03em] rounded shadow-[0_2px_8px_rgba(16,185,129,0.3)]`}>
+                          <span>0% Fees</span>
+                        </div>
                         <h3 className="text-lg font-bold text-white m-0 mb-2">{tier.name}</h3>
                         <div className="flex items-baseline mb-6">
                           <span className="text-xl font-semibold text-white">$</span>
@@ -911,7 +936,7 @@ export function OrgBilling() {
                         <ul className="list-none m-0 mb-6 p-0 flex flex-col gap-3">
                           <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
                             <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
-                            <span>{tier.seats === null ? 'Unlimited team seats' : `${tier.seats} team seats`}</span>
+                            <span>{tier.seats === null ? 'Unlimited team seats' : tier.seats === 0 ? 'Owner only (no team seats)' : `${tier.seats} team seats`}</span>
                           </li>
                           {tier.monthly_credits > 0 && (
                             <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
@@ -926,6 +951,18 @@ export function OrgBilling() {
                           <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
                             <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
                             <span>Shared assets & profiles</span>
+                          </li>
+                          <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
+                            <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
+                            <span>Unlimited marketing campaigns</span>
+                          </li>
+                          <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
+                            <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
+                            <span>Browse clipper talent directory</span>
+                          </li>
+                          <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
+                            <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
+                            <span>Post job listings for clippers & video editors</span>
                           </li>
                         </ul>
                         <Button
@@ -959,38 +996,41 @@ export function OrgBilling() {
                   {availableAddons.map((addon) => (
                     <div
                       key={addon.id}
-                      className="relative p-5 bg-zinc-900/50 border border-zinc-800 rounded-[10px] overflow-hidden transition-all duration-150 hover:border-white/10 hover:shadow-[0_4px_12px_rgba(0,0,0,0.15)]"
+                      className="relative flex flex-col bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden transition-all duration-200 hover:border-white/10 hover:shadow-[0_4px_20px_rgba(0,0,0,0.15)] hover:-translate-y-0.5"
                     >
-                      {addon.requires_ai && (
-                        <div className="absolute top-3 right-3 flex items-center gap-[5px] px-3 py-[7px] bg-gradient-to-br from-cyan-500 to-cyan-500/80 text-[#0a0a0b] text-[0.625rem] font-bold uppercase tracking-[0.05em] rounded-[5px] shadow-[0_2px_6px_rgba(6,182,212,0.25)]">
-                          <Star className="w-[11px] h-[11px]" />
-                          <span>Includes AI Credits</span>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-[0.9375rem] font-semibold text-white">{addon.name}</span>
-                      </div>
-                      <div className="text-2xl font-bold text-white mb-4">${addon.usd}/mo</div>
-                      <ul className="list-none m-0 mb-4 p-0 flex flex-col gap-2">
-                        <li className="flex items-center gap-2 text-[0.8125rem] text-zinc-500">
-                          <Plus className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>{addon.seats} seats</span>
-                        </li>
-                        {addon.monthly_credits > 0 && (
-                          <li className="flex items-center gap-2 text-[0.8125rem] text-zinc-500">
-                            <Plus className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>{addon.monthly_credits.toLocaleString()} credits/mo</span>
-                          </li>
+                      <div className="relative flex flex-col flex-1 p-6">
+                        {addon.requires_ai && (
+                          <div className="absolute top-3 right-3 flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-br from-cyan-500 to-cyan-500/80 text-[#0a0a0b] text-[0.625rem] font-bold uppercase tracking-[0.03em] rounded shadow-[0_2px_8px_rgba(6,182,212,0.3)]">
+                            <Star className="w-[11px] h-[11px]" />
+                            <span>Includes AI</span>
+                          </div>
                         )}
-                      </ul>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => selectSubscription(addon, 'addon')}
-                        className="w-full"
-                      >
-                        Add to Plan
-                      </Button>
+                        <h3 className="text-lg font-bold text-white m-0 mb-2">{addon.name}</h3>
+                        <div className="flex items-baseline mb-6">
+                          <span className="text-xl font-semibold text-white">$</span>
+                          <span className="text-[2.5rem] font-bold text-white tracking-tight">{addon.usd}</span>
+                          <span className="text-sm text-zinc-500 ml-1">/mo</span>
+                        </div>
+                        <ul className="list-none m-0 mb-6 p-0 flex flex-col gap-3">
+                          <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
+                            <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
+                            <span>{addon.seats} seats</span>
+                          </li>
+                          {addon.monthly_credits > 0 && (
+                            <li className="flex items-center gap-2.5 text-[0.8125rem] text-zinc-500">
+                              <Check className="w-[15px] h-[15px] text-emerald-400 shrink-0" />
+                              <span>{addon.monthly_credits.toLocaleString()} credits/month</span>
+                            </li>
+                          )}
+                        </ul>
+                        <Button
+                          onClick={() => selectSubscription(addon, 'addon')}
+                          className="w-full mt-auto"
+                          variant="secondary"
+                        >
+                          Add to Plan
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

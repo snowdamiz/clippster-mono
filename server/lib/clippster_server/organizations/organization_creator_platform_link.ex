@@ -8,7 +8,7 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorPlatformLink do
 
   alias ClippsterServer.Organizations.OrganizationCreatorProfile
 
-  @platforms ~w(pumpfun kick twitch youtube)
+  @platforms ~w(pumpfun kick twitch youtube rumble)
 
   schema "organization_creator_platform_links" do
     field :platform, :string
@@ -66,4 +66,3 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorPlatformLink do
   def valid_platform?(platform) when is_binary(platform), do: platform in @platforms
   def valid_platform?(_), do: false
 end
-

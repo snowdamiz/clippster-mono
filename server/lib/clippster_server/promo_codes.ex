@@ -332,9 +332,16 @@ defmodule ClippsterServer.PromoCodes do
   def create_stripe_promotion_code(%PromoCode{} = promo, coupon_id) do
     promo_params = %{
       coupon: coupon_id,
-      code: promo.code,
-      max_redemptions: promo.max_redemptions
+      code: promo.code
     }
+
+    # Only include max_redemptions if it has a value
+    promo_params =
+      if promo.max_redemptions do
+        Map.put(promo_params, :max_redemptions, promo.max_redemptions)
+      else
+        promo_params
+      end
 
     promo_params =
       if promo.redeem_by do
@@ -397,7 +404,8 @@ defmodule ClippsterServer.PromoCodes do
         }
 
         with {:ok, coupon} <- Stripe.Coupon.create(coupon_params),
-             {:ok, promo_code} <- create_stripe_promo_with_metadata(code, coupon.id, waitlist_entry_id, admin_id) do
+             {:ok, promo_code} <-
+               create_stripe_promo_with_metadata(code, coupon.id, waitlist_entry_id, admin_id) do
           {:ok, %{code: code, stripe_promo_id: promo_code.id}}
         else
           {:error, %Stripe.Error{message: message}} -> {:error, message}
@@ -491,7 +499,9 @@ defmodule ClippsterServer.PromoCodes do
   defp user_already_redeemed?(promo_code_id, user_id) do
     Repo.exists?(
       from(r in PromoRedemption,
-        where: r.promo_code_id == ^promo_code_id and r.user_id == ^user_id and is_nil(r.organization_id)
+        where:
+          r.promo_code_id == ^promo_code_id and r.user_id == ^user_id and
+            is_nil(r.organization_id)
       )
     )
   end

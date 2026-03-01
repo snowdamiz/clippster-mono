@@ -23,7 +23,9 @@ defmodule ClippsterServerWeb.MetadataController do
       })
 
     # Write payload to temp file
-    temp_file = Path.join(System.tmp_dir!(), "metadata_fetch_#{:erlang.unique_integer([:positive])}.json")
+    temp_file =
+      Path.join(System.tmp_dir!(), "metadata_fetch_#{:erlang.unique_integer([:positive])}.json")
+
     File.write!(temp_file, payload)
 
     # Call the Node.js script

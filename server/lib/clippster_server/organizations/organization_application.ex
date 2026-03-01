@@ -25,7 +25,16 @@ defmodule ClippsterServer.Organizations.OrganizationApplication do
   """
   def create_changeset(application, attrs) do
     application
-    |> cast(attrs, [:name, :description, :website, :team_size, :use_case, :contact_email, :logo_url, :user_id])
+    |> cast(attrs, [
+      :name,
+      :description,
+      :website,
+      :team_size,
+      :use_case,
+      :contact_email,
+      :logo_url,
+      :user_id
+    ])
     |> validate_required([:name, :description, :team_size, :use_case, :contact_email, :user_id])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, min: 10, max: 1000)

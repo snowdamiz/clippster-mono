@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, shallowRef, onUnmounted } from "vue";
+import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -12,7 +12,7 @@ import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
 import type { TimelineTrack } from "../../types/timeline";
 import type { AspectRatioId } from "../../types/project";
-import { ChevronDown, Smartphone, Link2 } from "lucide-vue-next";
+import { ChevronDown, Smartphone, Maximize, Minimize, Link2 } from "lucide-vue-next";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
 import { SOCIAL_OVERLAY_PRESETS } from "../../constants/social-overlay-constants";
@@ -34,37 +34,15 @@ const showAspectMenu = ref(false);
 const showSocialMenu = ref(false);
 const showSpeedMenu = ref(false);
 const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
+const isFullscreen = ref(false);
+const previewContainerRef = ref<HTMLDivElement | null>(null);
 
-// Custom canvas size
+// Custom aspect ratio state
 const showCustomSize = ref(false);
 const customWidth = ref(1920);
 const customHeight = ref(1080);
-const linkDimensions = ref(false);
-const customAspect = computed(() => customWidth.value / customHeight.value);
+const linkDimensions = ref(true);
 
-function applyCustomSize() {
-	const w = Math.max(100, Math.min(7680, Math.round(customWidth.value)));
-	const h = Math.max(100, Math.min(7680, Math.round(customHeight.value)));
-	editor.project.updateSettings({ settings: { canvasSize: { width: w, height: h } } });
-	showCustomSize.value = false;
-	showAspectMenu.value = false;
-}
-
-function onCustomWidthChange(val: number) {
-	customWidth.value = val;
-	if (linkDimensions.value) {
-		customHeight.value = Math.round(val / customAspect.value);
-	}
-}
-
-function onCustomHeightChange(val: number) {
-	customHeight.value = val;
-	if (linkDimensions.value) {
-		customWidth.value = Math.round(val * customAspect.value);
-	}
-}
-
-// Playback speed
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
 
 const currentSpeed = computed(() => {
@@ -97,6 +75,33 @@ const currentAspectLabel = computed(() => {
 function setAspectRatio(preset: { width: number; height: number }) {
 	editor.project.updateSettings({ settings: { canvasSize: preset } });
 	showAspectMenu.value = false;
+}
+
+// Custom aspect ratio functions
+function onCustomWidthChange(value: number) {
+	customWidth.value = value;
+	if (linkDimensions.value) {
+		// Maintain aspect ratio when linked
+		const aspect = customHeight.value / 1920; // Base aspect from original height
+		customHeight.value = Math.round(value * aspect);
+	}
+}
+
+function onCustomHeightChange(value: number) {
+	customHeight.value = value;
+	if (linkDimensions.value) {
+		// Maintain aspect ratio when linked
+		const aspect = customWidth.value / 1920; // Base aspect from original width
+		customWidth.value = Math.round(value * aspect);
+	}
+}
+
+function applyCustomSize() {
+	editor.project.updateSettings({ 
+		settings: { canvasSize: { width: customWidth.value, height: customHeight.value } } 
+	});
+	showAspectMenu.value = false;
+	showCustomSize.value = false;
 }
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -370,6 +375,33 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 		opacity: (overlay.opacity ?? 100) / 100,
 	};
 }
+
+function toggleFullscreen() {
+	const container = previewContainerRef.value;
+	if (!container) return;
+
+	if (!isFullscreen.value) {
+		if (container.requestFullscreen) {
+			container.requestFullscreen();
+		}
+	} else {
+		if (document.exitFullscreen) {
+			document.exitFullscreen();
+		}
+	}
+}
+
+function handleFullscreenChange() {
+	isFullscreen.value = !!document.fullscreenElement;
+}
+
+onMounted(() => {
+	document.addEventListener('fullscreenchange', handleFullscreenChange);
+});
+
+onUnmounted(() => {
+	document.removeEventListener('fullscreenchange', handleFullscreenChange);
+});
 </script>
 
 <template>
@@ -504,9 +536,21 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 			<!-- Click-away -->
 			<div v-if="showAspectMenu" class="fixed inset-0 z-40" @click="showAspectMenu = false; showCustomSize = false" />
 
-			<!-- Social overlay toggle (image mode: always, video mode: 9:16 only) -->
-			<div v-if="isImageMode || is916" class="absolute right-2 top-1/2 -translate-y-1/2">
+			<!-- Right controls: Fullscreen, Social overlay -->
+			<div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+				<!-- Fullscreen toggle -->
 				<button
+					type="button"
+					class="flex items-center rounded-md p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
+					@click="toggleFullscreen"
+				>
+					<Minimize v-if="isFullscreen" class="size-4" />
+					<Maximize v-else class="size-4" />
+				</button>
+
+				<!-- Social overlay toggle (9:16 only) -->
+				<button
+					v-if="is916"
 					type="button"
 					:class="[
 						'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
@@ -554,7 +598,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 		</div>
 
 		<!-- Canvas + Interactive Overlay -->
-		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
+		<div ref="previewContainerRef" class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
 			<div class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
 				:style="{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }"
 			>

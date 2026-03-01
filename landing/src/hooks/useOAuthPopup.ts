@@ -1,110 +1,205 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useRef } from 'react'
+import { api } from '@/lib/api'
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+interface SocialAccountResult {
+  id: number
+  platform: string
+  username: string
+  display_name?: string | null
+  profile_image_url?: string | null
+}
 
 interface OAuthResult {
   success: boolean
-  account_id?: string
-  platform?: string
-  platform_user_id?: string
+  account?: SocialAccountResult
   username?: string
-  display_name?: string
-  profile_image_url?: string
-  connected_at?: string
   error?: string
 }
 
+interface ConnectUrlResponse {
+  success: boolean
+  auth_url?: string
+  connection_id?: string
+  error?: string
+}
+
+interface ConnectStatusResponse {
+  success: boolean
+  status?: 'pending' | 'callback_received' | 'synced' | 'failed' | 'expired'
+  error?: string
+}
+
+interface CompleteConnectResponse {
+  success: boolean
+  account?: SocialAccountResult
+  accounts?: SocialAccountResult[]
+  error?: string
+}
+
+const STATUS_POLL_INTERVAL_MS = 1500
+const STATUS_POLL_TIMEOUT_MS = 180000
+
 /**
- * Hook for opening OAuth flows in a popup window.
- * 
- * Flow:
- * 1. Opens backend /api/auth/{platform}/start with web_redirect_uri pointing to /oauth/callback
- * 2. Backend redirects to platform OAuth
- * 3. After auth, backend redirects back to /oauth/callback?success=true&...
- * 4. OAuthCallbackPage reads params and postMessages them back to this window
- * 5. This hook receives the message and calls onResult
+ * Hook for opening social OAuth flows in a popup window using server-side callback tracking.
  */
 export function useOAuthPopup() {
   const popupRef = useRef<Window | null>(null)
-  const callbackRef = useRef<((result: OAuthResult) => void) | null>(null)
+  const runIdRef = useRef(0)
 
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      // Only accept messages from our own origin
-      if (event.origin !== window.location.origin) return
-      if (event.data?.type !== 'oauth-callback') return
+  const openOAuth = useCallback(
+    (
+      platform: 'instagram' | 'tiktok' | 'youtube' | 'twitter' | 'x',
+      organizationId: string | number,
+      onResult: (result: OAuthResult) => void
+    ) => {
+      runIdRef.current += 1
+      const runId = runIdRef.current
 
-      const result: OAuthResult = {
-        success: event.data.success === 'true',
-        account_id: event.data.account_id,
-        platform: event.data.platform,
-        platform_user_id: event.data.platform_user_id,
-        username: event.data.username,
-        display_name: event.data.display_name,
-        profile_image_url: event.data.profile_image_url,
-        connected_at: event.data.connected_at,
-        error: event.data.error,
+      if (popupRef.current && !popupRef.current.closed) {
+        popupRef.current.close()
       }
 
-      if (callbackRef.current) {
-        callbackRef.current(result)
-        callbackRef.current = null
-      }
-    }
+      void (async () => {
+        try {
+          const normalizedPlatform = platform === 'twitter' ? 'x' : platform
 
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [])
+          const connectResponse = await api.post<ConnectUrlResponse>('/social/connect-url', {
+            organization_id: organizationId,
+            platform: normalizedPlatform,
+            return_mode: 'web',
+            return_url: `${window.location.origin}/oauth/callback`
+          })
 
-  const openOAuth = useCallback((
-    platform: 'instagram' | 'twitter',
-    organizationId: string | number,
-    authToken: string,
-    onResult: (result: OAuthResult) => void
-  ) => {
-    // Close any existing popup
-    if (popupRef.current && !popupRef.current.closed) {
-      popupRef.current.close()
-    }
+          if (
+            !connectResponse.success ||
+            !connectResponse.auth_url ||
+            !connectResponse.connection_id
+          ) {
+            throw new Error(connectResponse.error || 'Failed to create OAuth connection URL')
+          }
 
-    callbackRef.current = onResult
+          const connectionId = connectResponse.connection_id
 
-    const webRedirectUri = `${window.location.origin}/oauth/callback`
+          const width = 600
+          const height = 720
+          const left = window.screenX + (window.outerWidth - width) / 2
+          const top = window.screenY + (window.outerHeight - height) / 2
 
-    const params = new URLSearchParams({
-      organization_id: String(organizationId),
-      auth_token: authToken,
-      web_redirect_uri: webRedirectUri,
-    })
+          popupRef.current = window.open(
+            connectResponse.auth_url,
+            `oauth-${normalizedPlatform}`,
+            `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes`
+          )
 
-    const url = `${API_BASE}/api/auth/${platform}/start?${params.toString()}`
+          const status = await pollConnectStatus(
+            organizationId,
+            connectionId,
+            () => runIdRef.current !== runId,
+            () => !!popupRef.current && popupRef.current.closed
+          )
 
-    // Open popup centered on screen
-    const width = 600
-    const height = 700
-    const left = window.screenX + (window.outerWidth - width) / 2
-    const top = window.screenY + (window.outerHeight - height) / 2
+          if (runIdRef.current !== runId) return
 
-    popupRef.current = window.open(
-      url,
-      `oauth-${platform}`,
-      `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,scrollbars=yes`
-    )
+          if (status.status !== 'synced') {
+            onResult({
+              success: false,
+              error: status.error || 'Social account connection failed'
+            })
+            return
+          }
 
-    // Poll for popup close (user closed it manually)
-    const pollTimer = setInterval(() => {
-      if (popupRef.current?.closed) {
-        clearInterval(pollTimer)
-        // If callback hasn't been called yet, treat as cancelled
-        if (callbackRef.current) {
-          callbackRef.current({ success: false, error: 'Authentication window was closed' })
-          callbackRef.current = null
+          const completeResponse = await api.post<CompleteConnectResponse>(
+            '/social/complete-connect',
+            {
+              organization_id: organizationId,
+              connection_id: connectionId,
+              platform: normalizedPlatform
+            }
+          )
+
+          if (!completeResponse.success) {
+            onResult({
+              success: false,
+              error: completeResponse.error || 'Failed to finalize social account connection'
+            })
+            return
+          }
+
+          const account = completeResponse.account || completeResponse.accounts?.[0]
+
+          onResult({
+            success: true,
+            account,
+            username: account?.username
+          })
+        } catch (error: unknown) {
+          if (runIdRef.current !== runId) return
+
+          const errorMessage = error instanceof Error ? error.message : undefined
+          onResult({
+            success: false,
+            error: errorMessage || 'Failed to connect social account'
+          })
+        } finally {
+          if (popupRef.current && !popupRef.current.closed) {
+            popupRef.current.close()
+          }
         }
-      }
-    }, 500)
-  }, [])
+      })()
+    },
+    []
+  )
 
   return { openOAuth }
+}
+
+async function pollConnectStatus(
+  organizationId: string | number,
+  connectionId: string,
+  isCancelled: () => boolean,
+  isPopupClosed: () => boolean
+): Promise<ConnectStatusResponse> {
+  const startedAt = Date.now()
+  let popupClosedAt: number | null = null
+
+  while (!isCancelled()) {
+    if (isPopupClosed()) {
+      popupClosedAt = popupClosedAt || Date.now()
+    } else {
+      popupClosedAt = null
+    }
+
+    const statusResponse = await api.get<ConnectStatusResponse>('/social/connect-status', {
+      params: {
+        organization_id: organizationId,
+        connection_id: connectionId
+      }
+    })
+
+    if (!statusResponse.success) {
+      throw new Error(statusResponse.error || 'Failed to fetch connection status')
+    }
+
+    if (
+      statusResponse.status === 'synced' ||
+      statusResponse.status === 'failed' ||
+      statusResponse.status === 'expired'
+    ) {
+      return statusResponse
+    }
+
+    if (popupClosedAt && Date.now() - popupClosedAt > 5000) {
+      throw new Error('Authentication window was closed')
+    }
+
+    if (Date.now() - startedAt > STATUS_POLL_TIMEOUT_MS) {
+      throw new Error('Timed out waiting for social account connection')
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, STATUS_POLL_INTERVAL_MS))
+  }
+
+  throw new Error('Authentication window was closed')
 }
 
 export type { OAuthResult }

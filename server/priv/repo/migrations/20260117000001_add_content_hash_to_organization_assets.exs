@@ -3,7 +3,8 @@ defmodule ClippsterServer.Repo.Migrations.AddContentHashToOrganizationAssets do
 
   def change do
     alter table(:organization_assets) do
-      add :content_hash, :string, size: 64  # SHA-256 hex string
+      # SHA-256 hex string
+      add :content_hash, :string, size: 64
     end
 
     # Index for fast lookup by org + hash + asset_type

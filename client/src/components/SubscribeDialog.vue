@@ -484,6 +484,8 @@ async function initiateStripePayment() {
       }
     }
 
+    payload.return_context = 'desktop';
+
     const response = await api.post(endpoint, payload);
 
     if (!response.data.success) {
@@ -614,7 +616,7 @@ async function initiateCryptoPayment() {
     });
 
     paymentStatus.value = 'Opening payment window...';
-    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+    const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
     await invoke('open_wallet_payment_window', {
       packKey: props.context === 'organization' ? `org_sub_${props.plan.id}` : `sub_${props.plan.id}`,
       packName: props.plan.name,

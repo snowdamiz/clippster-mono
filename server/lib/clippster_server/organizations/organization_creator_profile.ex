@@ -19,7 +19,9 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
     field :profile_image_url, :string
     field :watermark_settings, :map
     field :intro_outro_settings, :map
-    field :layout_overlays, :map
+    field :intro_ratio_settings, :string
+    field :outro_ratio_settings, :string
+    field :layout_overlays, {:array, :map}
     field :scope, :string, default: "streamer"
     field :disabled, :boolean, default: false
 
@@ -56,6 +58,8 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
       :watermark_id,
       :watermark_settings,
       :intro_outro_settings,
+      :intro_ratio_settings,
+      :outro_ratio_settings,
       :layout_overlays,
       :scope
     ])
@@ -84,6 +88,8 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
       :watermark_id,
       :watermark_settings,
       :intro_outro_settings,
+      :intro_ratio_settings,
+      :outro_ratio_settings,
       :layout_overlays,
       :scope,
       :disabled
@@ -96,4 +102,3 @@ defmodule ClippsterServer.Organizations.OrganizationCreatorProfile do
     |> foreign_key_constraint(:watermark_id)
   end
 end
-

@@ -220,7 +220,8 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     end
   end
 
-  defp get_org_account(%PostSubmission{organization_social_account_id: account_id}) when not is_nil(account_id) do
+  defp get_org_account(%PostSubmission{organization_social_account_id: account_id})
+       when not is_nil(account_id) do
     case Social.get_social_account(account_id) do
       nil ->
         {:error, :account_not_found}
@@ -239,7 +240,8 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
   defp get_org_account(_), do: {:error, :no_account_specified}
 
-  defp get_user_account(%PostSubmission{user_social_account_id: account_id}) when not is_nil(account_id) do
+  defp get_user_account(%PostSubmission{user_social_account_id: account_id})
+       when not is_nil(account_id) do
     case Campaigns.get_social_account(account_id) do
       nil ->
         {:error, :account_not_found}
@@ -262,36 +264,45 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   defp maybe_refresh_org_token(%SocialAccount{} = account) do
     if SocialAccount.token_needs_refresh?(account) do
       Logger.info("[ScheduledPostWorker] Token needs refresh for org account #{account.id}")
-      
+
       access_token = SocialAccount.get_access_token(account)
-      
+
       case Platform.call(account.platform, :refresh_tokens, [access_token]) do
         {:ok, new_tokens} ->
-          expires_at = if new_tokens[:expires_in] do
-            DateTime.utc_now()
-            |> DateTime.add(new_tokens[:expires_in], :second)
-            |> DateTime.truncate(:second)
-          else
-            nil
-          end
+          expires_at =
+            if new_tokens[:expires_in] do
+              DateTime.utc_now()
+              |> DateTime.add(new_tokens[:expires_in], :second)
+              |> DateTime.truncate(:second)
+            else
+              nil
+            end
 
           attrs = %{
             access_token: new_tokens[:access_token],
             token_expires_at: expires_at
           }
 
-          attrs = if new_tokens[:refresh_token] do
-            Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
-          else
-            attrs
-          end
+          attrs =
+            if new_tokens[:refresh_token] do
+              Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
+            else
+              attrs
+            end
 
           case Social.refresh_social_account_tokens(account, attrs) do
             {:ok, updated_account} ->
-              Logger.info("[ScheduledPostWorker] Successfully refreshed token for org account #{account.id}")
+              Logger.info(
+                "[ScheduledPostWorker] Successfully refreshed token for org account #{account.id}"
+              )
+
               updated_account
+
             {:error, reason} ->
-              Logger.warning("[ScheduledPostWorker] Failed to save refreshed token: #{inspect(reason)}")
+              Logger.warning(
+                "[ScheduledPostWorker] Failed to save refreshed token: #{inspect(reason)}"
+              )
+
               account
           end
 
@@ -308,36 +319,45 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   defp maybe_refresh_user_token(%ClipperSocialAccount{} = account) do
     if ClipperSocialAccount.token_needs_refresh?(account) do
       Logger.info("[ScheduledPostWorker] Token needs refresh for user account #{account.id}")
-      
+
       access_token = ClipperSocialAccount.get_access_token(account)
-      
+
       case Platform.call(account.platform, :refresh_tokens, [access_token]) do
         {:ok, new_tokens} ->
-          expires_at = if new_tokens[:expires_in] do
-            DateTime.utc_now()
-            |> DateTime.add(new_tokens[:expires_in], :second)
-            |> DateTime.truncate(:second)
-          else
-            nil
-          end
+          expires_at =
+            if new_tokens[:expires_in] do
+              DateTime.utc_now()
+              |> DateTime.add(new_tokens[:expires_in], :second)
+              |> DateTime.truncate(:second)
+            else
+              nil
+            end
 
           attrs = %{
             access_token: new_tokens[:access_token],
             token_expires_at: expires_at
           }
 
-          attrs = if new_tokens[:refresh_token] do
-            Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
-          else
-            attrs
-          end
+          attrs =
+            if new_tokens[:refresh_token] do
+              Map.put(attrs, :refresh_token, new_tokens[:refresh_token])
+            else
+              attrs
+            end
 
           case Campaigns.update_social_account_tokens(account, attrs) do
             {:ok, updated_account} ->
-              Logger.info("[ScheduledPostWorker] Successfully refreshed token for user account #{account.id}")
+              Logger.info(
+                "[ScheduledPostWorker] Successfully refreshed token for user account #{account.id}"
+              )
+
               updated_account
+
             {:error, reason} ->
-              Logger.warning("[ScheduledPostWorker] Failed to save refreshed token: #{inspect(reason)}")
+              Logger.warning(
+                "[ScheduledPostWorker] Failed to save refreshed token: #{inspect(reason)}"
+              )
+
               account
           end
 
@@ -350,9 +370,10 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     end
   end
 
-  # Twitter-specific publish: two-step flow (upload media, then create tweet)
-  defp do_publish(%PostSubmission{platform: "twitter"} = post, account, access_token) do
-    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to Twitter (two-step flow)")
+  # X/Twitter-specific publish: two-step flow (upload media, then create tweet)
+  defp do_publish(%PostSubmission{platform: platform} = post, account, access_token)
+       when platform in ["twitter", "x"] do
+    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to X (two-step flow)")
 
     # Check for duplicate content before publishing
     account_id = get_account_id(post)
@@ -368,11 +389,17 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
         # Step 1: Upload media
         Logger.info("[ScheduledPostWorker] Twitter: uploading media for post #{post.id}")
+
         case Platform.call("twitter", :publish_media, [access_token, post.media_url, publish_opts]) do
           {:ok, %{media_id: media_id}} ->
             # Step 2: Create tweet with media_id
             Logger.info("[ScheduledPostWorker] Twitter: creating tweet with media_id #{media_id}")
-            case Platform.call("twitter", :create_tweet, [access_token, caption, [media_ids: [media_id]]]) do
+
+            case Platform.call("twitter", :create_tweet, [
+                   access_token,
+                   caption,
+                   [media_ids: [media_id]]
+                 ]) do
               {:ok, result} ->
                 # Store content hash with media_id for accurate future duplicate detection
                 final_content_hash = TwitterDuplicateDetector.generate_hash(caption, [media_id])
@@ -390,7 +417,9 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
       {:error, :duplicate_content, existing_post} ->
         # Duplicate detected, fail permanently
-        error_msg = "Duplicate content detected (matches post #{existing_post.id} from #{existing_post.inserted_at})"
+        error_msg =
+          "Duplicate content detected (matches post #{existing_post.id} from #{existing_post.inserted_at})"
+
         handle_publish_failure(post, error_msg, :permanent)
     end
   end
@@ -504,7 +533,6 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
       String.contains?(reason_lower, "504") -> :transient
       String.contains?(reason_lower, "temporarily") -> :transient
       String.contains?(reason_lower, "try again") -> :transient
-
       # Permanent errors - don't retry
       String.contains?(reason_lower, "invalid token") -> :permanent
       String.contains?(reason_lower, "expired") -> :permanent
@@ -513,7 +541,6 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
       String.contains?(reason_lower, "forbidden") -> :permanent
       String.contains?(reason_lower, "not found") -> :permanent
       String.contains?(reason_lower, "invalid") -> :permanent
-
       # Default to transient for unknown errors
       true -> :transient
     end

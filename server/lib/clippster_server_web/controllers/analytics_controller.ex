@@ -17,7 +17,11 @@ defmodule ClippsterServerWeb.AnalyticsController do
       {:error, changeset} ->
         conn
         |> put_status(400)
-        |> json(%{success: false, error: "Failed to track event", details: format_changeset_errors(changeset)})
+        |> json(%{
+          success: false,
+          error: "Failed to track event",
+          details: format_changeset_errors(changeset)
+        })
     end
   end
 

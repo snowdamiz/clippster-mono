@@ -32,7 +32,8 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
   @instagram_graph_url "https://graph.instagram.com"
 
   # HTTP timeout configuration - Instagram API can be slow
-  @http_timeout 30_000  # 30 seconds
+  # 30 seconds
+  @http_timeout 30_000
   @http_options [timeout: @http_timeout, recv_timeout: @http_timeout]
 
   # ============================================================================
@@ -51,7 +52,11 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
     # This is typically built on the client side, but provided here for completeness
     app_id = opts[:app_id] || raise "app_id required"
     redirect_uri = opts[:redirect_uri] || raise "redirect_uri required"
-    scope = opts[:scope] || "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights"
+
+    scope =
+      opts[:scope] ||
+        "instagram_business_basic,instagram_business_content_publish,instagram_business_manage_insights"
+
     state = opts[:state]
 
     params = %{
@@ -78,22 +83,28 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         # Step 2: Exchange short-lived token for long-lived token
         case exchange_for_long_lived_token(short_lived_data.access_token, app_secret) do
           {:ok, long_lived_data} ->
-            {:ok, %{
-              access_token: long_lived_data.access_token,
-              user_id: short_lived_data.user_id,
-              expires_in: long_lived_data.expires_in,
-              permissions: short_lived_data.permissions
-            }}
+            {:ok,
+             %{
+               access_token: long_lived_data.access_token,
+               user_id: short_lived_data.user_id,
+               expires_in: long_lived_data.expires_in,
+               permissions: short_lived_data.permissions
+             }}
 
           {:error, reason} ->
             # Fall back to short-lived token if long-lived exchange fails
-            IO.puts("[Instagram] Long-lived token exchange failed: #{inspect(reason)}, using short-lived token")
-            {:ok, %{
-              access_token: short_lived_data.access_token,
-              user_id: short_lived_data.user_id,
-              expires_in: 3600, # Short-lived tokens last 1 hour
-              permissions: short_lived_data.permissions
-            }}
+            IO.puts(
+              "[Instagram] Long-lived token exchange failed: #{inspect(reason)}, using short-lived token"
+            )
+
+            {:ok,
+             %{
+               access_token: short_lived_data.access_token,
+               user_id: short_lived_data.user_id,
+               # Short-lived tokens last 1 hour
+               expires_in: 3600,
+               permissions: short_lived_data.permissions
+             }}
         end
 
       {:error, reason} ->
@@ -105,10 +116,12 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
   def refresh_tokens(access_token) do
     # Refresh a long-lived token for another 60 days
     # Only works if token is at least 24 hours old and not expired
-    url = "#{@instagram_graph_url}/refresh_access_token?" <> URI.encode_query(%{
-      "grant_type" => "ig_refresh_token",
-      "access_token" => access_token
-    })
+    url =
+      "#{@instagram_graph_url}/refresh_access_token?" <>
+        URI.encode_query(%{
+          "grant_type" => "ig_refresh_token",
+          "access_token" => access_token
+        })
 
     case HTTPoison.get(url, [], @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
@@ -135,10 +148,13 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
   @impl true
   def get_user_profile(access_token) do
     # Get the authenticated user's profile
-    url = "#{@instagram_graph_url}/me?" <> URI.encode_query(%{
-      "fields" => "id,username,name,profile_picture_url,account_type,followers_count,media_count",
-      "access_token" => access_token
-    })
+    url =
+      "#{@instagram_graph_url}/me?" <>
+        URI.encode_query(%{
+          "fields" =>
+            "id,username,name,profile_picture_url,account_type,followers_count,media_count",
+          "access_token" => access_token
+        })
 
     case HTTPoison.get(url, [], @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
@@ -147,15 +163,16 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
             {:error, error["message"] || "Failed to get profile"}
 
           {:ok, profile} ->
-            {:ok, %{
-              user_id: profile["id"],
-              username: profile["username"],
-              display_name: profile["name"] || profile["username"],
-              profile_image_url: profile["profile_picture_url"],
-              account_type: profile["account_type"],
-              followers_count: profile["followers_count"],
-              media_count: profile["media_count"]
-            }}
+            {:ok,
+             %{
+               user_id: profile["id"],
+               username: profile["username"],
+               display_name: profile["name"] || profile["username"],
+               profile_image_url: profile["profile_picture_url"],
+               account_type: profile["account_type"],
+               followers_count: profile["followers_count"],
+               media_count: profile["media_count"]
+             }}
 
           {:error, _} ->
             {:error, :invalid_response}
@@ -178,18 +195,23 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
 
     # Generate a presigned URL if this is an R2 storage URL (private bucket)
     # Instagram needs to be able to download the media, so we create a temporary public URL
-    accessible_url = if String.contains?(media_url, ".r2.cloudflarestorage.com") do
-      case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7200) do
-        {:ok, presigned} ->
-          Logger.info("[Instagram] Generated presigned URL for R2 media (expires in 2 hours)")
-          presigned
-        {:error, reason} ->
-          Logger.warning("[Instagram] Failed to generate presigned URL: #{inspect(reason)}, using original URL")
-          media_url
+    accessible_url =
+      if String.contains?(media_url, ".r2.cloudflarestorage.com") do
+        case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7200) do
+          {:ok, presigned} ->
+            Logger.info("[Instagram] Generated presigned URL for R2 media (expires in 2 hours)")
+            presigned
+
+          {:error, reason} ->
+            Logger.warning(
+              "[Instagram] Failed to generate presigned URL: #{inspect(reason)}, using original URL"
+            )
+
+            media_url
+        end
+      else
+        media_url
       end
-    else
-      media_url
-    end
 
     # PulseKit: Log publish start
     pulse_capture(%{
@@ -220,8 +242,10 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         {:ok, profile} ->
           Logger.info("[Instagram] Got profile, user_id: #{profile.user_id}")
           do_publish_media(access_token, profile.user_id, accessible_url, caption, media_type)
+
         {:error, reason} ->
           Logger.error("[Instagram] Cannot get user profile: #{inspect(reason)}")
+
           pulse_capture(%{
             type: "instagram.publish.error",
             level: :error,
@@ -229,6 +253,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
             metadata: %{error: inspect(reason), stage: "get_user_profile"},
             tags: %{platform: "instagram", action: "publish_error"}
           })
+
           {:error, "Cannot determine user ID: #{inspect(reason)}"}
       end
     else
@@ -240,10 +265,12 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
   def get_insights(access_token, post_id) do
     # First, get basic media info
     # Note: like_count and comments_count are available on the media object
-    media_url = "#{@instagram_graph_url}/#{post_id}?" <> URI.encode_query(%{
-      "fields" => "media_type,like_count,comments_count",
-      "access_token" => access_token
-    })
+    media_url =
+      "#{@instagram_graph_url}/#{post_id}?" <>
+        URI.encode_query(%{
+          "fields" => "media_type,like_count,comments_count",
+          "access_token" => access_token
+        })
 
     Logger.info("[Instagram] Fetching insights for post #{post_id}")
 
@@ -271,16 +298,19 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
             # As of 2024-2025: 'plays', 'video_views', 'impressions' are DEPRECATED
             # Use 'views' as the new unified consumption metric for all media types
             # 'reach', 'saved' are still available
-            metrics = case media_type do
-              "VIDEO" -> "views,reach,saved"
-              "REELS" -> "views,reach,saved"
-              _ -> "reach,saved"
-            end
+            metrics =
+              case media_type do
+                "VIDEO" -> "views,reach,saved"
+                "REELS" -> "views,reach,saved"
+                _ -> "reach,saved"
+              end
 
-            insights_url = "#{@instagram_graph_url}/#{post_id}/insights?" <> URI.encode_query(%{
-              "metric" => metrics,
-              "access_token" => access_token
-            })
+            insights_url =
+              "#{@instagram_graph_url}/#{post_id}/insights?" <>
+                URI.encode_query(%{
+                  "metric" => metrics,
+                  "access_token" => access_token
+                })
 
             case HTTPoison.get(insights_url, [], @http_options) do
               {:ok, %HTTPoison.Response{status_code: 200, body: insights_body}} ->
@@ -288,16 +318,20 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
                   {:ok, %{"data" => metrics_data}} ->
                     Logger.info("[Instagram] Insights data: #{inspect(metrics_data)}")
                     {:ok, parse_insights(metrics_data, base_insights)}
+
                   {:ok, %{"error" => error}} ->
                     Logger.warning("[Instagram] Insights API error: #{inspect(error)}")
                     {:ok, base_insights}
+
                   other ->
                     Logger.warning("[Instagram] Unexpected insights response: #{inspect(other)}")
                     {:ok, base_insights}
                 end
+
               {:ok, %HTTPoison.Response{status_code: status, body: error_body}} ->
                 Logger.warning("[Instagram] Insights API returned #{status}: #{error_body}")
                 {:ok, base_insights}
+
               {:error, reason} ->
                 Logger.warning("[Instagram] Insights API request failed: #{inspect(reason)}")
                 {:ok, base_insights}
@@ -322,13 +356,14 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
 
   defp exchange_code_for_short_lived_token(code, app_id, app_secret, redirect_uri) do
     # POST to Instagram OAuth endpoint
-    body = URI.encode_query(%{
-      "client_id" => app_id,
-      "client_secret" => app_secret,
-      "grant_type" => "authorization_code",
-      "redirect_uri" => redirect_uri,
-      "code" => code
-    })
+    body =
+      URI.encode_query(%{
+        "client_id" => app_id,
+        "client_secret" => app_secret,
+        "grant_type" => "authorization_code",
+        "redirect_uri" => redirect_uri,
+        "code" => code
+      })
 
     headers = [{"Content-Type", "application/x-www-form-urlencoded"}]
 
@@ -337,19 +372,21 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         case Jason.decode(response_body) do
           {:ok, %{"data" => [data | _]}} ->
             # New format with data array
-            {:ok, %{
-              access_token: data["access_token"],
-              user_id: data["user_id"],
-              permissions: data["permissions"]
-            }}
+            {:ok,
+             %{
+               access_token: data["access_token"],
+               user_id: data["user_id"],
+               permissions: data["permissions"]
+             }}
 
           {:ok, %{"access_token" => token, "user_id" => user_id} = data} ->
             # Legacy format
-            {:ok, %{
-              access_token: token,
-              user_id: to_string(user_id),
-              permissions: data["permissions"]
-            }}
+            {:ok,
+             %{
+               access_token: token,
+               user_id: to_string(user_id),
+               permissions: data["permissions"]
+             }}
 
           {:ok, %{"error_type" => error_type, "error_message" => error_message}} ->
             {:error, "#{error_type}: #{error_message}"}
@@ -369,11 +406,13 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
 
   defp exchange_for_long_lived_token(short_lived_token, app_secret) do
     # GET to exchange short-lived for long-lived token
-    url = "#{@instagram_graph_url}/access_token?" <> URI.encode_query(%{
-      "grant_type" => "ig_exchange_token",
-      "client_secret" => app_secret,
-      "access_token" => short_lived_token
-    })
+    url =
+      "#{@instagram_graph_url}/access_token?" <>
+        URI.encode_query(%{
+          "grant_type" => "ig_exchange_token",
+          "client_secret" => app_secret,
+          "access_token" => short_lived_token
+        })
 
     case HTTPoison.get(url, [], @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
@@ -418,27 +457,33 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
       tags: %{platform: "instagram", action: "dispatch", media_type: media_type}
     })
 
-    result = case media_type do
-      "image" ->
-        Logger.info("[Instagram] Publishing as IMAGE")
-        publish_image(access_token, ig_user_id, media_url, caption)
-      "video" ->
-        Logger.info("[Instagram] Publishing as REEL (VIDEO deprecated)")
-        publish_reel(access_token, ig_user_id, media_url, caption)
-      "reel" ->
-        Logger.info("[Instagram] Publishing as REEL")
-        publish_reel(access_token, ig_user_id, media_url, caption)
-      _ ->
-        Logger.error("[Instagram] Unsupported media type: #{inspect(media_type)}")
-        pulse_capture(%{
-          type: "instagram.publish.error",
-          level: :error,
-          message: "Unsupported media type: #{inspect(media_type)}",
-          metadata: %{media_type: media_type, ig_user_id: ig_user_id},
-          tags: %{platform: "instagram", action: "publish_error"}
-        })
-        {:error, :unsupported_media_type}
-    end
+    result =
+      case media_type do
+        "image" ->
+          Logger.info("[Instagram] Publishing as IMAGE")
+          publish_image(access_token, ig_user_id, media_url, caption)
+
+        "video" ->
+          Logger.info("[Instagram] Publishing as REEL (VIDEO deprecated)")
+          publish_reel(access_token, ig_user_id, media_url, caption)
+
+        "reel" ->
+          Logger.info("[Instagram] Publishing as REEL")
+          publish_reel(access_token, ig_user_id, media_url, caption)
+
+        _ ->
+          Logger.error("[Instagram] Unsupported media type: #{inspect(media_type)}")
+
+          pulse_capture(%{
+            type: "instagram.publish.error",
+            level: :error,
+            message: "Unsupported media type: #{inspect(media_type)}",
+            metadata: %{media_type: media_type, ig_user_id: ig_user_id},
+            tags: %{platform: "instagram", action: "publish_error"}
+          })
+
+          {:error, :unsupported_media_type}
+      end
 
     # Log final result
     case result do
@@ -455,6 +500,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
           },
           tags: %{platform: "instagram", action: "publish_success"}
         })
+
       {:error, reason} ->
         pulse_capture(%{
           type: "instagram.publish.failed",
@@ -475,15 +521,18 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
 
   defp publish_image(access_token, ig_user_id, image_url, caption) do
     container_url = "#{@instagram_graph_url}/#{ig_user_id}/media"
-    container_body = URI.encode_query(%{
-      "image_url" => image_url,
-      "caption" => caption,
-      "access_token" => access_token
-    })
+
+    container_body =
+      URI.encode_query(%{
+        "image_url" => image_url,
+        "caption" => caption,
+        "access_token" => access_token
+      })
 
     case create_media_container(container_url, container_body) do
       {:ok, container_id} ->
         publish_container(access_token, ig_user_id, container_id, "image")
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -512,12 +561,14 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
 
   defp publish_reel(access_token, ig_user_id, video_url, caption) do
     container_url = "#{@instagram_graph_url}/#{ig_user_id}/media"
-    container_body = URI.encode_query(%{
-      "video_url" => video_url,
-      "caption" => caption,
-      "media_type" => "REELS",
-      "access_token" => access_token
-    })
+
+    container_body =
+      URI.encode_query(%{
+        "video_url" => video_url,
+        "caption" => caption,
+        "media_type" => "REELS",
+        "access_token" => access_token
+      })
 
     case create_media_container(container_url, container_body) do
       {:ok, container_id} ->
@@ -525,6 +576,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
           :ok -> publish_container(access_token, ig_user_id, container_id, "reel")
           {:error, reason} -> {:error, reason}
         end
+
       {:error, reason} ->
         {:error, reason}
     end
@@ -545,9 +597,11 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
     case HTTPoison.post(url, body, headers, @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
         Logger.info("[Instagram] Container response (200): #{response_body}")
+
         case Jason.decode(response_body) do
           {:ok, %{"id" => container_id}} ->
             Logger.info("[Instagram] Container created: #{container_id}")
+
             pulse_capture(%{
               type: "instagram.container.created",
               level: :info,
@@ -555,10 +609,13 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
               metadata: %{container_id: container_id},
               tags: %{platform: "instagram", action: "container_created"}
             })
+
             {:ok, container_id}
+
           {:ok, %{"error" => error}} ->
             error_msg = error["message"] || "Container creation failed"
             Logger.error("[Instagram] Container creation error: #{inspect(error)}")
+
             pulse_capture(%{
               type: "instagram.container.error",
               level: :error,
@@ -566,9 +623,12 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
               metadata: %{error: error, error_message: error_msg, response_body: response_body},
               tags: %{platform: "instagram", action: "container_error"}
             })
+
             {:error, error_msg}
+
           _ ->
             Logger.error("[Instagram] Invalid container response: #{response_body}")
+
             pulse_capture(%{
               type: "instagram.container.error",
               level: :error,
@@ -576,12 +636,14 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
               metadata: %{response_body: response_body},
               tags: %{platform: "instagram", action: "container_error"}
             })
+
             {:error, :invalid_response}
         end
 
       {:ok, %HTTPoison.Response{status_code: status, body: response_body}} ->
         Logger.error("[Instagram] Container creation failed (#{status}): #{response_body}")
         error = extract_error(response_body, :container_creation_failed)
+
         pulse_capture(%{
           type: "instagram.container.error",
           level: :error,
@@ -589,10 +651,12 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
           metadata: %{status_code: status, response_body: response_body, error: error},
           tags: %{platform: "instagram", action: "container_error"}
         })
+
         {:error, error}
 
       {:error, reason} ->
         Logger.error("[Instagram] HTTP error creating container: #{inspect(reason)}")
+
         pulse_capture(%{
           type: "instagram.container.error",
           level: :error,
@@ -600,12 +664,14 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
           metadata: %{error: inspect(reason)},
           tags: %{platform: "instagram", action: "container_http_error"}
         })
+
         {:error, reason}
     end
   end
 
   defp wait_for_media_ready(access_token, container_id, attempts \\ 0) do
-    max_attempts = 30  # 5 minutes with 10 second intervals
+    # 5 minutes with 10 second intervals
+    max_attempts = 30
 
     if attempts >= max_attempts do
       pulse_capture(%{
@@ -615,12 +681,15 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         metadata: %{container_id: container_id, attempts: attempts, max_attempts: max_attempts},
         tags: %{platform: "instagram", action: "status_timeout"}
       })
+
       {:error, :media_processing_timeout}
     else
-      url = "#{@instagram_graph_url}/#{container_id}?" <> URI.encode_query(%{
-        "fields" => "status_code,status",
-        "access_token" => access_token
-      })
+      url =
+        "#{@instagram_graph_url}/#{container_id}?" <>
+          URI.encode_query(%{
+            "fields" => "status_code,status",
+            "access_token" => access_token
+          })
 
       case HTTPoison.get(url, [], @http_options) do
         {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
@@ -633,18 +702,27 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
                 metadata: %{container_id: container_id, attempts: attempts},
                 tags: %{platform: "instagram", action: "status_ready"}
               })
+
               :ok
+
             {:ok, %{"status_code" => "ERROR"} = response} ->
               error_reason = Map.get(response, "status", "Unknown error")
               Logger.error("[Instagram] Media processing failed: #{error_reason}")
+
               pulse_capture(%{
                 type: "instagram.status.error",
                 level: :error,
                 message: "Media processing failed: #{error_reason}",
-                metadata: %{container_id: container_id, attempts: attempts, error_reason: error_reason},
+                metadata: %{
+                  container_id: container_id,
+                  attempts: attempts,
+                  error_reason: error_reason
+                },
                 tags: %{platform: "instagram", action: "status_error"}
               })
+
               {:error, {:media_processing_failed, error_reason}}
+
             {:ok, %{"status_code" => status}} ->
               IO.puts("[Instagram] Media processing status: #{status}, waiting...")
               # Log every 5th poll to avoid flooding
@@ -657,8 +735,10 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
                   tags: %{platform: "instagram", action: "status_poll"}
                 })
               end
+
               Process.sleep(10_000)
               wait_for_media_ready(access_token, container_id, attempts + 1)
+
             _ ->
               pulse_capture(%{
                 type: "instagram.status.error",
@@ -667,12 +747,16 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
                 metadata: %{container_id: container_id, response_body: body},
                 tags: %{platform: "instagram", action: "status_error"}
               })
+
               {:error, :invalid_response}
           end
 
         {:error, %HTTPoison.Error{reason: :timeout}} ->
           # Timeout during status check - retry instead of failing
-          Logger.warning("[Instagram] Status check timed out, retrying... (attempt #{attempts + 1})")
+          Logger.warning(
+            "[Instagram] Status check timed out, retrying... (attempt #{attempts + 1})"
+          )
+
           Process.sleep(5_000)
           wait_for_media_ready(access_token, container_id, attempts + 1)
 
@@ -684,6 +768,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
             metadata: %{container_id: container_id, error: inspect(reason)},
             tags: %{platform: "instagram", action: "status_http_error"}
           })
+
           {:error, reason}
       end
     end
@@ -691,10 +776,13 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
 
   defp publish_container(access_token, ig_user_id, container_id, media_type) do
     url = "#{@instagram_graph_url}/#{ig_user_id}/media_publish"
-    body = URI.encode_query(%{
-      "creation_id" => container_id,
-      "access_token" => access_token
-    })
+
+    body =
+      URI.encode_query(%{
+        "creation_id" => container_id,
+        "access_token" => access_token
+      })
+
     headers = [{"Content-Type", "application/x-www-form-urlencoded"}]
 
     pulse_capture(%{
@@ -710,6 +798,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         case Jason.decode(response_body) do
           {:ok, %{"id" => post_id}} ->
             permalink = get_post_permalink(access_token, post_id)
+
             pulse_capture(%{
               type: "instagram.container.published",
               level: :info,
@@ -722,13 +811,17 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
               },
               tags: %{platform: "instagram", action: "container_published"}
             })
-            {:ok, %{
-              post_id: post_id,
-              post_url: permalink || "https://www.instagram.com/",
-              media_type: media_type
-            }}
+
+            {:ok,
+             %{
+               post_id: post_id,
+               post_url: permalink || "https://www.instagram.com/",
+               media_type: media_type
+             }}
+
           {:ok, %{"error" => error}} ->
             error_msg = error["message"] || "Publish failed"
+
             pulse_capture(%{
               type: "instagram.container.publish_error",
               level: :error,
@@ -736,7 +829,9 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
               metadata: %{container_id: container_id, error: error, error_message: error_msg},
               tags: %{platform: "instagram", action: "container_publish_error"}
             })
+
             {:error, error_msg}
+
           _ ->
             pulse_capture(%{
               type: "instagram.container.publish_error",
@@ -745,18 +840,26 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
               metadata: %{container_id: container_id, response_body: response_body},
               tags: %{platform: "instagram", action: "container_publish_error"}
             })
+
             {:error, :invalid_response}
         end
 
       {:ok, %HTTPoison.Response{status_code: status, body: response_body}} ->
         error = extract_error(response_body, :publish_failed)
+
         pulse_capture(%{
           type: "instagram.container.publish_error",
           level: :error,
           message: "Container publish failed with HTTP #{status}",
-          metadata: %{container_id: container_id, status_code: status, response_body: response_body, error: error},
+          metadata: %{
+            container_id: container_id,
+            status_code: status,
+            response_body: response_body,
+            error: error
+          },
           tags: %{platform: "instagram", action: "container_publish_error"}
         })
+
         {:error, error}
 
       {:error, reason} ->
@@ -767,15 +870,18 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
           metadata: %{container_id: container_id, error: inspect(reason)},
           tags: %{platform: "instagram", action: "container_publish_http_error"}
         })
+
         {:error, reason}
     end
   end
 
   defp get_post_permalink(access_token, post_id) do
-    url = "#{@instagram_graph_url}/#{post_id}?" <> URI.encode_query(%{
-      "fields" => "permalink",
-      "access_token" => access_token
-    })
+    url =
+      "#{@instagram_graph_url}/#{post_id}?" <>
+        URI.encode_query(%{
+          "fields" => "permalink",
+          "access_token" => access_token
+        })
 
     case HTTPoison.get(url, [], @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
@@ -783,7 +889,9 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
           {:ok, %{"permalink" => permalink}} -> permalink
           _ -> nil
         end
-      _ -> nil
+
+      _ ->
+        nil
     end
   end
 
@@ -794,6 +902,7 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
   defp parse_insights(metrics, base_insights) when is_list(metrics) do
     Enum.reduce(metrics, base_insights, fn metric, acc ->
       value = get_metric_value(metric)
+
       case metric["name"] do
         # Current metrics (2024-2025)
         "views" -> %{acc | view_count: value}
@@ -820,7 +929,8 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
       cond do
         String.match?(url, ~r/\.(jpg|jpeg|png|gif|webp)$/i) -> "image"
         String.match?(url, ~r/\.(mp4|mov|avi|mkv|webm)$/i) -> "video"
-        true -> "video"  # Default to video for clips
+        # Default to video for clips
+        true -> "video"
       end
     end
   end
@@ -833,5 +943,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
       _ -> default_error
     end
   end
+
   defp extract_error(_, default_error), do: default_error
 end

@@ -30,6 +30,27 @@ defmodule ClippsterServer.Waitlist do
   end
 
   @doc """
+  Creates a new waitlist entry and sends confirmation email (admin use).
+  Returns {:ok, entry} on success or {:error, changeset} on failure.
+  """
+  def admin_create_entry(attrs) do
+    result =
+      %WaitlistEntry{}
+      |> WaitlistEntry.changeset(attrs)
+      |> Repo.insert()
+
+    case result do
+      {:ok, entry} ->
+        # Send confirmation email
+        send_confirmation_email(entry.email)
+        {:ok, entry}
+
+      {:error, changeset} ->
+        {:error, changeset}
+    end
+  end
+
+  @doc """
   Lists all waitlist entries ordered by most recent first.
   """
   def list_entries do
@@ -113,10 +134,15 @@ defmodule ClippsterServer.Waitlist do
       {:ok, beta_code} = ClippsterServer.BetaCodes.generate_assigned_code(entry.email)
 
       # Generate discount code
-      case ClippsterServer.PromoCodes.create_waitlist_discount_code(entry.id, admin_id, discount_config) do
+      case ClippsterServer.PromoCodes.create_waitlist_discount_code(
+             entry.id,
+             admin_id,
+             discount_config
+           ) do
         {:ok, %{code: discount_code, stripe_promo_id: stripe_promo_id}} ->
           # Send invite email
-          email_result = send_invite_email(entry, beta_code, discount_code, discount_config.percent_off)
+          email_result =
+            send_invite_email(entry, beta_code, discount_code, discount_config.percent_off)
 
           # Update entry with invite tracking
           attrs = %{
@@ -176,7 +202,8 @@ defmodule ClippsterServer.Waitlist do
         {invited + new_invited, skipped + new_skipped, errors ++ new_errors}
       end)
 
-    {:ok, %{invited_count: elem(results, 0), skipped_count: elem(results, 1), errors: elem(results, 2)}}
+    {:ok,
+     %{invited_count: elem(results, 0), skipped_count: elem(results, 1), errors: elem(results, 2)}}
   end
 
   defp send_confirmation_email(email) do

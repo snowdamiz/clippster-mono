@@ -10,10 +10,11 @@ defmodule ClippsterServer.Credits do
 
   # Credit packs for purchasing additional credits (separate from subscription)
   # 1 credit = 1 minute of video processing
+  # Pricing matches add-on structure without seats
   @credit_packs %{
-    "small" => %{hours: 240, usd: 10.00, name: "Small Pack"},
-    "medium" => %{hours: 600, usd: 19.99, name: "Medium Pack"},
-    "large" => %{hours: 1800, usd: 44.99, name: "Large Pack"}
+    "small" => %{hours: 10_000, usd: 100.00, name: "10k Credits"},
+    "medium" => %{hours: 20_000, usd: 200.00, name: "20k Credits"},
+    "large" => %{hours: 40_000, usd: 400.00, name: "40k Credits"}
   }
 
   @doc """
@@ -68,10 +69,11 @@ defmodule ClippsterServer.Credits do
         {:ok, %{hours_remaining: Decimal.new("0"), hours_used: Decimal.new("0")}}
 
       user_credit ->
-        {:ok, %{
-          hours_remaining: user_credit.hours_remaining,
-          hours_used: user_credit.hours_used
-        }}
+        {:ok,
+         %{
+           hours_remaining: user_credit.hours_remaining,
+           hours_used: user_credit.hours_used
+         }}
     end
   end
 
@@ -98,7 +100,8 @@ defmodule ClippsterServer.Credits do
           case CreditTransaction.stripe_changeset(attrs) |> Repo.insert() do
             {:ok, transaction} ->
               # Add credits to user balance
-              {:ok, _user_credit} = add_credits(transaction.user_id, Decimal.to_float(transaction.hours_purchased))
+              {:ok, _user_credit} =
+                add_credits(transaction.user_id, Decimal.to_float(transaction.hours_purchased))
 
               Analytics.track_event("credits_purchased", transaction.user_id, %{
                 hours: transaction.hours_purchased,
@@ -124,6 +127,7 @@ defmodule ClippsterServer.Credits do
   def get_transaction_by_stripe_session(session_id) when is_binary(session_id) do
     Repo.get_by(CreditTransaction, stripe_session_id: session_id)
   end
+
   def get_transaction_by_stripe_session(_), do: nil
 
   @doc """
@@ -218,6 +222,7 @@ defmodule ClippsterServer.Credits do
       else
         # Only add enough to reach the cap
         capped_hours = min(hours, @free_tier_credit_cap - current)
+
         if capped_hours > 0 do
           add_credits(user_id, capped_hours)
         else
@@ -256,6 +261,7 @@ defmodule ClippsterServer.Credits do
           Analytics.track_event("credits_spent", user_id, %{
             hours: hours
           })
+
           updated_credit
 
         {:error, changeset} ->
@@ -277,10 +283,13 @@ defmodule ClippsterServer.Credits do
   - {:error, :not_a_member} if user is not a member of the org
   - {:error, reason} on other failures
   """
-  def deduct_credits_with_org_context(user_id, hours, organization_id) when is_nil(organization_id) do
+  def deduct_credits_with_org_context(user_id, hours, organization_id)
+      when is_nil(organization_id) do
     # No org context - use personal credits
     case deduct_credits(user_id, hours) do
-      {:ok, _} -> {:ok, %{source: :personal}}
+      {:ok, _} ->
+        {:ok, %{source: :personal}}
+
       {:error, _} ->
         {:ok, %{hours_remaining: remaining}} = get_user_balance(user_id)
         {:error, :insufficient_credits, Decimal.to_float(remaining), hours}
@@ -295,19 +304,22 @@ defmodule ClippsterServer.Credits do
       {:error, :not_a_member}
     else
       # Try to deduct from member's org allocation
-      case Organizations.deduct_member_credits(organization_id, user_id, hours, true) do
+      case Organizations.deduct_member_credits(organization_id, user_id, hours) do
         {:ok, _allocation} ->
           {:ok, %{source: :organization, org_id: organization_id}}
 
         {:error, :insufficient_credits} ->
           # Get remaining allocation for error message
           allocation = Organizations.get_member_allocation(organization_id, user_id)
-          remaining = if allocation do
-            Organizations.MemberCreditAllocation.remaining_hours(allocation)
-            |> Decimal.to_float()
-          else
-            0.0
-          end
+
+          remaining =
+            if allocation do
+              Organizations.MemberCreditAllocation.remaining_hours(allocation)
+              |> Decimal.to_float()
+            else
+              0.0
+            end
+
           {:error, :insufficient_credits, remaining, hours}
 
         {:error, reason} ->
@@ -334,7 +346,13 @@ defmodule ClippsterServer.Credits do
 
       allocation ->
         remaining = Organizations.MemberCreditAllocation.remaining_hours(allocation)
-        {:ok, %{source: :organization, hours_remaining: Decimal.to_float(remaining), org_id: organization_id}}
+
+        {:ok,
+         %{
+           source: :organization,
+           hours_remaining: Decimal.to_float(remaining),
+           org_id: organization_id
+         }}
     end
   end
 
@@ -383,9 +401,13 @@ defmodule ClippsterServer.Credits do
 
     Enum.any?(organizations, fn %{organization: org} ->
       case Organizations.get_member_allocation(org.id, user_id) do
-        nil -> false
+        nil ->
+          false
+
         allocation ->
-          remaining = ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
+          remaining =
+            ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
+
           Decimal.compare(remaining, hours_decimal) != :lt
       end
     end)
@@ -402,20 +424,26 @@ defmodule ClippsterServer.Credits do
     # Sum up all organization allocations
     organizations = Organizations.list_user_organizations(user_id)
 
-    org_remaining = Enum.reduce(organizations, Decimal.new("0"), fn %{organization: org}, acc ->
-      case Organizations.get_member_allocation(org.id, user_id) do
-        nil -> acc
-        allocation ->
-          remaining = ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
-          Decimal.add(acc, remaining)
-      end
-    end)
+    org_remaining =
+      Enum.reduce(organizations, Decimal.new("0"), fn %{organization: org}, acc ->
+        case Organizations.get_member_allocation(org.id, user_id) do
+          nil ->
+            acc
 
-    {:ok, %{
-      personal: personal_remaining,
-      organization: org_remaining,
-      total: Decimal.add(personal_remaining, org_remaining)
-    }}
+          allocation ->
+            remaining =
+              ClippsterServer.Organizations.MemberCreditAllocation.remaining_hours(allocation)
+
+            Decimal.add(acc, remaining)
+        end
+      end)
+
+    {:ok,
+     %{
+       personal: personal_remaining,
+       organization: org_remaining,
+       total: Decimal.add(personal_remaining, org_remaining)
+     }}
   end
 
   # ============================================================================
@@ -492,11 +520,12 @@ defmodule ClippsterServer.Credits do
   def cancel_processing_job(job_id, user_id, reason \\ "User cancelled") do
     Repo.transaction(fn ->
       # Get and validate the job
-      job = case get_processing_job(job_id, user_id) do
-        {:ok, job} -> job
-        {:error, :not_found} -> Repo.rollback(:job_not_found)
-        {:error, :unauthorized} -> Repo.rollback(:unauthorized)
-      end
+      job =
+        case get_processing_job(job_id, user_id) do
+          {:ok, job} -> job
+          {:error, :not_found} -> Repo.rollback(:job_not_found)
+          {:error, :unauthorized} -> Repo.rollback(:unauthorized)
+        end
 
       # Check if job can be cancelled
       unless ProcessingJob.can_cancel?(job) do
@@ -512,14 +541,17 @@ defmodule ClippsterServer.Credits do
       refund_amount = job.credits_deducted
 
       # Update job status to cancelled with refund info
-      {:ok, updated_job} = job
+      {:ok, updated_job} =
+        job
         |> ProcessingJob.cancel_changeset(refund_amount, reason)
         |> Repo.update()
 
       # Add credits back to user's balance
       {:ok, _updated_credit} = add_credits(user_id, Decimal.to_float(refund_amount))
 
-      IO.puts("[Credits] Refunded #{Decimal.to_string(refund_amount)} credits to user #{user_id} for cancelled job #{job_id}")
+      IO.puts(
+        "[Credits] Refunded #{Decimal.to_string(refund_amount)} credits to user #{user_id} for cancelled job #{job_id}"
+      )
 
       %{job: updated_job, refunded: refund_amount}
     end)
@@ -541,7 +573,9 @@ defmodule ClippsterServer.Credits do
   """
   def complete_processing_job(job_id, result_data \\ nil) do
     case Repo.get(ProcessingJob, job_id) do
-      nil -> {:error, :not_found}
+      nil ->
+        {:error, :not_found}
+
       job ->
         job
         |> ProcessingJob.complete_changeset(result_data)
@@ -556,7 +590,9 @@ defmodule ClippsterServer.Credits do
   """
   def fail_processing_job(job_id, error_info \\ nil) do
     case Repo.get(ProcessingJob, job_id) do
-      nil -> {:error, :not_found}
+      nil ->
+        {:error, :not_found}
+
       job ->
         job
         |> ProcessingJob.fail_changeset(error_info)
@@ -568,19 +604,22 @@ defmodule ClippsterServer.Credits do
   Lists all processing jobs for a user.
   """
   def list_user_processing_jobs(user_id, opts \\ []) do
-    query = ProcessingJob
+    query =
+      ProcessingJob
       |> where([j], j.user_id == ^user_id)
       |> order_by([j], desc: j.inserted_at)
 
-    query = case Keyword.get(opts, :status) do
-      nil -> query
-      status -> where(query, [j], j.status == ^status)
-    end
+    query =
+      case Keyword.get(opts, :status) do
+        nil -> query
+        status -> where(query, [j], j.status == ^status)
+      end
 
-    query = case Keyword.get(opts, :limit) do
-      nil -> query
-      limit -> limit(query, ^limit)
-    end
+    query =
+      case Keyword.get(opts, :limit) do
+        nil -> query
+        limit -> limit(query, ^limit)
+      end
 
     Repo.all(query)
   end

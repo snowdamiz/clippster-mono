@@ -5,7 +5,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
   """
 
   @whisper_api_url "https://api.lemonfox.ai/v1/audio/transcriptions"
-  
+
   # Retry configuration for transient network errors
   # Using aggressive retry strategy to handle intermittent connection issues
   @max_retries 5
@@ -32,7 +32,8 @@ defmodule ClippsterServer.AI.WhisperAPI do
 
         # Debug: Check if binary size is reasonable
         actual_size = byte_size(audio_binary)
-        if actual_size > 50_000_000 do  # 50MB threshold
+        # 50MB threshold
+        if actual_size > 50_000_000 do
           IO.puts("[WhisperAPI] WARNING: Binary seems too large (#{actual_size} bytes)")
         end
 
@@ -43,7 +44,13 @@ defmodule ClippsterServer.AI.WhisperAPI do
         boundary = "----WebKitFormBoundary#{:crypto.strong_rand_bytes(16) |> Base.encode16()}"
 
         # Build multipart body with binary data
-        multipart_body = build_prototype_multipart_body(audio_binary, upload_metadata.filename, upload_metadata.content_type, boundary)
+        multipart_body =
+          build_prototype_multipart_body(
+            audio_binary,
+            upload_metadata.filename,
+            upload_metadata.content_type,
+            boundary
+          )
 
         headers = [
           {"Authorization", "Bearer #{api_key}"},
@@ -95,7 +102,8 @@ defmodule ClippsterServer.AI.WhisperAPI do
           IO.puts("[WhisperAPI] File size: #{actual_size} bytes")
 
           # Debug: Check if file size matches expected MP3 size
-          if actual_size > 5_000_000 do  # 5MB threshold
+          # 5MB threshold
+          if actual_size > 5_000_000 do
             IO.puts("[WhisperAPI] WARNING: File seems too large for MP3 (#{actual_size} bytes)")
           end
 
@@ -106,7 +114,13 @@ defmodule ClippsterServer.AI.WhisperAPI do
           boundary = "----WebKitFormBoundary#{:crypto.strong_rand_bytes(16) |> Base.encode16()}"
 
           # Build multipart body EXACTLY matching the prototype
-          multipart_body = build_prototype_multipart_body(file_content, audio_upload.filename, audio_upload.content_type, boundary)
+          multipart_body =
+            build_prototype_multipart_body(
+              file_content,
+              audio_upload.filename,
+              audio_upload.content_type,
+              boundary
+            )
 
           headers = [
             {"Authorization", "Bearer #{api_key}"},
@@ -132,7 +146,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
   # Execute HTTP request with retry logic for transient network errors
   defp execute_request_with_retry(headers, body, attempt) do
     request = Finch.build(:post, @whisper_api_url, headers, body)
-    
+
     # Use pool_timeout to fail fast if connection pool is exhausted
     # and receive_timeout for the actual request
     case Finch.request(request, ClippsterFinch, receive_timeout: 120_000, pool_timeout: 10_000) do
@@ -157,7 +171,11 @@ defmodule ClippsterServer.AI.WhisperAPI do
         if attempt < @max_retries do
           # Use longer delay for rate limiting (at least 5 seconds)
           delay = max(calculate_backoff_delay(attempt), 5000)
-          IO.puts("[WhisperAPI] Rate limited (429), retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})...")
+
+          IO.puts(
+            "[WhisperAPI] Rate limited (429), retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})..."
+          )
+
           Process.sleep(delay)
           execute_request_with_retry(headers, body, attempt + 1)
         else
@@ -165,15 +183,23 @@ defmodule ClippsterServer.AI.WhisperAPI do
           {:error, "Whisper API rate limited (429): #{response_body}"}
         end
 
-      {:ok, %Finch.Response{status: status_code, body: response_body}} when status_code in [500, 502, 503, 504] ->
+      {:ok, %Finch.Response{status: status_code, body: response_body}}
+      when status_code in [500, 502, 503, 504] ->
         # Server errors that are retryable
         if attempt < @max_retries do
           delay = calculate_backoff_delay(attempt)
-          IO.puts("[WhisperAPI] Server error #{status_code}, retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})...")
+
+          IO.puts(
+            "[WhisperAPI] Server error #{status_code}, retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})..."
+          )
+
           Process.sleep(delay)
           execute_request_with_retry(headers, body, attempt + 1)
         else
-          IO.puts("[WhisperAPI] API returned error status after #{@max_retries} retries: #{status_code}")
+          IO.puts(
+            "[WhisperAPI] API returned error status after #{@max_retries} retries: #{status_code}"
+          )
+
           IO.puts("[WhisperAPI] Error body: #{response_body}")
           {:error, "Whisper API error (#{status_code}): #{response_body}"}
         end
@@ -186,11 +212,18 @@ defmodule ClippsterServer.AI.WhisperAPI do
       {:error, reason} ->
         if retryable_error?(reason) and attempt < @max_retries do
           delay = calculate_backoff_delay(attempt)
-          IO.puts("[WhisperAPI] Transient error: #{format_error(reason)}, retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})...")
+
+          IO.puts(
+            "[WhisperAPI] Transient error: #{format_error(reason)}, retrying in #{delay}ms (attempt #{attempt + 1}/#{@max_retries})..."
+          )
+
           Process.sleep(delay)
           execute_request_with_retry(headers, body, attempt + 1)
         else
-          IO.puts("[WhisperAPI] HTTP request failed after #{attempt + 1} attempts: #{format_error(reason)}")
+          IO.puts(
+            "[WhisperAPI] HTTP request failed after #{attempt + 1} attempts: #{format_error(reason)}"
+          )
+
           {:error, "Network error after #{attempt + 1} attempts: #{format_error(reason)}"}
         end
     end
@@ -200,52 +233,63 @@ defmodule ClippsterServer.AI.WhisperAPI do
   defp format_error(%{__struct__: struct_name, reason: reason}) do
     "#{inspect(struct_name)}: #{inspect(reason)}"
   end
+
   defp format_error(error), do: inspect(error)
 
   # Check if an error is retryable (transient network issues)
   # Comprehensive pattern matching for all known transient error types
-  
+
   # Mint transport errors (connection level)
-  defp retryable_error?(%Mint.TransportError{reason: reason}) 
-    when reason in [:closed, :timeout, :econnrefused, :econnreset, :ehostunreach, 
-                    :enetunreach, :enotconn, :epipe, :etimedout, :econnaborted] do
+  defp retryable_error?(%Mint.TransportError{reason: reason})
+       when reason in [
+              :closed,
+              :timeout,
+              :econnrefused,
+              :econnreset,
+              :ehostunreach,
+              :enetunreach,
+              :enotconn,
+              :epipe,
+              :etimedout,
+              :econnaborted
+            ] do
     true
   end
-  
+
   # TLS/SSL errors - these are transient network issues that should be retried
   # Includes: bad_record_mac, handshake_failure, unexpected_message, etc.
   defp retryable_error?(%Mint.TransportError{reason: {:tls_alert, _}}) do
     true
   end
-  
+
   # Generic SSL/TLS closed errors
   defp retryable_error?(%Mint.TransportError{reason: {:ssl_closed, _}}) do
     true
   end
-  
+
   # Mint HTTP errors (protocol level)
-  defp retryable_error?(%Mint.HTTPError{reason: reason}) 
-    when reason in [:closed, :timeout] do
+  defp retryable_error?(%Mint.HTTPError{reason: reason})
+       when reason in [:closed, :timeout] do
     true
   end
-  
+
   # Mint HTTP errors with tuple reasons
   defp retryable_error?(%Mint.HTTPError{reason: {:stream_not_found, _}}) do
     true
   end
-  
+
   # Generic timeout errors
   defp retryable_error?({:error, :timeout}), do: true
   defp retryable_error?(:timeout), do: true
-  
+
   # Pool timeout (couldn't get connection from pool)
   defp retryable_error?({:error, :pool_timeout}), do: true
   defp retryable_error?(%Finch.Error{reason: :pool_timeout}), do: true
-  
+
   # Connection closed during checkout
   defp retryable_error?(%Finch.Error{reason: :checkout_timeout}), do: true
   defp retryable_error?(%Finch.Error{reason: {:checkout_timeout, _}}), do: true
-  
+
   # Catch-all for any error with :closed or :timeout in its structure
   defp retryable_error?(error) when is_map(error) do
     case Map.get(error, :reason) do
@@ -256,7 +300,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
       _ -> false
     end
   end
-  
+
   defp retryable_error?(_), do: false
 
   # Calculate exponential backoff delay with jitter
@@ -274,7 +318,9 @@ defmodule ClippsterServer.AI.WhisperAPI do
   @chunk_size 65_536
   defp chunk_binary_for_streaming(binary) do
     Stream.unfold(binary, fn
-      <<>> -> nil
+      <<>> ->
+        nil
+
       data ->
         size = min(byte_size(data), @chunk_size)
         <<chunk::binary-size(size), rest::binary>> = data

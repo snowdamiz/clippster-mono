@@ -10,6 +10,7 @@ import { ChevronDown, ArrowLeft, Pencil, Trash2, Keyboard, X, Download, Image, C
 import ShortcutsDialog from "./dialogs/ShortcutsDialog.vue";
 import { useWatermarkExport } from "@/composables/useWatermarkExport";
 import { useCampaignImageSubmit } from "@/composables/useCampaignImageSubmit";
+import ChatFab from "@/components/chat/ChatFab.vue";
 
 const { editor, version } = useEditor();
 const { isImageMode, isCoverMode, exportAsImage, exportAndSave, exportAndSaveAsCover } = useImageMode();
@@ -356,6 +357,7 @@ function openRename() {
 			</template>
 			<!-- Video mode: standard export -->
 			<ExportButton v-else />
+			<ChatFab />
 			<button
 				type="button"
 				class="flex items-center justify-center rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"

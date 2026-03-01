@@ -52,6 +52,8 @@ export interface PublishPostData {
   caption?: string;
   thumbnail_url?: string;
   media_type?: 'image' | 'video' | 'reel';
+  creator_profile_id?: number;
+  campaign_id?: number;
 }
 
 export interface UploadMediaResponse {
@@ -93,6 +95,36 @@ export interface InstagramAuthResult {
   error?: string;
 }
 
+interface PostForMeConnectUrlResponse {
+  success: boolean;
+  connection_id?: string;
+  auth_url?: string;
+  external_id?: string;
+  platform?: string;
+  error?: string;
+}
+
+interface PostForMeCompleteConnectResponse {
+  success: boolean;
+  social_account?: UserInstagramAccount;
+  social_accounts?: UserInstagramAccount[];
+  error?: string;
+}
+
+interface PostForMeConnectStatusResponse {
+  success: boolean;
+  connection_id?: string;
+  status?: 'pending' | 'callback_received' | 'synced' | 'failed' | 'expired';
+  session_success?: boolean | null;
+  account_ids?: string[];
+  external_id?: string;
+  platform?: string;
+  error?: string;
+}
+
+const POST_FOR_ME_STATUS_POLL_INTERVAL_MS = 1500;
+const POST_FOR_ME_STATUS_TIMEOUT_MS = 180000;
+
 // ============================================
 // OAuth Functions
 // ============================================
@@ -119,26 +151,121 @@ export async function startUserInstagramOAuth(
 
   // Dynamic import to handle Tauri-specific code
   const { invoke } = await import('@tauri-apps/api/core');
-  const { listen } = await import('@tauri-apps/api/event');
 
   try {
-    // Start OAuth - Tauri will open browser and handle callback
-    const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000';
-    await invoke('start_user_instagram_oauth', { apiBase, authToken });
+    // Preferred flow: Post For Me generic OAuth
+    const connectResponse = await api.post<PostForMeConnectUrlResponse>(
+      '/user/social/connect-url',
+      { platform: 'instagram' }
+    );
 
-    // Listen for the result
-    const unlisten = await listen<InstagramAuthResult>('instagram-auth-complete', (event) => {
-      if (onResult) {
-        onResult(event.payload);
+    if (!connectResponse.data.success || !connectResponse.data.auth_url) {
+      throw new Error(connectResponse.data.error || 'Failed to create Post For Me auth URL');
+    }
+
+    const connectionId = connectResponse.data.connection_id;
+
+    if (!connectionId) {
+      throw new Error('Post For Me response did not include connection_id');
+    }
+
+    await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const status = await pollUserConnectStatus(connectionId, () => cancelled);
+
+        if (cancelled || !onResult) return;
+
+        if (status.status !== 'synced') {
+          onResult({
+            success: false,
+            error: status.error || 'Social account connection failed',
+          });
+          return;
+        }
+
+        const completeResponse = await api.post<PostForMeCompleteConnectResponse>(
+          '/user/social/complete-connect',
+          {
+            connection_id: connectionId,
+            platform: 'instagram',
+          }
+        );
+
+        if (!completeResponse.data.success) {
+          onResult({
+            success: false,
+            error: completeResponse.data.error || 'Failed to finalize social account connection',
+          });
+          return;
+        }
+
+        const account =
+          completeResponse.data.social_account || completeResponse.data.social_accounts?.[0];
+
+        onResult({
+          success: true,
+          account,
+        });
+      } catch (error: any) {
+        if (cancelled || !onResult) return;
+
+        onResult({
+          success: false,
+          error:
+            error.response?.data?.error ||
+            error.message ||
+            'Failed to complete social account connection',
+        });
       }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  } catch (postForMeError: any) {
+    const message =
+      postForMeError?.response?.data?.error ||
+      postForMeError?.message ||
+      'Failed to create Post For Me auth URL';
+
+    console.error('[UserInstagramApi] Post For Me connect failed:', message);
+    throw new Error(message);
+  }
+}
+
+async function pollUserConnectStatus(
+  connectionId: string,
+  isCancelled: () => boolean
+): Promise<PostForMeConnectStatusResponse> {
+  const startedAt = Date.now();
+
+  while (!isCancelled()) {
+    const response = await api.get<PostForMeConnectStatusResponse>('/user/social/connect-status', {
+      params: { connection_id: connectionId },
     });
 
-    // Return cleanup function
-    return unlisten;
-  } catch (error) {
-    console.error('Failed to start Instagram OAuth:', error);
-    throw error;
+    const status = response.data;
+
+    if (!status.success) {
+      throw new Error(status.error || 'Failed to fetch connection status');
+    }
+
+    if (status.status === 'synced' || status.status === 'failed' || status.status === 'expired') {
+      return status;
+    }
+
+    if (Date.now() - startedAt > POST_FOR_ME_STATUS_TIMEOUT_MS) {
+      throw new Error('Timed out waiting for account connection');
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, POST_FOR_ME_STATUS_POLL_INTERVAL_MS));
   }
+
+  throw new Error('Connection polling cancelled');
 }
 
 // ============================================
@@ -196,15 +323,11 @@ export async function uploadUserMediaForPost(
       formData.append('thumbnail', thumbnail);
     }
 
-    const response = await api.post<UploadMediaResponse>(
-      '/user/posts/upload-media',
-      formData,
-      {
-        headers: {
-          'Content-Type': undefined,
-        },
-      }
-    );
+    const response = await api.post<UploadMediaResponse>('/user/posts/upload-media', formData, {
+      headers: {
+        'Content-Type': undefined,
+      },
+    });
     return response.data;
   } catch (error: any) {
     console.error('[UserInstagramApi] Failed to upload media:', error);
@@ -225,6 +348,8 @@ export async function publishToUserInstagram(data: PublishPostData): Promise<Pos
     caption: data.caption || '',
     thumbnail_url: data.thumbnail_url,
     media_type: data.media_type || 'reel',
+    creator_profile_id: data.creator_profile_id,
+    campaign_id: data.campaign_id,
   });
   return response.data;
 }

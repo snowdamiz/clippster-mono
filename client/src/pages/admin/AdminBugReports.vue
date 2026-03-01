@@ -212,7 +212,7 @@
     { label: 'Critical', value: 'critical' }
   ];
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+  const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
 
   const fetchBugReports = async () => {
     try {
@@ -577,6 +577,7 @@
     margin: 0.25rem 0 0;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     white-space: normal;

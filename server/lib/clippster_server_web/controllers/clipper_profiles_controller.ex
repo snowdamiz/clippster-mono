@@ -19,7 +19,9 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
 
     case ClipperProfiles.get_or_create_profile(user.id) do
       {:ok, profile} ->
-        profile = ClippsterServer.Repo.preload(profile, [:channel_links, :portfolio_clips, :badges])
+        profile =
+          ClippsterServer.Repo.preload(profile, [:channel_links, :portfolio_clips, :badges])
+
         json(conn, %{success: true, profile: serialize_profile(profile)})
 
       {:error, changeset} ->
@@ -43,7 +45,10 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
          {:ok, updated_profile} <- ClipperProfiles.update_profile(profile, params) do
       Logger.debug("update_own result is_public: #{inspect(updated_profile.is_public)}")
-      updated_profile = ClippsterServer.Repo.preload(updated_profile, [:channel_links, :portfolio_clips, :badges])
+
+      updated_profile =
+        ClippsterServer.Repo.preload(updated_profile, [:channel_links, :portfolio_clips, :badges])
+
       json(conn, %{success: true, profile: serialize_profile(updated_profile)})
     else
       {:error, changeset} ->
@@ -57,7 +62,8 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   POST /api/user/clipper-profile/avatar
   Upload an avatar image to R2 storage (max 5MB).
   """
-  @max_avatar_size 5 * 1024 * 1024  # 5MB
+  # 5MB
+  @max_avatar_size 5 * 1024 * 1024
   def upload_avatar(conn, %{"file" => %Plug.Upload{} = upload}) do
     user = conn.assigns.current_user
 
@@ -81,17 +87,28 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
           with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
                {:ok, file_binary} <- File.read(upload.path),
                key <- generate_avatar_key(user.id, upload.filename),
-               {:ok, avatar_url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
-
+               {:ok, avatar_url} <-
+                 Storage.upload_file(file_binary, key, content_type: content_type) do
             # Update the profile with the new avatar URL
             case ClipperProfiles.update_profile(profile, %{"avatar_url" => avatar_url}) do
               {:ok, updated_profile} ->
-                updated_profile = ClippsterServer.Repo.preload(updated_profile, [:channel_links, :portfolio_clips, :badges])
-                json(conn, %{success: true, profile: serialize_profile(updated_profile), avatar_url: maybe_presign_avatar(avatar_url)})
+                updated_profile =
+                  ClippsterServer.Repo.preload(updated_profile, [
+                    :channel_links,
+                    :portfolio_clips,
+                    :badges
+                  ])
+
+                json(conn, %{
+                  success: true,
+                  profile: serialize_profile(updated_profile),
+                  avatar_url: maybe_presign_avatar(avatar_url)
+                })
 
               {:error, changeset} ->
                 # Clean up uploaded file on failure
                 Storage.delete_file(key)
+
                 conn
                 |> put_status(:unprocessable_entity)
                 |> json(%{success: false, error: format_changeset_errors(changeset)})
@@ -125,6 +142,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   end
 
   defp maybe_presign_avatar(nil), do: nil
+
   defp maybe_presign_avatar(url) when is_binary(url) do
     Storage.presigned_url!(url)
   end
@@ -175,13 +193,17 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
 
         {:error, reason} ->
           Logger.error("[ClipperProfiles] create_channel_link error: #{inspect(reason)}")
+
           conn
           |> put_status(:unprocessable_entity)
           |> json(%{success: false, error: "Failed to save channel link"})
       end
     rescue
       e ->
-        Logger.error("[ClipperProfiles] create_channel_link exception: #{inspect(e)}\n#{inspect(__STACKTRACE__)}")
+        Logger.error(
+          "[ClipperProfiles] create_channel_link exception: #{inspect(e)}\n#{inspect(__STACKTRACE__)}"
+        )
+
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{success: false, error: "An unexpected error occurred"})
@@ -203,8 +225,10 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     else
       nil ->
         conn |> put_status(:not_found) |> json(%{success: false, error: "Channel link not found"})
+
       false ->
         conn |> put_status(:forbidden) |> json(%{success: false, error: "Not authorized"})
+
       {:error, changeset} ->
         conn
         |> put_status(:unprocessable_entity)
@@ -227,10 +251,14 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     else
       nil ->
         conn |> put_status(:not_found) |> json(%{success: false, error: "Channel link not found"})
+
       false ->
         conn |> put_status(:forbidden) |> json(%{success: false, error: "Not authorized"})
+
       {:error, _} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{success: false, error: "Failed to delete"})
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{success: false, error: "Failed to delete"})
     end
   end
 
@@ -248,6 +276,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     case ClipperProfiles.get_or_create_profile(user.id) do
       {:ok, profile} ->
         clips = ClipperProfiles.list_portfolio_clips(profile.id)
+
         json(conn, %{success: true, portfolio_clips: Enum.map(clips, &serialize_portfolio_clip/1)})
 
       {:error, _} ->
@@ -294,9 +323,13 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       json(conn, %{success: true, portfolio_clip: serialize_portfolio_clip(updated_clip)})
     else
       nil ->
-        conn |> put_status(:not_found) |> json(%{success: false, error: "Portfolio clip not found"})
+        conn
+        |> put_status(:not_found)
+        |> json(%{success: false, error: "Portfolio clip not found"})
+
       false ->
         conn |> put_status(:forbidden) |> json(%{success: false, error: "Not authorized"})
+
       {:error, changeset} ->
         conn
         |> put_status(:unprocessable_entity)
@@ -318,11 +351,17 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       json(conn, %{success: true})
     else
       nil ->
-        conn |> put_status(:not_found) |> json(%{success: false, error: "Portfolio clip not found"})
+        conn
+        |> put_status(:not_found)
+        |> json(%{success: false, error: "Portfolio clip not found"})
+
       false ->
         conn |> put_status(:forbidden) |> json(%{success: false, error: "Not authorized"})
+
       {:error, _} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{success: false, error: "Failed to delete"})
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{success: false, error: "Failed to delete"})
     end
   end
 
@@ -340,13 +379,17 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       case Storage.presigned_url(clip.video_url, expires_in: 3600) do
         {:ok, url} ->
           json(conn, %{success: true, url: url})
+
         {:error, _} ->
           # Fall back to the stored URL if presigning fails
           json(conn, %{success: true, url: clip.video_url})
       end
     else
       nil ->
-        conn |> put_status(:not_found) |> json(%{success: false, error: "Portfolio clip not found"})
+        conn
+        |> put_status(:not_found)
+        |> json(%{success: false, error: "Portfolio clip not found"})
+
       false ->
         conn |> put_status(:forbidden) |> json(%{success: false, error: "Not authorized"})
     end
@@ -356,7 +399,8 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   POST /api/user/clipper-profile/portfolio-clips/upload
   Upload a portfolio clip video file to R2 storage (max 200MB).
   """
-  @max_file_size 200 * 1024 * 1024  # 200MB
+  # 200MB
+  @max_file_size 200 * 1024 * 1024
   def upload_portfolio_clip(conn, %{"file" => %Plug.Upload{} = upload} = params) do
     user = conn.assigns.current_user
 
@@ -373,26 +417,32 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
              key <- generate_portfolio_clip_key(user.id, upload.filename),
              content_type <- upload.content_type || "video/mp4",
              {:ok, video_url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
-
           # Upload thumbnail if provided
           thumbnail_url =
             case params["thumbnail"] do
               %Plug.Upload{} = thumb ->
-                thumb_key = "portfolio-clips/#{user.id}/thumbnails/#{System.unique_integer([:positive])}_thumbnail.jpg"
+                thumb_key =
+                  "portfolio-clips/#{user.id}/thumbnails/#{System.unique_integer([:positive])}_thumbnail.jpg"
+
                 case File.read(thumb.path) do
                   {:ok, thumb_binary} ->
                     case Storage.upload_file(thumb_binary, thumb_key, content_type: "image/jpeg") do
                       {:ok, url} -> url
                       _ -> nil
                     end
-                  _ -> nil
+
+                  _ ->
+                    nil
                 end
-              _ -> nil
+
+              _ ->
+                nil
             end
 
           # Create the portfolio clip record
           clip_params = %{
-            "title" => params["title"] || Path.basename(upload.filename, Path.extname(upload.filename)),
+            "title" =>
+              params["title"] || Path.basename(upload.filename, Path.extname(upload.filename)),
             "video_url" => video_url,
             "thumbnail_url" => thumbnail_url,
             "file_size" => file_size
@@ -407,6 +457,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
             {:error, :max_clips_reached} ->
               # Clean up uploaded file
               Storage.delete_file(key)
+
               conn
               |> put_status(:unprocessable_entity)
               |> json(%{success: false, error: "Maximum of 3 portfolio clips allowed"})
@@ -414,6 +465,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
             {:error, changeset} ->
               # Clean up uploaded file
               Storage.delete_file(key)
+
               conn
               |> put_status(:unprocessable_entity)
               |> json(%{success: false, error: format_changeset_errors(changeset)})
@@ -434,17 +486,27 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
 
   def upload_portfolio_clip(conn, params) do
     require Logger
-    Logger.error("[ClipperProfiles] upload_portfolio_clip fallback - params keys: #{inspect(Map.keys(params))}")
+
+    Logger.error(
+      "[ClipperProfiles] upload_portfolio_clip fallback - params keys: #{inspect(Map.keys(params))}"
+    )
+
     conn
     |> put_status(:bad_request)
-    |> json(%{success: false, error: "No file provided. Expected multipart/form-data with 'file' field."})
+    |> json(%{
+      success: false,
+      error: "No file provided. Expected multipart/form-data with 'file' field."
+    })
   end
 
   defp generate_portfolio_clip_key(user_id, filename) do
     timestamp = DateTime.utc_now() |> DateTime.to_unix()
-    sanitized = filename
+
+    sanitized =
+      filename
       |> String.replace(~r/[^\w\-\.]/, "_")
       |> String.slice(0, 50)
+
     "portfolio-clips/#{user_id}/#{timestamp}_#{sanitized}"
   end
 
@@ -464,6 +526,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       case Storage.presigned_url(clip.video_url, expires_in: 3600) do
         {:ok, url} ->
           json(conn, %{success: true, url: url})
+
         {:error, _} ->
           json(conn, %{success: true, url: clip.video_url})
       end
@@ -486,6 +549,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
         case Storage.presigned_url(clip.thumbnail_url, expires_in: 3600) do
           {:ok, url} ->
             json(conn, %{success: true, url: url})
+
           {:error, _} ->
             json(conn, %{success: true, url: clip.thumbnail_url})
         end
@@ -527,7 +591,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
         conn |> put_status(:not_found) |> json(%{success: false, error: "Profile not found"})
 
       profile ->
-        if profile.is_public do
+        if ClipperProfiles.public_directory_profile?(profile) do
           json(conn, %{success: true, profile: serialize_public_profile(profile)})
         else
           conn |> put_status(:not_found) |> json(%{success: false, error: "Profile not found"})
@@ -564,37 +628,57 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     # Use provided organization_id, or fall back to the user's own organization
     organization_id =
       case params["organization_id"] do
-        nil -> user.owned_organization_id
-        0 -> user.owned_organization_id
-        id when is_integer(id) and id > 0 -> id
+        nil ->
+          user.owned_organization_id
+
+        0 ->
+          user.owned_organization_id
+
+        id when is_integer(id) and id > 0 ->
+          id
+
         id when is_binary(id) ->
           case Integer.parse(id) do
             {n, ""} when n > 0 -> n
             _ -> user.owned_organization_id
           end
-        _ -> user.owned_organization_id
+
+        _ ->
+          user.owned_organization_id
       end
 
     with %ClipperProfile{} = profile <- ClipperProfiles.get_profile_by_slug(slug),
          {:org, true} <- {:org, not is_nil(organization_id)},
          true <- ClipperProfiles.can_endorse?(organization_id, profile.user_id),
-         {:ok, endorsement} <- ClipperProfiles.create_endorsement(profile.id, organization_id, %{
-           endorsed_by_user_id: user.id,
-           campaign_id: params["campaign_id"],
-           content: params["content"],
-           rating: params["rating"]
-         }) do
+         {:ok, endorsement} <-
+           ClipperProfiles.create_endorsement(profile.id, organization_id, %{
+             endorsed_by_user_id: user.id,
+             campaign_id: params["campaign_id"],
+             content: params["content"],
+             rating: params["rating"]
+           }) do
       endorsement = ClippsterServer.Repo.preload(endorsement, [:organization, :endorsed_by_user])
+
       conn
       |> put_status(:created)
       |> json(%{success: true, endorsement: serialize_endorsement(endorsement)})
     else
       nil ->
         conn |> put_status(:not_found) |> json(%{success: false, error: "Profile not found"})
+
       {:org, false} ->
-        conn |> put_status(:forbidden) |> json(%{success: false, error: "You must own an organization to endorse clippers"})
+        conn
+        |> put_status(:forbidden)
+        |> json(%{success: false, error: "You must own an organization to endorse clippers"})
+
       false ->
-        conn |> put_status(:forbidden) |> json(%{success: false, error: "Cannot endorse - your organization has not worked with this clipper"})
+        conn
+        |> put_status(:forbidden)
+        |> json(%{
+          success: false,
+          error: "Cannot endorse - your organization has not worked with this clipper"
+        })
+
       {:error, changeset} ->
         conn
         |> put_status(:unprocessable_entity)
@@ -640,12 +724,16 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
     base = serialize_profile(profile)
 
     Map.merge(base, %{
-      user: if(profile.user, do: %{
-        id: profile.user.id,
-        name: profile.user.name,
-        email: profile.user.email,
-        last_active_at: profile.user.last_active_at
-      }, else: nil),
+      user:
+        if(profile.user,
+          do: %{
+            id: profile.user.id,
+            name: profile.user.name,
+            email: profile.user.email,
+            last_active_at: profile.user.last_active_at
+          },
+          else: nil
+        ),
       endorsements: Enum.map(profile.endorsements || [], &serialize_endorsement/1)
     })
   end
@@ -686,14 +774,22 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       id: endorsement.id,
       content: endorsement.content,
       rating: endorsement.rating,
-      organization: if(endorsement.organization, do: %{
-        id: endorsement.organization.id,
-        name: endorsement.organization.name
-      }, else: nil),
-      endorsed_by: if(endorsement.endorsed_by_user, do: %{
-        id: endorsement.endorsed_by_user.id,
-        name: endorsement.endorsed_by_user.name
-      }, else: nil),
+      organization:
+        if(endorsement.organization,
+          do: %{
+            id: endorsement.organization.id,
+            name: endorsement.organization.name
+          },
+          else: nil
+        ),
+      endorsed_by:
+        if(endorsement.endorsed_by_user,
+          do: %{
+            id: endorsement.endorsed_by_user.id,
+            name: endorsement.endorsed_by_user.name
+          },
+          else: nil
+        ),
       inserted_at: endorsement.inserted_at
     }
   end
@@ -707,15 +803,19 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       campaigns_active: entry.campaigns_active,
       endorsements_received: entry.endorsements_received,
       total_views: entry.total_views || 0,
-      clipper_profile: if(entry.clipper_profile, do: %{
-        id: entry.clipper_profile.id,
-        user_id: entry.clipper_profile.user_id,
-        display_name: entry.clipper_profile.display_name,
-        avatar_url: maybe_presign_avatar(entry.clipper_profile.avatar_url),
-        slug: entry.clipper_profile.slug,
-        is_verified: entry.clipper_profile.is_verified,
-        badges: Enum.map(entry.clipper_profile.badges || [], &serialize_badge/1)
-      }, else: nil)
+      clipper_profile:
+        if(entry.clipper_profile,
+          do: %{
+            id: entry.clipper_profile.id,
+            user_id: entry.clipper_profile.user_id,
+            display_name: entry.clipper_profile.display_name,
+            avatar_url: maybe_presign_avatar(entry.clipper_profile.avatar_url),
+            slug: entry.clipper_profile.slug,
+            is_verified: entry.clipper_profile.is_verified,
+            badges: Enum.map(entry.clipper_profile.badges || [], &serialize_badge/1)
+          },
+          else: nil
+        )
     }
   end
 

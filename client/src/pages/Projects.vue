@@ -1,5 +1,5 @@
 <template>
-  <PageLayout title="Projects" description="Manage and organize your video projects" :show-header="true" :icon="Folder">
+  <PageLayout title="VOD Library" description="Manage and organize your video projects" :show-header="true" :icon="Folder">
     <template #actions>
       <div class="projects-header-actions">
         <!-- Search -->
@@ -59,12 +59,11 @@
 
         <!-- Fix Stream Info Button -->
         <button 
-          v-if="hasVideosWithoutDuration" 
           @click="fixVideoMetadata" 
           :disabled="fixingMetadata"
           class="projects-create-btn" 
           :style="{ marginRight: '0.5rem', background: fixingMetadata ? '#9ca3af' : '#f59e0b', cursor: fixingMetadata ? 'not-allowed' : 'pointer' }" 
-          title="Extract metadata for videos with missing information"
+          title="Extract metadata and generate thumbnails for videos with missing information"
         >
           <Loader2 v-if="fixingMetadata" class="projects-create-btn__icon" style="animation: spin 1s linear infinite;" />
           <Clock v-else class="projects-create-btn__icon" />
@@ -91,8 +90,8 @@
         v-if="projects.length > 0 || loading || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
         class="projects__heading"
       >
-        <h1 class="projects__title">Projects</h1>
-        <p class="projects__subtitle">Manage and organize your video projects, detect clips, and build content</p>
+        <h1 class="projects__title">VOD Library</h1>
+        <p class="projects__subtitle">Manage and organize your downloaded vods and detect clips</p>
       </div>
 
       <!-- Loading State -->
@@ -260,7 +259,7 @@
                   <div class="project-card__meta">
                     <!-- Platform Icon -->
                     <div
-                      v-if="getProjectPlatform(project) === 'Youtube'"
+                      v-if="getProjectPlatform(project) === 'YouTube'"
                       class="project-card__platform project-card__platform--youtube"
                       title="YouTube"
                     >
@@ -279,6 +278,20 @@
                       title="Kick"
                     >
                       <img src="/kick.svg" class="project-card__platform-icon project-card__platform-icon--kick" />
+                    </div>
+                    <div
+                      v-else-if="getProjectPlatform(project) === 'Rumble'"
+                      class="project-card__platform project-card__platform--rumble"
+                      title="Rumble"
+                    >
+                      <img src="/rumble.svg" class="project-card__platform-icon" />
+                    </div>
+                    <div
+                      v-else-if="getProjectPlatform(project) === 'Twitter'"
+                      class="project-card__platform project-card__platform--twitter"
+                      title="Twitter"
+                    >
+                      <img src="/x.svg" class="project-card__platform-icon" />
                     </div>
                     <div
                       v-else-if="getProjectPlatform(project) === 'PumpFun'"
@@ -1318,6 +1331,7 @@
     getIntroOutroById,
     getWatermarkByServerId,
     getVideoEditorProjectsForClip,
+    getAllVideoEditorProjects,
     type Project,
     type RawVideo,
     type ClipWithVersion,
@@ -1397,6 +1411,7 @@
   const workspaceProject = ref<Project | null>(null);
   const workspaceInitialClipId = ref<string | null>(null);
   const projectVideos = ref<Record<string, RawVideo[]>>({});
+  const videoEditorProjects = ref<Record<string, VideoEditorProject>>({});
   const thumbnailCache = ref<Map<string, string>>(new Map());
   const clipThumbnailCache = ref<Map<string, string>>(new Map());
   const { getRelativeTime, formatDuration } = useFormatters();
@@ -1639,6 +1654,14 @@
       console.log('[Projects] Top-level projects:', projects.value.filter((p) => !p.parent_id).length);
       console.log('[Projects] Child projects:', projects.value.filter((p) => p.parent_id).length);
 
+      // Load video editor projects and create mapping by name
+      const allVideoEditorProjects = await getAllVideoEditorProjects();
+      videoEditorProjects.value = {};
+      for (const vep of allVideoEditorProjects) {
+        videoEditorProjects.value[vep.name] = vep;
+      }
+      console.log('[Projects] Loaded video editor projects:', allVideoEditorProjects.length);
+
       // Load clip counts and video thumbnails for each project
       for (const project of projects.value) {
         const clips = await getClipsWithVersionsByProjectId(project.id);
@@ -1753,6 +1776,16 @@
   }
 
   function getProjectDuration(projectId: string): string | null {
+    // First check if this is a video editor project (by name)
+    const project = projects.value.find(p => p.id === projectId);
+    if (project && videoEditorProjects.value[project.name]) {
+      const vep = videoEditorProjects.value[project.name];
+      if (vep.total_duration > 0) {
+        return formatDuration(vep.total_duration);
+      }
+    }
+
+    // Fall back to raw_videos duration calculation
     let totalDuration = 0;
 
     // Check direct videos on this project
@@ -1787,11 +1820,29 @@
       const { getAllRawVideos, updateRawVideo } = await import('@/services/database');
       const allVideos = await getAllRawVideos();
       
-      // Find videos with missing or zero duration
-      const videosToFix = allVideos.filter(v => !v.duration || v.duration === 0);
+      // Find videos with missing duration or thumbnail, but only if the file exists
+      console.log(`[Projects] Checking ${allVideos.length} videos for missing metadata...`);
+      const videosToFix = [];
+      
+      for (const video of allVideos) {
+        // Skip if video already has complete metadata
+        if (video.duration && video.duration > 0 && video.thumbnail_path) {
+          continue;
+        }
+        
+        // Check if file exists - skip orphaned videos silently
+        const fileExists = await invoke('check_file_exists', { path: video.file_path }) as boolean;
+        if (!fileExists) {
+          console.log(`[Projects] Skipping orphaned video (file doesn't exist): ${video.original_filename}`);
+          continue;
+        }
+        
+        // File exists and needs metadata - add to fix list
+        videosToFix.push(video);
+      }
       
       if (videosToFix.length === 0) {
-        success('No videos need fixing', 'All videos have duration metadata');
+        success('No videos need fixing', 'All videos have complete metadata');
         fixingMetadata.value = false;
         return;
       }
@@ -1799,6 +1850,7 @@
       console.log(`[Projects] Fixing metadata for ${videosToFix.length} videos...`);
       let fixed = 0;
       let failed = 0;
+      let thumbnailsGenerated = 0;
       
       for (let i = 0; i < videosToFix.length; i++) {
         const video = videosToFix[i];
@@ -1806,37 +1858,66 @@
         console.log(`[Projects] Video path: ${video.file_path}`);
         
         try {
-          // Extract metadata using Tauri backend
-          console.log(`[Projects] Calling get_video_metadata for: ${video.file_path}`);
-          const metadata = await invoke('get_video_metadata', { 
-            videoPath: video.file_path 
-          }) as any;
           
-          console.log(`[Projects] Received metadata:`, metadata);
+          const updates: any = {};
           
-          if (metadata && metadata.duration) {
-            await updateRawVideo(video.id, {
-              duration: metadata.duration,
-              width: metadata.width,
-              height: metadata.height,
-              codec: metadata.codec,
-            });
+          // Extract metadata if missing duration
+          if (!video.duration || video.duration === 0) {
+            console.log(`[Projects] Calling get_video_metadata for: ${video.file_path}`);
+            const metadata = await invoke('get_video_metadata', { 
+              videoPath: video.file_path 
+            }) as any;
+            
+            console.log(`[Projects] Received metadata:`, metadata);
+            
+            if (metadata && metadata.duration) {
+              updates.duration = metadata.duration;
+              updates.width = metadata.width;
+              updates.height = metadata.height;
+              updates.codec = metadata.codec;
+              console.log(`[Projects] ✓ Extracted metadata: ${metadata.duration}s`);
+            } else {
+              console.warn(`[Projects] ✗ No duration in metadata for: ${video.original_filename}`);
+            }
+          }
+          
+          // Generate thumbnail if missing
+          if (!video.thumbnail_path) {
+            console.log(`[Projects] Generating thumbnail for: ${video.file_path}`);
+            try {
+              const thumbnailPath = await invoke('generate_video_thumbnail', {
+                videoPath: video.file_path,
+                timestamp: 5.0
+              }) as string;
+              
+              if (thumbnailPath) {
+                updates.thumbnail_path = thumbnailPath;
+                thumbnailsGenerated++;
+                console.log(`[Projects] ✓ Generated thumbnail: ${thumbnailPath}`);
+              }
+            } catch (thumbErr) {
+              console.warn(`[Projects] Failed to generate thumbnail:`, thumbErr);
+            }
+          }
+          
+          // Update database if we have any updates
+          if (Object.keys(updates).length > 0) {
+            await updateRawVideo(video.id, updates);
             fixed++;
-            console.log(`[Projects] ✓ Fixed metadata for: ${video.original_filename} (${metadata.duration}s)`);
-          } else {
-            console.warn(`[Projects] ✗ No duration in metadata for: ${video.original_filename}`);
-            failed++;
+            console.log(`[Projects] ✓ Updated video: ${video.original_filename}`);
           }
         } catch (err) {
-          console.error(`[Projects] ✗ Failed to fix metadata for ${video.original_filename}:`, err);
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          console.error(`[Projects] ✗ Failed to fix metadata for ${video.original_filename}:`, errorMsg);
           failed++;
         }
       }
       
-      console.log(`[Projects] Metadata extraction complete. Fixed: ${fixed}, Failed: ${failed}`);
-      success('Metadata Updated', `Fixed ${fixed} videos${failed > 0 ? `, ${failed} failed` : ''}`);
+      console.log(`[Projects] Metadata extraction complete. Fixed: ${fixed}, Thumbnails: ${thumbnailsGenerated}, Failed: ${failed}`);
+      const message = `Fixed ${fixed} videos${thumbnailsGenerated > 0 ? `, generated ${thumbnailsGenerated} thumbnails` : ''}${failed > 0 ? `, ${failed} failed` : ''}`;
+      success('Metadata Updated', message);
       
-      // Reload projects to show updated durations
+      // Reload projects to show updated durations and thumbnails
       await loadProjects();
     } catch (err) {
       console.error('[Projects] Error in fixVideoMetadata:', err);
@@ -1846,18 +1927,36 @@
     }
   }
 
-  // Check if any videos need metadata fixing
+  // Check if any videos need metadata fixing (duration or thumbnail)
+  // Only counts videos whose files actually exist on disk
   async function checkForVideosWithoutDuration() {
     try {
       const { getAllRawVideos } = await import('@/services/database');
       const allVideos = await getAllRawVideos();
-      hasVideosWithoutDuration.value = allVideos.some(v => !v.duration || v.duration === 0);
+      
+      // Check each video with missing metadata to see if file exists
+      let hasFixableVideos = false;
+      for (const video of allVideos) {
+        // Skip if video already has complete metadata
+        if (video.duration && video.duration > 0 && video.thumbnail_path) {
+          continue;
+        }
+        
+        // Check if file exists - only count it if file exists
+        const fileExists = await invoke('check_file_exists', { path: video.file_path }) as boolean;
+        if (fileExists) {
+          hasFixableVideos = true;
+          break; // Found at least one fixable video
+        }
+      }
+      
+      hasVideosWithoutDuration.value = hasFixableVideos;
     } catch (err) {
       console.warn('[Projects] Failed to check for videos without duration:', err);
     }
   }
 
-  function getProjectPlatform(project: Project): 'PumpFun' | 'Kick' | 'Youtube' | 'Twitch' | 'Manual' | null {
+  function getProjectPlatform(project: Project): 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual' | null {
     // 0. Check explicit platform field
     if (project.platform) {
       return project.platform;
@@ -1868,8 +1967,10 @@
       const desc = project.description.toLowerCase();
       if (desc.includes('kick')) return 'Kick';
       if (desc.includes('pumpfun')) return 'PumpFun';
-      if (desc.includes('youtube')) return 'Youtube';
+      if (desc.includes('youtube')) return 'YouTube';
       if (desc.includes('twitch')) return 'Twitch';
+      if (desc.includes('rumble')) return 'Rumble';
+      if (desc.includes('twitter')) return 'Twitter';
     }
 
     // 2. Check videos
@@ -3683,40 +3784,77 @@
       // Resolve per-ratio intro/outro from creator profile
       const introOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> = {};
       
-      if (folderCreatorProfile.value?.intro_outro_settings) {
+      // New approach: Use separate intro_ratio_settings and outro_ratio_settings
+      // Fall back to intro_outro_settings for backward compatibility
+      const profile = folderCreatorProfile.value;
+      
+      if (profile) {
         try {
-          const introOutroSettings = JSON.parse(folderCreatorProfile.value.intro_outro_settings);
+          // Parse intro ratio settings
+          let introRatioSettings: Record<string, { assetId: number }> = {};
+          if (profile.intro_ratio_settings) {
+            try {
+              introRatioSettings = JSON.parse(profile.intro_ratio_settings);
+            } catch (e) {
+              console.warn('[Projects] Failed to parse intro_ratio_settings:', e);
+            }
+          }
           
+          // Parse outro ratio settings
+          let outroRatioSettings: Record<string, { assetId: number }> = {};
+          if (profile.outro_ratio_settings) {
+            try {
+              outroRatioSettings = JSON.parse(profile.outro_ratio_settings);
+            } catch (e) {
+              console.warn('[Projects] Failed to parse outro_ratio_settings:', e);
+            }
+          }
+          
+          // Fallback: Try old intro_outro_settings format
+          let legacyIntroOutroSettings: Record<string, { introId?: number; outroId?: number }> = {};
+          if (profile.intro_outro_settings && (!profile.intro_ratio_settings && !profile.outro_ratio_settings)) {
+            try {
+              legacyIntroOutroSettings = JSON.parse(profile.intro_outro_settings);
+            } catch (e) {
+              console.warn('[Projects] Failed to parse intro_outro_settings:', e);
+            }
+          }
+          
+          // Resolve assets for each aspect ratio
           for (const ratio of settings.aspectRatios) {
-            const ratioConfig = introOutroSettings[ratio];
-            if (ratioConfig) {
-              const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
-              
-              // Resolve intro for this ratio
-              if (ratioConfig.introId) {
-                const introAsset = await getIntroOutroById(ratioConfig.introId);
-                if (introAsset) {
-                  ratioData.introPath = introAsset.file_path || undefined;
-                  ratioData.introDuration = introAsset.duration || undefined;
-                  console.log(`[Projects] Resolved intro for ${ratio}:`, introAsset.name);
-                }
+            const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
+            
+            // Resolve intro for this ratio
+            const introConfig = introRatioSettings[ratio] || legacyIntroOutroSettings[ratio];
+            const introAssetId = introConfig?.assetId || (introConfig as any)?.introId;
+            if (introAssetId) {
+              const introAsset = await getIntroOutroById(introAssetId);
+              if (introAsset) {
+                ratioData.introPath = introAsset.file_path || undefined;
+                ratioData.introDuration = introAsset.duration || undefined;
+                console.log(`[Projects] Resolved intro for ${ratio}:`, introAsset.name);
               }
-              
-              // Resolve outro for this ratio
-              if (ratioConfig.outroId) {
-                const outroAsset = await getIntroOutroById(ratioConfig.outroId);
-                if (outroAsset) {
-                  ratioData.outroPath = outroAsset.file_path || undefined;
-                  ratioData.outroDuration = outroAsset.duration || undefined;
-                  console.log(`[Projects] Resolved outro for ${ratio}:`, outroAsset.name);
-                }
+            }
+            
+            // Resolve outro for this ratio
+            const outroConfig = outroRatioSettings[ratio] || legacyIntroOutroSettings[ratio];
+            const outroAssetId = outroConfig?.assetId || (outroConfig as any)?.outroId;
+            if (outroAssetId) {
+              const outroAsset = await getIntroOutroById(outroAssetId);
+              if (outroAsset) {
+                ratioData.outroPath = outroAsset.file_path || undefined;
+                ratioData.outroDuration = outroAsset.duration || undefined;
+                console.log(`[Projects] Resolved outro for ${ratio}:`, outroAsset.name);
               }
-              
+            }
+            
+            // Only add to map if we found at least one asset
+            if (ratioData.introPath || ratioData.outroPath) {
               introOutroPerRatio[ratio] = ratioData;
             }
           }
         } catch (e) {
-          console.warn('[Projects] Failed to parse intro_outro_settings:', e);
+          console.warn('[Projects] Failed to resolve per-ratio intro/outro:', e);
         }
       }
 
@@ -6035,6 +6173,14 @@
 
   .project-card__platform--kick {
     background-color: #53fc18;
+  }
+
+  .project-card__platform--rumble {
+    background-color: #85c742;
+  }
+
+  .project-card__platform--twitter {
+    background-color: #000000;
   }
 
   .project-card__platform--pumpfun {

@@ -6,6 +6,9 @@
     :icon="Globe"
     :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Social Accounts' }]"
   >
+    <template #firstBreadcrumb>
+      <OrganizationBreadcrumb />
+    </template>
     <div class="social-accounts">
       <!-- Page Heading -->
       <div class="social-accounts__heading">
@@ -42,15 +45,15 @@
               v-if="isAdmin"
               class="social-accounts__connect-btn"
               @click="connectInstagram"
-              :disabled="connecting"
+              :disabled="connectingPlatform !== null"
             >
-              <Loader2 v-if="connecting" class="social-accounts__connect-spinner" />
+              <Loader2 v-if="connectingPlatform === 'instagram'" class="social-accounts__connect-spinner" />
               <Plus v-else class="social-accounts__connect-icon" />
-              {{ connecting ? 'Connecting...' : 'Connect Account' }}
+              {{ connectingPlatform === 'instagram' ? 'Connecting...' : 'Connect Account' }}
             </button>
           </div>
 
-          <div class="social-accounts__platform-connect social-accounts__platform-connect--disabled">
+          <div class="social-accounts__platform-connect">
             <div class="social-accounts__platform-info">
               <div class="social-accounts__platform-badge social-accounts__platform-badge--tiktok">
                 <svg viewBox="0 0 24 24" class="social-accounts__platform-svg social-accounts__platform-svg--tiktok">
@@ -67,28 +70,42 @@
                 </svg>
               </div>
               <div class="social-accounts__platform-details">
-                <h3 class="social-accounts__platform-name">
-                  TikTok
-                  <span class="social-accounts__coming-soon">Coming Soon</span>
-                </h3>
+                <h3 class="social-accounts__platform-name">TikTok</h3>
                 <p class="social-accounts__platform-desc">Share your clips directly to TikTok</p>
               </div>
             </div>
+            <button
+              v-if="isAdmin"
+              class="social-accounts__connect-btn"
+              @click="connectTiktok"
+              :disabled="connectingPlatform !== null"
+            >
+              <Loader2 v-if="connectingPlatform === 'tiktok'" class="social-accounts__connect-spinner" />
+              <Plus v-else class="social-accounts__connect-icon" />
+              {{ connectingPlatform === 'tiktok' ? 'Connecting...' : 'Connect Account' }}
+            </button>
           </div>
 
-          <div class="social-accounts__platform-connect social-accounts__platform-connect--disabled">
+          <div class="social-accounts__platform-connect">
             <div class="social-accounts__platform-info">
               <div class="social-accounts__platform-badge social-accounts__platform-badge--youtube">
                 <Youtube />
               </div>
               <div class="social-accounts__platform-details">
-                <h3 class="social-accounts__platform-name">
-                  YouTube Shorts
-                  <span class="social-accounts__coming-soon">Coming Soon</span>
-                </h3>
+                <h3 class="social-accounts__platform-name">YouTube Shorts</h3>
                 <p class="social-accounts__platform-desc">Upload clips as YouTube Shorts automatically</p>
               </div>
             </div>
+            <button
+              v-if="isAdmin"
+              class="social-accounts__connect-btn"
+              @click="connectYoutube"
+              :disabled="connectingPlatform !== null"
+            >
+              <Loader2 v-if="connectingPlatform === 'YouTube'" class="social-accounts__connect-spinner" />
+              <Plus v-else class="social-accounts__connect-icon" />
+              {{ connectingPlatform === 'YouTube' ? 'Connecting...' : 'Connect Account' }}
+            </button>
           </div>
 
           <div class="social-accounts__platform-connect">
@@ -109,11 +126,11 @@
               v-if="isAdmin"
               class="social-accounts__connect-btn"
               @click="connectTwitter"
-              :disabled="connecting"
+              :disabled="connectingPlatform !== null"
             >
-              <Loader2 v-if="connecting" class="social-accounts__connect-spinner" />
+              <Loader2 v-if="connectingPlatform === 'x'" class="social-accounts__connect-spinner" />
               <Plus v-else class="social-accounts__connect-icon" />
-              {{ connecting ? 'Connecting...' : 'Connect Account' }}
+              {{ connectingPlatform === 'x' ? 'Connecting...' : 'Connect Account' }}
             </button>
           </div>
         </div>
@@ -431,6 +448,7 @@
     Loader2,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import SocialAccountAssignments from '@/components/organization/SocialAccountAssignments.vue';
   import OrgScheduledPostsList from '@/components/organization/OrgScheduledPostsList.vue';
   import { useOrganization } from '@/composables/useOrganization';
@@ -438,18 +456,29 @@
   import {
     listSocialAccounts,
     startInstagramOAuthPopup,
+    startTiktokOAuthPopup,
     startTwitterOAuthPopup,
+    startYoutubeOAuthPopup,
     updateSocialAccount,
     deleteSocialAccount,
     refreshAccountToken,
     type SocialAccount,
   } from '@/services/socialAccountsApi';
 
+  type ConnectPlatform = 'instagram' | 'tiktok' | 'YouTube' | 'x';
+
+  const CONNECT_PLATFORM_LABELS: Record<ConnectPlatform, string> = {
+    instagram: 'Instagram',
+    tiktok: 'TikTok',
+    YouTube: 'YouTube',
+    x: 'X',
+  };
+
   const { organizationId, isAdmin, members, loadOrganization } = useOrganization();
   const { showToast } = useToast();
 
   const loading = ref(true);
-  const connecting = ref(false);
+  const connectingPlatform = ref<ConnectPlatform | null>(null);
   const accounts = ref<SocialAccount[]>([]);
   const selectedAccount = ref<SocialAccount | null>(null);
   const showAssignmentsDialog = ref(false);
@@ -524,14 +553,17 @@
   }
 
   async function handleAuthResult(result: { success: boolean; account?: any; error?: string }) {
+    const connectedPlatform = connectingPlatform.value;
+    const platformLabel = connectedPlatform ? CONNECT_PLATFORM_LABELS[connectedPlatform] : 'Social';
+
     if (result.success && result.account) {
-      showToast(`Instagram account @${result.account.username} connected successfully`, 'success');
+      showToast(`${platformLabel} account @${result.account.username} connected successfully`, 'success');
       await loadAccounts();
       loadOrganization();
     } else if (result.error) {
       showToast(result.error, 'error');
     }
-    connecting.value = false;
+    connectingPlatform.value = null;
   }
 
   async function loadAccounts() {
@@ -552,28 +584,54 @@
     }
   }
 
-  async function connectInstagram() {
+  async function connectPlatform(platform: ConnectPlatform) {
     if (!organizationId.value) return;
-    connecting.value = true;
+    connectingPlatform.value = platform;
+
     try {
-      cleanupAuthListener = await startInstagramOAuthPopup(organizationId.value, handleAuthResult);
+      if (cleanupAuthListener) {
+        cleanupAuthListener();
+        cleanupAuthListener = null;
+      }
+
+      if (platform === 'instagram') {
+        cleanupAuthListener = await startInstagramOAuthPopup(organizationId.value, handleAuthResult);
+        return;
+      }
+
+      if (platform === 'tiktok') {
+        cleanupAuthListener = await startTiktokOAuthPopup(organizationId.value, handleAuthResult);
+        return;
+      }
+
+      if (platform === 'YouTube') {
+        cleanupAuthListener = await startYoutubeOAuthPopup(organizationId.value, handleAuthResult);
+        return;
+      }
+
+      cleanupAuthListener = await startTwitterOAuthPopup(organizationId.value, handleAuthResult);
     } catch (error) {
-      console.error('Failed to connect Instagram:', error);
-      showToast(error instanceof Error ? error.message : 'Failed to connect Instagram.', 'error');
-      connecting.value = false;
+      const platformLabel = CONNECT_PLATFORM_LABELS[platform];
+      console.error(`Failed to connect ${platformLabel}:`, error);
+      showToast(error instanceof Error ? error.message : `Failed to connect ${platformLabel}.`, 'error');
+      connectingPlatform.value = null;
     }
   }
 
+  async function connectInstagram() {
+    await connectPlatform('instagram');
+  }
+
+  async function connectTiktok() {
+    await connectPlatform('tiktok');
+  }
+
+  async function connectYoutube() {
+    await connectPlatform('YouTube');
+  }
+
   async function connectTwitter() {
-    if (!organizationId.value) return;
-    connecting.value = true;
-    try {
-      cleanupAuthListener = await startTwitterOAuthPopup(organizationId.value, handleAuthResult);
-    } catch (error) {
-      console.error('Failed to connect X:', error);
-      showToast(error instanceof Error ? error.message : 'Failed to connect X.', 'error');
-      connecting.value = false;
-    }
+    await connectPlatform('x');
   }
 
   function openAssignments(account: SocialAccount) {

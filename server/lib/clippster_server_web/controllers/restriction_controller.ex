@@ -108,7 +108,11 @@ defmodule ClippsterServerWeb.RestrictionController do
       {:error, changeset} ->
         conn
         |> put_status(:unprocessable_entity)
-        |> json(%{success: false, error: "Invalid settings", details: translate_errors(changeset)})
+        |> json(%{
+          success: false,
+          error: "Invalid settings",
+          details: translate_errors(changeset)
+        })
     end
   end
 
@@ -152,11 +156,12 @@ defmodule ClippsterServerWeb.RestrictionController do
     is_restricted = Map.get(params, "is_restricted")
 
     # Update is_restricted status if provided
-    result = if is_restricted != nil do
-      Organizations.set_member_restricted(organization_id, user_id, is_restricted, user)
-    else
-      {:ok, nil}
-    end
+    result =
+      if is_restricted != nil do
+        Organizations.set_member_restricted(organization_id, user_id, is_restricted, user)
+      else
+        {:ok, nil}
+      end
 
     case result do
       {:ok, _} ->
@@ -182,7 +187,11 @@ defmodule ClippsterServerWeb.RestrictionController do
           {:error, changeset} ->
             conn
             |> put_status(:unprocessable_entity)
-            |> json(%{success: false, error: "Invalid overrides", details: translate_errors(changeset)})
+            |> json(%{
+              success: false,
+              error: "Invalid overrides",
+              details: translate_errors(changeset)
+            })
         end
 
       {:error, :cannot_restrict_owner} ->

@@ -7,7 +7,7 @@
     <!-- Video fills entire container -->
     <video
       ref="videoRef"
-      class="w-full h-full object-fill"
+      class="w-full h-full object-contain"
       autoplay
       playsinline
       :muted="isMuted"
@@ -90,7 +90,7 @@
       <button
         @click="createClip"
         :disabled="!canClip"
-        class="p-1.5 rounded bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white transition-colors"
+        class="p-1.5 rounded bg-[var(--sidebar-accent)] hover:opacity-90 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white transition-colors"
         title="Create Clip (Alt+C)"
       >
         <Scissors class="w-4 h-4" />
@@ -217,13 +217,30 @@ watch([volume, isMuted], () => {
 });
 
 // Watch for play state changes
-watch(isPlaying, (playing) => {
-  if (videoRef.value) {
-    if (playing) {
-      videoRef.value.play().catch(() => {});
-    } else {
-      videoRef.value.pause();
+watch(isPlaying, async (playing) => {
+  if (!videoRef.value) return;
+  
+  console.log('[PIP] Play state changed to:', playing);
+  
+  if (playing) {
+    try {
+      await videoRef.value.play();
+      console.log('[PIP] Video playback started successfully');
+    } catch (error) {
+      console.error('[PIP] Failed to start playback:', error);
+      // Retry after a short delay
+      setTimeout(async () => {
+        try {
+          await videoRef.value?.play();
+          console.log('[PIP] Video playback started on retry');
+        } catch (retryError) {
+          console.error('[PIP] Retry play failed:', retryError);
+        }
+      }, 100);
     }
+  } else {
+    videoRef.value.pause();
+    console.log('[PIP] Video paused (HLS continues loading)');
   }
 });
 
@@ -404,8 +421,8 @@ input[type='range']::-webkit-slider-runnable-track {
   height: 4px;
   background: linear-gradient(
     to right,
-    #8b5cf6 0%,
-    #8b5cf6 var(--value, 50%),
+    var(--sidebar-accent) 0%,
+    var(--sidebar-accent) var(--value, 50%),
     #52525b var(--value, 50%),
     #52525b 100%
   );

@@ -450,6 +450,13 @@ const trackDragId = ref<string | null>(null);
 const trackDragOverId = ref<string | null>(null);
 
 function onTrackDragStart(e: DragEvent, trackId: string) {
+	// Prevent dragging Track 0 (main video track)
+	const track = tracks.value.find((t) => t.id === trackId);
+	if (track && 'isMain' in track && track.isMain) {
+		e.preventDefault();
+		return;
+	}
+
 	trackDragId.value = trackId;
 	if (e.dataTransfer) {
 		e.dataTransfer.effectAllowed = "move";
@@ -467,10 +474,31 @@ function onTrackDragOver(e: DragEvent, trackId: string) {
 function onTrackDrop(e: DragEvent, targetTrackId: string) {
 	e.preventDefault();
 	if (!trackDragId.value || trackDragId.value === targetTrackId) return;
-	const newIndex = tracks.value.findIndex((t) => t.id === targetTrackId);
-	if (newIndex !== -1) {
-		editor.timeline.reorderTrack({ trackId: trackDragId.value, newIndex });
+
+	// Prevent dropping onto Track 0 (main video track)
+	const targetTrack = tracks.value.find((t) => t.id === targetTrackId);
+	if (targetTrack && 'isMain' in targetTrack && targetTrack.isMain) {
+		trackDragId.value = null;
+		trackDragOverId.value = null;
+		return;
 	}
+
+	const oldIndex = tracks.value.findIndex((t) => t.id === trackDragId.value);
+	const targetIndex = tracks.value.findIndex((t) => t.id === targetTrackId);
+
+	if (oldIndex === -1 || targetIndex === -1) return;
+
+	// Calculate correct new index accounting for drag direction
+	let newIndex = targetIndex;
+	if (oldIndex < targetIndex) {
+		// Dragging down: insert after target
+		newIndex = targetIndex;
+	} else {
+		// Dragging up: insert before target
+		newIndex = targetIndex;
+	}
+
+	editor.timeline.reorderTrack({ trackId: trackDragId.value, newIndex });
 	trackDragId.value = null;
 	trackDragOverId.value = null;
 }
@@ -561,15 +589,25 @@ function onTrackDragEnd() {
 								<div
 									v-for="track in tracks"
 									:key="track.id"
-									draggable="true"
-									class="group flex items-center px-1 transition-colors"
-									:class="{ 'bg-primary/10 border-t border-primary/40': trackDragOverId === track.id }"
+									:draggable="!('isMain' in track && track.isMain)"
+									class="group flex items-center px-1 transition-colors relative"
+									:class="{
+										'bg-primary/10': trackDragOverId === track.id,
+										'cursor-move': !('isMain' in track && track.isMain),
+										'cursor-not-allowed opacity-60': 'isMain' in track && track.isMain && trackDragId
+									}"
 									:style="{ height: `${getTrackHeight({ type: track.type })}px` }"
 									@dragstart="onTrackDragStart($event, track.id)"
 									@dragover="onTrackDragOver($event, track.id)"
 									@drop="onTrackDrop($event, track.id)"
 									@dragend="onTrackDragEnd"
 								>
+									<!-- Drop insertion indicator -->
+									<div
+										v-if="trackDragOverId === track.id"
+										class="absolute left-0 right-0 top-0 h-0.5 bg-primary z-10"
+									/>
+
 									<div class="flex min-w-0 flex-1 items-center justify-between gap-0.5">
 										<div class="flex flex-col min-w-0">
 											<span

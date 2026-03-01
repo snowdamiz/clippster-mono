@@ -25,14 +25,14 @@ defmodule ClippsterServer.Social.Platform do
   - :user_id (platform user ID)
   """
   @callback exchange_code(code :: String.t(), opts :: map()) ::
-    {:ok, map()} | {:error, term()}
+              {:ok, map()} | {:error, term()}
 
   @doc """
   Refreshes an expired access token using the refresh token.
   Returns {:ok, tokens_map} or {:error, reason}.
   """
   @callback refresh_tokens(refresh_token :: String.t()) ::
-    {:ok, map()} | {:error, term()}
+              {:ok, map()} | {:error, term()}
 
   @doc """
   Gets user profile information using the access token.
@@ -45,7 +45,7 @@ defmodule ClippsterServer.Social.Platform do
   - :profile_image_url
   """
   @callback get_user_profile(access_token :: String.t()) ::
-    {:ok, map()} | {:error, term()}
+              {:ok, map()} | {:error, term()}
 
   @doc """
   Publishes media to the platform.
@@ -57,7 +57,7 @@ defmodule ClippsterServer.Social.Platform do
   - :media_type
   """
   @callback publish_media(access_token :: String.t(), media_url :: String.t(), opts :: map()) ::
-    {:ok, map()} | {:error, term()}
+              {:ok, map()} | {:error, term()}
 
   @doc """
   Gets insights/analytics for a post.
@@ -72,7 +72,7 @@ defmodule ClippsterServer.Social.Platform do
   - :impressions_count (if available)
   """
   @callback get_insights(access_token :: String.t(), post_id :: String.t()) ::
-    {:ok, map()} | {:error, term()}
+              {:ok, map()} | {:error, term()}
 
   @doc """
   Returns the platform identifier string (e.g., "instagram", "tiktok").
@@ -91,7 +91,8 @@ defmodule ClippsterServer.Social.Platform do
   @doc """
   Gets the platform module for a given platform identifier.
   """
-  def get_platform_module("instagram"), do: {:ok, ClippsterServer.Social.Platforms.Instagram}
+  def get_platform_module("x"), do: {:ok, ClippsterServer.Social.Platforms.Twitter}
+  def get_platform_module("instagram"), do: {:error, :use_post_for_me}
   def get_platform_module("twitter"), do: {:ok, ClippsterServer.Social.Platforms.Twitter}
   def get_platform_module("tiktok"), do: {:error, :not_implemented}
   def get_platform_module("youtube"), do: {:error, :not_implemented}
@@ -100,7 +101,8 @@ defmodule ClippsterServer.Social.Platform do
   @doc """
   Calls a platform function dynamically.
   """
-  def call(platform, function, args) when is_binary(platform) and is_atom(function) and is_list(args) do
+  def call(platform, function, args)
+      when is_binary(platform) and is_atom(function) and is_list(args) do
     case get_platform_module(platform) do
       {:ok, module} -> apply(module, function, args)
       {:error, reason} -> {:error, reason}

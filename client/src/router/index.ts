@@ -8,11 +8,38 @@ const router = createRouter({
     {
       path: '/',
       redirect: () => {
-        // Dynamic redirect based on user type
         const authStore = useAuthStore();
+        const user = authStore.user;
+        console.log('[Router] Root redirect logic:', {
+          isAuthenticated: authStore.isAuthenticated,
+          userId: user?.id,
+          accountType: user?.account_type,
+          ownedOrgId: user?.owned_organization_id,
+          createdByOrgId: user?.created_by_organization_id,
+          hasSelectedPlan: !!localStorage.getItem('has_selected_plan'),
+          subStatus: (user as any)?.subscription?.status,
+        });
+        
+        // New users without a plan go to billing
+        if (
+          user &&
+          !user.is_admin &&
+          user.account_type !== 'organization' &&
+          !user.owned_organization_id &&
+          !user.created_by_organization_id &&
+          !localStorage.getItem('has_selected_plan')
+        ) {
+          const subStatus = (user as any).subscription?.status;
+          if (subStatus !== 'active' && subStatus !== 'cancelled') {
+            console.log('[Router] Redirecting to billing (new user)');
+            return '/billing?new_user=true';
+          }
+        }
         const isOrgOwner =
-          authStore.user?.account_type === 'organization' && authStore.user?.owned_organization_id;
-        return isOrgOwner ? '/organizations' : '/creators';
+          user?.account_type === 'organization' && user?.owned_organization_id;
+        const destination = isOrgOwner ? '/organizations' : '/creators';
+        console.log('[Router] Redirecting to:', destination);
+        return destination;
       },
     },
     {
@@ -59,7 +86,6 @@ const router = createRouter({
       path: '/ai-video',
       name: 'ai-video',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -532,32 +558,64 @@ const router = createRouter({
 
 // Helper to check if a user is an organization account owner
 export function isOrgAccountOwner(
-  user?: { account_type?: string; owned_organization_id?: string | null } | null
+  user?: { account_type?: string; owned_organization_id?: string | number | null } | null
 ): boolean {
   const userData = user ?? useAuthStore().user;
   return userData?.account_type === 'organization' && !!userData?.owned_organization_id;
 }
 
+// Helper to check if a user needs to select a plan (new user flow)
+function needsPlanSelection(
+  user?: { account_type?: string; owned_organization_id?: string | number | null; is_admin?: boolean; created_by_organization_id?: string | number | null; subscription?: { status?: string } } | null
+): boolean {
+  if (!user) return false;
+  if (user.is_admin) return false;
+  if (user.account_type === 'organization' || user.owned_organization_id) return false;
+  if (user.created_by_organization_id) return false;
+  const hasSelectedPlan = localStorage.getItem('has_selected_plan');
+  if (hasSelectedPlan) return false;
+  const subStatus = user.subscription?.status;
+  if (subStatus === 'active' || subStatus === 'cancelled') return false;
+  return true;
+}
+
 // Helper to get the default landing route for a user
 export function getDefaultRoute(
-  user?: { account_type?: string; owned_organization_id?: string | null } | null
+  user?: { account_type?: string; owned_organization_id?: string | number | null; is_admin?: boolean; created_by_organization_id?: string | number | null; subscription?: { status?: string } } | null
 ): string {
+  if (needsPlanSelection(user)) return '/billing?new_user=true';
   return isOrgAccountOwner(user) ? '/organizations' : '/creators';
 }
 
 // Navigation guard for authentication, admin access, and feature flags
 router.beforeEach(async (to, _from, next) => {
+  console.log('[Router] beforeEach triggered:', {
+    to: to.path,
+    from: _from.path,
+    isAuthenticated: useAuthStore().isAuthenticated,
+  });
+  
   const authStore = useAuthStore();
+  const ownedOrganizationId = authStore.user?.owned_organization_id;
+
+  // Org-owner accounts should use organization billing, not personal billing.
+  if (ownedOrganizationId && to.path === '/billing') {
+    next(`/organization/${ownedOrganizationId}/billing`);
+    return;
+  }
 
   // Check if route requires authentication
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    // Save intended destination and redirect to login
-    next({ path: '/login', query: { redirect: to.fullPath } });
+    // Auth gate in App.vue will show modal, but we still prevent route navigation
+    next(false);
     return;
   }
 
   // Check if route requires admin or moderator
-  if (to.meta.requiresAdmin && (!authStore.isAuthenticated || (!authStore.user?.is_admin && !authStore.user?.is_moderator))) {
+  if (
+    to.meta.requiresAdmin &&
+    (!authStore.isAuthenticated || (!authStore.user?.is_admin && !authStore.user?.is_moderator))
+  ) {
     next('/projects');
     return;
   }
@@ -579,17 +637,16 @@ router.beforeEach(async (to, _from, next) => {
           'clippers-directory': 'Browse Clippers',
           'messages-home': 'Access Messages',
           'prompts-home': 'Access Prompts',
-          'ai-video-home': 'Use AI Video Creator',
         };
         const routeName = typeof to.name === 'string' ? to.name : String(to.name);
         const context = routeLabels[routeName] || `Access ${routeName}`;
-        
+
         // Dispatch subscription gate event
         const event = new CustomEvent('show-subscription-gate', {
           detail: { context, type: 'general' },
         });
         window.dispatchEvent(event);
-        
+
         // Prevent navigation
         next(false);
         return;
@@ -605,11 +662,16 @@ router.beforeEach(async (to, _from, next) => {
     if (orgId && !isBillingPage) {
       // Check subscription status from cached org data or fetch
       try {
-        const { data } = await import('@/services/api').then(m => m.default.get(`/organizations/${orgId}/subscription`));
+        const { data } = await import('@/services/api').then((m) =>
+          m.default.get(`/organizations/${orgId}/subscription`)
+        );
         if (data.success && data.subscription) {
           const status = data.subscription.status;
           if (status === 'none' || status === 'expired') {
-            next({ path: `/organization/${orgId}/billing`, query: { subscription_required: 'true' } });
+            next({
+              path: `/organization/${orgId}/billing`,
+              query: { subscription_required: 'true' },
+            });
             return;
           }
         }
@@ -636,6 +698,7 @@ router.beforeEach(async (to, _from, next) => {
     return;
   }
 
+  console.log('[Router] Navigation allowed to:', to.path);
   next();
 });
 

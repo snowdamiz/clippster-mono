@@ -1,11 +1,17 @@
 <template>
   <div class="org-hub">
     <PageLayout
-      :title="organization?.name || 'Organization'"
+      :title="hasMultipleOrgs ? '' : (organization?.name || 'Organization')"
       description="Manage your team and organization tools"
       :show-header="true"
       :icon="Building2"
     >
+      <template #title v-if="hasMultipleOrgs">
+        <OrganizationSelector
+          v-model="organizationId"
+          class="org-hub__selector"
+        />
+      </template>
       <template #badge>
         <span v-if="loading" class="org-hub__role org-hub__role--loading">
           <Loader2 class="org-hub__role-spinner" />
@@ -199,9 +205,12 @@
   import PageLayout from '@/components/PageLayout.vue';
   import { useOrganization } from '@/composables/useOrganization';
   import InviteMemberDialog from '@/components/InviteMemberDialog.vue';
+  import OrganizationSelector from '@/components/OrganizationSelector.vue';
+  import { useOrganizationSelector } from '@/composables/useOrganizationSelector';
 
   const router = useRouter();
   const showInviteDialog = ref(false);
+  const { hasMultipleOrgs } = useOrganizationSelector();
 
   const {
     loading,
@@ -447,6 +456,11 @@
     height: 14px;
   }
 
+  /* ===== Organization Selector ===== */
+  .org-hub__selector {
+    margin: 0;
+  }
+
   /* ===== Role Badge ===== */
   .org-hub__role {
     display: inline-flex;
@@ -633,6 +647,7 @@
     line-height: 1.4;
     display: -webkit-box;
     -webkit-line-clamp: 1;
+    line-clamp: 1;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }

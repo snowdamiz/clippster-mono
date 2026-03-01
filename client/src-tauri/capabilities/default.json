@@ -58,6 +58,14 @@
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-unregister",
     {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        {
+          "path": "$TEMP/**"
+        }
+      ]
+    },
+    {
       "identifier": "opener:allow-reveal-item-in-dir",
       "allow": [
         {

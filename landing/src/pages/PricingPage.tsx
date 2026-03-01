@@ -107,17 +107,19 @@ const organizationPlans = [
     description: 'For individual creators',
     icon: Package,
     features: [
-      'No team seats (owner only)',
+      'Owner only (no team seats)',
       'Team collaboration tools',
       'Shared assets & profiles',
-      'Buy credits separately',
+      'Unlimited marketing campaigns',
+      'Browse clipper talent directory',
+      'Post job listings for clippers & video editors',
     ],
     cta: 'Get Started',
     highlight: false,
   },
   {
     name: 'Enterprise Base',
-    price: 299.99,
+    price: 349.99,
     period: 'month',
     seats: 5,
     credits: 0,
@@ -127,14 +129,16 @@ const organizationPlans = [
       '5 team seats',
       'Team collaboration tools',
       'Shared assets & profiles',
-      'Buy credits separately',
+      'Unlimited marketing campaigns',
+      'Browse clipper talent directory',
+      'Post job listings for clippers & video editors',
     ],
     cta: 'Get Started',
     highlight: false,
   },
   {
     name: 'Enterprise AI',
-    price: 499.99,
+    price: 549.99,
     period: 'month',
     seats: 5,
     credits: 20000,
@@ -146,13 +150,16 @@ const organizationPlans = [
       '20,000 credits/month',
       'Team collaboration tools',
       'Shared assets & profiles',
+      'Unlimited marketing campaigns',
+      'Browse clipper talent directory',
+      'Post job listings for clippers & video editors',
     ],
     cta: 'Get Started',
     highlight: true,
   },
   {
     name: 'Enterprise Unlimited',
-    price: 1899.99,
+    price: 2199.99,
     period: 'month',
     seats: null,
     credits: 100000,
@@ -163,6 +170,9 @@ const organizationPlans = [
       '100,000 credits/month',
       'Team collaboration tools',
       'Shared assets & profiles',
+      'Unlimited marketing campaigns',
+      'Browse clipper talent directory',
+      'Post job listings for clippers & video editors',
     ],
     cta: 'Get Started',
     highlight: false,
@@ -651,6 +661,13 @@ export function PricingPage() {
               <p className="text-zinc-500 max-w-lg mx-auto px-4 leading-relaxed">
                 Powerful collaboration tools for teams of all sizes
               </p>
+              
+              {/* 0% Campaign Fees Badge */}
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 border border-emerald-500/30 mt-4">
+                <span className="text-sm font-semibold text-emerald-400">0% Campaign Fees</span>
+                <span className="text-xs text-emerald-300/70">•</span>
+                <span className="text-xs text-zinc-400">Save 10-30% vs other platforms</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-7xl mx-auto">

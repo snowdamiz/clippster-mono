@@ -604,6 +604,7 @@ export async function getAnalyticsSummary(
 export interface AssignedCreatorProfile {
   id: number;
   organization_id: number;
+  organization_name?: string;
   name: string;
   description: string | null;
   profile_image_url: string | null;
@@ -685,27 +686,49 @@ export async function uploadMediaForPost(
 }
 
 // ============================================
-// Instagram Connection via Business Login (Tauri OAuth)
+// Social Account Connection via PostForMe OAuth
 // ============================================
 
-import {
-  isTauri,
-  startInstagramOAuth,
-  onInstagramAuthComplete as onTauriInstagramAuthComplete,
-  type InstagramAuthResult,
-} from '@/lib/instagram-auth';
+import { isTauri } from '@/lib/instagram-auth';
 
-import {
-  startTwitterOAuth,
-  onTwitterAuthComplete as onTauriTwitterAuthComplete,
-  type TwitterAuthResult,
-} from '@/lib/twitter-auth';
+interface PostForMeConnectUrlResponse {
+  success: boolean;
+  connection_id?: string;
+  auth_url?: string;
+  external_id?: string;
+  platform?: string;
+  error?: string;
+}
+
+interface PostForMeCompleteConnectResponse {
+  success: boolean;
+  account?: SocialAccount;
+  accounts?: SocialAccount[];
+  error?: string;
+}
+
+interface PostForMeConnectStatusResponse {
+  success: boolean;
+  connection_id?: string;
+  status?: 'pending' | 'callback_received' | 'synced' | 'failed' | 'expired';
+  session_success?: boolean | null;
+  account_ids?: string[];
+  external_id?: string;
+  platform?: string;
+  error?: string;
+}
+
+const POST_FOR_ME_STATUS_POLL_INTERVAL_MS = 1500;
+const POST_FOR_ME_STATUS_TIMEOUT_MS = 180000;
 
 /**
  * Get the API base URL
  */
 function getApiBase(): string {
-  return import.meta.env.VITE_API_URL || 'http://localhost:4000';
+  return (
+    import.meta.env.VITE_API_URL ||
+    (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app')
+  );
 }
 
 /**
@@ -715,9 +738,128 @@ function getAuthToken(): string {
   return localStorage.getItem('auth_token') || '';
 }
 
+async function startPostForMeOrganizationOAuth(
+  organizationId: string | number,
+  platform: string,
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): Promise<() => void> {
+  const { invoke } = await import('@tauri-apps/api/core');
+
+  const connectResponse = await api.post<PostForMeConnectUrlResponse>('/social/connect-url', {
+    organization_id: organizationId,
+    platform,
+  });
+
+  if (!connectResponse.data.success || !connectResponse.data.auth_url) {
+    throw new Error(connectResponse.data.error || 'Failed to create Post For Me auth URL');
+  }
+
+  const connectionId = connectResponse.data.connection_id;
+
+  if (!connectionId) {
+    throw new Error('Post For Me response did not include connection_id');
+  }
+
+  await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
+
+  let cancelled = false;
+
+  void (async () => {
+    try {
+      const status = await pollOrganizationConnectStatus(
+        organizationId,
+        connectionId,
+        () => cancelled
+      );
+
+      if (cancelled || !onResult) return;
+
+      if (status.status !== 'synced') {
+        onResult({
+          success: false,
+          error: status.error || 'Social account connection failed',
+        });
+        return;
+      }
+
+      const completeResponse = await api.post<PostForMeCompleteConnectResponse>(
+        '/social/complete-connect',
+        {
+          organization_id: organizationId,
+          connection_id: connectionId,
+          platform,
+        }
+      );
+
+      if (!completeResponse.data.success) {
+        onResult({
+          success: false,
+          error: completeResponse.data.error || 'Failed to finalize social account connection',
+        });
+        return;
+      }
+
+      const account = completeResponse.data.account || completeResponse.data.accounts?.[0];
+
+      onResult({
+        success: true,
+        account,
+      });
+    } catch (error: any) {
+      if (cancelled || !onResult) return;
+
+      onResult({
+        success: false,
+        error:
+          error.response?.data?.error ||
+          error.message ||
+          'Failed to complete social account connection',
+      });
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}
+
+async function pollOrganizationConnectStatus(
+  organizationId: string | number,
+  connectionId: string,
+  isCancelled: () => boolean
+): Promise<PostForMeConnectStatusResponse> {
+  const startedAt = Date.now();
+
+  while (!isCancelled()) {
+    const response = await api.get<PostForMeConnectStatusResponse>('/social/connect-status', {
+      params: {
+        organization_id: organizationId,
+        connection_id: connectionId,
+      },
+    });
+
+    const status = response.data;
+
+    if (!status.success) {
+      throw new Error(status.error || 'Failed to fetch connection status');
+    }
+
+    if (status.status === 'synced' || status.status === 'failed' || status.status === 'expired') {
+      return status;
+    }
+
+    if (Date.now() - startedAt > POST_FOR_ME_STATUS_TIMEOUT_MS) {
+      throw new Error('Timed out waiting for account connection');
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, POST_FOR_ME_STATUS_POLL_INTERVAL_MS));
+  }
+
+  throw new Error('Connection polling cancelled');
+}
+
 /**
- * Start Instagram OAuth flow.
- * For Tauri: Opens browser and handles OAuth via local callback server.
+ * Start Instagram OAuth flow via PostForMe.
  * Returns a cleanup function.
  */
 export async function startInstagramOAuthPopup(
@@ -728,52 +870,17 @@ export async function startInstagramOAuthPopup(
     throw new Error('Instagram OAuth is only supported in the Tauri desktop app');
   }
 
-  const apiBase = getApiBase();
   const authToken = getAuthToken();
 
   if (!authToken) {
     throw new Error('You must be logged in to connect Instagram');
   }
 
-  return startInstagramOAuth(organizationId, apiBase, authToken, (result: InstagramAuthResult) => {
-    if (onResult) {
-      onResult({
-        success: result.success,
-        account: result.account as SocialAccount | undefined,
-        error: result.error,
-      });
-    }
-  });
+  return startPostForMeOrganizationOAuth(organizationId, 'instagram', onResult);
 }
 
 /**
- * Listen for Instagram OAuth completion events.
- * Returns cleanup function to remove listener.
- */
-export function onInstagramAuthComplete(
-  callback: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
-): () => void {
-  if (!isTauri()) {
-    // Return no-op for non-Tauri
-    return () => {};
-  }
-
-  return onTauriInstagramAuthComplete((result: InstagramAuthResult) => {
-    callback({
-      success: result.success,
-      account: result.account as SocialAccount | undefined,
-      error: result.error,
-    });
-  });
-}
-
-// ============================================
-// X (Twitter) Connection via OAuth (Tauri OAuth)
-// ============================================
-
-/**
- * Start X (Twitter) OAuth flow.
- * For Tauri: Opens browser and handles OAuth via local callback server.
+ * Start X (Twitter) OAuth flow via PostForMe.
  * Returns a cleanup function.
  */
 export async function startTwitterOAuthPopup(
@@ -784,40 +891,54 @@ export async function startTwitterOAuthPopup(
     throw new Error('X OAuth is only supported in the Tauri desktop app');
   }
 
-  const apiBase = getApiBase();
   const authToken = getAuthToken();
 
   if (!authToken) {
     throw new Error('You must be logged in to connect X');
   }
 
-  return startTwitterOAuth(organizationId, apiBase, authToken, (result: TwitterAuthResult) => {
-    if (onResult) {
-      onResult({
-        success: result.success,
-        account: result.account as SocialAccount | undefined,
-        error: result.error,
-      });
-    }
-  });
+  return startPostForMeOrganizationOAuth(organizationId, 'x', onResult);
 }
 
 /**
- * Listen for X (Twitter) OAuth completion events.
- * Returns cleanup function to remove listener.
+ * Start TikTok OAuth flow.
+ * Uses Post For Me provider flow.
  */
-export function onTwitterAuthComplete(
-  callback: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
-): () => void {
+export async function startTiktokOAuthPopup(
+  organizationId: string | number,
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): Promise<() => void> {
   if (!isTauri()) {
-    return () => {};
+    throw new Error('TikTok OAuth is only supported in the Tauri desktop app');
   }
 
-  return onTauriTwitterAuthComplete((result: TwitterAuthResult) => {
-    callback({
-      success: result.success,
-      account: result.account as SocialAccount | undefined,
-      error: result.error,
-    });
-  });
+  const authToken = getAuthToken();
+
+  if (!authToken) {
+    throw new Error('You must be logged in to connect TikTok');
+  }
+
+  return startPostForMeOrganizationOAuth(organizationId, 'tiktok', onResult);
 }
+
+/**
+ * Start YouTube OAuth flow.
+ * Uses Post For Me provider flow.
+ */
+export async function startYoutubeOAuthPopup(
+  organizationId: string | number,
+  onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void
+): Promise<() => void> {
+  if (!isTauri()) {
+    throw new Error('YouTube OAuth is only supported in the Tauri desktop app');
+  }
+
+  const authToken = getAuthToken();
+
+  if (!authToken) {
+    throw new Error('You must be logged in to connect YouTube');
+  }
+
+  return startPostForMeOrganizationOAuth(organizationId, 'youtube', onResult);
+}
+

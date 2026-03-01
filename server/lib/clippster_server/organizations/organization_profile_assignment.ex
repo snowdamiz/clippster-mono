@@ -31,4 +31,3 @@ defmodule ClippsterServer.Organizations.OrganizationProfileAssignment do
     )
   end
 end
-

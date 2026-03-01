@@ -151,8 +151,8 @@ pub struct WatermarkSettings {
     pub height: Option<u32>,
     pub position_x: u32, // 0-100 (percentage from left)
     pub position_y: u32, // 0-100 (percentage from top)
-    pub opacity: u32, // 0-100
-    pub scale: u32, // percentage of video width (5-50)
+    pub opacity: u32,    // 0-100
+    pub scale: u32,      // percentage of video width (5-50)
     // Optional per-aspect-ratio settings from creator profile
     #[serde(skip_serializing_if = "Option::is_none")]
     pub per_ratio_settings: Option<PerRatioWatermarkSettings>,
@@ -162,15 +162,15 @@ pub struct WatermarkSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MusicTrackSettings {
-    pub file_path: String,   // Path to audio file
-    pub gain_db: f64,        // dB gain (-20 to +20)
+    pub file_path: String, // Path to audio file
+    pub gain_db: f64,      // dB gain (-20 to +20)
     #[serde(default)]
-    pub pan: f64,            // Pan -1.0 to 1.0 (0.0 is center)
-    pub fade_in: f64,        // Fade in duration in seconds
-    pub fade_out: f64,       // Fade out duration in seconds
-    pub start_time: f64,     // When audio starts in clip timeline
-    pub end_time: f64,       // When audio ends in clip timeline
-    pub is_muted: bool,      // Whether track is muted
+    pub pan: f64, // Pan -1.0 to 1.0 (0.0 is center)
+    pub fade_in: f64,      // Fade in duration in seconds
+    pub fade_out: f64,     // Fade out duration in seconds
+    pub start_time: f64,   // When audio starts in clip timeline
+    pub end_time: f64,     // When audio ends in clip timeline
+    pub is_muted: bool,    // Whether track is muted
 }
 
 // Audio settings structure
@@ -201,38 +201,38 @@ pub struct VideoFilterSegment {
 #[serde(rename_all = "camelCase")]
 pub struct VideoFilterSettings {
     #[serde(default)]
-    pub preset: Option<String>,   // Filter preset name (e.g., "warm", "cool", "vintage")
+    pub preset: Option<String>, // Filter preset name (e.g., "warm", "cool", "vintage")
     #[serde(default)]
-    pub brightness: f64,          // -100 to 100 (0 = no change)
+    pub brightness: f64, // -100 to 100 (0 = no change)
     #[serde(default)]
-    pub contrast: f64,            // -100 to 100 (0 = no change)
+    pub contrast: f64, // -100 to 100 (0 = no change)
     #[serde(default)]
-    pub saturation: f64,          // -100 to 100 (0 = no change)
+    pub saturation: f64, // -100 to 100 (0 = no change)
     #[serde(default)]
-    pub hue: f64,                 // -180 to 180 degrees (0 = no change)
+    pub hue: f64, // -180 to 180 degrees (0 = no change)
     #[serde(default)]
-    pub temperature: f64,         // -100 to 100 (warm/cool adjustment)
+    pub temperature: f64, // -100 to 100 (warm/cool adjustment)
     #[serde(default)]
-    pub vignette: f64,            // 0 to 100 (vignette intensity)
+    pub vignette: f64, // 0 to 100 (vignette intensity)
     #[serde(default)]
-    pub sharpen: f64,             // 0 to 100 (sharpening amount)
+    pub sharpen: f64, // 0 to 100 (sharpening amount)
     #[serde(default)]
-    pub fade: f64,                // 0 to 100 (fade/muted look)
+    pub fade: f64, // 0 to 100 (fade/muted look)
 }
 
 impl VideoFilterSettings {
     /// Check if any filter is active (non-default values)
     pub fn is_active(&self) -> bool {
-        self.brightness != 0.0 
-            || self.contrast != 0.0 
-            || self.saturation != 0.0 
+        self.brightness != 0.0
+            || self.contrast != 0.0
+            || self.saturation != 0.0
             || self.hue != 0.0
             || self.temperature != 0.0
             || self.vignette > 0.0
             || self.sharpen > 0.0
             || self.fade > 0.0
     }
-    
+
     /// Build FFmpeg video filter string for color grading
     /// Returns None if no filters are active
     #[allow(dead_code)]
@@ -240,42 +240,43 @@ impl VideoFilterSettings {
         if !self.is_active() {
             return None;
         }
-        
+
         let mut filters = Vec::new();
-        
+
         // Use the eq (equalizer) filter for brightness, contrast, saturation
         // eq filter uses values around 1.0 as neutral
         // brightness: -1.0 to 1.0 (0.0 = no change)
         // contrast: 0.0 to 2.0 (1.0 = no change)
         // saturation: 0.0 to 3.0 (1.0 = no change)
-        
-        let has_eq_params = self.brightness != 0.0 || self.contrast != 0.0 || self.saturation != 0.0;
+
+        let has_eq_params =
+            self.brightness != 0.0 || self.contrast != 0.0 || self.saturation != 0.0;
         if has_eq_params {
             let mut eq_parts = Vec::new();
-            
+
             // Brightness: -100 to 100 → -1.0 to 1.0
             if self.brightness != 0.0 {
                 let brightness = self.brightness / 100.0;
                 eq_parts.push(format!("brightness={:.3}", brightness));
             }
-            
+
             // Contrast: -100 to 100 → 0.0 to 2.0 (1.0 = neutral)
             if self.contrast != 0.0 {
                 let contrast = 1.0 + (self.contrast / 100.0);
                 eq_parts.push(format!("contrast={:.3}", contrast.clamp(0.0, 2.0)));
             }
-            
+
             // Saturation: -100 to 100 → 0.0 to 2.0 (1.0 = neutral)
             if self.saturation != 0.0 {
                 let saturation = 1.0 + (self.saturation / 100.0);
                 eq_parts.push(format!("saturation={:.3}", saturation.clamp(0.0, 3.0)));
             }
-            
+
             if !eq_parts.is_empty() {
                 filters.push(format!("eq={}", eq_parts.join(":")));
             }
         }
-        
+
         // Hue rotation: use hue filter (h=degrees in radians)
         if self.hue != 0.0 {
             // hue filter uses h= in radians, but we can use degrees with PI conversion
@@ -283,16 +284,19 @@ impl VideoFilterSettings {
             let hue_radians = self.hue * std::f64::consts::PI / 180.0;
             filters.push(format!("hue=h={:.4}", hue_radians));
         }
-        
+
         // Temperature (warm/cool): use colortemperature filter
         // FFmpeg colortemperature filter: temperature in Kelvin (6500 = neutral)
         // Warm (-100) = lower K (e.g., 4500), Cool (+100) = higher K (e.g., 8500)
         if self.temperature != 0.0 {
             // Map -100..100 to 4500..8500 Kelvin (6500 = neutral)
             let temp_k = 6500.0 - (self.temperature * 20.0);
-            filters.push(format!("colortemperature=temperature={:.0}", temp_k.clamp(2000.0, 12000.0)));
+            filters.push(format!(
+                "colortemperature=temperature={:.0}",
+                temp_k.clamp(2000.0, 12000.0)
+            ));
         }
-        
+
         // Vignette: use vignette filter
         // angle: controls spread (PI/5 to PI/2), default PI/5
         // a (aspect): 1 for round, higher for elliptical
@@ -300,9 +304,12 @@ impl VideoFilterSettings {
             // Map 0-100 to vignette intensity
             // Higher angle = less vignette (more open), lower = more vignette
             let angle = std::f64::consts::PI / 5.0 * (1.0 - self.vignette / 200.0);
-            filters.push(format!("vignette=angle={:.4}", angle.clamp(0.1, std::f64::consts::PI / 2.0)));
+            filters.push(format!(
+                "vignette=angle={:.4}",
+                angle.clamp(0.1, std::f64::consts::PI / 2.0)
+            ));
         }
-        
+
         // Sharpen: use unsharp filter
         // unsharp=lx:ly:la:cx:cy:ca (luma size x/y, luma amount, chroma size x/y, chroma amount)
         // Default: 5:5:1.0, higher amount = more sharpening
@@ -310,9 +317,12 @@ impl VideoFilterSettings {
             // Map 0-100 to sharpening amount 0-3
             let amount = self.sharpen / 100.0 * 3.0;
             let chroma_amount = amount * 0.5; // Less sharpening on chroma
-            filters.push(format!("unsharp=5:5:{:.2}:5:5:{:.2}", amount, chroma_amount));
+            filters.push(format!(
+                "unsharp=5:5:{:.2}:5:5:{:.2}",
+                amount, chroma_amount
+            ));
         }
-        
+
         // Fade look: reduce contrast and add slight "film" look
         // This applies on top of other filters if present
         if self.fade > 0.0 {
@@ -320,14 +330,14 @@ impl VideoFilterSettings {
             let fade_factor = self.fade / 100.0;
             let contrast_reduction = 1.0 - (fade_factor * 0.3); // Max 30% reduction
             let saturation_reduction = 1.0 - (fade_factor * 0.2); // Max 20% reduction
-            
+
             filters.push(format!(
-                "eq=contrast={:.3}:saturation={:.3}", 
+                "eq=contrast={:.3}:saturation={:.3}",
                 contrast_reduction.clamp(0.5, 1.0),
                 saturation_reduction.clamp(0.5, 1.0)
             ));
         }
-        
+
         if filters.is_empty() {
             None
         } else {
@@ -342,80 +352,92 @@ impl VideoFilterSettings {
         if !self.is_active() {
             return None;
         }
-        
+
         let mut filters = Vec::new();
-        
+
         // Build the enable expression for this time range
         // FFmpeg uses seconds for time, between(t,start,end) checks if t is in range
         let enable_expr = format!("enable='between(t,{:.3},{:.3})'", start_time, end_time);
-        
+
         // Use the eq (equalizer) filter for brightness, contrast, saturation
-        let has_eq_params = self.brightness != 0.0 || self.contrast != 0.0 || self.saturation != 0.0;
+        let has_eq_params =
+            self.brightness != 0.0 || self.contrast != 0.0 || self.saturation != 0.0;
         if has_eq_params {
             let mut eq_parts = Vec::new();
-            
+
             if self.brightness != 0.0 {
                 let brightness = self.brightness / 100.0;
                 eq_parts.push(format!("brightness={:.3}", brightness));
             }
-            
+
             if self.contrast != 0.0 {
                 let contrast = 1.0 + (self.contrast / 100.0);
                 eq_parts.push(format!("contrast={:.3}", contrast.clamp(0.0, 2.0)));
             }
-            
+
             if self.saturation != 0.0 {
                 let saturation = 1.0 + (self.saturation / 100.0);
                 eq_parts.push(format!("saturation={:.3}", saturation.clamp(0.0, 3.0)));
             }
-            
+
             if !eq_parts.is_empty() {
                 // Add enable expression to eq filter
                 eq_parts.push(enable_expr.clone());
                 filters.push(format!("eq={}", eq_parts.join(":")));
             }
         }
-        
+
         // Hue rotation with enable
         if self.hue != 0.0 {
             let hue_radians = self.hue * std::f64::consts::PI / 180.0;
             filters.push(format!("hue=h={:.4}:{}", hue_radians, enable_expr));
         }
-        
+
         // Temperature with enable
         if self.temperature != 0.0 {
             let temp_k = 6500.0 - (self.temperature * 20.0);
-            filters.push(format!("colortemperature=temperature={:.0}:{}", temp_k.clamp(2000.0, 12000.0), enable_expr));
+            filters.push(format!(
+                "colortemperature=temperature={:.0}:{}",
+                temp_k.clamp(2000.0, 12000.0),
+                enable_expr
+            ));
         }
-        
+
         // Vignette with enable
         if self.vignette > 0.0 {
             let angle = std::f64::consts::PI / 5.0 * (1.0 - self.vignette / 200.0);
-            filters.push(format!("vignette=angle={:.4}:{}", angle.clamp(0.1, std::f64::consts::PI / 2.0), enable_expr));
+            filters.push(format!(
+                "vignette=angle={:.4}:{}",
+                angle.clamp(0.1, std::f64::consts::PI / 2.0),
+                enable_expr
+            ));
         }
-        
+
         // Sharpen with enable
         // unsharp uses positional params: lx:ly:la:cx:cy:ca, then enable
         if self.sharpen > 0.0 {
             let amount = self.sharpen / 100.0 * 3.0;
             let chroma_amount = amount * 0.5; // Less sharpening on chroma
-            filters.push(format!("unsharp=5:5:{:.2}:5:5:{:.2}:{}", amount, chroma_amount, enable_expr));
+            filters.push(format!(
+                "unsharp=5:5:{:.2}:5:5:{:.2}:{}",
+                amount, chroma_amount, enable_expr
+            ));
         }
-        
+
         // Fade look with enable
         if self.fade > 0.0 {
             let fade_factor = self.fade / 100.0;
             let contrast_reduction = 1.0 - (fade_factor * 0.3);
             let saturation_reduction = 1.0 - (fade_factor * 0.2);
-            
+
             filters.push(format!(
-                "eq=contrast={:.3}:saturation={:.3}:{}", 
+                "eq=contrast={:.3}:saturation={:.3}:{}",
                 contrast_reduction.clamp(0.5, 1.0),
                 saturation_reduction.clamp(0.5, 1.0),
                 enable_expr
             ));
         }
-        
+
         if filters.is_empty() {
             None
         } else {
@@ -427,7 +449,8 @@ impl VideoFilterSettings {
 impl VideoFilterSegment {
     /// Build FFmpeg filter string for this segment with proper time-based enable expression
     pub fn to_ffmpeg_filter(&self) -> Option<String> {
-        self.settings.to_ffmpeg_filter_with_enable(self.start_time, self.end_time)
+        self.settings
+            .to_ffmpeg_filter_with_enable(self.start_time, self.end_time)
     }
 }
 
@@ -437,15 +460,15 @@ pub fn build_time_based_filter_string(segments: &[VideoFilterSegment]) -> Option
     if segments.is_empty() {
         return None;
     }
-    
+
     let mut all_filters = Vec::new();
-    
+
     for segment in segments {
         if let Some(filter_str) = segment.to_ffmpeg_filter() {
             all_filters.push(filter_str);
         }
     }
-    
+
     if all_filters.is_empty() {
         None
     } else {
@@ -484,7 +507,6 @@ pub enum FramingMode {
     MultiRegion,
 }
 
-
 /// Video content type classification
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -504,7 +526,6 @@ pub enum VideoType {
     #[default]
     Unknown,
 }
-
 
 /// Normalized bounding box (coordinates in 0.0-1.0 range)
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -734,7 +755,7 @@ impl FramingStrategy {
     pub fn default_centered(source_width: u32, source_height: u32) -> Self {
         let target_aspect = 9.0 / 16.0;
         let source_aspect = source_width as f64 / source_height as f64;
-        
+
         // Calculate crop dimensions for portrait
         let (crop_w, crop_h) = if target_aspect < source_aspect {
             // Crop width
@@ -838,7 +859,7 @@ pub struct ShadowConfig {
 #[serde(rename_all = "camelCase")]
 pub struct ChatBubbleConfig {
     pub enabled: bool,
-    pub shape: String, // "rounded", "pointed", "cloud", "square"
+    pub shape: String,         // "rounded", "pointed", "cloud", "square"
     pub tail_position: String, // "left", "right", "bottom-left", "bottom-right", "none"
     #[serde(default)]
     pub tail_size: f32,
@@ -892,7 +913,7 @@ pub struct TextOverlayStyle {
     pub font_family: String,
     pub font_size: f32,
     pub font_weight: u32,
-    pub color: String,  // Text color
+    pub color: String, // Text color
     #[serde(default)]
     pub background_color: Option<String>,
     #[serde(default)]
@@ -948,27 +969,27 @@ pub struct TextOverlayStyle {
     pub text_offset_x: f32,
     #[serde(default)]
     pub text_offset_y: f32,
-    
+
     // === EXTENDED PROPERTIES ===
-    
+
     // Text Transform
     #[serde(default)]
     pub text_transform: Option<String>, // "none", "uppercase", "lowercase", "capitalize"
     #[serde(default)]
     pub text_decoration: Option<String>, // "none", "underline", "line-through"
-    
+
     // Gradient Text
     #[serde(default)]
     pub gradient: Option<GradientConfig>,
-    
+
     // Outer Glow
     #[serde(default)]
     pub glow: Option<GlowConfig>,
-    
+
     // Multiple Shadows
     #[serde(default)]
     pub shadows: Option<Vec<ShadowConfig>>,
-    
+
     // Background enhancements
     #[serde(default)]
     pub background_gradient: Option<GradientConfig>,
@@ -976,7 +997,7 @@ pub struct TextOverlayStyle {
     pub background_blur: Option<f32>,
     #[serde(default)]
     pub background_opacity: Option<f32>,
-    
+
     // Border enhancements
     #[serde(default)]
     pub border_style: Option<String>, // "solid", "dashed", "dotted"
@@ -984,11 +1005,11 @@ pub struct TextOverlayStyle {
     pub border_width: Option<f32>,
     #[serde(default)]
     pub border_color: Option<String>,
-    
+
     // Chat bubble
     #[serde(default)]
     pub chat_bubble: Option<ChatBubbleConfig>,
-    
+
     // Animation preset
     #[serde(default)]
     pub animation_preset: Option<TextAnimationPreset>,
@@ -1055,8 +1076,8 @@ pub struct TextOverlayRatioConfig {
 /// Text overlay position as x/y coordinates
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TextOverlayPosition {
-    pub x: f64,  // 0-100 percentage
-    pub y: f64,  // 0-100 percentage
+    pub x: f64, // 0-100 percentage
+    pub y: f64, // 0-100 percentage
 }
 
 /// Text overlay settings for export
@@ -1067,8 +1088,8 @@ pub struct TextOverlaySettings {
     pub text: String,
     pub start_time: f64,
     pub end_time: f64,
-    pub position_x: f64,  // 0-100 percentage (default position)
-    pub position_y: f64,  // 0-100 percentage (default position)
+    pub position_x: f64, // 0-100 percentage (default position)
+    pub position_y: f64, // 0-100 percentage (default position)
     pub style: TextOverlayStyle,
     pub animation: String,
     /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
@@ -1097,8 +1118,8 @@ pub struct StickerRatioConfig {
 /// Sticker position as x/y coordinates
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StickerPosition {
-    pub x: f64,  // 0-100 percentage
-    pub y: f64,  // 0-100 percentage
+    pub x: f64, // 0-100 percentage
+    pub y: f64, // 0-100 percentage
 }
 
 /// Sticker overlay settings for export
@@ -1106,14 +1127,14 @@ pub struct StickerPosition {
 #[serde(rename_all = "camelCase")]
 pub struct StickerSettings {
     pub id: String,
-    pub sticker_path: String,  // Path to sticker image or emoji character
-    pub sticker_type: String,  // "emoji" | "image" | "gif"
+    pub sticker_path: String, // Path to sticker image or emoji character
+    pub sticker_type: String, // "emoji" | "image" | "gif"
     pub start_time: f64,
     pub end_time: f64,
-    pub position_x: f64,  // 0-100 percentage (default position)
-    pub position_y: f64,  // 0-100 percentage (default position)
-    pub scale: f64,       // 0.1-3 (default scale)
-    pub rotation: f64,    // Degrees (default rotation)
+    pub position_x: f64, // 0-100 percentage (default position)
+    pub position_y: f64, // 0-100 percentage (default position)
+    pub scale: f64,      // 0.1-3 (default scale)
+    pub rotation: f64,   // Degrees (default rotation)
     pub animation: String,
     /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
     #[serde(default)]
@@ -1142,36 +1163,40 @@ pub struct OverlayRatioConfig {
     pub is_full_frame_overlay: Option<bool>,
 }
 
-fn default_50() -> f64 { 50.0 }
-fn default_100() -> f64 { 100.0 }
+fn default_50() -> f64 {
+    50.0
+}
+fn default_100() -> f64 {
+    100.0
+}
 
 /// Layout overlay settings for VOD preset overlays (borders, dividers, decorative elements)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayoutOverlaySettings {
     pub id: String,
-    pub image_path: String,  // Local file path to uploaded PNG
+    pub image_path: String, // Local file path to uploaded PNG
     #[serde(default = "default_50")]
-    pub x: f64,              // 0-100 percentage position (center-based)
+    pub x: f64, // 0-100 percentage position (center-based)
     #[serde(default = "default_50")]
-    pub y: f64,              // 0-100 percentage position (center-based)
+    pub y: f64, // 0-100 percentage position (center-based)
     #[serde(default)]
-    pub width: f64,          // 0-100 percentage of target frame width (legacy)
+    pub width: f64, // 0-100 percentage of target frame width (legacy)
     #[serde(default)]
-    pub height: f64,         // 0-100 percentage of target frame height (legacy)
+    pub height: f64, // 0-100 percentage of target frame height (legacy)
     #[serde(default = "default_100")]
-    pub opacity: f64,        // 0-100
+    pub opacity: f64, // 0-100
     #[serde(default)]
-    pub rotation: f64,       // degrees
+    pub rotation: f64, // degrees
     #[serde(default = "default_overlay_scale")]
-    pub scale: f64,          // 0-100 percentage scale (like watermark)
+    pub scale: f64, // 0-100 percentage scale (like watermark)
     #[serde(default)]
     pub is_full_frame_overlay: Option<bool>, // When true, position at 0,0 with 100% scale
     #[serde(default)]
     pub label: Option<String>,
     /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
     #[serde(default)]
-    pub per_ratio_settings: Option<std::collections::HashMap<String, OverlayRatioConfig>>,
+    pub per_ratio_settings: Option<std::collections::HashMap<String, Option<OverlayRatioConfig>>>,
 }
 
 fn default_overlay_scale() -> f64 {
@@ -1183,8 +1208,8 @@ fn default_overlay_scale() -> f64 {
 #[serde(rename_all = "camelCase")]
 pub struct ClipWatermarkRatioConfig {
     pub position: StickerPosition, // Reuse StickerPosition (x/y percentage)
-    pub scale: f64,   // percentage of video width
-    pub opacity: f64, // 0-100
+    pub scale: f64,                // percentage of video width
+    pub opacity: f64,              // 0-100
     #[serde(default)]
     pub is_full_frame_overlay: Option<bool>, // When true, position at 0,0 with 100% scale
 }
@@ -1194,13 +1219,13 @@ pub struct ClipWatermarkRatioConfig {
 #[serde(rename_all = "camelCase")]
 pub struct ClipWatermarkSettings {
     pub id: String,
-    pub watermark_path: String,  // Path to watermark image file
+    pub watermark_path: String, // Path to watermark image file
     pub start_time: f64,
     pub end_time: f64,
-    pub position_x: f64,  // 0-100 percentage (default position)
-    pub position_y: f64,  // 0-100 percentage (default position)
-    pub scale: f64,       // percentage of video width (default scale)
-    pub opacity: f64,     // 0-100 (default opacity)
+    pub position_x: f64, // 0-100 percentage (default position)
+    pub position_y: f64, // 0-100 percentage (default position)
+    pub scale: f64,      // percentage of video width (default scale)
+    pub opacity: f64,    // 0-100 (default opacity)
     /// Per-aspect-ratio configurations (key is ratio like "16:9", "9:16")
     #[serde(default)]
     pub per_ratio_configs: Option<std::collections::HashMap<String, ClipWatermarkRatioConfig>>,

@@ -21,7 +21,16 @@ defmodule ClippsterServer.AdminMessaging.EmailCampaign do
 
   def changeset(campaign, attrs) do
     campaign
-    |> cast(attrs, [:subject, :body, :audience, :target_email, :sent_by, :sent_at, :recipient_count, :status])
+    |> cast(attrs, [
+      :subject,
+      :body,
+      :audience,
+      :target_email,
+      :sent_by,
+      :sent_at,
+      :recipient_count,
+      :status
+    ])
     |> validate_required([:subject, :body, :audience])
     |> validate_inclusion(:audience, @valid_audiences)
     |> validate_inclusion(:status, @valid_statuses)
@@ -32,6 +41,7 @@ defmodule ClippsterServer.AdminMessaging.EmailCampaign do
     case get_field(changeset, :audience) do
       "individual" ->
         validate_required(changeset, [:target_email])
+
       _ ->
         changeset
     end

@@ -4,7 +4,8 @@ defmodule ClippsterServer.Repo.Migrations.CreateOrganizationAssets do
   def change do
     create table(:organization_assets) do
       add :organization_id, references(:organizations, on_delete: :delete_all), null: false
-      add :asset_type, :string, null: false  # 'intro', 'outro', 'watermark', 'audio', 'image'
+      # 'intro', 'outro', 'watermark', 'audio', 'image'
+      add :asset_type, :string, null: false
       add :name, :string, null: false
       add :url, :text, null: false
       add :thumbnail_url, :text
@@ -23,4 +24,3 @@ defmodule ClippsterServer.Repo.Migrations.CreateOrganizationAssets do
     create index(:organization_assets, [:uploaded_by_user_id])
   end
 end
-

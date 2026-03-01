@@ -18,9 +18,10 @@ defmodule ClippsterServer.Repo.Migrations.AddEmailAuthFields do
             "SELECT 1"
 
     # Add index for verification token lookups
-    create index(:users, [:email_verification_token], where: "email_verification_token IS NOT NULL")
+    create index(:users, [:email_verification_token],
+             where: "email_verification_token IS NOT NULL"
+           )
+
     create index(:users, [:password_reset_token], where: "password_reset_token IS NOT NULL")
   end
 end
-
-

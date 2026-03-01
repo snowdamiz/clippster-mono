@@ -55,7 +55,7 @@ export interface ActiveDownload {
   // Project grouping
   projectId?: string;
   parentProjectId?: string;
-  provider?: 'pumpfun' | 'kick' | 'twitch';
+  provider?: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
   groupId?: string;
   totalSegments?: number;
   currentSegmentIndex?: number;
@@ -427,7 +427,7 @@ export function useDownloads() {
     options: {
       autoSegment?: boolean;
       segmentDuration?: number;
-      provider?: 'pumpfun' | 'kick' | 'twitch';
+      provider?: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
       // Watermark settings from creator profile (stored with project for automatic application)
       creatorWatermarkSettings?: {
         watermarkId: string;
@@ -541,8 +541,8 @@ export function useDownloads() {
           parentProjectId = existingProjects[0].id;
         } else {
           // Create a new parent project
-          const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : provider === 'twitch' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
-          const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun';
+          const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : provider === 'twitch' ? `Channel: ${mintId}` : provider === 'YouTube' ? `Channel: ${mintId}` : provider === 'rumble' ? `Channel: ${mintId}` : provider === 'twitter' ? `Broadcast: ${mintId}` : `Mint: ${mintId}`;
+          const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : provider === 'YouTube' ? 'YouTube' : provider === 'rumble' ? 'Rumble' : provider === 'twitter' ? 'Twitter' : 'PumpFun';
           parentProjectId = await createProject(
             title,
             `Manual downloads from ${providerLabel} (${sourceLabel})`,
@@ -553,7 +553,7 @@ export function useDownloads() {
         }
 
         // Create the child project for this specific segment
-        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun';
+        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : provider === 'YouTube' ? 'YouTube' : provider === 'rumble' ? 'Rumble' : provider === 'twitter' ? 'Twitter' : 'PumpFun';
         projectId = await createProject(
           finalTitle,
           `Segment ${segmentNumber} of ${title}`,
@@ -568,11 +568,11 @@ export function useDownloads() {
           : undefined;
 
         // Full stream download - create a standard project
-        const sourceLabel = provider === 'kick' ? `Channel: ${mintId}` : provider === 'twitch' ? `Channel: ${mintId}` : `Mint: ${mintId}`;
-        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun';
+        const sourceLabel = provider === 'kick' || provider === 'twitch' || provider === 'YouTube' || provider === 'rumble' ? `Channel: ${mintId}` : provider === 'twitter' ? `Broadcast: ${mintId}` : `Mint: ${mintId}`;
+        const providerLabel = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : provider === 'YouTube' ? 'YouTube' : provider === 'rumble' ? 'Rumble' : provider === 'twitter' ? 'Twitter' : 'PumpFun';
         projectId = await createProject(
           finalTitle,
-          `Downloaded from ${providerLabel} (${sourceLabel})`,
+          `Manual downloads from ${providerLabel} (${sourceLabel})`,
           undefined,
           providerLabel,
           watermarkSettingsJson
@@ -656,6 +656,75 @@ export function useDownloads() {
             activeDownloads.delete(downloadId);
           });
         }
+      } else if (provider === 'YouTube') {
+        // YouTube VODs use yt-dlp based download
+        if (isSegmentDownload) {
+          invoke('download_youtube_vod_segment', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            channelName: mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        } else {
+          invoke('download_youtube_vod', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            channelName: mintId,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        }
+      } else if (provider === 'rumble') {
+        // Rumble VODs use yt-dlp based download
+        if (isSegmentDownload) {
+          invoke('download_rumble_vod_segment', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            channelName: mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        } else {
+          invoke('download_rumble_vod', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            channelName: mintId,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        }
+      } else if (provider === 'twitter') {
+        // Twitter broadcasts use yt-dlp based download
+        if (isSegmentDownload) {
+          invoke('download_twitter_vod_segment', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            broadcastId: mintId,
+            startTime: segmentRange.startTime,
+            endTime: segmentRange.endTime,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        } else {
+          invoke('download_twitter_vod', {
+            downloadId,
+            title: finalTitle,
+            vodUrl: videoUrl,
+            broadcastId: mintId,
+          }).catch((_error) => {
+            activeDownloads.delete(downloadId);
+          });
+        }
       } else {
         // PumpFun (default)
         if (isSegmentDownload) {
@@ -697,7 +766,7 @@ export function useDownloads() {
     sourceClipId: string,
     totalDuration: number,
     maxSegmentDuration: number = 3600,
-    provider: 'pumpfun' | 'kick' | 'twitch' = 'pumpfun',
+    provider: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' = 'pumpfun',
     creatorWatermarkSettings?: { watermarkId: string; watermarkSettings: string }
   ): Promise<string> {
     await initialize();
@@ -734,11 +803,13 @@ export function useDownloads() {
         ? JSON.stringify(creatorWatermarkSettings)
         : undefined;
 
+      const providerLabelAuto = provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : provider === 'YouTube' ? 'YouTube' : provider === 'rumble' ? 'Rumble' : 'PumpFun';
+      const sourceLabelAuto = provider === 'kick' || provider === 'twitch' || provider === 'YouTube' || provider === 'rumble' ? 'Channel' : 'Mint';
       parentProjectId = await createProject(
         title,
-        `Auto-segmented download from ${provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun'} (${provider === 'kick' || provider === 'twitch' ? 'Channel' : 'Mint'}: ${mintId}). ${numberOfSegments} parts.`,
+        `Auto-segmented download from ${providerLabelAuto} (${sourceLabelAuto}: ${mintId}). ${numberOfSegments} parts.`,
         undefined,
-        provider === 'kick' ? 'Kick' : provider === 'twitch' ? 'Twitch' : 'PumpFun',
+        providerLabelAuto,
         watermarkSettingsJson
       );
     } catch (error) {

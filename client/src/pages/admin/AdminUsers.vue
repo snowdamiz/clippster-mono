@@ -161,6 +161,10 @@
                         <Handshake class="admin-users__affiliate-badge-icon" />
                         Affiliate
                       </span>
+                      <span v-if="user.created_by_organization_id" class="admin-users__org-badge" title="Created by Organization">
+                        <Users class="admin-users__org-badge-icon" />
+                        Org Account
+                      </span>
                     </div>
                   </td>
                   <td class="admin-users__td">
@@ -172,6 +176,12 @@
                     >
                       <span v-if="user.subscription?.tier_name" class="admin-users__tier admin-users__tier--active">
                         {{ user.subscription.tier_name }}
+                        <span v-if="user.subscription?.organization_id" class="admin-users__org-sub-indicator" title="Organization Subscription">
+                          <Users :size="12" />
+                        </span>
+                      </span>
+                      <span v-else-if="user.created_by_organization_id" class="admin-users__tier admin-users__tier--org">
+                        Organization Sub
                       </span>
                       <span v-else class="admin-users__tier admin-users__tier--none">None</span>
                       <div class="admin-users__sub-status">
@@ -802,6 +812,7 @@
     is_moderator: boolean;
     is_affiliate: boolean;
     affiliate_status: string | null;
+    created_by_organization_id: number | null;
     created_at: string;
     updated_at: string;
     credits: {
@@ -815,6 +826,7 @@
       start_date: string | null;
       end_date: string | null;
       days_remaining: number;
+      organization_id?: number | null;
     };
   }
 
@@ -875,7 +887,7 @@
   const openUserActionMenuId = ref<number | null>(null);
   const userActionMenuRefs = ref<Map<number, HTMLElement>>(new Map());
 
-  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+  const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
 
   // Filtered and sorted users
   const filteredAndSortedUsers = computed(() => {
@@ -1159,7 +1171,7 @@
     updatingCreditsUserId.value = userToEditCredits.value.id;
     creditError.value = null;
     try {
-      const response = await fetch(`${API_BASE}/api/admin/users/${userToEditCredits.value.id}/credits`, {
+      const response = await fetch(`${API_BASE}/admin/users/${userToEditCredits.value.id}/credits`, {
         method: 'PUT',
         headers: {
           Authorization: `Bearer ${authStore.token}`,
@@ -1887,6 +1899,29 @@
     margin-right: 0.25rem;
   }
 
+  /* ===== Org Account Badge ===== */
+  .admin-users__org-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.625rem;
+    border-radius: 8px;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    margin-left: 0.5rem;
+    width: fit-content;
+  }
+
+  .admin-users__org-badge-icon {
+    width: 10px;
+    height: 10px;
+    margin-right: 0.25rem;
+  }
+
   /* ===== Subscription Cell ===== */
   .admin-users__subscription {
     display: flex;
@@ -1926,6 +1961,19 @@
   .admin-users__tier--none {
     background-color: rgba(39, 39, 42, 0.5);
     color: var(--sidebar-text-muted);
+  }
+
+  .admin-users__tier--org {
+    font-weight: 600;
+    color: #ffffff;
+  }
+
+  .admin-users__org-sub-indicator {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 0.375rem;
+    color: var(--sidebar-accent);
+    opacity: 0.8;
   }
 
   .admin-users__sub-status {

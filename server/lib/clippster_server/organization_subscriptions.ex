@@ -33,13 +33,13 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   # Base subscription tiers
   @org_subscription_tiers %{
     "solo" => %{name: "Solo", seats: 0, monthly_credits: 0, usd: 149.99},
-    "enterprise_base" => %{name: "Enterprise Base", seats: 5, monthly_credits: 0, usd: 299.99},
-    "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 499.99},
+    "enterprise_base" => %{name: "Enterprise Base", seats: 5, monthly_credits: 0, usd: 349.99},
+    "enterprise_ai" => %{name: "Enterprise AI", seats: 5, monthly_credits: 20_000, usd: 549.99},
     "enterprise_unlimited" => %{
       name: "Enterprise Unlimited",
       seats: nil,
       monthly_credits: 100_000,
-      usd: 1899.99
+      usd: 2199.99
     }
   }
 
@@ -50,27 +50,27 @@ defmodule ClippsterServer.OrganizationSubscriptions do
       name: "5 Seats + AI",
       seats: 5,
       monthly_credits: 10_000,
-      usd: 250,
+      usd: 299,
       requires_ai: true
     },
     "seats_10_ai" => %{
       name: "10 Seats + AI",
       seats: 10,
       monthly_credits: 20_000,
-      usd: 400,
+      usd: 479,
       requires_ai: true
     },
     "seats_20_ai" => %{
       name: "20 Seats + AI",
       seats: 20,
       monthly_credits: 40_000,
-      usd: 575,
+      usd: 689,
       requires_ai: true
     },
     # Without AI
-    "seats_5" => %{name: "5 Seats", seats: 5, monthly_credits: 0, usd: 150, requires_ai: false},
-    "seats_10" => %{name: "10 Seats", seats: 10, monthly_credits: 0, usd: 200, requires_ai: false},
-    "seats_20" => %{name: "20 Seats", seats: 20, monthly_credits: 0, usd: 350, requires_ai: false}
+    "seats_5" => %{name: "5 Seats", seats: 5, monthly_credits: 0, usd: 179, requires_ai: false},
+    "seats_10" => %{name: "10 Seats", seats: 10, monthly_credits: 0, usd: 239, requires_ai: false},
+    "seats_20" => %{name: "20 Seats", seats: 20, monthly_credits: 0, usd: 419, requires_ai: false}
   }
 
   @doc """
@@ -818,133 +818,157 @@ defmodule ClippsterServer.OrganizationSubscriptions do
     if Repo.get_by(UserSchema, email: email) do
       {:error, :email_already_exists}
     else
-      result = Repo.transaction(fn ->
-        # Create the owner user account via email registration changeset
-        case %UserSchema{}
-             |> UserSchema.email_registration_changeset(%{
-               email: email,
-               password: password,
-               name: Map.get(attrs, :owner_name, org_name)
-             })
-             |> Repo.insert() do
-          {:ok, user} ->
-            # Mark email as verified (admin-created accounts are pre-verified)
-            case user
-                 |> UserSchema.verify_email_changeset()
-                 |> Repo.update() do
-              {:ok, user} ->
-                # Set account type to organization
-                case user
-                     |> UserSchema.account_type_changeset(%{account_type: "organization"})
-                     |> Repo.update() do
-                  {:ok, user} ->
-                    # Create the organization
-                    case %Organization{}
-                         |> Organization.create_changeset(%{
-                           name: org_name,
-                           description: Map.get(attrs, :description, ""),
-                           owner_id: user.id
-                         })
-                         |> Repo.insert() do
-                      {:ok, org} ->
-                        # Set subscription fields
-                        start_date = DateTime.utc_now() |> DateTime.truncate(:second)
-                        end_date = DateTime.add(start_date, days, :day)
+      result =
+        Repo.transaction(fn ->
+          # Create the owner user account via email registration changeset
+          case %UserSchema{}
+               |> UserSchema.email_registration_changeset(%{
+                 email: email,
+                 password: password,
+                 name: Map.get(attrs, :owner_name, org_name)
+               })
+               |> Repo.insert() do
+            {:ok, user} ->
+              # Mark email as verified (admin-created accounts are pre-verified)
+              case user
+                   |> UserSchema.verify_email_changeset()
+                   |> Repo.update() do
+                {:ok, user} ->
+                  # Set account type to organization
+                  case user
+                       |> UserSchema.account_type_changeset(%{account_type: "organization"})
+                       |> Repo.update() do
+                    {:ok, user} ->
+                      # Create the organization
+                      case %Organization{}
+                           |> Organization.create_changeset(%{
+                             name: org_name,
+                             description: Map.get(attrs, :description, ""),
+                             owner_id: user.id
+                           })
+                           |> Repo.insert() do
+                        {:ok, org} ->
+                          # Set subscription fields
+                          start_date = DateTime.utc_now() |> DateTime.truncate(:second)
+                          end_date = DateTime.add(start_date, days, :day)
 
-                        case org
-                             |> Organization.subscription_changeset(%{
-                               subscription_status: "active",
-                               subscription_tier: tier,
-                               subscription_start_date: start_date,
-                               subscription_end_date: end_date,
-                               subscription_renewal_method: "admin",
-                               max_seats: if(max_seats == 0, do: nil, else: max_seats),
-                               monthly_credits: monthly_credits,
-                               admin_price_cents: price_cents,
-                               admin_billing_cycle_day: start_date.day,
-                               created_by_admin_id: admin_id,
-                               setup_completed: false
-                             })
-                             |> Repo.update() do
-                          {:ok, updated_org} ->
-                            # Update user with owned_organization_id
-                            case user
-                                 |> Ecto.Changeset.change(%{owned_organization_id: updated_org.id})
-                                 |> Repo.update() do
-                              {:ok, _user} ->
-                                # Add owner as member
-                                case Organizations.add_member(updated_org.id, user.id, "owner") do
-                                  {:ok, _member} ->
-                                    # Grant initial credits if any
-                                    if monthly_credits > 0 do
-                                      case Organizations.add_organization_credits(updated_org.id, monthly_credits) do
-                                        {:ok, _} -> :ok
-                                        {:error, reason} ->
-                                          Repo.rollback({:credits_error, reason})
+                          case org
+                               |> Organization.subscription_changeset(%{
+                                 subscription_status: "active",
+                                 subscription_tier: tier,
+                                 subscription_start_date: start_date,
+                                 subscription_end_date: end_date,
+                                 subscription_renewal_method: "admin",
+                                 max_seats: if(max_seats == 0, do: nil, else: max_seats),
+                                 monthly_credits: monthly_credits,
+                                 admin_price_cents: price_cents,
+                                 admin_billing_cycle_day: start_date.day,
+                                 created_by_admin_id: admin_id,
+                                 setup_completed: false
+                               })
+                               |> Repo.update() do
+                            {:ok, updated_org} ->
+                              # Update user with owned_organization_id
+                              case user
+                                   |> Ecto.Changeset.change(%{
+                                     owned_organization_id: updated_org.id
+                                   })
+                                   |> Repo.update() do
+                                {:ok, _user} ->
+                                  # Add owner as member
+                                  IO.puts(
+                                    "[OrgSubscriptions] Adding owner as member: org_id=#{updated_org.id}, user_id=#{user.id}"
+                                  )
+
+                                  case Organizations.add_member(updated_org.id, user.id, "owner") do
+                                    {:ok, member} ->
+                                      IO.puts(
+                                        "[OrgSubscriptions] Successfully added owner as member: #{inspect(member)}"
+                                      )
+
+                                      # Grant initial credits if any
+                                      if monthly_credits > 0 do
+                                        case Organizations.add_organization_credits(
+                                               updated_org.id,
+                                               monthly_credits
+                                             ) do
+                                          {:ok, _} ->
+                                            :ok
+
+                                          {:error, reason} ->
+                                            Repo.rollback({:credits_error, reason})
+                                        end
                                       end
-                                    end
 
-                                    # Create subscription history
-                                    case %OrganizationSubscription{}
-                                         |> OrganizationSubscription.create_changeset(%{
-                                           organization_id: updated_org.id,
-                                           subscription_type: "base",
-                                           tier: tier,
-                                           status: "active",
-                                           start_date: start_date,
-                                           end_date: end_date,
-                                           seats: if(max_seats == 0, do: nil, else: max_seats),
-                                           credits_granted: Decimal.new(to_string(monthly_credits)),
-                                           payment_method: "admin",
-                                           stripe_subscription_id:
-                                             "admin_create_#{updated_org.id}_#{System.system_time(:second)}",
-                                           amount_usd: Decimal.new(to_string(price_cents / 100))
-                                         })
-                                         |> Repo.insert() do
-                                      {:ok, _sub} ->
-                                        IO.puts(
-                                          "[OrgSubscriptions] Admin created org account: #{org_name} (org #{updated_org.id})"
-                                        )
-                                        %{organization: updated_org, user: user}
+                                      # Create subscription history
+                                      case %OrganizationSubscription{}
+                                           |> OrganizationSubscription.create_changeset(%{
+                                             organization_id: updated_org.id,
+                                             subscription_type: "base",
+                                             tier: tier,
+                                             status: "active",
+                                             start_date: start_date,
+                                             end_date: end_date,
+                                             seats: if(max_seats == 0, do: nil, else: max_seats),
+                                             credits_granted:
+                                               Decimal.new(to_string(monthly_credits)),
+                                             payment_method: "admin",
+                                             stripe_subscription_id:
+                                               "admin_create_#{updated_org.id}_#{System.system_time(:second)}",
+                                             amount_usd: Decimal.new(to_string(price_cents / 100))
+                                           })
+                                           |> Repo.insert() do
+                                        {:ok, _sub} ->
+                                          IO.puts(
+                                            "[OrgSubscriptions] Admin created org account: #{org_name} (org #{updated_org.id})"
+                                          )
 
-                                      {:error, changeset} ->
-                                        Repo.rollback({:subscription_history_error, changeset})
-                                    end
+                                          %{organization: updated_org, user: user}
 
-                                  {:error, reason} ->
-                                    Repo.rollback({:member_error, reason})
-                                end
+                                        {:error, changeset} ->
+                                          Repo.rollback({:subscription_history_error, changeset})
+                                      end
 
-                              {:error, changeset} ->
-                                Repo.rollback({:user_org_link_error, changeset})
-                            end
+                                    {:error, reason} ->
+                                      Repo.rollback({:member_error, reason})
+                                  end
 
-                          {:error, changeset} ->
-                            Repo.rollback({:org_subscription_error, changeset})
-                        end
+                                {:error, changeset} ->
+                                  Repo.rollback({:user_org_link_error, changeset})
+                              end
 
-                      {:error, changeset} ->
-                        Repo.rollback({:org_create_error, changeset})
-                    end
+                            {:error, changeset} ->
+                              Repo.rollback({:org_subscription_error, changeset})
+                          end
 
-                  {:error, changeset} ->
-                    Repo.rollback({:account_type_error, changeset})
-                end
+                        {:error, changeset} ->
+                          Repo.rollback({:org_create_error, changeset})
+                      end
 
-              {:error, changeset} ->
-                Repo.rollback({:email_verify_error, changeset})
-            end
+                    {:error, changeset} ->
+                      Repo.rollback({:account_type_error, changeset})
+                  end
 
-          {:error, changeset} ->
-            Repo.rollback({:user_create_error, changeset})
-        end
-      end)
+                {:error, changeset} ->
+                  Repo.rollback({:email_verify_error, changeset})
+              end
+
+            {:error, changeset} ->
+              Repo.rollback({:user_create_error, changeset})
+          end
+        end)
 
       case result do
-        {:ok, data} -> {:ok, data}
+        {:ok, data} ->
+          {:ok, data}
+
         {:error, {error_type, reason}} ->
-          IO.puts("[OrgSubscriptions] Error creating org account: #{inspect(error_type)} - #{inspect(reason)}")
+          IO.puts(
+            "[OrgSubscriptions] Error creating org account: #{inspect(error_type)} - #{inspect(reason)}"
+          )
+
           {:error, error_type}
+
         {:error, reason} ->
           IO.puts("[OrgSubscriptions] Error creating org account: #{inspect(reason)}")
           {:error, reason}
@@ -1076,37 +1100,105 @@ defmodule ClippsterServer.OrganizationSubscriptions do
   end
 
   defp apply_tier_upgrade(org, new_tier, new_tier_info) do
-    Repo.transaction(fn ->
-      # If org has Stripe subscription, update it with proration
-      if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
-        # Stripe proration would be handled here via Stripe API
-        # For now, just update the tier locally
-        :ok
+    if org.stripe_subscription_id && org.subscription_renewal_method == "stripe" do
+      # Retrieve current Stripe subscription to get the item ID
+      case Stripe.Subscription.retrieve(org.stripe_subscription_id) do
+        {:ok, stripe_sub} ->
+          item = List.first(stripe_sub.items.data)
+
+          if item do
+            new_amount_cents = trunc(new_tier_info.usd * 100)
+
+            # Update the subscription item with new price, prorate immediately
+            update_params = %{
+              items: [
+                %{
+                  id: item.id,
+                  price_data: %{
+                    currency: "usd",
+                    product: item.price.product,
+                    unit_amount: new_amount_cents,
+                    recurring: %{interval: item.price.recurring.interval}
+                  }
+                }
+              ],
+              proration_behavior: "create_prorations",
+              metadata: %{
+                organization_id: to_string(org.id),
+                subscription_tier: new_tier,
+                subscription_type: "base",
+                monthly_credits: to_string(new_tier_info.monthly_credits)
+              }
+            }
+
+            case Stripe.Subscription.update(org.stripe_subscription_id, update_params) do
+              {:ok, _updated_sub} ->
+                # Update DB immediately for upgrades
+                Repo.transaction(fn ->
+                  {:ok, updated_org} =
+                    org
+                    |> Organization.subscription_changeset(%{
+                      subscription_tier: new_tier,
+                      max_seats: new_tier_info.seats,
+                      monthly_credits: new_tier_info.monthly_credits,
+                      pending_subscription_tier: nil
+                    })
+                    |> Repo.update()
+
+                  # Grant additional credits if upgrading to a tier with more credits
+                  current_credits = org.monthly_credits || 0
+                  new_credits = new_tier_info.monthly_credits
+
+                  if new_credits > current_credits do
+                    credit_diff = new_credits - current_credits
+                    {:ok, _} = Organizations.add_organization_credits(org.id, credit_diff)
+                  end
+
+                  IO.puts(
+                    "[OrgSubscriptions] Upgraded org #{org.id} to #{new_tier} with Stripe proration"
+                  )
+
+                  updated_org
+                end)
+
+              {:error, %Stripe.Error{message: message}} ->
+                IO.puts("[OrgSubscriptions] Stripe upgrade error for org #{org.id}: #{message}")
+                {:error, "Stripe error: #{message}"}
+            end
+          else
+            {:error, :no_subscription_items}
+          end
+
+        {:error, %Stripe.Error{message: message}} ->
+          {:error, "Failed to retrieve subscription: #{message}"}
       end
+    else
+      # Non-Stripe subscription (admin/crypto) — just update tier directly
+      Repo.transaction(fn ->
+        {:ok, updated_org} =
+          org
+          |> Organization.subscription_changeset(%{
+            subscription_tier: new_tier,
+            max_seats: new_tier_info.seats,
+            monthly_credits: new_tier_info.monthly_credits,
+            pending_subscription_tier: nil
+          })
+          |> Repo.update()
 
-      {:ok, updated_org} =
-        org
-        |> Organization.subscription_changeset(%{
-          subscription_tier: new_tier,
-          max_seats: new_tier_info.seats,
-          monthly_credits: new_tier_info.monthly_credits,
-          pending_subscription_tier: nil
-        })
-        |> Repo.update()
+        # Grant additional credits if upgrading to a tier with more credits
+        current_credits = org.monthly_credits || 0
+        new_credits = new_tier_info.monthly_credits
 
-      # Grant additional credits if upgrading to a tier with more credits
-      current_credits = org.monthly_credits || 0
-      new_credits = new_tier_info.monthly_credits
+        if new_credits > current_credits do
+          credit_diff = new_credits - current_credits
+          {:ok, _} = Organizations.add_organization_credits(org.id, credit_diff)
+        end
 
-      if new_credits > current_credits do
-        credit_diff = new_credits - current_credits
-        {:ok, _} = Organizations.add_organization_credits(org.id, credit_diff)
-      end
+        IO.puts("[OrgSubscriptions] Upgraded org #{org.id} to #{new_tier} (non-Stripe)")
 
-      IO.puts("[OrgSubscriptions] Upgraded org #{org.id} to #{new_tier}")
-
-      updated_org
-    end)
+        updated_org
+      end)
+    end
   end
 
   defp schedule_tier_downgrade(org, new_tier) do
