@@ -400,6 +400,26 @@ pub fn get_storage_paths() -> Result<StoragePathsResponse, String> {
     })
 }
 
+/// Tauri command to get the app data directory path
+#[tauri::command]
+pub fn get_app_data_dir() -> Result<String, String> {
+    let base_dir = get_storage_base_dir()?;
+    Ok(base_dir.to_string_lossy().to_string())
+}
+
+/// Tauri command to create a directory (and all parent directories)
+#[tauri::command]
+pub fn create_directory(path: String) -> Result<(), String> {
+    use std::fs;
+    use std::path::Path;
+
+    let dir_path = Path::new(&path);
+    fs::create_dir_all(dir_path)
+        .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    Ok(())
+}
+
 /// Response structure for storage paths
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StoragePathsResponse {

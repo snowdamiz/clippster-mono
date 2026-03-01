@@ -164,10 +164,19 @@ export async function startRumbleRecording(
 }
 
 /**
- * Stop recording a Rumble livestream
+ * Stop recording a Rumble livestream (stops ALL sessions for this channel)
  */
 export async function stopRumbleRecording(channel: string): Promise<void> {
   await invoke('stop_rumble_recording', { channel });
+}
+
+/**
+ * Stop a specific Rumble recording session by session_id
+ * Unlike stopRumbleRecording which stops ALL sessions for a channel,
+ * this only stops the one specific session, leaving others untouched.
+ */
+export async function stopRumbleRecordingSession(sessionId: string): Promise<void> {
+  await invoke('stop_rumble_recording_session', { sessionId });
 }
 
 /**

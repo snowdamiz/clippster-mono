@@ -618,6 +618,37 @@ pub async fn stop_twitch_recording(channel_name: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Stop a specific Twitch recording session by session_id
+/// Unlike stop_twitch_recording which stops ALL sessions for a channel,
+/// this only stops the one specific session, leaving others untouched.
+#[tauri::command]
+pub async fn stop_twitch_recording_session(session_id: String) -> Result<(), String> {
+    let entry_opt = {
+        let mut recordings = TWITCH_ACTIVE_RECORDINGS.lock().unwrap();
+        recordings.remove(&session_id)
+    };
+
+    if let Some(entry) = entry_opt {
+        if let Some(tx) = entry.stop_tx {
+            let _ = tx.send(());
+        }
+        if let Err(err) = entry.task.await {
+            eprintln!(
+                "[TwitchRecorder] Join error for session {}: {}",
+                session_id, err
+            );
+        }
+        println!("[TwitchRecorder] Stopped session: {}", session_id);
+    } else {
+        println!(
+            "[TwitchRecorder] No active session found for: {}",
+            session_id
+        );
+    }
+
+    Ok(())
+}
+
 /// Stop all active Twitch recordings
 #[tauri::command]
 pub async fn stop_all_twitch_recordings() -> Result<(), String> {

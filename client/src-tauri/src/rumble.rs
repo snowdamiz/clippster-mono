@@ -48,8 +48,12 @@ static RUMBLE_HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
 struct RumbleRecordingEntry {
     stop_tx: Option<oneshot::Sender<()>>,
     task: tokio::task::JoinHandle<()>,
+    channel_name: String, // Store channel_name to allow lookup by channel
 }
 
+// Track recordings by session_id instead of channel_name to allow multiple sessions per channel
+// This enables both temp viewer sessions (4-sec segments) and persistent auto-detect sessions
+// to record the same channel simultaneously in different directories
 static RUMBLE_ACTIVE_RECORDINGS: Lazy<Arc<Mutex<HashMap<String, RumbleRecordingEntry>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
@@ -686,8 +690,10 @@ pub async fn start_rumble_recording(
 ) -> Result<(), String> {
     let channel_name = normalize_channel_name(&channel);
     
-    if RUMBLE_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&channel_name) {
-        println!("[Rumble] Recording already active for {}, sharing existing session", channel_name);
+    // Check if this specific session is already recording
+    // Allow multiple sessions per channel (e.g., temp viewer + persistent auto-detect)
+    if RUMBLE_ACTIVE_RECORDINGS.lock().unwrap().contains_key(&session_id) {
+        println!("[Rumble] Session {} already recording, skipping duplicate start", session_id);
         return Ok(());
     }
     
@@ -714,6 +720,7 @@ pub async fn start_rumble_recording(
     let output_str = session_dir.to_string_lossy().to_string();
     let app_handle = app.clone();
     
+    let session_for_cleanup = session_id.clone();
     let task = tokio::spawn(async move {
         if let Err(err) = run_rumble_recorder(
             app_handle,
@@ -727,14 +734,17 @@ pub async fn start_rumble_recording(
             eprintln!("[RumbleRecorder] {}", err);
         }
         
-        RUMBLE_ACTIVE_RECORDINGS.lock().unwrap().remove(&channel_clone);
+        // Cleanup by session_id (not channel_name) since we track by session now
+        RUMBLE_ACTIVE_RECORDINGS.lock().unwrap().remove(&session_for_cleanup);
     });
     
+    // Insert by session_id (not channel_name) to allow multiple sessions per channel
     RUMBLE_ACTIVE_RECORDINGS.lock().unwrap().insert(
-        channel_name,
+        session_id.clone(),
         RumbleRecordingEntry {
             stop_tx: Some(stop_tx),
             task,
+            channel_name,
         },
     );
     
@@ -789,10 +799,29 @@ async fn run_rumble_recorder(
     if playback_url.is_empty() {
         let stderr = String::from_utf8_lossy(&ytdlp_output.stderr);
         println!("[RumbleRecorder] yt-dlp failed to extract playback URL. stderr: {}", stderr);
+        
+        // Emit error log to frontend
+        let _ = app.emit("recorder-log", RumbleRecorderLogPayload {
+            streamer_id: streamer_id.clone(),
+            channel_name: channel_name.clone(),
+            mint_id: channel_name.clone(),
+            message: format!("yt-dlp failed to extract playback URL: {}", stderr),
+            level: "error".to_string(),
+        });
+        
         return Err(format!("Failed to extract playback URL from Rumble stream. yt-dlp stderr: {}", stderr));
     }
     
     println!("[RumbleRecorder] Playback URL: {}", playback_url);
+    
+    // Emit success log to frontend
+    let _ = app.emit("recorder-log", RumbleRecorderLogPayload {
+        streamer_id: streamer_id.clone(),
+        channel_name: channel_name.clone(),
+        mint_id: channel_name.clone(),
+        message: format!("Successfully extracted playback URL from Rumble stream"),
+        level: "info".to_string(),
+    });
     
     // Now use FFmpeg to record directly from the playback URL
     let mut ffmpeg_cmd = tokio::process::Command::new(&ffmpeg_path);
@@ -814,15 +843,46 @@ async fn run_rumble_recorder(
     let mut ffmpeg_child = ffmpeg_cmd.spawn()
         .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
     
+    // Emit log that FFmpeg started successfully
+    let _ = app.emit("recorder-log", RumbleRecorderLogPayload {
+        streamer_id: streamer_id.clone(),
+        channel_name: channel_name.clone(),
+        mint_id: channel_name.clone(),
+        message: format!("FFmpeg recorder started for Rumble stream ({}s segments)", hls_segment_seconds),
+        level: "info".to_string(),
+    });
+    
+    // Forward FFmpeg stderr to frontend via recorder-log events
     if let Some(ffmpeg_stderr) = ffmpeg_child.stderr.take() {
+        let app_log = app.clone();
+        let streamer_log = streamer_id.clone();
+        let channel_log = channel_name.clone();
+        
         tokio::spawn(async move {
             let reader = tokio::io::BufReader::new(ffmpeg_stderr);
             let mut lines = reader.lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                // Only log important FFmpeg lines to avoid flooding server logs
-                let dominated = line.contains("Opening") || line.contains("Skip");
-                if !dominated {
+                // Only log important FFmpeg lines to avoid flooding
+                let is_noise = line.contains("Opening") || line.contains("Skip");
+                if !is_noise {
                     println!("[RumbleRecorder] FFmpeg: {}", line);
+                    
+                    // Determine log level based on content
+                    let level = if line.contains("error") || line.contains("Error") || line.contains("ERROR") {
+                        "error"
+                    } else if line.contains("warning") || line.contains("Warning") || line.contains("WARN") {
+                        "warn"
+                    } else {
+                        "info"
+                    };
+                    
+                    let _ = app_log.emit("recorder-log", RumbleRecorderLogPayload {
+                        streamer_id: streamer_log.clone(),
+                        channel_name: channel_log.clone(),
+                        mint_id: channel_log.clone(),
+                        message: line,
+                        level: level.to_string(),
+                    });
                 }
             }
         });
@@ -836,12 +896,33 @@ async fn run_rumble_recorder(
                 println!("[RumbleRecorder] FFmpeg exited: {:?}", status);
                 
                 let exit_status = status.ok();
+                let exit_code = exit_status.as_ref().and_then(|s| s.code());
+                
+                // Emit log about FFmpeg exit
+                let exit_message = if let Some(code) = exit_code {
+                    if code == 0 {
+                        format!("FFmpeg recorder stopped normally (exit code: {})", code)
+                    } else {
+                        format!("FFmpeg recorder exited with error code: {}", code)
+                    }
+                } else {
+                    "FFmpeg recorder terminated".to_string()
+                };
+                
+                let _ = app.emit("recorder-log", RumbleRecorderLogPayload {
+                    streamer_id: streamer_id.clone(),
+                    channel_name: channel_name.clone(),
+                    mint_id: channel_name.clone(),
+                    message: exit_message,
+                    level: if exit_code == Some(0) { "info" } else { "error" }.to_string(),
+                });
+                
                 let _ = app.emit("recorder-exit", RumbleRecorderExitPayload {
                     streamer_id: streamer_id.clone(),
                     session_id: session_id.clone(),
                     channel_name: channel_name.clone(),
                     mint_id: channel_name.clone(),
-                    code: exit_status.as_ref().and_then(|s| s.code()),
+                    code: exit_code,
                 });
                 
                 // If FFmpeg exited unsuccessfully, stream likely ended
@@ -905,38 +986,80 @@ async fn run_rumble_recorder(
 }
 
 /// Stop recording a Rumble livestream
+/// Stops ALL sessions recording this channel (both temp viewer and persistent auto-detect)
 #[tauri::command]
 pub async fn stop_rumble_recording(channel: String) -> Result<(), String> {
     let channel_name = normalize_channel_name(&channel);
     
-    let entry_opt = {
+    // Find all sessions recording this channel and collect their entries
+    let entries: Vec<(String, RumbleRecordingEntry)> = {
         let mut recordings = RUMBLE_ACTIVE_RECORDINGS.lock().unwrap();
-        recordings.remove(&channel_name)
+        let session_ids: Vec<String> = recordings
+            .iter()
+            .filter(|(_, entry)| entry.channel_name == channel_name)
+            .map(|(session_id, _)| session_id.clone())
+            .collect();
+
+        session_ids
+            .into_iter()
+            .filter_map(|session_id| {
+                recordings.remove(&session_id).map(|entry| (session_id, entry))
+            })
+            .collect()
     };
     
+    for (session_id, mut entry) in entries {
+        if let Some(stop_tx) = entry.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        if let Err(err) = entry.task.await {
+            eprintln!("[RumbleRecorder] Join error for session {}: {}", session_id, err);
+        }
+    }
+    
+    Ok(())
+}
+
+/// Stop a specific Rumble recording session by session_id
+/// Unlike stop_rumble_recording which stops ALL sessions for a channel,
+/// this only stops the one specific session, leaving others untouched.
+#[tauri::command]
+pub async fn stop_rumble_recording_session(session_id: String) -> Result<(), String> {
+    let entry_opt = {
+        let mut recordings = RUMBLE_ACTIVE_RECORDINGS.lock().unwrap();
+        recordings.remove(&session_id)
+    };
+
     if let Some(mut entry) = entry_opt {
         if let Some(stop_tx) = entry.stop_tx.take() {
             let _ = stop_tx.send(());
         }
-        
-        let _ = entry.task.await;
-        println!("[Rumble] Stopped recording for {}", channel_name);
-        Ok(())
+        if let Err(err) = entry.task.await {
+            eprintln!("[RumbleRecorder] Join error for session {}: {}", session_id, err);
+        }
+        println!("[RumbleRecorder] Stopped session: {}", session_id);
     } else {
-        Err(format!("No active recording for channel: {}", channel_name))
+        println!("[RumbleRecorder] No active session found for: {}", session_id);
     }
+
+    Ok(())
 }
 
 /// Stop all active Rumble recordings
 #[tauri::command]
 pub async fn stop_all_rumble_recordings() -> Result<(), String> {
-    let channels: Vec<String> = {
-        let recordings = RUMBLE_ACTIVE_RECORDINGS.lock().unwrap();
-        recordings.keys().cloned().collect()
+    let entries: Vec<(String, RumbleRecordingEntry)> = {
+        let mut recordings = RUMBLE_ACTIVE_RECORDINGS.lock().unwrap();
+        recordings.drain().collect()
     };
     
-    for channel in channels {
-        let _ = stop_rumble_recording(channel).await;
+    for (session_id, mut entry) in entries {
+        if let Some(stop_tx) = entry.stop_tx.take() {
+            let _ = stop_tx.send(());
+        }
+        if let Err(err) = entry.task.await {
+            eprintln!("[RumbleRecorder] Join error for session {}: {}", session_id, err);
+        }
     }
     
     Ok(())
@@ -950,11 +1073,22 @@ pub fn get_rumble_session_output_dir(session_id: String) -> Result<String, Strin
     Ok(session_dir.to_string_lossy().to_string())
 }
 
-/// Get list of active Rumble recordings
+/// Get list of active Rumble recording session IDs
 #[tauri::command]
 pub fn get_active_rumble_recordings() -> Result<Vec<String>, String> {
     let recordings = RUMBLE_ACTIVE_RECORDINGS.lock().unwrap();
     Ok(recordings.keys().cloned().collect())
+}
+
+/// Check if a Rumble recording is currently active for a channel
+#[tauri::command]
+pub fn is_rumble_recording_active(channel: String) -> bool {
+    let channel_name = normalize_channel_name(&channel);
+    RUMBLE_ACTIVE_RECORDINGS
+        .lock()
+        .unwrap()
+        .values()
+        .any(|entry| entry.channel_name == channel_name)
 }
 
 /// Get Rumble channel information including profile image

@@ -240,11 +240,20 @@ export async function startKickRecording(
 }
 
 /**
- * Stop recording a Kick livestream
+ * Stop recording a Kick livestream (stops ALL sessions for this channel)
  * @param channelSlug - The Kick channel slug
  */
 export async function stopKickRecording(channelSlug: string): Promise<void> {
   await invoke('stop_kick_recording', { channelSlug });
+}
+
+/**
+ * Stop a specific Kick recording session by session_id
+ * Unlike stopKickRecording which stops ALL sessions for a channel,
+ * this only stops the one specific session, leaving others untouched.
+ */
+export async function stopKickRecordingSession(sessionId: string): Promise<void> {
+  await invoke('stop_kick_recording_session', { sessionId });
 }
 
 /**

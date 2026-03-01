@@ -343,8 +343,8 @@ pub async fn export_video_editor_project(
         }
 
         let probe_output = shell
-            .sidecar("ffmpeg")
-            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .sidecar("ffprobe")
+            .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
             .args(&[
                 "-v",
                 "quiet",

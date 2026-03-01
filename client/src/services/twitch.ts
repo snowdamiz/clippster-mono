@@ -110,10 +110,19 @@ export async function startTwitchRecording(
 }
 
 /**
- * Stop recording a Twitch livestream
+ * Stop recording a Twitch livestream (stops ALL sessions for this channel)
  */
 export async function stopTwitchRecording(channelName: string): Promise<void> {
   await invoke('stop_twitch_recording', { channelName });
+}
+
+/**
+ * Stop a specific Twitch recording session by session_id
+ * Unlike stopTwitchRecording which stops ALL sessions for a channel,
+ * this only stops the one specific session, leaving others untouched.
+ */
+export async function stopTwitchRecordingSession(sessionId: string): Promise<void> {
+  await invoke('stop_twitch_recording_session', { sessionId });
 }
 
 /**

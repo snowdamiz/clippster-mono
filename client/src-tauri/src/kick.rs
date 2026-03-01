@@ -699,6 +699,37 @@ pub async fn stop_kick_recording(channel_slug: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Stop a specific Kick recording session by session_id
+/// Unlike stop_kick_recording which stops ALL sessions for a channel,
+/// this only stops the one specific session, leaving others untouched.
+#[tauri::command]
+pub async fn stop_kick_recording_session(session_id: String) -> Result<(), String> {
+    let entry_opt = {
+        let mut recordings = KICK_ACTIVE_RECORDINGS.lock().unwrap();
+        recordings.remove(&session_id)
+    };
+
+    if let Some(entry) = entry_opt {
+        if let Some(tx) = entry.stop_tx {
+            let _ = tx.send(());
+        }
+        if let Err(err) = entry.task.await {
+            eprintln!(
+                "[KickRecorder] Join error for session {}: {}",
+                session_id, err
+            );
+        }
+        println!("[KickRecorder] Stopped session: {}", session_id);
+    } else {
+        println!(
+            "[KickRecorder] No active session found for: {}",
+            session_id
+        );
+    }
+
+    Ok(())
+}
+
 /// Stop all active Kick recordings
 #[tauri::command]
 pub async fn stop_all_kick_recordings() -> Result<(), String> {
