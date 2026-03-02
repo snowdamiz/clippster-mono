@@ -26,21 +26,25 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   # ============================================================================
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @doc """
   Triggers an immediate check for scheduled posts.
   """
   def process_now do
-    GenServer.cast(__MODULE__, :process_now)
+    GenServer.cast({:global, __MODULE__}, :process_now)
   end
 
   @doc """
   Gets the current worker status.
   """
   def status do
-    GenServer.call(__MODULE__, :status)
+    GenServer.call({:global, __MODULE__}, :status)
   end
 
   # ============================================================================
@@ -101,9 +105,11 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     new_state = %{state | processing: true, last_run: DateTime.utc_now()}
 
     # Run processing in a task
+    worker = self()
+
     Task.start(fn ->
       result = process_scheduled_posts()
-      send(__MODULE__, {:process_complete, result})
+      send(worker, {:process_complete, result})
     end)
 
     # Schedule next check

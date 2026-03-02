@@ -19,21 +19,25 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
   # ============================================================================
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @doc """
   Triggers an immediate token refresh check.
   """
   def refresh_now do
-    GenServer.cast(__MODULE__, :refresh_now)
+    GenServer.cast({:global, __MODULE__}, :refresh_now)
   end
 
   @doc """
   Refreshes tokens for a specific account.
   """
   def refresh_account(account_id) do
-    GenServer.cast(__MODULE__, {:refresh_account, account_id})
+    GenServer.cast({:global, __MODULE__}, {:refresh_account, account_id})
   end
 
   # ============================================================================

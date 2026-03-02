@@ -27,28 +27,32 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
   # ============================================================================
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @doc """
   Triggers an immediate sync for all pending posts.
   """
   def sync_now do
-    GenServer.cast(__MODULE__, :sync_now)
+    GenServer.cast({:global, __MODULE__}, :sync_now)
   end
 
   @doc """
   Syncs analytics for a specific post.
   """
   def sync_post(post_id) do
-    GenServer.cast(__MODULE__, {:sync_post, post_id})
+    GenServer.cast({:global, __MODULE__}, {:sync_post, post_id})
   end
 
   @doc """
   Gets the current worker status.
   """
   def status do
-    GenServer.call(__MODULE__, :status)
+    GenServer.call({:global, __MODULE__}, :status)
   end
 
   # ============================================================================
@@ -124,9 +128,11 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
     new_state = %{state | syncing: true, last_sync: DateTime.utc_now()}
 
     # Run sync in a task to not block the GenServer
+    worker = self()
+
     Task.start(fn ->
       result = run_sync()
-      send(__MODULE__, {:sync_complete, result})
+      send(worker, {:sync_complete, result})
     end)
 
     # DISABLED: No longer schedule next sync automatically

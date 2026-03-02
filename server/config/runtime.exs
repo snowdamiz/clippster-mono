@@ -301,6 +301,15 @@ if config_env() == :prod do
 
   config :clippster_server, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
+  # Construct a unique, routable node name for Erlang distribution on Fly.io
+  fly_machine_id = System.get_env("FLY_MACHINE_ID")
+  fly_app_name = System.get_env("FLY_APP_NAME") || "clippster-server"
+
+  if fly_machine_id do
+    node_name = "clippster_server@#{fly_machine_id}.vm.#{fly_app_name}.internal"
+    System.put_env("RELEASE_NODE", node_name)
+  end
+
   config :clippster_server, ClippsterServerWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [
