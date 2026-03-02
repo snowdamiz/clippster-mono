@@ -11,6 +11,7 @@
 //! - convert_video: Video conversion commands
 
 pub mod convert_video;
+pub mod delete_local_storage;
 pub mod download_audio;
 pub mod download_management;
 pub mod file_operations;
@@ -21,6 +22,7 @@ pub mod system;
 
 // Re-export all commands for convenient importing
 pub use convert_video::*;
+pub use delete_local_storage::*;
 pub use download_audio::*;
 pub use download_management::*;
 pub use file_operations::*;

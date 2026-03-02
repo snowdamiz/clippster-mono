@@ -44,7 +44,7 @@ pub struct HlsSegmentInfo {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RecorderErrorPayload {
+struct _RecorderErrorPayload {
     mint_id: String,
     session_id: String,
     exit_code: Option<i32>,

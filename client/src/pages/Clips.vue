@@ -1265,8 +1265,53 @@
       const completedBuildsCount = clip.builds?.filter((b) => b.status === 'completed').length || 0;
       const hasMultipleBuilds = completedBuildsCount > 1;
 
+      // Handle video editor exports (source='video_editor') - they don't have clip_builds
+      if ((clip as any).source === 'video_editor' && clip.build_status === 'completed' && clip.built_file_path) {
+        const filePath = clip.built_file_path;
+        const aspectRatio = extractAspectRatioFromPath(filePath);
+        const thumbnailUrl = buildThumbnailCache.value.get(filePath) || clipThumbnailUrl;
+
+        // Create a fake build object for video editor exports
+        const fakeBuild = {
+          id: clip.id,
+          clip_id: clip.id,
+          build_number: 1,
+          status: 'completed' as const,
+          file_path: filePath,
+          output_paths: filePath,
+          aspect_ratios: aspectRatio || '',
+          thumbnail_path: clip.built_thumbnail_path,
+          quality: 'high' as const,
+          frame_rate: 30,
+          output_format: 'mp4' as const,
+          include_subtitles: false,
+          progress: 100,
+          error: null,
+          error_message: null,
+          file_size: clip.built_file_size,
+          duration: clip.built_duration || clip.duration,
+          started_at: clip.created_at,
+          created_at: clip.created_at,
+          completed_at: clip.built_at || clip.created_at,
+          updated_at: clip.updated_at,
+        };
+
+        builds.push({
+          id: clip.id,
+          build: fakeBuild,
+          clip,
+          clipName,
+          projectName,
+          projectId: clip.project_id,
+          thumbnailUrl,
+          createdAt: clip.built_at || clip.created_at,
+          filePath,
+          aspectRatio,
+          hasMultipleBuilds: false,
+        });
+      }
       // If clip has builds, create displayable items for each output file
-      if (clip.builds && clip.builds.length > 0) {
+      else if (clip.builds && clip.builds.length > 0) {
         for (const build of clip.builds) {
           if (build.status === 'completed') {
             // Get all output paths for this build
