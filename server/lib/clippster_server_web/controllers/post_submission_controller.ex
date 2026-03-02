@@ -141,6 +141,8 @@ defmodule ClippsterServerWeb.PostSubmissionController do
 
               case Social.create_post_submission(org_id, submission_attrs, user) do
                 {:ok, submission} ->
+                  Appsignal.increment_counter("social_posts.submitted", 1, %{platform: account.platform})
+
                   # Attempt to publish asynchronously (mode-dependent provider dispatch)
                   Task.start(fn ->
                     dispatch_publish(submission, account, params)

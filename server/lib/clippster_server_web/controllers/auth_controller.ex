@@ -164,6 +164,10 @@ defmodule ClippsterServerWeb.AuthController do
       referral_code = Map.get(conn.params, "referral_code")
       {:ok, user, is_new_user} = Accounts.get_or_create_user(public_key, referral_code)
 
+      if is_new_user do
+        Appsignal.increment_counter("users.registered", 1, %{method: "wallet"})
+      end
+
       # Update last active timestamp
       Accounts.update_last_active(user.id)
 
@@ -430,6 +434,10 @@ defmodule ClippsterServerWeb.AuthController do
                        ) do
                     {:ok, user, is_new_user} ->
                       IO.puts("User created/retrieved: #{user.id}, is_new: #{is_new_user}")
+
+                      if is_new_user do
+                        Appsignal.increment_counter("users.registered", 1, %{method: "google"})
+                      end
 
                       # Generate JWT token
                       token_claims = %{

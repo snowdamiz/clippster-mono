@@ -368,6 +368,8 @@ defmodule ClippsterServerWeb.StripeController do
   defp handle_event(%{type: "customer.subscription.created", data: %{object: subscription}}) do
     IO.puts("[Stripe Webhook] Processing customer.subscription.created")
 
+    Appsignal.increment_counter("subscriptions.created", 1)
+
     stripe_subscription_id = safe_get(subscription, "id")
     stripe_customer_id = safe_get(subscription, "customer")
     metadata = safe_get(subscription, "metadata") || %{}
@@ -519,6 +521,8 @@ defmodule ClippsterServerWeb.StripeController do
   # Handle subscription deletion/cancellation
   defp handle_event(%{type: "customer.subscription.deleted", data: %{object: subscription}}) do
     IO.puts("[Stripe Webhook] Processing customer.subscription.deleted")
+
+    Appsignal.increment_counter("subscriptions.deleted", 1)
 
     stripe_subscription_id = safe_get(subscription, "id")
 
@@ -694,6 +698,8 @@ defmodule ClippsterServerWeb.StripeController do
         IO.puts(
           "[Stripe Webhook] Successfully created #{tier} subscription for user #{user_id_int}"
         )
+
+        Appsignal.increment_counter("subscriptions.checkout_completed", 1, %{tier: tier})
 
         # Create promo code redemption if promo_code_id is provided
         if promo_code_id do

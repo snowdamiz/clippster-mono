@@ -202,6 +202,14 @@ config :clippster_server, :post_for_me,
   project_id: System.get_env("POST_FOR_ME_PROJECT_ID"),
   connect_session_ttl_seconds: post_for_me_connect_session_ttl_seconds
 
+# AppSignal APM + error tracking
+config :appsignal, :config,
+  otp_app: :clippster_server,
+  name: "Clippster Server",
+  push_api_key: System.get_env("APPSIGNAL_PUSH_API_KEY"),
+  env: config_env(),
+  active: not is_nil(System.get_env("APPSIGNAL_PUSH_API_KEY"))
+
 # Freesound API (sound effects search proxy)
 config :clippster_server, :freesound, api_key: System.get_env("FREESOUND_API_KEY")
 
@@ -300,6 +308,15 @@ if config_env() == :prod do
   port = String.to_integer(System.get_env("PORT") || "4000")
 
   config :clippster_server, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
+
+  # Construct a unique, routable node name for Erlang distribution on Fly.io
+  fly_machine_id = System.get_env("FLY_MACHINE_ID")
+  fly_app_name = System.get_env("FLY_APP_NAME") || "clippster-server"
+
+  if fly_machine_id do
+    node_name = "clippster_server@#{fly_machine_id}.vm.#{fly_app_name}.internal"
+    System.put_env("RELEASE_NODE", node_name)
+  end
 
   config :clippster_server, ClippsterServerWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],

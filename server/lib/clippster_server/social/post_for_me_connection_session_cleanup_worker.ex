@@ -12,7 +12,11 @@ defmodule ClippsterServer.Social.PostForMeConnectionSessionCleanupWorker do
   @initial_delay :timer.minutes(1)
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @impl true
@@ -43,7 +47,7 @@ defmodule ClippsterServer.Social.PostForMeConnectionSessionCleanupWorker do
   def handle_call(:status, _from, state), do: {:reply, state, state}
 
   def status do
-    GenServer.call(__MODULE__, :status)
+    GenServer.call({:global, __MODULE__}, :status)
   end
 
   defp schedule_next_cleanup do

@@ -12,7 +12,11 @@ defmodule ClippsterServer.ClipperProfiles.ResponseTimeWorker do
   @check_interval :timer.hours(24)
 
   def start_link(_opts) do
-    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, %{}, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @impl true

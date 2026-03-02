@@ -14,6 +14,8 @@ primary_region = "iad"
   PORT = "4000"
   ECTO_IPV6 = "true"
   ERL_AFLAGS = "-proto_dist inet6_tcp"
+  RELEASE_DISTRIBUTION = "name"
+  DNS_CLUSTER_QUERY = "clippster-server.internal"
 
 # HTTP service configuration
 [http_service]
@@ -22,11 +24,18 @@ primary_region = "iad"
   auto_stop_machines = "stop"
   auto_start_machines = true
   min_machines_running = 1
+  max_machines_running = 3
   processes = ["app"]
 
-  # Health check configuration
   [http_service.http_options]
     h2_backend = false
+
+  # Autoscaling trigger: Fly spins up a new instance at soft_limit,
+  # stops routing new connections to this instance at hard_limit.
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 200
+    hard_limit = 250
 
   [[http_service.checks]]
     grace_period = "30s"
