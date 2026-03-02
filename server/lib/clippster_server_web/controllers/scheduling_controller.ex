@@ -13,17 +13,6 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   plug ClippsterServerWeb.AuthPlug
 
-  # PulseKit helper for safe event capture
-  defp pulse_capture(event) do
-    if Code.ensure_loaded?(PulseKit) do
-      try do
-        PulseKit.capture(event)
-      rescue
-        _ -> :ok
-      end
-    end
-  end
-
   # ============================================================================
   # Schedule Post
   # ============================================================================
@@ -67,20 +56,6 @@ defmodule ClippsterServerWeb.SchedulingController do
       with :ok <- validate_scheduling_request(params, user, owner_type),
            attrs <- build_scheduling_attrs(params, owner_type),
            {:ok, post} <- Social.schedule_post(attrs, user) do
-        pulse_capture(%{
-          type: "post.scheduled",
-          level: :info,
-          message: "Post scheduled for #{post.scheduled_at}",
-          metadata: %{
-            post_id: post.id,
-            platform: post.platform,
-            owner_type: owner_type,
-            scheduled_at: post.scheduled_at,
-            user_id: user.id
-          },
-          tags: %{platform: post.platform, action: "scheduled"}
-        })
-
         conn
         |> put_status(201)
         |> json(%{
@@ -197,18 +172,6 @@ defmodule ClippsterServerWeb.SchedulingController do
       post ->
         case Social.cancel_scheduled_post(post, user) do
           {:ok, canceled} ->
-            pulse_capture(%{
-              type: "post.canceled",
-              level: :info,
-              message: "Scheduled post canceled",
-              metadata: %{
-                post_id: canceled.id,
-                platform: canceled.platform,
-                user_id: user.id
-              },
-              tags: %{platform: canceled.platform, action: "canceled"}
-            })
-
             json(conn, %{success: true, post: serialize_post(canceled)})
 
           {:error, :unauthorized} ->
@@ -250,18 +213,6 @@ defmodule ClippsterServerWeb.SchedulingController do
         if can_view_post?(post, user) do
           case Social.retry_failed_post(post, user) do
             {:ok, updated} ->
-              pulse_capture(%{
-                type: "post.retry",
-                level: :info,
-                message: "Failed post queued for retry",
-                metadata: %{
-                  post_id: updated.id,
-                  platform: updated.platform,
-                  user_id: user.id
-                },
-                tags: %{platform: updated.platform, action: "retry"}
-              })
-
               json(conn, %{
                 success: true,
                 post: serialize_post(updated),

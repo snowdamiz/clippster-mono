@@ -79,8 +79,6 @@ defmodule ClippsterServer.MixProject do
       {:hackney, "~> 1.20"},
       # CA certificates for HTTPS
       {:certifi, "~> 2.12"},
-      # PulseKit error tracking and event monitoring
-      {:pulsekit, "~> 1.0"},
       # Retry logic for transient failures
       {:retry, "~> 0.19"},
       # Image info extraction (pure Elixir, no external deps)

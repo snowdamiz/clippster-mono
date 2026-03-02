@@ -21,17 +21,6 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   @poll_interval :timer.minutes(1)
   @batch_size 20
 
-  # PulseKit helper for safe event capture
-  defp pulse_capture(event) do
-    if Code.ensure_loaded?(PulseKit) do
-      try do
-        PulseKit.capture(event)
-      rescue
-        _ -> :ok
-      end
-    end
-  end
-
   # ============================================================================
   # Public API
   # ============================================================================
@@ -173,20 +162,6 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   end
 
   defp process_single_post(%PostSubmission{} = post) do
-    pulse_capture(%{
-      type: "scheduled_post.processing_start",
-      level: :info,
-      message: "Processing scheduled post #{post.id}",
-      metadata: %{
-        post_id: post.id,
-        platform: post.platform,
-        owner_type: post.owner_type,
-        scheduled_at: post.scheduled_at,
-        attempts: post.attempts
-      },
-      tags: %{platform: post.platform, action: "scheduled_processing"}
-    })
-
     # Try to lock the post
     case Social.lock_post_for_publishing(post) do
       {:ok, locked_post} ->
@@ -455,19 +430,6 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   defp handle_publish_success(%PostSubmission{} = post, result, content_hash \\ nil) do
     Logger.info("[ScheduledPostWorker] Successfully published post #{post.id}")
 
-    pulse_capture(%{
-      type: "scheduled_post.success",
-      level: :info,
-      message: "Scheduled post #{post.id} published successfully",
-      metadata: %{
-        post_id: post.id,
-        platform: post.platform,
-        platform_post_id: result.post_id,
-        post_url: result.post_url
-      },
-      tags: %{platform: post.platform, action: "scheduled_success"}
-    })
-
     attrs = %{
       post_id: result.post_id,
       post_url: result.post_url,
@@ -483,21 +445,6 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
   defp handle_publish_failure(%PostSubmission{} = post, error_message, error_type) do
     Logger.warning("[ScheduledPostWorker] Failed to publish post #{post.id}: #{error_message}")
-
-    pulse_capture(%{
-      type: "scheduled_post.failure",
-      level: :error,
-      message: "Scheduled post #{post.id} failed: #{error_message}",
-      metadata: %{
-        post_id: post.id,
-        platform: post.platform,
-        error: error_message,
-        error_type: error_type,
-        attempts: post.attempts + 1,
-        max_attempts: post.max_attempts
-      },
-      tags: %{platform: post.platform, action: "scheduled_failure", error_type: error_type}
-    })
 
     case error_type do
       :transient ->

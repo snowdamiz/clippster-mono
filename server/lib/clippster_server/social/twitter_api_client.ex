@@ -3,7 +3,6 @@ defmodule ClippsterServer.Social.TwitterApiClient do
   Centralized HTTP client wrapper for X (Twitter) API with reliability features:
   - Exponential backoff retry for transient failures (429, 5xx)
   - Rate limit header parsing and quota tracking
-  - PulseKit logging for all API interactions
   - Permanent failure detection (400, 401, 403, 404) - no retry
 
   Use this instead of HTTPoison directly for all X API calls.
@@ -73,8 +72,7 @@ defmodule ClippsterServer.Social.TwitterApiClient do
   1. Pre-flight rate limit checking
   2. Exponential backoff retry (up to 5 minutes)
   3. Rate limit header parsing
-  4. PulseKit logging
-  5. Transient vs permanent error classification
+  4. Transient vs permanent error classification
 
   ## Parameters
     - method: HTTP method atom (:get, :post, :put, :delete)
@@ -96,12 +94,9 @@ defmodule ClippsterServer.Social.TwitterApiClient do
     social_account_id = opts[:social_account_id]
     http_opts = opts[:http_options] || [timeout: 30_000, recv_timeout: 30_000]
 
-    start_time = System.monotonic_time(:millisecond)
-
     # Pre-flight rate limit check
     case maybe_check_quota(endpoint, social_account_id) do
       {:error, :rate_limited, reset_at} ->
-        log_api_call(method, endpoint, nil, nil, start_time, {:error, {:rate_limited, reset_at}})
         {:error, {:rate_limited, reset_at}}
 
       _ ->
@@ -113,8 +108,7 @@ defmodule ClippsterServer.Social.TwitterApiClient do
           headers,
           http_opts,
           endpoint,
-          social_account_id,
-          start_time
+          social_account_id
         )
     end
   end
@@ -127,41 +121,35 @@ defmodule ClippsterServer.Social.TwitterApiClient do
          headers,
          http_opts,
          endpoint,
-         social_account_id,
-         start_time
+         social_account_id
        ) do
     retry with: exponential_backoff() |> randomize() |> cap(60_000) |> expiry(300_000) do
       case HTTPoison.request(method, url, body, headers, http_opts) do
         {:ok, response} ->
-          process_response(response, method, endpoint, social_account_id, start_time)
+          process_response(response, endpoint, social_account_id)
 
         {:error, %HTTPoison.Error{reason: reason}} ->
           # Network/connection errors are retryable
-          log_api_call(method, endpoint, nil, nil, start_time, {:error, reason})
           raise RetryableError, status_code: :network_error, response_body: inspect(reason)
       end
     after
       result ->
         result
     else
-      error ->
+      _error ->
         # Max retries exceeded
-        log_api_call(method, endpoint, nil, nil, start_time, {:error, :max_retries_exceeded})
         {:error, :max_retries_exceeded}
     end
   end
 
-  # Process response: parse rate limits, log, classify errors
-  defp process_response(response, method, endpoint, social_account_id, start_time) do
+  # Process response: parse rate limits, classify errors
+  defp process_response(response, endpoint, social_account_id) do
     %HTTPoison.Response{status_code: status, headers: headers, body: body} = response
 
     # Parse and store rate limit headers
     if endpoint && social_account_id do
       TwitterRateLimiter.update_from_response(endpoint, social_account_id, headers)
     end
-
-    # Log the API call
-    log_api_call(method, endpoint, status, response, start_time, :ok)
 
     case status do
       # Success
@@ -232,73 +220,4 @@ defmodule ClippsterServer.Social.TwitterApiClient do
     end
   end
 
-  # PulseKit logging helper
-  defp pulse_capture(event) do
-    if Code.ensure_loaded?(PulseKit) do
-      try do
-        PulseKit.capture(event)
-      rescue
-        _ -> :ok
-      end
-    end
-  end
-
-  # Log API call to PulseKit
-  defp log_api_call(method, endpoint, status, response, start_time, result) do
-    duration_ms = System.monotonic_time(:millisecond) - start_time
-
-    rate_limit_metadata =
-      case response do
-        %HTTPoison.Response{headers: headers} ->
-          %{
-            limit: get_header_value(headers, "x-rate-limit-limit"),
-            remaining: get_header_value(headers, "x-rate-limit-remaining"),
-            reset: get_header_value(headers, "x-rate-limit-reset")
-          }
-
-        _ ->
-          nil
-      end
-
-    error_info =
-      case result do
-        {:error, reason} -> %{error: inspect(reason)}
-        _ -> %{}
-      end
-
-    metadata =
-      %{
-        endpoint: endpoint,
-        method: method,
-        status: status,
-        duration_ms: duration_ms
-      }
-      |> maybe_merge_map(:rate_limit, rate_limit_metadata)
-      |> Map.merge(error_info)
-
-    event_type =
-      if match?({:error, _}, result), do: "x_api_call.error", else: "x_api_call.success"
-
-    level = if match?({:error, _}, result), do: :error, else: :info
-
-    pulse_capture(%{
-      type: event_type,
-      level: level,
-      message: "X API #{method} #{endpoint || "unknown"}: #{status || "error"}",
-      metadata: metadata,
-      tags: %{platform: "twitter", endpoint: endpoint}
-    })
-  end
-
-  defp get_header_value(headers, name) when is_list(headers) do
-    name_lower = String.downcase(name)
-
-    case Enum.find(headers, fn {key, _} -> String.downcase(to_string(key)) == name_lower end) do
-      {_, value} -> to_string(value)
-      nil -> nil
-    end
-  end
-
-  defp maybe_merge_map(map, _key, nil), do: map
-  defp maybe_merge_map(map, key, value), do: Map.put(map, key, value)
 end
