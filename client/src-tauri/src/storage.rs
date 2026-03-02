@@ -513,7 +513,7 @@ pub async fn generate_thumbnail(
     let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
 
     // Use ffmpeg sidecar to generate thumbnail at 1 second mark
-    let output = app
+    let mut command = app
         .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
@@ -531,7 +531,15 @@ pub async fn generate_thumbnail(
             "scale=320:-1",
             "-y",
             thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-        ])
+        ]);
+
+    // On Windows, hide the console window to prevent PowerShell popups
+    #[cfg(target_os = "windows")]
+    {
+        command = command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = command
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
@@ -597,7 +605,7 @@ pub async fn generate_thumbnail_at_timestamp(
     let timestamp_str = format!("{:02}:{:02}:{:06.3}", hours, minutes, seconds);
 
     // Use ffmpeg sidecar to generate thumbnail at specified timestamp
-    let output = app
+    let mut command = app
         .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
@@ -615,7 +623,15 @@ pub async fn generate_thumbnail_at_timestamp(
             "scale=320:-1",
             "-y",
             thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-        ])
+        ]);
+
+    // On Windows, hide the console window to prevent PowerShell popups
+    #[cfg(target_os = "windows")]
+    {
+        command = command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let output = command
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;

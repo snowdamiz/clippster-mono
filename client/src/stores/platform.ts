@@ -430,6 +430,8 @@ export const usePlatformStore = defineStore('platform', {
           hasMore: boolean;
           total: number;
           error?: string;
+          fallbackUsed?: boolean;
+          actualTab?: 'streams' | 'videos';
         };
         let extractedId: string | null = null;
 
@@ -562,6 +564,8 @@ export const usePlatformStore = defineStore('platform', {
             clips: filteredClips,
             total: filteredClips.length,
             hasMore: result.hasMore,
+            fallbackUsed: result.fallbackUsed,
+            actualTab: result.actualTab,
           };
         } else {
           this.error = result.error || 'Failed to fetch VODs';
@@ -620,6 +624,8 @@ export const usePlatformStore = defineStore('platform', {
       hasMore: boolean;
       total: number;
       error?: string;
+      fallbackUsed?: boolean;
+      actualTab?: 'streams' | 'videos';
     }> {
       try {
         // Construct URL with /livestreams or /videos path based on tab
@@ -644,11 +650,30 @@ export const usePlatformStore = defineStore('platform', {
         // Filter VODs based on tab selection using was_live field
         // Note: Rumble's /livestreams and /videos URLs return the same content,
         // so we must filter client-side based on the was_live field from yt-dlp
-        const filteredVods = tab === 'streams' 
+        let filteredVods = tab === 'streams' 
           ? vods.filter(vod => vod.isLive)  // isLive = is_live || was_live from backend
           : vods.filter(vod => !vod.isLive);
         
         console.log('[Platform Store] Filtered', filteredVods.length, 'out of', vods.length, 'VODs for tab:', tab);
+        
+        let fallbackUsed = false;
+        let actualTab = tab;
+        
+        // If no results after filtering, try the other tab
+        if (filteredVods.length === 0 && vods.length > 0) {
+          const fallbackTab = tab === 'streams' ? 'videos' : 'streams';
+          console.log('[Platform Store] No results in', tab, 'tab, trying', fallbackTab, 'tab');
+          filteredVods = fallbackTab === 'streams'
+            ? vods.filter(vod => vod.isLive)
+            : vods.filter(vod => !vod.isLive);
+          console.log('[Platform Store] Fallback filtered', filteredVods.length, 'VODs');
+          
+          if (filteredVods.length > 0) {
+            fallbackUsed = true;
+            actualTab = fallbackTab;
+          }
+        }
+        
         const clips: PlatformClip[] = filteredVods.map((vod: RumbleVod) => {
           // upload_date from yt-dlp is YYYYMMDD — convert to ISO
           let createdAt: string | undefined;
@@ -680,6 +705,8 @@ export const usePlatformStore = defineStore('platform', {
           clips,
           hasMore: clips.length >= limit,
           total: clips.length,
+          fallbackUsed,
+          actualTab,
         };
       } catch (error) {
         return {
@@ -699,15 +726,38 @@ export const usePlatformStore = defineStore('platform', {
       hasMore: boolean;
       total: number;
       error?: string;
+      fallbackUsed?: boolean;
+      actualTab?: 'streams' | 'videos';
     }> {
       try {
         console.log('[Platform Store] getYouTubeClips - channelId:', channelId, 'tab:', tab);
         // Import getYouTubeVideos dynamically
         const { getYouTubeVideos } = await import('@/services/youtube');
-        const vods = tab === 'videos' 
+        
+        // Try primary tab first
+        let vods = tab === 'videos' 
           ? await getYouTubeVideos(channelId, limit)
           : await getYouTubeVods(channelId, limit);
         console.log('[Platform Store] Fetched', vods.length, tab === 'videos' ? 'videos' : 'streams');
+        
+        let fallbackUsed = false;
+        let actualTab = tab;
+        
+        // If no results, automatically try the other tab
+        if (vods.length === 0) {
+          const fallbackTab = tab === 'streams' ? 'videos' : 'streams';
+          console.log('[Platform Store] No results in', tab, 'tab, trying', fallbackTab, 'tab');
+          vods = fallbackTab === 'videos'
+            ? await getYouTubeVideos(channelId, limit)
+            : await getYouTubeVods(channelId, limit);
+          console.log('[Platform Store] Fallback fetched', vods.length, fallbackTab);
+          
+          if (vods.length > 0) {
+            fallbackUsed = true;
+            actualTab = fallbackTab;
+          }
+        }
+        
         const clips: PlatformClip[] = vods.map((vod: YouTubeVod, index: number) => {
           // Log first item to debug date fields
           if (index === 0) {
@@ -756,6 +806,8 @@ export const usePlatformStore = defineStore('platform', {
           clips,
           hasMore: clips.length >= limit,
           total: clips.length,
+          fallbackUsed,
+          actualTab,
         };
       } catch (error) {
         return {
@@ -805,7 +857,7 @@ export const usePlatformStore = defineStore('platform', {
           playlistUrl: validatedUrl,
           mp4Url: validatedUrl,
           clipType: 'COMPLETE' as const,
-          createdAt: new Date().toISOString(),
+          createdAt: metadata.timestamp || new Date().toISOString(), // Use actual broadcast timestamp, fallback to current date
           uploader: metadata.username || metadata.uploader,
         };
         
