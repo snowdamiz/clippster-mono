@@ -83,6 +83,9 @@ defmodule ClippsterServer.MixProject do
       {:retry, "~> 0.19"},
       # Image info extraction (pure Elixir, no external deps)
       {:ex_image_info, "~> 0.2.4"},
+      # AppSignal APM + error tracking
+      {:appsignal, "~> 2.14"},
+      {:appsignal_phoenix, "~> 2.4"},
       # Code quality analysis
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]

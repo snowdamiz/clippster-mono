@@ -202,6 +202,14 @@ config :clippster_server, :post_for_me,
   project_id: System.get_env("POST_FOR_ME_PROJECT_ID"),
   connect_session_ttl_seconds: post_for_me_connect_session_ttl_seconds
 
+# AppSignal APM + error tracking
+config :appsignal, :config,
+  otp_app: :clippster_server,
+  name: "Clippster Server",
+  push_api_key: System.get_env("APPSIGNAL_PUSH_API_KEY"),
+  env: config_env(),
+  active: not is_nil(System.get_env("APPSIGNAL_PUSH_API_KEY"))
+
 # Freesound API (sound effects search proxy)
 config :clippster_server, :freesound, api_key: System.get_env("FREESOUND_API_KEY")
 

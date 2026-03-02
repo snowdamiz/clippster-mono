@@ -210,6 +210,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
       case Social.sync_post_analytics(post, insights) do
         {:ok, _updated} ->
           Logger.debug("[AnalyticsSyncWorker] Synced post #{post.id}")
+          Appsignal.increment_counter("worker.analytics_sync.success", 1, %{platform: post.platform})
           :ok
 
         {:error, reason} ->
@@ -217,6 +218,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
             "[AnalyticsSyncWorker] Failed to update post #{post.id}: #{inspect(reason)}"
           )
 
+          Appsignal.increment_counter("worker.analytics_sync.failed", 1, %{platform: post.platform})
           {:error, reason}
       end
     else
@@ -230,6 +232,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
 
       {:error, reason} ->
         Logger.warning("[AnalyticsSyncWorker] Failed to sync post #{post.id}: #{inspect(reason)}")
+        Appsignal.increment_counter("worker.analytics_sync.failed", 1, %{platform: post.platform})
         {:error, reason}
     end
   end
@@ -257,6 +260,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
       case Campaigns.update_user_post_analytics(post, insights) do
         {:ok, _updated} ->
           Logger.debug("[AnalyticsSyncWorker] Synced user post #{post.id}")
+          Appsignal.increment_counter("worker.analytics_sync.success", 1, %{platform: post.platform})
           :ok
 
         {:error, reason} ->
@@ -264,6 +268,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
             "[AnalyticsSyncWorker] Failed to update user post #{post.id}: #{inspect(reason)}"
           )
 
+          Appsignal.increment_counter("worker.analytics_sync.failed", 1, %{platform: post.platform})
           {:error, reason}
       end
     else
@@ -280,6 +285,7 @@ defmodule ClippsterServer.Social.AnalyticsSyncWorker do
           "[AnalyticsSyncWorker] Failed to sync user post #{post.id}: #{inspect(reason)}"
         )
 
+        Appsignal.increment_counter("worker.analytics_sync.failed", 1, %{platform: post.platform})
         {:error, reason}
     end
   end

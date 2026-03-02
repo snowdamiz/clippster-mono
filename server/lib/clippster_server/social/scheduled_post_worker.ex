@@ -147,24 +147,26 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   # ============================================================================
 
   defp process_scheduled_posts do
-    now = DateTime.utc_now()
+    Appsignal.instrument("ScheduledPostWorker#process", fn ->
+      now = DateTime.utc_now()
 
-    # Find posts that are scheduled and ready to publish
-    posts = Social.get_scheduled_posts_ready_to_publish(now, @batch_size)
+      # Find posts that are scheduled and ready to publish
+      posts = Social.get_scheduled_posts_ready_to_publish(now, @batch_size)
 
-    Logger.debug("[ScheduledPostWorker] Found #{length(posts)} posts ready to publish")
+      Logger.debug("[ScheduledPostWorker] Found #{length(posts)} posts ready to publish")
 
-    results =
-      Enum.map(posts, fn post ->
-        process_single_post(post)
-      end)
+      results =
+        Enum.map(posts, fn post ->
+          process_single_post(post)
+        end)
 
-    %{
-      processed: length(results),
-      successful: Enum.count(results, &(&1 == :ok)),
-      failed: Enum.count(results, &(&1 == :failed)),
-      retried: Enum.count(results, &(&1 == :retried))
-    }
+      %{
+        processed: length(results),
+        successful: Enum.count(results, &(&1 == :ok)),
+        failed: Enum.count(results, &(&1 == :failed)),
+        retried: Enum.count(results, &(&1 == :retried))
+      }
+    end)
   end
 
   defp process_single_post(%PostSubmission{} = post) do
@@ -436,6 +438,8 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   defp handle_publish_success(%PostSubmission{} = post, result, content_hash \\ nil) do
     Logger.info("[ScheduledPostWorker] Successfully published post #{post.id}")
 
+    Appsignal.increment_counter("worker.scheduled_post.published", 1, %{platform: post.platform})
+
     attrs = %{
       post_id: result.post_id,
       post_url: result.post_url,
@@ -451,6 +455,11 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
   defp handle_publish_failure(%PostSubmission{} = post, error_message, error_type) do
     Logger.warning("[ScheduledPostWorker] Failed to publish post #{post.id}: #{error_message}")
+
+    Appsignal.increment_counter("worker.scheduled_post.failed", 1, %{
+      platform: post.platform,
+      error_type: to_string(error_type)
+    })
 
     case error_type do
       :transient ->
