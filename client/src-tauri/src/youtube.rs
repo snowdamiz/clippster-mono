@@ -1218,7 +1218,13 @@ fn get_target_triple() -> &'static str {
     #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     return "x86_64-unknown-linux-gnu";
 
-    "unknown"
+    #[cfg(not(any(
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )))]
+    compile_error!("Unsupported platform - only x86_64 Windows/Linux and x86_64/aarch64 macOS are supported");
 }
 
 fn resolve_ytdlp_binary() -> Result<String, String> {

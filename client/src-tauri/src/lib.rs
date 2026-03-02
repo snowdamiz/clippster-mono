@@ -1194,6 +1194,10 @@ commands::file_utils::generate_video_thumbnail,
             storage::set_current_user_id,
             storage::clear_current_user_id,
 
+            // Delete local storage commands
+            calculate_local_storage_size,
+            delete_local_storage,
+
             // Assets commands
             assets::upload_asset_async,
 
