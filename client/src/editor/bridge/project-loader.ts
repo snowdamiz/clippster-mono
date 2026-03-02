@@ -268,6 +268,7 @@ async function buildMediaAssetsFromSources(
 			type: mediaType,
 			file,
 			url,
+			filePath: source.source_path,
 			width: dims?.width,
 			height: dims?.height,
 			duration: source.source_duration ?? undefined,
