@@ -435,35 +435,57 @@ defmodule ClippsterServerWeb.PostSubmissionController do
     Logger.info("[PostSubmission] Starting Post For Me publish for submission #{submission.id}")
 
     with {:ok, provider_account_id} <- get_provider_account_id(account),
-         {:ok, media_url} <- ensure_post_for_me_media_url(params["media_url"]),
-         {:ok, post} <-
-           PostForMe.create_social_post(%{
-             caption: params["caption"] || "",
-             social_accounts: [provider_account_id],
-             media: [%{url: media_url}],
-             external_id: "submission:#{submission.id}"
-           }) do
-      provider_post_id = post.id || "submission-#{submission.id}"
+         {:ok, media_url} <- ensure_post_for_me_media_url(params["media_url"]) do
+      # Build platform-specific configuration
+      platform_config = build_org_platform_config(account.platform, params)
 
-      publish_attrs = %{
-        post_id: provider_post_id,
-        post_url: nil,
-        posted_at: DateTime.utc_now(),
-        provider: "post_for_me",
-        provider_post_id: provider_post_id,
-        provider_payload: post.raw
+      post_params = %{
+        caption: params["caption"] || "",
+        social_accounts: [provider_account_id],
+        media: [%{url: media_url}],
+        external_id: "submission:#{submission.id}"
       }
 
-      case Social.mark_post_published(submission, publish_attrs) do
-        {:ok, _updated} ->
-          Logger.info(
-            "[PostSubmission] Post For Me publish accepted for submission #{submission.id}"
-          )
+      # Add platform_configurations if present
+      post_params =
+        if platform_config do
+          Map.put(post_params, :platform_configurations, platform_config)
+        else
+          post_params
+        end
+
+      case PostForMe.create_social_post(post_params) do
+        {:ok, post} ->
+          provider_post_id = post.id || "submission-#{submission.id}"
+
+          publish_attrs = %{
+            post_id: provider_post_id,
+            post_url: nil,
+            posted_at: DateTime.utc_now(),
+            provider: "post_for_me",
+            provider_post_id: provider_post_id,
+            provider_payload: post.raw
+          }
+
+          case Social.mark_post_published(submission, publish_attrs) do
+            {:ok, _updated} ->
+              Logger.info(
+                "[PostSubmission] Post For Me publish accepted for submission #{submission.id}"
+              )
+
+            {:error, reason} ->
+              Logger.error(
+                "[PostSubmission] Failed to persist Post For Me publish result for submission #{submission.id}: #{inspect(reason)}"
+              )
+          end
 
         {:error, reason} ->
+          error_message = format_provider_error(reason)
           Logger.error(
-            "[PostSubmission] Failed to persist Post For Me publish result for submission #{submission.id}: #{inspect(reason)}"
+            "[PostSubmission] Post For Me publish failed for submission #{submission.id}: #{error_message}"
           )
+
+          Social.mark_post_failed(submission, %{error_message: error_message})
       end
     else
       {:error, reason} ->
@@ -751,6 +773,27 @@ defmodule ClippsterServerWeb.PostSubmissionController do
       {:ok, media_url}
     end
   end
+
+  defp build_org_platform_config("youtube", params) do
+    # YouTube requires specific configuration
+    youtube_config = %{
+      "title" => params["title"],
+      "privacy" => params["privacy"] || "public",
+      "madeForKids" => params["made_for_kids"] || false
+    }
+
+    # Add optional category if provided
+    youtube_config =
+      if params["category_id"] do
+        Map.put(youtube_config, "categoryId", params["category_id"])
+      else
+        youtube_config
+      end
+
+    %{"youtube" => youtube_config}
+  end
+
+  defp build_org_platform_config(_platform, _params), do: nil
 
   defp format_provider_error(%PostForMe.ApiError{message: message}), do: message
   defp format_provider_error(error) when is_binary(error), do: error

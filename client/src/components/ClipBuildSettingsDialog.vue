@@ -1195,7 +1195,27 @@
       const rawVideos = await getRawVideosByProjectId(projectId);
       if (rawVideos.length === 0) return;
 
-      const rawVideoPath = rawVideos[0].file_path;
+      // Find the raw video that matches the clip's file_path
+      // The clip.file_path is the source VOD file that the clip was detected from
+      let rawVideoPath = '';
+      
+      if (props.clip.file_path) {
+        // Try to find the raw video that matches the clip's file_path
+        const matchingRawVideo = rawVideos.find(rv => rv.file_path === props.clip!.file_path);
+        if (matchingRawVideo) {
+          rawVideoPath = matchingRawVideo.file_path;
+          console.log('[BuildSettings] Found matching raw video for clip:', rawVideoPath.split(/[\\/]/).pop());
+        } else {
+          // Fallback: use the first raw video if no exact match found
+          rawVideoPath = rawVideos[0].file_path;
+          console.warn('[BuildSettings] No matching raw video found for clip file_path, using first raw video');
+        }
+      } else {
+        // No file_path on clip, use first raw video as fallback
+        rawVideoPath = rawVideos[0].file_path;
+        console.warn('[BuildSettings] Clip has no file_path, using first raw video');
+      }
+
       videoPath.value = rawVideoPath; // Store video path for POI editor
       const startTime = props.clip.current_version_start_time || 0;
 

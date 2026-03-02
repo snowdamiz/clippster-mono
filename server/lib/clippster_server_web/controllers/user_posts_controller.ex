@@ -398,11 +398,24 @@ defmodule ClippsterServerWeb.UserPostsController do
         media_url
       end
 
-    case PostForMe.create_social_post(%{
-           caption: params["caption"] || "",
-           social_accounts: [account.provider_account_id],
-           media: [%{url: media_url_resolved}]
-         }) do
+    # Build platform-specific configuration
+    platform_config = build_platform_config(account.platform, params)
+
+    post_params = %{
+      caption: params["caption"] || "",
+      social_accounts: [account.provider_account_id],
+      media: [%{url: media_url_resolved}]
+    }
+
+    # Add platform_configurations if present
+    post_params =
+      if platform_config do
+        Map.put(post_params, :platform_configurations, platform_config)
+      else
+        post_params
+      end
+
+    case PostForMe.create_social_post(post_params) do
       {:ok, post} ->
         {:ok, %{post_id: post.id || "pfm_post", post_url: nil}}
 
@@ -410,6 +423,27 @@ defmodule ClippsterServerWeb.UserPostsController do
         {:error, reason}
     end
   end
+
+  defp build_platform_config("youtube", params) do
+    # YouTube requires specific configuration
+    youtube_config = %{
+      "title" => params["title"],
+      "privacy" => params["privacy"] || "public",
+      "madeForKids" => params["made_for_kids"] || false
+    }
+
+    # Add optional category if provided
+    youtube_config =
+      if params["category_id"] do
+        Map.put(youtube_config, "categoryId", params["category_id"])
+      else
+        youtube_config
+      end
+
+    %{"youtube" => youtube_config}
+  end
+
+  defp build_platform_config(_platform, _params), do: nil
 
   defp fetch_insights(_account, _post) do
     # Insights are fetched via PostForMe feed API in the scheduling controller

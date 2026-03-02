@@ -227,9 +227,13 @@ export async function disconnectUserYoutubeAccount(
 export interface PublishToUserYoutubeData {
   account_id: number;
   media_url: string;
+  title: string;
   caption?: string;
   media_type?: string;
   thumbnail_url?: string;
+  privacy?: 'public' | 'unlisted' | 'private';
+  made_for_kids?: boolean;
+  category_id?: string;
   creator_profile_id?: number;
   campaign_id?: number;
 }
