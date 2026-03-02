@@ -19,6 +19,7 @@ import {
   Link2,
 } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
+import PageLayout from '@/components/PageLayout.vue';
 import { listScheduledPosts, listOrgScheduledPosts, listExternalPosts, type ScheduledPost, type ExternalPostSubmission } from '@/services/schedulingApi';
 import { listOrganizationCampaigns, listMyCampaigns, type Campaign } from '@/services/campaignApi';
 import { listUserPosts, type UserPost } from '@/services/userInstagramApi';
@@ -468,43 +469,34 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <!-- Header -->
-    <div class="flex items-center justify-between px-6 py-4 border-b border-white/10">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 bg-blue-500/15 rounded-lg flex items-center justify-center border border-blue-500/20">
-          <CalendarDays class="size-5 text-blue-400" />
-        </div>
-        <div>
-          <h1 class="text-lg font-semibold text-zinc-100">Content Calendar</h1>
-          <p class="text-xs text-zinc-500">Scheduled posts, campaigns & deadlines</p>
-        </div>
+  <PageLayout
+    title="Content Calendar"
+    description="Scheduled posts, campaigns & deadlines"
+    :show-header="true"
+    :icon="CalendarDays"
+  >
+    <template #actions>
+      <div class="flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
+        <button
+          @click="viewMode = 'month'"
+          :class="[
+            'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+            viewMode === 'month' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
+          ]"
+        >
+          Month
+        </button>
+        <button
+          @click="viewMode = 'week'"
+          :class="[
+            'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+            viewMode === 'week' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
+          ]"
+        >
+          Week
+        </button>
       </div>
-
-      <!-- View toggle -->
-      <div class="flex items-center gap-2">
-        <div class="flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
-          <button
-            @click="viewMode = 'month'"
-            :class="[
-              'px-3 py-1 text-xs font-medium rounded-md transition-colors',
-              viewMode === 'month' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
-            ]"
-          >
-            Month
-          </button>
-          <button
-            @click="viewMode = 'week'"
-            :class="[
-              'px-3 py-1 text-xs font-medium rounded-md transition-colors',
-              viewMode === 'week' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
-            ]"
-          >
-            Week
-          </button>
-        </div>
-      </div>
-    </div>
+    </template>
 
     <!-- Stats bar -->
     <div class="flex items-center gap-4 px-6 py-3 border-b border-white/5">
@@ -867,5 +859,5 @@ onMounted(() => {
         </div>
       </div>
     </div>
-  </div>
+  </PageLayout>
 </template>

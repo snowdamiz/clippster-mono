@@ -57,11 +57,31 @@ export function useVideoOperations() {
         thumbnailPath = undefined;
       }
 
+      // Extract video metadata (duration, resolution, codec)
+      let videoMetadata: { duration?: number; width?: number; height?: number; codec?: string } = {};
+      try {
+        const metadata = await invoke<{ duration: number; width: number; height: number; codec?: string }>(
+          'get_video_metadata',
+          { videoPath: result.destination_path }
+        );
+        if (metadata?.duration) {
+          videoMetadata = {
+            duration: metadata.duration,
+            width: metadata.width,
+            height: metadata.height,
+            codec: metadata.codec,
+          };
+        }
+      } catch {
+        // Non-fatal: metadata will be backfilled on next Projects load
+      }
+
       // Create raw_videos record with original filename and thumbnail
       // Note: Waveform generation is deferred until the user opens the workspace
       await createRawVideo(result.destination_path, {
         originalFilename: result.original_filename,
         thumbnailPath,
+        ...videoMetadata,
       });
 
       // Show success toast
@@ -113,12 +133,32 @@ export function useVideoOperations() {
         thumbnailPath = undefined;
       }
 
+      // Extract video metadata (duration, resolution, codec)
+      let videoMetadata: { duration?: number; width?: number; height?: number; codec?: string } = {};
+      try {
+        const metadata = await invoke<{ duration: number; width: number; height: number; codec?: string }>(
+          'get_video_metadata',
+          { videoPath: result.destination_path }
+        );
+        if (metadata?.duration) {
+          videoMetadata = {
+            duration: metadata.duration,
+            width: metadata.width,
+            height: metadata.height,
+            codec: metadata.codec,
+          };
+        }
+      } catch {
+        // Non-fatal: metadata will be backfilled on next Projects load
+      }
+
       // Create raw_videos record with original filename and thumbnail
       // Note: Waveform generation is deferred until the user opens the workspace
       const videoId = await createRawVideo(result.destination_path, {
         originalFilename: result.original_filename,
         thumbnailPath,
         projectId,
+        ...videoMetadata,
       });
 
       return {

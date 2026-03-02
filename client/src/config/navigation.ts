@@ -67,6 +67,12 @@ export const navigationItems: NavigationItem[] = [
     group: 'browse',
   },
   {
+    name: 'Messages',
+    path: '/messages',
+    icon: MessageCircle,
+    group: 'browse',
+  },
+  {
     name: 'Campaigns',
     path: '/campaigns',
     icon: Megaphone,
@@ -74,12 +80,6 @@ export const navigationItems: NavigationItem[] = [
     restrictedHidden: true,
     disabled: true,
     badge: 'Coming Soon',
-  },
-  {
-    name: 'Messages',
-    path: '/messages',
-    icon: MessageCircle,
-    group: 'browse',
   },
 
   // Create group - content creation tools

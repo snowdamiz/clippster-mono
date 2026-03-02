@@ -631,35 +631,52 @@
             </div>
           </div>
 
-          <div class="org-billing__addons-grid">
-            <div v-for="addon in availableAddons" :key="addon.id" class="org-billing__addon-card">
-              <div class="org-billing__addon-content">
-                <div v-if="addon.requires_ai" class="org-billing__addon-corner-badge">
-                  <Star class="org-billing__addon-corner-badge-icon" />
-                  <span>Includes AI</span>
-                </div>
-                <h3 class="org-billing__addon-name">{{ addon.name }}</h3>
-                <div class="org-billing__addon-price">
-                  <span class="org-billing__addon-price-currency">$</span>
-                  <span class="org-billing__addon-price-amount">{{ addon.usd }}</span>
-                  <span class="org-billing__addon-price-period">/mo</span>
-                </div>
-                <ul class="org-billing__addon-features">
-                  <li class="org-billing__addon-feature">
-                    <Check class="org-billing__addon-feature-icon" />
-                    <span>{{ addon.seats }} seats</span>
-                  </li>
-                  <li v-if="addon.monthly_credits > 0" class="org-billing__addon-feature">
-                    <Check class="org-billing__addon-feature-icon" />
-                    <span>{{ addon.monthly_credits.toLocaleString() }} credits/month</span>
-                  </li>
-                </ul>
-                <Button
-                  @click="selectSubscription(addon, 'addon')"
-                  class="org-billing__addon-btn"
-                >
-                  Add to Plan
-                </Button>
+          <div class="org-billing__addons-table">
+            <div class="org-billing__addons-table-header">
+              <div class="org-billing__addons-col-label"></div>
+              <div class="org-billing__addons-col-head">
+                <Users class="org-billing__addons-col-head-icon" />
+                <span>Standard</span>
+              </div>
+              <div class="org-billing__addons-col-head org-billing__addons-col-head--ai">
+                <Zap class="org-billing__addons-col-head-icon" />
+                <span>Includes AI</span>
+              </div>
+            </div>
+            <div v-for="group in groupedAddons" :key="group.seats" class="org-billing__addons-row">
+              <div class="org-billing__addons-row-seats">
+                <span class="org-billing__addons-row-count">{{ group.seats }}</span>
+                <span class="org-billing__addons-row-unit">seats</span>
+              </div>
+              <div class="org-billing__addons-cell">
+                <template v-if="group.standard">
+                  <div class="org-billing__addons-cell-price">
+                    <span class="org-billing__addons-cell-currency">$</span>
+                    <span class="org-billing__addons-cell-amount">{{ group.standard.usd }}</span>
+                    <span class="org-billing__addons-cell-period">/mo</span>
+                  </div>
+                  <Button size="sm" variant="outline" @click="selectSubscription(group.standard, 'addon')" class="org-billing__addons-cell-btn">
+                    Add to Plan
+                  </Button>
+                </template>
+                <span v-else class="org-billing__addons-cell-na">—</span>
+              </div>
+              <div class="org-billing__addons-cell org-billing__addons-cell--ai">
+                <template v-if="group.ai">
+                  <div class="org-billing__addons-cell-price">
+                    <span class="org-billing__addons-cell-currency">$</span>
+                    <span class="org-billing__addons-cell-amount">{{ group.ai.usd }}</span>
+                    <span class="org-billing__addons-cell-period">/mo</span>
+                  </div>
+                  <div v-if="group.ai.monthly_credits > 0" class="org-billing__addons-cell-credits">
+                    <Zap class="org-billing__addons-cell-credits-icon" />
+                    <span>{{ group.ai.monthly_credits.toLocaleString() }} credits/mo</span>
+                  </div>
+                  <Button size="sm" @click="selectSubscription(group.ai, 'addon')" class="org-billing__addons-cell-btn org-billing__addons-cell-btn--ai">
+                    Add to Plan
+                  </Button>
+                </template>
+                <span v-else class="org-billing__addons-cell-na">—</span>
               </div>
             </div>
           </div>
@@ -980,11 +997,17 @@
     return [...baseTiers.value].sort((a, b) => a.usd - b.usd);
   });
 
-  const availableAddons = computed(() => {
+  const groupedAddons = computed(() => {
     if (!subscription.value) return [];
-    
-    // Show all add-ons sorted by seat count (smallest to largest)
-    return [...addonTiers.value].sort((a, b) => a.seats - b.seats);
+    const groups: Record<number, { standard: any | null; ai: any | null }> = {};
+    for (const addon of addonTiers.value) {
+      if (!groups[addon.seats]) groups[addon.seats] = { standard: null, ai: null };
+      if (addon.requires_ai) groups[addon.seats].ai = addon;
+      else groups[addon.seats].standard = addon;
+    }
+    return Object.entries(groups)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([seats, opts]) => ({ seats: Number(seats), ...opts }));
   });
 
   function getMemberInitials(member: any): string {
@@ -2603,133 +2626,189 @@
     color: var(--sidebar-bg) !important;
   }
 
-  /* ===== Add-ons Grid ===== */
-  .org-billing__addons-grid {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 1rem;
+  /* ===== Add-ons Comparison Table ===== */
+  .org-billing__addons-table {
     margin-top: 1rem;
-  }
-
-  @media (min-width: 640px) {
-    .org-billing__addons-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (min-width: 1024px) {
-    .org-billing__addons-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  .org-billing__addon-card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     overflow: hidden;
-    transition: all 200ms ease;
   }
 
-  .org-billing__addon-card:hover {
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    transform: translateY(-2px);
+  .org-billing__addons-table-header {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid var(--sidebar-border);
   }
 
-  .org-billing__addon-content {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    padding: 1.5rem;
+  .org-billing__addons-col-label {
+    padding: 0.875rem 1.25rem;
   }
 
-  .org-billing__addon-corner-badge {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
+  .org-billing__addons-col-head {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.3rem 0.6rem;
-    background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.8));
-    color: var(--sidebar-bg);
-    font-size: 0.625rem;
-    font-weight: 700;
+    gap: 0.4rem;
+    padding: 0.875rem 1.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.03em;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(6, 182, 212, 0.3);
+    letter-spacing: 0.05em;
+    border-left: 1px solid var(--sidebar-border);
   }
 
-  .org-billing__addon-corner-badge-icon {
-    width: 11px;
-    height: 11px;
+  .org-billing__addons-col-head--ai {
+    color: var(--sidebar-accent);
   }
 
-  .org-billing__addon-name {
-    font-size: 1.125rem;
+  .org-billing__addons-col-head-icon {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+  }
+
+  .org-billing__addons-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    border-top: 1px solid var(--sidebar-border);
+    transition: background-color 150ms ease;
+  }
+
+  .org-billing__addons-row:first-of-type {
+    border-top: none;
+  }
+
+  .org-billing__addons-row:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+  }
+
+  .org-billing__addons-row-seats {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 1rem 1.25rem;
+  }
+
+  .org-billing__addons-row-count {
+    font-size: 1.375rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
+    line-height: 1;
   }
 
-  .org-billing__addon-price {
+  .org-billing__addons-row-unit {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    padding-top: 0.2rem;
+  }
+
+  .org-billing__addons-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border-left: 1px solid var(--sidebar-border);
+  }
+
+  .org-billing__addons-cell--ai {
+    background-color: rgba(6, 182, 212, 0.03);
+  }
+
+  .org-billing__addons-cell-price {
     display: flex;
     align-items: baseline;
-    margin-bottom: 1.5rem;
+    gap: 0.1rem;
+    flex-shrink: 0;
   }
 
-  .org-billing__addon-price-currency {
-    font-size: 1.25rem;
+  .org-billing__addons-cell-currency {
+    font-size: 0.875rem;
     font-weight: 600;
     color: var(--sidebar-text);
   }
 
-  .org-billing__addon-price-amount {
-    font-size: 2.5rem;
+  .org-billing__addons-cell-amount {
+    font-size: 1.375rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    letter-spacing: -0.03em;
+    letter-spacing: -0.02em;
+    line-height: 1;
   }
 
-  .org-billing__addon-price-period {
-    font-size: 0.875rem;
+  .org-billing__addons-cell-period {
+    font-size: 0.75rem;
     color: var(--sidebar-text-muted);
-    margin-left: 0.25rem;
+    margin-left: 0.1rem;
   }
 
-  .org-billing__addon-features {
-    list-style: none;
-    margin: 0 0 1.5rem;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .org-billing__addon-feature {
+  .org-billing__addons-cell-credits {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-billing__addon-feature-icon {
-    width: 15px;
-    height: 15px;
-    color: #34d399;
+    gap: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-accent);
     flex-shrink: 0;
   }
 
-  .org-billing__addon-btn {
-    width: 100%;
-    margin-top: auto;
+  .org-billing__addons-cell-credits-icon {
+    width: 11px;
+    height: 11px;
+    flex-shrink: 0;
+  }
+
+  .org-billing__addons-cell-btn {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .org-billing__addons-cell-btn--ai {
+    background-color: var(--sidebar-accent) !important;
+    color: var(--sidebar-bg) !important;
+    border-color: var(--sidebar-accent) !important;
+  }
+
+  .org-billing__addons-cell-btn--ai:hover {
+    opacity: 0.9;
+  }
+
+  .org-billing__addons-cell-na {
+    color: var(--sidebar-text-muted);
+    font-size: 1rem;
+  }
+
+  @media (max-width: 639px) {
+    .org-billing__addons-table-header {
+      display: none;
+    }
+
+    .org-billing__addons-row {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+
+    .org-billing__addons-row-seats {
+      background-color: rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid var(--sidebar-border);
+      padding: 0.625rem 1.25rem;
+    }
+
+    .org-billing__addons-cell {
+      border-left: none;
+      border-top: 1px solid var(--sidebar-border);
+      flex-wrap: wrap;
+    }
+
+    .org-billing__addons-cell--ai::before {
+      content: 'Includes AI';
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--sidebar-accent);
+      width: 100%;
+      margin-bottom: 0.25rem;
+    }
   }
 
   /* ===== Modal Styles ===== */
