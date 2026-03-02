@@ -9,7 +9,7 @@
   - SDK: `@solana/web3.js` (client) + custom Node.js bindings (server)
   - Auth: `SOLANA_RPC_URL` environment variable
   - Purpose: Blockchain transactions, wallet integration
-  - Server packages: `@120356aa/pulsekit-sdk`, `@metaplex-foundation/umi`, `@metaplex-foundation/umi-bundle-defaults`
+  - Server packages: `@metaplex-foundation/umi`, `@metaplex-foundation/umi-bundle-defaults`
 
 - Alchemy - Blockchain API platform
   - SDK: Custom integration via `req` HTTP client
@@ -81,14 +81,6 @@
   - Implementation: `server/lib/clippster_server/social/platforms/twitter.ex`
   - Purpose: Tweet analytics and read-only access
   - Configuration: `server/config/runtime.exs` (lines 97-99)
-
-**Error Tracking & Monitoring:**
-- PulseKit - Error tracking and event monitoring
-  - SDK: `pulsekit` 1.0 (Elixir)
-  - Auth: `PULSEKIT_CLIPPSTER_SERVER_KEY` environment variable
-  - Endpoint: `PULSEKIT_ENDPOINT` (default: https://pulsekit.fly.dev)
-  - Configuration: `server/config/runtime.exs` (lines 101-110)
-  - Purpose: Application monitoring and error tracking
 
 ## Data Storage
 
@@ -200,10 +192,6 @@
 - `R2_BUCKET_NAME` - R2 bucket name
 - `R2_PUBLIC_URL` - R2 public URL base
 
-*Monitoring:*
-- `PULSEKIT_CLIPPSTER_SERVER_KEY` - PulseKit API key
-- `PULSEKIT_ENDPOINT` - PulseKit endpoint (default: https://pulsekit.fly.dev)
-
 *Client:*
 - `VITE_API_URL` - API server URL (development: `http://localhost:4000`, production: `https://clippster-server.fly.dev`)
 
@@ -231,10 +219,6 @@
   - Purpose: OAuth token exchange for Instagram Business account access
 
 **Outgoing Webhooks/Events:**
-- PulseKit - Event tracking
-  - Sends: Application errors, user events, performance metrics
-  - Endpoint: Configured via `PULSEKIT_ENDPOINT`
-
 - Email Notifications via Resend
   - User verification emails
   - Subscription confirmations

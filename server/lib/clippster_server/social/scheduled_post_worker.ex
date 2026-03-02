@@ -21,37 +21,30 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   @poll_interval :timer.minutes(1)
   @batch_size 20
 
-  # PulseKit helper for safe event capture
-  defp pulse_capture(event) do
-    if Code.ensure_loaded?(PulseKit) do
-      try do
-        PulseKit.capture(event)
-      rescue
-        _ -> :ok
-      end
-    end
-  end
-
   # ============================================================================
   # Public API
   # ============================================================================
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @doc """
   Triggers an immediate check for scheduled posts.
   """
   def process_now do
-    GenServer.cast(__MODULE__, :process_now)
+    GenServer.cast({:global, __MODULE__}, :process_now)
   end
 
   @doc """
   Gets the current worker status.
   """
   def status do
-    GenServer.call(__MODULE__, :status)
+    GenServer.call({:global, __MODULE__}, :status)
   end
 
   # ============================================================================
@@ -112,9 +105,11 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     new_state = %{state | processing: true, last_run: DateTime.utc_now()}
 
     # Run processing in a task
+    worker = self()
+
     Task.start(fn ->
       result = process_scheduled_posts()
-      send(__MODULE__, {:process_complete, result})
+      send(worker, {:process_complete, result})
     end)
 
     # Schedule next check
@@ -152,41 +147,29 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   # ============================================================================
 
   defp process_scheduled_posts do
-    now = DateTime.utc_now()
+    Appsignal.instrument("ScheduledPostWorker#process", fn ->
+      now = DateTime.utc_now()
 
-    # Find posts that are scheduled and ready to publish
-    posts = Social.get_scheduled_posts_ready_to_publish(now, @batch_size)
+      # Find posts that are scheduled and ready to publish
+      posts = Social.get_scheduled_posts_ready_to_publish(now, @batch_size)
 
-    Logger.debug("[ScheduledPostWorker] Found #{length(posts)} posts ready to publish")
+      Logger.debug("[ScheduledPostWorker] Found #{length(posts)} posts ready to publish")
 
-    results =
-      Enum.map(posts, fn post ->
-        process_single_post(post)
-      end)
+      results =
+        Enum.map(posts, fn post ->
+          process_single_post(post)
+        end)
 
-    %{
-      processed: length(results),
-      successful: Enum.count(results, &(&1 == :ok)),
-      failed: Enum.count(results, &(&1 == :failed)),
-      retried: Enum.count(results, &(&1 == :retried))
-    }
+      %{
+        processed: length(results),
+        successful: Enum.count(results, &(&1 == :ok)),
+        failed: Enum.count(results, &(&1 == :failed)),
+        retried: Enum.count(results, &(&1 == :retried))
+      }
+    end)
   end
 
   defp process_single_post(%PostSubmission{} = post) do
-    pulse_capture(%{
-      type: "scheduled_post.processing_start",
-      level: :info,
-      message: "Processing scheduled post #{post.id}",
-      metadata: %{
-        post_id: post.id,
-        platform: post.platform,
-        owner_type: post.owner_type,
-        scheduled_at: post.scheduled_at,
-        attempts: post.attempts
-      },
-      tags: %{platform: post.platform, action: "scheduled_processing"}
-    })
-
     # Try to lock the post
     case Social.lock_post_for_publishing(post) do
       {:ok, locked_post} ->
@@ -455,18 +438,7 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   defp handle_publish_success(%PostSubmission{} = post, result, content_hash \\ nil) do
     Logger.info("[ScheduledPostWorker] Successfully published post #{post.id}")
 
-    pulse_capture(%{
-      type: "scheduled_post.success",
-      level: :info,
-      message: "Scheduled post #{post.id} published successfully",
-      metadata: %{
-        post_id: post.id,
-        platform: post.platform,
-        platform_post_id: result.post_id,
-        post_url: result.post_url
-      },
-      tags: %{platform: post.platform, action: "scheduled_success"}
-    })
+    Appsignal.increment_counter("worker.scheduled_post.published", 1, %{platform: post.platform})
 
     attrs = %{
       post_id: result.post_id,
@@ -484,19 +456,9 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   defp handle_publish_failure(%PostSubmission{} = post, error_message, error_type) do
     Logger.warning("[ScheduledPostWorker] Failed to publish post #{post.id}: #{error_message}")
 
-    pulse_capture(%{
-      type: "scheduled_post.failure",
-      level: :error,
-      message: "Scheduled post #{post.id} failed: #{error_message}",
-      metadata: %{
-        post_id: post.id,
-        platform: post.platform,
-        error: error_message,
-        error_type: error_type,
-        attempts: post.attempts + 1,
-        max_attempts: post.max_attempts
-      },
-      tags: %{platform: post.platform, action: "scheduled_failure", error_type: error_type}
+    Appsignal.increment_counter("worker.scheduled_post.failed", 1, %{
+      platform: post.platform,
+      error_type: to_string(error_type)
     })
 
     case error_type do

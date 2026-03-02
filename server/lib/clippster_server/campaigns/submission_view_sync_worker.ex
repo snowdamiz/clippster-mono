@@ -27,28 +27,32 @@ defmodule ClippsterServer.Campaigns.SubmissionViewSyncWorker do
   # ============================================================================
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @doc """
   Triggers an immediate sync for all pending submissions.
   """
   def sync_now do
-    GenServer.cast(__MODULE__, :sync_now)
+    GenServer.cast({:global, __MODULE__}, :sync_now)
   end
 
   @doc """
   Syncs views for a specific submission.
   """
   def sync_submission(submission_id) do
-    GenServer.cast(__MODULE__, {:sync_submission, submission_id})
+    GenServer.cast({:global, __MODULE__}, {:sync_submission, submission_id})
   end
 
   @doc """
   Gets the current worker status.
   """
   def status do
-    GenServer.call(__MODULE__, :status)
+    GenServer.call({:global, __MODULE__}, :status)
   end
 
   # ============================================================================
@@ -127,9 +131,11 @@ defmodule ClippsterServer.Campaigns.SubmissionViewSyncWorker do
     new_state = %{state | syncing: true, last_sync: DateTime.utc_now()}
 
     # Run sync in a task to not block the GenServer
+    worker = self()
+
     Task.start(fn ->
       result = run_sync()
-      send(__MODULE__, {:sync_complete, result})
+      send(worker, {:sync_complete, result})
     end)
 
     # Schedule next sync

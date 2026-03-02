@@ -39,7 +39,6 @@ Requirements for milestone v1.0: Official X API Posting. Each maps to roadmap ph
 - [ ] **REL-02**: System retries transient failures (429, 5xx) with exponential backoff
 - [ ] **REL-03**: System marks permanent failures (400, 403, 404) without retry
 - [ ] **REL-04**: System detects duplicate content before posting to avoid X's 403 duplicate error
-- [ ] **REL-05**: System logs all X API interactions via PulseKit for debugging
 
 ## v1.1 Requirements
 

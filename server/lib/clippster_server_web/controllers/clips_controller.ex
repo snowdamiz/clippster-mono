@@ -1249,6 +1249,8 @@ defmodule ClippsterServerWeb.ClipsController do
           credits_deducted: credits_deducted
         })
 
+        Appsignal.increment_counter("clips.created", 1, %{project_id: to_string(project_id)})
+
         # Get updated user balance after credit deduction (or show unlimited for admins)
         remaining_credits =
           if is_admin do

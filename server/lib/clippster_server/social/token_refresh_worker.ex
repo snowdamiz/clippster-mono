@@ -19,21 +19,25 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
   # ============================================================================
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @doc """
   Triggers an immediate token refresh check.
   """
   def refresh_now do
-    GenServer.cast(__MODULE__, :refresh_now)
+    GenServer.cast({:global, __MODULE__}, :refresh_now)
   end
 
   @doc """
   Refreshes tokens for a specific account.
   """
   def refresh_account(account_id) do
-    GenServer.cast(__MODULE__, {:refresh_account, account_id})
+    GenServer.cast({:global, __MODULE__}, {:refresh_account, account_id})
   end
 
   # ============================================================================
@@ -166,6 +170,7 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
       case Social.refresh_social_account_tokens(account, attrs) do
         {:ok, _updated} ->
           Logger.info("[TokenRefreshWorker] Successfully refreshed account #{account.id}")
+          Appsignal.increment_counter("worker.token_refresh.success", 1, %{platform: account.platform})
           :ok
 
         {:error, reason} ->
@@ -173,6 +178,7 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
             "[TokenRefreshWorker] Failed to update account #{account.id}: #{inspect(reason)}"
           )
 
+          Appsignal.increment_counter("worker.token_refresh.failed", 1, %{platform: account.platform})
           {:error, reason}
       end
     else
@@ -185,6 +191,7 @@ defmodule ClippsterServer.Social.TokenRefreshWorker do
           "[TokenRefreshWorker] Failed to refresh account #{account.id}: #{inspect(reason)}"
         )
 
+        Appsignal.increment_counter("worker.token_refresh.failed", 1, %{platform: account.platform})
         {:error, reason}
     end
   end

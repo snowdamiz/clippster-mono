@@ -37,7 +37,7 @@
       </div>
     </ToastRoot>
     <ToastViewport
-      class="fixed flex flex-col gap-3 w-[380px] max-w-[calc(100vw-3rem)] z-[9999] outline-none"
+      class="fixed flex flex-col gap-3 w-[380px] max-w-[calc(100vw-3rem)] z-[10002] outline-none"
       :class="viewportPositionClass"
     />
   </ToastProvider>
