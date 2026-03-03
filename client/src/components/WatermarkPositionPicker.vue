@@ -188,7 +188,7 @@
             <div class="flex justify-center mb-3">
               <div
                 ref="previewContainer"
-                class="relative bg-[var(--sidebar-surface)] rounded-lg overflow-hidden border transition-all duration-300 select-none"
+                class="relative transparency-checkerboard rounded-lg overflow-hidden border transition-all duration-300 select-none"
                 :class="[
                   enabledRatios[currentAspectRatio]
                     ? 'cursor-crosshair border-[var(--sidebar-border)]'

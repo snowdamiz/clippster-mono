@@ -589,4 +589,16 @@
   .dark [data-radix-scroll-area-viewport] {
     scrollbar-color: oklch(0.4 0 0 / 0.85) transparent !important;
   }
+
+  /* Transparency checkerboard pattern for image previews */
+  .transparency-checkerboard {
+    background-color: #cccccc;
+    background-image: 
+      linear-gradient(45deg, #999999 25%, transparent 25%),
+      linear-gradient(-45deg, #999999 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #999999 75%),
+      linear-gradient(-45deg, transparent 75%, #999999 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  }
 }

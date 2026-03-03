@@ -123,12 +123,26 @@ defmodule ClippsterServerWeb.MessagingJSON do
   defp render_user(%Ecto.Association.NotLoaded{}), do: nil
 
   defp render_user(user) do
+    # Prioritize clipper profile display_name if available
+    display_name = case user.clipper_profile do
+      %Ecto.Association.NotLoaded{} -> user.name
+      nil -> user.name
+      profile -> profile.display_name || user.name
+    end
+
+    # Prioritize clipper profile avatar if available
+    avatar_url = case user.clipper_profile do
+      %Ecto.Association.NotLoaded{} -> user.avatar_url
+      nil -> user.avatar_url
+      profile -> profile.avatar_url || user.avatar_url
+    end
+
     %{
       id: user.id,
-      display_name: user.name,
+      display_name: display_name,
       name: user.name,
       email: user.email,
-      avatar_url: user.avatar_url,
+      avatar_url: avatar_url,
       is_admin: user.is_admin || false,
       is_moderator: user.is_moderator || false
     }

@@ -358,7 +358,7 @@ defmodule ClippsterServerWeb.PaymentController do
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, org} <- get_organization(org_id),
          true <- Organizations.is_admin?(org.id, user_id),
-         {:ok, pack_info} <- validate_pack_type(pack_type),
+         {:ok, pack_info} <- validate_org_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
       # Calculate base price
       base_usd = pack_info.usd
@@ -465,7 +465,7 @@ defmodule ClippsterServerWeb.PaymentController do
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, org} <- get_organization(org_id),
          true <- Organizations.is_admin?(org.id, user_id),
-         {:ok, pack_info} <- validate_pack_type(pack_type),
+         {:ok, pack_info} <- validate_org_pack_type(pack_type),
          {:ok, sol_usd_rate} <- ClippsterServer.PriceService.get_sol_price() do
       # Validate promo code if provided and calculate final price
       {expected_usd, validated_promo} =
@@ -747,6 +747,13 @@ defmodule ClippsterServerWeb.PaymentController do
 
   defp validate_pack_type(pack_type) do
     case Credits.get_pack_info(pack_type) do
+      nil -> {:error, :invalid_pack}
+      pack_info -> {:ok, pack_info}
+    end
+  end
+
+  defp validate_org_pack_type(pack_type) do
+    case Credits.get_org_pack_info(pack_type) do
       nil -> {:error, :invalid_pack}
       pack_info -> {:ok, pack_info}
     end

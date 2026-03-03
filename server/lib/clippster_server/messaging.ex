@@ -137,7 +137,7 @@ defmodule ClippsterServer.Messaging do
   def get_conversation(id) do
     Conversation
     |> Repo.get(id)
-    |> Repo.preload([:participants, participants: :user])
+    |> Repo.preload([:participants, participants: [user: :clipper_profile]])
   end
 
   @doc """
@@ -167,7 +167,7 @@ defmodule ClippsterServer.Messaging do
     |> where([c, p], p.user_id == ^user_id)
     |> where([c, p], is_nil(p.left_at))
     |> order_by([c, p], desc: c.last_message_at)
-    |> preload([:participants, participants: :user])
+    |> preload([:participants, participants: [user: :clipper_profile]])
     |> Repo.all()
   end
 
@@ -180,7 +180,7 @@ defmodule ClippsterServer.Messaging do
     |> where([c, p], p.user_id == ^user_id)
     |> where([c, p], is_nil(p.left_at))
     |> order_by([c, p], desc: c.last_message_at)
-    |> preload([:organization, participants: :user])
+    |> preload([:organization, participants: [user: :clipper_profile]])
     |> Repo.all()
   end
 
@@ -213,7 +213,7 @@ defmodule ClippsterServer.Messaging do
         |> where([c], c.id == ^conversation_id)
         |> Repo.update_all(set: [last_message_at: now, last_message_preview: preview])
 
-        Repo.preload(message, [:sender])
+        Repo.preload(message, [sender: :clipper_profile])
       end)
     end
   end
@@ -272,7 +272,7 @@ defmodule ClippsterServer.Messaging do
       |> where([m], m.conversation_id == ^conversation_id)
       |> order_by([m], desc: m.inserted_at)
       |> limit(^limit)
-      |> preload([:sender, :read_statuses, :attachments])
+      |> preload([:read_statuses, :attachments, sender: :clipper_profile])
 
     query =
       if before_id do
@@ -294,7 +294,7 @@ defmodule ClippsterServer.Messaging do
     |> order_by([m], desc: m.inserted_at)
     |> limit(^limit)
     |> offset(^offset)
-    |> preload([:sender, :read_statuses, :attachments])
+    |> preload([:read_statuses, :attachments, sender: :clipper_profile])
     |> Repo.all()
   end
 
@@ -734,7 +734,7 @@ defmodule ClippsterServer.Messaging do
 
       Repo.insert_all(ConversationParticipant, participants)
 
-      Repo.preload(conversation, [:participants, participants: :user])
+      Repo.preload(conversation, [:participants, participants: [user: :clipper_profile]])
     end)
   end
 
@@ -933,7 +933,7 @@ defmodule ClippsterServer.Messaging do
         if conversation.status == "archived" do
           case reopen_support_conversation(conversation.id) do
             {:ok, reopened_conversation} ->
-              {:ok, Repo.preload(reopened_conversation, participants: :user)}
+              {:ok, Repo.preload(reopened_conversation, participants: [user: :clipper_profile])}
 
             error ->
               error
@@ -957,7 +957,7 @@ defmodule ClippsterServer.Messaging do
     |> Repo.one()
     |> case do
       nil -> nil
-      conversation -> Repo.preload(conversation, participants: :user)
+      conversation -> Repo.preload(conversation, participants: [user: :clipper_profile])
     end
   end
 
@@ -998,7 +998,7 @@ defmodule ClippsterServer.Messaging do
 
       Repo.insert_all(ConversationParticipant, participants)
 
-      Repo.preload(conversation, [:participants, participants: :user])
+      Repo.preload(conversation, [:participants, participants: [user: :clipper_profile]])
     end)
   end
 

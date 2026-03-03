@@ -167,13 +167,22 @@
               <div class="billing-card__indicator billing-card__indicator--credits"></div>
               <div class="billing-card__inner">
                 <div class="billing-card__header">
-                  <div class="billing-card__icon billing-card__icon--credits">
-                    <Coins />
+                  <div class="billing-card__header-left">
+                    <div class="billing-card__icon billing-card__icon--credits">
+                      <Coins />
+                    </div>
+                    <div class="billing-card__header-text">
+                      <h2 class="billing-card__title">Credit Balance</h2>
+                      <p class="billing-card__subtitle">Available processing time</p>
+                    </div>
                   </div>
-                  <div class="billing-card__header-text">
-                    <h2 class="billing-card__title">Credit Balance</h2>
-                    <p class="billing-card__subtitle">Available processing time</p>
-                  </div>
+                  <button
+                    v-if="!loadingBalance && typeof hoursRemaining === 'number'"
+                    @click="showBuyCreditsModal = true"
+                    class="billing-card__buy-btn"
+                  >
+                    Buy Credits
+                  </button>
                 </div>
 
                 <div class="billing-card__body">
@@ -778,6 +787,120 @@
       </Transition>
     </Teleport>
 
+    <!-- Buy Credits Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showBuyCreditsModal"
+          class="credits-dialog__overlay"
+          @click.self="closeCreditPackModal"
+          @keydown.esc="closeCreditPackModal"
+        >
+          <Transition name="dialog" appear>
+            <div v-if="showBuyCreditsModal" class="credits-dialog" role="dialog" aria-modal="true">
+              <!-- Accent bar -->
+              <div class="credits-dialog__accent"></div>
+
+              <!-- Pack Selection Step -->
+              <template v-if="creditPackPaymentStep === 'select'">
+                <!-- Header -->
+                <div class="credits-dialog__header credits-dialog__header--simple">
+                  <button
+                    class="credits-dialog__close"
+                    @click="closeCreditPackModal"
+                    title="Close"
+                    :disabled="creditPackProcessing"
+                  >
+                    <X :size="18" />
+                  </button>
+                  <h2 class="credits-dialog__title">Buy Credits</h2>
+                </div>
+
+                <!-- Content -->
+                <div class="credits-dialog__content">
+                  <div class="credits-dialog__packs">
+                    <button
+                      v-for="(pack, key) in sortedCreditPacks"
+                      :key="key"
+                      @click="selectCreditPack(key as string, pack)"
+                      class="credits-dialog__pack"
+                      :class="{ 'credits-dialog__pack--selected': selectedCreditPack?.key === key }"
+                    >
+                      <div class="credits-dialog__pack-content">
+                        <h3 class="credits-dialog__pack-name">{{ pack.name }}</h3>
+                        <div class="credits-dialog__pack-price">
+                          <span class="credits-dialog__pack-price-currency">$</span>
+                          <span class="credits-dialog__pack-price-amount">{{
+                            pack.usd % 1 === 0 ? pack.usd : pack.usd.toFixed(2)
+                          }}</span>
+                        </div>
+                        <ul class="credits-dialog__pack-features">
+                          <li class="credits-dialog__pack-feature">
+                            <Zap class="credits-dialog__pack-feature-icon" />
+                            <span>{{ pack.hours.toLocaleString() }} credits</span>
+                          </li>
+                        </ul>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Processing Step -->
+              <template v-else-if="creditPackPaymentStep === 'processing'">
+                <div class="credits-dialog__centered">
+                  <Loader2 class="credits-dialog__spinner" />
+                  <h3 class="credits-dialog__centered-title">Processing Payment</h3>
+                  <p class="credits-dialog__centered-subtitle">{{ creditPackPaymentStatus }}</p>
+                  <button class="credits-dialog__btn credits-dialog__btn--secondary" @click="closeCreditPackModal">
+                    Cancel
+                  </button>
+                </div>
+              </template>
+
+              <!-- Success Step -->
+              <template v-else-if="creditPackPaymentStep === 'success'">
+                <div class="credits-dialog__centered">
+                  <div class="credits-dialog__success-icon">
+                    <Check :size="32" />
+                  </div>
+                  <h3 class="credits-dialog__centered-title">Credits Added!</h3>
+                  <p class="credits-dialog__centered-subtitle">
+                    {{ selectedCreditPack?.hours }} credits added to your account
+                  </p>
+                  <button class="credits-dialog__btn credits-dialog__btn--primary" @click="closeCreditPackModal">
+                    Done
+                  </button>
+                </div>
+              </template>
+
+              <!-- Error Step -->
+              <template v-else-if="creditPackPaymentStep === 'error'">
+                <div class="credits-dialog__centered">
+                  <div class="credits-dialog__error-icon">
+                    <AlertTriangle :size="32" />
+                  </div>
+                  <h3 class="credits-dialog__centered-title">Payment Failed</h3>
+                  <p class="credits-dialog__centered-subtitle">{{ creditPackErrorMessage }}</p>
+                  <div class="credits-dialog__footer">
+                    <button
+                      class="credits-dialog__btn credits-dialog__btn--secondary"
+                      @click="creditPackPaymentStep = 'select'"
+                    >
+                      Try Again
+                    </button>
+                    <button class="credits-dialog__btn credits-dialog__btn--primary" @click="closeCreditPackModal">
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Subscribe Dialog -->
     <SubscribeDialog
       v-if="selectedSubscription"
@@ -883,10 +1006,28 @@
   const deactivateInput = ref('');
   const deactivatingProfile = ref(false);
 
+  // Buy Credits modal
+  const showBuyCreditsModal = ref(false);
+  const creditPacks = ref<any>({});
+  const selectedCreditPack = ref<any>(null);
+  const creditPackPaymentStep = ref<'select' | 'processing' | 'success' | 'error'>('select');
+  const creditPackProcessing = ref(false);
+  const creditPackPaymentStatus = ref('');
+  const creditPackErrorMessage = ref('');
+
   // Tier hierarchy for upgrade/downgrade detection
   const TIER_HIERARCHY: Record<string, number> = { starter: 1, creator: 2, pro: 3 };
 
   // Computed values
+  const sortedCreditPacks = computed(() => {
+    return Object.entries(creditPacks.value)
+      .sort(([, a], [, b]) => (a as any).usd - (b as any).usd)
+      .reduce((acc, [key, value]) => {
+        acc[key] = value;
+        return acc;
+      }, {} as Record<string, any>);
+  });
+
   const hasActiveSubscription = computed(() => {
     return subscriptionStatus.value?.status === 'active' || subscriptionStatus.value?.status === 'cancelled';
   });
@@ -959,6 +1100,7 @@
 
   onMounted(async () => {
     await loadAllData();
+    await fetchCreditPacks();
     
     // Listen for auth state changes and refetch data
     window.addEventListener('auth-state-changed', loadAllData);
@@ -1007,6 +1149,17 @@
       console.error('Failed to fetch balance:', error);
     } finally {
       loadingBalance.value = false;
+    }
+  }
+
+  async function fetchCreditPacks() {
+    try {
+      const response = await api.get('/pricing');
+      if (response.data.success) {
+        creditPacks.value = response.data.packs;
+      }
+    } catch (error: any) {
+      console.error('Failed to fetch credit packs:', error);
     }
   }
 
@@ -1218,6 +1371,81 @@
     } finally {
       cancellingSubscription.value = false;
     }
+  }
+
+  function selectCreditPack(packKey: string, pack: any) {
+    selectedCreditPack.value = {
+      key: packKey,
+      hours: pack.hours,
+      usd: pack.usd,
+      name: pack.name,
+    };
+    initiateCreditPackPayment();
+  }
+
+  async function initiateCreditPackPayment() {
+    if (!selectedCreditPack.value) return;
+
+    creditPackProcessing.value = true;
+    creditPackPaymentStep.value = 'processing';
+    creditPackPaymentStatus.value = 'Creating checkout session...';
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const { listen } = await import('@tauri-apps/api/event');
+
+      const response = await api.post('/payments/stripe/create-session', {
+        pack_type: selectedCreditPack.value.key,
+        return_context: 'desktop',
+      });
+
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Failed to create checkout session');
+      }
+
+      const { url: checkoutUrl } = response.data;
+
+      const unlisten = await listen('stripe-payment-complete', async (event: any) => {
+        const paymentResult = event.payload;
+
+        if (paymentResult.success) {
+          creditPackPaymentStep.value = 'success';
+          creditPackProcessing.value = false;
+          showSuccessToast('Payment successful', 'Credits added to your account');
+          unlisten();
+
+          setTimeout(async () => {
+            await fetchBalance();
+            await fetchPaymentHistory();
+            closeCreditPackModal();
+          }, 2000);
+        } else {
+          unlisten();
+        }
+      });
+
+      creditPackPaymentStatus.value = 'Opening payment page...';
+      await invoke('open_stripe_payment_window', {
+        checkoutUrl: checkoutUrl,
+        packKey: selectedCreditPack.value.key,
+        packHours: selectedCreditPack.value.hours,
+      });
+
+      creditPackPaymentStatus.value = 'Complete payment in your browser...';
+    } catch (error: any) {
+      creditPackErrorMessage.value = error.message || 'Failed to create checkout session';
+      creditPackPaymentStep.value = 'error';
+      creditPackProcessing.value = false;
+      showErrorToast('Payment failed', error.message || 'An error occurred');
+    }
+  }
+
+  function closeCreditPackModal() {
+    showBuyCreditsModal.value = false;
+    selectedCreditPack.value = null;
+    creditPackPaymentStep.value = 'select';
+    creditPackErrorMessage.value = '';
+    creditPackProcessing.value = false;
   }
 
 </script>
@@ -1683,6 +1911,24 @@
   .billing-card__cancel-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .billing-card__buy-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: white;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #8b5cf6 100%);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .billing-card__buy-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
   }
 
   /* Credits Card Specific */
@@ -2754,6 +3000,304 @@
     to {
       transform: rotate(360deg);
     }
+  }
+
+  /* ===== Buy Credits Dialog (matches org modal) ===== */
+  .credits-dialog__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 1rem;
+  }
+
+  .credits-dialog {
+    position: relative;
+    background-color: var(--sidebar-bg);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+    width: 100%;
+    max-width: 800px;
+    max-height: 90vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .credits-dialog__accent {
+    height: 4px;
+    background: linear-gradient(90deg, var(--sidebar-accent) 0%, #8b5cf6 100%);
+  }
+
+  .credits-dialog__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+    z-index: 10;
+  }
+
+  .credits-dialog__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .credits-dialog__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .credits-dialog__header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 2rem 1.5rem;
+    text-align: center;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .credits-dialog__header--simple {
+    align-items: flex-start;
+    padding: 1.5rem 2rem;
+    text-align: left;
+  }
+
+  .credits-dialog__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #8b5cf6 100%);
+    border-radius: 12px;
+    color: white;
+    margin-bottom: 1rem;
+  }
+
+  .credits-dialog__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .credits-dialog__header--simple .credits-dialog__title {
+    margin: 0;
+    font-size: 1.25rem;
+  }
+
+  .credits-dialog__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  .credits-dialog__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 2rem;
+  }
+
+  .credits-dialog__packs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+
+  .credits-dialog__pack {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 200ms ease;
+  }
+
+  .credits-dialog__pack:hover {
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+  }
+
+  .credits-dialog__pack--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 4px 20px rgba(6, 182, 212, 0.2);
+  }
+
+  .credits-dialog__pack-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    padding: 1.5rem;
+    text-align: left;
+  }
+
+  .credits-dialog__pack-name {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .credits-dialog__pack-price {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 1.5rem;
+  }
+
+  .credits-dialog__pack-price-currency {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .credits-dialog__pack-price-amount {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    letter-spacing: -0.03em;
+  }
+
+  .credits-dialog__pack-features {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .credits-dialog__pack-feature {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .credits-dialog__pack-feature-icon {
+    width: 15px;
+    height: 15px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .credits-dialog__footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1.5rem 2rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  .credits-dialog__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    border: none;
+  }
+
+  .credits-dialog__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #8b5cf6 100%);
+    color: white;
+  }
+
+  .credits-dialog__btn--primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+  }
+
+  .credits-dialog__btn--primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .credits-dialog__btn--secondary {
+    background-color: transparent;
+    color: var(--sidebar-text-muted);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .credits-dialog__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .credits-dialog__centered {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 2rem;
+    text-align: center;
+  }
+
+  .credits-dialog__centered-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 1rem 0 0.5rem;
+  }
+
+  .credits-dialog__centered-subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin-bottom: 1.5rem;
+  }
+
+  .credits-dialog__spinner {
+    width: 32px;
+    height: 32px;
+    color: var(--sidebar-accent);
+    animation: spin 0.8s linear infinite;
+  }
+
+  .credits-dialog__success-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background-color: rgba(16, 185, 129, 0.15);
+    border-radius: 50%;
+    color: #10b981;
+  }
+
+  .credits-dialog__error-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background-color: rgba(248, 113, 113, 0.15);
+    border-radius: 50%;
+    color: #f87171;
   }
 
   .billing-modal__actions {

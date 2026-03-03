@@ -513,7 +513,7 @@ pub async fn generate_thumbnail(
     let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
 
     // Use ffmpeg sidecar to generate thumbnail at 1 second mark
-    let mut command = app
+    let command = app
         .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
@@ -599,7 +599,7 @@ pub async fn generate_thumbnail_at_timestamp(
     let timestamp_str = format!("{:02}:{:02}:{:06.3}", hours, minutes, seconds);
 
     // Use ffmpeg sidecar to generate thumbnail at specified timestamp
-    let mut command = app
+    let command = app
         .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?

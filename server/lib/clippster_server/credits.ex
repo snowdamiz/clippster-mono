@@ -8,25 +8,44 @@ defmodule ClippsterServer.Credits do
   alias ClippsterServer.Credits.{CreditTransaction, UserCredit, ProcessingJob}
   alias ClippsterServer.Analytics
 
-  # Credit packs for purchasing additional credits (separate from subscription)
+  # Personal user credit packs (for individual purchases)
   # 1 credit = 1 minute of video processing
-  # Pricing matches add-on structure without seats
   @credit_packs %{
+    "small" => %{hours: 240, usd: 10.00, name: "Small Pack"},
+    "medium" => %{hours: 600, usd: 20.00, name: "Medium Pack"},
+    "large" => %{hours: 1_800, usd: 44.00, name: "Large Pack"}
+  }
+
+  # Organization credit packs (for team purchases)
+  # 1 credit = 1 minute of video processing
+  @org_credit_packs %{
     "small" => %{hours: 10_000, usd: 100.00, name: "10k Credits"},
     "medium" => %{hours: 20_000, usd: 200.00, name: "20k Credits"},
     "large" => %{hours: 40_000, usd: 400.00, name: "40k Credits"}
   }
 
   @doc """
-  Gets the pricing information for all credit packs
+  Gets the pricing information for all personal user credit packs
   """
   def get_credit_packs, do: @credit_packs
 
   @doc """
-  Gets pricing info for a specific pack
+  Gets the pricing information for all organization credit packs
+  """
+  def get_org_credit_packs, do: @org_credit_packs
+
+  @doc """
+  Gets pricing info for a specific personal user pack
   """
   def get_pack_info(pack_type) when is_binary(pack_type) do
     Map.get(@credit_packs, pack_type)
+  end
+
+  @doc """
+  Gets pricing info for a specific organization pack
+  """
+  def get_org_pack_info(pack_type) when is_binary(pack_type) do
+    Map.get(@org_credit_packs, pack_type)
   end
 
   @doc """
