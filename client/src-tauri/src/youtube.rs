@@ -140,6 +140,7 @@ pub async fn check_youtube_livestream(channel: String) -> Result<String, String>
     cmd.arg("--dump-json")
         .arg("--skip-download")
         .arg("--no-playlist")
+        .arg("--impersonate").arg("chrome")
         .arg(&live_url)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -217,6 +218,7 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
         .arg("--skip-download")
         .arg("--no-warnings")
         .arg("--ignore-errors")
+        .arg("--impersonate").arg("chrome")
         .arg("--extractor-args").arg("youtubetab:skip=webpage;youtube:player_skip=webpage,configs")
         .arg("--playlist-end").arg(&limit_str)
         .arg(&channel_url);
@@ -311,6 +313,7 @@ pub async fn get_youtube_videos(channel: String, limit: Option<u32>) -> Result<S
         .arg("--skip-download")
         .arg("--no-warnings")
         .arg("--ignore-errors")
+        .arg("--impersonate").arg("chrome")
         .arg("--extractor-args").arg("youtubetab:skip=webpage;youtube:player_skip=webpage,configs")
         .arg("--playlist-end").arg(&limit_str)
         .arg(&channel_url);
@@ -462,6 +465,7 @@ pub async fn download_youtube_vod(
         
         cmd.arg(&vod_url)
             .arg("-o").arg(&output_file_str)
+            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--external-downloader").arg("ffmpeg")
             .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
@@ -766,6 +770,7 @@ async fn run_youtube_recorder(
         .arg("-o").arg("-")
         .arg("--quiet")
         .arg("--no-part")
+        .arg("--impersonate").arg("chrome")
         .arg("--ffmpeg-location").arg(&ffmpeg_path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -1049,6 +1054,7 @@ pub async fn get_youtube_channel_info(channel: String) -> Result<String, String>
         .arg("--skip-download")
         .arg("--playlist-items").arg("0")
         .arg("--no-warnings")
+        .arg("--impersonate").arg("chrome")
         .arg(&channel_url)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -1400,6 +1406,7 @@ pub async fn download_youtube_vod_segment(
             .unwrap_or_else(|| ffmpeg_path.clone());
         cmd.arg(&vod_url)
             .arg("-o").arg(&video_path_str)
+            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--external-downloader").arg("ffmpeg")
             .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
