@@ -849,6 +849,8 @@
           await loadDownloadedVodIds();
           if (result.total === 0) {
             showError('No Content Found', `No ${tab === 'streams' ? 'live streams' : 'videos'} found for this channel`);
+          } else if ('fallbackUsed' in result && result.fallbackUsed && result.actualTab) {
+            success('Content Found', `No ${tab} found, showing ${result.actualTab} instead (${result.total} found)`);
           }
         } else {
           showError('Search Failed', result.error || 'Failed to fetch content');
@@ -879,6 +881,8 @@
           await loadDownloadedVodIds();
           if (result.total === 0) {
             showError('No Content Found', `No ${tab === 'streams' ? 'live streams' : 'videos'} found for this channel`);
+          } else if ('fallbackUsed' in result && result.fallbackUsed && result.actualTab) {
+            success('Content Found', `No ${tab} found, showing ${result.actualTab} instead (${result.total} found)`);
           }
         } else {
           showError('Search Failed', result.error || 'Failed to fetch content');
@@ -950,6 +954,8 @@
         
         if (result.total === 0) {
           showError('No VODs Found', 'No available VODs found for this search');
+        } else if ('fallbackUsed' in result && result.fallbackUsed && result.actualTab && tabParam) {
+          success('Content Found', `No ${tabParam} found, showing ${result.actualTab} instead (${result.total} found)`);
         } else {
           success('VODs Loaded', `Found ${result.total} VOD${result.total !== 1 ? 's' : ''}`);
         }
