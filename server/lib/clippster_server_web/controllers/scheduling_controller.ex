@@ -689,11 +689,17 @@ defmodule ClippsterServerWeb.SchedulingController do
                         analytics = extract_feed_analytics(post.platform, item, account)
                         Logger.info("[sync_org_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}")
                         
-                        if map_size(analytics) > 0 do
+                        # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
+                        metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
+                        has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
+                        
+                        if has_real_data do
                           case Social.sync_post_analytics(post, analytics) do
                             {:ok, _} -> Logger.info("[sync_org_posts_analytics] Post #{post.id}: analytics synced successfully")
                             {:error, reason} -> Logger.error("[sync_org_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
                           end
+                        else
+                          Logger.debug("[sync_org_posts_analytics] Post #{post.id}: skipping sync - all metrics are zero")
                         end
                     end
 
@@ -797,11 +803,17 @@ defmodule ClippsterServerWeb.SchedulingController do
                                 analytics = extract_feed_analytics(sub.platform, item, account)
                                 Logger.info("[sync_org_external_posts_analytics] External post #{sub.id}: extracted analytics: #{inspect(analytics)}")
                                 
-                                if map_size(analytics) > 0 do
+                                # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
+                                metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
+                                has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
+                                
+                                if has_real_data do
                                   case Social.sync_external_post_analytics(sub, analytics) do
                                     {:ok, _} -> Logger.info("[sync_org_external_posts_analytics] External post #{sub.id}: analytics synced successfully")
                                     {:error, reason} -> Logger.error("[sync_org_external_posts_analytics] External post #{sub.id}: sync failed: #{inspect(reason)}")
                                   end
+                                else
+                                  Logger.debug("[sync_org_external_posts_analytics] External post #{sub.id}: skipping sync - all metrics are zero")
                                 end
                             end
 
@@ -924,8 +936,14 @@ defmodule ClippsterServerWeb.SchedulingController do
   defp fetch_post_for_me_feed(provider_account_id) do
     alias ClippsterServer.Social.Providers.PostForMe
 
-    case PostForMe.get_social_account_feed(provider_account_id, %{limit: 50}) do
+    case PostForMe.get_social_account_feed(provider_account_id, %{limit: 50, expand: ["metrics"]}) do
       {:ok, %{data: feed_items}} when is_list(feed_items) ->
+        {:ok, feed_items}
+
+      {:ok, %{"data" => feed_items}} when is_list(feed_items) ->
+        {:ok, feed_items}
+
+      {:ok, feed_items} when is_list(feed_items) ->
         {:ok, feed_items}
 
       {:error, reason} ->
@@ -1034,12 +1052,17 @@ defmodule ClippsterServerWeb.SchedulingController do
   defp match_feed_item(_platform, _feed_items, _id), do: nil
 
   # Extract analytics from a PostForMe feed item, per platform
+  # Metrics are in item["metrics"] when expand=metrics is passed to the feed API
   defp extract_feed_analytics("instagram", item, account) do
+    m = item["metrics"] || %{}
+
     %{
-      view_count: item["play_count"] || item["video_views"] || 0,
-      like_count: item["like_count"] || item["likes_count"] || 0,
-      comment_count: item["comments_count"] || item["comment_count"] || 0,
-      save_count: item["saved"] || item["save_count"] || 0,
+      view_count: m["views"] || 0,
+      like_count: m["likes"] || 0,
+      comment_count: m["comments"] || 0,
+      save_count: m["saved"] || 0,
+      reach_count: m["reach"] || 0,
+      share_count: m["shares"] || 0,
       author_username: account.username,
       author_name: account.display_name,
       author_profile_image: account.profile_image_url
@@ -1047,11 +1070,15 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp extract_feed_analytics(platform, item, account) when platform in ["x", "twitter"] do
+    m = item["metrics"] || %{}
+    pm = m["public_metrics"] || %{}
+
     %{
-      view_count: item["view_count"] || item["views"] || item["impression_count"] || 0,
-      like_count: item["like_count"] || item["likes"] || item["favorite_count"] || 0,
-      comment_count: item["reply_count"] || item["replies"] || item["comment_count"] || 0,
-      share_count: item["retweet_count"] || item["retweets"] || item["share_count"] || 0,
+      view_count: pm["impression_count"] || 0,
+      like_count: pm["like_count"] || 0,
+      comment_count: pm["reply_count"] || 0,
+      share_count: pm["retweet_count"] || 0,
+      impressions_count: pm["impression_count"] || 0,
       author_username: account.username,
       author_name: account.display_name,
       author_profile_image: account.profile_image_url
@@ -1059,12 +1086,17 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp extract_feed_analytics("tiktok", item, account) do
+    m = item["metrics"] || %{}
+
+    # TikTok consumer: like_count, comment_count, share_count, view_count
+    # TikTok Business: likes, comments, shares, favorites, reach, video_views
     %{
-      view_count: item["play_count"] || item["view_count"] || item["views"] || 0,
-      like_count: item["digg_count"] || item["like_count"] || item["likes"] || 0,
-      comment_count: item["comment_count"] || item["comments"] || 0,
-      share_count: item["share_count"] || item["shares"] || 0,
-      save_count: item["collect_count"] || item["save_count"] || item["saves"] || 0,
+      view_count: m["view_count"] || m["video_views"] || 0,
+      like_count: m["like_count"] || m["likes"] || 0,
+      comment_count: m["comment_count"] || m["comments"] || 0,
+      share_count: m["share_count"] || m["shares"] || 0,
+      save_count: m["favorites"] || 0,
+      reach_count: m["reach"] || 0,
       author_username: account.username,
       author_name: account.display_name,
       author_profile_image: account.profile_image_url
@@ -1072,12 +1104,27 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp extract_feed_analytics("youtube", item, account) do
-    stats = item["statistics"] || %{}
+    m = item["metrics"] || %{}
 
     %{
-      view_count: item["view_count"] || item["views"] || stats["viewCount"] || 0,
-      like_count: item["like_count"] || item["likes"] || stats["likeCount"] || 0,
-      comment_count: item["comment_count"] || item["comments"] || stats["commentCount"] || 0,
+      view_count: m["views"] || 0,
+      like_count: m["likes"] || 0,
+      comment_count: m["comments"] || 0,
+      author_username: account.username,
+      author_name: account.display_name,
+      author_profile_image: account.profile_image_url
+    }
+  end
+
+  defp extract_feed_analytics("facebook", item, account) do
+    m = item["metrics"] || %{}
+
+    %{
+      view_count: m["video_views"] || m["media_views"] || 0,
+      like_count: m["reactions_total"] || m["reactions_like"] || 0,
+      comment_count: m["comments"] || 0,
+      share_count: m["shares"] || 0,
+      reach_count: m["reach"] || 0,
       author_username: account.username,
       author_name: account.display_name,
       author_profile_image: account.profile_image_url

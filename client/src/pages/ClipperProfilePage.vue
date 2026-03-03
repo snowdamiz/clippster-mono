@@ -134,8 +134,8 @@
                     <span class="rank-stat__label">Rank</span>
                   </div>
                   <div class="rank-stat">
-                    <span class="rank-stat__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
-                    <span class="rank-stat__label">Clips</span>
+                    <span class="rank-stat__value">{{ leaderboardType === 'posts' ? myPostsCount : (clipperProfile?.total_clips_delivered || 0) }}</span>
+                    <span class="rank-stat__label">{{ leaderboardType === 'posts' ? 'Posts' : 'Clips' }}</span>
                   </div>
                   <div class="rank-stat">
                     <span class="rank-stat__value">{{ formatViews(totalViews) }}</span>
@@ -192,28 +192,37 @@
                 <p>No leaderboard data yet</p>
               </div>
               <div v-else class="leaderboard__list">
+                <div class="lb-header">
+                  <span class="lb-header__rank">#</span>
+                  <span class="lb-header__user">User</span>
+                  <span class="lb-header__col">{{ leaderboardType === 'posts' ? 'Posts' : 'Clips' }}</span>
+                  <span v-if="leaderboardType === 'campaigns'" class="lb-header__col">Campaigns</span>
+                  <span class="lb-header__col">Views</span>
+                </div>
                 <div
                   v-for="(entry, index) in leaderboardEntries"
                   :key="entry.id"
                   class="lb-entry"
-                  :class="{ 'lb-entry--you': entry.clipper_profile?.user_id === currentUserId }"
+                  :class="{ 'lb-entry--you': entry.profile?.user_id === currentUserId }"
                 >
                   <span class="lb-entry__rank" :class="`lb-entry__rank--${index + 1}`">{{ index + 1 }}</span>
                   <div class="lb-entry__avatar">
-                    <img v-if="entry.clipper_profile?.avatar_url" :src="entry.clipper_profile.avatar_url" />
+                    <img v-if="entry.profile?.avatar_url" :src="entry.profile.avatar_url" />
                     <UserCircle v-else />
                   </div>
                   <div class="lb-entry__info">
                     <span class="lb-entry__name">
-                      {{ entry.clipper_profile?.display_name || 'Anonymous' }}
-                      <span v-if="entry.clipper_profile?.user_id === currentUserId" class="lb-entry__you">(You)</span>
+                      {{ entry.profile?.display_name || 'Anonymous' }}
+                      <span v-if="entry.profile?.user_id === currentUserId" class="lb-entry__you">(You)</span>
                     </span>
-                    <span v-if="leaderboardType === 'posts'" class="lb-entry__clips">
-                      {{ entry.posts_count }} {{ entry.posts_count === 1 ? 'post' : 'posts' }}
-                    </span>
-                    <span v-else class="lb-entry__clips">{{ entry.clips_delivered }} clips</span>
                   </div>
-                  <span class="lb-entry__views">{{ formatViews(entry.total_views || 0) }} views</span>
+                  <span class="lb-entry__stat">
+                    {{ leaderboardType === 'posts' ? entry.posts_count : entry.clips_delivered }}
+                  </span>
+                  <span v-if="leaderboardType === 'campaigns'" class="lb-entry__stat">
+                    {{ entry.campaigns_active }}
+                  </span>
+                  <span class="lb-entry__stat">{{ formatViews(entry.total_views || 0) }}</span>
                 </div>
               </div>
             </section>
@@ -1407,6 +1416,7 @@
   const leaderboardEntries = ref<LeaderboardEntry[]>([]);
   const myRank = ref<number | null>(null);
   const totalViews = ref(0);
+  const myPostsCount = ref(0);
   const currentUserId = ref<number | null>(null);
   const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
   const leaderboardType = ref<'posts' | 'campaigns'>('posts');
@@ -1530,9 +1540,13 @@
   interface LeaderboardEntry {
     id: number;
     rank: number;
+    score: number;
     clips_delivered: number;
+    campaigns_active: number;
+    endorsements_received: number;
     total_views: number;
-    clipper_profile?: { id: number; user_id: number; display_name: string | null; avatar_url: string | null };
+    posts_count: number;
+    profile?: { id: number; user_id: number; display_name: string | null; avatar_url: string | null; slug?: string; is_verified?: boolean };
   }
 
   // Reset avatar load error when clipperProfile changes
@@ -1593,8 +1607,10 @@
           rank: index + 1,
         }));
         if (currentUserId.value) {
-          const myEntry = leaderboardEntries.value.find((e) => e.clipper_profile?.user_id === currentUserId.value);
+          const myEntry = leaderboardEntries.value.find((e) => e.profile?.user_id === currentUserId.value);
           myRank.value = myEntry?.rank || null;
+          totalViews.value = myEntry?.total_views || 0;
+          myPostsCount.value = myEntry?.posts_count || 0;
         }
       }
     } catch (error) {
@@ -2727,6 +2743,41 @@
     gap: 0.25rem;
   }
 
+  .lb-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.375rem 0.625rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    margin-bottom: 0.25rem;
+  }
+
+  .lb-header__rank {
+    width: 24px;
+    text-align: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .lb-header__user {
+    flex: 1;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    padding-left: calc(30px + 0.75rem);
+  }
+
+  .lb-header__col {
+    width: 60px;
+    text-align: right;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
   .lb-entry {
     display: flex;
     align-items: center;
@@ -2825,9 +2876,12 @@
     color: var(--sidebar-text-muted);
   }
 
-  .lb-entry__views {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
+  .lb-entry__stat {
+    width: 60px;
+    text-align: right;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
     flex-shrink: 0;
   }
 

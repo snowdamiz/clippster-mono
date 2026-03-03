@@ -89,6 +89,7 @@ export interface LeaderboardEntry {
   posts_count: number;
   profile: {
     id: number;
+    user_id: number;
     display_name: string;
     avatar_url: string | null;
     slug: string;

@@ -811,6 +811,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
         if(entry.clipper_profile,
           do: %{
             id: entry.clipper_profile.id,
+            user_id: entry.clipper_profile.user_id,
             display_name: entry.clipper_profile.display_name || (entry.clipper_profile.user && entry.clipper_profile.user.name),
             avatar_url: maybe_presign_avatar(entry.clipper_profile.avatar_url),
             slug: entry.clipper_profile.slug,
