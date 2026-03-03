@@ -256,11 +256,11 @@
                   <a
                     v-for="(account, idx) in profile.social_accounts"
                     :key="idx"
-                    :href="account.profile_url || '#'"
+                    :href="getAccountUrl(account) || '#'"
                     target="_blank"
                     rel="noopener noreferrer"
                     class="connected-account"
-                    :class="{ 'connected-account--no-link': !account.profile_url }"
+                    :class="{ 'connected-account--no-link': !getAccountUrl(account) }"
                   >
                     <div class="connected-account__left">
                       <img
@@ -280,10 +280,7 @@
                       </div>
                     </div>
                     <div class="connected-account__right">
-                      <span v-if="account.follower_count" class="connected-account__followers">
-                        {{ formatFollowers(account.follower_count) }}
-                      </span>
-                      <ExternalLink v-if="account.profile_url" class="connected-account__link-icon" />
+                      <ExternalLink v-if="getAccountUrl(account)" class="connected-account__link-icon" />
                     </div>
                   </a>
                 </div>
@@ -680,10 +677,31 @@
     return views.toString();
   };
 
-  const formatFollowers = (count: number): string => {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-    return count.toString();
+  const getAccountUrl = (account: any): string | null => {
+    // Use profile_url if available
+    if (account.profile_url) return account.profile_url;
+    
+    // Fallback: construct URL from platform and username
+    if (!account.username) return null;
+    
+    const username = account.username.replace('@', '');
+    switch (account.platform.toLowerCase()) {
+      case 'instagram':
+        return `https://instagram.com/${username}`;
+      case 'tiktok':
+        return `https://tiktok.com/@${username}`;
+      case 'twitter':
+      case 'x':
+        return `https://twitter.com/${username}`;
+      case 'youtube':
+        return `https://youtube.com/@${username}`;
+      case 'twitch':
+        return `https://twitch.tv/${username}`;
+      case 'kick':
+        return `https://kick.com/${username}`;
+      default:
+        return null;
+    }
   };
 
   const getPlatformIcon = (platform: string) => {
@@ -1694,13 +1712,6 @@
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
-  }
-
-  .connected-account__followers {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    font-variant-numeric: tabular-nums;
   }
 
   .connected-account__link-icon {

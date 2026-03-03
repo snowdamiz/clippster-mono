@@ -770,7 +770,6 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       username: account.username,
       profile_url: account.profile_url,
       profile_image_url: account.profile_image_url,
-      follower_count: account.follower_count,
       is_verified: account.is_verified || false
     }
   end

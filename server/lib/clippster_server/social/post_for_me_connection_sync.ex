@@ -233,8 +233,48 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
       username: username,
       display_name: provider_display_name(provider_account),
       profile_image_url: provider_account.profile_photo_url,
+      profile_url: extract_profile_url(provider_account, normalized_platform, username),
+      is_verified: extract_verified_status(provider_account),
       is_active: provider_account.status != "disconnected"
     }
+  end
+
+  defp extract_profile_url(provider_account, platform, username) do
+    # Try metadata first
+    profile_url = get_in(provider_account.metadata, ["profile_url"]) || 
+                  get_in(provider_account.raw, ["profile_url"])
+    
+    if profile_url do
+      profile_url
+    else
+      # Construct from platform and username
+      construct_profile_url(platform, username)
+    end
+  end
+
+  defp construct_profile_url(platform, username) when is_binary(username) do
+    clean_username = String.replace(username, "@", "")
+    
+    case platform do
+      "instagram" -> "https://instagram.com/#{clean_username}"
+      "tiktok" -> "https://tiktok.com/@#{clean_username}"
+      "twitter" -> "https://twitter.com/#{clean_username}"
+      "x" -> "https://twitter.com/#{clean_username}"
+      "youtube" -> "https://youtube.com/@#{clean_username}"
+      "twitch" -> "https://twitch.tv/#{clean_username}"
+      "kick" -> "https://kick.com/#{clean_username}"
+      _ -> nil
+    end
+  end
+
+  defp construct_profile_url(_, _), do: nil
+
+  defp extract_verified_status(provider_account) do
+    get_in(provider_account.metadata, ["is_verified"]) ||
+    get_in(provider_account.metadata, ["verified"]) ||
+    get_in(provider_account.raw, ["is_verified"]) ||
+    get_in(provider_account.raw, ["verified"]) ||
+    false
   end
 
   defp upsert_org_accounts(org_id, user, provider_accounts, platform_override)
@@ -290,6 +330,8 @@ defmodule ClippsterServer.Social.PostForMeConnectionSync do
       username: username,
       display_name: provider_display_name(provider_account),
       profile_image_url: provider_account.profile_photo_url,
+      profile_url: extract_profile_url(provider_account, normalized_platform, username),
+      is_verified: extract_verified_status(provider_account),
       is_active: provider_account.status != "disconnected"
     }
   end

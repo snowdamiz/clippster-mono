@@ -86,7 +86,6 @@ export interface PublicSocialAccount {
   username: string | null;
   profile_url: string | null;
   profile_image_url: string | null;
-  follower_count: number | null;
   is_verified: boolean;
 }
 
