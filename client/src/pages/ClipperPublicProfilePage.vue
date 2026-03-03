@@ -106,6 +106,10 @@
               <span class="stat__value">{{ profile.total_endorsements }}</span>
               <span class="stat__label">Endorsements</span>
             </div>
+            <div v-if="profile.total_views" class="stat">
+              <span class="stat__value">{{ formatViews(profile.total_views) }}</span>
+              <span class="stat__label">Views</span>
+            </div>
           </div>
         </header>
 
@@ -241,8 +245,53 @@
               </div>
             </div>
 
-            <!-- Platforms -->
-            <div v-if="profile.preferred_platforms?.length" class="sidebar-card">
+            <!-- Connected Accounts -->
+            <div v-if="profile.social_accounts?.length" class="sidebar-card">
+              <div class="sidebar-card__header">
+                <Users class="sidebar-card__icon" />
+                <h3 class="sidebar-card__title">Connected Accounts</h3>
+              </div>
+              <div class="sidebar-card__content">
+                <div class="connected-accounts-list">
+                  <a
+                    v-for="(account, idx) in profile.social_accounts"
+                    :key="idx"
+                    :href="account.profile_url || '#'"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="connected-account"
+                    :class="{ 'connected-account--no-link': !account.profile_url }"
+                  >
+                    <div class="connected-account__left">
+                      <img
+                        v-if="account.profile_image_url"
+                        :src="account.profile_image_url"
+                        class="connected-account__avatar"
+                      />
+                      <div v-else class="connected-account__avatar-fallback">
+                        <component :is="getPlatformIcon(account.platform)" class="connected-account__avatar-icon" />
+                      </div>
+                      <div class="connected-account__info">
+                        <div class="connected-account__username">
+                          {{ account.username ? `@${account.username}` : getPlatformLabel(account.platform) }}
+                          <CheckCircle v-if="account.is_verified" class="connected-account__verified" />
+                        </div>
+                        <div class="connected-account__platform">{{ getPlatformLabel(account.platform) }}</div>
+                      </div>
+                    </div>
+                    <div class="connected-account__right">
+                      <span v-if="account.follower_count" class="connected-account__followers">
+                        {{ formatFollowers(account.follower_count) }}
+                      </span>
+                      <ExternalLink v-if="account.profile_url" class="connected-account__link-icon" />
+                    </div>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            <!-- Platforms (fallback when no connected accounts) -->
+            <div v-else-if="profile.preferred_platforms?.length" class="sidebar-card">
               <div class="sidebar-card__header">
                 <Monitor class="sidebar-card__icon" />
                 <h3 class="sidebar-card__title">Platforms</h3>
@@ -454,6 +503,8 @@
     Share2,
     Handshake,
     X,
+    Eye,
+    Users,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Badge } from '@/components/ui/badge';
@@ -621,6 +672,18 @@
     } finally {
       submittingEndorsement.value = false;
     }
+  };
+
+  const formatViews = (views: number): string => {
+    if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M';
+    if (views >= 1000) return (views / 1000).toFixed(1) + 'K';
+    return views.toString();
+  };
+
+  const formatFollowers = (count: number): string => {
+    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
+    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+    return count.toString();
   };
 
   const getPlatformIcon = (platform: string) => {
@@ -1535,6 +1598,116 @@
   .tag--style {
     background: rgba(139, 92, 246, 0.12);
     color: #a78bfa;
+  }
+
+  /* Connected Accounts */
+  .connected-accounts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .connected-account {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.625rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    text-decoration: none;
+    transition: all 150ms ease;
+  }
+
+  .connected-account:hover:not(.connected-account--no-link) {
+    background: var(--sidebar-active);
+    border-color: var(--sidebar-accent);
+  }
+
+  .connected-account--no-link {
+    cursor: default;
+  }
+
+  .connected-account__left {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    min-width: 0;
+  }
+
+  .connected-account__avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .connected-account__avatar-fallback {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--sidebar-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .connected-account__avatar-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .connected-account__info {
+    min-width: 0;
+  }
+
+  .connected-account__username {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .connected-account__verified {
+    width: 12px;
+    height: 12px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .connected-account__platform {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .connected-account__right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .connected-account__followers {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .connected-account__link-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
   }
 
   /* Platform List */

@@ -29,6 +29,8 @@ export interface ClipperProfile {
   badges: Badge[];
   is_affiliate: boolean;
   endorsements?: Endorsement[];
+  social_accounts?: PublicSocialAccount[];
+  total_views?: number;
   user?: {
     id: number;
     name: string;
@@ -77,6 +79,15 @@ export interface Endorsement {
     name: string;
   } | null;
   inserted_at: string;
+}
+
+export interface PublicSocialAccount {
+  platform: string;
+  username: string | null;
+  profile_url: string | null;
+  profile_image_url: string | null;
+  follower_count: number | null;
+  is_verified: boolean;
 }
 
 export interface LeaderboardEntry {

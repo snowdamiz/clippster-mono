@@ -193,7 +193,10 @@ defmodule ClippsterServer.ClipperProfiles do
   def increment_stats(%ClipperProfile{} = profile, field, amount \\ 1)
       when field in [:total_campaigns_completed, :total_clips_delivered, :total_endorsements] do
     current_value = Map.get(profile, field) || 0
-    update_profile(profile, %{field => current_value + amount})
+
+    profile
+    |> ClipperProfile.stats_changeset(%{field => current_value + amount})
+    |> Repo.update()
   end
 
   # ============================================================================
@@ -579,6 +582,29 @@ defmodule ClippsterServer.ClipperProfiles do
     |> where([s], s.inserted_at >= ^start_dt and s.inserted_at <= ^end_dt)
     |> select([s], coalesce(sum(s.view_count), 0))
     |> Repo.one()
+  end
+
+  @doc """
+  Gets total all-time views for a user across published posts and verified campaign submissions.
+  """
+  def get_total_views_for_user(user_id) do
+    import Ecto.Query
+
+    post_views =
+      ClippsterServer.Campaigns.UserPost
+      |> where([p], p.user_id == ^user_id)
+      |> where([p], p.status == "published")
+      |> select([p], coalesce(sum(p.view_count), 0))
+      |> Repo.one()
+
+    submission_views =
+      ClippsterServer.Campaigns.CampaignSubmission
+      |> where([s], s.user_id == ^user_id)
+      |> where([s], s.status in ["verified", "paid"])
+      |> select([s], coalesce(sum(s.view_count), 0))
+      |> Repo.one()
+
+    (post_views || 0) + (submission_views || 0)
   end
 
   @doc """
