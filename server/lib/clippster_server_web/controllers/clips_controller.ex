@@ -19,6 +19,22 @@ defmodule ClippsterServerWeb.ClipsController do
   # 5 minutes per chunk for multimodal mode
   @chunk_timeout_multimodal 300_000
 
+  # Helper to parse numeric strings that may be integers or floats
+  defp parse_numeric_string(nil), do: nil
+  defp parse_numeric_string(""), do: nil
+  defp parse_numeric_string(val) when is_binary(val) do
+    # Try to parse as integer first, then as float
+    case Integer.parse(val) do
+      {int_val, ""} -> int_val * 1.0
+      _ ->
+        case Float.parse(val) do
+          {float_val, _} -> float_val
+          :error -> nil
+        end
+    end
+  end
+  defp parse_numeric_string(val) when is_number(val), do: val * 1.0
+
   def detect_chunked(
         conn,
         %{"project_id" => project_id, "prompt" => user_prompt, "chunks" => chunks_json} = params
@@ -64,19 +80,8 @@ defmodule ClippsterServerWeb.ClipsController do
             IO.puts("[ClipsController] Multimodal mode enabled: #{multimodal}")
 
             # Extract optional time range parameters
-            start_time =
-              case Map.get(params, "start_time") do
-                nil -> 0.0
-                "" -> 0.0
-                val -> String.to_float(val)
-              end
-
-            end_time =
-              case Map.get(params, "end_time") do
-                nil -> nil
-                "" -> nil
-                val -> String.to_float(val)
-              end
+            start_time = parse_numeric_string(Map.get(params, "start_time")) || 0.0
+            end_time = parse_numeric_string(Map.get(params, "end_time"))
 
             IO.puts("[ClipsController] Starting chunked clip detection for project #{project_id}")
             IO.puts("[ClipsController] Processing #{length(chunks_metadata)} chunks")
