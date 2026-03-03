@@ -35,10 +35,10 @@ fn kill_all_active_ffmpeg() {
             }
             #[cfg(not(target_os = "windows"))]
             {
-                // On Unix, send SIGKILL
-                unsafe {
-                    libc::kill(pid as i32, libc::SIGKILL);
-                }
+                // On Unix, use kill -9 to force-kill the process
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output();
             }
         }
         pids.clear();
