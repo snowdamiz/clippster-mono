@@ -1876,6 +1876,7 @@ defmodule ClippsterServerWeb.AdminController do
               scheduled_deletion_at: user.scheduled_deletion_at,
               account_type: user.account_type,
               owned_organization_id: user.owned_organization_id,
+              ai_editor_enabled: user.ai_editor_enabled,
               created_at: user.inserted_at,
               last_active_at: user.last_active_at,
               credits: %{
