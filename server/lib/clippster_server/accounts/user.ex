@@ -2,6 +2,8 @@ defmodule ClippsterServer.Accounts.User do
   use Ecto.Schema
   import Ecto.Changeset
 
+  alias ClippsterServer.ClipperProfiles.ClipperProfile
+
   schema "users" do
     field :wallet_address, :string
     field :email, :string
@@ -12,6 +14,9 @@ defmodule ClippsterServer.Accounts.User do
     field :is_admin, :boolean, default: false
     field :is_moderator, :boolean, default: false
     field :ai_editor_enabled, :boolean, default: false
+
+    # Associations
+    has_one :clipper_profile, ClipperProfile
 
     # Email auth fields
     field :password, :string, virtual: true
