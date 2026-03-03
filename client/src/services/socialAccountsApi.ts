@@ -490,6 +490,10 @@ export async function publishPost(
     caption?: string;
     media_type?: 'image' | 'video' | 'reel';
     thumbnail_url?: string;
+    title?: string;
+    privacy?: 'public' | 'unlisted' | 'private';
+    made_for_kids?: boolean;
+    category_id?: string;
   }
 ): Promise<PostResponse> {
   try {
