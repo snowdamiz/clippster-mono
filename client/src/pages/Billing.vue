@@ -852,6 +852,9 @@
                   <Loader2 class="credits-dialog__spinner" />
                   <h3 class="credits-dialog__centered-title">Processing Payment</h3>
                   <p class="credits-dialog__centered-subtitle">{{ creditPackPaymentStatus }}</p>
+                  <button class="credits-dialog__btn credits-dialog__btn--secondary" @click="closeCreditPackModal">
+                    Cancel
+                  </button>
                 </div>
               </template>
 
@@ -1438,12 +1441,11 @@
   }
 
   function closeCreditPackModal() {
-    if (!creditPackProcessing.value) {
-      showBuyCreditsModal.value = false;
-      selectedCreditPack.value = null;
-      creditPackPaymentStep.value = 'select';
-      creditPackErrorMessage.value = '';
-    }
+    showBuyCreditsModal.value = false;
+    selectedCreditPack.value = null;
+    creditPackPaymentStep.value = 'select';
+    creditPackErrorMessage.value = '';
+    creditPackProcessing.value = false;
   }
 
 </script>
