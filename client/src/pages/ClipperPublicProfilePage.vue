@@ -45,70 +45,83 @@
       <div v-else class="profile-content">
         <!-- Profile Header -->
         <header class="profile-header">
-          <div class="profile-header__main">
-            <div class="profile-avatar">
-              <img
-                v-if="profile.avatar_url"
-                :src="profile.avatar_url"
-                class="profile-avatar__img"
-              />
-              <UserCircle v-else class="profile-avatar__fallback" />
-              <div v-if="profile.is_verified" class="profile-avatar__verified">
-                <CheckCircle />
+          <div class="profile-header__container">
+            <!-- Avatar Section -->
+            <div class="profile-avatar-section">
+              <div class="profile-avatar">
+                <img
+                  v-if="profile.avatar_url"
+                  :src="profile.avatar_url"
+                  class="profile-avatar__img"
+                />
+                <UserCircle v-else class="profile-avatar__fallback" />
+                <div v-if="profile.is_verified" class="profile-avatar__verified">
+                  <CheckCircle />
+                </div>
               </div>
             </div>
-            <div class="profile-meta">
-              <div class="profile-meta__top">
-                <h1 class="profile-name">{{ profile.display_name || 'Unnamed Clipper' }}</h1>
-                <span v-if="profile.looking_for_work" class="available-badge">
-                  <span class="available-badge__dot"></span>
-                  Available
-                </span>
-                <span v-if="profile.is_affiliate" class="affiliate-badge">
-                  <Handshake :size="12" class="affiliate-badge__icon" />
-                  Affiliate
-                </span>
-                <div v-for="badge in profile.badges" :key="badge.id" class="profile-badge">
-                  <Badge :class="getBadgeColor(badge.badge_type)">
-                    {{ getBadgeLabel(badge.badge_type) }}
-                  </Badge>
+
+            <!-- Profile Info -->
+            <div class="profile-info">
+              <div class="profile-info__header">
+                <div class="profile-info__left">
+                  <h1 class="profile-name">{{ profile.display_name || 'Unnamed Clipper' }}</h1>
+                  <div class="profile-badges">
+                    <span v-if="profile.looking_for_work" class="badge badge--available">
+                      <span class="badge__dot"></span>
+                      Looking for Work
+                    </span>
+                    <span v-if="profile.is_affiliate" class="badge badge--affiliate">
+                      <Handshake :size="12" />
+                      Affiliate
+                    </span>
+                    <span v-if="isOnline(profile.user?.last_active_at)" class="badge badge--online">
+                      <span class="badge__dot"></span>
+                      Online
+                    </span>
+                    <span v-else-if="profile.user?.last_active_at" class="badge badge--offline">
+                      {{ formatLastActive(profile.user.last_active_at) }}
+                    </span>
+                    <div v-for="badge in profile.badges" :key="badge.id" class="profile-badge">
+                      <Badge :class="getBadgeColor(badge.badge_type)">
+                        {{ getBadgeLabel(badge.badge_type) }}
+                      </Badge>
+                    </div>
+                  </div>
                 </div>
-                <span v-if="isOnline(profile.user?.last_active_at)" class="status-badge status-badge--online">
-                  <span class="status-badge__dot"></span>
-                  Online
-                </span>
-                <span v-else class="status-badge status-badge--offline">
-                  <span class="status-badge__dot"></span>
-                  Offline
-                </span>
-                <span v-if="profile.user?.last_active_at" class="last-active-text">
-                  {{ formatLastActive(profile.user.last_active_at) }}
-                </span>
               </div>
+
               <p v-if="profile.bio" class="profile-bio">{{ profile.bio }}</p>
+
+              <!-- Stats Row -->
+              <div class="profile-stats">
+                <div class="stat">
+                  <span class="stat__value">{{ profile.total_campaigns_completed }}</span>
+                  <span class="stat__label">Campaigns</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat">
+                  <span class="stat__value">{{ profile.total_clips_delivered }}</span>
+                  <span class="stat__label">Clips</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat">
+                  <span class="stat__value">{{ profile.total_endorsements }}</span>
+                  <span class="stat__label">Endorsements</span>
+                </div>
+                <div v-if="profile.total_views" class="stat-divider"></div>
+                <div v-if="profile.total_views" class="stat">
+                  <span class="stat__value">{{ formatViews(profile.total_views) }}</span>
+                  <span class="stat__label">Views</span>
+                </div>
+              </div>
+
+              <!-- Specialty Tags -->
               <div v-if="profile.specialty_tags?.length" class="profile-tags">
-                <span v-for="tag in profile.specialty_tags.slice(0, 5)" :key="tag" class="profile-tag">
+                <span v-for="tag in profile.specialty_tags.slice(0, 6)" :key="tag" class="profile-tag">
                   {{ getSpecialtyTagLabel(tag) }}
                 </span>
               </div>
-            </div>
-          </div>
-          <div class="profile-stats">
-            <div class="stat">
-              <span class="stat__value">{{ profile.total_campaigns_completed }}</span>
-              <span class="stat__label">Campaigns</span>
-            </div>
-            <div class="stat">
-              <span class="stat__value">{{ profile.total_clips_delivered }}</span>
-              <span class="stat__label">Clips</span>
-            </div>
-            <div class="stat">
-              <span class="stat__value">{{ profile.total_endorsements }}</span>
-              <span class="stat__label">Endorsements</span>
-            </div>
-            <div v-if="profile.total_views" class="stat">
-              <span class="stat__value">{{ formatViews(profile.total_views) }}</span>
-              <span class="stat__label">Views</span>
             </div>
           </div>
         </header>
@@ -757,13 +770,13 @@
   .clipper-public-profile-page {
     width: 100%;
     min-height: 100%;
+    background: var(--sidebar-bg);
   }
 
   .profile-content {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
+    gap: 0;
     max-width: 1400px;
     margin: 0 auto;
     width: 100%;
@@ -838,33 +851,31 @@
 
   /* ===== Profile Header ===== */
   .profile-header {
+    position: relative;
+    background: var(--sidebar-surface);
+    border-bottom: 1px solid var(--sidebar-border);
+    padding: 2rem;
+  }
+
+  .profile-header__container {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
     gap: 2rem;
-  }
-
-  @media (max-width: 640px) {
-    .profile-header {
-      flex-direction: column;
-    }
-  }
-
-  .profile-header__main {
-    display: flex;
     align-items: flex-start;
-    gap: 1.25rem;
-    flex: 1;
+  }
+
+  .profile-avatar-section {
+    flex-shrink: 0;
   }
 
   .profile-avatar {
     position: relative;
-    width: 72px;
-    height: 72px;
-    border-radius: 12px;
-    background: var(--sidebar-surface);
+    width: 160px;
+    height: 160px;
+    border-radius: 20px;
+    background: var(--sidebar-bg);
+    border: 4px solid var(--sidebar-border);
     overflow: hidden;
-    flex-shrink: 0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
   }
 
   .profile-avatar__img {
@@ -882,127 +893,110 @@
 
   .profile-avatar__verified {
     position: absolute;
-    bottom: -2px;
-    right: -2px;
-    width: 20px;
-    height: 20px;
+    bottom: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
     background: var(--sidebar-accent);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 2px solid var(--sidebar-bg);
+    border: 3px solid var(--sidebar-surface);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .profile-avatar__verified svg {
-    width: 10px;
-    height: 10px;
+    width: 16px;
+    height: 16px;
     color: white;
   }
 
-  .profile-meta {
+  .profile-info {
+    flex: 1;
+    min-width: 0;
+    padding-top: 1rem;
+  }
+
+  .profile-info__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .profile-info__left {
     flex: 1;
     min-width: 0;
   }
 
-  .profile-meta__top {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    flex-wrap: wrap;
-    margin-bottom: 0.375rem;
-  }
-
   .profile-name {
-    font-size: 1.25rem;
+    font-size: 2rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
+    margin: 0 0 0.5rem;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
   }
 
-  .available-badge {
+  .profile-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .badge {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.25rem 0.5rem;
-    background: rgba(16, 185, 129, 0.12);
-    border-radius: 4px;
-    font-size: 0.625rem;
-    font-weight: 600;
-    color: #10b981;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .available-badge__dot {
-    width: 5px;
-    height: 5px;
-    background: #10b981;
-    border-radius: 50%;
-  }
-
-  .affiliate-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.5rem;
-    background: rgba(168, 85, 247, 0.12);
-    border-radius: 4px;
-    font-size: 0.625rem;
-    font-weight: 600;
-    color: #a855f7;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .affiliate-badge__icon {
-    flex-shrink: 0;
-  }
-
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.625rem;
-    border-radius: 9999px;
+    padding: 0.375rem 0.75rem;
+    border-radius: 6px;
     font-size: 0.6875rem;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.02em;
   }
 
-  .status-badge--online {
+  .badge--available {
     background: rgba(16, 185, 129, 0.15);
     color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
   }
 
-  .status-badge--offline {
+  .badge--affiliate {
+    background: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+  }
+
+  .badge--online {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+  }
+
+  .badge--offline {
     background: rgba(107, 114, 128, 0.15);
     color: #9ca3af;
+    border: 1px solid rgba(107, 114, 128, 0.2);
   }
 
-  .status-badge__dot {
-    width: 5px;
-    height: 5px;
+  .badge__dot {
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
+    background: currentColor;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
-  .status-badge--online .status-badge__dot {
-    background: #10b981;
-    box-shadow: 0 0 4px rgba(16, 185, 129, 0.6);
-  }
-
-  .status-badge--offline .status-badge__dot {
-    background: #6b7280;
-  }
-
-  .last-active-text {
-    display: inline-flex;
-    align-items: center;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    opacity: 0.8;
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
   }
 
   .profile-badge {
@@ -1010,40 +1004,57 @@
   }
 
   .profile-bio {
-    font-size: 0.8125rem;
+    font-size: 0.9375rem;
     color: var(--sidebar-text-muted);
-    margin: 0 0 0.625rem;
-    line-height: 1.5;
-    max-width: 420px;
+    margin: 0 0 1.25rem;
+    line-height: 1.6;
+    max-width: 600px;
+  }
+
+  .profile-stats {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1rem 0;
+    margin-bottom: 1rem;
+  }
+
+  .stat-divider {
+    width: 1px;
+    height: 32px;
+    background: var(--sidebar-border);
   }
 
   .profile-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
+    gap: 0.5rem;
   }
 
   .profile-tag {
-    padding: 0.25rem 0.4375rem;
-    background: rgba(6, 182, 212, 0.1);
-    border-radius: 4px;
-    font-size: 0.625rem;
-    font-weight: 600;
+    padding: 0.375rem 0.75rem;
+    background: rgba(6, 182, 212, 0.12);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
     color: var(--sidebar-accent);
+    transition: all 150ms ease;
   }
 
-  .profile-stats {
-    display: flex;
-    gap: 2rem;
+  .profile-tag:hover {
+    background: rgba(6, 182, 212, 0.18);
+    border-color: rgba(6, 182, 212, 0.3);
   }
 
   .stat {
-    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
   }
 
   .stat__value {
-    display: block;
-    font-size: 1.5rem;
+    font-size: 1.75rem;
     font-weight: 700;
     color: var(--sidebar-text);
     font-variant-numeric: tabular-nums;
@@ -1051,12 +1062,9 @@
   }
 
   .stat__label {
-    display: block;
-    font-size: 0.5625rem;
+    font-size: 0.75rem;
     color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-top: 0.25rem;
+    font-weight: 500;
   }
 
   /* Header Action Buttons */
@@ -1113,14 +1121,18 @@
   /* ===== Main Layout ===== */
   .main-layout {
     display: grid;
-    grid-template-columns: 1fr 380px;
-    gap: 1.5rem;
+    grid-template-columns: 1fr 360px;
+    gap: 2rem;
     align-items: start;
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
   }
 
   @media (max-width: 1024px) {
     .main-layout {
       grid-template-columns: 1fr;
+      padding: 1.5rem;
     }
   }
 
@@ -1135,32 +1147,35 @@
   .section {
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    padding: 1.25rem;
+    border-radius: 12px;
+    padding: 0;
+    overflow: hidden;
   }
 
   .section__header {
     display: flex;
     align-items: center;
-    gap: 0.875rem;
-    margin-bottom: 1.25rem;
+    gap: 1rem;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    background: linear-gradient(to bottom, rgba(6, 182, 212, 0.03), transparent);
   }
 
   .section__header-icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
     background-color: rgba(6, 182, 212, 0.15);
     color: var(--sidebar-accent);
     flex-shrink: 0;
   }
 
   .section__header-icon svg {
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
   }
 
   .section__header-icon--purple {
@@ -1179,34 +1194,41 @@
   }
 
   .section__title {
-    font-size: 1.0625rem;
+    font-size: 1.125rem;
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.02em;
   }
 
   .section__subtitle {
-    font-size: 0.75rem;
+    font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
-    margin: 0.1875rem 0 0;
+    margin: 0.25rem 0 0;
   }
 
   /* About Section */
   .about-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 1rem;
+    padding: 1.5rem;
   }
 
   .about-item {
     display: flex;
     align-items: flex-start;
-    gap: 0.875rem;
-    padding: 0.875rem;
+    gap: 1rem;
+    padding: 1.25rem;
     background: var(--sidebar-hover);
     border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
+    border-radius: 10px;
+    transition: all 150ms ease;
+  }
+
+  .about-item:hover {
+    background: var(--sidebar-active);
+    border-color: rgba(6, 182, 212, 0.3);
   }
 
   .about-item__icon {
@@ -1239,22 +1261,24 @@
   /* Portfolio Section */
   .portfolio-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1.25rem;
+    padding: 1.5rem;
   }
 
   .portfolio-item {
-    border-radius: 10px;
+    border-radius: 12px;
     overflow: hidden;
-    background: var(--sidebar-hover);
+    background: var(--sidebar-bg);
     border: 1px solid var(--sidebar-border);
-    transition: all 180ms ease;
+    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
   }
 
   .portfolio-item:hover {
     border-color: var(--sidebar-accent);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(6, 182, 212, 0.2);
   }
 
   .portfolio-item__thumbnail {
@@ -1293,13 +1317,13 @@
   .portfolio-item__overlay {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(2px);
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.4) 50%, transparent 100%);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
     opacity: 0;
-    transition: opacity 180ms ease;
+    transition: opacity 200ms ease;
     border: none;
     cursor: pointer;
     width: 100%;
@@ -1313,17 +1337,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 52px;
-    height: 52px;
+    width: 64px;
+    height: 64px;
     background: var(--sidebar-accent);
-    border: 2px solid white;
+    border: 3px solid white;
     border-radius: 50%;
-    transition: all 180ms ease;
+    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
   }
 
   .portfolio-item:hover .portfolio-item__play {
-    transform: scale(1.1);
-    opacity: 0.9;
+    transform: scale(1.15);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
   }
 
   .portfolio-item__play-icon {
@@ -1334,16 +1359,18 @@
   }
 
   .portfolio-item__info {
-    padding: 0.75rem;
+    padding: 1rem;
+    background: var(--sidebar-surface);
   }
 
   .portfolio-item__title {
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: 0.875rem;
+    font-weight: 600;
     color: var(--sidebar-text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    letter-spacing: -0.01em;
   }
 
   /* Video Player Modal */
@@ -1454,13 +1481,20 @@
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    padding: 1.5rem;
   }
 
   .endorsement-card {
-    padding: 1.125rem;
-    background: var(--sidebar-hover);
+    padding: 1.5rem;
+    background: var(--sidebar-bg);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    border-radius: 12px;
+    transition: all 150ms ease;
+  }
+
+  .endorsement-card:hover {
+    background: var(--sidebar-hover);
+    border-color: rgba(245, 158, 11, 0.3);
   }
 
   .endorsement-card__header {
@@ -1549,33 +1583,35 @@
   .sidebar-card {
     background-color: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    border-radius: 12px;
     overflow: hidden;
   }
 
   .sidebar-card__header {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
-    padding: 1rem 1.125rem;
+    gap: 0.75rem;
+    padding: 1.25rem;
     border-bottom: 1px solid var(--sidebar-border);
+    background: linear-gradient(to bottom, rgba(6, 182, 212, 0.03), transparent);
   }
 
   .sidebar-card__icon {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
     color: var(--sidebar-accent);
   }
 
   .sidebar-card__title {
-    font-size: 0.9375rem;
+    font-size: 1rem;
     font-weight: 600;
     color: var(--sidebar-text);
     margin: 0;
+    letter-spacing: -0.01em;
   }
 
   .sidebar-card__content {
-    padding: 1rem 1.125rem;
+    padding: 1.25rem;
   }
 
   /* Tag Groups */
@@ -1809,49 +1845,66 @@
 
   /* ===== Responsive ===== */
   @media (max-width: 768px) {
-    .profile-content {
-      padding: 1rem;
-      gap: 1.25rem;
-    }
-
     .profile-header {
-      flex-direction: column;
+      padding: 1.5rem 1rem;
     }
 
-    .profile-header__main {
+    .profile-header__container {
       flex-direction: column;
       align-items: center;
       text-align: center;
+      gap: 1rem;
+    }
+
+    .profile-avatar {
+      width: 120px;
+      height: 120px;
+    }
+
+    .profile-info__header {
+      flex-direction: column;
+      align-items: center;
     }
 
     .profile-name {
-      font-size: 1.125rem;
+      font-size: 1.5rem;
     }
 
-    .profile-meta__top {
+    .profile-badges {
       justify-content: center;
     }
 
     .profile-stats {
-      width: 100%;
       justify-content: center;
+      flex-wrap: wrap;
     }
 
-    .stat {
-      min-width: 80px;
+    .stat-divider {
+      display: none;
     }
 
     .main-layout {
-      gap: 1rem;
+      gap: 1.5rem;
+      padding: 1rem;
     }
 
     .portfolio-grid {
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 0.75rem;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 1rem;
+      padding: 1rem;
     }
 
     .about-grid {
       grid-template-columns: 1fr;
+      padding: 1rem;
+    }
+
+    .endorsements-list {
+      padding: 1rem;
+    }
+
+    .section__header {
+      padding: 1rem;
     }
   }
 
