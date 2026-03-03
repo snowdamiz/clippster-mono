@@ -325,6 +325,7 @@ pub async fn get_rumble_vods(channel: String, limit: Option<u32>) -> Result<Stri
         .arg("--skip-download")
         .arg("--no-warnings")
         .arg("--ignore-errors")
+        .arg("--impersonate").arg("chrome")
         .arg("--playlist-end").arg(&limit_str)
         .arg(&channel_url);
 
@@ -480,6 +481,7 @@ pub async fn download_rumble_vod(
         
         cmd.arg(&vod_url)
             .arg("-o").arg(&output_file_str)
+            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--external-downloader").arg("ffmpeg")
             .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
@@ -487,7 +489,7 @@ pub async fn download_rumble_vod(
             .arg("--progress")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
-        
+
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -788,6 +790,7 @@ async fn run_rumble_recorder(
         .arg(&stream_url)
         .arg("--get-url")
         .arg("--no-warnings")
+        .arg("--impersonate").arg("chrome")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     
@@ -1446,6 +1449,7 @@ pub async fn download_rumble_vod_segment(
             .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
         cmd.arg(&vod_url)
             .arg("-o").arg(&video_path_str)
+            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--external-downloader").arg("ffmpeg")
             .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")

@@ -205,6 +205,7 @@ async fn run_twitter_recorder(
         .arg("-o").arg("-")
         .arg("--quiet")
         .arg("--no-part")
+        .arg("--impersonate").arg("chrome")
         .arg("--ffmpeg-location").arg(&ffmpeg_path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -475,6 +476,7 @@ pub async fn get_twitter_broadcast_info(url: String) -> Result<String, String> {
     cmd.arg("--dump-json")
         .arg("--skip-download")
         .arg("--no-warnings")
+        .arg("--impersonate").arg("chrome")
         .arg(&normalized_url);
     
     let output = cmd.output().await
@@ -669,6 +671,7 @@ pub async fn download_twitter_vod(
         
         cmd.arg(&vod_url)
             .arg("-o").arg(&output_file_str)
+            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--external-downloader").arg("ffmpeg")
             .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
@@ -676,7 +679,7 @@ pub async fn download_twitter_vod(
             .arg("--progress")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
-        
+
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -1013,6 +1016,7 @@ pub async fn download_twitter_vod_segment(
             .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
         cmd.arg(&vod_url)
             .arg("-o").arg(&video_path_str)
+            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--external-downloader").arg("ffmpeg")
             .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
