@@ -79,6 +79,15 @@ export function useChunkedClipDetection() {
       abortController = null;
     }
 
+    // Kill any running FFmpeg processes on the Rust side
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('cancel_audio_extraction');
+      console.log('[ChunkedClipDetection] Cancelled FFmpeg audio extraction processes');
+    } catch (err) {
+      console.warn('[ChunkedClipDetection] Failed to cancel audio extraction:', err);
+    }
+
     // Request server-side cancellation and refund
     let creditsRefunded = 0;
     if (currentProjectId) {
@@ -290,6 +299,13 @@ export function useChunkedClipDetection() {
       showError('Clip detection failed', errorMessage, undefined, 'clips');
       return { success: false, error: errorMessage };
     } finally {
+      // Always kill any orphaned FFmpeg processes when detection ends (error, cancel, or success)
+      try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('cancel_audio_extraction');
+      } catch (_) {
+        // Ignore - may not have any active processes
+      }
       isProcessing.value = false;
       abortController = null;
       currentProjectId = null;
