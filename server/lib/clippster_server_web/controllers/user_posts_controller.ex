@@ -183,6 +183,26 @@ defmodule ClippsterServerWeb.UserPostsController do
   end
 
   @doc """
+  Sync analytics for all user posts using PostForMe feed API.
+  POST /api/user/posts/sync-analytics
+  """
+  def sync_user_analytics(conn, _params) do
+    user = conn.assigns.current_user
+    Logger.info("[sync_user_analytics] Starting sync for user #{user.id}")
+
+    try do
+      sync_user_posts_analytics(user.id)
+      Logger.info("[sync_user_analytics] Sync completed successfully")
+      json(conn, %{success: true, message: "Analytics sync started"})
+    rescue
+      e ->
+        Logger.error("[sync_user_analytics] Sync failed: #{inspect(e)}")
+        Logger.error("[sync_user_analytics] Stacktrace: #{inspect(__STACKTRACE__)}")
+        json(conn, %{success: true, message: "Analytics sync started"})
+    end
+  end
+
+  @doc """
   Get a single post with details.
 
   GET /api/user/posts/:id
@@ -417,10 +437,125 @@ defmodule ClippsterServerWeb.UserPostsController do
 
     case PostForMe.create_social_post(post_params) do
       {:ok, post} ->
-        {:ok, %{post_id: post.id || "pfm_post", post_url: nil}}
+        # Try to fetch the post URL from the feed
+        post_url = fetch_post_url_from_feed(account.provider_account_id, post.id)
+        {:ok, %{post_id: post.id || "pfm_post", post_url: post_url}}
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  # Fetch post URL from PostForMe feed by post ID
+  defp fetch_post_url_from_feed(provider_account_id, post_id) do
+    case fetch_post_for_me_feed(provider_account_id) do
+      {:ok, feed_items} ->
+        # Find the post in the feed by ID
+        case Enum.find(feed_items, fn item ->
+          item["id"] == post_id || item["platform_id"] == post_id
+        end) do
+          nil -> 
+            Logger.warning("[UserPosts] Post #{post_id} not found in feed yet, URL will be nil")
+            nil
+          item -> 
+            url = item["platform_url"] || item["permalink"] || item["url"]
+            Logger.info("[UserPosts] Found post URL in feed: #{url}")
+            url
+        end
+
+      {:error, reason} ->
+        Logger.warning("[UserPosts] Failed to fetch feed for URL lookup: #{inspect(reason)}")
+        nil
+    end
+  end
+
+  # Backfill missing post_url values by fetching from PostForMe feed
+  defp backfill_missing_post_urls(posts, user_id) do
+    # Find posts missing post_url
+    posts_needing_urls = Enum.filter(posts, fn post ->
+      is_nil(post.post_url) || post.post_url == ""
+    end)
+
+    if length(posts_needing_urls) > 0 do
+      Logger.info("[sync_user_posts_analytics] Attempting to backfill #{length(posts_needing_urls)} posts with missing post_url")
+
+      # Get user's social accounts
+      case Campaigns.list_user_social_accounts(user_id) do
+        accounts when is_list(accounts) ->
+          # Group posts by platform
+          posts_by_platform = Enum.group_by(posts_needing_urls, & &1.platform)
+
+          # Fetch URLs for each platform
+          updated_posts = for {platform, platform_posts} <- posts_by_platform do
+            # Normalize platform name
+            lookup_platform = if platform == "twitter", do: "x", else: platform
+
+            # Find active account with provider_account_id
+            account = Enum.find(accounts, fn acc ->
+              normalized = if acc.platform == "twitter", do: "x", else: acc.platform
+              normalized == lookup_platform && acc.is_active && is_binary(acc.provider_account_id)
+            end)
+
+            if account do
+              # Fetch feed for this platform
+              case fetch_post_for_me_feed(account.provider_account_id) do
+                {:ok, feed_items} ->
+                  # Try to find URL for each post
+                  Enum.map(platform_posts, fn post ->
+                    if post.provider_post_id do
+                      case Enum.find(feed_items, fn item ->
+                        item["id"] == post.provider_post_id || item["platform_id"] == post.provider_post_id
+                      end) do
+                        nil ->
+                          Logger.warning("[sync_user_posts_analytics] Post #{post.id} (provider_post_id: #{post.provider_post_id}) not found in feed")
+                          post
+                        item ->
+                          url = item["platform_url"] || item["permalink"] || item["url"]
+                          if url do
+                            Logger.info("[sync_user_posts_analytics] Backfilling post_url for post #{post.id}: #{url}")
+                            # Update the post in the database
+                            case Campaigns.update_user_post(post, %{post_url: url}) do
+                              {:ok, updated_post} -> updated_post
+                              {:error, _} -> post
+                            end
+                          else
+                            post
+                          end
+                      end
+                    else
+                      Logger.warning("[sync_user_posts_analytics] Post #{post.id} has no provider_post_id, cannot backfill")
+                      post
+                    end
+                  end)
+
+                {:error, reason} ->
+                  Logger.error("[sync_user_posts_analytics] Failed to fetch feed for backfill: #{inspect(reason)}")
+                  platform_posts
+              end
+            else
+              Logger.warning("[sync_user_posts_analytics] No active #{platform} account found for backfill")
+              platform_posts
+            end
+          end
+          |> List.flatten()
+
+          # Merge updated posts back into the full list
+          updated_post_ids = MapSet.new(updated_posts, & &1.id)
+          posts
+          |> Enum.map(fn post ->
+            if MapSet.member?(updated_post_ids, post.id) do
+              Enum.find(updated_posts, fn up -> up.id == post.id end) || post
+            else
+              post
+            end
+          end)
+
+        _ ->
+          Logger.warning("[sync_user_posts_analytics] No social accounts found for backfill")
+          posts
+      end
+    else
+      posts
     end
   end
 
@@ -550,6 +685,237 @@ defmodule ClippsterServerWeb.UserPostsController do
         :ok
     end
   end
+
+  # Sync analytics for user posts using PostForMe feed API
+  defp sync_user_posts_analytics(user_id) do
+    Logger.info("[sync_user_posts_analytics] Starting sync for user #{user_id}")
+
+    # Get all published user posts
+    posts = Campaigns.list_user_posts(user_id)
+    Logger.info("[sync_user_posts_analytics] Found #{length(posts)} user posts")
+
+    # First, try to backfill missing post_url values
+    posts_with_urls = backfill_missing_post_urls(posts, user_id)
+
+    # Filter to posts with post_url and supported platforms
+    filtered_posts =
+      Enum.filter(posts_with_urls, fn post ->
+        has_post_url = is_binary(post.post_url) && post.post_url != ""
+        is_supported = post.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
+
+        if not has_post_url do
+          Logger.warning("[sync_user_posts_analytics] Post #{post.id} (#{post.platform}) has no post_url - cannot sync analytics")
+        end
+
+        if not is_supported do
+          Logger.debug("[sync_user_posts_analytics] Post #{post.id} platform #{post.platform} not supported")
+        end
+
+        has_post_url && is_supported
+      end)
+
+    Logger.info("[sync_user_posts_analytics] #{length(filtered_posts)} posts after filtering")
+
+    # Get user's social accounts
+    case Campaigns.list_user_social_accounts(user_id) do
+      accounts when is_list(accounts) ->
+        # Group posts by platform
+        posts_by_platform = Enum.group_by(filtered_posts, & &1.platform)
+
+        for {platform, platform_posts} <- posts_by_platform do
+          # Normalize platform name
+          lookup_platform = if platform == "twitter", do: "x", else: platform
+
+          # Find active account with provider_account_id
+          account =
+            Enum.find(accounts, fn acc ->
+              normalized = if acc.platform == "twitter", do: "x", else: acc.platform
+              normalized == lookup_platform && acc.is_active && is_binary(acc.provider_account_id)
+            end)
+
+          if account do
+            Logger.info("[sync_user_posts_analytics] Processing #{length(platform_posts)} #{platform} posts for account #{account.provider_account_id}")
+
+            # Fetch feed once per platform
+            case fetch_post_for_me_feed(account.provider_account_id) do
+              {:ok, feed_items} ->
+                Logger.info("[sync_user_posts_analytics] Fetched #{length(feed_items)} feed items from PostForMe")
+
+                for post <- platform_posts do
+                  case extract_post_identifier(post.platform, post.post_url) do
+                    {:ok, post_identifier} ->
+                      Logger.debug("[sync_user_posts_analytics] Post #{post.id}: extracted identifier #{post_identifier} from #{post.post_url}")
+
+                      case match_feed_item(post.platform, feed_items, post_identifier) do
+                        nil ->
+                          Logger.warning("[sync_user_posts_analytics] Post #{post.id}: identifier #{post_identifier} NOT FOUND in feed")
+                          :ok
+
+                        item ->
+                          Logger.info("[sync_user_posts_analytics] Post #{post.id}: MATCHED feed item")
+                          analytics = extract_feed_analytics(post.platform, item, account)
+                          Logger.info("[sync_user_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}")
+
+                          if map_size(analytics) > 0 do
+                            case Campaigns.update_user_post_analytics(post, analytics) do
+                              {:ok, _} -> Logger.info("[sync_user_posts_analytics] Post #{post.id}: analytics synced successfully")
+                              {:error, reason} -> Logger.error("[sync_user_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
+                            end
+                          end
+                      end
+
+                    {:error, reason} ->
+                      Logger.warning("[sync_user_posts_analytics] Post #{post.id}: failed to extract identifier from #{post.post_url}: #{inspect(reason)}")
+                      :ok
+                  end
+                end
+
+              {:error, reason} ->
+                Logger.error("[sync_user_posts_analytics] Failed to fetch PostForMe feed for account #{account.provider_account_id}: #{inspect(reason)}")
+                :ok
+            end
+          else
+            Logger.warning("[sync_user_posts_analytics] No active #{platform} account with provider_account_id found")
+          end
+        end
+
+      _ ->
+        Logger.warning("[sync_user_posts_analytics] User #{user_id} has no social accounts")
+    end
+  end
+
+  # Fetch feed from PostForMe API
+  defp fetch_post_for_me_feed(provider_account_id) do
+    case PostForMe.get_social_account_feed(provider_account_id, %{limit: 50}) do
+      {:ok, %{data: feed_items}} when is_list(feed_items) ->
+        {:ok, feed_items}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  # Extract platform-specific identifier from post URL
+  defp extract_post_identifier("instagram", url) when is_binary(url) do
+    case Regex.run(~r{instagram\.com/(?:p|reel|tv)/([A-Za-z0-9_-]+)}, url) do
+      [_, shortcode] -> {:ok, shortcode}
+      _ -> {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier(platform, url) when platform in ["x", "twitter"] and is_binary(url) do
+    case Regex.run(~r{(?:twitter\.com|x\.com)/.+/status/(\d+)}, url) do
+      [_, tweet_id] -> {:ok, tweet_id}
+      _ -> {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier("tiktok", url) when is_binary(url) do
+    case Regex.run(~r{tiktok\.com/.+/video/(\d+)}, url) do
+      [_, video_id] -> {:ok, video_id}
+      _ -> {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier("youtube", url) when is_binary(url) do
+    cond do
+      match = Regex.run(~r{youtube\.com/shorts/([A-Za-z0-9_-]+)}, url) ->
+        {:ok, Enum.at(match, 1)}
+
+      match = Regex.run(~r{youtube\.com/watch\?v=([A-Za-z0-9_-]+)}, url) ->
+        {:ok, Enum.at(match, 1)}
+
+      match = Regex.run(~r{youtu\.be/([A-Za-z0-9_-]+)}, url) ->
+        {:ok, Enum.at(match, 1)}
+
+      true ->
+        {:error, :invalid_url}
+    end
+  end
+
+  defp extract_post_identifier(_platform, _url), do: {:error, :unsupported_platform}
+
+  # Match feed item against post identifier
+  defp match_feed_item("instagram", feed_items, shortcode) do
+    Enum.find(feed_items, fn item ->
+      item_shortcode =
+        item["shortcode"] || item["code"] ||
+          extract_shortcode_from_url(item["permalink"]) ||
+          extract_shortcode_from_url(item["platform_url"])
+
+      item_shortcode == shortcode
+    end)
+  end
+
+  defp match_feed_item(platform, feed_items, post_id) when platform in ["x", "twitter"] do
+    Enum.find(feed_items, fn item ->
+      item["id"] == post_id || item["platform_id"] == post_id
+    end)
+  end
+
+  defp match_feed_item("tiktok", feed_items, video_id) do
+    Enum.find(feed_items, fn item ->
+      item["id"] == video_id || item["platform_id"] == video_id
+    end)
+  end
+
+  defp match_feed_item("youtube", feed_items, video_id) do
+    Enum.find(feed_items, fn item ->
+      item["id"] == video_id || item["platform_id"] == video_id
+    end)
+  end
+
+  defp match_feed_item(_platform, _feed_items, _identifier), do: nil
+
+  defp extract_shortcode_from_url(nil), do: nil
+
+  defp extract_shortcode_from_url(url) when is_binary(url) do
+    case Regex.run(~r{/(?:p|reel|tv)/([A-Za-z0-9_-]+)}, url) do
+      [_, shortcode] -> shortcode
+      _ -> nil
+    end
+  end
+
+  # Extract analytics from feed item
+  defp extract_feed_analytics("instagram", item, _account) do
+    %{
+      view_count: item["play_count"] || item["view_count"] || 0,
+      like_count: item["like_count"] || 0,
+      comment_count: item["comment_count"] || item["comments_count"] || 0,
+      save_count: item["save_count"] || 0,
+      reach_count: item["reach"] || 0,
+      impressions_count: item["impressions"] || 0
+    }
+  end
+
+  defp extract_feed_analytics(platform, item, _account) when platform in ["x", "twitter"] do
+    %{
+      view_count: item["view_count"] || item["impression_count"] || 0,
+      like_count: item["like_count"] || item["favorite_count"] || 0,
+      comment_count: item["reply_count"] || 0,
+      reach_count: item["reach"] || 0,
+      impressions_count: item["impression_count"] || 0
+    }
+  end
+
+  defp extract_feed_analytics("tiktok", item, _account) do
+    %{
+      view_count: item["view_count"] || item["play_count"] || 0,
+      like_count: item["like_count"] || item["digg_count"] || 0,
+      comment_count: item["comment_count"] || 0,
+      share_count: item["share_count"] || 0
+    }
+  end
+
+  defp extract_feed_analytics("youtube", item, _account) do
+    %{
+      view_count: item["view_count"] || 0,
+      like_count: item["like_count"] || 0,
+      comment_count: item["comment_count"] || 0
+    }
+  end
+
+  defp extract_feed_analytics(_platform, _item, _account), do: %{}
 
   defp create_org_submission(user, account, post_data, params, platform, profile, campaign_id) do
     submission_attrs = %{

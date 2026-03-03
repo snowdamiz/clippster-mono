@@ -8,8 +8,10 @@ defmodule ClippsterServer.ClipperProfiles.ClipperLeaderboardEntry do
   alias ClippsterServer.ClipperProfiles.ClipperProfile
 
   @period_types ~w(weekly monthly)
+  @leaderboard_types ~w(campaigns posts)
 
   schema "clipper_leaderboard_entries" do
+    field :leaderboard_type, :string, default: "campaigns"
     field :period_type, :string
     field :period_start, :date
     field :period_end, :date
@@ -18,6 +20,7 @@ defmodule ClippsterServer.ClipperProfiles.ClipperLeaderboardEntry do
     field :campaigns_active, :integer, default: 0
     field :endorsements_received, :integer, default: 0
     field :total_views, :integer, default: 0
+    field :posts_count, :integer, default: 0
     field :score, :integer, default: 0
 
     belongs_to :clipper_profile, ClipperProfile
@@ -32,6 +35,7 @@ defmodule ClippsterServer.ClipperProfiles.ClipperLeaderboardEntry do
     entry
     |> cast(attrs, [
       :clipper_profile_id,
+      :leaderboard_type,
       :period_type,
       :period_start,
       :period_end,
@@ -40,12 +44,14 @@ defmodule ClippsterServer.ClipperProfiles.ClipperLeaderboardEntry do
       :campaigns_active,
       :endorsements_received,
       :total_views,
+      :posts_count,
       :score
     ])
     |> validate_required([:clipper_profile_id, :period_type, :period_start, :period_end])
     |> validate_inclusion(:period_type, @period_types)
+    |> validate_inclusion(:leaderboard_type, @leaderboard_types)
     |> foreign_key_constraint(:clipper_profile_id)
-    |> unique_constraint([:clipper_profile_id, :period_type, :period_start])
+    |> unique_constraint([:clipper_profile_id, :leaderboard_type, :period_type, :period_start])
   end
 
   @doc """

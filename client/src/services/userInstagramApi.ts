@@ -327,6 +327,7 @@ export async function uploadUserMediaForPost(
       headers: {
         'Content-Type': undefined,
       },
+      timeout: 600_000, // 10 minutes for large video uploads
     });
     return response.data;
   } catch (error: any) {
@@ -381,6 +382,22 @@ export async function getUserPost(postId: number): Promise<PostResponse> {
 export async function syncPostAnalytics(postId: number): Promise<PostResponse> {
   const response = await api.post(`/user/posts/${postId}/sync`);
   return response.data;
+}
+
+/**
+ * Sync analytics for all user posts using PostForMe
+ */
+export async function syncUserAnalytics(): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const response = await api.post('/user/posts/sync-analytics');
+    return response.data;
+  } catch (error: any) {
+    console.error('[UserInstagramApi] Failed to sync analytics:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to sync analytics',
+    };
+  }
 }
 
 export interface UserAnalyticsSummary {

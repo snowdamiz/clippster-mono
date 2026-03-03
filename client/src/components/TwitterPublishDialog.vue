@@ -43,27 +43,50 @@
 
                 <!-- X Account -->
                 <div class="twitter-dialog__field">
-                  <label for="tw-account" class="twitter-dialog__label">X Account *</label>
-                  <div class="twitter-dialog__select-wrapper">
-                    <select
-                      id="tw-account"
-                      v-model="selectedAccountValue"
-                      class="twitter-dialog__select"
+                  <label class="twitter-dialog__label">X Account *</label>
+                  <div class="relative">
+                    <button
+                      type="button"
+                      @click="showAccountDropdown = !showAccountDropdown"
+                      class="twitter-dialog__input twitter-dialog__dropdown-trigger"
                       :disabled="publishing || loadingAccounts"
                     >
-                      <option value="" disabled>Select an account</option>
-                      <optgroup v-if="orgAccounts.length > 0" :label="currentOrgName + ' Accounts'">
-                        <option v-for="account in orgAccounts" :key="`org-${account.id}`" :value="`org:${account.id}`">
+                      <span class="truncate">
+                        {{ selectedAccountLabel || 'Select an account...' }}
+                      </span>
+                      <ChevronDown
+                        class="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform"
+                        :class="{ 'rotate-180': showAccountDropdown }"
+                      />
+                    </button>
+                    <div v-if="showAccountDropdown" class="twitter-dialog__dropdown">
+                      <template v-if="orgAccounts.length > 0">
+                        <div class="twitter-dialog__dropdown-group">{{ currentOrgName }} Accounts</div>
+                        <button
+                          v-for="account in orgAccounts"
+                          :key="`org-${account.id}`"
+                          type="button"
+                          @click="selectAccount(`org:${account.id}`, `@${account.username}`)"
+                          class="twitter-dialog__dropdown-item"
+                          :class="{ 'twitter-dialog__dropdown-item--selected': selectedAccountValue === `org:${account.id}` }"
+                        >
                           @{{ account.username }}
-                        </option>
-                      </optgroup>
-                      <optgroup v-if="showPersonalAccounts && personalAccounts.length > 0" label="My Personal Accounts">
-                        <option v-for="account in personalAccounts" :key="`user-${account.id}`" :value="`user:${account.id}`">
+                        </button>
+                      </template>
+                      <template v-if="showPersonalAccounts && personalAccounts.length > 0">
+                        <div class="twitter-dialog__dropdown-group">My Personal Accounts</div>
+                        <button
+                          v-for="account in personalAccounts"
+                          :key="`user-${account.id}`"
+                          type="button"
+                          @click="selectAccount(`user:${account.id}`, `@${account.username}`)"
+                          class="twitter-dialog__dropdown-item"
+                          :class="{ 'twitter-dialog__dropdown-item--selected': selectedAccountValue === `user:${account.id}` }"
+                        >
                           @{{ account.username }}
-                        </option>
-                      </optgroup>
-                    </select>
-                    <ChevronDown class="twitter-dialog__select-icon" :size="16" />
+                        </button>
+                      </template>
+                    </div>
                   </div>
                   <p v-if="allAccounts.length === 0 && !loadingAccounts" class="twitter-dialog__field-hint twitter-dialog__field-hint--warning">
                     No X accounts available. Connect a personal account or ask an admin to assign you an organization account.
@@ -72,23 +95,45 @@
 
                 <!-- Creator Profile -->
                 <div v-if="creatorProfiles.length > 0" class="twitter-dialog__field">
-                  <label for="tw-creator" class="twitter-dialog__label">
+                  <label class="twitter-dialog__label">
                     Creator Profile
                     <span class="twitter-dialog__label-hint">(optional)</span>
                   </label>
-                  <div class="twitter-dialog__select-wrapper">
-                    <select
-                      id="tw-creator"
-                      v-model="selectedCreatorProfileId"
-                      class="twitter-dialog__select"
+                  <div class="relative">
+                    <button
+                      type="button"
+                      @click="showCreatorDropdown = !showCreatorDropdown"
+                      class="twitter-dialog__input twitter-dialog__dropdown-trigger"
                       :disabled="publishing"
                     >
-                      <option value="">None</option>
-                      <option v-for="profile in creatorProfiles" :key="profile.id" :value="String(profile.id)">
+                      <span class="truncate">
+                        {{ selectedCreatorLabel || 'None' }}
+                      </span>
+                      <ChevronDown
+                        class="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform"
+                        :class="{ 'rotate-180': showCreatorDropdown }"
+                      />
+                    </button>
+                    <div v-if="showCreatorDropdown" class="twitter-dialog__dropdown">
+                      <button
+                        type="button"
+                        @click="selectCreator('', 'None')"
+                        class="twitter-dialog__dropdown-item"
+                        :class="{ 'twitter-dialog__dropdown-item--selected': selectedCreatorProfileId === '' }"
+                      >
+                        None
+                      </button>
+                      <button
+                        v-for="profile in creatorProfiles"
+                        :key="profile.id"
+                        type="button"
+                        @click="selectCreator(String(profile.id), profile.name)"
+                        class="twitter-dialog__dropdown-item"
+                        :class="{ 'twitter-dialog__dropdown-item--selected': selectedCreatorProfileId === String(profile.id) }"
+                      >
                         {{ profile.name }}
-                      </option>
-                    </select>
-                    <ChevronDown class="twitter-dialog__select-icon" :size="16" />
+                      </button>
+                    </div>
                   </div>
                   <p class="twitter-dialog__field-hint">Associate this post with a creator profile for tracking</p>
                 </div>
@@ -199,7 +244,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch } from 'vue';
+  import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { FileVideo, Loader2, ChevronDown, Calendar, X, AlertCircle } from 'lucide-vue-next';
   import XLogo from '@/components/icons/XLogo.vue';
   import { useToast } from '@/composables/useToast';
@@ -242,7 +287,11 @@
   const personalAccounts = ref<UserTwitterAccount[]>([]);
   const allowPersonalTwitter = ref(true);
   const selectedAccountValue = ref('');
+  const selectedAccountLabel = ref('');
   const selectedCreatorProfileId = ref('');
+  const selectedCreatorLabel = ref('');
+  const showAccountDropdown = ref(false);
+  const showCreatorDropdown = ref(false);
   const caption = ref('');
   const publishing = ref(false);
   const error = ref<string | null>(null);
@@ -288,6 +337,34 @@
     return `${relative} (${date.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })})`;
   }
 
+  function selectAccount(value: string, label: string) {
+    selectedAccountValue.value = value;
+    selectedAccountLabel.value = label;
+    showAccountDropdown.value = false;
+  }
+
+  function selectCreator(value: string, label: string) {
+    selectedCreatorProfileId.value = value;
+    selectedCreatorLabel.value = label;
+    showCreatorDropdown.value = false;
+  }
+
+  function handleClickOutside(event: Event) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.relative')) {
+      showAccountDropdown.value = false;
+      showCreatorDropdown.value = false;
+    }
+  }
+
+  onMounted(() => {
+    document.addEventListener('click', handleClickOutside);
+  });
+
+  onUnmounted(() => {
+    document.removeEventListener('click', handleClickOutside);
+  });
+
   watch(
     () => props.open,
     async (isOpen) => {
@@ -319,9 +396,9 @@
         personalAccounts.value = pRes.accounts.filter((a) => a.is_active);
       }
       if (orgAccounts.value.length > 0) {
-        selectedAccountValue.value = `org:${orgAccounts.value[0].id}`;
+        selectAccount(`org:${orgAccounts.value[0].id}`, `@${orgAccounts.value[0].username}`);
       } else if (showPersonalAccounts.value && personalAccounts.value.length > 0) {
-        selectedAccountValue.value = `user:${personalAccounts.value[0].id}`;
+        selectAccount(`user:${personalAccounts.value[0].id}`, `@${personalAccounts.value[0].username}`);
       }
     } finally {
       loadingAccounts.value = false;
@@ -406,7 +483,11 @@
 
   function resetForm() {
     selectedAccountValue.value = '';
+    selectedAccountLabel.value = '';
     selectedCreatorProfileId.value = '';
+    selectedCreatorLabel.value = '';
+    showAccountDropdown.value = false;
+    showCreatorDropdown.value = false;
     caption.value = '';
     isScheduled.value = false;
     scheduleDate.value = '';
@@ -656,47 +737,80 @@
     color: white;
   }
 
-  /* ===== Select ===== */
-  .twitter-dialog__select-wrapper {
-    position: relative;
-  }
-
-  .twitter-dialog__select {
-    width: 100%;
-    padding: 0.75rem 2.5rem 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
+  /* ===== Custom Dropdown ===== */
+  .twitter-dialog__dropdown-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     cursor: pointer;
-    transition: all 150ms ease;
-    appearance: none;
   }
 
-  .twitter-dialog__select:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  .twitter-dialog__dropdown-trigger:hover {
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
-  .twitter-dialog__select:disabled {
+  .twitter-dialog__dropdown-trigger:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .twitter-dialog__select option {
+  .twitter-dialog__dropdown {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    left: 0;
+    right: 0;
     background-color: var(--sidebar-surface);
-    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    overflow: hidden;
+    z-index: 10;
+    max-height: 12rem;
+    overflow-y: auto;
   }
 
-  .twitter-dialog__select-icon {
-    position: absolute;
-    right: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
+  .twitter-dialog__dropdown::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .twitter-dialog__dropdown::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .twitter-dialog__dropdown::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .twitter-dialog__dropdown-group {
+    padding: 0.5rem 0.75rem 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
     color: var(--sidebar-text-muted);
-    pointer-events: none;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .twitter-dialog__dropdown-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.625rem 0.75rem;
+    border-radius: 5px;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    transition: background-color 150ms ease;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .twitter-dialog__dropdown-item:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .twitter-dialog__dropdown-item--selected {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
   }
 
   /* ===== Caption Info ===== */

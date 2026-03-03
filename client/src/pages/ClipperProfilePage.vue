@@ -156,6 +156,20 @@
                 </div>
                 <div class="period-switch">
                   <button
+                    :class="{ active: leaderboardType === 'posts' }"
+                    @click="switchLeaderboardType('posts')"
+                  >
+                    Posts
+                  </button>
+                  <button
+                    :class="{ active: leaderboardType === 'campaigns' }"
+                    @click="switchLeaderboardType('campaigns')"
+                  >
+                    Campaigns
+                  </button>
+                </div>
+                <div class="period-switch">
+                  <button
                     :class="{ active: leaderboardPeriod === 'weekly' }"
                     @click="switchLeaderboardPeriod('weekly')"
                   >
@@ -194,7 +208,10 @@
                       {{ entry.clipper_profile?.display_name || 'Anonymous' }}
                       <span v-if="entry.clipper_profile?.user_id === currentUserId" class="lb-entry__you">(You)</span>
                     </span>
-                    <span class="lb-entry__clips">{{ entry.clips_delivered }} clips</span>
+                    <span v-if="leaderboardType === 'posts'" class="lb-entry__clips">
+                      {{ entry.posts_count }} {{ entry.posts_count === 1 ? 'post' : 'posts' }}
+                    </span>
+                    <span v-else class="lb-entry__clips">{{ entry.clips_delivered }} clips</span>
                   </div>
                   <span class="lb-entry__views">{{ formatViews(entry.total_views || 0) }} views</span>
                 </div>
@@ -1294,6 +1311,7 @@
     isTokenExpiringSoon,
     getUserAnalyticsSummary,
     listUserPosts,
+    syncUserAnalytics,
     type UserInstagramAccount,
     type UserPost,
     type UserAnalyticsSummary,
@@ -1391,6 +1409,7 @@
   const totalViews = ref(0);
   const currentUserId = ref<number | null>(null);
   const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
+  const leaderboardType = ref<'posts' | 'campaigns'>('posts');
   const avatarLoadError = ref(false);
 
   // Affiliate State
@@ -1554,11 +1573,18 @@
     }
   };
 
+  const switchLeaderboardType = (type: 'posts' | 'campaigns') => {
+    if (leaderboardType.value !== type) {
+      leaderboardType.value = type;
+      loadLeaderboard();
+    }
+  };
+
   const loadLeaderboard = async () => {
     loadingLeaderboard.value = true;
     try {
       const response = await import('@/services/clipperProfilesApi').then((m) =>
-        m.getLeaderboard(leaderboardPeriod.value)
+        m.getLeaderboard(leaderboardPeriod.value, leaderboardType.value)
       );
       if (response.success) {
         leaderboardEntries.value = response.entries.map((entry: any, index: number) => ({
@@ -1644,6 +1670,9 @@
   const loadPostsAnalytics = async () => {
     loadingPosts.value = true;
     try {
+      // Sync analytics from PostForMe first
+      await syncUserAnalytics();
+
       // Load analytics summary
       const analyticsRes = await getUserAnalyticsSummary({ days: 30 });
       if (analyticsRes.success && analyticsRes.summary) {

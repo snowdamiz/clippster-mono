@@ -51,24 +51,31 @@
 
                 <!-- Account Selection -->
                 <div class="space-y-1.5 sm:space-y-2">
-                  <label for="account" class="block text-xs sm:text-sm font-medium text-zinc-300">
+                  <label class="block text-xs sm:text-sm font-medium text-zinc-300">
                     Instagram Account *
                   </label>
                   <div class="relative">
-                    <select
-                      id="account"
-                      v-model="selectedAccountId"
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all pr-10"
+                    <button
+                      type="button"
+                      @click="showAccountDropdown = !showAccountDropdown"
+                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all flex items-center justify-between"
                       :disabled="publishing"
                     >
-                      <option value="" disabled>Select an account</option>
-                      <option v-for="account in availableAccounts" :key="account.id" :value="String(account.id)">
+                      <span class="truncate">{{ selectedAccountLabel || 'Select an account...' }}</span>
+                      <ChevronDown class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-400 transition-transform" :class="{ 'rotate-180': showAccountDropdown }" />
+                    </button>
+                    <div v-if="showAccountDropdown" class="publish-dropdown">
+                      <button
+                        v-for="account in availableAccounts"
+                        :key="account.id"
+                        type="button"
+                        @click="selectAccount(String(account.id), `@${account.username}`)"
+                        class="publish-dropdown__item"
+                        :class="{ 'publish-dropdown__item--selected': selectedAccountId === String(account.id) }"
+                      >
                         @{{ account.username }}
-                      </option>
-                    </select>
-                    <ChevronDown
-                      class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none"
-                    />
+                      </button>
+                    </div>
                   </div>
                   <p v-if="availableAccounts.length === 0" class="text-xs text-amber-400/80">
                     No Instagram accounts available. Ask an admin to assign you an account.
@@ -77,50 +84,66 @@
 
                 <!-- Creator Profile Selection (optional) -->
                 <div v-if="creatorProfiles.length > 0" class="space-y-1.5 sm:space-y-2">
-                  <label for="creator" class="block text-xs sm:text-sm font-medium text-zinc-300">
+                  <label class="block text-xs sm:text-sm font-medium text-zinc-300">
                     Creator Profile (Optional)
                   </label>
                   <div class="relative">
-                    <select
-                      id="creator"
-                      v-model="selectedCreatorProfileId"
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all pr-10"
+                    <button
+                      type="button"
+                      @click="showCreatorDropdown = !showCreatorDropdown"
+                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all flex items-center justify-between"
                       :disabled="publishing"
                     >
-                      <option value="">None</option>
-                      <option v-for="profile in creatorProfiles" :key="profile.id" :value="String(profile.id)">
+                      <span class="truncate">{{ selectedCreatorLabel || 'None' }}</span>
+                      <ChevronDown class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-400 transition-transform" :class="{ 'rotate-180': showCreatorDropdown }" />
+                    </button>
+                    <div v-if="showCreatorDropdown" class="publish-dropdown">
+                      <button type="button" @click="selectCreator('', 'None')" class="publish-dropdown__item" :class="{ 'publish-dropdown__item--selected': selectedCreatorProfileId === '' }">None</button>
+                      <button
+                        v-for="profile in creatorProfiles"
+                        :key="profile.id"
+                        type="button"
+                        @click="selectCreator(String(profile.id), profile.name)"
+                        class="publish-dropdown__item"
+                        :class="{ 'publish-dropdown__item--selected': selectedCreatorProfileId === String(profile.id) }"
+                      >
                         {{ profile.name }}
-                      </option>
-                    </select>
-                    <ChevronDown
-                      class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none"
-                    />
+                      </button>
+                    </div>
                   </div>
                   <p class="text-xs text-zinc-500">Associate this post with a creator profile for tracking</p>
                 </div>
 
                 <!-- Campaign Selection (shows when creator has campaigns) -->
                 <div v-if="creatorCampaigns.length > 0" class="space-y-1.5 sm:space-y-2">
-                  <label for="campaign" class="block text-xs sm:text-sm font-medium text-zinc-300">
+                  <label class="block text-xs sm:text-sm font-medium text-zinc-300">
                     Campaign
                     <span v-if="creatorCampaigns.length > 1" class="text-zinc-500 font-normal">({{ creatorCampaigns.length }} available)</span>
                   </label>
                   <div class="relative">
-                    <select
-                      id="campaign"
-                      v-model="selectedCampaignId"
-                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all pr-10"
+                    <button
+                      type="button"
+                      @click="showCampaignDropdown = !showCampaignDropdown"
+                      class="w-full px-3 sm:px-4 py-2.5 sm:py-3 bg-zinc-900/80 border border-zinc-800 rounded-lg sm:rounded-xl text-white text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all flex items-center justify-between"
                       :disabled="publishing || loadingCampaigns"
                     >
-                      <option value="">No campaign</option>
-                      <option v-for="campaign in creatorCampaigns" :key="campaign.id" :value="String(campaign.id)">
+                      <span class="truncate">{{ selectedCampaignLabel || 'No campaign' }}</span>
+                      <ChevronDown class="h-3.5 w-3.5 sm:h-4 sm:w-4 text-zinc-400 transition-transform" :class="{ 'rotate-180': showCampaignDropdown }" />
+                    </button>
+                    <div v-if="showCampaignDropdown" class="publish-dropdown">
+                      <button type="button" @click="selectCampaign('', 'No campaign')" class="publish-dropdown__item" :class="{ 'publish-dropdown__item--selected': selectedCampaignId === '' }">No campaign</button>
+                      <button
+                        v-for="campaign in creatorCampaigns"
+                        :key="campaign.id"
+                        type="button"
+                        @click="selectCampaign(String(campaign.id), campaign.title + (campaign.organization?.name ? ` (${campaign.organization.name})` : ''))"
+                        class="publish-dropdown__item"
+                        :class="{ 'publish-dropdown__item--selected': selectedCampaignId === String(campaign.id) }"
+                      >
                         {{ campaign.title }}
-                        <template v-if="campaign.organization?.name"> ({{ campaign.organization.name }})</template>
-                      </option>
-                    </select>
-                    <ChevronDown
-                      class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none"
-                    />
+                        <span v-if="campaign.organization?.name" class="text-zinc-500"> ({{ campaign.organization.name }})</span>
+                      </button>
+                    </div>
                   </div>
                   <p class="text-xs text-zinc-500">Associate this post with a campaign for tracking and analytics</p>
                 </div>
@@ -242,7 +265,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch } from 'vue';
+  import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { Instagram, FileVideo, Loader2, ChevronDown, Calendar } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import {
@@ -286,7 +309,13 @@
 
   const availableAccounts = ref<SocialAccount[]>([]);
   const selectedAccountId = ref('');
+  const selectedAccountLabel = ref('');
   const selectedCreatorProfileId = ref('');
+  const selectedCreatorLabel = ref('');
+  const selectedCampaignLabel = ref('');
+  const showAccountDropdown = ref(false);
+  const showCreatorDropdown = ref(false);
+  const showCampaignDropdown = ref(false);
   const caption = ref('');
   const postType = ref<'reel'>('reel');
   const publishing = ref(false);
@@ -364,6 +393,36 @@
     return `${relative} (${formatted})`;
   }
 
+  function selectAccount(value: string, label: string) {
+    selectedAccountId.value = value;
+    selectedAccountLabel.value = label;
+    showAccountDropdown.value = false;
+  }
+
+  function selectCreator(value: string, label: string) {
+    selectedCreatorProfileId.value = value;
+    selectedCreatorLabel.value = label;
+    showCreatorDropdown.value = false;
+  }
+
+  function selectCampaign(value: string, label: string) {
+    selectedCampaignId.value = value;
+    selectedCampaignLabel.value = label;
+    showCampaignDropdown.value = false;
+  }
+
+  function handleClickOutside(event: Event) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.relative')) {
+      showAccountDropdown.value = false;
+      showCreatorDropdown.value = false;
+      showCampaignDropdown.value = false;
+    }
+  }
+
+  onMounted(() => { document.addEventListener('click', handleClickOutside); });
+  onUnmounted(() => { document.removeEventListener('click', handleClickOutside); });
+
   const canPublish = computed(() => {
     const hasAccount = !!selectedAccountId.value;
     const hasMedia = !!props.mediaUrl;
@@ -410,9 +469,11 @@
         creatorCampaigns.value = response.campaigns;
         // Auto-select if only one campaign
         if (creatorCampaigns.value.length === 1) {
-          selectedCampaignId.value = String(creatorCampaigns.value[0].id);
+          const c = creatorCampaigns.value[0];
+          selectCampaign(String(c.id), c.title + (c.organization?.name ? ` (${c.organization.name})` : ''));
         } else {
           selectedCampaignId.value = '';
+          selectedCampaignLabel.value = '';
         }
       } else {
         creatorCampaigns.value = [];
@@ -438,7 +499,7 @@
 
         // Auto-select if only one account
         if (availableAccounts.value.length === 1) {
-          selectedAccountId.value = String(availableAccounts.value[0].id);
+          selectAccount(String(availableAccounts.value[0].id), `@${availableAccounts.value[0].username}`);
         }
       }
     } catch (err) {
@@ -520,8 +581,14 @@
 
   function resetForm() {
     selectedAccountId.value = '';
+    selectedAccountLabel.value = '';
     selectedCreatorProfileId.value = '';
+    selectedCreatorLabel.value = '';
     selectedCampaignId.value = '';
+    selectedCampaignLabel.value = '';
+    showAccountDropdown.value = false;
+    showCreatorDropdown.value = false;
+    showCampaignDropdown.value = false;
     creatorCampaigns.value = [];
     caption.value = '';
     postType.value = 'reel';
@@ -581,10 +648,54 @@
     background: rgb(82 82 91);
   }
 
-  /* Style native select dropdown arrow area */
-  select option {
-    background: rgb(24 24 27);
+  /* Custom Dropdown */
+  .publish-dropdown {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    left: 0;
+    right: 0;
+    background-color: rgb(24 24 27);
+    border: 1px solid rgb(63 63 70);
+    border-radius: 8px;
+    overflow: hidden;
+    z-index: 10;
+    max-height: 12rem;
+    overflow-y: auto;
+  }
+
+  .publish-dropdown::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .publish-dropdown::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .publish-dropdown::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .publish-dropdown__item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.625rem 0.75rem;
+    border-radius: 5px;
+    font-size: 0.875rem;
     color: white;
-    padding: 8px;
+    transition: background-color 150ms ease;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .publish-dropdown__item:hover {
+    background-color: rgb(39 39 42);
+  }
+
+  .publish-dropdown__item--selected {
+    background-color: rgba(236, 72, 153, 0.15);
+    color: rgb(244 114 182);
   }
 </style>

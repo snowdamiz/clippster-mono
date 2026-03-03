@@ -631,11 +631,18 @@ defmodule ClippsterServerWeb.SchedulingController do
     case Social.list_post_submissions(org_id, status: "published", limit: 500) do
       {:ok, %{posts: posts}} ->
         Logger.info("[sync_org_posts_analytics] Found #{length(posts)} published posts")
+        
+        # Log post details for debugging
+        for post <- posts do
+          Logger.debug("[sync_org_posts_analytics] Post #{post.id}: platform=#{post.platform}, post_url=#{inspect(post.post_url)}, has_account=#{post.organization_social_account != nil}")
+        end
+        
         # Group posts by social account to minimize API calls (one feed fetch per account)
         filtered_posts = posts
           |> Enum.filter(fn post ->
             has_account = post.organization_social_account != nil
             has_provider_id = has_account && is_binary(post.organization_social_account.provider_account_id)
+            has_post_url = is_binary(post.post_url) && post.post_url != ""
             is_supported = post.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
             
             if not has_account do
@@ -644,11 +651,14 @@ defmodule ClippsterServerWeb.SchedulingController do
             if has_account and not has_provider_id do
               Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) account has no provider_account_id")
             end
+            if not has_post_url do
+              Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) has no post_url - cannot sync analytics")
+            end
             if not is_supported do
               Logger.debug("[sync_org_posts_analytics] Post #{post.id} platform #{post.platform} not supported")
             end
             
-            has_account && has_provider_id && is_supported
+            has_account && has_provider_id && has_post_url && is_supported
           end)
         
         Logger.info("[sync_org_posts_analytics] #{length(filtered_posts)} posts after filtering (need account + provider_id + supported platform)")
@@ -708,20 +718,30 @@ defmodule ClippsterServerWeb.SchedulingController do
     case Social.list_external_post_submissions(org_id, limit: 500) do
       {:ok, %{posts: posts}} ->
         Logger.info("[sync_org_external_posts_analytics] Found #{length(posts)} external posts")
-        # Filter to supported platforms with a submitting user
+        
+        # Log post details for debugging
+        for post <- posts do
+          Logger.debug("[sync_org_external_posts_analytics] External post #{post.id}: platform=#{post.platform}, post_url=#{inspect(post.post_url)}, has_user=#{post.submitted_by_user_id != nil}")
+        end
+        
+        # Filter to supported platforms with a submitting user and post_url
         supported_posts =
           Enum.filter(posts, fn sub ->
             has_user = sub.submitted_by_user_id != nil
+            has_post_url = is_binary(sub.post_url) && sub.post_url != ""
             is_supported = sub.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
             
             if not has_user do
               Logger.warning("[sync_org_external_posts_analytics] External post #{sub.id} (#{sub.platform}) has no submitted_by_user_id")
             end
+            if not has_post_url do
+              Logger.warning("[sync_org_external_posts_analytics] External post #{sub.id} (#{sub.platform}) has no post_url - cannot sync analytics")
+            end
             if not is_supported do
               Logger.debug("[sync_org_external_posts_analytics] External post #{sub.id} platform #{sub.platform} not supported")
             end
             
-            has_user && is_supported
+            has_user && has_post_url && is_supported
           end)
         
         Logger.info("[sync_org_external_posts_analytics] #{length(supported_posts)} external posts after filtering")

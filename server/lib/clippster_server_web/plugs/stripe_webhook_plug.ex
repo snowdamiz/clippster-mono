@@ -10,8 +10,11 @@ defmodule ClippsterServerWeb.StripeWebhookPlug do
   multipart streaming (required for large file uploads).
   """
   def read_body(conn, opts) do
+    # Ensure we pass through the length option from Plug.Parsers (200MB limit)
+    read_opts = Keyword.put_new(opts, :length, 200_000_000)
+    
     if conn.request_path == "/api/stripe/webhook" do
-      case read_full_body(conn, opts, []) do
+      case read_full_body(conn, read_opts, []) do
         {:ok, body, conn} ->
           conn = Plug.Conn.assign(conn, :raw_body, body)
           {:ok, body, conn}
@@ -20,7 +23,7 @@ defmodule ClippsterServerWeb.StripeWebhookPlug do
           {:error, reason}
       end
     else
-      Plug.Conn.read_body(conn, opts)
+      Plug.Conn.read_body(conn, read_opts)
     end
   end
 

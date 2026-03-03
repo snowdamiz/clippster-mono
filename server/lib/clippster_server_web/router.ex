@@ -107,6 +107,28 @@ defmodule ClippsterServerWeb.Router do
     plug(ClippsterServerWeb.RateLimit, max_requests: 10, window_seconds: 3600)
   end
 
+  pipeline :api_upload do
+    plug(:accepts, ["json", "multipart"])
+
+    plug(CORSPlug,
+      origin: &__MODULE__.cors_origins/0,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+      headers: [
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "X-Client-Platform"
+      ],
+      max_age: 86400,
+      credentials: true
+    )
+
+    plug(ClippsterServerWeb.AuthPlug)
+    plug(ClippsterServerWeb.EnsureOrgSubscription)
+  end
+
   pipeline :public_html do
     plug(:accepts, ["html"])
   end
@@ -668,12 +690,6 @@ defmodule ClippsterServerWeb.Router do
 
     get("/organizations/:organization_id/posts/:id", PostSubmissionController, :show)
 
-    post(
-      "/organizations/:organization_id/posts/upload-media",
-      PostSubmissionController,
-      :upload_media
-    )
-
     post("/organizations/:organization_id/posts/publish", PostSubmissionController, :publish)
     put("/organizations/:organization_id/posts/:id", PostSubmissionController, :update)
 
@@ -787,13 +803,13 @@ defmodule ClippsterServerWeb.Router do
     get("/user/external-posts", SchedulingController, :list_personal_external_posts)
 
     # User social media posts (personal posting, not campaigns)
-    post("/user/posts/upload-media", UserPostsController, :upload_media)
     post("/user/instagram/publish", UserPostsController, :publish)
     post("/user/twitter/publish", UserPostsController, :publish_twitter)
     post("/user/tiktok/publish", UserPostsController, :publish_tiktok)
     post("/user/youtube/publish", UserPostsController, :publish_youtube)
     get("/user/posts", UserPostsController, :index)
     get("/user/posts/analytics", UserPostsController, :analytics_summary)
+    post("/user/posts/sync-analytics", UserPostsController, :sync_user_analytics)
     get("/user/posts/:id", UserPostsController, :show)
     post("/user/posts/:id/sync", UserPostsController, :sync_analytics)
 
@@ -1073,6 +1089,21 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/payments/:payment_id/complete",
       CampaignController,
       :complete_payment
+    )
+  end
+
+  # Upload endpoints (require authentication + accept multipart)
+  scope "/api", ClippsterServerWeb do
+    pipe_through(:api_upload)
+
+    # User posts media upload
+    post("/user/posts/upload-media", UserPostsController, :upload_media)
+
+    # Organization posts media upload
+    post(
+      "/organizations/:organization_id/posts/upload-media",
+      PostSubmissionController,
+      :upload_media
     )
   end
 

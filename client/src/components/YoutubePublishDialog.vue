@@ -29,18 +29,26 @@
                 </div>
 
                 <div class="yt-dialog__field">
-                  <label for="yt-account" class="yt-dialog__label">YouTube Account *</label>
-                  <div class="yt-dialog__select-wrapper">
-                    <select id="yt-account" v-model="selectedAccountValue" class="yt-dialog__select" :disabled="publishing || loadingAccounts">
-                      <option value="" disabled>Select an account</option>
-                      <optgroup v-if="orgAccounts.length > 0" :label="currentOrgName + ' Accounts'">
-                        <option v-for="account in orgAccounts" :key="`org-${account.id}`" :value="`org:${account.id}`">@{{ account.username }}</option>
-                      </optgroup>
-                      <optgroup v-if="showPersonalAccounts && personalAccounts.length > 0" label="My Personal Accounts">
-                        <option v-for="account in personalAccounts" :key="`user-${account.id}`" :value="`user:${account.id}`">@{{ account.username }}</option>
-                      </optgroup>
-                    </select>
-                    <ChevronDown class="yt-dialog__select-icon" :size="16" />
+                  <label class="yt-dialog__label">YouTube Account *</label>
+                  <div class="relative">
+                    <button type="button" @click="showAccountDropdown = !showAccountDropdown" class="yt-dialog__input yt-dialog__dropdown-trigger" :disabled="publishing || loadingAccounts">
+                      <span class="truncate">{{ selectedAccountLabel || 'Select an account...' }}</span>
+                      <ChevronDown class="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform" :class="{ 'rotate-180': showAccountDropdown }" />
+                    </button>
+                    <div v-if="showAccountDropdown" class="yt-dialog__dropdown">
+                      <template v-if="orgAccounts.length > 0">
+                        <div class="yt-dialog__dropdown-group">{{ currentOrgName }} Accounts</div>
+                        <button v-for="account in orgAccounts" :key="`org-${account.id}`" type="button" @click="selectAccount(`org:${account.id}`, `@${account.username}`)" class="yt-dialog__dropdown-item" :class="{ 'yt-dialog__dropdown-item--selected': selectedAccountValue === `org:${account.id}` }">
+                          @{{ account.username }}
+                        </button>
+                      </template>
+                      <template v-if="showPersonalAccounts && personalAccounts.length > 0">
+                        <div class="yt-dialog__dropdown-group">My Personal Accounts</div>
+                        <button v-for="account in personalAccounts" :key="`user-${account.id}`" type="button" @click="selectAccount(`user:${account.id}`, `@${account.username}`)" class="yt-dialog__dropdown-item" :class="{ 'yt-dialog__dropdown-item--selected': selectedAccountValue === `user:${account.id}` }">
+                          @{{ account.username }}
+                        </button>
+                      </template>
+                    </div>
                   </div>
                   <p v-if="allAccounts.length === 0 && !loadingAccounts" class="yt-dialog__field-hint yt-dialog__field-hint--warning">
                     No YouTube accounts available. Connect a personal account or ask an admin to assign you an organization account.
@@ -48,13 +56,16 @@
                 </div>
 
                 <div v-if="creatorProfiles.length > 0" class="yt-dialog__field">
-                  <label for="yt-creator" class="yt-dialog__label">Creator Profile <span class="yt-dialog__label-hint">(optional)</span></label>
-                  <div class="yt-dialog__select-wrapper">
-                    <select id="yt-creator" v-model="selectedCreatorProfileId" class="yt-dialog__select" :disabled="publishing">
-                      <option value="">None</option>
-                      <option v-for="profile in creatorProfiles" :key="profile.id" :value="String(profile.id)">{{ profile.name }}</option>
-                    </select>
-                    <ChevronDown class="yt-dialog__select-icon" :size="16" />
+                  <label class="yt-dialog__label">Creator Profile <span class="yt-dialog__label-hint">(optional)</span></label>
+                  <div class="relative">
+                    <button type="button" @click="showCreatorDropdown = !showCreatorDropdown" class="yt-dialog__input yt-dialog__dropdown-trigger" :disabled="publishing">
+                      <span class="truncate">{{ selectedCreatorLabel || 'None' }}</span>
+                      <ChevronDown class="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform" :class="{ 'rotate-180': showCreatorDropdown }" />
+                    </button>
+                    <div v-if="showCreatorDropdown" class="yt-dialog__dropdown">
+                      <button type="button" @click="selectCreator('', 'None')" class="yt-dialog__dropdown-item" :class="{ 'yt-dialog__dropdown-item--selected': selectedCreatorProfileId === '' }">None</button>
+                      <button v-for="profile in creatorProfiles" :key="profile.id" type="button" @click="selectCreator(String(profile.id), profile.name)" class="yt-dialog__dropdown-item" :class="{ 'yt-dialog__dropdown-item--selected': selectedCreatorProfileId === String(profile.id) }">{{ profile.name }}</button>
+                    </div>
                   </div>
                   <p class="yt-dialog__field-hint">Associate this post with a creator profile for tracking</p>
                 </div>
@@ -74,14 +85,17 @@
                 </div>
 
                 <div class="yt-dialog__field">
-                  <label for="yt-privacy" class="yt-dialog__label">Privacy *</label>
-                  <div class="yt-dialog__select-wrapper">
-                    <select id="yt-privacy" v-model="privacy" class="yt-dialog__select" :disabled="publishing">
-                      <option value="public">Public</option>
-                      <option value="unlisted">Unlisted</option>
-                      <option value="private">Private</option>
-                    </select>
-                    <ChevronDown class="yt-dialog__select-icon" :size="16" />
+                  <label class="yt-dialog__label">Privacy *</label>
+                  <div class="relative">
+                    <button type="button" @click="showPrivacyDropdown = !showPrivacyDropdown" class="yt-dialog__input yt-dialog__dropdown-trigger" :disabled="publishing">
+                      <span class="truncate">{{ privacyLabel }}</span>
+                      <ChevronDown class="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform" :class="{ 'rotate-180': showPrivacyDropdown }" />
+                    </button>
+                    <div v-if="showPrivacyDropdown" class="yt-dialog__dropdown">
+                      <button type="button" @click="selectPrivacy('public')" class="yt-dialog__dropdown-item" :class="{ 'yt-dialog__dropdown-item--selected': privacy === 'public' }">Public</button>
+                      <button type="button" @click="selectPrivacy('unlisted')" class="yt-dialog__dropdown-item" :class="{ 'yt-dialog__dropdown-item--selected': privacy === 'unlisted' }">Unlisted</button>
+                      <button type="button" @click="selectPrivacy('private')" class="yt-dialog__dropdown-item" :class="{ 'yt-dialog__dropdown-item--selected': privacy === 'private' }">Private</button>
+                    </div>
                   </div>
                   <p class="yt-dialog__field-hint">Control who can see your video</p>
                 </div>
@@ -145,7 +159,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch } from 'vue';
+  import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
   import { Youtube, FileVideo, Loader2, ChevronDown, Calendar, X, AlertCircle } from 'lucide-vue-next';
   import { useToast } from '@/composables/useToast';
   import { getMyAssignedAccounts, listSocialAccounts, publishPost, type SocialAccount } from '@/services/socialAccountsApi';
@@ -180,7 +194,12 @@
   const personalAccounts = ref<UserYoutubeAccount[]>([]);
   const allowPersonal = ref(true);
   const selectedAccountValue = ref('');
+  const selectedAccountLabel = ref('');
   const selectedCreatorProfileId = ref('');
+  const selectedCreatorLabel = ref('');
+  const showAccountDropdown = ref(false);
+  const showCreatorDropdown = ref(false);
+  const showPrivacyDropdown = ref(false);
   const title = ref('');
   const caption = ref('');
   const privacy = ref<'public' | 'unlisted' | 'private'>('public');
@@ -223,6 +242,38 @@
     return `${relative} (${date.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })})`;
   }
 
+  const privacyLabels: Record<string, string> = { public: 'Public', unlisted: 'Unlisted', private: 'Private' };
+  const privacyLabel = computed(() => privacyLabels[privacy.value] || 'Public');
+
+  function selectAccount(value: string, label: string) {
+    selectedAccountValue.value = value;
+    selectedAccountLabel.value = label;
+    showAccountDropdown.value = false;
+  }
+
+  function selectCreator(value: string, label: string) {
+    selectedCreatorProfileId.value = value;
+    selectedCreatorLabel.value = label;
+    showCreatorDropdown.value = false;
+  }
+
+  function selectPrivacy(value: 'public' | 'unlisted' | 'private') {
+    privacy.value = value;
+    showPrivacyDropdown.value = false;
+  }
+
+  function handleClickOutside(event: Event) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.relative')) {
+      showAccountDropdown.value = false;
+      showCreatorDropdown.value = false;
+      showPrivacyDropdown.value = false;
+    }
+  }
+
+  onMounted(() => { document.addEventListener('click', handleClickOutside); });
+  onUnmounted(() => { document.removeEventListener('click', handleClickOutside); });
+
   watch(() => props.open, async (isOpen) => { if (isOpen) { await loadAccounts(); error.value = null; } }, { immediate: true });
 
   async function loadAccounts() {
@@ -238,8 +289,8 @@
       }
       const pRes = await listUserYoutubeAccounts();
       if (pRes.success) { personalAccounts.value = pRes.accounts.filter((a) => a.is_active); }
-      if (orgAccounts.value.length > 0) { selectedAccountValue.value = `org:${orgAccounts.value[0].id}`; }
-      else if (showPersonalAccounts.value && personalAccounts.value.length > 0) { selectedAccountValue.value = `user:${personalAccounts.value[0].id}`; }
+      if (orgAccounts.value.length > 0) { selectAccount(`org:${orgAccounts.value[0].id}`, `@${orgAccounts.value[0].username}`); }
+      else if (showPersonalAccounts.value && personalAccounts.value.length > 0) { selectAccount(`user:${personalAccounts.value[0].id}`, `@${personalAccounts.value[0].username}`); }
     } finally { loadingAccounts.value = false; }
   }
 
@@ -310,7 +361,9 @@
   }
 
   function resetForm() {
-    selectedAccountValue.value = ''; selectedCreatorProfileId.value = ''; title.value = ''; caption.value = '';
+    selectedAccountValue.value = ''; selectedAccountLabel.value = ''; selectedCreatorProfileId.value = ''; selectedCreatorLabel.value = '';
+    showAccountDropdown.value = false; showCreatorDropdown.value = false; showPrivacyDropdown.value = false;
+    title.value = ''; caption.value = '';
     privacy.value = 'public'; madeForKids.value = false;
     isScheduled.value = false; scheduleDate.value = ''; scheduleTime.value = ''; scheduleError.value = null;
   }
@@ -347,12 +400,17 @@
   .yt-dialog__preview-img { max-width: 100%; max-height: 400px; width: auto; height: auto; object-fit: contain; }
   .yt-dialog__preview-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--sidebar-text-muted); opacity: 0.3; }
   .yt-dialog__preview-badge { position: absolute; bottom: 0.5rem; right: 0.5rem; padding: 0.25rem 0.5rem; background-color: rgba(0,0,0,0.7); backdrop-filter: blur(4px); border-radius: 4px; font-size: 0.75rem; font-weight: 500; color: white; }
-  .yt-dialog__select-wrapper { position: relative; }
-  .yt-dialog__select { width: 100%; padding: 0.75rem 2.5rem 0.75rem 1rem; font-size: 0.875rem; background-color: var(--sidebar-hover); border: 1px solid var(--sidebar-border); border-radius: 8px; color: var(--sidebar-text); cursor: pointer; transition: all 150ms ease; appearance: none; }
-  .yt-dialog__select:focus { outline: none; border-color: var(--sidebar-accent); box-shadow: 0 0 0 2px rgba(6,182,212,0.15); }
-  .yt-dialog__select:disabled { opacity: 0.5; cursor: not-allowed; }
-  .yt-dialog__select option { background-color: var(--sidebar-surface); color: var(--sidebar-text); }
-  .yt-dialog__select-icon { position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: var(--sidebar-text-muted); pointer-events: none; }
+  .yt-dialog__dropdown-trigger { display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+  .yt-dialog__dropdown-trigger:hover { border-color: rgba(255,255,255,0.1); }
+  .yt-dialog__dropdown-trigger:disabled { opacity: 0.5; cursor: not-allowed; }
+  .yt-dialog__dropdown { position: absolute; top: calc(100% + 0.5rem); left: 0; right: 0; background-color: var(--sidebar-surface); border: 1px solid var(--sidebar-border); border-radius: 8px; overflow: hidden; z-index: 10; max-height: 12rem; overflow-y: auto; }
+  .yt-dialog__dropdown::-webkit-scrollbar { width: 6px; }
+  .yt-dialog__dropdown::-webkit-scrollbar-track { background: transparent; }
+  .yt-dialog__dropdown::-webkit-scrollbar-thumb { background-color: rgba(255,255,255,0.15); border-radius: 3px; }
+  .yt-dialog__dropdown-group { padding: 0.5rem 0.75rem 0.25rem; font-size: 0.75rem; font-weight: 600; color: var(--sidebar-text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .yt-dialog__dropdown-item { display: block; width: 100%; text-align: left; padding: 0.625rem 0.75rem; border-radius: 5px; font-size: 0.875rem; color: var(--sidebar-text); transition: background-color 150ms ease; border: none; background: transparent; cursor: pointer; }
+  .yt-dialog__dropdown-item:hover { background-color: var(--sidebar-hover); }
+  .yt-dialog__dropdown-item--selected { background-color: rgba(6,182,212,0.15); color: var(--sidebar-accent); }
   .yt-dialog__caption-info { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
   .yt-dialog__toggle-row { display: flex; align-items: center; justify-content: space-between; }
   .yt-dialog__toggle { position: relative; display: inline-flex; height: 24px; width: 44px; align-items: center; border-radius: 9999px; background-color: rgba(255,255,255,0.1); border: 1px solid var(--sidebar-border); cursor: pointer; transition: all 150ms ease; }

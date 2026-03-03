@@ -19,7 +19,14 @@ config :clippster_server, ClippsterServer.Repo,
 config :clippster_server, ClippsterServerWeb.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")],
+  http: [
+    ip: {127, 0, 0, 1},
+    port: String.to_integer(System.get_env("PORT") || "4000"),
+    http_1_options: [
+      max_request_line_length: 100_000,
+      max_header_length: 100_000
+    ]
+  ],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
@@ -36,14 +43,7 @@ config :clippster_server, ClippsterServerWeb.Endpoint,
       ]
     ]
   ],
-  # Configure Bandit to allow larger request bodies
-  adapter: Bandit.PhoenixAdapter,
-  transport_options: [
-    max_request_line_length: 10_000_000,
-    max_header_value_length: 100_000_000,
-    # Bandit-specific body limit
-    protocol_options: [max_frame_size: 100_000_000]
-  ]
+  adapter: Bandit.PhoenixAdapter
 
 # ## SSL Support
 #

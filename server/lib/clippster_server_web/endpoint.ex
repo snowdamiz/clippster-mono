@@ -64,14 +64,7 @@ defmodule ClippsterServerWeb.Endpoint do
     max_age: 86400,
     credentials: true
 
-  plug Plug.Parsers,
-    parsers: [:urlencoded, :multipart, :json],
-    pass: ["*/*"],
-    json_decoder: Phoenix.json_library(),
-    # 200MB max request size for large video uploads
-    length: 200_000_000,
-    # Capture raw body for Stripe webhooks
-    body_reader: {ClippsterServerWeb.StripeWebhookPlug, :read_body, []}
+  plug ClippsterServerWeb.SafeParsers
 
   # Debug: Print configuration info
   plug Plug.Logger, log: :debug

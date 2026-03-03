@@ -677,6 +677,7 @@ export async function uploadMediaForPost(
         headers: {
           'Content-Type': undefined,
         },
+        timeout: 600_000, // 10 minutes for large video uploads
       }
     );
     return response.data;

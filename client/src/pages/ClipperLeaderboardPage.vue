@@ -7,6 +7,14 @@
       :icon="Trophy"
     >
       <div class="max-w-3xl pt-4">
+        <!-- Leaderboard Type Tabs -->
+        <Tabs v-model="leaderboardType" class="mb-4">
+          <TabsList>
+            <TabsTrigger value="posts">Posts</TabsTrigger>
+            <TabsTrigger value="campaigns">Campaigns</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
         <!-- Period Tabs -->
         <Tabs v-model="period" class="mb-6">
           <TabsList>
@@ -72,14 +80,29 @@
                   </div>
                 </div>
                 <div class="text-xs text-muted-foreground">
-                  {{ entry.clips_delivered }} clips · {{ entry.campaigns_active }} campaigns · {{ entry.endorsements_received }} endorsements
+                  <template v-if="leaderboardType === 'posts'">
+                    {{ entry.posts_count }} {{ entry.posts_count === 1 ? 'post' : 'posts' }} · {{ entry.total_views.toLocaleString() }} total views
+                  </template>
+                  <template v-else>
+                    {{ entry.clips_delivered }} clips · {{ entry.campaigns_active }} campaigns · {{ entry.endorsements_received }} endorsements
+                  </template>
                 </div>
               </div>
 
               <!-- Score -->
               <div class="text-right">
-                <div class="text-lg font-bold text-foreground">{{ entry.score }}</div>
-                <div class="text-xs text-muted-foreground">points</div>
+                <div class="text-lg font-bold text-foreground">
+                  <template v-if="leaderboardType === 'posts'">
+                    {{ entry.total_views.toLocaleString() }}
+                  </template>
+                  <template v-else>
+                    {{ entry.score }}
+                  </template>
+                </div>
+                <div class="text-xs text-muted-foreground">
+                  <template v-if="leaderboardType === 'posts'">views</template>
+                  <template v-else>points</template>
+                </div>
               </div>
             </div>
           </router-link>
@@ -102,12 +125,13 @@ import {
 
 const loading = ref(true);
 const period = ref<'weekly' | 'monthly'>('weekly');
+const leaderboardType = ref<'posts' | 'campaigns'>('posts');
 const entries = ref<LeaderboardEntry[]>([]);
 
 const loadLeaderboard = async () => {
   loading.value = true;
   try {
-    const response = await getLeaderboard(period.value);
+    const response = await getLeaderboard(period.value, leaderboardType.value);
     if (response.success) {
       entries.value = response.entries;
     }
@@ -133,6 +157,10 @@ const getRankBadgeClass = (rank: number) => {
 };
 
 watch(period, () => {
+  loadLeaderboard();
+});
+
+watch(leaderboardType, () => {
   loadLeaderboard();
 });
 

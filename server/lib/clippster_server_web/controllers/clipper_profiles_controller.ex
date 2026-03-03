@@ -602,14 +602,17 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   @doc """
   GET /api/clippers/leaderboard
   Get the clipper leaderboard.
+  Accepts: period (weekly|monthly), type (posts|campaigns)
   """
   def leaderboard(conn, params) do
     period_type = params["period"] || "weekly"
-    entries = ClipperProfiles.get_leaderboard(period_type)
+    leaderboard_type = params["type"] || "posts"
+    entries = ClipperProfiles.get_leaderboard(period_type, leaderboard_type: leaderboard_type)
 
     json(conn, %{
       success: true,
       period_type: period_type,
+      leaderboard_type: leaderboard_type,
       entries: Enum.map(entries, &serialize_leaderboard_entry/1)
     })
   end
@@ -795,20 +798,20 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   end
 
   defp serialize_leaderboard_entry(entry) do
+    # Handle both database structs (with .id) and live-calculated maps (without .id)
     %{
-      id: entry.id,
       rank: entry.rank,
       score: entry.score,
       clips_delivered: entry.clips_delivered,
       campaigns_active: entry.campaigns_active,
       endorsements_received: entry.endorsements_received,
       total_views: entry.total_views || 0,
-      clipper_profile:
+      posts_count: entry.posts_count || 0,
+      profile:
         if(entry.clipper_profile,
           do: %{
             id: entry.clipper_profile.id,
-            user_id: entry.clipper_profile.user_id,
-            display_name: entry.clipper_profile.display_name,
+            display_name: entry.clipper_profile.display_name || (entry.clipper_profile.user && entry.clipper_profile.user.name),
             avatar_url: maybe_presign_avatar(entry.clipper_profile.avatar_url),
             slug: entry.clipper_profile.slug,
             is_verified: entry.clipper_profile.is_verified,

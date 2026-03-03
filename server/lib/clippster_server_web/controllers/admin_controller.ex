@@ -2119,15 +2119,19 @@ defmodule ClippsterServerWeb.AdminController do
       case period_type do
         "weekly" ->
           LeaderboardWorker.calculate_weekly_leaderboard()
+          LeaderboardWorker.calculate_weekly_posts_leaderboard()
           %{weekly: true, monthly: false}
 
         "monthly" ->
           LeaderboardWorker.calculate_monthly_leaderboard()
+          LeaderboardWorker.calculate_monthly_posts_leaderboard()
           %{weekly: false, monthly: true}
 
         _ ->
           LeaderboardWorker.calculate_weekly_leaderboard()
+          LeaderboardWorker.calculate_weekly_posts_leaderboard()
           LeaderboardWorker.calculate_monthly_leaderboard()
+          LeaderboardWorker.calculate_monthly_posts_leaderboard()
           %{weekly: true, monthly: true}
       end
 
