@@ -488,14 +488,20 @@ export const usePlatformStore = defineStore('platform', {
             // Otherwise, extract the channel name
             let channelInput: string;
             if (trimmedInput.includes('rumble.com/')) {
+              const extracted = extractRumbleChannel(trimmedInput);
+              if (!extracted) {
+                // extractRumbleChannel returns null for video URLs (e.g. rumble.com/v12abc-title.html)
+                this.error = "That's a Rumble video link, not a channel page. Enter the channel URL instead — e.g. rumble.com/c/ChannelName or rumble.com/user/Username.";
+                this.loading = false;
+                return { success: false, error: this.error };
+              }
+              extractedId = extracted;
               channelInput = trimmedInput;
-              // Extract channel name for currentSearchId (for display purposes)
-              extractedId = extractRumbleChannel(trimmedInput) || trimmedInput.trim();
             } else {
               extractedId = extractRumbleChannel(trimmedInput) || trimmedInput.trim();
               channelInput = extractedId;
             }
-            
+
             if (!extractedId) {
               this.error = 'Invalid Rumble channel URL or name';
               this.loading = false;
@@ -633,8 +639,9 @@ export const usePlatformStore = defineStore('platform', {
         
         // If it's already a full URL, extract the base and reconstruct with the correct path
         if (channelName.includes('rumble.com/')) {
-          // Extract base channel URL and add the appropriate path
-          const baseUrl = channelName.split(/\/(livestreams|videos)/)[0];
+          // Strip query string before appending path, then remove any existing /livestreams or /videos suffix
+          const withoutQuery = channelName.split('?')[0];
+          const baseUrl = withoutQuery.split(/\/(livestreams|videos)/)[0];
           urlToFetch = `${baseUrl}/${tab === 'streams' ? 'livestreams' : 'videos'}`;
         } else {
           // Construct URL from channel name
