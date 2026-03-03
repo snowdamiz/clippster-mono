@@ -40,9 +40,6 @@ Thumbs.db
 erl_crash.dump
 *.ez
 
-# Release artifacts (we build fresh in Docker)
-/rel/
-
 # Test database
 *.db
 *.db-journal

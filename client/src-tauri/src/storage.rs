@@ -533,12 +533,6 @@ pub async fn generate_thumbnail(
             thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
         ]);
 
-    // On Windows, hide the console window to prevent PowerShell popups
-    #[cfg(target_os = "windows")]
-    {
-        command = command.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-
     let output = command
         .output()
         .await
@@ -624,12 +618,6 @@ pub async fn generate_thumbnail_at_timestamp(
             "-y",
             thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
         ]);
-
-    // On Windows, hide the console window to prevent PowerShell popups
-    #[cfg(target_os = "windows")]
-    {
-        command = command.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
 
     let output = command
         .output()

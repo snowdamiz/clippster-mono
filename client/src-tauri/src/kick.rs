@@ -370,6 +370,7 @@ pub async fn get_kick_stream_url(channel: String) -> Result<String, String> {
             .arg("--get-url")
             .arg("--no-download")
             .arg("--no-warnings")
+            .arg("--impersonate").arg("chrome")
             .arg(&kick_url),
     )
     .output()
@@ -802,6 +803,7 @@ async fn fetch_kick_playback_url(channel_slug: &str) -> Result<String, String> {
             .arg("--get-url")
             .arg("--no-download")
             .arg("--no-warnings")
+            .arg("--impersonate").arg("chrome")
             .arg(&kick_url),
     )
     .output()
