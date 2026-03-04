@@ -2738,6 +2738,73 @@
           }
         }
         
+        // Apply admin watermark settings for free tier users
+        if (adminBranding.watermark_id && adminBranding.watermark_settings) {
+          console.log('[ClipsTab] Applying admin watermark for free tier user:', adminBranding.watermark_id);
+          
+          const adminWatermark = await resolveWatermarkById(adminBranding.watermark_id);
+          if (adminWatermark) {
+            const adminWatermarkSettings = typeof adminBranding.watermark_settings === 'string'
+              ? JSON.parse(adminBranding.watermark_settings)
+              : adminBranding.watermark_settings;
+            
+            // Build per-ratio settings from admin watermark config
+            const buildPerRatioSettings: Record<
+              string,
+              {
+                watermarkId: string | null;
+                filePath: string | null;
+                width: number | null;
+                height: number | null;
+                position: { x: number; y: number; opacity: number; scale: number } | null;
+              } | null
+            > = {};
+            
+            const allRatios = ['16:9', '9:16', '1:1', '4:5'];
+            for (const ratio of allRatios) {
+              const ratioConfig = adminWatermarkSettings[ratio];
+              if (ratioConfig && ratioConfig.position) {
+                buildPerRatioSettings[ratio] = {
+                  watermarkId: adminBranding.watermark_id,
+                  filePath: adminWatermark.filePath,
+                  width: adminWatermark.width,
+                  height: adminWatermark.height,
+                  position: ratioConfig.position,
+                };
+              } else {
+                // Use default position if no per-ratio config
+                buildPerRatioSettings[ratio] = {
+                  watermarkId: adminBranding.watermark_id,
+                  filePath: adminWatermark.filePath,
+                  width: adminWatermark.width,
+                  height: adminWatermark.height,
+                  position: { x: 12, y: 92, opacity: 80, scale: 20 },
+                };
+              }
+            }
+            
+            // Override watermark settings with admin watermark
+            watermarkSettings = {
+              enabled: true,
+              watermarkId: adminBranding.watermark_id,
+              filePath: adminWatermark.filePath,
+              width: adminWatermark.width,
+              height: adminWatermark.height,
+              positionX: 12,
+              positionY: 92,
+              opacity: 80,
+              scale: 20,
+              perRatioSettings: buildPerRatioSettings,
+            };
+            
+            console.log('[ClipsTab] Admin watermark applied:', {
+              watermarkId: adminBranding.watermark_id,
+              filePath: adminWatermark.filePath,
+              hasPerRatioSettings: true,
+            });
+          }
+        }
+        
         console.log('[ClipsTab] Free tier branding applied successfully');
       }
 
