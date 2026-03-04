@@ -1,6 +1,6 @@
 [package]
 name = "clippster-ui"
-version = "1.170"
+version = "0.1.170"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
