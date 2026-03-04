@@ -407,7 +407,15 @@
   watch(
     [watermarkSettings, normalizedAspectRatio],
     async ([settings, aspectRatioStr]) => {
+      console.log('[ProjectWorkspaceDialog] Watermark watcher triggered:', {
+        enabled: settings.enabled,
+        watermarkId: settings.watermarkId,
+        aspectRatio: aspectRatioStr,
+        currentWatermarkData: !!currentWatermarkData.value,
+      });
+      
       if (!settings.enabled) {
+        console.log('[ProjectWorkspaceDialog] Watermark disabled, clearing data');
         currentWatermarkData.value = null;
         currentWatermarkId.value = null;
         return;
@@ -421,14 +429,18 @@
         const config = perRatio[aspectRatioStr as keyof typeof perRatio];
         if (config && config.watermarkId) {
           targetId = config.watermarkId;
+          console.log('[ProjectWorkspaceDialog] Using per-ratio watermark ID:', targetId, 'for', aspectRatioStr);
         }
       }
 
       // Only reload if the watermark ID changed
       if (targetId !== currentWatermarkId.value) {
+        console.log('[ProjectWorkspaceDialog] Watermark ID changed, loading:', targetId);
         currentWatermarkId.value = targetId;
         // Use loadWatermarkDataById which handles both local and org-asset watermarks
         await loadWatermarkDataById(targetId);
+      } else {
+        console.log('[ProjectWorkspaceDialog] Watermark ID unchanged, skipping reload');
       }
     },
     { deep: true, immediate: true }

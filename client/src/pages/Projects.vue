@@ -2794,9 +2794,20 @@
         }
       }
 
+      // If no watermark found from creator profiles, check for free tier admin branding
       if (!watermarkId) {
-        console.log('[Projects] loadPreviewWatermark: No watermark_id found');
-        return;
+        const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
+        const { getBrandingIfFreeTier } = useFreeTierBranding();
+        const adminBranding = await getBrandingIfFreeTier();
+        
+        if (adminBranding?.watermark_id) {
+          console.log('[Projects] loadPreviewWatermark: Using admin free tier watermark:', adminBranding.watermark_id);
+          watermarkId = adminBranding.watermark_id;
+          watermarkSettingsRaw = adminBranding.watermark_settings ? JSON.stringify(adminBranding.watermark_settings) : null;
+        } else {
+          console.log('[Projects] loadPreviewWatermark: No watermark_id found (checked creator profiles + admin branding)');
+          return;
+        }
       }
 
       // Load the watermark image
@@ -3623,6 +3634,58 @@
             opacity: settings.watermark.opacity,
             scale: settings.watermark.scale,
           };
+        }
+      }
+      
+      // If no watermark from dialog, check for free tier admin branding
+      if (!watermarkSettings) {
+        const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
+        const { getBrandingIfFreeTier } = useFreeTierBranding();
+        const adminBranding = await getBrandingIfFreeTier();
+        
+        if (adminBranding?.watermark_id) {
+          console.log('[Projects] Applying admin free tier watermark to build:', adminBranding.watermark_id);
+          
+          // Resolve watermark file path
+          const { getWatermarkImage } = await import('@/services/database/watermarks');
+          const watermarkImage = await getWatermarkImage(adminBranding.watermark_id);
+          
+          if (watermarkImage) {
+            // Parse per-ratio settings to get default position
+            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+            if (adminBranding.watermark_settings) {
+              try {
+                const perRatioSettings = typeof adminBranding.watermark_settings === 'string' 
+                  ? JSON.parse(adminBranding.watermark_settings)
+                  : adminBranding.watermark_settings;
+                
+                // Use 16:9 as the default display position
+                const ratioConfig = perRatioSettings['16:9'];
+                if (ratioConfig?.position) {
+                  defaultPos = ratioConfig.position;
+                }
+              } catch (e) {
+                console.warn('[Projects] Failed to parse admin watermark settings:', e);
+              }
+            }
+            
+            watermarkSettings = {
+              enabled: true,
+              watermarkId: adminBranding.watermark_id,
+              filePath: watermarkImage.file_path,
+              width: watermarkImage.width ?? null,
+              height: watermarkImage.height ?? null,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+            };
+            
+            console.log('[Projects] Admin watermark settings applied:', {
+              watermarkId: watermarkSettings.watermarkId,
+              position: { x: defaultPos.x, y: defaultPos.y },
+            });
+          }
         }
       }
 
