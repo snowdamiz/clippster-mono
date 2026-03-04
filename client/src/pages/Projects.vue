@@ -2802,7 +2802,34 @@
         
         if (adminBranding?.watermark_id) {
           console.log('[Projects] loadPreviewWatermark: Using admin free tier watermark:', adminBranding.watermark_id);
-          watermarkId = adminBranding.watermark_id;
+          
+          // Server provides a presigned URL — download directly via Tauri (bypasses CORS)
+          if (adminBranding.watermark_url) {
+            console.log('[Projects] loadPreviewWatermark: Downloading free tier watermark via presigned URL');
+            try {
+              const dataUrl = await invoke<string>('download_url_as_data_url', { url: adminBranding.watermark_url });
+              const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                img.onerror = () => resolve(null);
+                img.src = dataUrl;
+              });
+              previewWatermarkData.value = {
+                dataUrl,
+                width: dimensions?.width || undefined,
+                height: dimensions?.height || undefined,
+              };
+              console.log('[Projects] loadPreviewWatermark: Free tier watermark loaded:', {
+                width: dimensions?.width,
+                height: dimensions?.height,
+              });
+            } catch (dlErr) {
+              console.error('[Projects] loadPreviewWatermark: Failed to download free tier watermark:', dlErr);
+              return;
+            }
+          } else {
+            watermarkId = adminBranding.watermark_id;
+          }
           watermarkSettingsRaw = adminBranding.watermark_settings ? JSON.stringify(adminBranding.watermark_settings) : null;
         } else {
           console.log('[Projects] loadPreviewWatermark: No watermark_id found (checked creator profiles + admin branding)');
@@ -2810,8 +2837,9 @@
         }
       }
 
-      // Load the watermark image
-      console.log('[Projects] loadPreviewWatermark: Loading watermark image for ID:', watermarkId);
+      // Load the watermark image (skip if already loaded from free tier presigned URL above)
+      if (!previewWatermarkData.value && watermarkId) {
+        console.log('[Projects] loadPreviewWatermark: Loading watermark image for ID:', watermarkId);
 
       // Check if this is an organization asset (ID format: org-asset-{serverId})
       if (watermarkId.startsWith('org-asset-')) {
@@ -2938,6 +2966,7 @@
         };
         console.log('[Projects] loadPreviewWatermark: Watermark data loaded:', { width: wmWidth, height: wmHeight });
       }
+      } // end if (!previewWatermarkData.value && watermarkId)
 
       // Parse watermark settings (from project or creator profile)
       let watermarkSettings: WatermarkSettings = {
@@ -2964,10 +2993,13 @@
           if (ratioConfig) {
             // Handle both old format (direct x/y/opacity/scale) and new format (position object)
             const position = ratioConfig.position || ratioConfig;
+            // For org-asset watermarks (e.g. free tier admin branding), never override the
+            // top-level watermarkId with the per-ratio one — those are the admin's local UUIDs.
+            const isOrgAsset = watermarkId?.startsWith('org-asset-');
             watermarkSettings = {
               ...watermarkSettings,
               enabled: true,
-              watermarkId: ratioConfig.watermarkId || watermarkId,
+              watermarkId: (!isOrgAsset && ratioConfig.watermarkId) ? ratioConfig.watermarkId : watermarkId,
               positionX: position.x ?? 12,
               positionY: position.y ?? 92,
               opacity: position.opacity ?? 80,
@@ -3646,41 +3678,73 @@
         if (adminBranding?.watermark_id) {
           console.log('[Projects] Applying admin free tier watermark to build:', adminBranding.watermark_id);
           
-          // Resolve watermark file path
-          const { getWatermarkImage } = await import('@/services/database/watermarks');
-          const watermarkImage = await getWatermarkImage(adminBranding.watermark_id);
-          
-          if (watermarkImage) {
-            // Parse per-ratio settings to get default position
-            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
-            if (adminBranding.watermark_settings) {
-              try {
-                const perRatioSettings = typeof adminBranding.watermark_settings === 'string' 
-                  ? JSON.parse(adminBranding.watermark_settings)
-                  : adminBranding.watermark_settings;
-                
-                // Use 16:9 as the default display position
-                const ratioConfig = perRatioSettings['16:9'];
-                if (ratioConfig?.position) {
-                  defaultPos = ratioConfig.position;
-                }
-              } catch (e) {
-                console.warn('[Projects] Failed to parse admin watermark settings:', e);
+          // Parse per-ratio settings to get default position
+          let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+          if (adminBranding.watermark_settings) {
+            try {
+              const perRatioSettings = typeof adminBranding.watermark_settings === 'string' 
+                ? JSON.parse(adminBranding.watermark_settings)
+                : adminBranding.watermark_settings;
+              const ratioConfig = perRatioSettings['16:9'];
+              if (ratioConfig?.position) {
+                defaultPos = ratioConfig.position;
               }
+            } catch (e) {
+              console.warn('[Projects] Failed to parse admin watermark settings:', e);
             }
-            
+          }
+          
+          // Download watermark via presigned URL to local file for FFmpeg
+          let filePath: string | null = null;
+          let wmWidth: number | null = null;
+          let wmHeight: number | null = null;
+          
+          if (adminBranding.watermark_url) {
+            try {
+              const filename = `free-tier-watermark-${adminBranding.watermark_id.replace(/[^a-zA-Z0-9-]/g, '_')}.png`;
+              filePath = await invoke<string>('download_org_asset_from_url', {
+                url: adminBranding.watermark_url,
+                filename,
+                assetType: 'watermarks',
+                organizationId: 'free-tier',
+              });
+              console.log('[Projects] Free tier watermark downloaded to:', filePath);
+              // Measure dimensions
+              const dataUrl = await invoke<string>('read_file_as_data_url', { filePath });
+              const dims = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                const img = new Image();
+                img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                img.onerror = () => resolve(null);
+                img.src = dataUrl;
+              });
+              wmWidth = dims?.width ?? null;
+              wmHeight = dims?.height ?? null;
+            } catch (dlErr) {
+              console.error('[Projects] Failed to download free tier watermark for build:', dlErr);
+            }
+          } else {
+            // Fallback: try local database lookup (for org members who have the asset synced)
+            const { getWatermarkImage } = await import('@/services/database/watermarks');
+            const watermarkImage = await getWatermarkImage(adminBranding.watermark_id);
+            if (watermarkImage) {
+              filePath = watermarkImage.file_path;
+              wmWidth = watermarkImage.width ?? null;
+              wmHeight = watermarkImage.height ?? null;
+            }
+          }
+          
+          if (filePath) {
             watermarkSettings = {
               enabled: true,
               watermarkId: adminBranding.watermark_id,
-              filePath: watermarkImage.file_path,
-              width: watermarkImage.width ?? null,
-              height: watermarkImage.height ?? null,
+              filePath,
+              width: wmWidth,
+              height: wmHeight,
               positionX: defaultPos.x,
               positionY: defaultPos.y,
               opacity: defaultPos.opacity,
               scale: defaultPos.scale,
             };
-            
             console.log('[Projects] Admin watermark settings applied:', {
               watermarkId: watermarkSettings.watermarkId,
               position: { x: defaultPos.x, y: defaultPos.y },
@@ -3842,19 +3906,93 @@
         }
       }
 
-      // Free tier branding override: nullify intro/outro for free tier users
-      // Note: Watermark settings are already loaded into UI state by ProjectWorkspaceDialog
-      // Admin intro/outro are applied via creatorDefaultIntro/creatorDefaultOutro in ProjectWorkspaceDialog
+      // Free tier branding override: replace user intro/outro with admin-configured branding
       const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
       const { getBrandingIfFreeTier } = useFreeTierBranding();
       const adminBranding = await getBrandingIfFreeTier();
       if (adminBranding) {
-        // Nullify user-selected intro/outro (admin defaults will be applied automatically)
+        console.log('[Projects] Free tier user detected - applying admin branding');
+
+        // Clear any user-selected global intro/outro
         introPath = null;
         introDuration = null;
         outroPath = null;
         outroDuration = null;
-        console.log('[Projects] Free tier user detected - admin branding will be applied');
+
+        // Resolve admin per-ratio intro/outro settings into file paths
+        if (adminBranding.intro_settings || adminBranding.outro_settings) {
+          const introRatioSettings = adminBranding.intro_settings ?? {};
+          const outroRatioSettings = adminBranding.outro_settings ?? {};
+
+          const allRatios = new Set([
+            ...Object.keys(introRatioSettings),
+            ...Object.keys(outroRatioSettings),
+          ]);
+
+          for (const ratio of allRatios) {
+            const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
+
+            const introConfig = introRatioSettings[ratio];
+            if (introConfig?.assetId) {
+              // Use presigned URL if available (free tier users), otherwise fall back to local resolution
+              if ((introConfig as any).url) {
+                try {
+                  const filename = `free-tier-intro-${introConfig.assetId.replace(/[^a-zA-Z0-9-]/g, '_')}.mp4`;
+                  const localPath = await invoke<string>('download_org_asset_from_url', {
+                    url: (introConfig as any).url,
+                    filename,
+                    assetType: 'intros',
+                    organizationId: 'free-tier',
+                  });
+                  ratioData.introPath = localPath;
+                  console.log(`[Projects] Admin intro for ${ratio} downloaded:`, localPath);
+                } catch (dlErr) {
+                  console.error(`[Projects] Failed to download admin intro for ${ratio}:`, dlErr);
+                }
+              } else {
+                const { resolveIntroOutroById } = await import('@/services/database/intro-outros');
+                const resolved = await resolveIntroOutroById(introConfig.assetId);
+                if (resolved) {
+                  ratioData.introPath = resolved.filePath;
+                  ratioData.introDuration = resolved.duration ?? undefined;
+                  console.log(`[Projects] Admin intro for ${ratio}:`, resolved.filePath);
+                }
+              }
+            }
+
+            const outroConfig = outroRatioSettings[ratio];
+            if (outroConfig?.assetId) {
+              // Use presigned URL if available (free tier users), otherwise fall back to local resolution
+              if ((outroConfig as any).url) {
+                try {
+                  const filename = `free-tier-outro-${outroConfig.assetId.replace(/[^a-zA-Z0-9-]/g, '_')}.mp4`;
+                  const localPath = await invoke<string>('download_org_asset_from_url', {
+                    url: (outroConfig as any).url,
+                    filename,
+                    assetType: 'outros',
+                    organizationId: 'free-tier',
+                  });
+                  ratioData.outroPath = localPath;
+                  console.log(`[Projects] Admin outro for ${ratio} downloaded:`, localPath);
+                } catch (dlErr) {
+                  console.error(`[Projects] Failed to download admin outro for ${ratio}:`, dlErr);
+                }
+              } else {
+                const { resolveIntroOutroById } = await import('@/services/database/intro-outros');
+                const resolved = await resolveIntroOutroById(outroConfig.assetId);
+                if (resolved) {
+                  ratioData.outroPath = resolved.filePath;
+                  ratioData.outroDuration = resolved.duration ?? undefined;
+                  console.log(`[Projects] Admin outro for ${ratio}:`, resolved.filePath);
+                }
+              }
+            }
+
+            if (ratioData.introPath || ratioData.outroPath) {
+              introOutroPerRatio[ratio] = ratioData;
+            }
+          }
+        }
       }
 
       // Start the build using the correct command

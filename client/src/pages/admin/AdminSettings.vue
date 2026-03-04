@@ -274,7 +274,7 @@
                     <Play :size="14" />
                   </div>
                   <span class="admin-settings__asset-name">
-                    {{ introConfiguredRatios > 0 ? `${introConfiguredRatios} intro(s) configured` : 'No intro configured' }}
+                    {{ selectedIntroName || (introConfiguredRatios > 0 ? `${introConfiguredRatios} ratio(s) configured` : 'No intro configured') }}
                   </span>
                 </div>
                 <button
@@ -312,7 +312,7 @@
                     <SkipForward :size="14" />
                   </div>
                   <span class="admin-settings__asset-name">
-                    {{ outroConfiguredRatios > 0 ? `${outroConfiguredRatios} outro(s) configured` : 'No outro configured' }}
+                    {{ selectedOutroName || (outroConfiguredRatios > 0 ? `${outroConfiguredRatios} ratio(s) configured` : 'No outro configured') }}
                   </span>
                 </div>
                 <button
@@ -393,9 +393,9 @@
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from '@/components/WatermarkPositionPicker.vue';
   import IntroOutroRatioPicker from '@/components/IntroOutroRatioPicker.vue';
   import type { RatioAssetMap } from '@/services/database/types';
-  import { getAllWatermarkImages, getAllIntroOutros } from '@/services/database';
-  import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
-  import { useAssetOperations } from '@/composables/useAssetOperations';
+  import { listOrganizationAssets, uploadOrganizationAsset, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
+  import { useAuthStore } from '@/stores/auth';
+  import { readFile } from '@tauri-apps/plugin-fs';
 
   const {
     isLiveClipEnabled,
@@ -407,6 +407,9 @@
   } = useFeatureFlags();
 
   const { success, error } = useToast();
+  const authStore = useAuthStore();
+
+  const adminOrgId = computed(() => (authStore.user as any)?.owned_organization_id ?? null);
 
   const updatingLiveClipFlag = ref(false);
   const updatingBetaModeFlag = ref(false);
@@ -492,21 +495,42 @@
   
   // Watermark picker state
   const showWatermarkPositionPicker = ref(false);
-  const watermarkAssets = ref<any[]>([]);
+  const orgAssets = ref<ServerOrganizationAsset[]>([]);
+  // Helper: extract numeric server ID from 'org-asset-{id}' or plain string
+  function extractServerId(assetId: string | null | undefined): number | null {
+    if (!assetId) return null;
+    if (assetId.startsWith('org-asset-')) return parseInt(assetId.replace('org-asset-', ''), 10) || null;
+    const n = parseInt(assetId, 10);
+    return isNaN(n) ? null : n;
+  }
+
   const selectedWatermark = computed(() => {
     if (!freeTierBranding.value.watermark_id) return null;
-    return watermarkAssets.value.find(w => w.id === freeTierBranding.value.watermark_id);
+    const sid = extractServerId(freeTierBranding.value.watermark_id);
+    return orgAssets.value.find(a => a.id === sid);
   });
-  
+  const selectedIntroName = computed(() => {
+    const introSettings = freeTierBranding.value.intro_settings;
+    if (!introSettings) return null;
+    const firstEntry = Object.values(introSettings).find((v): v is { assetId: string } => v !== null && v !== undefined);
+    if (!firstEntry) return null;
+    const sid = extractServerId(firstEntry.assetId);
+    const asset = orgAssets.value.find(a => a.id === sid);
+    return asset?.name ?? null;
+  });
+  const selectedOutroName = computed(() => {
+    const outroSettings = freeTierBranding.value.outro_settings;
+    if (!outroSettings) return null;
+    const firstEntry = Object.values(outroSettings).find((v): v is { assetId: string } => v !== null && v !== undefined);
+    if (!firstEntry) return null;
+    const sid = extractServerId(firstEntry.assetId);
+    const asset = orgAssets.value.find(a => a.id === sid);
+    return asset?.name ?? null;
+  });
+
   // Intro/Outro picker state
   const showIntroRatioPicker = ref(false);
   const showOutroRatioPicker = ref(false);
-  const introAssets = ref<any[]>([]);
-  const outroAssets = ref<any[]>([]);
-  
-  // Watermark operations
-  const { uploadWatermark } = useWatermarkOperations();
-  const { uploadAsset } = useAssetOperations();
 
   const refreshingLeaderboard = ref<'weekly' | 'monthly' | 'both' | null>(null);
   const leaderboardRefreshResult = ref<{ success: boolean; message: string } | null>(null);
@@ -571,15 +595,86 @@
   }
   
   async function loadAssets() {
+    const orgId = adminOrgId.value;
+    if (!orgId) return;
     try {
-      watermarkAssets.value = await getAllWatermarkImages();
-      const allIntros = await getAllIntroOutros('intro');
-      const allOutros = await getAllIntroOutros('outro');
-      introAssets.value = allIntros;
-      outroAssets.value = allOutros;
+      const response = await listOrganizationAssets(orgId);
+      if (response.success) {
+        orgAssets.value = response.assets;
+      }
     } catch (err) {
-      console.warn('[AdminSettings] Failed to load assets:', err);
+      console.warn('[AdminSettings] Failed to load org assets:', err);
     }
+  }
+
+  async function selectVideoFileNative(): Promise<File | null> {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'Video Files', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'] }],
+    });
+    if (!selected || typeof selected !== 'string') return null;
+    const fileName = selected.split(/[\\/]/).pop() || 'file';
+    const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
+    const mimeMap: Record<string, string> = {
+      mp4: 'video/mp4', mov: 'video/quicktime', avi: 'video/x-msvideo',
+      mkv: 'video/x-matroska', webm: 'video/webm', flv: 'video/x-flv',
+      wmv: 'video/x-ms-wmv', m4v: 'video/x-m4v',
+    };
+    const bytes = await readFile(selected);
+    return new File([bytes], fileName, { type: mimeMap[ext] || 'video/mp4' });
+  }
+
+  async function selectImageFileNative(): Promise<File | null> {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+    });
+    if (!selected || typeof selected !== 'string') return null;
+    const fileName = selected.split(/[\\/]/).pop() || 'file';
+    const ext = fileName.split('.').pop()?.toLowerCase() || 'png';
+    const mimeMap: Record<string, string> = {
+      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+      webp: 'image/webp', gif: 'image/gif',
+    };
+    const bytes = await readFile(selected);
+    return new File([bytes], fileName, { type: mimeMap[ext] || 'image/png' });
+  }
+
+  async function extractVideoMetadata(videoBlob: Blob): Promise<{ duration: number | null; width: number | null; height: number | null; thumbnail: File | null }> {
+    return new Promise((resolve) => {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.muted = true;
+      const timeout = setTimeout(() => resolve({ duration: null, width: null, height: null, thumbnail: null }), 10000);
+      video.onloadedmetadata = () => {
+        video.currentTime = 1;
+        video.onseeked = () => {
+          clearTimeout(timeout);
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          canvas.getContext('2d')?.drawImage(video, 0, 0);
+          canvas.toBlob((blob) => {
+            const thumbnail = blob ? new File([blob], 'thumbnail.jpg', { type: 'image/jpeg' }) : null;
+            resolve({ duration: video.duration || null, width: video.videoWidth || null, height: video.videoHeight || null, thumbnail });
+            URL.revokeObjectURL(video.src);
+          }, 'image/jpeg', 0.8);
+        };
+      };
+      video.onerror = () => { clearTimeout(timeout); resolve({ duration: null, width: null, height: null, thumbnail: null }); };
+      video.src = URL.createObjectURL(videoBlob);
+    });
+  }
+
+  async function extractImageDimensions(imageBlob: Blob): Promise<{ width: number | null; height: number | null }> {
+    return new Promise((resolve) => {
+      const img = new window.Image();
+      img.onload = () => { resolve({ width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(img.src); };
+      img.onerror = () => { resolve({ width: null, height: null }); URL.revokeObjectURL(img.src); };
+      img.src = URL.createObjectURL(imageBlob);
+    });
   }
   
   function openWatermarkPositionPicker() {
@@ -604,45 +699,102 @@
   
   async function handleWatermarkUpload() {
     if (uploadingWatermark.value) return;
+    const orgId = adminOrgId.value;
+    if (!orgId) { error('No organization', 'Admin account must own an organization to upload assets'); return; }
     uploadingWatermark.value = true;
     try {
-      const result = await uploadWatermark();
-      if (result.success && result.watermarkId) {
-        await loadAssets();
-        freeTierBranding.value.watermark_id = result.watermarkId;
+      const file = await selectImageFileNative();
+      if (!file) return;
+      const dimensions = await extractImageDimensions(file);
+      const response = await uploadOrganizationAsset(orgId, file, 'watermark', {
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        width: dimensions.width ?? undefined,
+        height: dimensions.height ?? undefined,
+      });
+      if (response.success && response.asset) {
+        orgAssets.value.push(response.asset);
+        freeTierBranding.value.watermark_id = `org-asset-${response.asset.id}`;
+        success('Watermark uploaded', `"${response.asset.name}" has been uploaded successfully`);
+      } else {
+        error('Upload failed', response.error || 'Failed to upload watermark');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[AdminSettings] Watermark upload failed:', err);
+      error('Upload failed', err.message || 'Failed to upload watermark');
     } finally {
       uploadingWatermark.value = false;
     }
   }
-  
+
   async function handleIntroUpload() {
     if (uploadingIntro.value) return;
+    const orgId = adminOrgId.value;
+    if (!orgId) { error('No organization', 'Admin account must own an organization to upload assets'); return; }
     uploadingIntro.value = true;
     try {
-      const result = await uploadAsset('intro');
-      if (result.success) {
-        await loadAssets();
+      const file = await selectVideoFileNative();
+      if (!file) return;
+      const metadata = await extractVideoMetadata(file);
+      const response = await uploadOrganizationAsset(orgId, file, 'intro', {
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        thumbnail: metadata.thumbnail ?? undefined,
+        duration: metadata.duration ?? undefined,
+        width: metadata.width ?? undefined,
+        height: metadata.height ?? undefined,
+      });
+      if (response.success && response.asset) {
+        orgAssets.value.push(response.asset);
+        const assetId = `org-asset-${response.asset.id}`;
+        freeTierBranding.value.intro_settings = {
+          '16:9': { assetId },
+          '9:16': { assetId },
+          '1:1': { assetId },
+          '4:5': { assetId },
+        };
+        success('Intro uploaded', `"${response.asset.name}" has been uploaded successfully`);
+      } else {
+        error('Upload failed', response.error || 'Failed to upload intro');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[AdminSettings] Intro upload failed:', err);
+      error('Upload failed', err.message || 'Failed to upload intro');
     } finally {
       uploadingIntro.value = false;
     }
   }
-  
+
   async function handleOutroUpload() {
     if (uploadingOutro.value) return;
+    const orgId = adminOrgId.value;
+    if (!orgId) { error('No organization', 'Admin account must own an organization to upload assets'); return; }
     uploadingOutro.value = true;
     try {
-      const result = await uploadAsset('outro');
-      if (result.success) {
-        await loadAssets();
+      const file = await selectVideoFileNative();
+      if (!file) return;
+      const metadata = await extractVideoMetadata(file);
+      const response = await uploadOrganizationAsset(orgId, file, 'outro', {
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        thumbnail: metadata.thumbnail ?? undefined,
+        duration: metadata.duration ?? undefined,
+        width: metadata.width ?? undefined,
+        height: metadata.height ?? undefined,
+      });
+      if (response.success && response.asset) {
+        orgAssets.value.push(response.asset);
+        const assetId = `org-asset-${response.asset.id}`;
+        freeTierBranding.value.outro_settings = {
+          '16:9': { assetId },
+          '9:16': { assetId },
+          '1:1': { assetId },
+          '4:5': { assetId },
+        };
+        success('Outro uploaded', `"${response.asset.name}" has been uploaded successfully`);
+      } else {
+        error('Upload failed', response.error || 'Failed to upload outro');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('[AdminSettings] Outro upload failed:', err);
+      error('Upload failed', err.message || 'Failed to upload outro');
     } finally {
       uploadingOutro.value = false;
     }

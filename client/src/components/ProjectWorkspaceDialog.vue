@@ -425,7 +425,12 @@
       let targetId = settings.watermarkId;
       const perRatio = settings.perRatioSettings;
 
-      if (perRatio && perRatio[aspectRatioStr as keyof typeof perRatio]) {
+      // Skip per-ratio watermark ID overrides when the top-level watermark is an org-asset.
+      // For org-asset watermarks (e.g. free tier admin branding), per-ratio configs only
+      // carry position data — the watermarkId inside them is the admin's local SQLite UUID
+      // which free tier users do not have in their database.
+      const isOrgAsset = targetId?.startsWith('org-asset-');
+      if (!isOrgAsset && perRatio && perRatio[aspectRatioStr as keyof typeof perRatio]) {
         const config = perRatio[aspectRatioStr as keyof typeof perRatio];
         if (config && config.watermarkId) {
           targetId = config.watermarkId;
@@ -1735,29 +1740,24 @@
         console.log('[ProjectWorkspaceDialog] No creator profile found for project:', projectId);
       }
 
-      // For free tier users, load admin-configured branding if no creator profile watermark was applied
-      if (!watermarkSettings.value.enabled) {
+      // For free tier users, admin-configured branding OVERRIDES any project/creator watermark
+      {
         const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
         const { getBrandingIfFreeTier } = useFreeTierBranding();
         const adminBranding = await getBrandingIfFreeTier();
         
         console.log('[ProjectWorkspaceDialog] Checking free tier branding:', {
           hasBranding: !!adminBranding,
-          fullBranding: adminBranding,
-          watermarkSettings: adminBranding?.watermark_settings,
-          intro: adminBranding?.intro,
-          outro: adminBranding?.outro,
+          watermark_id: adminBranding?.watermark_id,
+          watermark_url: adminBranding?.watermark_url,
         });
         
         if (adminBranding) {
-          console.log('[ProjectWorkspaceDialog] Free tier user detected, loading admin branding');
+          console.log('[ProjectWorkspaceDialog] Free tier user detected, applying admin branding (overrides project/creator watermark)');
           
-          // Apply admin watermark settings (same pattern as creator profiles)
-          // watermark_id is the top-level watermark ID
-          // watermark_settings contains per-ratio position data (like creator profiles)
+          // Apply admin watermark settings — overrides any previously set watermark
           if (adminBranding.watermark_id) {
             console.log('[ProjectWorkspaceDialog] Admin watermark ID:', adminBranding.watermark_id);
-            console.log('[ProjectWorkspaceDialog] Admin watermark settings (per-ratio):', adminBranding.watermark_settings);
             
             // Parse per-ratio settings to get default position
             let perRatioSettings = null;
@@ -1768,7 +1768,6 @@
                   ? JSON.parse(adminBranding.watermark_settings)
                   : adminBranding.watermark_settings;
                 
-                // Use 16:9 as the default display position
                 const ratioConfig = perRatioSettings['16:9'];
                 if (ratioConfig?.position) {
                   defaultPos = ratioConfig.position;
@@ -1779,26 +1778,58 @@
             }
             
             const newSettings = {
-              ...watermarkSettings.value,
               enabled: true,
               watermarkId: adminBranding.watermark_id,
               positionX: defaultPos.x,
               positionY: defaultPos.y,
               opacity: defaultPos.opacity,
               scale: defaultPos.scale,
+              // Pass admin per-ratio settings for position data.
+              // The watcher skips per-ratio watermarkId overrides for org-asset IDs,
+              // so these only affect position/opacity/scale per ratio — not which image loads.
               perRatioSettings: perRatioSettings,
             };
             
             console.log('[ProjectWorkspaceDialog] Applying admin watermark settings:', {
               watermarkId: newSettings.watermarkId,
-              hasPerRatioSettings: !!newSettings.perRatioSettings,
             });
             
-            await nextTick();
+            // Pre-set currentWatermarkId to the admin watermark ID BEFORE updating
+            // watermarkSettings — this ensures the watcher sees no change and skips reload
+            currentWatermarkId.value = adminBranding.watermark_id;
+            
             if (mediaPanelRef.value) {
               mediaPanelRef.value.setWatermarkSettings(newSettings);
             }
-            await onWatermarkSettingsChanged(newSettings);
+            watermarkSettings.value = newSettings;
+            
+            // Download watermark via presigned URL (bypasses org-asset system)
+            if (adminBranding.watermark_url) {
+              console.log('[ProjectWorkspaceDialog] Downloading free tier watermark via presigned URL');
+              try {
+                const dataUrl = await invoke<string>('download_url_as_data_url', { url: adminBranding.watermark_url });
+                const dimensions = await new Promise<{ width: number; height: number } | null>((resolve) => {
+                  const img = new Image();
+                  img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                  img.onerror = () => resolve(null);
+                  img.src = dataUrl;
+                });
+                currentWatermarkData.value = {
+                  dataUrl,
+                  width: dimensions?.width || undefined,
+                  height: dimensions?.height || undefined,
+                };
+                console.log('[ProjectWorkspaceDialog] Free tier watermark loaded:', {
+                  width: dimensions?.width,
+                  height: dimensions?.height,
+                });
+              } catch (dlErr) {
+                console.error('[ProjectWorkspaceDialog] Failed to download free tier watermark:', dlErr);
+                await loadWatermarkDataById(adminBranding.watermark_id);
+              }
+            } else {
+              await loadWatermarkDataById(adminBranding.watermark_id);
+            }
           }
           
           // Load admin intro (will be auto-applied when building clips)
