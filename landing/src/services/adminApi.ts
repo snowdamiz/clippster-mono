@@ -279,9 +279,10 @@ export interface FeatureFlags {
 }
 
 export interface FreeTierBranding {
-  watermark_url: string
-  intro_url: string
-  outro_url: string
+  watermark_id: string | null
+  watermark_settings: any | null
+  intro_settings: any | null
+  outro_settings: any | null
 }
 
 export interface OrgApplication {
@@ -919,9 +920,10 @@ export async function getFreeTierBranding(): Promise<FreeTierBranding> {
     'Failed to load free-tier branding',
   )
   return {
-    watermark_url: res.branding?.watermark_url || '',
-    intro_url: res.branding?.intro_url || '',
-    outro_url: res.branding?.outro_url || '',
+    watermark_id: res.branding?.watermark_id || null,
+    watermark_settings: res.branding?.watermark_settings || null,
+    intro_settings: res.branding?.intro_settings || null,
+    outro_settings: res.branding?.outro_settings || null,
   }
 }
 

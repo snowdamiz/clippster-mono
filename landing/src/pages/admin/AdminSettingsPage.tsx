@@ -4,7 +4,6 @@ import { PageLayout } from '@/components/dashboard/PageLayout'
 import {
   getAdminSettings,
   getFreeTierBranding,
-  saveFreeTierBranding,
   updateAdminSetting,
   type FreeTierBranding,
 } from '@/services/adminApi'
@@ -42,15 +41,15 @@ export function AdminSettingsPage() {
   const [titleBarPlatformOverride, setTitleBarPlatformOverrideState] = useState('auto')
 
   const [freeTierBranding, setFreeTierBranding] = useState<FreeTierBranding>({
-    watermark_url: '',
-    intro_url: '',
-    outro_url: '',
+    watermark_id: null,
+    watermark_settings: null,
+    intro_settings: null,
+    outro_settings: null,
   })
-  const [savingBranding, setSavingBranding] = useState(false)
 
   const freeTierBrandingConfigured = useMemo(
-    () => Boolean(freeTierBranding.watermark_url || freeTierBranding.intro_url || freeTierBranding.outro_url),
-    [freeTierBranding.intro_url, freeTierBranding.outro_url, freeTierBranding.watermark_url],
+    () => Boolean(freeTierBranding.watermark_id || freeTierBranding.intro_settings || freeTierBranding.outro_settings),
+    [freeTierBranding.watermark_id, freeTierBranding.intro_settings, freeTierBranding.outro_settings],
   )
 
   async function fetchFeatureFlags() {
@@ -119,23 +118,13 @@ export function AdminSettingsPage() {
     try {
       const branding = await getFreeTierBranding()
       setFreeTierBranding({
-        watermark_url: branding.watermark_url || '',
-        intro_url: branding.intro_url || '',
-        outro_url: branding.outro_url || '',
+        watermark_id: branding.watermark_id || null,
+        watermark_settings: branding.watermark_settings || null,
+        intro_settings: branding.intro_settings || null,
+        outro_settings: branding.outro_settings || null,
       })
     } catch (err) {
       console.warn('[AdminSettings] Failed to load free tier branding:', err)
-    }
-  }
-
-  async function saveCurrentFreeTierBranding() {
-    setSavingBranding(true)
-    try {
-      await saveFreeTierBranding(freeTierBranding)
-    } catch (err) {
-      console.error('[AdminSettings] Failed to save free tier branding:', err)
-    } finally {
-      setSavingBranding(false)
     }
   }
 
@@ -326,53 +315,56 @@ export function AdminSettingsPage() {
 
               <div className="admin-settings__branding-fields">
                 <div className="admin-settings__branding-field">
-                  <label className="admin-settings__branding-field-label">Watermark Image URL</label>
-                  <input
-                    value={freeTierBranding.watermark_url}
-                    onChange={(event) =>
-                      setFreeTierBranding((previous) => ({ ...previous, watermark_url: event.target.value }))
-                    }
-                    type="text"
-                    placeholder="https://... (PNG or SVG recommended)"
-                    className="admin-settings__input"
-                  />
+                  <label className="admin-settings__branding-field-label">Watermark</label>
+                  <div className="admin-settings__branding-value">
+                    {freeTierBranding.watermark_id ? (
+                      <>
+                        <strong>ID:</strong> {freeTierBranding.watermark_id}
+                        {freeTierBranding.watermark_settings ? (
+                          <span style={{ marginLeft: '12px', color: '#10b981' }}>
+                            (Position configured)
+                          </span>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span style={{ color: '#6b7280' }}>Not configured</span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="admin-settings__branding-field">
-                  <label className="admin-settings__branding-field-label">Intro Video URL</label>
-                  <input
-                    value={freeTierBranding.intro_url}
-                    onChange={(event) =>
-                      setFreeTierBranding((previous) => ({ ...previous, intro_url: event.target.value }))
-                    }
-                    type="text"
-                    placeholder="https://... (MP4 recommended)"
-                    className="admin-settings__input"
-                  />
+                  <label className="admin-settings__branding-field-label">Intro Video</label>
+                  <div className="admin-settings__branding-value">
+                    {freeTierBranding.intro_settings ? (
+                      <span style={{ color: '#10b981' }}>
+                        Configured for {Object.keys(freeTierBranding.intro_settings).length} aspect ratio(s)
+                      </span>
+                    ) : (
+                      <span style={{ color: '#6b7280' }}>Not configured</span>
+                    )}
+                  </div>
                 </div>
 
                 <div className="admin-settings__branding-field">
-                  <label className="admin-settings__branding-field-label">Outro Video URL</label>
-                  <input
-                    value={freeTierBranding.outro_url}
-                    onChange={(event) =>
-                      setFreeTierBranding((previous) => ({ ...previous, outro_url: event.target.value }))
-                    }
-                    type="text"
-                    placeholder="https://... (MP4 recommended)"
-                    className="admin-settings__input"
-                  />
+                  <label className="admin-settings__branding-field-label">Outro Video</label>
+                  <div className="admin-settings__branding-value">
+                    {freeTierBranding.outro_settings ? (
+                      <span style={{ color: '#10b981' }}>
+                        Configured for {Object.keys(freeTierBranding.outro_settings).length} aspect ratio(s)
+                      </span>
+                    ) : (
+                      <span style={{ color: '#6b7280' }}>Not configured</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <button
-                className="admin-settings__branding-save"
-                disabled={savingBranding}
-                onClick={() => void saveCurrentFreeTierBranding()}
-              >
-                {savingBranding ? <Loader2 size={14} className="admin-settings__flag-loading-icon" /> : null}
-                <span>{savingBranding ? 'Saving...' : 'Save Branding'}</span>
-              </button>
+              <div className="admin-settings__branding-notice">
+                <p style={{ fontSize: '14px', color: '#9ca3af', marginTop: '16px' }}>
+                  <strong>Note:</strong> Free tier branding must be configured in the Tauri desktop app. 
+                  This page displays the current configuration for reference only.
+                </p>
+              </div>
             </div>
           </div>
         </div>

@@ -3785,8 +3785,11 @@
       const adminBranding = await getBrandingIfFreeTier();
       if (adminBranding) {
         // Override watermark with admin watermark
-        if (adminBranding.watermark_url) {
-          watermarkSettings = adminBranding.watermark_settings || null;
+        if (adminBranding.watermark_settings) {
+          watermarkSettings = {
+            ...adminBranding.watermark_settings,
+            enabled: true, // Ensure enabled field is always set for Rust
+          };
         }
         // Override intro/outro with admin versions (nullify user selections)
         introPath = null;
