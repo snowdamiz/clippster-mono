@@ -331,23 +331,6 @@
                 <!-- Hover Overlay Buttons -->
                 <div class="project-card__hover-actions">
                   <button
-                    v-if="viewMode === 'folders' && (hasChildren(project.id) || hasDirectVideos(project.id))"
-                    class="project-card__action-btn"
-                    title="View Project"
-                    @click.stop="handleProjectClick(project)"
-                  >
-                    <FolderOpen class="project-card__action-icon" />
-                  </button>
-                  <button
-                    v-else
-                    class="project-card__action-btn"
-                    title="Open Workspace"
-                    @click.stop="handleProjectClick(project)"
-                  >
-                    <Play class="project-card__action-icon" />
-                  </button>
-
-                  <button
                     v-if="canDetectClips(project.id) && !isProjectDetecting(project.id) && isAIAllowed"
                     class="project-card__action-btn"
                     title="Detect Clips"
@@ -378,14 +361,6 @@
 
                   <button class="project-card__action-btn" title="Edit" @click.stop="editProject(project)">
                     <Edit class="project-card__action-icon" />
-                  </button>
-                  <button
-                    v-if="!isProjectDetecting(project.id)"
-                    class="project-card__action-btn"
-                    title="Delete"
-                    @click.stop="confirmDelete(project)"
-                  >
-                    <Trash2 class="project-card__action-icon" />
                   </button>
                 </div>
               </div>
@@ -5643,7 +5618,7 @@
 
   @media (min-width: 1400px) {
     .projects__grid {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
     }
   }
 
