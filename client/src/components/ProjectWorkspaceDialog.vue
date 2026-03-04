@@ -1722,6 +1722,57 @@
       } else {
         console.log('[ProjectWorkspaceDialog] No creator profile found for project:', projectId);
       }
+
+      // For free tier users, load admin-configured branding if no creator profile watermark was applied
+      if (!watermarkSettings.value.enabled) {
+        const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
+        const { getBrandingIfFreeTier } = useFreeTierBranding();
+        const adminBranding = await getBrandingIfFreeTier();
+        
+        if (adminBranding) {
+          console.log('[ProjectWorkspaceDialog] Free tier user detected, loading admin branding');
+          
+          // Apply admin watermark settings (same pattern as creator profiles)
+          if (adminBranding.watermark_settings) {
+            const wmSettings = adminBranding.watermark_settings;
+            
+            // Admin watermark_settings is already a complete WatermarkSettings object
+            const newSettings = {
+              ...watermarkSettings.value,
+              enabled: wmSettings.enabled ?? true,
+              watermarkId: wmSettings.watermarkId,
+              positionX: wmSettings.positionX ?? 50,
+              positionY: wmSettings.positionY ?? 50,
+              opacity: wmSettings.opacity ?? 100,
+              scale: wmSettings.scale ?? 20,
+              perRatioSettings: wmSettings.perRatioSettings ?? null,
+            };
+            
+            console.log('[ProjectWorkspaceDialog] Applying admin watermark settings:', {
+              watermarkId: newSettings.watermarkId,
+              hasPerRatioSettings: !!newSettings.perRatioSettings,
+            });
+            
+            await nextTick();
+            if (mediaPanelRef.value) {
+              mediaPanelRef.value.setWatermarkSettings(newSettings);
+            }
+            await onWatermarkSettingsChanged(newSettings);
+          }
+          
+          // Load admin intro (will be auto-applied when building clips)
+          if (adminBranding.intro) {
+            creatorDefaultIntro.value = adminBranding.intro;
+            console.log('[ProjectWorkspaceDialog] Loaded admin default intro:', adminBranding.intro.name);
+          }
+          
+          // Load admin outro (will be auto-applied when building clips)
+          if (adminBranding.outro) {
+            creatorDefaultOutro.value = adminBranding.outro;
+            console.log('[ProjectWorkspaceDialog] Loaded admin default outro:', adminBranding.outro.name);
+          }
+        }
+      }
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to load creator profile:', error);
       creatorProfile.value = null;
