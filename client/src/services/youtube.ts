@@ -118,13 +118,41 @@ export async function getYouTubeChannelInfo(channel: string): Promise<YouTubeCha
 }
 
 /**
+ * Get duration for a YouTube VOD using ffprobe
+ */
+async function getYouTubeVodDuration(vodUrl: string): Promise<number | undefined> {
+  try {
+    console.log('[YouTube] Fetching duration via ffprobe for:', vodUrl);
+    const duration = await invoke<number>('get_youtube_vod_duration', { vodUrl });
+    console.log('[YouTube] ffprobe duration:', duration);
+    return duration;
+  } catch (error) {
+    console.warn('[YouTube] Failed to get duration via ffprobe:', error);
+    return undefined;
+  }
+}
+
+/**
  * Get VODs (past live streams) for a YouTube channel
  */
 export async function getYouTubeVods(channel: string, limit: number = 20): Promise<YouTubeVod[]> {
   try {
     const channelId = extractYouTubeChannel(channel) || channel.trim();
     const result = await invoke<string>('get_youtube_vods', { channel: channelId, limit });
-    return JSON.parse(result);
+    const vods: YouTubeVod[] = JSON.parse(result);
+    
+    // If yt-dlp didn't return duration, try ffprobe
+    for (const vod of vods) {
+      if (!vod.duration || vod.duration === 0) {
+        console.log('[YouTube] VOD missing duration, trying ffprobe:', vod.videoId);
+        const duration = await getYouTubeVodDuration(vod.url);
+        if (duration) {
+          vod.duration = duration;
+        }
+      }
+    }
+    
+    return vods;
   } catch (error: unknown) {
     console.error('[YouTube] Failed to get VODs:', error);
     return [];
@@ -138,7 +166,20 @@ export async function getYouTubeVideos(channel: string, limit: number = 20): Pro
   try {
     const channelId = extractYouTubeChannel(channel) || channel.trim();
     const result = await invoke<string>('get_youtube_videos', { channel: channelId, limit });
-    return JSON.parse(result);
+    const videos: YouTubeVod[] = JSON.parse(result);
+    
+    // If yt-dlp didn't return duration, try ffprobe
+    for (const video of videos) {
+      if (!video.duration || video.duration === 0) {
+        console.log('[YouTube] Video missing duration, trying ffprobe:', video.videoId);
+        const duration = await getYouTubeVodDuration(video.url);
+        if (duration) {
+          video.duration = duration;
+        }
+      }
+    }
+    
+    return videos;
   } catch (error: unknown) {
     console.error('[YouTube] Failed to get videos:', error);
     return [];

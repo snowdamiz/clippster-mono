@@ -54,62 +54,53 @@
             <p class="creators__subtitle">View your creator profiles, monitor live streams, and manage recordings</p>
           </div>
 
-          <!-- Stats Summary Cards (hidden in empty state) -->
+          <!-- Enhanced Stats Summary Cards -->
           <div v-if="creators.length > 0 || loading" class="creators__stats">
             <!-- Total Creators Card -->
-            <div class="creators-stat">
-              <div class="creators-stat__indicator creators-stat__indicator--total"></div>
-              <div class="creators-stat__inner">
-                <div class="creators-stat__icon creators-stat__icon--total">
-                  <Users />
-                </div>
-                <div class="creators-stat__info">
-                  <span class="creators-stat__label">Total Creators</span>
-                  <span class="creators-stat__value">
-                    <template v-if="loading">
-                      <span class="creators-stat__loading"></span>
-                    </template>
-                    <template v-else>{{ creators.length }}</template>
-                  </span>
-                </div>
+            <div class="creators-stat-card">
+              <div class="creators-stat-card__icon creators-stat-card__icon--blue">
+                <Users :size="20" />
+              </div>
+              <div class="creators-stat-card__content">
+                <span class="creators-stat-card__label">Total Creators</span>
+                <span class="creators-stat-card__value">
+                  <template v-if="loading">
+                    <span class="creators-stat-card__loading"></span>
+                  </template>
+                  <template v-else>{{ creators.length }}</template>
+                </span>
               </div>
             </div>
 
             <!-- Live Now Card -->
-            <div class="creators-stat creators-stat--live">
-              <div class="creators-stat__indicator creators-stat__indicator--live"></div>
-              <div class="creators-stat__inner">
-                <div class="creators-stat__icon creators-stat__icon--live">
-                  <Radio />
-                </div>
-                <div class="creators-stat__info">
-                  <span class="creators-stat__label">Live Now</span>
-                  <span class="creators-stat__value creators-stat__value--live">
-                    <template v-if="loading">
-                      <span class="creators-stat__loading"></span>
-                    </template>
-                    <template v-else>{{ liveCreatorsCount }}</template>
-                  </span>
-                </div>
+            <div class="creators-stat-card">
+              <div class="creators-stat-card__icon creators-stat-card__icon--red">
+                <Radio :size="20" />
+              </div>
+              <div class="creators-stat-card__content">
+                <span class="creators-stat-card__label">Live Now</span>
+                <span class="creators-stat-card__value creators-stat-card__value--red">
+                  <template v-if="loading">
+                    <span class="creators-stat-card__loading"></span>
+                  </template>
+                  <template v-else>{{ liveCreatorsCount }}</template>
+                </span>
               </div>
             </div>
 
             <!-- Monitoring Card -->
-            <div class="creators-stat creators-stat--monitoring">
-              <div class="creators-stat__indicator creators-stat__indicator--monitoring"></div>
-              <div class="creators-stat__inner">
-                <div class="creators-stat__icon creators-stat__icon--monitoring">
-                  <Activity />
-                </div>
-                <div class="creators-stat__info">
-                  <span class="creators-stat__label">Monitoring</span>
-                  <span class="creators-stat__value creators-stat__value--monitoring">
-                    <template v-if="loading">
-                      <span class="creators-stat__loading"></span>
-                    </template>
-                    <template v-else>{{ monitoringCreatorsCount }}</template>
-                  </span>
-                </div>
+            <div class="creators-stat-card">
+              <div class="creators-stat-card__icon creators-stat-card__icon--green">
+                <Activity :size="20" />
+              </div>
+              <div class="creators-stat-card__content">
+                <span class="creators-stat-card__label">Monitoring</span>
+                <span class="creators-stat-card__value creators-stat-card__value--green">
+                  <template v-if="loading">
+                    <span class="creators-stat-card__loading"></span>
+                  </template>
+                  <template v-else>{{ monitoringCreatorsCount }}</template>
+                </span>
               </div>
             </div>
           </div>
@@ -2065,7 +2056,7 @@
     margin-right: 0.25rem;
   }
 
-  /* ===== Stats Summary ===== */
+  /* ===== Enhanced Stats Summary ===== */
   .creators__stats {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -2078,106 +2069,80 @@
     }
   }
 
-  .creators-stat {
+  .creators-stat-card {
     display: flex;
-    background-color: var(--sidebar-surface);
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--sidebar-surface);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
+    border-radius: 12px;
     transition: all 200ms ease;
   }
 
-  .creators-stat:hover {
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  .creators-stat-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   }
 
-  .creators-stat__indicator {
-    width: 4px;
-    flex-shrink: 0;
-    background-color: var(--sidebar-border);
-  }
-
-  .creators-stat__indicator--total {
-    background: linear-gradient(to bottom, #06b6d4 0%, #0891b2 100%);
-  }
-
-  .creators-stat__indicator--live {
-    background-color: #ef4444;
-  }
-
-  .creators-stat__indicator--monitoring {
-    background-color: #10b981;
-  }
-
-  .creators-stat__inner {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 1rem 1.25rem;
-  }
-
-  .creators-stat__icon {
+  .creators-stat-card__icon {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
     flex-shrink: 0;
   }
 
-  .creators-stat__icon svg {
-    width: 20px;
-    height: 20px;
+  .creators-stat-card__icon--blue {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(14, 165, 233, 0.2) 100%);
+    color: var(--sidebar-accent);
   }
 
-  .creators-stat__icon--total {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
-  }
-
-  .creators-stat__icon--live {
-    background-color: rgba(239, 68, 68, 0.15);
+  .creators-stat-card__icon--red {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.2) 100%);
     color: #ef4444;
   }
 
-  .creators-stat__icon--monitoring {
-    background-color: rgba(16, 185, 129, 0.15);
+  .creators-stat-card__icon--green {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%);
     color: #10b981;
   }
 
-  .creators-stat__info {
+  .creators-stat-card__content {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: 0.25rem;
   }
 
-  .creators-stat__label {
+  .creators-stat-card__label {
     font-size: 0.75rem;
     color: var(--sidebar-text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
-  .creators-stat__value {
-    font-size: 1.5rem;
+  .creators-stat-card__value {
+    font-size: 1.75rem;
     font-weight: 700;
     color: var(--sidebar-text);
     letter-spacing: -0.02em;
     line-height: 1;
+    font-variant-numeric: tabular-nums;
   }
 
-  .creators-stat__value--live {
+  .creators-stat-card__value--red {
     color: #ef4444;
   }
 
-  .creators-stat__value--monitoring {
+  .creators-stat-card__value--green {
     color: #10b981;
   }
 
-  .creators-stat__loading {
+  .creators-stat-card__loading {
     display: inline-block;
     width: 32px;
     height: 24px;
@@ -2245,8 +2210,8 @@
 
   .creators__list-inner {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.25rem;
   }
 
   @media (max-width: 768px) {
@@ -2255,39 +2220,58 @@
     }
   }
 
-  /* ===== Creator Card ===== */
+  /* ===== Creator Card - Completely Redesigned ===== */
   .creator-card {
     position: relative;
     display: flex;
     flex-direction: column;
-    background-color: var(--sidebar-surface);
+    background: linear-gradient(to bottom, var(--sidebar-surface) 0%, rgba(0, 0, 0, 0.2) 100%);
     border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
+    border-radius: 16px;
     overflow: hidden;
-    transition: all 150ms ease;
+    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .creator-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.1) 0%, rgba(14, 165, 233, 0.05) 100%);
+    opacity: 0.5;
+    pointer-events: none;
   }
 
   .creator-card:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    border-color: rgba(6, 182, 212, 0.4);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(6, 182, 212, 0.1);
   }
 
-  /* Card Header */
+  /* Card Header - Centered Vertical Layout */
   .creator-card__header {
+    position: relative;
     display: flex;
+    flex-direction: column;
     align-items: center;
+    text-align: center;
     gap: 0.875rem;
-    padding: 1rem;
+    padding: 1.5rem 1.25rem 1rem;
   }
 
   .creator-card__avatar {
-    width: 48px;
-    height: 48px;
-    border-radius: 10px;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
     flex-shrink: 0;
     overflow: hidden;
     background-color: var(--sidebar-hover);
-    border: 2px solid var(--sidebar-border);
+    border: 4px solid var(--sidebar-surface);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2), 0 0 0 2px rgba(6, 182, 212, 0.2);
+    position: relative;
+    z-index: 1;
   }
 
   .creator-card__avatar-img {
@@ -2306,44 +2290,52 @@
   }
 
   .creator-card__avatar-icon {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     color: var(--sidebar-text-muted);
     opacity: 0.6;
   }
 
   .creator-card__header-info {
-    flex: 1;
-    min-width: 0;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .creator-card__name-row {
     display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 0.5rem;
-    flex-wrap: wrap;
+    width: 100%;
   }
 
   .creator-card__name {
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: 1.125rem;
+    font-weight: 700;
     color: var(--sidebar-text);
-    white-space: nowrap;
+    line-height: 1.3;
+    letter-spacing: -0.02em;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
-    line-height: 1.3;
+    white-space: nowrap;
   }
 
   .creator-card__org-badge {
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    padding: 0.1875rem 0.5rem;
-    background-color: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
+    padding: 0.25rem 0.5rem;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
     font-size: 0.625rem;
     font-weight: 600;
-    border-radius: 4px;
+    border-radius: 5px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
   }
 
   .creator-card__org-badge-icon {
@@ -2354,32 +2346,41 @@
   .creator-card__desc {
     font-size: 0.8125rem;
     color: var(--sidebar-text-muted);
-    white-space: nowrap;
+    line-height: 1.5;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 0.25rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
   }
 
   /* Menu Button */
   .creator-card__menu-btn {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
     display: flex;
     align-items: center;
     justify-content: center;
     width: 32px;
     height: 32px;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
     color: var(--sidebar-text-muted);
     cursor: pointer;
     transition: all 150ms ease;
-    flex-shrink: 0;
+    z-index: 2;
   }
 
   .creator-card__menu-btn:hover {
-    background-color: var(--sidebar-hover);
-    border-color: var(--sidebar-border);
+    background: rgba(0, 0, 0, 0.5);
+    border-color: rgba(255, 255, 255, 0.2);
     color: var(--sidebar-text);
+    transform: scale(1.05);
   }
 
   .creator-card__menu-icon {
@@ -2387,20 +2388,21 @@
     height: 18px;
   }
 
-  /* Stats Row */
+  /* Stats Row - Compact Centered */
   .creator-card__stats-row {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.625rem;
-    padding: 0.625rem 1rem;
+    padding: 0.875rem 1rem;
     border-top: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.1);
+    background-color: rgba(0, 0, 0, 0.2);
   }
 
   .creator-card__divider {
     width: 1px;
-    height: 22px;
-    background-color: var(--sidebar-border);
+    height: 20px;
+    background-color: rgba(255, 255, 255, 0.1);
   }
 
   /* Platform Icons */
@@ -2416,18 +2418,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: rgba(255, 255, 255, 0.06);
-    border-radius: 5px;
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 6px;
     transition: all 150ms ease;
   }
 
   .creator-card__platform-icon-wrapper:hover {
     background-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-1px);
   }
 
   .creator-card__platform-icon {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
   }
 
   .creator-card__more-badge {
@@ -2463,22 +2466,26 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: rgba(255, 255, 255, 0.04);
-    border-radius: 5px;
+    background-color: rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
     color: var(--sidebar-text-muted);
-    opacity: 0.3;
+    opacity: 0.4;
     transition: all 150ms ease;
   }
 
   .creator-card__branding-icon svg {
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
   }
 
   .creator-card__branding-icon--active {
     opacity: 1;
     background-color: rgba(16, 185, 129, 0.15);
     color: #10b981;
+  }
+
+  .creator-card__branding-icon--active:hover {
+    transform: translateY(-1px);
   }
 
   /* Status Indicator */
@@ -2498,13 +2505,13 @@
     }
   }
 
-  /* Card Footer */
+  /* Card Footer - Centered Layout */
   .creator-card__footer {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.625rem;
-    padding: 0.75rem 1rem;
+    gap: 0.75rem;
+    padding: 1rem;
     border-top: 1px solid var(--sidebar-border);
   }
 

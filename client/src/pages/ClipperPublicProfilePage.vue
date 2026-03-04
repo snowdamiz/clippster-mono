@@ -43,43 +43,42 @@
 
       <!-- Profile Content -->
       <div v-else class="profile-content">
-        <!-- Profile Header -->
-        <header class="profile-header">
-          <div class="profile-header__container">
-            <!-- Avatar Section -->
-            <div class="profile-avatar-section">
-              <div class="profile-avatar">
-                <img
-                  v-if="profile.avatar_url"
-                  :src="profile.avatar_url"
-                  class="profile-avatar__img"
-                />
-                <UserCircle v-else class="profile-avatar__fallback" />
-                <div v-if="profile.is_verified" class="profile-avatar__verified">
-                  <CheckCircle />
+        <!-- Enhanced Profile Header Card -->
+        <div class="profile-header-card">
+          <div class="profile-header-bg"></div>
+          <div class="profile-header-content">
+            <div class="profile-header-main">
+              <div class="profile-avatar-wrapper">
+                <div class="profile-avatar">
+                  <img
+                    v-if="profile.avatar_url"
+                    :src="profile.avatar_url"
+                    class="profile-avatar__img"
+                  />
+                  <UserCircle v-else class="profile-avatar__fallback" />
+                  <div v-if="profile.is_verified" class="profile-avatar__verified">
+                    <CheckCircle />
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <!-- Profile Info -->
-            <div class="profile-info">
-              <div class="profile-info__header">
-                <div class="profile-info__left">
+              <div class="profile-info">
+                <div class="profile-name-row">
                   <h1 class="profile-name">{{ profile.display_name || 'Unnamed Clipper' }}</h1>
                   <div class="profile-badges">
-                    <span v-if="profile.looking_for_work" class="badge badge--available">
-                      <span class="badge__dot"></span>
+                    <span v-if="profile.looking_for_work" class="status-badge status-badge--available">
+                      <span class="status-badge__dot"></span>
                       Looking for Work
                     </span>
-                    <span v-if="profile.is_affiliate" class="badge badge--affiliate">
+                    <span v-if="profile.is_affiliate" class="status-badge status-badge--affiliate">
                       <Handshake :size="12" />
                       Affiliate
                     </span>
-                    <span v-if="isOnline(profile.user?.last_active_at)" class="badge badge--online">
-                      <span class="badge__dot"></span>
+                    <span v-if="isOnline(profile.user?.last_active_at)" class="status-badge status-badge--online">
+                      <span class="status-badge__dot"></span>
                       Online
                     </span>
-                    <span v-else-if="profile.user?.last_active_at" class="badge badge--offline">
+                    <span v-else-if="profile.user?.last_active_at" class="status-badge status-badge--offline">
                       {{ formatLastActive(profile.user.last_active_at) }}
                     </span>
                     <div v-for="badge in profile.badges" :key="badge.id" class="profile-badge">
@@ -89,42 +88,58 @@
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <p v-if="profile.bio" class="profile-bio">{{ profile.bio }}</p>
+                <p v-if="profile.bio" class="profile-bio">{{ profile.bio }}</p>
 
-              <!-- Stats Row -->
-              <div class="profile-stats">
-                <div class="stat">
-                  <span class="stat__value">{{ profile.total_campaigns_completed }}</span>
-                  <span class="stat__label">Campaigns</span>
-                </div>
-                <div class="stat-divider"></div>
-                <div class="stat">
-                  <span class="stat__value">{{ profile.total_clips_delivered }}</span>
-                  <span class="stat__label">Clips</span>
-                </div>
-                <div class="stat-divider"></div>
-                <div class="stat">
-                  <span class="stat__value">{{ profile.total_endorsements }}</span>
-                  <span class="stat__label">Endorsements</span>
-                </div>
-                <div v-if="profile.total_views" class="stat-divider"></div>
-                <div v-if="profile.total_views" class="stat">
-                  <span class="stat__value">{{ formatViews(profile.total_views) }}</span>
-                  <span class="stat__label">Views</span>
+                <div v-if="profile.specialty_tags?.length" class="profile-tags">
+                  <span v-for="tag in profile.specialty_tags.slice(0, 6)" :key="tag" class="profile-tag">
+                    {{ getSpecialtyTagLabel(tag) }}
+                  </span>
                 </div>
               </div>
+            </div>
 
-              <!-- Specialty Tags -->
-              <div v-if="profile.specialty_tags?.length" class="profile-tags">
-                <span v-for="tag in profile.specialty_tags.slice(0, 6)" :key="tag" class="profile-tag">
-                  {{ getSpecialtyTagLabel(tag) }}
-                </span>
+            <!-- Enhanced Stats Grid -->
+            <div class="profile-stats-grid">
+              <div class="profile-stat-card">
+                <div class="profile-stat-card__icon profile-stat-card__icon--cyan">
+                  <Megaphone :size="18" />
+                </div>
+                <div class="profile-stat-card__content">
+                  <span class="profile-stat-card__value">{{ profile.total_campaigns_completed }}</span>
+                  <span class="profile-stat-card__label">Campaigns</span>
+                </div>
+              </div>
+              <div class="profile-stat-card">
+                <div class="profile-stat-card__icon profile-stat-card__icon--cyan">
+                  <Video :size="18" />
+                </div>
+                <div class="profile-stat-card__content">
+                  <span class="profile-stat-card__value">{{ profile.total_clips_delivered }}</span>
+                  <span class="profile-stat-card__label">Clips Delivered</span>
+                </div>
+              </div>
+              <div class="profile-stat-card">
+                <div class="profile-stat-card__icon profile-stat-card__icon--amber">
+                  <Award :size="18" />
+                </div>
+                <div class="profile-stat-card__content">
+                  <span class="profile-stat-card__value">{{ profile.total_endorsements }}</span>
+                  <span class="profile-stat-card__label">Endorsements</span>
+                </div>
+              </div>
+              <div v-if="profile.total_views" class="profile-stat-card">
+                <div class="profile-stat-card__icon profile-stat-card__icon--green">
+                  <Eye :size="18" />
+                </div>
+                <div class="profile-stat-card__content">
+                  <span class="profile-stat-card__value">{{ formatViews(profile.total_views) }}</span>
+                  <span class="profile-stat-card__label">Total Views</span>
+                </div>
               </div>
             </div>
           </div>
-        </header>
+        </div>
 
         <!-- Two Column Layout -->
         <div class="main-layout">
@@ -169,7 +184,7 @@
             <!-- Portfolio Section -->
             <section v-if="profile.portfolio_clips?.length" class="section">
               <div class="section__header">
-                <div class="section__header-icon section__header-icon--purple">
+                <div class="section__header-icon section__header-icon--cyan">
                   <Video />
                 </div>
                 <div class="section__header-text">
@@ -203,7 +218,7 @@
             <!-- Endorsements Section -->
             <section v-if="profile.endorsements?.length" class="section">
               <div class="section__header">
-                <div class="section__header-icon section__header-icon--amber">
+                <div class="section__header-icon section__header-icon--cyan">
                   <Award />
                 </div>
                 <div class="section__header-text">
@@ -378,6 +393,9 @@
                 :src="videoPlaybackUrl"
                 controls
                 autoplay
+                :controlsList="canDownloadClips ? '' : 'nodownload'"
+                :disablePictureInPicture="!canDownloadClips"
+                @contextmenu.prevent="!canDownloadClips"
                 class="video-modal__video"
                 @click.stop
               />
@@ -515,6 +533,7 @@
     X,
     Eye,
     Users,
+    Megaphone,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Badge } from '@/components/ui/badge';
@@ -565,6 +584,11 @@
     }
     crumbs.push({ label: profile.value?.display_name || 'Profile' });
     return crumbs;
+  });
+
+  // Check if current user is an organization owner (can download clips)
+  const canDownloadClips = computed(() => {
+    return !!authStore.user?.owned_organization_id;
   });
 
   // Video player state
@@ -849,33 +873,60 @@
     line-height: 1.5;
   }
 
-  /* ===== Profile Header ===== */
-  .profile-header {
+  /* ===== Enhanced Profile Header Card ===== */
+  .profile-header-card {
     position: relative;
     background: var(--sidebar-surface);
-    border-bottom: 1px solid var(--sidebar-border);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+
+  .profile-header-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 120px;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.15) 100%);
+    opacity: 0.5;
+  }
+
+  .profile-header-content {
+    position: relative;
     padding: 2rem;
   }
 
-  .profile-header__container {
+  .profile-header-main {
     display: flex;
-    gap: 2rem;
     align-items: flex-start;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
   }
 
-  .profile-avatar-section {
+  @media (max-width: 640px) {
+    .profile-header-main {
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+  }
+
+  .profile-avatar-wrapper {
+    position: relative;
     flex-shrink: 0;
   }
 
   .profile-avatar {
     position: relative;
-    width: 160px;
-    height: 160px;
+    width: 96px;
+    height: 96px;
     border-radius: 20px;
-    background: var(--sidebar-bg);
-    border: 4px solid var(--sidebar-border);
+    background: var(--sidebar-hover);
     overflow: hidden;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    border: 3px solid var(--sidebar-surface);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
 
   .profile-avatar__img {
@@ -887,55 +938,55 @@
   .profile-avatar__fallback {
     width: 100%;
     height: 100%;
-    padding: 16px;
+    padding: 20px;
     color: var(--sidebar-text-muted);
   }
 
   .profile-avatar__verified {
     position: absolute;
-    bottom: 8px;
-    right: 8px;
-    width: 32px;
-    height: 32px;
-    background: var(--sidebar-accent);
+    bottom: -3px;
+    right: -3px;
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     border: 3px solid var(--sidebar-surface);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .profile-avatar__verified svg {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     color: white;
   }
 
   .profile-info {
     flex: 1;
     min-width: 0;
-    padding-top: 1rem;
   }
 
-  .profile-info__header {
+  .profile-name-row {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
     margin-bottom: 0.75rem;
   }
 
-  .profile-info__left {
-    flex: 1;
-    min-width: 0;
+  @media (max-width: 640px) {
+    .profile-name-row {
+      justify-content: center;
+    }
   }
 
   .profile-name {
-    font-size: 2rem;
+    font-size: 1.75rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
+    margin: 0;
     letter-spacing: -0.03em;
     line-height: 1.2;
   }
@@ -947,56 +998,49 @@
     flex-wrap: wrap;
   }
 
-  .badge {
+  .status-badge {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
+    padding: 0.375rem 0.625rem;
     border-radius: 6px;
     font-size: 0.6875rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
   }
 
-  .badge--available {
+  .status-badge--available {
     background: rgba(16, 185, 129, 0.15);
     color: #10b981;
-    border: 1px solid rgba(16, 185, 129, 0.3);
   }
 
-  .badge--affiliate {
-    background: rgba(168, 85, 247, 0.15);
-    color: #a855f7;
-    border: 1px solid rgba(168, 85, 247, 0.3);
+  .status-badge--affiliate {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
   }
 
-  .badge--online {
+  .status-badge--online {
     background: rgba(16, 185, 129, 0.15);
     color: #10b981;
-    border: 1px solid rgba(16, 185, 129, 0.3);
   }
 
-  .badge--offline {
+  .status-badge--offline {
     background: rgba(107, 114, 128, 0.15);
     color: #9ca3af;
-    border: 1px solid rgba(107, 114, 128, 0.2);
   }
 
-  .badge__dot {
+  .status-badge__dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
     background: currentColor;
+    border-radius: 50%;
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
   @keyframes pulse {
-    0%, 100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 
   .profile-badge {
@@ -1006,23 +1050,15 @@
   .profile-bio {
     font-size: 0.9375rem;
     color: var(--sidebar-text-muted);
-    margin: 0 0 1.25rem;
+    margin: 0 0 0.875rem;
     line-height: 1.6;
     max-width: 600px;
   }
 
-  .profile-stats {
-    display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    padding: 1rem 0;
-    margin-bottom: 1rem;
-  }
-
-  .stat-divider {
-    width: 1px;
-    height: 32px;
-    background: var(--sidebar-border);
+  @media (max-width: 640px) {
+    .profile-bio {
+      max-width: 100%;
+    }
   }
 
   .profile-tags {
@@ -1032,39 +1068,100 @@
   }
 
   .profile-tag {
-    padding: 0.375rem 0.75rem;
-    background: rgba(6, 182, 212, 0.12);
-    border: 1px solid rgba(6, 182, 212, 0.2);
+    padding: 0.375rem 0.625rem;
+    background: rgba(59, 130, 246, 0.12);
     border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-accent);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: #3b82f6;
     transition: all 150ms ease;
   }
 
   .profile-tag:hover {
-    background: rgba(6, 182, 212, 0.18);
-    border-color: rgba(6, 182, 212, 0.3);
+    background: rgba(59, 130, 246, 0.18);
   }
 
-  .stat {
+  /* Profile Stats Grid */
+  .profile-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+  }
+
+  @media (max-width: 640px) {
+    .profile-stats-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .profile-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    transition: all 200ms ease;
+  }
+
+  .profile-stat-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  }
+
+  .profile-stat-card__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+
+  .profile-stat-card__icon--purple {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.2) 100%);
+    color: #3b82f6;
+  }
+
+  .profile-stat-card__icon--cyan {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(37, 99, 235, 0.2) 100%);
+    color: #3b82f6;
+  }
+
+  .profile-stat-card__icon--amber {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(251, 191, 36, 0.2) 100%);
+    color: #fbbf24;
+  }
+
+  .profile-stat-card__icon--green {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%);
+    color: #10b981;
+  }
+
+  .profile-stat-card__content {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
   }
 
-  .stat__value {
+  .profile-stat-card__value {
     font-size: 1.75rem;
     font-weight: 700;
     color: var(--sidebar-text);
-    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
     line-height: 1;
+    font-variant-numeric: tabular-nums;
   }
 
-  .stat__label {
+  .profile-stat-card__label {
     font-size: 0.75rem;
     color: var(--sidebar-text-muted);
     font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
   /* Header Action Buttons */
@@ -1178,14 +1275,9 @@
     height: 22px;
   }
 
-  .section__header-icon--purple {
-    background-color: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-  }
-
-  .section__header-icon--amber {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
+  .section__header-icon--cyan {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
   }
 
   .section__header-text {
@@ -1494,7 +1586,7 @@
 
   .endorsement-card:hover {
     background: var(--sidebar-hover);
-    border-color: rgba(245, 158, 11, 0.3);
+    border-color: rgba(6, 182, 212, 0.3);
   }
 
   .endorsement-card__header {
@@ -1650,8 +1742,8 @@
   }
 
   .tag--style {
-    background: rgba(139, 92, 246, 0.12);
-    color: #a78bfa;
+    background: rgba(59, 130, 246, 0.12);
+    color: #3b82f6;
   }
 
   /* Connected Accounts */
@@ -1846,7 +1938,7 @@
   /* ===== Responsive ===== */
   @media (max-width: 768px) {
     .profile-header {
-      padding: 1.5rem 1rem;
+      padding: 1rem;
     }
 
     .profile-header__container {
@@ -1857,30 +1949,31 @@
     }
 
     .profile-avatar {
-      width: 120px;
-      height: 120px;
+      width: 64px;
+      height: 64px;
     }
 
-    .profile-info__header {
+    .profile-top-row {
       flex-direction: column;
       align-items: center;
+      gap: 1rem;
+    }
+
+    .profile-stats {
+      gap: 1.5rem;
     }
 
     .profile-name {
-      font-size: 1.5rem;
+      font-size: 1.25rem;
     }
 
     .profile-badges {
       justify-content: center;
     }
 
-    .profile-stats {
-      justify-content: center;
-      flex-wrap: wrap;
-    }
 
-    .stat-divider {
-      display: none;
+    .profile-main {
+      width: 100%;
     }
 
     .main-layout {

@@ -8,6 +8,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tauri::Emitter;
+use tauri_plugin_shell::ShellExt;
 
 use crate::storage;
 use tokio::io::AsyncBufReadExt;
@@ -453,6 +454,28 @@ pub async fn download_youtube_vod(
         });
     }
     
+    // Fetch video duration for time-based progress
+    println!("[YouTube] Fetching video duration for {}", vod_url);
+    let total_duration = match get_youtube_vod_duration(app.clone(), vod_url.clone()).await {
+        Ok(dur) => {
+            println!("[YouTube] Video duration: {:.2}s", dur);
+            Some(dur)
+        }
+        Err(e) => {
+            println!("[YouTube] Failed to fetch duration: {}", e);
+            None
+        }
+    };
+    
+    // Send initial progress
+    let _ = app.emit("download-progress", DownloadProgress {
+        download_id: download_id.clone(),
+        progress: 0.0,
+        current_time: None,
+        total_time: total_duration,
+        status: "Starting download...".to_string(),
+    });
+    
     tokio::spawn(async move {
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
         no_window(&mut cmd);
@@ -533,6 +556,35 @@ pub async fn download_youtube_vod(
                     line = stderr_reader.next_line() => {
                         if let Ok(Some(line)) = line {
                             println!("[YouTube] yt-dlp stderr: {}", line);
+                            
+                            // Parse FFmpeg progress output: out_time=HH:MM:SS.MS
+                            if line.starts_with("out_time=") && total_duration.is_some() {
+                                if let Some(time_str) = line.strip_prefix("out_time=") {
+                                    // Parse time format HH:MM:SS.MS or -577014:32:22.775807 (invalid)
+                                    if !time_str.starts_with('-') {
+                                        let parts: Vec<&str> = time_str.split(':').collect();
+                                        if parts.len() == 3 {
+                                            if let (Ok(hours), Ok(mins), Ok(secs)) = (
+                                                parts[0].parse::<f64>(),
+                                                parts[1].parse::<f64>(),
+                                                parts[2].parse::<f64>()
+                                            ) {
+                                                let current_time = hours * 3600.0 + mins * 60.0 + secs;
+                                                let total_dur = total_duration.unwrap();
+                                                let progress = (current_time / total_dur * 100.0).min(100.0);
+                                                
+                                                let _ = app_progress.emit("download-progress", DownloadProgress {
+                                                    download_id: download_id_progress.clone(),
+                                                    progress,
+                                                    current_time: Some(current_time),
+                                                    total_time: total_duration,
+                                                    status: format!("Downloading... {}%", progress as u32),
+                                                });
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1026,6 +1078,42 @@ pub fn is_youtube_recording_active(channel: String) -> bool {
         .unwrap()
         .values()
         .any(|entry| entry.channel_id == channel_id)
+}
+
+/// Get duration for a YouTube VOD using ffprobe
+#[tauri::command]
+pub async fn get_youtube_vod_duration(app: tauri::AppHandle, vod_url: String) -> Result<f64, String> {
+    println!("[YouTube] Getting duration for URL: {}", vod_url);
+    
+    let output = app.shell()
+        .sidecar("ffprobe")
+        .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
+        .args([
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            &vod_url
+        ])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("ffprobe failed: {}", stderr));
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let duration_str = stdout.trim();
+    
+    println!("[YouTube] ffprobe duration output: {}", duration_str);
+    
+    if duration_str.is_empty() || duration_str == "N/A" {
+        return Err("Duration not available".to_string());
+    }
+    
+    duration_str.parse::<f64>()
+        .map_err(|e| format!("Failed to parse duration: {}", e))
 }
 
 /// Get YouTube channel information including profile image

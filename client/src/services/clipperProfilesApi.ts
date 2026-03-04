@@ -95,8 +95,11 @@ export interface LeaderboardEntry {
   clips_delivered: number;
   campaigns_active: number;
   endorsements_received: number;
+  total_views: number;
+  posts_count: number;
   profile: {
     id: number;
+    user_id: number;
     display_name: string;
     avatar_url: string | null;
     slug: string;
@@ -552,9 +555,10 @@ export async function getClipperBySlug(slug: string): Promise<ProfileResponse> {
 }
 
 export async function getLeaderboard(
-  period: 'weekly' | 'monthly' = 'weekly'
+  period: 'weekly' | 'monthly' = 'weekly',
+  type: 'posts' | 'campaigns' = 'posts'
 ): Promise<LeaderboardResponse> {
-  const response = await api.get(`/clippers/leaderboard?period=${period}`);
+  const response = await api.get(`/clippers/leaderboard?period=${period}&type=${type}`);
   return response.data;
 }
 
