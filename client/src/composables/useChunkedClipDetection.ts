@@ -234,7 +234,9 @@ export function useChunkedClipDetection() {
       const sessionResult = await initializeChunkedTranscriptSession(
         projectVideo.id,
         chunkDurationMinutes,
-        overlapSeconds
+        overlapSeconds,
+        startTime,
+        endTime
       );
 
       if (!sessionResult.success || !sessionResult.sessionId) {

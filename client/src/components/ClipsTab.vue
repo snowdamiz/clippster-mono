@@ -2679,12 +2679,25 @@
         console.log('[ClipsTab] Free tier user detected, applying admin branding');
         
         // Override watermark with admin watermark
-        if (adminBranding.watermark_settings) {
-          watermarkSettings = {
-            ...adminBranding.watermark_settings,
-            enabled: true, // Ensure enabled field is always set for Rust
-          };
-          console.log('[ClipsTab] Applied admin watermark settings');
+        if (adminBranding.watermark_settings && adminBranding.watermark_settings.watermarkId) {
+          // Resolve watermark file path from ID (already imported above)
+          const resolved = await resolveWatermarkById(adminBranding.watermark_settings.watermarkId);
+          
+          if (resolved?.filePath) {
+            watermarkSettings = {
+              enabled: true,
+              watermark_id: adminBranding.watermark_settings.watermarkId,
+              file_path: resolved.filePath,
+              position_x: adminBranding.watermark_settings.positionX,
+              position_y: adminBranding.watermark_settings.positionY,
+              opacity: adminBranding.watermark_settings.opacity,
+              scale: adminBranding.watermark_settings.scale,
+              width: adminBranding.watermark_settings.width || null,
+              height: adminBranding.watermark_settings.height || null,
+              per_ratio_settings: adminBranding.watermark_settings.perRatioSettings || null,
+            };
+            console.log('[ClipsTab] Applied admin watermark settings');
+          }
         }
         
         // Override intro/outro with admin versions

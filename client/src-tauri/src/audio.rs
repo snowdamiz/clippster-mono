@@ -292,6 +292,8 @@ pub async fn extract_and_chunk_audio(
     project_id: String,
     chunk_duration_minutes: u32,
     overlap_seconds: u32,
+    start_time: Option<f64>,
+    end_time: Option<f64>,
 ) -> Result<Vec<AudioChunk>, String> {
     use tauri_plugin_shell::ShellExt;
 
@@ -303,6 +305,8 @@ pub async fn extract_and_chunk_audio(
         chunk_duration_minutes
     );
     println!("[Rust]   overlap_seconds: {}", overlap_seconds);
+    println!("[Rust]   start_time: {:?}", start_time);
+    println!("[Rust]   end_time: {:?}", end_time);
 
     // Get storage paths for temporary files
     let paths = storage::init_storage_dirs().map_err(|e| {
@@ -337,6 +341,23 @@ pub async fn extract_and_chunk_audio(
     if video_duration <= 0.0 {
         return Err("Invalid video duration".to_string());
     }
+
+    // Determine the actual range to chunk based on start_time and end_time
+    let chunk_start = start_time.unwrap_or(0.0).max(0.0);
+    let chunk_end = end_time.unwrap_or(video_duration).min(video_duration);
+    
+    if chunk_start >= chunk_end {
+        return Err(format!(
+            "Invalid time range: start ({:.2}s) must be less than end ({:.2}s)",
+            chunk_start, chunk_end
+        ));
+    }
+    
+    let effective_duration = chunk_end - chunk_start;
+    println!(
+        "[Rust] Chunking range: {:.2}s - {:.2}s (duration: {:.2}s)",
+        chunk_start, chunk_end, effective_duration
+    );
 
     // Determine if we should use the cached audio file or the original video
     let use_cached_audio = if let Ok(ref cached_path) = cached_audio_path_result {
@@ -401,12 +422,13 @@ pub async fn extract_and_chunk_audio(
     println!("[Rust] Using source for chunking: {}", source_path_str);
 
     // Build the list of chunk specs (start, end, duration, index) upfront
+    // Only create chunks within the selected time range
     let mut chunk_specs: Vec<(f64, f64, f64, usize)> = Vec::new();
-    let mut current_start = 0.0f64;
+    let mut current_start = chunk_start;
     let mut chunk_index = 1usize;
 
-    while current_start < video_duration {
-        let current_end = (current_start + chunk_duration_secs).min(video_duration);
+    while current_start < chunk_end {
+        let current_end = (current_start + chunk_duration_secs).min(chunk_end);
         let actual_duration = current_end - current_start;
 
         if actual_duration < 30.0 {
@@ -419,7 +441,7 @@ pub async fn extract_and_chunk_audio(
 
         chunk_specs.push((current_start, current_end, actual_duration, chunk_index));
         current_start = current_end
-            - if current_end < video_duration {
+            - if current_end < chunk_end {
                 overlap_secs
             } else {
                 0.0

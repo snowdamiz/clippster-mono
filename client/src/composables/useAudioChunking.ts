@@ -63,6 +63,8 @@ export function useAudioChunking() {
     options: {
       chunkDurationMinutes?: number;
       overlapSeconds?: number;
+      startTime?: number;
+      endTime?: number;
     } = {}
   ): Promise<{ success: boolean; chunks?: AudioChunk[]; error?: string }> {
     if (isProcessing.value) {
@@ -72,6 +74,8 @@ export function useAudioChunking() {
     const {
       chunkDurationMinutes = 25, // Default 25-minute chunks
       overlapSeconds = 30, // Default 30-second overlap
+      startTime,
+      endTime,
     } = options;
 
     if (chunkDurationMinutes > 30) {
@@ -99,6 +103,8 @@ export function useAudioChunking() {
         projectId,
         chunkDurationMinutes,
         overlapSeconds,
+        startTime: startTime ?? null,
+        endTime: endTime ?? null,
       });
 
       // Update progress
