@@ -2677,35 +2677,18 @@
       const { getBrandingIfFreeTier } = useFreeTierBranding();
       const adminBranding = await getBrandingIfFreeTier();
       if (adminBranding) {
-        console.log('[ClipsTab] Free tier user detected, applying admin intro/outro');
-        
-        // Override intro/outro with admin versions
-        if (adminBranding.intro) {
-          introPath = adminBranding.intro.file_path || null;
-          introDuration = adminBranding.intro.duration || null;
-          console.log('[ClipsTab] Applied admin intro:', adminBranding.intro.name);
-        } else {
-          introPath = null;
-          introDuration = null;
-        }
-        
-        if (adminBranding.outro) {
-          outroPath = adminBranding.outro.file_path || null;
-          outroDuration = adminBranding.outro.duration || null;
-          console.log('[ClipsTab] Applied admin outro:', adminBranding.outro.name);
-        } else {
-          outroPath = null;
-          outroDuration = null;
-        }
+        console.log('[ClipsTab] Free tier user detected, applying admin branding');
+
+        // Clear user-selected global intro/outro (per-ratio settings handled below)
+        introPath = null;
+        introDuration = null;
+        outroPath = null;
+        outroDuration = null;
         
         // Override per-ratio intro/outro with admin settings if configured
-        if (adminBranding.intro_ratio_settings || adminBranding.outro_ratio_settings) {
-          const adminIntroRatios = adminBranding.intro_ratio_settings 
-            ? JSON.parse(adminBranding.intro_ratio_settings) 
-            : {};
-          const adminOutroRatios = adminBranding.outro_ratio_settings 
-            ? JSON.parse(adminBranding.outro_ratio_settings) 
-            : {};
+        if (adminBranding.intro_settings || adminBranding.outro_settings) {
+          const adminIntroRatios = adminBranding.intro_settings ?? {};
+          const adminOutroRatios = adminBranding.outro_settings ?? {};
           
           // Clear user-configured per-ratio settings
           Object.keys(introOutroPerRatio).forEach(key => delete introOutroPerRatio[key]);
@@ -2715,20 +2698,66 @@
             const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
             
             if (adminIntroRatios[ratio]?.assetId) {
-              const introResolved = await resolveIntroOutroById(adminIntroRatios[ratio].assetId);
-              if (introResolved) {
-                ratioData.introPath = introResolved.filePath || undefined;
-                ratioData.introDuration = introResolved.duration || undefined;
-                console.log(`[ClipsTab] Applied admin intro for ${ratio}`);
+              const introConfig = adminIntroRatios[ratio] as any;
+              if (introConfig.url) {
+                // Use presigned URL directly — bypasses org asset system for free tier users
+                try {
+                  const filename = `free-tier-intro-${introConfig.assetId.replace(/[^a-zA-Z0-9-]/g, '_')}.mp4`;
+                  const dlPath = await invoke<string>('download_org_asset_from_url', {
+                    url: introConfig.url,
+                    filename,
+                    assetType: 'intros',
+                    organizationId: 'free-tier',
+                  });
+                  ratioData.introPath = dlPath || undefined;
+                  console.log(`[ClipsTab] Applied admin intro for ${ratio} via presigned URL`);
+                } catch (dlErr) {
+                  console.error(`[ClipsTab] Failed to download admin intro for ${ratio}:`, dlErr);
+                  const introResolved = await resolveIntroOutroById(introConfig.assetId);
+                  if (introResolved) {
+                    ratioData.introPath = introResolved.filePath || undefined;
+                    ratioData.introDuration = introResolved.duration || undefined;
+                  }
+                }
+              } else {
+                const introResolved = await resolveIntroOutroById(introConfig.assetId);
+                if (introResolved) {
+                  ratioData.introPath = introResolved.filePath || undefined;
+                  ratioData.introDuration = introResolved.duration || undefined;
+                  console.log(`[ClipsTab] Applied admin intro for ${ratio}`);
+                }
               }
             }
             
             if (adminOutroRatios[ratio]?.assetId) {
-              const outroResolved = await resolveIntroOutroById(adminOutroRatios[ratio].assetId);
-              if (outroResolved) {
-                ratioData.outroPath = outroResolved.filePath || undefined;
-                ratioData.outroDuration = outroResolved.duration || undefined;
-                console.log(`[ClipsTab] Applied admin outro for ${ratio}`);
+              const outroConfig = adminOutroRatios[ratio] as any;
+              if (outroConfig.url) {
+                // Use presigned URL directly — bypasses org asset system for free tier users
+                try {
+                  const filename = `free-tier-outro-${outroConfig.assetId.replace(/[^a-zA-Z0-9-]/g, '_')}.mp4`;
+                  const dlPath = await invoke<string>('download_org_asset_from_url', {
+                    url: outroConfig.url,
+                    filename,
+                    assetType: 'outros',
+                    organizationId: 'free-tier',
+                  });
+                  ratioData.outroPath = dlPath || undefined;
+                  console.log(`[ClipsTab] Applied admin outro for ${ratio} via presigned URL`);
+                } catch (dlErr) {
+                  console.error(`[ClipsTab] Failed to download admin outro for ${ratio}:`, dlErr);
+                  const outroResolved = await resolveIntroOutroById(outroConfig.assetId);
+                  if (outroResolved) {
+                    ratioData.outroPath = outroResolved.filePath || undefined;
+                    ratioData.outroDuration = outroResolved.duration || undefined;
+                  }
+                }
+              } else {
+                const outroResolved = await resolveIntroOutroById(outroConfig.assetId);
+                if (outroResolved) {
+                  ratioData.outroPath = outroResolved.filePath || undefined;
+                  ratioData.outroDuration = outroResolved.duration || undefined;
+                  console.log(`[ClipsTab] Applied admin outro for ${ratio}`);
+                }
               }
             }
             
@@ -2739,14 +2768,45 @@
         }
         
         // Apply admin watermark settings for free tier users
-        if (adminBranding.watermark_id && adminBranding.watermark_settings) {
+        if (adminBranding.watermark_id) {
           console.log('[ClipsTab] Applying admin watermark for free tier user:', adminBranding.watermark_id);
           
-          const adminWatermark = await resolveWatermarkById(adminBranding.watermark_id);
-          if (adminWatermark) {
-            const adminWatermarkSettings = typeof adminBranding.watermark_settings === 'string'
-              ? JSON.parse(adminBranding.watermark_settings)
-              : adminBranding.watermark_settings;
+          // Resolve watermark file path — prefer presigned URL to bypass org asset system
+          let wmFilePath: string | null = null;
+          let wmWidth: number | null = null;
+          let wmHeight: number | null = null;
+
+          if (adminBranding.watermark_url) {
+            try {
+              const filename = `free-tier-watermark-${adminBranding.watermark_id.replace(/[^a-zA-Z0-9-]/g, '_')}.png`;
+              wmFilePath = await invoke<string>('download_org_asset_from_url', {
+                url: adminBranding.watermark_url,
+                filename,
+                assetType: 'watermarks',
+                organizationId: 'free-tier',
+              });
+              console.log('[ClipsTab] Free tier watermark downloaded to:', wmFilePath);
+            } catch (dlErr) {
+              console.error('[ClipsTab] Failed to download free tier watermark via presigned URL:', dlErr);
+            }
+          }
+
+          if (!wmFilePath) {
+            // Fallback: local cache (works for org members)
+            const adminWatermark = await resolveWatermarkById(adminBranding.watermark_id);
+            if (adminWatermark) {
+              wmFilePath = adminWatermark.filePath;
+              wmWidth = adminWatermark.width;
+              wmHeight = adminWatermark.height;
+            }
+          }
+
+          if (wmFilePath) {
+            const adminWatermarkSettings = adminBranding.watermark_settings
+              ? (typeof adminBranding.watermark_settings === 'string'
+                  ? JSON.parse(adminBranding.watermark_settings)
+                  : adminBranding.watermark_settings)
+              : null;
             
             // Build per-ratio settings from admin watermark config
             const buildPerRatioSettings: Record<
@@ -2762,45 +2822,35 @@
             
             const allRatios = ['16:9', '9:16', '1:1', '4:5'];
             for (const ratio of allRatios) {
-              const ratioConfig = adminWatermarkSettings[ratio];
-              if (ratioConfig && ratioConfig.position) {
-                buildPerRatioSettings[ratio] = {
-                  watermarkId: adminBranding.watermark_id,
-                  filePath: adminWatermark.filePath,
-                  width: adminWatermark.width,
-                  height: adminWatermark.height,
-                  position: ratioConfig.position,
-                };
-              } else {
-                // Use default position if no per-ratio config
-                buildPerRatioSettings[ratio] = {
-                  watermarkId: adminBranding.watermark_id,
-                  filePath: adminWatermark.filePath,
-                  width: adminWatermark.width,
-                  height: adminWatermark.height,
-                  position: { x: 12, y: 92, opacity: 80, scale: 20 },
-                };
-              }
+              const ratioConfig = adminWatermarkSettings?.[ratio];
+              buildPerRatioSettings[ratio] = {
+                watermarkId: adminBranding.watermark_id,
+                filePath: wmFilePath,
+                width: wmWidth,
+                height: wmHeight,
+                position: ratioConfig?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 },
+              };
             }
             
-            // Override watermark settings with admin watermark
+            // Get default position from 16:9 config
+            const defaultPos = adminWatermarkSettings?.['16:9']?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
+
             watermarkSettings = {
               enabled: true,
               watermarkId: adminBranding.watermark_id,
-              filePath: adminWatermark.filePath,
-              width: adminWatermark.width,
-              height: adminWatermark.height,
-              positionX: 12,
-              positionY: 92,
-              opacity: 80,
-              scale: 20,
+              filePath: wmFilePath,
+              width: wmWidth,
+              height: wmHeight,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
               perRatioSettings: buildPerRatioSettings,
             };
             
             console.log('[ClipsTab] Admin watermark applied:', {
               watermarkId: adminBranding.watermark_id,
-              filePath: adminWatermark.filePath,
-              hasPerRatioSettings: true,
+              filePath: wmFilePath,
             });
           }
         }

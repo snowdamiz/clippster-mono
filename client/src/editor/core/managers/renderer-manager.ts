@@ -780,33 +780,85 @@ export class RendererManager {
 			if (adminBranding) {
 				console.log("[Export] Free tier user detected, applying admin branding");
 
-				// Apply admin watermark
-				if (adminBranding.watermark_settings?.watermarkId) {
-					const resolved = await resolveWatermarkById(adminBranding.watermark_settings.watermarkId);
-					if (resolved?.filePath) {
+				// Apply admin watermark — use presigned URL from server to download locally
+				if (adminBranding.watermark_id) {
+					// Parse per-ratio settings to get position for this aspect ratio
+					let pos = { x: 12, y: 92, scale: 20, opacity: 80, isFullFrameOverlay: false };
+					if (adminBranding.watermark_settings) {
+						try {
+							const perRatio = typeof adminBranding.watermark_settings === "string"
+								? JSON.parse(adminBranding.watermark_settings)
+								: adminBranding.watermark_settings;
+							const ratioConfig = aspectRatio ? perRatio[aspectRatio] : perRatio["16:9"];
+							if (ratioConfig?.position) {
+								pos = { ...pos, ...ratioConfig.position };
+							}
+						} catch (e) {
+							console.warn("[Export] Failed to parse admin watermark_settings:", e);
+						}
+					}
+
+					let filePath: string | null = null;
+					if (adminBranding.watermark_url) {
+						// Download via presigned URL (bypasses org-asset system)
+						try {
+							const { invoke } = await import("@tauri-apps/api/core");
+							const filename = `free-tier-watermark-${adminBranding.watermark_id.replace(/[^a-zA-Z0-9-]/g, "_")}.png`;
+							filePath = await invoke<string>("download_org_asset_from_url", {
+								url: adminBranding.watermark_url,
+								filename,
+								assetType: "watermarks",
+								organizationId: "free-tier",
+							});
+							console.log("[Export] Free tier watermark downloaded to:", filePath);
+						} catch (dlErr) {
+							console.error("[Export] Failed to download free tier watermark:", dlErr);
+						}
+					}
+					if (!filePath) {
+						// Fallback: try local database (works for org members)
+						const resolved = await resolveWatermarkById(adminBranding.watermark_id);
+						filePath = resolved?.filePath ?? null;
+					}
+
+					if (filePath) {
 						result.watermark = {
-							image_path: resolved.filePath,
-							x: adminBranding.watermark_settings.positionX,
-							y: adminBranding.watermark_settings.positionY,
-							scale: adminBranding.watermark_settings.scale ?? 1.0,
-							opacity: adminBranding.watermark_settings.opacity ?? 1.0,
-							is_full_frame: adminBranding.watermark_settings.isFullFrameOverlay ?? false,
+							image_path: filePath,
+							x: pos.x,
+							y: pos.y,
+							scale: pos.scale ?? 20,
+							opacity: pos.opacity ?? 80,
+							is_full_frame: pos.isFullFrameOverlay ?? false,
 						};
 						console.log("[Export] Applied admin watermark");
 					}
 				}
 
-				// Apply admin intro/outro
+				// Apply admin intro/outro — use presigned URLs from intro_settings/outro_settings
 				if (aspectRatio) {
-					// Check for per-ratio intro/outro first
 					let introApplied = false;
 					let outroApplied = false;
 
-					if (adminBranding.intro_ratio_settings) {
-						try {
-							const introRatios = JSON.parse(adminBranding.intro_ratio_settings);
-							if (introRatios[aspectRatio]?.assetId) {
-								const introResolved = await resolveIntroOutroById(introRatios[aspectRatio].assetId);
+					if (adminBranding.intro_settings) {
+						const introConfig = adminBranding.intro_settings[aspectRatio];
+						if (introConfig?.assetId) {
+							if ((introConfig as any).url) {
+								try {
+									const { invoke } = await import("@tauri-apps/api/core");
+									const filename = `free-tier-intro-${introConfig.assetId.replace(/[^a-zA-Z0-9-]/g, "_")}.mp4`;
+									result.introPath = await invoke<string>("download_org_asset_from_url", {
+										url: (introConfig as any).url,
+										filename,
+										assetType: "intros",
+										organizationId: "free-tier",
+									});
+									introApplied = true;
+									console.log(`[Export] Applied admin intro for ${aspectRatio}`);
+								} catch (dlErr) {
+									console.error(`[Export] Failed to download admin intro for ${aspectRatio}:`, dlErr);
+								}
+							} else {
+								const introResolved = await resolveIntroOutroById(introConfig.assetId);
 								if (introResolved) {
 									result.introPath = introResolved.filePath;
 									result.introDuration = introResolved.duration ?? null;
@@ -814,16 +866,29 @@ export class RendererManager {
 									console.log(`[Export] Applied admin intro for ${aspectRatio}`);
 								}
 							}
-						} catch (e) {
-							console.warn("[Export] Failed to parse admin intro_ratio_settings:", e);
 						}
 					}
 
-					if (adminBranding.outro_ratio_settings) {
-						try {
-							const outroRatios = JSON.parse(adminBranding.outro_ratio_settings);
-							if (outroRatios[aspectRatio]?.assetId) {
-								const outroResolved = await resolveIntroOutroById(outroRatios[aspectRatio].assetId);
+					if (adminBranding.outro_settings) {
+						const outroConfig = adminBranding.outro_settings[aspectRatio];
+						if (outroConfig?.assetId) {
+							if ((outroConfig as any).url) {
+								try {
+									const { invoke } = await import("@tauri-apps/api/core");
+									const filename = `free-tier-outro-${outroConfig.assetId.replace(/[^a-zA-Z0-9-]/g, "_")}.mp4`;
+									result.outroPath = await invoke<string>("download_org_asset_from_url", {
+										url: (outroConfig as any).url,
+										filename,
+										assetType: "outros",
+										organizationId: "free-tier",
+									});
+									outroApplied = true;
+									console.log(`[Export] Applied admin outro for ${aspectRatio}`);
+								} catch (dlErr) {
+									console.error(`[Export] Failed to download admin outro for ${aspectRatio}:`, dlErr);
+								}
+							} else {
+								const outroResolved = await resolveIntroOutroById(outroConfig.assetId);
 								if (outroResolved) {
 									result.outroPath = outroResolved.filePath;
 									result.outroDuration = outroResolved.duration ?? null;
@@ -831,8 +896,6 @@ export class RendererManager {
 									console.log(`[Export] Applied admin outro for ${aspectRatio}`);
 								}
 							}
-						} catch (e) {
-							console.warn("[Export] Failed to parse admin outro_ratio_settings:", e);
 						}
 					}
 

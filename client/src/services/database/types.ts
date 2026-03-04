@@ -526,7 +526,7 @@ export interface CreatorIntroOutroSettings {
 }
 
 // Separate per-ratio settings for intro and outro independently
-export type AspectRatioId = '9:16' | '1:1' | '4:5';
+export type AspectRatioId = '16:9' | '9:16' | '1:1' | '4:5';
 export type RatioAssetMap = Record<AspectRatioId, CreatorRatioAssetConfig | null>;
 
 export interface CreatorProfile {
