@@ -1088,19 +1088,20 @@
                   // Extract the normalized ID from the stored platform_id
                   // This handles cases where the server stores full URLs instead of just IDs
                   let storedId = link.platform_id;
-                  if (link.platform === 'kick') {
+                  const platform = link.platform as string; // Type assertion to avoid narrowing issues
+                  if (platform === 'kick') {
                     // Try to extract channel slug from URL if it's a full URL
                     const extractedSlug = extractChannelSlug(storedId);
                     if (extractedSlug) storedId = extractedSlug;
-                  } else if (link.platform === 'pumpfun') {
+                  } else if (platform === 'pumpfun') {
                     // Try to extract mint ID from URL if it's a full URL
                     const extractedMint = extractMintId(storedId);
                     if (extractedMint) storedId = extractedMint;
-                  } else if (link.platform === 'rumble') {
+                  } else if (platform === 'rumble') {
                     // Try to extract channel name from URL if it's a full URL
                     const extractedChannel = extractRumbleChannel(storedId);
                     if (extractedChannel) storedId = extractedChannel;
-                  } else if (link.platform === 'youtube') {
+                  } else if (platform === 'youtube' || platform === 'YouTube') {
                     // Try to extract channel ID from URL if it's a full URL
                     const extractedChannel = extractYouTubeChannel(storedId);
                     if (extractedChannel) storedId = extractedChannel;
