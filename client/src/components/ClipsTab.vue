@@ -2680,7 +2680,10 @@
         
         // Override watermark with admin watermark
         if (adminBranding.watermark_settings) {
-          watermarkSettings = adminBranding.watermark_settings;
+          watermarkSettings = {
+            ...adminBranding.watermark_settings,
+            enabled: true, // Ensure enabled field is always set for Rust
+          };
           console.log('[ClipsTab] Applied admin watermark settings');
         }
         
