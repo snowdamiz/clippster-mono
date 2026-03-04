@@ -323,7 +323,10 @@
     }
 
     if (remaining < creditsToCharge) {
-      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits${multimodalNote}.`;
+      const adjustRangeHint = !props.segmentCount && props.videoDuration > 0 
+        ? ' Adjust the time range above to reduce the cost.' 
+        : '';
+      return `Insufficient credits in ${sourceName}. You have ${roundedRemaining} credits, but this operation requires ${roundedCredits} credits${multimodalNote}.${adjustRangeHint}`;
     }
 
     return `This operation will charge ${roundedCredits} credits${multimodalNote} from ${sourceName}. You have ${roundedRemaining} credits remaining.`;

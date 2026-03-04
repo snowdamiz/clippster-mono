@@ -762,8 +762,6 @@ export class RendererManager {
 		};
 
 		try {
-			const { getWatermarkForCanvasSize, getOverlaysForCanvasSize, getActiveIntro, getActiveOutro } = useBrandingConfig();
-
 			// Detect aspect ratio from canvas size
 			const ratioMap: Record<string, AspectRatioId> = {
 				"1920x1080": "16:9",
@@ -773,6 +771,91 @@ export class RendererManager {
 			};
 			const ratioKey = `${canvasSize.width}x${canvasSize.height}`;
 			const aspectRatio = ratioMap[ratioKey];
+
+			// Check for free tier branding first - it overrides creator profile settings
+			const { useFreeTierBranding } = await import("@/composables/useFreeTierBranding");
+			const { getBrandingIfFreeTier } = useFreeTierBranding();
+			const adminBranding = await getBrandingIfFreeTier();
+
+			if (adminBranding) {
+				console.log("[Export] Free tier user detected, applying admin branding");
+
+				// Apply admin watermark
+				if (adminBranding.watermark_settings?.watermarkId) {
+					const resolved = await resolveWatermarkById(adminBranding.watermark_settings.watermarkId);
+					if (resolved?.filePath) {
+						result.watermark = {
+							image_path: resolved.filePath,
+							x: adminBranding.watermark_settings.positionX,
+							y: adminBranding.watermark_settings.positionY,
+							scale: adminBranding.watermark_settings.scale ?? 1.0,
+							opacity: adminBranding.watermark_settings.opacity ?? 1.0,
+							is_full_frame: adminBranding.watermark_settings.isFullFrameOverlay ?? false,
+						};
+						console.log("[Export] Applied admin watermark");
+					}
+				}
+
+				// Apply admin intro/outro
+				if (aspectRatio) {
+					// Check for per-ratio intro/outro first
+					let introApplied = false;
+					let outroApplied = false;
+
+					if (adminBranding.intro_ratio_settings) {
+						try {
+							const introRatios = JSON.parse(adminBranding.intro_ratio_settings);
+							if (introRatios[aspectRatio]?.assetId) {
+								const introResolved = await resolveIntroOutroById(introRatios[aspectRatio].assetId);
+								if (introResolved) {
+									result.introPath = introResolved.filePath;
+									result.introDuration = introResolved.duration ?? null;
+									introApplied = true;
+									console.log(`[Export] Applied admin intro for ${aspectRatio}`);
+								}
+							}
+						} catch (e) {
+							console.warn("[Export] Failed to parse admin intro_ratio_settings:", e);
+						}
+					}
+
+					if (adminBranding.outro_ratio_settings) {
+						try {
+							const outroRatios = JSON.parse(adminBranding.outro_ratio_settings);
+							if (outroRatios[aspectRatio]?.assetId) {
+								const outroResolved = await resolveIntroOutroById(outroRatios[aspectRatio].assetId);
+								if (outroResolved) {
+									result.outroPath = outroResolved.filePath;
+									result.outroDuration = outroResolved.duration ?? null;
+									outroApplied = true;
+									console.log(`[Export] Applied admin outro for ${aspectRatio}`);
+								}
+							}
+						} catch (e) {
+							console.warn("[Export] Failed to parse admin outro_ratio_settings:", e);
+						}
+					}
+
+					// Fall back to default intro/outro if no per-ratio settings
+					if (!introApplied && adminBranding.intro) {
+						result.introPath = adminBranding.intro.file_path ?? null;
+						result.introDuration = adminBranding.intro.duration ?? null;
+						console.log("[Export] Applied admin default intro");
+					}
+
+					if (!outroApplied && adminBranding.outro) {
+						result.outroPath = adminBranding.outro.file_path ?? null;
+						result.outroDuration = adminBranding.outro.duration ?? null;
+						console.log("[Export] Applied admin default outro");
+					}
+				}
+
+				console.log("[Export] Free tier branding applied successfully");
+				return result;
+			}
+
+			// Not free tier - use creator profile branding
+			const { getWatermarkForCanvasSize, getOverlaysForCanvasSize, getActiveIntro, getActiveOutro } = useBrandingConfig();
 
 			// Resolve watermark
 			const wmConfig = getWatermarkForCanvasSize(canvasSize.width, canvasSize.height);

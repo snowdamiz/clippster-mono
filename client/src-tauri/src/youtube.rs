@@ -8,14 +8,12 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 use tauri::Emitter;
-use tauri_plugin_shell::ShellExt;
-
-use crate::storage;
 use tokio::io::AsyncBufReadExt;
 use crate::downloads::{
     DownloadProgress, DownloadResult, ACTIVE_DOWNLOADS, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA,
     DownloadMetadata,
 };
+use crate::storage;
 
 #[cfg(target_os = "windows")]
 #[allow(unused_imports)]
@@ -1082,12 +1080,15 @@ pub fn is_youtube_recording_active(channel: String) -> bool {
 
 /// Get duration for a YouTube VOD using ffprobe
 #[tauri::command]
-pub async fn get_youtube_vod_duration(app: tauri::AppHandle, vod_url: String) -> Result<f64, String> {
+pub async fn get_youtube_vod_duration(_app: tauri::AppHandle, vod_url: String) -> Result<f64, String> {
     println!("[YouTube] Getting duration for URL: {}", vod_url);
     
-    let output = app.shell()
-        .sidecar("ffprobe")
-        .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
+    let ffprobe_path = resolve_sidecar_binary("ffprobe")?;
+    
+    let mut cmd = tokio::process::Command::new(&ffprobe_path);
+    no_window(&mut cmd);
+    
+    let output = cmd
         .args([
             "-v", "error",
             "-show_entries", "format=duration",
