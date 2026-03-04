@@ -383,6 +383,22 @@ export async function syncPostAnalytics(postId: number): Promise<PostResponse> {
   return response.data;
 }
 
+/**
+ * Sync analytics for all user posts via PostForMe
+ */
+export async function syncUserAnalytics(): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const response = await api.post('/user/posts/sync-analytics');
+    return response.data;
+  } catch (error: any) {
+    console.error('[UserInstagramApi] Failed to sync user analytics:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error || error.message || 'Failed to sync analytics',
+    };
+  }
+}
+
 export interface UserAnalyticsSummary {
   total_posts: number;
   total_views: number;
