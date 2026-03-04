@@ -2773,6 +2773,9 @@ defmodule ClippsterServerWeb.ClipsController do
   defp calculate_duration_from_chunks(_), do: 0.0
 
   # Calculate duration from filtered chunks (already parsed list)
+  # NOTE: This function is NO LONGER USED after the time-range-based chunking fix.
+  # Chunks are now created ONLY for the selected time range, so their total duration
+  # equals the selected duration. Keeping this for backward compatibility.
   defp calculate_duration_from_filtered_chunks(chunks) when is_list(chunks) do
     # Sum the duration of all chunks in the filtered list
     total_seconds =
