@@ -232,6 +232,7 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
   avatarUrl?: string;
   timestamp?: string;
   uploadDate?: string;
+  error?: string;
 }> {
   try {
     const result = await invoke<string>('get_twitter_broadcast_info', { url });
@@ -266,25 +267,38 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
     const username = metadata.uploader_id || 
                     (uploader ? `@${uploader.replace('@', '')}` : undefined);
     
-    // Try to get duration from metadata first
-    let duration = metadata.duration;
-    if (typeof duration === 'string') {
-      duration = parseFloat(duration);
-    }
-    if (isNaN(duration) || duration === null || duration === undefined) {
-      duration = undefined;
-    }
-    
-    // If duration not in metadata, try to get it from the manifest URL using ffprobe
-    if (!duration && metadata.manifest_url) {
+    // Try to get duration from ffprobe first (most reliable)
+    let duration: number | undefined;
+    if (metadata.manifest_url || metadata.url) {
+      const probeUrl = metadata.manifest_url || metadata.url;
       try {
-        console.log('[Twitter] Duration not in metadata, fetching from manifest:', metadata.manifest_url);
+        console.log('[Twitter] Fetching duration via ffprobe from:', probeUrl);
         duration = await invoke<number>('get_twitter_broadcast_duration', { 
-          manifestUrl: metadata.manifest_url 
+          manifestUrl: probeUrl 
         });
         console.log('[Twitter] Duration from ffprobe:', duration);
       } catch (error) {
-        console.warn('[Twitter] Failed to get duration from manifest:', error);
+        console.warn('[Twitter] Failed to get duration from ffprobe:', error);
+        
+        // Fallback to yt-dlp metadata if ffprobe fails
+        let metaDuration = metadata.duration;
+        if (typeof metaDuration === 'string') {
+          metaDuration = parseFloat(metaDuration);
+        }
+        if (!isNaN(metaDuration) && metaDuration !== null && metaDuration !== undefined) {
+          duration = metaDuration;
+          console.log('[Twitter] Using duration from yt-dlp metadata:', duration);
+        }
+      }
+    } else {
+      // No URL available, try yt-dlp metadata
+      let metaDuration = metadata.duration;
+      if (typeof metaDuration === 'string') {
+        metaDuration = parseFloat(metaDuration);
+      }
+      if (!isNaN(metaDuration) && metaDuration !== null && metaDuration !== undefined) {
+        duration = metaDuration;
+        console.log('[Twitter] Using duration from yt-dlp metadata (no URL):', duration);
       }
     }
     
@@ -377,6 +391,14 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
     };
   } catch (error) {
     console.error('[Twitter] Failed to get broadcast info:', error);
-    return {};
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Return minimal data with error flag so UI can still show the VOD
+    // Extract broadcast ID from URL for fallback title
+    const broadcastId = extractTwitterBroadcastId(url);
+    return {
+      title: broadcastId ? `X Broadcast ${broadcastId.substring(0, 8)}...` : 'X Broadcast',
+      error: errorMessage,
+    };
   }
 }

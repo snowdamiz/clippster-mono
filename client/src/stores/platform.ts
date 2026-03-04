@@ -834,6 +834,7 @@ export const usePlatformStore = defineStore('platform', {
       hasMore: boolean;
       total: number;
       error?: string;
+      warning?: string;
     }> {
       try {
         // Validate the URL
@@ -855,6 +856,13 @@ export const usePlatformStore = defineStore('platform', {
         const metadata = await getTwitterBroadcastInfo(validatedUrl);
         console.log('[Platform] Twitter metadata received:', metadata);
 
+        // Check if metadata fetch failed but we still have the URL
+        let warning: string | undefined;
+        if (metadata.error) {
+          warning = `Could not fetch broadcast details: ${metadata.error}. You can still download the VOD, but duration and thumbnail may not be available.`;
+          console.warn('[Platform] Twitter metadata fetch failed:', metadata.error);
+        }
+
         // For Twitter, we return a single "clip" representing the broadcast/space
         const clip: PlatformClip = {
           clipId: broadcastId,
@@ -870,12 +878,12 @@ export const usePlatformStore = defineStore('platform', {
         
         // Add to recent searches with avatar
         // Store the full URL as both id and displayText so clicking works correctly
-        if (metadata.username) {
+        if (metadata.username || broadcastId) {
           this.addToRecentSearches(
             validatedUrl,
             validatedUrl, // displayText is the URL for searching
             'twitter',
-            metadata.username, // label is the username shown below avatar
+            metadata.username || broadcastId, // label is the username shown below avatar
             {
               name: metadata.title || `X Broadcast ${broadcastId}`, // name is the title shown in bold
               imageUrl: metadata.avatarUrl,
@@ -888,6 +896,7 @@ export const usePlatformStore = defineStore('platform', {
           clips: [clip],
           hasMore: false,
           total: 1,
+          warning,
         };
       } catch (error) {
         return {

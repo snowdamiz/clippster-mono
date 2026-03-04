@@ -517,7 +517,7 @@
   const router = useRouter();
   const { gates } = useSubscriptionGate();
   const route = useRoute();
-  const { success, error: showError } = useToast();
+  const { success, error: showError, warning } = useToast();
   const { startDownload } = useDownloads();
   const platformStore = usePlatformStore();
   const authStore = useAuthStore();
@@ -956,6 +956,9 @@
           showError('No VODs Found', 'No available VODs found for this search');
         } else if ('fallbackUsed' in result && result.fallbackUsed && result.actualTab && tabParam) {
           success('Content Found', `No ${tabParam} found, showing ${result.actualTab} instead (${result.total} found)`);
+        } else if ('warning' in result && result.warning && typeof result.warning === 'string') {
+          // Show warning for partial success (e.g., Twitter metadata fetch failed)
+          warning('VOD Available', result.warning);
         } else {
           success('VODs Loaded', `Found ${result.total} VOD${result.total !== 1 ? 's' : ''}`);
         }
