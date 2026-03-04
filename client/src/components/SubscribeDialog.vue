@@ -173,17 +173,17 @@
                     </div>
                   </div>
 
-                  <!-- Promo Code Section -->
+                  <!-- Code Section -->
                   <div class="subscribe-dialog__promo">
                     <label class="subscribe-dialog__promo-label">
                       <Tag :size="14" />
-                      Promo Code
+                      Code
                     </label>
                     <div class="subscribe-dialog__promo-input-group">
                       <input
                         v-model="promoCode"
                         type="text"
-                        placeholder="Enter discount code"
+                        placeholder="Enter code"
                         class="subscribe-dialog__promo-input"
                         :disabled="validatingPromo"
                         @keyup.enter="validatePromoCode"

@@ -48,7 +48,9 @@ export function useChunkedTranscriptCache() {
   async function initializeChunkedTranscriptSession(
     rawVideoId: string,
     chunkDurationMinutes: number = 10,
-    overlapSeconds: number = 30
+    overlapSeconds: number = 30,
+    startTime?: number,
+    endTime?: number
   ): Promise<{ success: boolean; sessionId?: string; chunks?: AudioChunk[]; error?: string }> {
     try {
       isProcessing.value = true;
@@ -96,6 +98,8 @@ export function useChunkedTranscriptCache() {
       const chunkingResult = await extractAndChunkVideo(rawVideo.file_path, rawVideoId, {
         chunkDurationMinutes,
         overlapSeconds,
+        startTime,
+        endTime,
       });
 
       if (!chunkingResult.success || !chunkingResult.chunks) {

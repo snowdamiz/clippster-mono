@@ -291,12 +291,10 @@
   }
 
   .download-card__time {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.6);
     font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas, monospace;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-    letter-spacing: 0.02em;
   }
 
   /* ===== Progress Bar ===== */
