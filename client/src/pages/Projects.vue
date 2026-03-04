@@ -5621,13 +5621,13 @@
 
   @media (min-width: 1400px) {
     .projects__grid {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 
   @media (min-width: 1800px) {
     .projects__grid {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 
