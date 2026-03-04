@@ -9,7 +9,8 @@ import type { WatermarkSettings, IntroOutroRef } from '@/types';
  * Fetched from server app_settings and cached locally.
  */
 interface FreeTierBranding {
-  watermark_settings: WatermarkSettings | null;
+  watermark_id: string | null;
+  watermark_settings: any | null; // Per-ratio position settings (like creator profiles)
   watermark_url: string | null;
   intro: IntroOutroRef | null;
   outro: IntroOutroRef | null;

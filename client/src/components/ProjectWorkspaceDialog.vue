@@ -1729,23 +1729,52 @@
         const { getBrandingIfFreeTier } = useFreeTierBranding();
         const adminBranding = await getBrandingIfFreeTier();
         
+        console.log('[ProjectWorkspaceDialog] Checking free tier branding:', {
+          hasBranding: !!adminBranding,
+          fullBranding: adminBranding,
+          watermarkSettings: adminBranding?.watermark_settings,
+          intro: adminBranding?.intro,
+          outro: adminBranding?.outro,
+        });
+        
         if (adminBranding) {
           console.log('[ProjectWorkspaceDialog] Free tier user detected, loading admin branding');
           
           // Apply admin watermark settings (same pattern as creator profiles)
-          if (adminBranding.watermark_settings) {
-            const wmSettings = adminBranding.watermark_settings;
+          // watermark_id is the top-level watermark ID
+          // watermark_settings contains per-ratio position data (like creator profiles)
+          if (adminBranding.watermark_id) {
+            console.log('[ProjectWorkspaceDialog] Admin watermark ID:', adminBranding.watermark_id);
+            console.log('[ProjectWorkspaceDialog] Admin watermark settings (per-ratio):', adminBranding.watermark_settings);
             
-            // Admin watermark_settings is already a complete WatermarkSettings object
+            // Parse per-ratio settings to get default position
+            let perRatioSettings = null;
+            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+            if (adminBranding.watermark_settings) {
+              try {
+                perRatioSettings = typeof adminBranding.watermark_settings === 'string' 
+                  ? JSON.parse(adminBranding.watermark_settings)
+                  : adminBranding.watermark_settings;
+                
+                // Use 16:9 as the default display position
+                const ratioConfig = perRatioSettings['16:9'];
+                if (ratioConfig?.position) {
+                  defaultPos = ratioConfig.position;
+                }
+              } catch (e) {
+                console.warn('[ProjectWorkspaceDialog] Failed to parse admin watermark settings:', e);
+              }
+            }
+            
             const newSettings = {
               ...watermarkSettings.value,
-              enabled: wmSettings.enabled ?? true,
-              watermarkId: wmSettings.watermarkId,
-              positionX: wmSettings.positionX ?? 50,
-              positionY: wmSettings.positionY ?? 50,
-              opacity: wmSettings.opacity ?? 100,
-              scale: wmSettings.scale ?? 20,
-              perRatioSettings: wmSettings.perRatioSettings ?? null,
+              enabled: true,
+              watermarkId: adminBranding.watermark_id,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+              perRatioSettings: perRatioSettings,
             };
             
             console.log('[ProjectWorkspaceDialog] Applying admin watermark settings:', {
@@ -1762,13 +1791,13 @@
           
           // Load admin intro (will be auto-applied when building clips)
           if (adminBranding.intro) {
-            creatorDefaultIntro.value = adminBranding.intro;
+            creatorDefaultIntro.value = adminBranding.intro as any;
             console.log('[ProjectWorkspaceDialog] Loaded admin default intro:', adminBranding.intro.name);
           }
           
           // Load admin outro (will be auto-applied when building clips)
           if (adminBranding.outro) {
-            creatorDefaultOutro.value = adminBranding.outro;
+            creatorDefaultOutro.value = adminBranding.outro as any;
             console.log('[ProjectWorkspaceDialog] Loaded admin default outro:', adminBranding.outro.name);
           }
         }
