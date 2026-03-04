@@ -2680,8 +2680,12 @@
         
         // Override watermark with admin watermark
         if (adminBranding.watermark_settings && adminBranding.watermark_settings.watermarkId) {
+          console.log('[ClipsTab] Attempting to resolve watermark ID:', adminBranding.watermark_settings.watermarkId);
+          console.log('[ClipsTab] Full admin watermark settings:', adminBranding.watermark_settings);
+          
           // Resolve watermark file path from ID (already imported above)
           const resolved = await resolveWatermarkById(adminBranding.watermark_settings.watermarkId);
+          console.log('[ClipsTab] Watermark resolution result:', resolved);
           
           if (resolved?.filePath) {
             watermarkSettings = {
@@ -2696,7 +2700,17 @@
               height: adminBranding.watermark_settings.height || null,
               per_ratio_settings: adminBranding.watermark_settings.perRatioSettings || null,
             };
-            console.log('[ClipsTab] Applied admin watermark settings');
+            console.log('[ClipsTab] Applied admin watermark settings:', {
+              enabled: watermarkSettings.enabled,
+              watermark_id: watermarkSettings.watermark_id,
+              file_path: watermarkSettings.file_path,
+              position_x: watermarkSettings.position_x,
+              position_y: watermarkSettings.position_y,
+              opacity: watermarkSettings.opacity,
+              scale: watermarkSettings.scale,
+            });
+          } else {
+            console.warn('[ClipsTab] Failed to resolve watermark file path for ID:', adminBranding.watermark_settings.watermarkId);
           }
         }
         

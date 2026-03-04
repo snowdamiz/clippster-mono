@@ -1078,11 +1078,41 @@ pub fn is_youtube_recording_active(channel: String) -> bool {
         .any(|entry| entry.channel_id == channel_id)
 }
 
-/// Get duration for a YouTube VOD using ffprobe
+/// Get duration for a YouTube VOD using yt-dlp + ffprobe
+/// First extracts the direct stream URL using yt-dlp, then uses ffprobe to get duration
 #[tauri::command]
 pub async fn get_youtube_vod_duration(_app: tauri::AppHandle, vod_url: String) -> Result<f64, String> {
     println!("[YouTube] Getting duration for URL: {}", vod_url);
     
+    // Step 1: Use yt-dlp to extract the direct stream URL
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    
+    println!("[YouTube] Extracting stream URL via yt-dlp...");
+    let ytdlp_output = no_window(
+        tokio::process::Command::new(&ytdlp_path)
+            .arg("--get-url")
+            .arg("--no-download")
+            .arg("--no-warnings")
+            .arg("--impersonate").arg("chrome")
+            .arg(&vod_url)
+    )
+    .output()
+    .await
+    .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    
+    if !ytdlp_output.status.success() {
+        let stderr = String::from_utf8_lossy(&ytdlp_output.stderr);
+        return Err(format!("yt-dlp failed to extract stream URL: {}", stderr.chars().take(300).collect::<String>()));
+    }
+    
+    let stream_url = String::from_utf8_lossy(&ytdlp_output.stdout).trim().to_string();
+    if stream_url.is_empty() {
+        return Err("yt-dlp returned empty stream URL".to_string());
+    }
+    
+    println!("[YouTube] Got stream URL, probing duration with ffprobe...");
+    
+    // Step 2: Use ffprobe on the direct stream URL
     let ffprobe_path = resolve_sidecar_binary("ffprobe")?;
     
     let mut cmd = tokio::process::Command::new(&ffprobe_path);
@@ -1093,7 +1123,7 @@ pub async fn get_youtube_vod_duration(_app: tauri::AppHandle, vod_url: String) -
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1",
-            &vod_url
+            &stream_url
         ])
         .output()
         .await
