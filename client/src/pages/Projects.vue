@@ -3779,37 +3779,19 @@
         }
       }
 
-      // Free tier branding override: replace user assets with admin-configured branding
+      // Free tier branding override: nullify intro/outro for free tier users
+      // Note: Watermark settings are already loaded into UI state by ProjectWorkspaceDialog
+      // Admin intro/outro are applied via creatorDefaultIntro/creatorDefaultOutro in ProjectWorkspaceDialog
       const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
       const { getBrandingIfFreeTier } = useFreeTierBranding();
-      const { resolveWatermarkById } = await import('@/services/database/watermarks');
       const adminBranding = await getBrandingIfFreeTier();
       if (adminBranding) {
-        // Override watermark with admin watermark
-        if (adminBranding.watermark_settings && adminBranding.watermark_settings.watermarkId) {
-          const resolved = await resolveWatermarkById(adminBranding.watermark_settings.watermarkId);
-          
-          if (resolved?.filePath) {
-            watermarkSettings = {
-              enabled: true,
-              watermark_id: adminBranding.watermark_settings.watermarkId,
-              file_path: resolved.filePath,
-              position_x: adminBranding.watermark_settings.positionX,
-              position_y: adminBranding.watermark_settings.positionY,
-              opacity: adminBranding.watermark_settings.opacity,
-              scale: adminBranding.watermark_settings.scale,
-              width: adminBranding.watermark_settings.width || null,
-              height: adminBranding.watermark_settings.height || null,
-              per_ratio_settings: adminBranding.watermark_settings.perRatioSettings || null,
-            };
-          }
-        }
-        // Override intro/outro with admin versions (nullify user selections)
+        // Nullify user-selected intro/outro (admin defaults will be applied automatically)
         introPath = null;
         introDuration = null;
         outroPath = null;
         outroDuration = null;
-        console.log('[Projects] Free tier branding applied — admin watermark/intro/outro injected');
+        console.log('[Projects] Free tier user detected - admin branding will be applied');
       }
 
       // Start the build using the correct command

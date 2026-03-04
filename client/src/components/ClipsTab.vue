@@ -2671,34 +2671,13 @@
         }
       }
 
-      // Free tier branding override: replace user assets with admin-configured branding
+      // Free tier branding override: apply admin intro/outro
+      // Note: Watermark settings are already loaded into UI state by ProjectWorkspaceDialog
       const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
       const { getBrandingIfFreeTier } = useFreeTierBranding();
       const adminBranding = await getBrandingIfFreeTier();
       if (adminBranding) {
-        console.log('[ClipsTab] Free tier user detected, applying admin branding');
-        
-        // Override watermark with admin watermark
-        if (adminBranding.watermark_settings && adminBranding.watermark_settings.watermarkId) {
-          // Resolve watermark file path from ID (already imported above)
-          const resolved = await resolveWatermarkById(adminBranding.watermark_settings.watermarkId);
-          
-          if (resolved?.filePath) {
-            watermarkSettings = {
-              enabled: true,
-              watermark_id: adminBranding.watermark_settings.watermarkId,
-              file_path: resolved.filePath,
-              position_x: adminBranding.watermark_settings.positionX,
-              position_y: adminBranding.watermark_settings.positionY,
-              opacity: adminBranding.watermark_settings.opacity,
-              scale: adminBranding.watermark_settings.scale,
-              width: adminBranding.watermark_settings.width || null,
-              height: adminBranding.watermark_settings.height || null,
-              per_ratio_settings: adminBranding.watermark_settings.perRatioSettings || null,
-            };
-            console.log('[ClipsTab] Applied admin watermark settings');
-          }
-        }
+        console.log('[ClipsTab] Free tier user detected, applying admin intro/outro');
         
         // Override intro/outro with admin versions
         if (adminBranding.intro) {
