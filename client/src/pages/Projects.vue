@@ -4143,9 +4143,22 @@
   const filteredProjects = computed(() => {
     let result = projects.value;
 
-    // Note: We no longer filter out projects based on active downloads.
-    // Projects should always appear in folder view once created.
-    // Active downloads are shown separately in the Active Downloads section.
+    // Filter out empty projects (projects with no raw videos)
+    // This hides folders that were created for downloads but the download hasn't completed yet
+    // or failed/was cancelled. Only show projects that have at least one raw video.
+    result = result.filter((p) => {
+      const videos = projectVideos.value[p.id] || [];
+      // For parent projects (folders), check if any child has videos
+      if (hasChildren(p.id)) {
+        const childProjects = projects.value.filter(child => child.parent_id === p.id);
+        return childProjects.some(child => {
+          const childVideos = projectVideos.value[child.id] || [];
+          return childVideos.length > 0;
+        });
+      }
+      // For regular projects, check if they have videos
+      return videos.length > 0;
+    });
 
     // 1. Filter by View Mode (only if NOT searching)
     // If user is searching, we want to search across all projects regardless of folder structure

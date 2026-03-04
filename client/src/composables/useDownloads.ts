@@ -188,6 +188,54 @@ export function useDownloads() {
       }
     });
 
+    // Listen for download errors
+    await listen<DownloadResult>('download-error', async (event) => {
+      console.log('[Downloads] Download error event received:', event.payload.download_id);
+      const download = activeDownloads.get(event.payload.download_id);
+      if (download) {
+        download.result = event.payload;
+        
+        // Refund free tier usage for failed download
+        await refundFreeTierUsage();
+        
+        // Cleanup empty projects created for this download
+        await cleanupEmptyProjects(download);
+        
+        // Show error toast
+        const { error: showError } = useToast();
+        showError('Download Failed', event.payload.error || 'Download failed', undefined, 'downloads');
+        
+        // Remove from active downloads tracking
+        activeDownloadIds.delete(event.payload.download_id);
+        saveState();
+        
+        // Process next in queue
+        processQueue();
+      }
+    });
+
+    // Listen for download cancellations
+    await listen<DownloadResult>('download-cancelled', async (event) => {
+      console.log('[Downloads] Download cancelled event received:', event.payload.download_id);
+      const download = activeDownloads.get(event.payload.download_id);
+      if (download) {
+        download.result = event.payload;
+        
+        // Refund free tier usage for cancelled download
+        await refundFreeTierUsage();
+        
+        // Cleanup empty projects created for this download
+        await cleanupEmptyProjects(download);
+        
+        // Remove from active downloads tracking
+        activeDownloadIds.delete(event.payload.download_id);
+        saveState();
+        
+        // Process next in queue
+        processQueue();
+      }
+    });
+
     // Listen for download completion
     await listen<DownloadResult>('download-complete', async (event) => {
       console.log('[Downloads] Download complete event received:', event.payload.download_id);
@@ -334,6 +382,9 @@ export function useDownloads() {
                 download.rawVideoId
               );
 
+              // Cleanup empty projects created for this download
+              await cleanupEmptyProjects(download);
+
               // Update download result to show failure
               download.result = {
                 ...event.payload,
@@ -364,6 +415,9 @@ export function useDownloads() {
               event.payload.thumbnail_path || null,
               download.rawVideoId
             );
+
+            // Cleanup empty projects created for this download
+            await cleanupEmptyProjects(download);
 
             // Update result to show failure
             download.result = {
@@ -1090,6 +1144,12 @@ export function useDownloads() {
         // Refund free tier usage for cancelled download
         await refundFreeTierUsage();
 
+        // Cleanup empty projects created for this download
+        const download = activeDownloads.get(downloadId);
+        if (download) {
+          await cleanupEmptyProjects(download);
+        }
+
         // Remove from active downloads
         activeDownloads.delete(downloadId);
         activeDownloadIds.delete(downloadId);
@@ -1100,6 +1160,12 @@ export function useDownloads() {
 
       // Check if download is in queue
       if (queuedDownloads.has(downloadId)) {
+        // Cleanup empty projects for queued download
+        const queuedDownload = queuedDownloads.get(downloadId);
+        if (queuedDownload) {
+          await cleanupEmptyProjects(queuedDownload);
+        }
+        
         // Simply remove from queue (no backend process to cancel)
         queuedDownloads.delete(downloadId);
         
@@ -1228,6 +1294,49 @@ export function useDownloads() {
       }
     } catch (error) {
       console.error('[Cleanup] Error during cleanup:', error);
+    }
+  }
+
+  async function cleanupEmptyProjects(download: ActiveDownload): Promise<void> {
+    try {
+      const { getDatabase, deleteProject } = await import('@/services/database');
+      const db = await getDatabase();
+      
+      // Check if the project has any raw videos
+      const projectsToCheck: string[] = [];
+      if (download.projectId) {
+        projectsToCheck.push(download.projectId);
+      }
+      if (download.parentProjectId) {
+        projectsToCheck.push(download.parentProjectId);
+      }
+      
+      for (const projectId of projectsToCheck) {
+        try {
+          // Check if project has any raw videos
+          const rawVideos = await db.select<{ id: string }[]>(
+            'SELECT id FROM raw_videos WHERE project_id = ? LIMIT 1',
+            [projectId]
+          );
+          
+          // If no raw videos exist, delete the project
+          if (rawVideos.length === 0) {
+            console.log(`[Cleanup] Deleting empty project: ${projectId}`);
+            await deleteProject(projectId);
+            
+            // Dispatch event to refresh UI
+            window.dispatchEvent(
+              new CustomEvent('project-deleted', {
+                detail: { projectId },
+              })
+            );
+          }
+        } catch (error) {
+          console.warn(`[Cleanup] Failed to cleanup project ${projectId}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('[Cleanup] Error during empty project cleanup:', error);
     }
   }
 
