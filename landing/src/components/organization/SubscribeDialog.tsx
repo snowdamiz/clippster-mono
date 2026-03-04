@@ -131,11 +131,11 @@ export function SubscribeDialog({ open, onClose, plan, type, organizationId, org
           </div>
         </div>
 
-        {/* Promo code */}
+        {/* Code */}
         <div className="flex gap-2">
           <div className="flex-1">
             <Input
-              placeholder="Promo code"
+              placeholder="Code"
               value={promoCode}
               onChange={(e) => {
                 setPromoCode(e.target.value)

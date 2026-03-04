@@ -50,12 +50,13 @@ defmodule ClippsterServerWeb.SubscriptionController do
   end
 
   @doc """
-  Validate a promo code for a specific subscription tier.
-  Returns promo code details if valid, error message if invalid.
+  Validate a promo code or affiliate code for a specific subscription tier.
+  Returns code details if valid, error message if invalid.
   """
   def validate_promo(conn, %{"code" => code, "tier" => tier})
       when is_binary(code) and is_binary(tier) do
     with {:ok, user_id} <- get_user_id_from_token(conn) do
+      # First try promo code validation
       case PromoCodes.validate_promo(code, tier, user_id) do
         {:ok, promo} ->
           json(conn, %{
@@ -68,29 +69,68 @@ defmodule ClippsterServerWeb.SubscriptionController do
             }
           })
 
+        {:error, :invalid_code} ->
+          # If not a promo code, check if it's an affiliate code
+          case ClippsterServer.Affiliates.get_affiliate_by_code(code) do
+            %{status: "active"} = affiliate ->
+              # Valid affiliate code - check if discount is enabled
+              {discount_pct, duration_kind, duration_months} =
+                if affiliate.discount_enabled do
+                  # Use first_month_discount_pct for initial subscription
+                  pct = Decimal.to_float(affiliate.first_month_discount_pct || Decimal.new("0"))
+                  
+                  # Determine duration based on discount type
+                  {kind, months} =
+                    case affiliate.discount_type do
+                      "one_time" -> {"once", nil}
+                      "recurring" -> {"forever", nil}
+                      "tiered" -> {"repeating", 3}  # Default to 3 months for tiered
+                      _ -> {"once", nil}
+                    end
+                  
+                  {pct, kind, months}
+                else
+                  # No discount, but code is still valid for referral tracking
+                  {0, "once", nil}
+                end
+
+              json(conn, %{
+                success: true,
+                promo: %{
+                  code: code,
+                  percent_off: discount_pct,
+                  duration_kind: duration_kind,
+                  duration_months: duration_months,
+                  is_affiliate_code: true
+                }
+              })
+
+            _ ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Invalid code"})
+          end
+
         {:error, reason} ->
           error_message =
             case reason do
-              :invalid_code ->
-                "Invalid promo code"
-
               :inactive_code ->
-                "This promo code is not active"
+                "This code is not active"
 
               :expired_code ->
-                "This promo code has expired"
+                "This code has expired"
 
               :tier_not_allowed ->
-                "This promo code is not valid for the selected plan"
+                "This code is not valid for the selected plan"
 
               :max_redemptions_reached ->
-                "This promo code has reached its maximum redemption limit"
+                "This code has reached its maximum redemption limit"
 
               :already_redeemed ->
-                "You have already used this promo code"
+                "You have already used this code"
 
               _ ->
-                "Invalid promo code"
+                "Invalid code"
             end
 
           conn
