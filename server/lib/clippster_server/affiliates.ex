@@ -100,6 +100,46 @@ defmodule ClippsterServer.Affiliates do
   end
 
   @doc """
+  Links a user to an affiliate by referral code.
+  Sets `referred_by_affiliate_id` on the user if not already set.
+  Called when an affiliate code is entered at checkout by a user who wasn't
+  referred at signup.
+  Returns {:ok, affiliate} on success, {:error, reason} on failure.
+  """
+  def link_user_to_affiliate(user_id, affiliate_code) when is_binary(affiliate_code) do
+    case get_affiliate_by_code(affiliate_code) do
+      %Affiliate{status: "active"} = affiliate ->
+        user = Repo.get(User, user_id)
+
+        cond do
+          is_nil(user) ->
+            {:error, :user_not_found}
+
+          user.referred_by_affiliate_id == affiliate.id ->
+            # Already linked to this affiliate
+            {:ok, affiliate}
+
+          is_nil(user.referred_by_affiliate_id) ->
+            # Link user to affiliate
+            user
+            |> User.referral_changeset(%{referred_by_affiliate_id: affiliate.id})
+            |> Repo.update()
+
+            {:ok, affiliate}
+
+          true ->
+            # Already linked to a different affiliate, don't overwrite
+            {:ok, get_affiliate(user.referred_by_affiliate_id)}
+        end
+
+      _ ->
+        {:error, :invalid_affiliate_code}
+    end
+  end
+
+  def link_user_to_affiliate(_, _), do: {:error, :invalid_affiliate_code}
+
+  @doc """
   Gets an affiliate by referral code.
   """
   def get_affiliate_by_code(code) when is_binary(code) do

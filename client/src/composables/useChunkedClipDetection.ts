@@ -514,13 +514,29 @@ export function useChunkedClipDetection() {
 
       // Call the chunked detection endpoint with abort signal
       // Use extended timeout (20 minutes) since AI processing each chunk can take 1-2 min
-      const response = await api.post('/clips/detect-chunked', formData, {
-        headers: {
-          'Content-Type': undefined,
-        },
-        signal: abortController?.signal,
-        timeout: 1200000, // 20 minutes - chunked AI detection is very long-running
-      });
+      let response;
+      try {
+        response = await api.post('/clips/detect-chunked', formData, {
+          headers: {
+            'Content-Type': undefined,
+          },
+          signal: abortController?.signal,
+          timeout: 1200000, // 20 minutes - chunked AI detection is very long-running
+        });
+      } catch (err: any) {
+        if (err?.response?.status === 402) {
+          const data = err.response.data;
+          const refunded = data?.credits_refunded ?? 0;
+          const remaining = data?.credits_remaining ?? 0;
+          const needed = data?.credits_required ?? 0;
+          const msg = refunded > 0
+            ? `Insufficient credits for detection. ${refunded} transcription credit${refunded !== 1 ? 's' : ''} have been refunded. You now have ${Math.round(remaining)} credits but ${Math.ceil(needed)} are required.`
+            : `Insufficient credits. You have ${Math.round(remaining)} credits but ${Math.ceil(needed)} are required for detection.`;
+          showError('Insufficient Credits', msg, undefined, 'clips');
+          return { success: false, error: msg };
+        }
+        throw err;
+      }
 
       const result = response.data;
 
