@@ -439,30 +439,157 @@ defmodule ClippsterServer.ClipperProfiles do
   # ============================================================================
 
   @doc """
-  Gets the leaderboard for a period type.
+  Gets the leaderboard for a period type and leaderboard type.
+  Uses live calculation for current period, snapshots for historical periods.
   """
   def get_leaderboard(period_type, opts \\ []) do
     limit = Keyword.get(opts, :limit, 50)
+    leaderboard_type = Keyword.get(opts, :leaderboard_type, "posts")
 
-    # Get the most recent period
-    case get_latest_period(period_type) do
+    {current_period_start, _current_period_end} = get_current_period_range(period_type)
+
+    # Check if we have a snapshot for the current period
+    case get_latest_period(period_type, leaderboard_type) do
       nil ->
-        []
+        # No snapshots exist, calculate live
+        get_live_leaderboard(period_type, leaderboard_type, limit)
 
-      {period_start, _period_end} ->
-        ClipperLeaderboardEntry
-        |> where([e], e.period_type == ^period_type)
-        |> where([e], e.period_start == ^period_start)
-        |> order_by([e], e.rank)
-        |> limit(^limit)
-        |> Repo.all()
-        |> Repo.preload(clipper_profile: [:user, :badges])
+      {snapshot_start, _snapshot_end} ->
+        if snapshot_start == current_period_start do
+          # Snapshot exists for current period, but calculate live for real-time updates
+          get_live_leaderboard(period_type, leaderboard_type, limit)
+        else
+          # Historical period, use snapshot
+          ClipperLeaderboardEntry
+          |> where([e], e.period_type == ^period_type)
+          |> where([e], e.leaderboard_type == ^leaderboard_type)
+          |> where([e], e.period_start == ^snapshot_start)
+          |> order_by([e], e.rank)
+          |> limit(^limit)
+          |> Repo.all()
+          |> Repo.preload(clipper_profile: [:user, :badges])
+        end
     end
   end
 
-  defp get_latest_period(period_type) do
+  defp get_current_period_range(period_type) do
+    today = Date.utc_today()
+
+    case period_type do
+      "weekly" ->
+        days_since_monday = Date.day_of_week(today) - 1
+        period_start = Date.add(today, -days_since_monday)
+        period_end = Date.add(period_start, 6)
+        {period_start, period_end}
+
+      "monthly" ->
+        period_start = Date.beginning_of_month(today)
+        period_end = Date.end_of_month(today)
+        {period_start, period_end}
+
+      _ ->
+        {today, today}
+    end
+  end
+
+  @doc """
+  Calculates live leaderboard rankings for the current period.
+  Used for real-time updates.
+  """
+  def get_live_leaderboard(period_type, leaderboard_type, limit \\ 50) do
+    {period_start, period_end} = get_current_period_range(period_type)
+    profiles = list_all_public_profiles()
+
+    case leaderboard_type do
+      "posts" ->
+        calculate_live_posts_leaderboard(profiles, period_start, period_end, limit)
+
+      "campaigns" ->
+        calculate_live_campaigns_leaderboard(profiles, period_start, period_end, limit)
+
+      _ ->
+        []
+    end
+  end
+
+  defp calculate_live_posts_leaderboard(profiles, period_start, period_end, limit) do
+    profiles
+    |> Enum.map(fn profile ->
+      total_views = count_post_views_in_period(profile.user_id, period_start, period_end)
+      posts_count = count_posts_in_period(profile.user_id, period_start, period_end)
+
+      # Create a virtual leaderboard entry
+      %{
+        profile: profile,
+        total_views: total_views,
+        posts_count: posts_count,
+        score: total_views,
+        clips_delivered: 0,
+        campaigns_active: 0,
+        endorsements_received: 0
+      }
+    end)
+    |> Enum.filter(fn entry -> entry.posts_count > 0 end)
+    |> Enum.sort_by(fn entry -> entry.total_views end, :desc)
+    |> Enum.take(limit)
+    |> Enum.with_index(1)
+    |> Enum.map(fn {entry, rank} ->
+      # Convert to struct-like map that matches ClipperLeaderboardEntry
+      %{
+        rank: rank,
+        score: entry.score,
+        total_views: entry.total_views,
+        posts_count: entry.posts_count,
+        clips_delivered: entry.clips_delivered,
+        campaigns_active: entry.campaigns_active,
+        endorsements_received: entry.endorsements_received,
+        clipper_profile: Repo.preload(entry.profile, [:user, :badges])
+      }
+    end)
+  end
+
+  defp calculate_live_campaigns_leaderboard(profiles, period_start, period_end, limit) do
+    profiles
+    |> Enum.map(fn profile ->
+      clips_delivered = count_clips_in_period(profile.user_id, period_start, period_end)
+      campaigns_active = count_campaigns_in_period(profile.user_id, period_start, period_end)
+      endorsements_received = count_endorsements_in_period(profile.id, period_start, period_end)
+      total_views = count_views_in_period(profile.user_id, period_start, period_end)
+
+      score = clips_delivered * 10 + div(total_views, 1000) + endorsements_received * 50 + campaigns_active * 25
+
+      %{
+        profile: profile,
+        clips_delivered: clips_delivered,
+        campaigns_active: campaigns_active,
+        endorsements_received: endorsements_received,
+        total_views: total_views,
+        posts_count: 0,
+        score: score
+      }
+    end)
+    |> Enum.filter(fn entry -> entry.score > 0 end)
+    |> Enum.sort_by(fn entry -> entry.score end, :desc)
+    |> Enum.take(limit)
+    |> Enum.with_index(1)
+    |> Enum.map(fn {entry, rank} ->
+      %{
+        rank: rank,
+        score: entry.score,
+        total_views: entry.total_views,
+        posts_count: entry.posts_count,
+        clips_delivered: entry.clips_delivered,
+        campaigns_active: entry.campaigns_active,
+        endorsements_received: entry.endorsements_received,
+        clipper_profile: Repo.preload(entry.profile, [:user, :badges])
+      }
+    end)
+  end
+
+  defp get_latest_period(period_type, leaderboard_type) do
     ClipperLeaderboardEntry
     |> where([e], e.period_type == ^period_type)
+    |> where([e], e.leaderboard_type == ^leaderboard_type)
     |> order_by([e], desc: e.period_start)
     |> limit(1)
     |> select([e], {e.period_start, e.period_end})
@@ -470,10 +597,10 @@ defmodule ClippsterServer.ClipperProfiles do
   end
 
   @doc """
-  Gets a clipper's rank for a period.
+  Gets a clipper's rank for a period and leaderboard type.
   """
-  def get_clipper_rank(profile_id, period_type) do
-    case get_latest_period(period_type) do
+  def get_clipper_rank(profile_id, period_type, leaderboard_type \\ "posts") do
+    case get_latest_period(period_type, leaderboard_type) do
       nil ->
         {:error, :no_leaderboard}
 
@@ -481,6 +608,7 @@ defmodule ClippsterServer.ClipperProfiles do
         case ClipperLeaderboardEntry
              |> where([e], e.clipper_profile_id == ^profile_id)
              |> where([e], e.period_type == ^period_type)
+             |> where([e], e.leaderboard_type == ^leaderboard_type)
              |> where([e], e.period_start == ^period_start)
              |> Repo.one() do
           nil -> {:error, :not_ranked}
@@ -614,5 +742,67 @@ defmodule ClippsterServer.ClipperProfiles do
     profile
     |> ClipperProfile.update_changeset(%{response_time_hours: hours})
     |> Repo.update()
+  end
+
+  @doc """
+  Counts total views from published posts by a user in a period.
+  Includes posts from X, Instagram, TikTok, and YouTube.
+  Queries both user_posts and post_submissions tables.
+  """
+  def count_post_views_in_period(user_id, period_start, period_end) do
+    import Ecto.Query
+
+    start_dt = DateTime.new!(period_start, ~T[00:00:00], "Etc/UTC")
+    end_dt = DateTime.new!(period_end, ~T[23:59:59], "Etc/UTC")
+
+    # Count views from post_submissions (org posts)
+    post_submission_views =
+      ClippsterServer.Social.PostSubmission
+      |> where([p], p.submitted_by_user_id == ^user_id)
+      |> where([p], p.status == "published")
+      |> where([p], p.posted_at >= ^start_dt and p.posted_at <= ^end_dt)
+      |> select([p], coalesce(sum(p.view_count), 0))
+      |> Repo.one()
+
+    # Count views from user_posts (personal posts)
+    user_post_views =
+      ClippsterServer.Campaigns.UserPost
+      |> where([p], p.user_id == ^user_id)
+      |> where([p], p.status == "published")
+      |> where([p], p.inserted_at >= ^start_dt and p.inserted_at <= ^end_dt)
+      |> select([p], coalesce(sum(p.view_count), 0))
+      |> Repo.one()
+
+    post_submission_views + user_post_views
+  end
+
+  @doc """
+  Counts number of published posts by a user in a period.
+  Includes posts from X, Instagram, TikTok, and YouTube.
+  Queries both user_posts and post_submissions tables.
+  """
+  def count_posts_in_period(user_id, period_start, period_end) do
+    import Ecto.Query
+
+    start_dt = DateTime.new!(period_start, ~T[00:00:00], "Etc/UTC")
+    end_dt = DateTime.new!(period_end, ~T[23:59:59], "Etc/UTC")
+
+    # Count posts from post_submissions (org posts)
+    post_submission_count =
+      ClippsterServer.Social.PostSubmission
+      |> where([p], p.submitted_by_user_id == ^user_id)
+      |> where([p], p.status == "published")
+      |> where([p], p.posted_at >= ^start_dt and p.posted_at <= ^end_dt)
+      |> Repo.aggregate(:count)
+
+    # Count posts from user_posts (personal posts)
+    user_post_count =
+      ClippsterServer.Campaigns.UserPost
+      |> where([p], p.user_id == ^user_id)
+      |> where([p], p.status == "published")
+      |> where([p], p.inserted_at >= ^start_dt and p.inserted_at <= ^end_dt)
+      |> Repo.aggregate(:count)
+
+    post_submission_count + user_post_count
   end
 end
