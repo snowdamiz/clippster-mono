@@ -37,6 +37,7 @@
     .container {
       max-width: 28rem;
       width: 100%;
+      animation: fadeIn 0.5s ease-out;
     }
 
     .card {
@@ -99,10 +100,36 @@
       color: var(--muted-foreground);
       opacity: 0.7;
     }
+    .logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+    }
+
+    .logo img:first-child {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+    }
+
+    .logo img:last-child {
+      height: 20px;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
 <body>
   <div class="container">
+    <div class="logo">
+      <img src="/logo-icon.svg" alt="Clippster" width="32" height="32">
+      <img src="/logo.svg" alt="Clippster" height="20">
+    </div>
     <div class="card">
       <div class="gradient-overlay"></div>
       <div class="content">
