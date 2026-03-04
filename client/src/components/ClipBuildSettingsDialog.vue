@@ -487,6 +487,8 @@
                     </div>
 
                     <div class="build-dialog__addons-section">
+                      <!-- Intro/Outro section - hidden for free tier users (admin-controlled) -->
+                      <div v-if="!isFreeTier" class="build-dialog__intro-outro-section">
                       <!-- Intro Compact Selector -->
                       <div class="build-dialog__field">
                         <div class="build-dialog__field-header">
@@ -670,6 +672,8 @@
                         <span class="build-dialog__duration-label">Total Duration</span>
                         <span class="build-dialog__duration-value">{{ formatDuration(totalDuration) }}</span>
                       </div>
+                      </div>
+                      <!-- End intro/outro section -->
                     </div>
                   </div>
                 </Transition>
@@ -773,6 +777,7 @@
   import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
   import { resolveOverlayImagePath } from '@/services/database/watermarks';
   import { useAuthStore } from '@/stores/auth';
+  import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
   import type {
@@ -851,6 +856,9 @@
 
   // Auth store for checking org memberships
   const authStore = useAuthStore();
+
+  // Free tier limits composable
+  const { isFreeTier } = useFreeTierLimits();
 
   // State
   const selectedRatios = ref<string[]>(['16:9']);

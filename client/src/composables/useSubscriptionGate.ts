@@ -82,7 +82,8 @@ export function useSubscriptionGate() {
       const hasCredits =
         totalAvailable.value === 'unlimited' ||
         (typeof totalAvailable.value === 'number' && totalAvailable.value > 0);
-      if (hasCredits && hasValidSubscription.value) {
+      // Allow if user has credits (free tier users get 60 one-time credits)
+      if (hasCredits) {
         return true;
       }
       showGate(context || 'Use AI features', type);
