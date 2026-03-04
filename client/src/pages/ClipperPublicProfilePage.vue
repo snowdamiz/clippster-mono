@@ -46,25 +46,23 @@
         <!-- Profile Header -->
         <header class="profile-header">
           <div class="profile-header__container">
-            <!-- Avatar Section -->
-            <div class="profile-avatar-section">
-              <div class="profile-avatar">
-                <img
-                  v-if="profile.avatar_url"
-                  :src="profile.avatar_url"
-                  class="profile-avatar__img"
-                />
-                <UserCircle v-else class="profile-avatar__fallback" />
-                <div v-if="profile.is_verified" class="profile-avatar__verified">
-                  <CheckCircle />
-                </div>
+            <!-- Avatar -->
+            <div class="profile-avatar">
+              <img
+                v-if="profile.avatar_url"
+                :src="profile.avatar_url"
+                class="profile-avatar__img"
+              />
+              <UserCircle v-else class="profile-avatar__fallback" />
+              <div v-if="profile.is_verified" class="profile-avatar__verified">
+                <CheckCircle />
               </div>
             </div>
 
-            <!-- Profile Info -->
-            <div class="profile-info">
-              <div class="profile-info__header">
-                <div class="profile-info__left">
+            <!-- Main Info -->
+            <div class="profile-main">
+              <div class="profile-top-row">
+                <div class="profile-identity">
                   <h1 class="profile-name">{{ profile.display_name || 'Unnamed Clipper' }}</h1>
                   <div class="profile-badges">
                     <span v-if="profile.looking_for_work" class="badge badge--available">
@@ -89,32 +87,30 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- Stats -->
+                <div class="profile-stats">
+                  <div class="stat">
+                    <span class="stat__value">{{ profile.total_campaigns_completed }}</span>
+                    <span class="stat__label">Campaigns</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat__value">{{ profile.total_clips_delivered }}</span>
+                    <span class="stat__label">Clips</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat__value">{{ profile.total_endorsements }}</span>
+                    <span class="stat__label">Endorsements</span>
+                  </div>
+                  <div v-if="profile.total_views" class="stat">
+                    <span class="stat__value">{{ formatViews(profile.total_views) }}</span>
+                    <span class="stat__label">Views</span>
+                  </div>
+                </div>
               </div>
 
+              <!-- Bio -->
               <p v-if="profile.bio" class="profile-bio">{{ profile.bio }}</p>
-
-              <!-- Stats Row -->
-              <div class="profile-stats">
-                <div class="stat">
-                  <span class="stat__value">{{ profile.total_campaigns_completed }}</span>
-                  <span class="stat__label">Campaigns</span>
-                </div>
-                <div class="stat-divider"></div>
-                <div class="stat">
-                  <span class="stat__value">{{ profile.total_clips_delivered }}</span>
-                  <span class="stat__label">Clips</span>
-                </div>
-                <div class="stat-divider"></div>
-                <div class="stat">
-                  <span class="stat__value">{{ profile.total_endorsements }}</span>
-                  <span class="stat__label">Endorsements</span>
-                </div>
-                <div v-if="profile.total_views" class="stat-divider"></div>
-                <div v-if="profile.total_views" class="stat">
-                  <span class="stat__value">{{ formatViews(profile.total_views) }}</span>
-                  <span class="stat__label">Views</span>
-                </div>
-              </div>
 
               <!-- Specialty Tags -->
               <div v-if="profile.specialty_tags?.length" class="profile-tags">
@@ -169,7 +165,7 @@
             <!-- Portfolio Section -->
             <section v-if="profile.portfolio_clips?.length" class="section">
               <div class="section__header">
-                <div class="section__header-icon section__header-icon--purple">
+                <div class="section__header-icon section__header-icon--cyan">
                   <Video />
                 </div>
                 <div class="section__header-text">
@@ -203,7 +199,7 @@
             <!-- Endorsements Section -->
             <section v-if="profile.endorsements?.length" class="section">
               <div class="section__header">
-                <div class="section__header-icon section__header-icon--amber">
+                <div class="section__header-icon section__header-icon--cyan">
                   <Award />
                 </div>
                 <div class="section__header-text">
@@ -854,28 +850,24 @@
     position: relative;
     background: var(--sidebar-surface);
     border-bottom: 1px solid var(--sidebar-border);
-    padding: 2rem;
+    padding: 1.25rem 2rem;
   }
 
   .profile-header__container {
     display: flex;
-    gap: 2rem;
+    gap: 1.25rem;
     align-items: flex-start;
-  }
-
-  .profile-avatar-section {
-    flex-shrink: 0;
   }
 
   .profile-avatar {
     position: relative;
-    width: 160px;
-    height: 160px;
-    border-radius: 20px;
+    width: 72px;
+    height: 72px;
+    border-radius: 12px;
     background: var(--sidebar-bg);
-    border: 4px solid var(--sidebar-border);
+    border: 2px solid var(--sidebar-border);
     overflow: hidden;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    flex-shrink: 0;
   }
 
   .profile-avatar__img {
@@ -893,50 +885,50 @@
 
   .profile-avatar__verified {
     position: absolute;
-    bottom: 8px;
-    right: 8px;
-    width: 32px;
-    height: 32px;
+    bottom: -2px;
+    right: -2px;
+    width: 20px;
+    height: 20px;
     background: var(--sidebar-accent);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 3px solid var(--sidebar-surface);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border: 2px solid var(--sidebar-surface);
   }
 
   .profile-avatar__verified svg {
-    width: 16px;
-    height: 16px;
+    width: 10px;
+    height: 10px;
     color: white;
   }
 
-  .profile-info {
+  .profile-main {
     flex: 1;
     min-width: 0;
-    padding-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
-  .profile-info__header {
+  .profile-top-row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 0.75rem;
+    gap: 2rem;
   }
 
-  .profile-info__left {
+  .profile-identity {
     flex: 1;
     min-width: 0;
   }
 
   .profile-name {
-    font-size: 2rem;
+    font-size: 1.375rem;
     font-weight: 700;
     color: var(--sidebar-text);
     margin: 0 0 0.5rem;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.02em;
     line-height: 1.2;
   }
 
@@ -950,12 +942,12 @@
   .badge {
     display: inline-flex;
     align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    border-radius: 6px;
+    gap: 0.25rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 5px;
     font-size: 0.6875rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
   }
 
   .badge--available {
@@ -965,9 +957,9 @@
   }
 
   .badge--affiliate {
-    background: rgba(168, 85, 247, 0.15);
-    color: #a855f7;
-    border: 1px solid rgba(168, 85, 247, 0.3);
+    background: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
+    border: 1px solid rgba(6, 182, 212, 0.3);
   }
 
   .badge--online {
@@ -983,8 +975,8 @@
   }
 
   .badge__dot {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     background: currentColor;
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
@@ -1004,25 +996,16 @@
   }
 
   .profile-bio {
-    font-size: 0.9375rem;
+    font-size: 0.875rem;
     color: var(--sidebar-text-muted);
-    margin: 0 0 1.25rem;
-    line-height: 1.6;
-    max-width: 600px;
+    margin: 0;
+    line-height: 1.5;
   }
 
   .profile-stats {
     display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    padding: 1rem 0;
-    margin-bottom: 1rem;
-  }
-
-  .stat-divider {
-    width: 1px;
-    height: 32px;
-    background: var(--sidebar-border);
+    gap: 2rem;
+    flex-shrink: 0;
   }
 
   .profile-tags {
@@ -1032,11 +1015,11 @@
   }
 
   .profile-tag {
-    padding: 0.375rem 0.75rem;
+    padding: 0.25rem 0.625rem;
     background: rgba(6, 182, 212, 0.12);
     border: 1px solid rgba(6, 182, 212, 0.2);
-    border-radius: 6px;
-    font-size: 0.75rem;
+    border-radius: 5px;
+    font-size: 0.6875rem;
     font-weight: 500;
     color: var(--sidebar-accent);
     transition: all 150ms ease;
@@ -1050,11 +1033,13 @@
   .stat {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.125rem;
+    text-align: center;
+    min-width: 70px;
   }
 
   .stat__value {
-    font-size: 1.75rem;
+    font-size: 1.25rem;
     font-weight: 700;
     color: var(--sidebar-text);
     font-variant-numeric: tabular-nums;
@@ -1062,7 +1047,7 @@
   }
 
   .stat__label {
-    font-size: 0.75rem;
+    font-size: 0.6875rem;
     color: var(--sidebar-text-muted);
     font-weight: 500;
   }
@@ -1178,14 +1163,9 @@
     height: 22px;
   }
 
-  .section__header-icon--purple {
-    background-color: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-  }
-
-  .section__header-icon--amber {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
+  .section__header-icon--cyan {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: #06b6d4;
   }
 
   .section__header-text {
@@ -1494,7 +1474,7 @@
 
   .endorsement-card:hover {
     background: var(--sidebar-hover);
-    border-color: rgba(245, 158, 11, 0.3);
+    border-color: rgba(6, 182, 212, 0.3);
   }
 
   .endorsement-card__header {
@@ -1846,7 +1826,7 @@
   /* ===== Responsive ===== */
   @media (max-width: 768px) {
     .profile-header {
-      padding: 1.5rem 1rem;
+      padding: 1rem;
     }
 
     .profile-header__container {
@@ -1857,30 +1837,31 @@
     }
 
     .profile-avatar {
-      width: 120px;
-      height: 120px;
+      width: 64px;
+      height: 64px;
     }
 
-    .profile-info__header {
+    .profile-top-row {
       flex-direction: column;
       align-items: center;
+      gap: 1rem;
+    }
+
+    .profile-stats {
+      gap: 1.5rem;
     }
 
     .profile-name {
-      font-size: 1.5rem;
+      font-size: 1.25rem;
     }
 
     .profile-badges {
       justify-content: center;
     }
 
-    .profile-stats {
-      justify-content: center;
-      flex-wrap: wrap;
-    }
 
-    .stat-divider {
-      display: none;
+    .profile-main {
+      width: 100%;
     }
 
     .main-layout {
