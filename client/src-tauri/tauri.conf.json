@@ -71,6 +71,7 @@
     ],
     "externalBin": [
       "binaries/ffmpeg",
+      "binaries/ffprobe",
       "binaries/node",
       "binaries/yt-dlp"
     ],
