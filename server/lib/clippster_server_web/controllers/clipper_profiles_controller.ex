@@ -3,6 +3,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
 
   alias ClippsterServer.ClipperProfiles
   alias ClippsterServer.ClipperProfiles.{ClipperProfile, ClipperChannelLink, ClipperPortfolioClip}
+  alias ClippsterServer.Campaigns
   alias ClippsterServer.Storage
   alias ClippsterServer.Affiliates
 
@@ -181,6 +182,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
 
     try do
       with {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id),
+           :ok <- check_channel_link_not_duplicate(user.id, link_params),
            {:ok, link} <- ClipperProfiles.add_channel_link(profile.id, link_params) do
         conn
         |> put_status(:created)
@@ -190,6 +192,11 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
           conn
           |> put_status(:unprocessable_entity)
           |> json(%{success: false, error: format_changeset_errors(changeset)})
+
+        {:error, :duplicate_social_account} ->
+          conn
+          |> put_status(:conflict)
+          |> json(%{success: false, error: "This account is already connected as a social account"})
 
         {:error, reason} ->
           Logger.error("[ClipperProfiles] create_channel_link error: #{inspect(reason)}")
@@ -602,14 +609,17 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   @doc """
   GET /api/clippers/leaderboard
   Get the clipper leaderboard.
+  Accepts: period (weekly|monthly), type (posts|campaigns)
   """
   def leaderboard(conn, params) do
     period_type = params["period"] || "weekly"
-    entries = ClipperProfiles.get_leaderboard(period_type)
+    leaderboard_type = params["type"] || "posts"
+    entries = ClipperProfiles.get_leaderboard(period_type, leaderboard_type: leaderboard_type)
 
     json(conn, %{
       success: true,
       period_type: period_type,
+      leaderboard_type: leaderboard_type,
       entries: Enum.map(entries, &serialize_leaderboard_entry/1)
     })
   end
@@ -723,6 +733,23 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   defp serialize_public_profile(profile) do
     base = serialize_profile(profile)
 
+    social_accounts =
+      if profile.user_id do
+        profile.user_id
+        |> Campaigns.list_user_social_accounts()
+        |> Enum.filter(& &1.is_active)
+        |> Enum.map(&serialize_public_social_account/1)
+      else
+        []
+      end
+
+    total_views =
+      if profile.user_id do
+        ClipperProfiles.get_total_views_for_user(profile.user_id)
+      else
+        0
+      end
+
     Map.merge(base, %{
       user:
         if(profile.user,
@@ -734,8 +761,20 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
           },
           else: nil
         ),
-      endorsements: Enum.map(profile.endorsements || [], &serialize_endorsement/1)
+      endorsements: Enum.map(profile.endorsements || [], &serialize_endorsement/1),
+      social_accounts: social_accounts,
+      total_views: total_views
     })
+  end
+
+  defp serialize_public_social_account(account) do
+    %{
+      platform: account.platform,
+      username: account.username,
+      profile_url: account.profile_url,
+      profile_image_url: account.profile_image_url,
+      is_verified: account.is_verified || false
+    }
   end
 
   defp serialize_channel_link(link) do
@@ -795,20 +834,21 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
   end
 
   defp serialize_leaderboard_entry(entry) do
+    # Handle both database structs (with .id) and live-calculated maps (without .id)
     %{
-      id: entry.id,
       rank: entry.rank,
       score: entry.score,
       clips_delivered: entry.clips_delivered,
       campaigns_active: entry.campaigns_active,
       endorsements_received: entry.endorsements_received,
       total_views: entry.total_views || 0,
-      clipper_profile:
+      posts_count: entry.posts_count || 0,
+      profile:
         if(entry.clipper_profile,
           do: %{
             id: entry.clipper_profile.id,
             user_id: entry.clipper_profile.user_id,
-            display_name: entry.clipper_profile.display_name,
+            display_name: entry.clipper_profile.display_name || (entry.clipper_profile.user && entry.clipper_profile.user.name),
             avatar_url: maybe_presign_avatar(entry.clipper_profile.avatar_url),
             slug: entry.clipper_profile.slug,
             is_verified: entry.clipper_profile.is_verified,
@@ -817,6 +857,65 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
           else: nil
         )
     }
+  end
+
+  defp check_channel_link_not_duplicate(user_id, link_params) do
+    platform = link_params["platform"] || ""
+    username = link_params["username"] || ""
+    url = link_params["url"] || ""
+
+    connected_accounts = Campaigns.list_user_social_accounts(user_id)
+
+    duplicate =
+      Enum.find(connected_accounts, fn account ->
+        account.is_active &&
+          normalize_platform_match(account.platform, platform) &&
+          (match_username?(account.username, username) ||
+             match_url?(account.profile_url, url))
+      end)
+
+    if duplicate do
+      {:error, :duplicate_social_account}
+    else
+      :ok
+    end
+  end
+
+  defp normalize_platform_match(account_platform, link_platform) do
+    normalize = fn p ->
+      case String.downcase(p || "") do
+        "twitter" -> "x"
+        "tiktok_business" -> "tiktok"
+        other -> other
+      end
+    end
+
+    normalize.(account_platform) == normalize.(link_platform)
+  end
+
+  defp match_username?(nil, _), do: false
+  defp match_username?(_, nil), do: false
+  defp match_username?(_, ""), do: false
+
+  defp match_username?(account_username, link_username) do
+    clean = fn name ->
+      name
+      |> String.trim()
+      |> String.trim_leading("@")
+      |> String.downcase()
+    end
+
+    clean.(account_username) == clean.(link_username)
+  end
+
+  defp match_url?(nil, _), do: false
+  defp match_url?(_, nil), do: false
+  defp match_url?(_, ""), do: false
+
+  defp match_url?(account_url, link_url) do
+    String.downcase(account_url) == String.downcase(link_url) ||
+      String.contains?(String.downcase(link_url), String.downcase(account_url)) ||
+      String.contains?(String.downcase(account_url), String.downcase(link_url))
   end
 
   defp parse_bool(nil), do: nil

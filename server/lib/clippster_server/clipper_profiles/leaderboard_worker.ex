@@ -11,7 +11,11 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
   @check_interval :timer.minutes(5)
 
   def start_link(_opts) do
-    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, %{}, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @impl true
@@ -24,16 +28,18 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
   def handle_info(:check_and_calculate, state) do
     now = DateTime.utc_now()
 
-    # Check if it's Monday for weekly leaderboard
+    # Check if it's Monday for weekly leaderboards
     if Date.day_of_week(now) == 1 and now.hour == 0 and now.minute < 5 do
-      Logger.info("[LeaderboardWorker] Calculating weekly leaderboard...")
+      Logger.info("[LeaderboardWorker] Calculating weekly leaderboards...")
       calculate_weekly_leaderboard()
+      calculate_weekly_posts_leaderboard()
     end
 
-    # Check if it's 1st of month for monthly leaderboard
+    # Check if it's 1st of month for monthly leaderboards
     if now.day == 1 and now.hour == 0 and now.minute < 5 do
-      Logger.info("[LeaderboardWorker] Calculating monthly leaderboard...")
+      Logger.info("[LeaderboardWorker] Calculating monthly leaderboards...")
       calculate_monthly_leaderboard()
+      calculate_monthly_posts_leaderboard()
     end
 
     schedule_check()
@@ -45,7 +51,7 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
   end
 
   @doc """
-  Calculate weekly leaderboard for all active clippers.
+  Calculate weekly campaigns leaderboard for all active clippers.
   """
   def calculate_weekly_leaderboard do
     today = Date.utc_today()
@@ -54,23 +60,47 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
     period_start = Date.add(today, -days_since_monday)
     period_end = Date.add(period_start, 6)
 
-    calculate_leaderboard("weekly", period_start, period_end)
+    calculate_leaderboard("campaigns", "weekly", period_start, period_end)
   end
 
   @doc """
-  Calculate monthly leaderboard for all active clippers.
+  Calculate monthly campaigns leaderboard for all active clippers.
   """
   def calculate_monthly_leaderboard do
     today = Date.utc_today()
     period_start = Date.beginning_of_month(today)
     period_end = Date.end_of_month(today)
 
-    calculate_leaderboard("monthly", period_start, period_end)
+    calculate_leaderboard("campaigns", "monthly", period_start, period_end)
   end
 
-  defp calculate_leaderboard(period_type, period_start, period_end) do
+  @doc """
+  Calculate weekly posts leaderboard for all active clippers.
+  """
+  def calculate_weekly_posts_leaderboard do
+    today = Date.utc_today()
+    # Get Monday of current week
+    days_since_monday = Date.day_of_week(today) - 1
+    period_start = Date.add(today, -days_since_monday)
+    period_end = Date.add(period_start, 6)
+
+    calculate_posts_leaderboard("weekly", period_start, period_end)
+  end
+
+  @doc """
+  Calculate monthly posts leaderboard for all active clippers.
+  """
+  def calculate_monthly_posts_leaderboard do
+    today = Date.utc_today()
+    period_start = Date.beginning_of_month(today)
+    period_end = Date.end_of_month(today)
+
+    calculate_posts_leaderboard("monthly", period_start, period_end)
+  end
+
+  defp calculate_leaderboard(leaderboard_type, period_type, period_start, period_end) do
     Logger.info(
-      "[LeaderboardWorker] Calculating #{period_type} leaderboard for #{period_start} to #{period_end}"
+      "[LeaderboardWorker] Calculating #{leaderboard_type} #{period_type} leaderboard for #{period_start} to #{period_end}"
     )
 
     # Get all public clipper profiles
@@ -92,6 +122,7 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
     Enum.each(scored_profiles, fn {{profile, stats, score}, rank} ->
       ClipperProfiles.create_leaderboard_entry(%{
         clipper_profile_id: profile.id,
+        leaderboard_type: leaderboard_type,
         period_type: period_type,
         period_start: period_start,
         period_end: period_end,
@@ -105,7 +136,7 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
     end)
 
     Logger.info(
-      "[LeaderboardWorker] Created #{length(scored_profiles)} leaderboard entries for #{period_type}"
+      "[LeaderboardWorker] Created #{length(scored_profiles)} #{leaderboard_type} leaderboard entries for #{period_type}"
     )
   end
 
@@ -131,6 +162,49 @@ defmodule ClippsterServer.ClipperProfiles.LeaderboardWorker do
       endorsements_received: endorsements_received,
       total_views: total_views
     }
+  end
+
+  defp calculate_posts_leaderboard(period_type, period_start, period_end) do
+    Logger.info(
+      "[LeaderboardWorker] Calculating posts #{period_type} leaderboard for #{period_start} to #{period_end}"
+    )
+
+    # Get all public clipper profiles
+    profiles = ClipperProfiles.list_all_public_profiles()
+
+    # Calculate total views and post count for each profile
+    scored_profiles =
+      profiles
+      |> Enum.map(fn profile ->
+        total_views = ClipperProfiles.count_post_views_in_period(profile.user_id, period_start, period_end)
+        posts_count = ClipperProfiles.count_posts_in_period(profile.user_id, period_start, period_end)
+        {profile, total_views, posts_count}
+      end)
+      |> Enum.filter(fn {_, total_views, _} -> total_views > 0 end)
+      |> Enum.sort_by(fn {_, total_views, _} -> total_views end, :desc)
+      |> Enum.with_index(1)
+
+    # Create leaderboard entries
+    Enum.each(scored_profiles, fn {{profile, total_views, posts_count}, rank} ->
+      ClipperProfiles.create_leaderboard_entry(%{
+        clipper_profile_id: profile.id,
+        leaderboard_type: "posts",
+        period_type: period_type,
+        period_start: period_start,
+        period_end: period_end,
+        rank: rank,
+        clips_delivered: 0,
+        campaigns_active: 0,
+        endorsements_received: 0,
+        total_views: total_views,
+        posts_count: posts_count,
+        score: total_views
+      })
+    end)
+
+    Logger.info(
+      "[LeaderboardWorker] Created #{length(scored_profiles)} posts leaderboard entries for #{period_type}"
+    )
   end
 
   defp calculate_score(stats) do

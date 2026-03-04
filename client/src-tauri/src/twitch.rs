@@ -280,6 +280,7 @@ pub async fn get_twitch_vods(channel: String, limit: Option<u32>) -> Result<Stri
             .arg("--skip-download")
             .arg("--playlist-end")
             .arg(limit.to_string())
+            .arg("--impersonate").arg("chrome")
             .arg(&twitch_url),
     )
     .output()
@@ -766,6 +767,7 @@ async fn run_twitch_recorder(
         .arg("-") // Output to stdout
         .arg("--quiet") // Suppress progress output
         .arg("--no-part") // Don't use .part files
+        .arg("--impersonate").arg("chrome")
         .arg("--ffmpeg-location")
         .arg(&ffmpeg_dir)
         .stdout(std::process::Stdio::piped())
@@ -1167,6 +1169,7 @@ pub async fn download_twitch_vod(
             tokio::process::Command::new(&ytdlp_path)
                 .arg("--print")
                 .arg("duration")
+                .arg("--impersonate").arg("chrome")
                 .arg(&video_url),
         )
         .output()
@@ -1195,6 +1198,7 @@ pub async fn download_twitch_vod(
         cmd.arg(&video_url)
             .arg("-o")
             .arg(&video_path_str)
+            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location")
             .arg(&ffmpeg_dir)
             .arg("--no-part") // Don't use .part files
@@ -1654,6 +1658,7 @@ pub async fn download_twitch_vod_segment(
             .unwrap_or_else(|| ffmpeg_path.clone());
         cmd.arg(&video_url)
             .arg("-o").arg(&video_path_str)
+            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--external-downloader").arg("ffmpeg")
             .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")

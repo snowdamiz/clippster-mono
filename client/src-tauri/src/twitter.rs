@@ -7,6 +7,7 @@ use std::{
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use tauri::Emitter;
+use tauri_plugin_shell::ShellExt;
 use tokio::sync::oneshot;
 use crate::storage;
 use tokio::io::AsyncBufReadExt;
@@ -204,6 +205,7 @@ async fn run_twitter_recorder(
         .arg("-o").arg("-")
         .arg("--quiet")
         .arg("--no-part")
+        .arg("--impersonate").arg("chrome")
         .arg("--ffmpeg-location").arg(&ffmpeg_path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -468,27 +470,41 @@ pub async fn get_twitter_broadcast_info(url: String) -> Result<String, String> {
     let ytdlp_path = resolve_ytdlp_binary()?;
     let normalized_url = normalize_twitter_url(&url);
     
+    println!("[Twitter] Fetching metadata for URL: {}", normalized_url);
+    
     let mut cmd = tokio::process::Command::new(&ytdlp_path);
     no_window(&mut cmd);
     
     cmd.arg("--dump-json")
         .arg("--skip-download")
-        .arg("--no-warnings")
+        .arg("--verbose")
+        .arg("--impersonate").arg("chrome")
         .arg(&normalized_url);
     
     let output = cmd.output().await
         .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
     
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    
+    // Log stderr for debugging (yt-dlp writes verbose output to stderr)
+    if !stderr.is_empty() {
+        println!("[Twitter] yt-dlp stderr: {}", stderr);
+    }
+    
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("[Twitter] yt-dlp failed with exit code: {:?}", output.status.code());
+        eprintln!("[Twitter] stderr: {}", stderr);
         return Err(format!("yt-dlp failed: {}", stderr));
     }
     
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    
     if stdout.trim().is_empty() {
-        return Err("No metadata returned from yt-dlp".to_string());
+        eprintln!("[Twitter] yt-dlp returned empty stdout");
+        eprintln!("[Twitter] stderr: {}", stderr);
+        return Err("No metadata returned from yt-dlp. The broadcast may be unavailable or expired.".to_string());
     }
+    
+    println!("[Twitter] Successfully fetched metadata ({} bytes)", stdout.len());
     
     // Return the JSON metadata
     Ok(stdout.to_string())
@@ -496,18 +512,18 @@ pub async fn get_twitter_broadcast_info(url: String) -> Result<String, String> {
 
 /// Get duration for a Twitter broadcast using ffprobe on the m3u8 manifest
 #[tauri::command]
-pub async fn get_twitter_broadcast_duration(manifest_url: String) -> Result<f64, String> {
-    let ffprobe_path = resolve_ffprobe_binary()?;
-    
-    let mut cmd = tokio::process::Command::new(&ffprobe_path);
-    no_window(&mut cmd);
-    
-    cmd.arg("-v").arg("error")
-        .arg("-show_entries").arg("format=duration")
-        .arg("-of").arg("default=noprint_wrappers=1:nokey=1")
-        .arg(&manifest_url);
-    
-    let output = cmd.output().await
+pub async fn get_twitter_broadcast_duration(app: tauri::AppHandle, manifest_url: String) -> Result<f64, String> {
+    let output = app.shell()
+        .sidecar("ffprobe")
+        .map_err(|e| format!("Failed to get ffprobe sidecar: {}", e))?
+        .args([
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            &manifest_url
+        ])
+        .output()
+        .await
         .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
     
     if !output.status.success() {
@@ -668,6 +684,7 @@ pub async fn download_twitter_vod(
         
         cmd.arg(&vod_url)
             .arg("-o").arg(&output_file_str)
+            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--external-downloader").arg("ffmpeg")
             .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
@@ -675,7 +692,7 @@ pub async fn download_twitter_vod(
             .arg("--progress")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
-        
+
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
@@ -754,6 +771,35 @@ pub async fn download_twitter_vod(
                 line = stderr_reader.next_line() => {
                     if let Ok(Some(line)) = line {
                         println!("[Twitter] yt-dlp stderr: {}", line);
+                        
+                        // Parse FFmpeg progress output: out_time=HH:MM:SS.MS
+                        if line.starts_with("out_time=") && total_duration.is_some() {
+                            if let Some(time_str) = line.strip_prefix("out_time=") {
+                                // Parse time format HH:MM:SS.MS or -577014:32:22.775807 (invalid)
+                                if !time_str.starts_with('-') {
+                                    let parts: Vec<&str> = time_str.split(':').collect();
+                                    if parts.len() == 3 {
+                                        if let (Ok(hours), Ok(mins), Ok(secs)) = (
+                                            parts[0].parse::<f64>(),
+                                            parts[1].parse::<f64>(),
+                                            parts[2].parse::<f64>()
+                                        ) {
+                                            let current_time = hours * 3600.0 + mins * 60.0 + secs;
+                                            let total_dur = total_duration.unwrap();
+                                            let progress = (current_time / total_dur * 100.0).min(100.0);
+                                            
+                                            let _ = app_clone.emit("download-progress", DownloadProgress {
+                                                download_id: download_id_clone.clone(),
+                                                progress,
+                                                current_time: Some(current_time),
+                                                total_time: total_duration,
+                                                status: format!("Downloading... {}%", progress as u32),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -904,27 +950,6 @@ fn resolve_ffmpeg_binary() -> Result<PathBuf, String> {
     }
 }
 
-fn resolve_ffprobe_binary() -> Result<PathBuf, String> {
-    #[cfg(target_os = "windows")]
-    let binary_name = "ffprobe.exe";
-    
-    #[cfg(not(target_os = "windows"))]
-    let binary_name = "ffprobe";
-    
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable directory: {}", e))?
-        .parent()
-        .ok_or("Failed to get parent directory")?
-        .to_path_buf();
-    
-    let ffprobe_path = exe_dir.join(binary_name);
-    
-    if ffprobe_path.exists() {
-        Ok(ffprobe_path)
-    } else {
-        Err(format!("ffprobe binary not found at: {}", ffprobe_path.display()))
-    }
-}
 fn format_time_for_filename(seconds: f64) -> String {
     let h = (seconds / 3600.0) as u32;
     let m = ((seconds % 3600.0) / 60.0) as u32;
@@ -1033,6 +1058,7 @@ pub async fn download_twitter_vod_segment(
             .unwrap_or_else(|| ffmpeg_path.to_string_lossy().to_string());
         cmd.arg(&vod_url)
             .arg("-o").arg(&video_path_str)
+            .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--external-downloader").arg("ffmpeg")
             .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")

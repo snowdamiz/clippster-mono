@@ -1093,6 +1093,7 @@ commands::file_utils::generate_video_thumbnail,
             youtube::get_youtube_channel_info,
             youtube::get_youtube_vods,
             youtube::get_youtube_videos,
+            youtube::get_youtube_vod_duration,
             youtube::download_youtube_vod,
             youtube::download_youtube_vod_segment,
             youtube::start_youtube_recording,
@@ -1143,6 +1144,7 @@ commands::file_utils::generate_video_thumbnail,
             // Audio commands
             audio::extract_audio_from_video,
             audio::extract_and_chunk_audio,
+            audio::cancel_audio_extraction,
             audio::extract_audio_to_file,
             audio::extract_audio_to_file_wav,
             audio::get_audio_duration,
@@ -1193,6 +1195,10 @@ commands::file_utils::generate_video_thumbnail,
             // User context for per-user storage
             storage::set_current_user_id,
             storage::clear_current_user_id,
+
+            // Delete local storage commands
+            calculate_local_storage_size,
+            delete_local_storage,
 
             // Assets commands
             assets::upload_asset_async,

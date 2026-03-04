@@ -12,7 +12,11 @@ defmodule ClippsterServer.ClipperProfiles.BadgeWorker do
   @check_interval :timer.hours(6)
 
   def start_link(_opts) do
-    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, %{}, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @impl true
@@ -44,7 +48,7 @@ defmodule ClippsterServer.ClipperProfiles.BadgeWorker do
   Trigger badge check for a specific user (called after campaign completion).
   """
   def check_user_badges(user_id) do
-    GenServer.cast(__MODULE__, {:check_clipper_badges, user_id})
+    GenServer.cast({:global, __MODULE__}, {:check_clipper_badges, user_id})
   end
 
   @doc """

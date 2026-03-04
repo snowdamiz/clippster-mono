@@ -318,6 +318,39 @@ pub fn get_livestream_recordings_dir() -> Result<PathBuf, String> {
     Ok(recordings_dir)
 }
 
+/// Get the raw videos directory (VOD recordings, livestream recordings)
+pub fn get_raw_videos_dir() -> Result<PathBuf, String> {
+    let paths = init_storage_dirs()?;
+    Ok(paths.videos)
+}
+
+/// Get the projects directory (video editor projects)
+pub fn get_projects_dir() -> Result<PathBuf, String> {
+    let base_dir = get_storage_base_dir()?;
+    let projects_dir = base_dir.join("projects");
+    std::fs::create_dir_all(&projects_dir)
+        .map_err(|e| format!("Failed to create projects directory: {}", e))?;
+    Ok(projects_dir)
+}
+
+/// Get the temp DVR directory
+pub fn get_temp_dvr_dir() -> Result<PathBuf, String> {
+    let paths = init_storage_dirs()?;
+    Ok(paths.temp.join("dvr"))
+}
+
+/// Get the auto-detect temp directory
+pub fn get_auto_detect_tmp_dir() -> Result<PathBuf, String> {
+    let paths = init_storage_dirs()?;
+    Ok(paths.temp.join("auto_detect"))
+}
+
+/// Get the proxy files directory
+pub fn get_proxy_dir() -> Result<PathBuf, String> {
+    let paths = init_storage_dirs()?;
+    Ok(paths.temp.join("proxies"))
+}
+
 /// Delete a livestream recording session directory and all its contents
 /// This removes all HLS segments, playlists, and other files for the session
 #[tauri::command]
@@ -480,7 +513,7 @@ pub async fn generate_thumbnail(
     let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
 
     // Use ffmpeg sidecar to generate thumbnail at 1 second mark
-    let output = app
+    let command = app
         .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
@@ -498,7 +531,9 @@ pub async fn generate_thumbnail(
             "scale=320:-1",
             "-y",
             thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-        ])
+        ]);
+
+    let output = command
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;
@@ -564,7 +599,7 @@ pub async fn generate_thumbnail_at_timestamp(
     let timestamp_str = format!("{:02}:{:02}:{:06.3}", hours, minutes, seconds);
 
     // Use ffmpeg sidecar to generate thumbnail at specified timestamp
-    let output = app
+    let command = app
         .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
@@ -582,7 +617,9 @@ pub async fn generate_thumbnail_at_timestamp(
             "scale=320:-1",
             "-y",
             thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
-        ])
+        ]);
+
+    let output = command
         .output()
         .await
         .map_err(|e| format!("Failed to run ffmpeg: {}", e))?;

@@ -29,6 +29,8 @@ export interface ClipperProfile {
   badges: Badge[];
   is_affiliate: boolean;
   endorsements?: Endorsement[];
+  social_accounts?: PublicSocialAccount[];
+  total_views?: number;
   user?: {
     id: number;
     name: string;
@@ -79,14 +81,25 @@ export interface Endorsement {
   inserted_at: string;
 }
 
+export interface PublicSocialAccount {
+  platform: string;
+  username: string | null;
+  profile_url: string | null;
+  profile_image_url: string | null;
+  is_verified: boolean;
+}
+
 export interface LeaderboardEntry {
   rank: number;
   score: number;
   clips_delivered: number;
   campaigns_active: number;
   endorsements_received: number;
+  total_views: number;
+  posts_count: number;
   profile: {
     id: number;
+    user_id: number;
     display_name: string;
     avatar_url: string | null;
     slug: string;
@@ -542,9 +555,10 @@ export async function getClipperBySlug(slug: string): Promise<ProfileResponse> {
 }
 
 export async function getLeaderboard(
-  period: 'weekly' | 'monthly' = 'weekly'
+  period: 'weekly' | 'monthly' = 'weekly',
+  type: 'posts' | 'campaigns' = 'posts'
 ): Promise<LeaderboardResponse> {
-  const response = await api.get(`/clippers/leaderboard?period=${period}`);
+  const response = await api.get(`/clippers/leaderboard?period=${period}&type=${type}`);
   return response.data;
 }
 

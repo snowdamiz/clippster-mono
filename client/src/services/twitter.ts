@@ -230,6 +230,9 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
   username?: string;
   description?: string;
   avatarUrl?: string;
+  timestamp?: string;
+  uploadDate?: string;
+  error?: string;
 }> {
   try {
     const result = await invoke<string>('get_twitter_broadcast_info', { url });
@@ -264,25 +267,94 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
     const username = metadata.uploader_id || 
                     (uploader ? `@${uploader.replace('@', '')}` : undefined);
     
-    // Try to get duration from metadata first
-    let duration = metadata.duration;
-    if (typeof duration === 'string') {
-      duration = parseFloat(duration);
-    }
-    if (isNaN(duration) || duration === null || duration === undefined) {
-      duration = undefined;
-    }
-    
-    // If duration not in metadata, try to get it from the manifest URL using ffprobe
-    if (!duration && metadata.manifest_url) {
+    // Try to get duration from ffprobe first (most reliable)
+    let duration: number | undefined;
+    if (metadata.manifest_url || metadata.url) {
+      const probeUrl = metadata.manifest_url || metadata.url;
       try {
-        console.log('[Twitter] Duration not in metadata, fetching from manifest:', metadata.manifest_url);
+        console.log('[Twitter] Fetching duration via ffprobe from:', probeUrl);
         duration = await invoke<number>('get_twitter_broadcast_duration', { 
-          manifestUrl: metadata.manifest_url 
+          manifestUrl: probeUrl 
         });
         console.log('[Twitter] Duration from ffprobe:', duration);
       } catch (error) {
-        console.warn('[Twitter] Failed to get duration from manifest:', error);
+        console.warn('[Twitter] Failed to get duration from ffprobe:', error);
+        
+        // Fallback to yt-dlp metadata if ffprobe fails
+        let metaDuration = metadata.duration;
+        if (typeof metaDuration === 'string') {
+          metaDuration = parseFloat(metaDuration);
+        }
+        if (!isNaN(metaDuration) && metaDuration !== null && metaDuration !== undefined) {
+          duration = metaDuration;
+          console.log('[Twitter] Using duration from yt-dlp metadata:', duration);
+        }
+      }
+    } else {
+      // No URL available, try yt-dlp metadata
+      let metaDuration = metadata.duration;
+      if (typeof metaDuration === 'string') {
+        metaDuration = parseFloat(metaDuration);
+      }
+      if (!isNaN(metaDuration) && metaDuration !== null && metaDuration !== undefined) {
+        duration = metaDuration;
+        console.log('[Twitter] Using duration from yt-dlp metadata (no URL):', duration);
+      }
+    }
+    
+    // Extract timestamp from yt-dlp metadata
+    let timestamp: string | undefined;
+    let uploadDate: string | undefined;
+    
+    // Try timestamp field (Unix timestamp)
+    if (metadata.timestamp) {
+      try {
+        const date = new Date(metadata.timestamp * 1000);
+        timestamp = date.toISOString();
+        console.log('[Twitter] Timestamp from metadata.timestamp:', timestamp);
+      } catch (error) {
+        console.warn('[Twitter] Failed to parse timestamp:', error);
+      }
+    }
+    
+    // Try release_timestamp as fallback
+    if (!timestamp && metadata.release_timestamp) {
+      try {
+        const date = new Date(metadata.release_timestamp * 1000);
+        timestamp = date.toISOString();
+        console.log('[Twitter] Timestamp from metadata.release_timestamp:', timestamp);
+      } catch (error) {
+        console.warn('[Twitter] Failed to parse release_timestamp:', error);
+      }
+    }
+    
+    // Try upload_date field (YYYYMMDD format)
+    if (metadata.upload_date) {
+      uploadDate = metadata.upload_date;
+      // Convert YYYYMMDD to ISO string if we don't have timestamp
+      if (!timestamp && uploadDate) {
+        try {
+          const year = uploadDate.substring(0, 4);
+          const month = uploadDate.substring(4, 6);
+          const day = uploadDate.substring(6, 8);
+          timestamp = new Date(`${year}-${month}-${day}`).toISOString();
+          console.log('[Twitter] Timestamp from metadata.upload_date:', timestamp);
+        } catch (error) {
+          console.warn('[Twitter] Failed to parse upload_date:', error);
+        }
+      }
+    }
+    
+    // Try modified_date as last resort
+    if (!timestamp && metadata.modified_date) {
+      try {
+        const year = metadata.modified_date.substring(0, 4);
+        const month = metadata.modified_date.substring(4, 6);
+        const day = metadata.modified_date.substring(6, 8);
+        timestamp = new Date(`${year}-${month}-${day}`).toISOString();
+        console.log('[Twitter] Timestamp from metadata.modified_date:', timestamp);
+      } catch (error) {
+        console.warn('[Twitter] Failed to parse modified_date:', error);
       }
     }
     
@@ -302,6 +374,8 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
       uploader,
       username,
       avatarUrl,
+      timestamp,
+      uploadDate,
     });
     
     return {
@@ -312,9 +386,19 @@ export async function getTwitterBroadcastInfo(url: string): Promise<{
       username,
       description: metadata.description,
       avatarUrl,
+      timestamp,
+      uploadDate,
     };
   } catch (error) {
     console.error('[Twitter] Failed to get broadcast info:', error);
-    return {};
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    
+    // Return minimal data with error flag so UI can still show the VOD
+    // Extract broadcast ID from URL for fallback title
+    const broadcastId = extractTwitterBroadcastId(url);
+    return {
+      title: broadcastId ? `X Broadcast ${broadcastId.substring(0, 8)}...` : 'X Broadcast',
+      error: errorMessage,
+    };
   }
 }

@@ -202,19 +202,16 @@ config :clippster_server, :post_for_me,
   project_id: System.get_env("POST_FOR_ME_PROJECT_ID"),
   connect_session_ttl_seconds: post_for_me_connect_session_ttl_seconds
 
+# AppSignal APM + error tracking
+config :appsignal, :config,
+  otp_app: :clippster_server,
+  name: "Clippster Server",
+  push_api_key: System.get_env("APPSIGNAL_PUSH_API_KEY"),
+  env: config_env(),
+  active: not is_nil(System.get_env("APPSIGNAL_PUSH_API_KEY"))
+
 # Freesound API (sound effects search proxy)
 config :clippster_server, :freesound, api_key: System.get_env("FREESOUND_API_KEY")
-
-# PulseKit error tracking and event monitoring
-pulsekit_key = System.get_env("PULSEKIT_CLIPPSTER_SERVER_KEY")
-pulsekit_endpoint = System.get_env("PULSEKIT_ENDPOINT") || "https://pulsekit.fly.dev"
-
-if pulsekit_key do
-  config :pulsekit,
-    endpoint: pulsekit_endpoint,
-    api_key: pulsekit_key,
-    environment: config_env() |> to_string()
-end
 
 # Cloudflare R2 storage configuration (for organization assets)
 r2_account_id = System.get_env("R2_ACCOUNT_ID")

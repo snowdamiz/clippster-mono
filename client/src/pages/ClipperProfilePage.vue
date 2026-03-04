@@ -32,87 +32,115 @@
 
       <!-- Profile Content (when profile configured) -->
       <div v-else class="profile-page">
-        <!-- Profile Header -->
-        <header class="profile-header">
-          <div class="profile-header__main">
-            <div class="profile-avatar">
-              <img
-                v-if="clipperProfile?.avatar_url && !avatarLoadError"
-                :src="clipperProfile.avatar_url"
-                class="profile-avatar__img"
-                @error="avatarLoadError = true"
-              />
-              <UserCircle v-else class="profile-avatar__fallback" />
-              <div v-if="clipperProfile?.is_verified" class="profile-avatar__verified">
-                <CheckCircle />
+        <!-- Enhanced Profile Header -->
+        <div class="profile-header-card">
+          <div class="profile-header-bg"></div>
+          <div class="profile-header-content">
+            <div class="profile-header-main">
+              <div class="profile-avatar-wrapper">
+                <div class="profile-avatar">
+                  <img
+                    v-if="clipperProfile?.avatar_url && !avatarLoadError"
+                    :src="clipperProfile.avatar_url"
+                    class="profile-avatar__img"
+                    @error="avatarLoadError = true"
+                  />
+                  <UserCircle v-else class="profile-avatar__fallback" />
+                  <div v-if="clipperProfile?.is_verified" class="profile-avatar__verified">
+                    <CheckCircle />
+                  </div>
+                </div>
+              </div>
+              <div class="profile-info">
+                <div class="profile-name-row">
+                  <h1 class="profile-name">{{ clipperProfile?.display_name || 'Set up your profile' }}</h1>
+                  <div class="profile-badges">
+                    <span v-if="clipperProfile?.looking_for_work" class="status-badge status-badge--available">
+                      <span class="status-badge__dot"></span>
+                      Available for Work
+                    </span>
+                    <span v-if="clipperProfile?.is_affiliate" class="status-badge status-badge--affiliate">
+                      <Handshake :size="12" />
+                      Affiliate
+                    </span>
+                  </div>
+                </div>
+                <div class="profile-meta-row">
+                  <button
+                    v-if="clipperProfile?.slug && clipperProfile?.is_public"
+                    class="profile-action-btn profile-action-btn--primary"
+                    @click="$router.push(`/clippers/${clipperProfile.slug}`)"
+                  >
+                    <Eye :size="14" />
+                    View Public Profile
+                  </button>
+                  <span v-else-if="clipperProfile" class="profile-visibility">
+                    <EyeOff :size="14" />
+                    Private Profile
+                  </span>
+                  <span v-if="clipperProfile?.user?.last_active_at" class="profile-last-active">
+                    <Clock :size="14" />
+                    {{ formatLastActive(clipperProfile.user.last_active_at) }}
+                  </span>
+                </div>
+                <p class="profile-bio" :class="{ 'profile-bio--empty': !clipperProfile?.bio }">
+                  {{ clipperProfile?.bio || 'Add a bio to tell organizations about yourself' }}
+                </p>
+                <div v-if="clipperProfile?.specialty_tags?.length" class="profile-tags">
+                  <span v-for="tag in clipperProfile.specialty_tags.slice(0, 5)" :key="tag" class="profile-tag">
+                    {{ tag }}
+                  </span>
+                </div>
               </div>
             </div>
-            <div class="profile-meta">
-              <div class="profile-meta__top">
-                <h1 class="profile-name">{{ clipperProfile?.display_name || 'Set up your profile' }}</h1>
-                <span v-if="clipperProfile?.looking_for_work" class="available-badge">
-                  <span class="available-badge__dot"></span>
-                  Available
-                </span>
-                <span v-if="clipperProfile?.is_affiliate" class="affiliate-badge">
-                  <Handshake :size="12" class="affiliate-badge__icon" />
-                  Affiliate
-                </span>
-                <button
-                  v-if="clipperProfile?.slug && clipperProfile?.is_public"
-                  class="view-public-btn"
-                  @click="$router.push(`/clippers/${clipperProfile.slug}`)"
-                >
-                  <Eye />
-                  View Public
-                </button>
-                <span v-else-if="clipperProfile" class="private-badge">
-                  <EyeOff />
-                  Private
-                </span>
+            <div class="profile-stats-grid">
+              <div class="profile-stat-card">
+                <div class="profile-stat-card__icon profile-stat-card__icon--purple">
+                  <Megaphone :size="18" />
+                </div>
+                <div class="profile-stat-card__content">
+                  <span class="profile-stat-card__value">{{ clipperProfile?.total_campaigns_completed || 0 }}</span>
+                  <span class="profile-stat-card__label">Campaigns</span>
+                </div>
               </div>
-              <div v-if="clipperProfile?.user?.last_active_at" class="profile-last-active">
-                <Clock :size="14" />
-                <span>{{ formatLastActive(clipperProfile.user.last_active_at) }}</span>
+              <div class="profile-stat-card">
+                <div class="profile-stat-card__icon profile-stat-card__icon--cyan">
+                  <FileVideo :size="18" />
+                </div>
+                <div class="profile-stat-card__content">
+                  <span class="profile-stat-card__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
+                  <span class="profile-stat-card__label">Clips Delivered</span>
+                </div>
               </div>
-              <p class="profile-bio" :class="{ 'profile-bio--empty': !clipperProfile?.bio }">
-                {{ clipperProfile?.bio || 'Add a bio to tell organizations about yourself' }}
-              </p>
-              <div v-if="clipperProfile?.specialty_tags?.length" class="profile-tags">
-                <span v-for="tag in clipperProfile.specialty_tags.slice(0, 5)" :key="tag" class="profile-tag">
-                  {{ tag }}
-                </span>
+              <div class="profile-stat-card">
+                <div class="profile-stat-card__icon profile-stat-card__icon--green">
+                  <CheckCircle :size="18" />
+                </div>
+                <div class="profile-stat-card__content">
+                  <span class="profile-stat-card__value">{{ clipperProfile?.total_endorsements || 0 }}</span>
+                  <span class="profile-stat-card__label">Endorsements</span>
+                </div>
               </div>
             </div>
           </div>
-          <div class="profile-stats">
-            <div class="stat">
-              <span class="stat__value">{{ clipperProfile?.total_campaigns_completed || 0 }}</span>
-              <span class="stat__label">Campaigns</span>
-            </div>
-            <div class="stat">
-              <span class="stat__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
-              <span class="stat__label">Clips</span>
-            </div>
-            <div class="stat">
-              <span class="stat__value">{{ clipperProfile?.total_endorsements || 0 }}</span>
-              <span class="stat__label">Endorsements</span>
-            </div>
-          </div>
-        </header>
+        </div>
 
-        <!-- Tab Navigation -->
-        <nav class="tabs">
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            class="tab"
-            :class="{ 'tab--active': activeTab === tab.id }"
-            @click="activeTab = tab.id"
-          >
-            <component :is="tab.icon" class="tab__icon" />
-            {{ tab.label }}
-          </button>
+        <!-- Enhanced Tab Navigation -->
+        <nav class="tabs-nav">
+          <div class="tabs-container">
+            <button
+              v-for="tab in tabs"
+              :key="tab.id"
+              class="tab-button"
+              :class="{ 'tab-button--active': activeTab === tab.id }"
+              @click="activeTab = tab.id"
+            >
+              <div class="tab-button__icon">
+                <component :is="tab.icon" />
+              </div>
+              <span class="tab-button__label">{{ tab.label }}</span>
+            </button>
+          </div>
         </nav>
 
         <!-- Content -->
@@ -134,8 +162,8 @@
                     <span class="rank-stat__label">Rank</span>
                   </div>
                   <div class="rank-stat">
-                    <span class="rank-stat__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
-                    <span class="rank-stat__label">Clips</span>
+                    <span class="rank-stat__value">{{ leaderboardType === 'posts' ? myPostsCount : (clipperProfile?.total_clips_delivered || 0) }}</span>
+                    <span class="rank-stat__label">{{ leaderboardType === 'posts' ? 'Posts' : 'Clips' }}</span>
                   </div>
                   <div class="rank-stat">
                     <span class="rank-stat__value">{{ formatViews(totalViews) }}</span>
@@ -153,6 +181,20 @@
                 <div class="leaderboard__header-text">
                   <h2 class="leaderboard__title">Top Clippers</h2>
                   <p class="leaderboard__subtitle">Global performance rankings</p>
+                </div>
+                <div class="period-switch">
+                  <button
+                    :class="{ active: leaderboardType === 'posts' }"
+                    @click="switchLeaderboardType('posts')"
+                  >
+                    Posts
+                  </button>
+                  <button
+                    :class="{ active: leaderboardType === 'campaigns' }"
+                    @click="switchLeaderboardType('campaigns')"
+                  >
+                    Campaigns
+                  </button>
                 </div>
                 <div class="period-switch">
                   <button
@@ -178,25 +220,37 @@
                 <p>No leaderboard data yet</p>
               </div>
               <div v-else class="leaderboard__list">
+                <div class="lb-header">
+                  <span class="lb-header__rank">#</span>
+                  <span class="lb-header__user">User</span>
+                  <span class="lb-header__col">{{ leaderboardType === 'posts' ? 'Posts' : 'Clips' }}</span>
+                  <span v-if="leaderboardType === 'campaigns'" class="lb-header__col">Campaigns</span>
+                  <span class="lb-header__col">Views</span>
+                </div>
                 <div
                   v-for="(entry, index) in leaderboardEntries"
                   :key="entry.id"
                   class="lb-entry"
-                  :class="{ 'lb-entry--you': entry.clipper_profile?.user_id === currentUserId }"
+                  :class="{ 'lb-entry--you': entry.profile?.user_id === currentUserId }"
                 >
                   <span class="lb-entry__rank" :class="`lb-entry__rank--${index + 1}`">{{ index + 1 }}</span>
                   <div class="lb-entry__avatar">
-                    <img v-if="entry.clipper_profile?.avatar_url" :src="entry.clipper_profile.avatar_url" />
+                    <img v-if="entry.profile?.avatar_url" :src="entry.profile.avatar_url" />
                     <UserCircle v-else />
                   </div>
                   <div class="lb-entry__info">
                     <span class="lb-entry__name">
-                      {{ entry.clipper_profile?.display_name || 'Anonymous' }}
-                      <span v-if="entry.clipper_profile?.user_id === currentUserId" class="lb-entry__you">(You)</span>
+                      {{ entry.profile?.display_name || 'Anonymous' }}
+                      <span v-if="entry.profile?.user_id === currentUserId" class="lb-entry__you">(You)</span>
                     </span>
-                    <span class="lb-entry__clips">{{ entry.clips_delivered }} clips</span>
                   </div>
-                  <span class="lb-entry__views">{{ formatViews(entry.total_views || 0) }} views</span>
+                  <span class="lb-entry__stat">
+                    {{ leaderboardType === 'posts' ? entry.posts_count : entry.clips_delivered }}
+                  </span>
+                  <span v-if="leaderboardType === 'campaigns'" class="lb-entry__stat">
+                    {{ entry.campaigns_active }}
+                  </span>
+                  <span class="lb-entry__stat">{{ formatViews(entry.total_views || 0) }}</span>
                 </div>
               </div>
             </section>
@@ -1294,6 +1348,7 @@
     isTokenExpiringSoon,
     getUserAnalyticsSummary,
     listUserPosts,
+    syncUserAnalytics,
     type UserInstagramAccount,
     type UserPost,
     type UserAnalyticsSummary,
@@ -1389,8 +1444,10 @@
   const leaderboardEntries = ref<LeaderboardEntry[]>([]);
   const myRank = ref<number | null>(null);
   const totalViews = ref(0);
+  const myPostsCount = ref(0);
   const currentUserId = ref<number | null>(null);
   const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
+  const leaderboardType = ref<'posts' | 'campaigns'>('posts');
   const avatarLoadError = ref(false);
 
   // Affiliate State
@@ -1511,9 +1568,13 @@
   interface LeaderboardEntry {
     id: number;
     rank: number;
+    score: number;
     clips_delivered: number;
+    campaigns_active: number;
+    endorsements_received: number;
     total_views: number;
-    clipper_profile?: { id: number; user_id: number; display_name: string | null; avatar_url: string | null };
+    posts_count: number;
+    profile?: { id: number; user_id: number; display_name: string | null; avatar_url: string | null; slug?: string; is_verified?: boolean };
   }
 
   // Reset avatar load error when clipperProfile changes
@@ -1554,11 +1615,18 @@
     }
   };
 
+  const switchLeaderboardType = (type: 'posts' | 'campaigns') => {
+    if (leaderboardType.value !== type) {
+      leaderboardType.value = type;
+      loadLeaderboard();
+    }
+  };
+
   const loadLeaderboard = async () => {
     loadingLeaderboard.value = true;
     try {
       const response = await import('@/services/clipperProfilesApi').then((m) =>
-        m.getLeaderboard(leaderboardPeriod.value)
+        m.getLeaderboard(leaderboardPeriod.value, leaderboardType.value)
       );
       if (response.success) {
         leaderboardEntries.value = response.entries.map((entry: any, index: number) => ({
@@ -1567,8 +1635,10 @@
           rank: index + 1,
         }));
         if (currentUserId.value) {
-          const myEntry = leaderboardEntries.value.find((e) => e.clipper_profile?.user_id === currentUserId.value);
+          const myEntry = leaderboardEntries.value.find((e) => e.profile?.user_id === currentUserId.value);
           myRank.value = myEntry?.rank || null;
+          totalViews.value = myEntry?.total_views || 0;
+          myPostsCount.value = myEntry?.posts_count || 0;
         }
       }
     } catch (error) {
@@ -1644,6 +1714,9 @@
   const loadPostsAnalytics = async () => {
     loadingPosts.value = true;
     try {
+      // Sync analytics from PostForMe first
+      await syncUserAnalytics();
+
       // Load analytics summary
       const analyticsRes = await getUserAnalyticsSummary({ days: 30 });
       if (analyticsRes.success && analyticsRes.summary) {
@@ -2179,35 +2252,60 @@
     height: 14px;
   }
 
-  /* ===== Profile Header ===== */
-  .profile-header {
+  /* ===== Enhanced Profile Header Card ===== */
+  .profile-header-card {
+    position: relative;
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+  }
+
+  .profile-header-bg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 120px;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+    opacity: 0.5;
+  }
+
+  .profile-header-content {
+    position: relative;
+    padding: 2rem 2rem 1.5rem;
+  }
+
+  .profile-header-main {
     display: flex;
     align-items: flex-start;
-    justify-content: space-between;
-    gap: 2rem;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
   }
 
   @media (max-width: 640px) {
-    .profile-header {
+    .profile-header-main {
       flex-direction: column;
+      align-items: center;
+      text-align: center;
     }
   }
 
-  .profile-header__main {
-    display: flex;
-    align-items: flex-start;
-    gap: 1.25rem;
-    flex: 1;
+  .profile-avatar-wrapper {
+    position: relative;
+    flex-shrink: 0;
   }
 
   .profile-avatar {
     position: relative;
-    width: 72px;
-    height: 72px;
-    border-radius: 12px;
-    background: var(--sidebar-surface);
+    width: 96px;
+    height: 96px;
+    border-radius: 20px;
+    background: var(--sidebar-hover);
     overflow: hidden;
-    flex-shrink: 0;
+    border: 3px solid var(--sidebar-surface);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
 
   .profile-avatar__img {
@@ -2219,224 +2317,348 @@
   .profile-avatar__fallback {
     width: 100%;
     height: 100%;
-    padding: 16px;
+    padding: 20px;
     color: var(--sidebar-text-muted);
   }
 
   .profile-avatar__verified {
     position: absolute;
-    bottom: -2px;
-    right: -2px;
-    width: 20px;
-    height: 20px;
-    background: var(--sidebar-accent);
+    bottom: -3px;
+    right: -3px;
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 2px solid var(--sidebar-bg);
+    border: 3px solid var(--sidebar-surface);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
   .profile-avatar__verified svg {
-    width: 10px;
-    height: 10px;
+    width: 14px;
+    height: 14px;
     color: white;
   }
 
-  .profile-meta {
+  .profile-info {
     flex: 1;
     min-width: 0;
   }
 
-  .profile-meta__top {
+  .profile-name-row {
     display: flex;
     align-items: center;
-    gap: 0.625rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
-    margin-bottom: 0.375rem;
+    margin-bottom: 0.75rem;
+  }
+
+  @media (max-width: 640px) {
+    .profile-name-row {
+      justify-content: center;
+    }
   }
 
   .profile-name {
-    font-size: 1.25rem;
+    font-size: 1.75rem;
     font-weight: 700;
     color: var(--sidebar-text);
     margin: 0;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
   }
 
-  .available-badge {
+  .profile-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .status-badge {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.25rem 0.5rem;
-    background: rgba(16, 185, 129, 0.12);
-    border-radius: 4px;
-    font-size: 0.625rem;
+    padding: 0.375rem 0.625rem;
+    border-radius: 6px;
+    font-size: 0.6875rem;
     font-weight: 600;
-    color: #10b981;
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
 
-  .available-badge__dot {
-    width: 5px;
-    height: 5px;
+  .status-badge--available {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+  }
+
+  .status-badge--available .status-badge__dot {
+    width: 6px;
+    height: 6px;
     background: #10b981;
     border-radius: 50%;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   }
 
-  .affiliate-badge {
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .status-badge--affiliate {
+    background: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
+  }
+
+  .profile-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+
+  @media (max-width: 640px) {
+    .profile-meta-row {
+      justify-content: center;
+    }
+  }
+
+  .profile-action-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.25rem 0.5rem;
-    background: rgba(168, 85, 247, 0.12);
-    border-radius: 4px;
-    font-size: 0.625rem;
+    padding: 0.5rem 0.875rem;
+    border-radius: 8px;
+    font-size: 0.75rem;
     font-weight: 600;
-    color: #a855f7;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .affiliate-badge__icon {
-    flex-shrink: 0;
-  }
-
-  .view-public-btn,
-  .private-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.625rem;
-    font-weight: 600;
-  }
-
-  .view-public-btn {
-    background: rgba(6, 182, 212, 0.1);
-    color: var(--sidebar-accent);
     border: none;
     cursor: pointer;
-    transition: background 150ms ease;
+    transition: all 150ms ease;
   }
 
-  .view-public-btn:hover {
-    background: rgba(6, 182, 212, 0.15);
+  .profile-action-btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: white;
   }
 
-  .view-public-btn svg,
-  .private-badge svg {
-    width: 11px;
-    height: 11px;
+  .profile-action-btn--primary:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
   }
 
-  .private-badge {
-    background: var(--sidebar-surface);
+  .profile-visibility {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background: var(--sidebar-hover);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 500;
     color: var(--sidebar-text-muted);
   }
 
   .profile-last-active {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 0.375rem;
     font-size: 0.75rem;
     color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0.5rem;
     opacity: 0.8;
   }
 
   .profile-bio {
-    font-size: 0.8125rem;
+    font-size: 0.9375rem;
     color: var(--sidebar-text-muted);
-    margin: 0 0 0.625rem;
-    line-height: 1.5;
-    max-width: 420px;
+    margin: 0 0 0.875rem;
+    line-height: 1.6;
+    max-width: 600px;
+  }
+
+  @media (max-width: 640px) {
+    .profile-bio {
+      max-width: 100%;
+    }
   }
 
   .profile-bio--empty {
     font-style: italic;
-    opacity: 0.5;
+    opacity: 0.6;
   }
 
   .profile-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.375rem;
+    gap: 0.5rem;
   }
 
   .profile-tag {
-    padding: 0.25rem 0.4375rem;
-    background: rgba(6, 182, 212, 0.1);
-    border-radius: 4px;
-    font-size: 0.625rem;
+    padding: 0.375rem 0.625rem;
+    background: rgba(6, 182, 212, 0.12);
+    border-radius: 6px;
+    font-size: 0.6875rem;
     font-weight: 600;
     color: var(--sidebar-accent);
-  }
-
-  .profile-stats {
-    display: flex;
-    gap: 2rem;
-  }
-
-  .stat {
-    text-align: center;
-  }
-
-  .stat__value {
-    display: block;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-  }
-
-  .stat__label {
-    display: block;
-    font-size: 0.5625rem;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-top: 0.25rem;
-  }
-
-  /* ===== Tabs ===== */
-  .tabs {
-    display: flex;
-    gap: 0.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .tab {
-    display: flex;
-    align-items: center;
-    gap: 0.4375rem;
-    padding: 0.625rem 0.875rem;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
     transition: all 150ms ease;
   }
 
-  .tab:hover {
+  .profile-tag:hover {
+    background: rgba(6, 182, 212, 0.18);
+  }
+
+  /* Profile Stats Grid */
+  .profile-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+  }
+
+  @media (max-width: 640px) {
+    .profile-stats-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .profile-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    transition: all 200ms ease;
+  }
+
+  .profile-stat-card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  }
+
+  .profile-stat-card__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    flex-shrink: 0;
+  }
+
+  .profile-stat-card__icon--purple {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%);
+    color: #a78bfa;
+  }
+
+  .profile-stat-card__icon--cyan {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.2) 0%, rgba(8, 145, 178, 0.2) 100%);
+    color: #06b6d4;
+  }
+
+  .profile-stat-card__icon--green {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.2) 100%);
+    color: #10b981;
+  }
+
+  .profile-stat-card__content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .profile-stat-card__value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    letter-spacing: -0.02em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .profile-stat-card__label {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* ===== Enhanced Tab Navigation ===== */
+  .tabs-nav {
+    background: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    padding: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .tabs-container {
+    display: flex;
+    gap: 0.375rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tabs-container::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab-button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.125rem;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 180ms ease;
+    white-space: nowrap;
+    position: relative;
+  }
+
+  .tab-button:hover:not(.tab-button--active) {
+    background: var(--sidebar-hover);
     color: var(--sidebar-text);
   }
 
-  .tab--active {
-    color: var(--sidebar-text);
-    border-bottom-color: var(--sidebar-accent);
+  .tab-button--active {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
+    color: var(--sidebar-accent);
+    box-shadow: 0 2px 8px rgba(6, 182, 212, 0.2);
   }
 
-  .tab__icon {
-    width: 15px;
-    height: 15px;
+  .tab-button__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+  }
+
+  .tab-button__icon svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .tab-button__label {
+    font-size: inherit;
+  }
+
+  @media (max-width: 768px) {
+    .tab-button__label {
+      display: none;
+    }
+    .tab-button {
+      padding: 0.75rem;
+    }
   }
 
   /* ===== Content ===== */
@@ -2698,6 +2920,41 @@
     gap: 0.25rem;
   }
 
+  .lb-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.375rem 0.625rem;
+    border-bottom: 1px solid var(--sidebar-border);
+    margin-bottom: 0.25rem;
+  }
+
+  .lb-header__rank {
+    width: 24px;
+    text-align: center;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .lb-header__user {
+    flex: 1;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    padding-left: calc(30px + 0.75rem);
+  }
+
+  .lb-header__col {
+    width: 60px;
+    text-align: right;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
   .lb-entry {
     display: flex;
     align-items: center;
@@ -2796,9 +3053,12 @@
     color: var(--sidebar-text-muted);
   }
 
-  .lb-entry__views {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
+  .lb-entry__stat {
+    width: 60px;
+    text-align: right;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
     flex-shrink: 0;
   }
 
@@ -3885,24 +4145,24 @@
 
   .status-badge--active,
   .status-badge--verified {
-    background: rgba(16, 185, 129, 0.12);
+    background: rgba(16, 185, 129, 0.15);
     color: #10b981;
   }
 
   .status-badge--paused,
   .status-badge--pending {
-    background: rgba(245, 158, 11, 0.12);
+    background: rgba(245, 158, 11, 0.15);
     color: #fbbf24;
   }
 
   .status-badge--completed,
   .status-badge--paid {
-    background: rgba(6, 182, 212, 0.12);
+    background: rgba(6, 182, 212, 0.15);
     color: var(--sidebar-accent);
   }
 
   .status-badge--rejected {
-    background: rgba(239, 68, 68, 0.12);
+    background: rgba(239, 68, 68, 0.15);
     color: #f87171;
   }
 

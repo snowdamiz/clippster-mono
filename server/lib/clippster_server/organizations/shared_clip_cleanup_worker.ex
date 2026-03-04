@@ -12,7 +12,11 @@ defmodule ClippsterServer.Organizations.SharedClipCleanupWorker do
   @initial_delay :timer.minutes(1)
 
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, opts, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @impl true
@@ -43,7 +47,7 @@ defmodule ClippsterServer.Organizations.SharedClipCleanupWorker do
   Manually trigger a cleanup (useful for testing or admin actions).
   """
   def trigger_cleanup do
-    GenServer.cast(__MODULE__, :manual_cleanup)
+    GenServer.cast({:global, __MODULE__}, :manual_cleanup)
   end
 
   @impl true
@@ -56,7 +60,7 @@ defmodule ClippsterServer.Organizations.SharedClipCleanupWorker do
   Get the current status of the cleanup worker.
   """
   def status do
-    GenServer.call(__MODULE__, :status)
+    GenServer.call({:global, __MODULE__}, :status)
   end
 
   defp schedule_next_cleanup do

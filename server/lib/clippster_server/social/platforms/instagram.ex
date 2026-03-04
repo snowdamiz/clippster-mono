@@ -16,17 +16,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
 
   @behaviour ClippsterServer.Social.Platform
 
-  # PulseKit helper for safe event capture
-  defp pulse_capture(event) do
-    if Code.ensure_loaded?(PulseKit) do
-      try do
-        PulseKit.capture(event)
-      rescue
-        _ -> :ok
-      end
-    end
-  end
-
   # Instagram OAuth endpoints
   @instagram_oauth_url "https://api.instagram.com/oauth/access_token"
   @instagram_graph_url "https://graph.instagram.com"
@@ -213,21 +202,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         media_url
       end
 
-    # PulseKit: Log publish start
-    pulse_capture(%{
-      type: "instagram.publish.start",
-      level: :info,
-      message: "Instagram publish initiated",
-      metadata: %{
-        media_url: media_url,
-        accessible_url: accessible_url,
-        media_type: opts[:media_type],
-        ig_user_id: opts[:ig_user_id] || opts[:user_id],
-        has_caption: !is_nil(opts[:caption]) && opts[:caption] != ""
-      },
-      tags: %{platform: "instagram", action: "publish_start"}
-    })
-
     # Get the user ID from opts or fetch it
     ig_user_id = opts[:ig_user_id] || opts[:user_id]
     caption = opts[:caption] || ""
@@ -245,14 +219,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
 
         {:error, reason} ->
           Logger.error("[Instagram] Cannot get user profile: #{inspect(reason)}")
-
-          pulse_capture(%{
-            type: "instagram.publish.error",
-            level: :error,
-            message: "Cannot determine user ID: #{inspect(reason)}",
-            metadata: %{error: inspect(reason), stage: "get_user_profile"},
-            tags: %{platform: "instagram", action: "publish_error"}
-          })
 
           {:error, "Cannot determine user ID: #{inspect(reason)}"}
       end
@@ -444,19 +410,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
     Logger.info("[Instagram] do_publish_media: type=#{media_type}, user_id=#{ig_user_id}")
     Logger.info("[Instagram] Caption: #{String.slice(caption || "", 0, 50)}...")
 
-    pulse_capture(%{
-      type: "instagram.publish.dispatch",
-      level: :info,
-      message: "Dispatching publish for media_type: #{media_type}",
-      metadata: %{
-        media_type: media_type,
-        ig_user_id: ig_user_id,
-        media_url: media_url,
-        caption_length: String.length(caption || "")
-      },
-      tags: %{platform: "instagram", action: "dispatch", media_type: media_type}
-    })
-
     result =
       case media_type do
         "image" ->
@@ -474,47 +427,8 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         _ ->
           Logger.error("[Instagram] Unsupported media type: #{inspect(media_type)}")
 
-          pulse_capture(%{
-            type: "instagram.publish.error",
-            level: :error,
-            message: "Unsupported media type: #{inspect(media_type)}",
-            metadata: %{media_type: media_type, ig_user_id: ig_user_id},
-            tags: %{platform: "instagram", action: "publish_error"}
-          })
-
           {:error, :unsupported_media_type}
       end
-
-    # Log final result
-    case result do
-      {:ok, post_data} ->
-        pulse_capture(%{
-          type: "instagram.publish.success",
-          level: :info,
-          message: "Successfully published to Instagram",
-          metadata: %{
-            post_id: post_data.post_id,
-            post_url: post_data.post_url,
-            media_type: post_data.media_type,
-            ig_user_id: ig_user_id
-          },
-          tags: %{platform: "instagram", action: "publish_success"}
-        })
-
-      {:error, reason} ->
-        pulse_capture(%{
-          type: "instagram.publish.failed",
-          level: :error,
-          message: "Failed to publish to Instagram: #{inspect(reason)}",
-          metadata: %{
-            error: inspect(reason),
-            media_type: media_type,
-            ig_user_id: ig_user_id,
-            media_url: media_url
-          },
-          tags: %{platform: "instagram", action: "publish_failed"}
-        })
-    end
 
     result
   end
@@ -586,14 +500,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
     Logger.info("[Instagram] Creating media container at: #{url}")
     headers = [{"Content-Type", "application/x-www-form-urlencoded"}]
 
-    pulse_capture(%{
-      type: "instagram.container.create_start",
-      level: :info,
-      message: "Creating media container",
-      metadata: %{url: url},
-      tags: %{platform: "instagram", action: "container_create"}
-    })
-
     case HTTPoison.post(url, body, headers, @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
         Logger.info("[Instagram] Container response (200): #{response_body}")
@@ -602,40 +508,16 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
           {:ok, %{"id" => container_id}} ->
             Logger.info("[Instagram] Container created: #{container_id}")
 
-            pulse_capture(%{
-              type: "instagram.container.created",
-              level: :info,
-              message: "Container created successfully",
-              metadata: %{container_id: container_id},
-              tags: %{platform: "instagram", action: "container_created"}
-            })
-
             {:ok, container_id}
 
           {:ok, %{"error" => error}} ->
             error_msg = error["message"] || "Container creation failed"
             Logger.error("[Instagram] Container creation error: #{inspect(error)}")
 
-            pulse_capture(%{
-              type: "instagram.container.error",
-              level: :error,
-              message: "Container creation returned error in response",
-              metadata: %{error: error, error_message: error_msg, response_body: response_body},
-              tags: %{platform: "instagram", action: "container_error"}
-            })
-
             {:error, error_msg}
 
           _ ->
             Logger.error("[Instagram] Invalid container response: #{response_body}")
-
-            pulse_capture(%{
-              type: "instagram.container.error",
-              level: :error,
-              message: "Invalid container response format",
-              metadata: %{response_body: response_body},
-              tags: %{platform: "instagram", action: "container_error"}
-            })
 
             {:error, :invalid_response}
         end
@@ -644,26 +526,10 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         Logger.error("[Instagram] Container creation failed (#{status}): #{response_body}")
         error = extract_error(response_body, :container_creation_failed)
 
-        pulse_capture(%{
-          type: "instagram.container.error",
-          level: :error,
-          message: "Container creation failed with HTTP #{status}",
-          metadata: %{status_code: status, response_body: response_body, error: error},
-          tags: %{platform: "instagram", action: "container_error"}
-        })
-
         {:error, error}
 
       {:error, reason} ->
         Logger.error("[Instagram] HTTP error creating container: #{inspect(reason)}")
-
-        pulse_capture(%{
-          type: "instagram.container.error",
-          level: :error,
-          message: "HTTP error creating container",
-          metadata: %{error: inspect(reason)},
-          tags: %{platform: "instagram", action: "container_http_error"}
-        })
 
         {:error, reason}
     end
@@ -674,14 +540,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
     max_attempts = 30
 
     if attempts >= max_attempts do
-      pulse_capture(%{
-        type: "instagram.status.timeout",
-        level: :error,
-        message: "Media processing timeout after #{max_attempts} attempts",
-        metadata: %{container_id: container_id, attempts: attempts, max_attempts: max_attempts},
-        tags: %{platform: "instagram", action: "status_timeout"}
-      })
-
       {:error, :media_processing_timeout}
     else
       url =
@@ -695,59 +553,21 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
         {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
           case Jason.decode(body) do
             {:ok, %{"status_code" => "FINISHED"}} ->
-              pulse_capture(%{
-                type: "instagram.status.ready",
-                level: :info,
-                message: "Media processing finished",
-                metadata: %{container_id: container_id, attempts: attempts},
-                tags: %{platform: "instagram", action: "status_ready"}
-              })
-
               :ok
 
             {:ok, %{"status_code" => "ERROR"} = response} ->
               error_reason = Map.get(response, "status", "Unknown error")
               Logger.error("[Instagram] Media processing failed: #{error_reason}")
 
-              pulse_capture(%{
-                type: "instagram.status.error",
-                level: :error,
-                message: "Media processing failed: #{error_reason}",
-                metadata: %{
-                  container_id: container_id,
-                  attempts: attempts,
-                  error_reason: error_reason
-                },
-                tags: %{platform: "instagram", action: "status_error"}
-              })
-
               {:error, {:media_processing_failed, error_reason}}
 
             {:ok, %{"status_code" => status}} ->
               IO.puts("[Instagram] Media processing status: #{status}, waiting...")
-              # Log every 5th poll to avoid flooding
-              if rem(attempts, 5) == 0 do
-                pulse_capture(%{
-                  type: "instagram.status.poll",
-                  level: :debug,
-                  message: "Media processing status: #{status}",
-                  metadata: %{container_id: container_id, status: status, attempt: attempts},
-                  tags: %{platform: "instagram", action: "status_poll"}
-                })
-              end
 
               Process.sleep(10_000)
               wait_for_media_ready(access_token, container_id, attempts + 1)
 
             _ ->
-              pulse_capture(%{
-                type: "instagram.status.error",
-                level: :error,
-                message: "Invalid status response format",
-                metadata: %{container_id: container_id, response_body: body},
-                tags: %{platform: "instagram", action: "status_error"}
-              })
-
               {:error, :invalid_response}
           end
 
@@ -761,14 +581,6 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
           wait_for_media_ready(access_token, container_id, attempts + 1)
 
         {:error, reason} ->
-          pulse_capture(%{
-            type: "instagram.status.error",
-            level: :error,
-            message: "HTTP error checking media status",
-            metadata: %{container_id: container_id, error: inspect(reason)},
-            tags: %{platform: "instagram", action: "status_http_error"}
-          })
-
           {:error, reason}
       end
     end
@@ -785,32 +597,11 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
 
     headers = [{"Content-Type", "application/x-www-form-urlencoded"}]
 
-    pulse_capture(%{
-      type: "instagram.container.publish_start",
-      level: :info,
-      message: "Publishing container to Instagram",
-      metadata: %{container_id: container_id, ig_user_id: ig_user_id, media_type: media_type},
-      tags: %{platform: "instagram", action: "container_publish"}
-    })
-
     case HTTPoison.post(url, body, headers, @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
         case Jason.decode(response_body) do
           {:ok, %{"id" => post_id}} ->
             permalink = get_post_permalink(access_token, post_id)
-
-            pulse_capture(%{
-              type: "instagram.container.published",
-              level: :info,
-              message: "Container published successfully",
-              metadata: %{
-                container_id: container_id,
-                post_id: post_id,
-                permalink: permalink,
-                media_type: media_type
-              },
-              tags: %{platform: "instagram", action: "container_published"}
-            })
 
             {:ok,
              %{
@@ -822,55 +613,18 @@ defmodule ClippsterServer.Social.Platforms.Instagram do
           {:ok, %{"error" => error}} ->
             error_msg = error["message"] || "Publish failed"
 
-            pulse_capture(%{
-              type: "instagram.container.publish_error",
-              level: :error,
-              message: "Container publish returned error in response",
-              metadata: %{container_id: container_id, error: error, error_message: error_msg},
-              tags: %{platform: "instagram", action: "container_publish_error"}
-            })
-
             {:error, error_msg}
 
           _ ->
-            pulse_capture(%{
-              type: "instagram.container.publish_error",
-              level: :error,
-              message: "Invalid publish response format",
-              metadata: %{container_id: container_id, response_body: response_body},
-              tags: %{platform: "instagram", action: "container_publish_error"}
-            })
-
             {:error, :invalid_response}
         end
 
-      {:ok, %HTTPoison.Response{status_code: status, body: response_body}} ->
+      {:ok, %HTTPoison.Response{status_code: _status, body: response_body}} ->
         error = extract_error(response_body, :publish_failed)
-
-        pulse_capture(%{
-          type: "instagram.container.publish_error",
-          level: :error,
-          message: "Container publish failed with HTTP #{status}",
-          metadata: %{
-            container_id: container_id,
-            status_code: status,
-            response_body: response_body,
-            error: error
-          },
-          tags: %{platform: "instagram", action: "container_publish_error"}
-        })
 
         {:error, error}
 
       {:error, reason} ->
-        pulse_capture(%{
-          type: "instagram.container.publish_error",
-          level: :error,
-          message: "HTTP error publishing container",
-          metadata: %{container_id: container_id, error: inspect(reason)},
-          tags: %{platform: "instagram", action: "container_publish_http_error"}
-        })
-
         {:error, reason}
     end
   end

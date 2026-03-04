@@ -236,7 +236,7 @@
               if (account.platform === 'instagram') orgIg++;
               if (account.platform === 'twitter' || account.platform === 'x') orgTw++;
               if (account.platform === 'tiktok') orgTk++;
-              if (account.platform === 'youtube' || account.platform === 'youtube_shorts') orgYt++;
+              if (account.platform === 'youtube' || account.platform === 'YouTube') orgYt++;
             }
           }
         }

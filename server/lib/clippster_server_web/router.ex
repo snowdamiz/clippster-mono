@@ -801,6 +801,7 @@ defmodule ClippsterServerWeb.Router do
     post("/user/youtube/publish", UserPostsController, :publish_youtube)
     get("/user/posts", UserPostsController, :index)
     get("/user/posts/analytics", UserPostsController, :analytics_summary)
+    post("/user/posts/sync-analytics", UserPostsController, :sync_user_analytics)
     get("/user/posts/:id", UserPostsController, :show)
     post("/user/posts/:id/sync", UserPostsController, :sync_analytics)
 

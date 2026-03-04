@@ -108,7 +108,6 @@ Minimum viable product — parity with Instagram integration.
 - [x] **Retry logic** — Exponential backoff for 429 (rate limits) and 5xx (server errors), permanent fail on 4xx (except 429)
 - [x] **Media processing wait** — Poll STATUS after FINALIZE, timeout after 5 minutes, handle FINISHED/ERROR states
 - [x] **Presigned URL generation** — Generate 2-hour presigned URLs for R2 media, X can download during processing
-- [x] **Error logging** — PulseKit events for publish start/success/failure, detailed error messages
 
 **Why these are essential:** These features achieve parity with Instagram integration. Users expect consistent experience across platforms. Video posting is the core use case (clip distribution). Scheduling is table stakes for content management. Error handling prevents silent failures.
 

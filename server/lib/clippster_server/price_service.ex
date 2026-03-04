@@ -15,7 +15,11 @@ defmodule ClippsterServer.PriceService do
   # Client API
 
   def start_link(_opts) do
-    GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
+    case GenServer.start_link(__MODULE__, %{}, name: {:global, __MODULE__}) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:already_started, _pid}} -> :ignore
+      error -> error
+    end
   end
 
   @doc """
@@ -23,14 +27,14 @@ defmodule ClippsterServer.PriceService do
   Returns {:ok, price} or {:error, reason}
   """
   def get_sol_price do
-    GenServer.call(__MODULE__, :get_price)
+    GenServer.call({:global, __MODULE__}, :get_price)
   end
 
   @doc """
   Forces a price refresh, bypassing cache
   """
   def refresh_price do
-    GenServer.call(__MODULE__, :refresh_price)
+    GenServer.call({:global, __MODULE__}, :refresh_price)
   end
 
   # Server Callbacks

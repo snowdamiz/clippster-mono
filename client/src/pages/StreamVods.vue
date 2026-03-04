@@ -517,7 +517,7 @@
   const router = useRouter();
   const { gates } = useSubscriptionGate();
   const route = useRoute();
-  const { success, error: showError } = useToast();
+  const { success, error: showError, warning } = useToast();
   const { startDownload } = useDownloads();
   const platformStore = usePlatformStore();
   const authStore = useAuthStore();
@@ -849,6 +849,8 @@
           await loadDownloadedVodIds();
           if (result.total === 0) {
             showError('No Content Found', `No ${tab === 'streams' ? 'live streams' : 'videos'} found for this channel`);
+          } else if ('fallbackUsed' in result && result.fallbackUsed && result.actualTab) {
+            success('Content Found', `No ${tab} found, showing ${result.actualTab} instead (${result.total} found)`);
           }
         } else {
           showError('Search Failed', result.error || 'Failed to fetch content');
@@ -879,6 +881,8 @@
           await loadDownloadedVodIds();
           if (result.total === 0) {
             showError('No Content Found', `No ${tab === 'streams' ? 'live streams' : 'videos'} found for this channel`);
+          } else if ('fallbackUsed' in result && result.fallbackUsed && result.actualTab) {
+            success('Content Found', `No ${tab} found, showing ${result.actualTab} instead (${result.total} found)`);
           }
         } else {
           showError('Search Failed', result.error || 'Failed to fetch content');
@@ -950,6 +954,11 @@
         
         if (result.total === 0) {
           showError('No VODs Found', 'No available VODs found for this search');
+        } else if ('fallbackUsed' in result && result.fallbackUsed && result.actualTab && tabParam) {
+          success('Content Found', `No ${tabParam} found, showing ${result.actualTab} instead (${result.total} found)`);
+        } else if ('warning' in result && result.warning && typeof result.warning === 'string') {
+          // Show warning for partial success (e.g., Twitter metadata fetch failed)
+          warning('VOD Available', result.warning);
         } else {
           success('VODs Loaded', `Found ${result.total} VOD${result.total !== 1 ? 's' : ''}`);
         }
@@ -1082,19 +1091,20 @@
                   // Extract the normalized ID from the stored platform_id
                   // This handles cases where the server stores full URLs instead of just IDs
                   let storedId = link.platform_id;
-                  if (link.platform === 'kick') {
+                  const platform = link.platform as string; // Type assertion to avoid narrowing issues
+                  if (platform === 'kick') {
                     // Try to extract channel slug from URL if it's a full URL
                     const extractedSlug = extractChannelSlug(storedId);
                     if (extractedSlug) storedId = extractedSlug;
-                  } else if (link.platform === 'pumpfun') {
+                  } else if (platform === 'pumpfun') {
                     // Try to extract mint ID from URL if it's a full URL
                     const extractedMint = extractMintId(storedId);
                     if (extractedMint) storedId = extractedMint;
-                  } else if (link.platform === 'rumble') {
+                  } else if (platform === 'rumble') {
                     // Try to extract channel name from URL if it's a full URL
                     const extractedChannel = extractRumbleChannel(storedId);
                     if (extractedChannel) storedId = extractedChannel;
-                  } else if (link.platform === 'YouTube') {
+                  } else if (platform === 'youtube' || platform === 'YouTube') {
                     // Try to extract channel ID from URL if it's a full URL
                     const extractedChannel = extractYouTubeChannel(storedId);
                     if (extractedChannel) storedId = extractedChannel;
@@ -1692,31 +1702,31 @@
 
   @media (min-width: 640px) {
     .streamvods__grid {
-      grid-template-columns: repeat(1, 1fr);
+      grid-template-columns: repeat(2, 1fr);
     }
   }
 
   @media (min-width: 1024px) {
     .streamvods__grid {
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
     }
   }
 
   @media (min-width: 1400px) {
     .streamvods__grid {
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
     }
   }
 
   @media (min-width: 1800px) {
     .streamvods__grid {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
     }
   }
 
   @media (min-width: 2200px) {
     .streamvods__grid {
-      grid-template-columns: repeat(5, 1fr);
+      grid-template-columns: repeat(6, 1fr);
     }
   }
 
@@ -2273,6 +2283,7 @@
     margin: 0 0 0.375rem;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     line-height: 1.4;

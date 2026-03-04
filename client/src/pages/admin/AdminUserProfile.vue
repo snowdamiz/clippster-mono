@@ -59,6 +59,10 @@
                   <Ban :size="12" />
                   Restricted
                 </span>
+                <span v-if="user.ai_editor_enabled" class="status-badge status-badge--ai-editor">
+                  <Sparkles :size="12" />
+                  AI Editor Enabled
+                </span>
               </div>
               <p class="user-bio">{{ user.email || user.wallet_address }}</p>
             </div>
@@ -1033,6 +1037,11 @@ onMounted(() => {
 .status-badge--restricted {
   background: rgba(239, 68, 68, 0.15);
   color: #ef4444;
+}
+
+.status-badge--ai-editor {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
 }
 
 .status-badge--none {

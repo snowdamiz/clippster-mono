@@ -101,7 +101,6 @@
 - `sweet_xml` 0.7 - XML parsing
 - `hackney` 1.20 - HTTP client with TLS support
 - `certifi` 2.12 - SSL/TLS certificates
-- `pulsekit` 1.0 - Error tracking and event monitoring
 
 **Landing Page:**
 - `react` 19.2.0 - UI framework

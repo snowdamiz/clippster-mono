@@ -60,11 +60,40 @@
                 </div>
 
                 <div class="yt-dialog__field">
+                  <label for="yt-title" class="yt-dialog__label">Title *</label>
+                  <input id="yt-title" type="text" v-model="title" :disabled="publishing" maxlength="100" placeholder="Enter video title..." class="yt-dialog__input" />
+                  <p class="yt-dialog__field-hint">{{ title.length }} / 100 characters</p>
+                </div>
+
+                <div class="yt-dialog__field">
                   <label for="yt-caption" class="yt-dialog__label">Description</label>
                   <textarea id="yt-caption" v-model="caption" :disabled="publishing" rows="4" maxlength="5000" placeholder="Write a description for your YouTube Short..." class="yt-dialog__input yt-dialog__textarea"></textarea>
                   <div class="yt-dialog__caption-info">
                     <p class="yt-dialog__field-hint" style="margin-left: auto">{{ caption.length }} / 5,000</p>
                   </div>
+                </div>
+
+                <div class="yt-dialog__field">
+                  <label for="yt-privacy" class="yt-dialog__label">Privacy *</label>
+                  <div class="yt-dialog__select-wrapper">
+                    <select id="yt-privacy" v-model="privacy" class="yt-dialog__select" :disabled="publishing">
+                      <option value="public">Public</option>
+                      <option value="unlisted">Unlisted</option>
+                      <option value="private">Private</option>
+                    </select>
+                    <ChevronDown class="yt-dialog__select-icon" :size="16" />
+                  </div>
+                  <p class="yt-dialog__field-hint">Control who can see your video</p>
+                </div>
+
+                <div class="yt-dialog__field">
+                  <div class="yt-dialog__toggle-row">
+                    <label class="yt-dialog__label">Made for kids</label>
+                    <button type="button" @click="madeForKids = !madeForKids" :class="['yt-dialog__toggle', { 'yt-dialog__toggle--active': madeForKids }]" :disabled="publishing">
+                      <span :class="['yt-dialog__toggle-thumb', { 'yt-dialog__toggle-thumb--active': madeForKids }]" />
+                    </button>
+                  </div>
+                  <p class="yt-dialog__field-hint">Required by YouTube: Is this video made for children?</p>
                 </div>
 
                 <div v-if="schedulingEnabled" class="yt-dialog__field">
@@ -152,7 +181,10 @@
   const allowPersonal = ref(true);
   const selectedAccountValue = ref('');
   const selectedCreatorProfileId = ref('');
+  const title = ref('');
   const caption = ref('');
+  const privacy = ref<'public' | 'unlisted' | 'private'>('public');
+  const madeForKids = ref(false);
   const publishing = ref(false);
   const error = ref<string | null>(null);
   const isScheduled = ref(false);
@@ -172,7 +204,7 @@
     return isNaN(dt.getTime()) ? null : dt;
   });
   const canPublish = computed(() =>
-    !!selectedAccountValue.value && !!props.mediaUrl &&
+    !!selectedAccountValue.value && !!props.mediaUrl && !!title.value.trim() &&
     (!isScheduled.value || (scheduledDateTime.value && !scheduleError.value))
   );
 
@@ -243,13 +275,24 @@
           response = await publishPost(props.organizationId, {
             social_account_id: selectedAccountId.value,
             creator_profile_id: selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined,
-            media_url: props.mediaUrl, caption: caption.value,
-            media_type: props.mediaType || 'video', thumbnail_url: props.thumbnailUrl,
+            media_url: props.mediaUrl,
+            title: title.value,
+            caption: caption.value,
+            privacy: privacy.value,
+            made_for_kids: madeForKids.value,
+            media_type: props.mediaType || 'video',
+            thumbnail_url: props.thumbnailUrl,
           });
         } else {
           response = await publishToUserYoutube({
-            account_id: selectedAccountId.value, media_url: props.mediaUrl,
-            caption: caption.value, media_type: props.mediaType || 'video', thumbnail_url: props.thumbnailUrl,
+            account_id: selectedAccountId.value,
+            media_url: props.mediaUrl,
+            title: title.value,
+            caption: caption.value,
+            privacy: privacy.value,
+            made_for_kids: madeForKids.value,
+            media_type: props.mediaType || 'video',
+            thumbnail_url: props.thumbnailUrl,
             creator_profile_id: selectedCreatorProfileId.value ? parseInt(selectedCreatorProfileId.value) : undefined,
             campaign_id: props.campaignId,
           });
@@ -267,7 +310,8 @@
   }
 
   function resetForm() {
-    selectedAccountValue.value = ''; selectedCreatorProfileId.value = ''; caption.value = '';
+    selectedAccountValue.value = ''; selectedCreatorProfileId.value = ''; title.value = ''; caption.value = '';
+    privacy.value = 'public'; madeForKids.value = false;
     isScheduled.value = false; scheduleDate.value = ''; scheduleTime.value = ''; scheduleError.value = null;
   }
 </script>

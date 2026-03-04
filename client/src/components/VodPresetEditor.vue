@@ -25,71 +25,69 @@
             <div class="vod-preset-dialog__content">
               <!-- Section 1: Aspect Ratio & Template -->
               <div class="vod-preset-dialog__section">
-                <div class="flex items-center gap-2 mb-3">
-                  <RatioIcon class="w-4 h-4 text-blue-400" />
-                  <h3 class="text-sm font-semibold text-white">Aspect Ratio & Template</h3>
+                <div class="vod-preset-dialog__section-header">
+                  <RatioIcon class="vod-preset-dialog__section-icon" />
+                  <h3 class="vod-preset-dialog__section-title">Aspect Ratio & Template</h3>
                 </div>
 
-                <div class="flex items-center gap-4">
-                  <!-- Aspect Ratio Buttons -->
-                  <div class="flex gap-2">
-                    <button
-                      v-for="ratio in aspectRatioOptions"
-                      :key="ratio.value"
-                      @click="selectedAspectRatio = ratio.value"
-                      class="px-3 py-2 text-xs font-medium rounded-lg border transition-all"
-                      :class="selectedAspectRatio === ratio.value
-                        ? 'bg-blue-600/20 border-blue-500/50 text-blue-300'
-                        : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600'"
-                    >
-                      <div class="flex items-center gap-1.5">
-                        <div
-                          class="border border-current rounded-sm"
-                          :style="{ width: ratio.previewW + 'px', height: ratio.previewH + 'px' }"
-                        />
-                        {{ ratio.label }}
-                      </div>
-                    </button>
-                  </div>
-
-                  <!-- Template Picker -->
-                  <div class="flex-1 flex items-center gap-2">
-                    <select
-                      v-model="selectedTemplateId"
-                      @change="onTemplateSelected"
-                      class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="">— No template —</option>
-                      <option v-for="t in availableTemplates" :key="t.id" :value="t.id">
-                        {{ t.name }} ({{ t.targetAspectRatio }})
-                      </option>
-                    </select>
-                    <button
-                      @click="showSaveTemplate = true"
-                      class="px-3 py-2 text-xs font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-lg transition-colors whitespace-nowrap"
-                    >
-                      <SaveIcon class="w-3.5 h-3.5 inline mr-1" />
-                      Save Template
-                    </button>
-                  </div>
+                <!-- Aspect Ratio Buttons -->
+                <div class="flex gap-2 mb-2">
+                  <button
+                    v-for="ratio in aspectRatioOptions"
+                    :key="ratio.value"
+                    @click="selectedAspectRatio = ratio.value"
+                    class="vod-preset-dialog__ratio-btn"
+                    :class="selectedAspectRatio === ratio.value
+                      ? 'vod-preset-dialog__ratio-btn--selected'
+                      : 'vod-preset-dialog__ratio-btn--idle'"
+                  >
+                    <div class="flex items-center gap-1.5">
+                      <div
+                        class="border border-current rounded-sm"
+                        :style="{ width: ratio.previewW + 'px', height: ratio.previewH + 'px' }"
+                      />
+                      {{ ratio.label }}
+                    </div>
+                  </button>
                 </div>
+
+                <!-- Template Picker -->
+                <div class="flex items-center gap-2">
+                  <div class="flex-1 min-w-0">
+                    <CustomDropdown
+                      :model-value="selectedTemplateId"
+                      :options="availableTemplatesOptions"
+                      placeholder="— No template —"
+                      trigger-class="vod-preset-dialog__select-trigger"
+                      @update:model-value="handleTemplateChange"
+                    />
+                  </div>
+                  <button
+                    @click="showSaveTemplate = true"
+                    class="vod-preset-dialog__action-btn"
+                  >
+                    <SaveIcon class="vod-preset-dialog__action-btn-icon" />
+                    Save Template
+                  </button>
+                </div>
+
               </div>
 
               <!-- Section 2: Framing -->
               <div class="vod-preset-dialog__section">
-                <div class="flex items-center justify-between mb-3">
-                  <div class="flex items-center gap-2">
-                    <CropIcon class="w-4 h-4 text-violet-400" />
-                    <h3 class="text-sm font-semibold text-white">Framing</h3>
-                    <span class="text-[10px] text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full">
+                <div class="vod-preset-dialog__section-header vod-preset-dialog__section-header--row">
+                  <div class="vod-preset-dialog__section-header-left">
+                    <CropIcon class="vod-preset-dialog__section-icon" />
+                    <h3 class="vod-preset-dialog__section-title">Framing</h3>
+                    <span class="vod-preset-dialog__section-badge">
                       {{ framingRegions.length }} region{{ framingRegions.length !== 1 ? 's' : '' }}
                     </span>
                   </div>
                   <button
                     @click="openFramingEditor"
-                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-violet-400 hover:text-violet-300 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 rounded-lg transition-colors"
+                    class="vod-preset-dialog__action-btn"
                   >
-                    <LayoutDashboardIcon class="w-3.5 h-3.5" />
+                    <LayoutDashboardIcon class="vod-preset-dialog__action-btn-icon" />
                     {{ framingRegions.length > 0 ? 'Edit Framing' : 'Configure Framing' }}
                   </button>
                 </div>
@@ -99,7 +97,7 @@
                   <div
                     v-for="(region, idx) in framingRegions"
                     :key="region.id"
-                    class="flex items-center gap-2 px-3 py-2 bg-zinc-800/50 border border-zinc-700/50 rounded-lg"
+                    class="vod-preset-dialog__region-chip"
                   >
                     <div class="w-3 h-3 rounded-full" :style="{ backgroundColor: region.color }" />
                     <span class="text-xs text-zinc-300">{{ region.label || `Region ${idx + 1}` }}</span>
@@ -108,39 +106,37 @@
                     </span>
                   </div>
                 </div>
-                <div v-else class="text-xs text-zinc-500 italic">
+                <div v-else class="vod-preset-dialog__empty-hint">
                   No framing configured — clips will use default center crop for {{ selectedAspectRatio }}
                 </div>
               </div>
 
               <!-- Section 3: Layout Overlays -->
               <div class="vod-preset-dialog__section">
-                <div class="flex items-center justify-between mb-3">
-                  <div class="flex items-center gap-2">
-                    <LayersIcon class="w-4 h-4 text-amber-400" />
-                    <h3 class="text-sm font-semibold text-white">Layout Overlays</h3>
-                    <span class="text-[10px] text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full">
+                <div class="vod-preset-dialog__section-header vod-preset-dialog__section-header--row">
+                  <div class="vod-preset-dialog__section-header-left">
+                    <LayersIcon class="vod-preset-dialog__section-icon" />
+                    <h3 class="vod-preset-dialog__section-title">Layout Overlays</h3>
+                    <span class="vod-preset-dialog__section-badge">
                       {{ layoutOverlays.length }} overlay{{ layoutOverlays.length !== 1 ? 's' : '' }}
                     </span>
                   </div>
                   <button
                     v-if="!hasCreatorProfile"
                     @click="addLayoutOverlay"
-                    class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg transition-colors"
+                    class="vod-preset-dialog__action-btn"
                   >
-                    <PlusIcon class="w-3.5 h-3.5" />
+                    <PlusIcon class="vod-preset-dialog__action-btn-icon" />
                     Add Overlay
                   </button>
                 </div>
 
                 <!-- Creator Profile Restriction Notice -->
-                <div v-if="hasCreatorProfile" class="px-3 py-2.5 bg-blue-500/10 border border-blue-500/20 rounded-lg mb-3">
-                  <div class="flex items-center gap-2">
-                    <InfoIcon class="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                    <span class="text-xs text-blue-300">
-                      Layout overlay settings are managed by the creator profile and cannot be changed here.
-                    </span>
-                  </div>
+                <div v-if="hasCreatorProfile" class="vod-preset-dialog__info-notice mb-3">
+                  <InfoIcon class="vod-preset-dialog__info-notice-icon" />
+                  <span class="vod-preset-dialog__info-notice-text">
+                    Layout overlay settings are managed by the creator profile and cannot be changed here.
+                  </span>
                 </div>
 
                 <!-- Overlay List -->
@@ -148,7 +144,7 @@
                   <div
                     v-for="(overlay, idx) in layoutOverlays"
                     :key="overlay.id"
-                    class="flex items-center gap-3 px-3 py-2.5 bg-zinc-800/50 border border-zinc-700/50 rounded-lg group"
+                    class="vod-preset-dialog__overlay-item"
                   >
                     <!-- Thumbnail -->
                     <div class="w-10 h-10 rounded bg-zinc-700 flex items-center justify-center overflow-hidden flex-shrink-0">
@@ -170,7 +166,7 @@
                       />
                       <div class="text-[10px] text-zinc-500 font-mono mt-0.5">
                         {{ overlay.x.toFixed(0) }}%, {{ overlay.y.toFixed(0) }}% · {{ overlay.width.toFixed(0) }}×{{ overlay.height.toFixed(0) }}% · {{ overlay.opacity }}% opacity
-                        <span v-if="overlayConfiguredRatioCount(overlay) > 0" class="text-amber-400 ml-1">
+                        <span v-if="overlayConfiguredRatioCount(overlay) > 0" class="vod-preset-dialog__overlay-ratio-count ml-1">
                           · {{ overlayConfiguredRatioCount(overlay) }}/4 ratios
                         </span>
                       </div>
@@ -180,15 +176,15 @@
                     <div v-if="!hasCreatorProfile" class="flex items-center gap-1.5">
                       <button
                         @click="openOverlayPositionPicker(idx)"
-                        class="px-2 py-1 text-[10px] font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded transition-colors"
+                        class="vod-preset-dialog__action-btn vod-preset-dialog__action-btn--sm"
                         title="Configure position per aspect ratio"
                       >
-                        <MoveIcon class="w-3 h-3 inline mr-0.5" />
+                        <MoveIcon class="vod-preset-dialog__action-btn-icon" />
                         Position
                       </button>
                       <button
                         @click="removeLayoutOverlay(idx)"
-                        class="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors opacity-0 group-hover:opacity-100"
+                        class="vod-preset-dialog__overlay-remove"
                         title="Remove overlay"
                       >
                         <Trash2Icon class="w-3.5 h-3.5" />
@@ -196,49 +192,47 @@
                     </div>
                   </div>
                 </div>
-                <div v-else class="text-xs text-zinc-500 italic">
+                <div v-else class="vod-preset-dialog__empty-hint">
                   No layout overlays — add border images, dividers, or decorative elements
                 </div>
               </div>
 
               <!-- Section 4: Watermark -->
               <div class="vod-preset-dialog__section vod-preset-dialog__section--last">
-                <div class="flex items-center gap-2 mb-3">
-                  <StampIcon class="w-4 h-4 text-pink-400" />
-                  <h3 class="text-sm font-semibold text-white">Watermark</h3>
+                <div class="vod-preset-dialog__section-header">
+                  <StampIcon class="vod-preset-dialog__section-icon" />
+                  <h3 class="vod-preset-dialog__section-title">Watermark</h3>
                 </div>
 
                 <!-- Creator Profile Restriction Notice -->
-                <div v-if="hasCreatorProfile" class="px-3 py-2.5 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                  <div class="flex items-center gap-2">
-                    <InfoIcon class="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-                    <span class="text-xs text-blue-300">
-                      This project has a creator profile attached. Watermark settings are managed by the creator profile and cannot be changed here.
-                    </span>
-                  </div>
+                <div v-if="hasCreatorProfile" class="vod-preset-dialog__info-notice">
+                  <InfoIcon class="vod-preset-dialog__info-notice-icon" />
+                  <span class="vod-preset-dialog__info-notice-text">
+                    This project has a creator profile attached. Watermark settings are managed by the creator profile and cannot be changed here.
+                  </span>
                 </div>
 
                 <!-- Watermark Mode Selection (only shown when NO creator profile) -->
-                <div v-if="!hasCreatorProfile" class="flex gap-2">
+                <div v-if="!hasCreatorProfile" class="vod-preset-dialog__wm-toggle">
                   <button
                     @click="watermarkMode = 'custom'"
-                    class="flex-1 px-3 py-2.5 text-xs font-medium rounded-lg border transition-all text-center"
+                    class="vod-preset-dialog__toggle-btn"
                     :class="watermarkMode === 'custom'
-                      ? 'bg-pink-600/20 border-pink-500/50 text-pink-300'
-                      : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600'"
+                      ? 'vod-preset-dialog__toggle-btn--selected'
+                      : 'vod-preset-dialog__toggle-btn--idle'"
                   >
-                    <ImageIcon class="w-3.5 h-3.5 inline mr-1" />
+                    <ImageIcon class="w-3.5 h-3.5" />
                     Custom Watermark
                   </button>
 
                   <button
                     @click="watermarkMode = 'none'"
-                    class="flex-1 px-3 py-2.5 text-xs font-medium rounded-lg border transition-all text-center"
+                    class="vod-preset-dialog__toggle-btn"
                     :class="watermarkMode === 'none'
-                      ? 'bg-zinc-600/20 border-zinc-500/50 text-zinc-300'
-                      : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600'"
+                      ? 'vod-preset-dialog__toggle-btn--selected'
+                      : 'vod-preset-dialog__toggle-btn--idle'"
                   >
-                    <EyeOffIcon class="w-3.5 h-3.5 inline mr-1" />
+                    <EyeOffIcon class="w-3.5 h-3.5" />
                     No Watermark
                   </button>
                 </div>
@@ -246,13 +240,13 @@
                 <!-- Custom Watermark Settings (only when mode is 'custom' AND no creator profile) -->
                 <div v-if="watermarkMode === 'custom' && !hasCreatorProfile" class="mt-3 space-y-3">
                   <!-- Watermark Image Selection -->
-                  <div class="p-3 bg-zinc-800/30 border border-zinc-700/30 rounded-lg">
+                  <div class="vod-preset-dialog__wm-card">
                     <div class="flex items-center justify-between mb-2">
                       <span class="text-xs text-zinc-400">Watermark Image</span>
                       <button
                         @click="uploadCustomWatermark"
                         :disabled="uploadingCustomWatermark"
-                        class="text-[10px] text-pink-400 hover:text-pink-300 transition-colors"
+                        class="vod-preset-dialog__upload-link"
                       >
                         {{ uploadingCustomWatermark ? 'Uploading...' : '+ Upload New' }}
                       </button>
@@ -289,7 +283,7 @@
                           :key="wm.id"
                           @click="selectCustomWatermark(wm)"
                           class="w-full text-left px-2.5 py-2 hover:bg-zinc-800 transition-colors text-xs flex items-center gap-2"
-                          :class="{ 'bg-pink-500/10 text-pink-300': selectedCustomWatermarkId === wm.id }"
+                          :class="{ 'vod-preset-dialog__wm-option--selected': selectedCustomWatermarkId === wm.id }"
                         >
                           <div class="w-6 h-6 rounded bg-zinc-800 border border-zinc-700 flex items-center justify-center overflow-hidden">
                             <img
@@ -313,12 +307,12 @@
                   <div v-if="selectedCustomWatermarkId" class="flex items-center gap-2">
                     <button
                       @click="openWatermarkPositionPicker"
-                      class="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-pink-400 hover:text-pink-300 bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 rounded-lg transition-colors"
+                      class="vod-preset-dialog__action-btn vod-preset-dialog__action-btn--full"
                     >
-                      <MoveIcon class="w-3.5 h-3.5" />
+                      <MoveIcon class="vod-preset-dialog__action-btn-icon" />
                       Configure Position
                     </button>
-                    <span v-if="watermarkConfiguredRatioCount > 0" class="text-[10px] text-pink-400">
+                    <span v-if="watermarkConfiguredRatioCount > 0" class="vod-preset-dialog__wm-ratio-count">
                       {{ watermarkConfiguredRatioCount }}/4 ratios
                     </span>
                   </div>
@@ -387,34 +381,25 @@
   <Teleport to="body">
     <Transition name="modal">
       <div v-if="showSaveTemplate" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[10002]">
-        <div class="bg-zinc-900 rounded-xl border border-zinc-700 p-5 w-full max-w-sm mx-4 shadow-2xl">
+        <div class="vod-preset-dialog__save-template-card">
           <h3 class="text-sm font-semibold text-white mb-3">Save as Template</h3>
           <input
             v-model="templateName"
-            class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-blue-500 mb-3"
+            class="vod-preset-dialog__save-template-input"
             placeholder="Template name..."
             @keydown.enter="saveTemplate"
           />
-          <label class="flex items-center gap-2 text-xs text-zinc-400 mb-4">
-            <input
-              type="checkbox"
-              v-model="templateLinkToCreator"
-              class="rounded border-zinc-600 bg-zinc-800 text-blue-500 focus:ring-blue-500"
-              :disabled="!hasCreatorProfile"
-            />
-            Link to creator profile
-          </label>
           <div class="flex justify-end gap-2">
             <button
               @click="showSaveTemplate = false"
-              class="px-3 py-1.5 text-xs text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
+              class="vod-preset-dialog__btn vod-preset-dialog__btn--secondary"
             >
               Cancel
             </button>
             <button
               @click="saveTemplate"
               :disabled="!templateName.trim()"
-              class="px-3 py-1.5 text-xs font-medium text-emerald-300 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              class="vod-preset-dialog__btn vod-preset-dialog__btn--primary"
             >
               Save
             </button>
@@ -473,6 +458,7 @@
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from './WatermarkPositionPicker.vue';
   import OverlayPositionPicker from './OverlayPositionPicker.vue';
+  import CustomDropdown, { type DropdownOption } from './CustomDropdown.vue';
   import { getAllWatermarkImages, resolveOverlayImagePath, type WatermarkImage } from '@/services/database/watermarks';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import type {
@@ -616,6 +602,18 @@
     return result;
   });
   const hasExistingConfig = computed(() => !!props.initialConfig);
+
+  const availableTemplatesOptions = computed<DropdownOption[]>(() =>
+    availableTemplates.value.map((t) => ({
+      label: `${t.name} (${t.targetAspectRatio})`,
+      value: t.id,
+    }))
+  );
+
+  function handleTemplateChange(val: string) {
+    selectedTemplateId.value = val;
+    onTemplateSelected();
+  }
 
   const currentFramingConfig = computed((): ManualFramingConfig | null => {
     if (framingRegions.value.length === 0) return null;
@@ -1098,7 +1096,7 @@
     border: 1px solid var(--sidebar-border);
     border-radius: 12px;
     width: 100%;
-    max-width: 960px;
+    max-width: 680px;
     margin: 1rem;
     max-height: 90vh;
     display: flex;
@@ -1261,6 +1259,321 @@
     color: #fca5a5;
   }
 
+  /* ===== Section Headers ===== */
+  .vod-preset-dialog__section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .vod-preset-dialog__section-header--row {
+    justify-content: space-between;
+  }
+
+  .vod-preset-dialog__section-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .vod-preset-dialog__section-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+    flex-shrink: 0;
+  }
+
+  .vod-preset-dialog__section-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .vod-preset-dialog__section-badge {
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+    background-color: var(--sidebar-hover);
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+  }
+
+  /* ===== Action Buttons ===== */
+  .vod-preset-dialog__action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+
+  .vod-preset-dialog__action-btn:hover {
+    color: var(--sidebar-text);
+    background-color: var(--sidebar-border);
+  }
+
+  .vod-preset-dialog__action-btn-icon {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+  }
+
+  .vod-preset-dialog__action-btn--sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.6875rem;
+  }
+
+  .vod-preset-dialog__action-btn--full {
+    flex: 1;
+    justify-content: center;
+  }
+
+  /* ===== Aspect Ratio Buttons ===== */
+  .vod-preset-dialog__ratio-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.375rem 0.625rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .vod-preset-dialog__ratio-btn--idle {
+    background-color: var(--sidebar-hover);
+    border-color: var(--sidebar-border);
+    color: var(--sidebar-text-muted);
+  }
+
+  .vod-preset-dialog__ratio-btn--idle:hover {
+    color: var(--sidebar-text);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .vod-preset-dialog__ratio-btn--selected {
+    background-color: rgba(14, 165, 233, 0.15);
+    border-color: rgba(14, 165, 233, 0.4);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Template Dropdown ===== */
+  :deep(.vod-preset-dialog__select-trigger) {
+    width: 100% !important;
+    padding: 0.5rem 0.75rem !important;
+    background-color: var(--sidebar-hover) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    transition: all 150ms ease !important;
+    justify-content: space-between !important;
+  }
+
+  :deep(.vod-preset-dialog__select-trigger:hover) {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  :deep(.vod-preset-dialog__select-trigger span) {
+    color: var(--sidebar-text) !important;
+    font-size: 0.75rem !important;
+  }
+
+  :deep(.vod-preset-dialog__select-trigger svg) {
+    width: 13px !important;
+    height: 13px !important;
+    color: var(--sidebar-text-muted) !important;
+  }
+
+  /* ===== Watermark Toggle ===== */
+  .vod-preset-dialog__wm-toggle {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .vod-preset-dialog__toggle-btn {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .vod-preset-dialog__toggle-btn--idle {
+    background-color: var(--sidebar-hover);
+    border-color: var(--sidebar-border);
+    color: var(--sidebar-text-muted);
+  }
+
+  .vod-preset-dialog__toggle-btn--idle:hover {
+    color: var(--sidebar-text);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+
+  .vod-preset-dialog__toggle-btn--selected {
+    background-color: rgba(14, 165, 233, 0.15);
+    border-color: rgba(14, 165, 233, 0.4);
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Watermark Card ===== */
+  .vod-preset-dialog__wm-card {
+    padding: 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .vod-preset-dialog__upload-link {
+    font-size: 0.625rem;
+    color: var(--sidebar-accent);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: opacity 150ms ease;
+  }
+
+  .vod-preset-dialog__upload-link:hover {
+    opacity: 0.8;
+  }
+
+  .vod-preset-dialog__wm-option--selected {
+    background-color: rgba(14, 165, 233, 0.1);
+    color: var(--sidebar-accent);
+  }
+
+  .vod-preset-dialog__wm-ratio-count {
+    font-size: 0.625rem;
+    color: var(--sidebar-accent);
+  }
+
+  /* ===== Overlay Items ===== */
+  .vod-preset-dialog__overlay-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.625rem 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  .vod-preset-dialog__overlay-item:hover .vod-preset-dialog__overlay-remove {
+    opacity: 1;
+  }
+
+  .vod-preset-dialog__overlay-ratio-count {
+    color: var(--sidebar-accent);
+  }
+
+  .vod-preset-dialog__overlay-remove {
+    padding: 0.375rem;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    opacity: 0;
+  }
+
+  .vod-preset-dialog__overlay-remove:hover {
+    color: #f87171;
+    background-color: rgba(239, 68, 68, 0.1);
+  }
+
+  /* ===== Region Chips ===== */
+  .vod-preset-dialog__region-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+  }
+
+  /* ===== Empty Hint ===== */
+  .vod-preset-dialog__empty-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    font-style: italic;
+  }
+
+  /* ===== Info Notice ===== */
+  .vod-preset-dialog__info-notice {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    background-color: rgba(14, 165, 233, 0.1);
+    border: 1px solid rgba(14, 165, 233, 0.2);
+    border-radius: 8px;
+  }
+
+  .vod-preset-dialog__info-notice-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .vod-preset-dialog__info-notice-text {
+    font-size: 0.75rem;
+    color: var(--sidebar-accent);
+    opacity: 0.85;
+  }
+
+  /* ===== Save Template Card ===== */
+  .vod-preset-dialog__save-template-card {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    width: 100%;
+    max-width: 24rem;
+    margin: 0 1rem;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  }
+
+  .vod-preset-dialog__save-template-input {
+    width: 100%;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    outline: none;
+    margin-bottom: 0.75rem;
+    transition: border-color 150ms ease;
+  }
+
+  .vod-preset-dialog__save-template-input:focus {
+    border-color: var(--sidebar-accent);
+  }
+
+  .vod-preset-dialog__save-template-input::placeholder {
+    color: var(--sidebar-text-muted);
+  }
+
   /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
@@ -1283,5 +1596,33 @@
   .dialog-leave-to {
     opacity: 0;
     transform: scale(0.98);
+  }
+</style>
+
+<!-- Global styles for template dropdown panel (rendered via Teleport to body) -->
+<style>
+  div.fixed.bg-popover {
+    z-index: 10050 !important;
+    background-color: var(--sidebar-surface) !important;
+    border: 1px solid var(--sidebar-border) !important;
+    border-radius: 8px !important;
+    padding: 0.25rem !important;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
+  }
+
+  div.fixed.bg-popover button {
+    font-size: 0.75rem !important;
+    color: var(--sidebar-text) !important;
+    border-radius: 5px !important;
+    padding: 0.5rem 0.75rem !important;
+  }
+
+  div.fixed.bg-popover button:hover {
+    background-color: var(--sidebar-hover) !important;
+  }
+
+  div.fixed.bg-popover button.bg-primary\/10 {
+    background-color: rgba(14, 165, 233, 0.15) !important;
+    color: var(--sidebar-accent) !important;
   }
 </style>

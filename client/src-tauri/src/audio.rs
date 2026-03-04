@@ -1,6 +1,49 @@
 use crate::ffmpeg_utils::parse_duration_from_ffmpeg_output;
 use crate::storage;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+
+/// Global flag to signal cancellation of audio extraction
+static AUDIO_EXTRACTION_CANCELLED: AtomicBool = AtomicBool::new(false);
+
+/// Track PIDs of active FFmpeg child processes spawned during audio extraction
+static ACTIVE_FFMPEG_PIDS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+fn register_ffmpeg_pid(pid: u32) {
+    if let Ok(mut pids) = ACTIVE_FFMPEG_PIDS.lock() {
+        pids.push(pid);
+    }
+}
+
+fn unregister_ffmpeg_pid(pid: u32) {
+    if let Ok(mut pids) = ACTIVE_FFMPEG_PIDS.lock() {
+        pids.retain(|&p| p != pid);
+    }
+}
+
+fn kill_all_active_ffmpeg() {
+    if let Ok(mut pids) = ACTIVE_FFMPEG_PIDS.lock() {
+        for &pid in pids.iter() {
+            println!("[Rust] Killing FFmpeg process PID: {}", pid);
+            #[cfg(target_os = "windows")]
+            {
+                // On Windows, use taskkill to force-kill the process tree
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/F", "/T", "/PID", &pid.to_string()])
+                    .output();
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                // On Unix, use kill -9 to force-kill the process
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output();
+            }
+        }
+        pids.clear();
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioChunk {
@@ -388,6 +431,9 @@ pub async fn extract_and_chunk_audio(
         }
     }
 
+    // Reset cancellation flag at the start of a new extraction
+    AUDIO_EXTRACTION_CANCELLED.store(false, Ordering::SeqCst);
+
     // Allow higher concurrency since each chunk extraction is I/O-bound (fast seeking).
     // With -ss before -i, each FFmpeg process starts near-instantly.
     let concurrency: usize = 6;
@@ -413,10 +459,20 @@ pub async fn extract_and_chunk_audio(
             use base64::{engine::general_purpose, Engine as _};
             use tauri_plugin_shell::ShellExt;
 
+            // Check cancellation before acquiring permit
+            if AUDIO_EXTRACTION_CANCELLED.load(Ordering::SeqCst) {
+                return Err("Audio extraction cancelled".to_string());
+            }
+
             let _permit = sem
                 .acquire()
                 .await
                 .map_err(|e| format!("Semaphore error: {}", e))?;
+
+            // Check cancellation after acquiring permit (may have waited)
+            if AUDIO_EXTRACTION_CANCELLED.load(Ordering::SeqCst) {
+                return Err("Audio extraction cancelled".to_string());
+            }
 
             let chunk_filename = format!("{}_chunk_{:03}.mp3", pid, idx);
             let chunk_path = vdir.join(&chunk_filename);
@@ -459,17 +515,52 @@ pub async fn extract_and_chunk_audio(
                 chunk_path.to_str().ok_or("Invalid chunk path")?.to_string(),
             ]);
 
+            // Use spawn() instead of output() so we can track and kill the child process
             let shell = app_clone.shell();
-            let chunk_output = shell
+            let (mut rx, child) = shell
                 .sidecar("ffmpeg")
                 .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
                 .args(&args)
-                .output()
-                .await
-                .map_err(|e| format!("Failed to run ffmpeg for chunk {}: {}", idx, e))?;
+                .spawn()
+                .map_err(|e| format!("Failed to spawn ffmpeg for chunk {}: {}", idx, e))?;
 
-            if !chunk_output.status.success() {
-                let stderr = String::from_utf8_lossy(&chunk_output.stderr);
+            // Register child PID so it can be killed on cancellation
+            let child_pid = child.pid();
+            register_ffmpeg_pid(child_pid);
+
+            // Wait for the process to finish by draining events
+            let mut stderr_buf = Vec::new();
+            let mut exit_code: Option<i32> = None;
+            while let Some(event) = rx.recv().await {
+                match event {
+                    tauri_plugin_shell::process::CommandEvent::Stderr(data) => {
+                        stderr_buf.extend_from_slice(&data);
+                    }
+                    tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
+                        exit_code = payload.code;
+                        break;
+                    }
+                    tauri_plugin_shell::process::CommandEvent::Error(err) => {
+                        unregister_ffmpeg_pid(child_pid);
+                        return Err(format!("FFmpeg chunk {} error: {}", idx, err));
+                    }
+                    _ => {}
+                }
+            }
+
+            // Unregister PID now that process has exited
+            unregister_ffmpeg_pid(child_pid);
+
+            // Check cancellation after FFmpeg finished
+            if AUDIO_EXTRACTION_CANCELLED.load(Ordering::SeqCst) {
+                // Clean up partial output file
+                let _ = std::fs::remove_file(&chunk_path);
+                return Err("Audio extraction cancelled".to_string());
+            }
+
+            let success = exit_code.map_or(false, |c| c == 0);
+            if !success {
+                let stderr = String::from_utf8_lossy(&stderr_buf);
                 println!("[Rust] FFmpeg chunk {} failed: {}", idx, stderr);
                 return Err(format!(
                     "FFmpeg chunk {} extraction failed: {}",
@@ -513,14 +604,33 @@ pub async fn extract_and_chunk_audio(
         handles.push(handle);
     }
 
-    // Collect results
+    // Collect results - abort remaining tasks on first error or cancellation
     let mut chunks: Vec<AudioChunk> = Vec::with_capacity(handles.len());
+    let mut first_error: Option<String> = None;
     for handle in handles {
+        if first_error.is_some() || AUDIO_EXTRACTION_CANCELLED.load(Ordering::SeqCst) {
+            handle.abort();
+            continue;
+        }
         match handle.await {
             Ok(Ok(chunk)) => chunks.push(chunk),
-            Ok(Err(e)) => return Err(e),
-            Err(e) => return Err(format!("Chunk task panicked: {}", e)),
+            Ok(Err(e)) => {
+                first_error = Some(e);
+                // Kill any remaining FFmpeg processes
+                kill_all_active_ffmpeg();
+            }
+            Err(e) if e.is_cancelled() => {
+                first_error = Some("Audio extraction cancelled".to_string());
+            }
+            Err(e) => {
+                first_error = Some(format!("Chunk task panicked: {}", e));
+                kill_all_active_ffmpeg();
+            }
         }
+    }
+
+    if let Some(err) = first_error {
+        return Err(err);
     }
 
     // Sort by start_time since tasks may complete out of order
@@ -810,4 +920,14 @@ pub async fn get_audio_duration(app: tauri::AppHandle, file_path: String) -> Res
 
     println!("[Rust] Audio duration: {:.2} seconds", duration);
     Ok(duration)
+}
+
+/// Cancel any in-progress audio extraction by setting the cancellation flag
+/// and killing all active FFmpeg child processes.
+#[tauri::command]
+pub async fn cancel_audio_extraction() -> Result<(), String> {
+    println!("[Rust] cancel_audio_extraction called - setting cancellation flag and killing FFmpeg processes");
+    AUDIO_EXTRACTION_CANCELLED.store(true, Ordering::SeqCst);
+    kill_all_active_ffmpeg();
+    Ok(())
 }

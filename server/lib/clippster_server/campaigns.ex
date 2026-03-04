@@ -1047,6 +1047,15 @@ defmodule ClippsterServer.Campaigns do
   end
 
   @doc """
+  Updates user post fields like post_url.
+  """
+  def update_user_post(%UserPost{} = post, attrs) do
+    post
+    |> UserPost.update_changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
   Gets posts needing analytics sync (for background worker).
   """
   def get_user_posts_needing_sync(opts \\ []) do

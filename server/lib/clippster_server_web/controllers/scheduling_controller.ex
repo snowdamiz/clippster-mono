@@ -13,17 +13,6 @@ defmodule ClippsterServerWeb.SchedulingController do
 
   plug ClippsterServerWeb.AuthPlug
 
-  # PulseKit helper for safe event capture
-  defp pulse_capture(event) do
-    if Code.ensure_loaded?(PulseKit) do
-      try do
-        PulseKit.capture(event)
-      rescue
-        _ -> :ok
-      end
-    end
-  end
-
   # ============================================================================
   # Schedule Post
   # ============================================================================
@@ -67,20 +56,6 @@ defmodule ClippsterServerWeb.SchedulingController do
       with :ok <- validate_scheduling_request(params, user, owner_type),
            attrs <- build_scheduling_attrs(params, owner_type),
            {:ok, post} <- Social.schedule_post(attrs, user) do
-        pulse_capture(%{
-          type: "post.scheduled",
-          level: :info,
-          message: "Post scheduled for #{post.scheduled_at}",
-          metadata: %{
-            post_id: post.id,
-            platform: post.platform,
-            owner_type: owner_type,
-            scheduled_at: post.scheduled_at,
-            user_id: user.id
-          },
-          tags: %{platform: post.platform, action: "scheduled"}
-        })
-
         conn
         |> put_status(201)
         |> json(%{
@@ -197,18 +172,6 @@ defmodule ClippsterServerWeb.SchedulingController do
       post ->
         case Social.cancel_scheduled_post(post, user) do
           {:ok, canceled} ->
-            pulse_capture(%{
-              type: "post.canceled",
-              level: :info,
-              message: "Scheduled post canceled",
-              metadata: %{
-                post_id: canceled.id,
-                platform: canceled.platform,
-                user_id: user.id
-              },
-              tags: %{platform: canceled.platform, action: "canceled"}
-            })
-
             json(conn, %{success: true, post: serialize_post(canceled)})
 
           {:error, :unauthorized} ->
@@ -250,18 +213,6 @@ defmodule ClippsterServerWeb.SchedulingController do
         if can_view_post?(post, user) do
           case Social.retry_failed_post(post, user) do
             {:ok, updated} ->
-              pulse_capture(%{
-                type: "post.retry",
-                level: :info,
-                message: "Failed post queued for retry",
-                metadata: %{
-                  post_id: updated.id,
-                  platform: updated.platform,
-                  user_id: user.id
-                },
-                tags: %{platform: updated.platform, action: "retry"}
-              })
-
               json(conn, %{
                 success: true,
                 post: serialize_post(updated),
@@ -680,11 +631,18 @@ defmodule ClippsterServerWeb.SchedulingController do
     case Social.list_post_submissions(org_id, status: "published", limit: 500) do
       {:ok, %{posts: posts}} ->
         Logger.info("[sync_org_posts_analytics] Found #{length(posts)} published posts")
+        
+        # Log post details for debugging
+        for post <- posts do
+          Logger.debug("[sync_org_posts_analytics] Post #{post.id}: platform=#{post.platform}, post_url=#{inspect(post.post_url)}, has_account=#{post.organization_social_account != nil}")
+        end
+        
         # Group posts by social account to minimize API calls (one feed fetch per account)
         filtered_posts = posts
           |> Enum.filter(fn post ->
             has_account = post.organization_social_account != nil
             has_provider_id = has_account && is_binary(post.organization_social_account.provider_account_id)
+            has_post_url = is_binary(post.post_url) && post.post_url != ""
             is_supported = post.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
             
             if not has_account do
@@ -693,11 +651,14 @@ defmodule ClippsterServerWeb.SchedulingController do
             if has_account and not has_provider_id do
               Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) account has no provider_account_id")
             end
+            if not has_post_url do
+              Logger.warning("[sync_org_posts_analytics] Post #{post.id} (#{post.platform}) has no post_url - cannot sync analytics")
+            end
             if not is_supported do
               Logger.debug("[sync_org_posts_analytics] Post #{post.id} platform #{post.platform} not supported")
             end
             
-            has_account && has_provider_id && is_supported
+            has_account && has_provider_id && has_post_url && is_supported
           end)
         
         Logger.info("[sync_org_posts_analytics] #{length(filtered_posts)} posts after filtering (need account + provider_id + supported platform)")
@@ -728,11 +689,17 @@ defmodule ClippsterServerWeb.SchedulingController do
                         analytics = extract_feed_analytics(post.platform, item, account)
                         Logger.info("[sync_org_posts_analytics] Post #{post.id}: extracted analytics: #{inspect(analytics)}")
                         
-                        if map_size(analytics) > 0 do
+                        # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
+                        metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
+                        has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
+                        
+                        if has_real_data do
                           case Social.sync_post_analytics(post, analytics) do
                             {:ok, _} -> Logger.info("[sync_org_posts_analytics] Post #{post.id}: analytics synced successfully")
                             {:error, reason} -> Logger.error("[sync_org_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
                           end
+                        else
+                          Logger.debug("[sync_org_posts_analytics] Post #{post.id}: skipping sync - all metrics are zero")
                         end
                     end
 
@@ -757,20 +724,30 @@ defmodule ClippsterServerWeb.SchedulingController do
     case Social.list_external_post_submissions(org_id, limit: 500) do
       {:ok, %{posts: posts}} ->
         Logger.info("[sync_org_external_posts_analytics] Found #{length(posts)} external posts")
-        # Filter to supported platforms with a submitting user
+        
+        # Log post details for debugging
+        for post <- posts do
+          Logger.debug("[sync_org_external_posts_analytics] External post #{post.id}: platform=#{post.platform}, post_url=#{inspect(post.post_url)}, has_user=#{post.submitted_by_user_id != nil}")
+        end
+        
+        # Filter to supported platforms with a submitting user and post_url
         supported_posts =
           Enum.filter(posts, fn sub ->
             has_user = sub.submitted_by_user_id != nil
+            has_post_url = is_binary(sub.post_url) && sub.post_url != ""
             is_supported = sub.platform in ["instagram", "x", "twitter", "tiktok", "youtube"]
             
             if not has_user do
               Logger.warning("[sync_org_external_posts_analytics] External post #{sub.id} (#{sub.platform}) has no submitted_by_user_id")
             end
+            if not has_post_url do
+              Logger.warning("[sync_org_external_posts_analytics] External post #{sub.id} (#{sub.platform}) has no post_url - cannot sync analytics")
+            end
             if not is_supported do
               Logger.debug("[sync_org_external_posts_analytics] External post #{sub.id} platform #{sub.platform} not supported")
             end
             
-            has_user && is_supported
+            has_user && has_post_url && is_supported
           end)
         
         Logger.info("[sync_org_external_posts_analytics] #{length(supported_posts)} external posts after filtering")
@@ -826,11 +803,17 @@ defmodule ClippsterServerWeb.SchedulingController do
                                 analytics = extract_feed_analytics(sub.platform, item, account)
                                 Logger.info("[sync_org_external_posts_analytics] External post #{sub.id}: extracted analytics: #{inspect(analytics)}")
                                 
-                                if map_size(analytics) > 0 do
+                                # Only sync if at least one metric is non-zero to avoid overwriting real data with zeros
+                                metric_keys = [:view_count, :like_count, :comment_count, :save_count, :reach_count, :impressions_count, :share_count]
+                                has_real_data = Enum.any?(metric_keys, fn k -> (Map.get(analytics, k) || 0) > 0 end)
+                                
+                                if has_real_data do
                                   case Social.sync_external_post_analytics(sub, analytics) do
                                     {:ok, _} -> Logger.info("[sync_org_external_posts_analytics] External post #{sub.id}: analytics synced successfully")
                                     {:error, reason} -> Logger.error("[sync_org_external_posts_analytics] External post #{sub.id}: sync failed: #{inspect(reason)}")
                                   end
+                                else
+                                  Logger.debug("[sync_org_external_posts_analytics] External post #{sub.id}: skipping sync - all metrics are zero")
                                 end
                             end
 
@@ -953,8 +936,14 @@ defmodule ClippsterServerWeb.SchedulingController do
   defp fetch_post_for_me_feed(provider_account_id) do
     alias ClippsterServer.Social.Providers.PostForMe
 
-    case PostForMe.get_social_account_feed(provider_account_id, %{limit: 50}) do
+    case PostForMe.get_social_account_feed(provider_account_id, %{limit: 50, expand: ["metrics"]}) do
       {:ok, %{data: feed_items}} when is_list(feed_items) ->
+        {:ok, feed_items}
+
+      {:ok, %{"data" => feed_items}} when is_list(feed_items) ->
+        {:ok, feed_items}
+
+      {:ok, feed_items} when is_list(feed_items) ->
         {:ok, feed_items}
 
       {:error, reason} ->
@@ -1063,12 +1052,17 @@ defmodule ClippsterServerWeb.SchedulingController do
   defp match_feed_item(_platform, _feed_items, _id), do: nil
 
   # Extract analytics from a PostForMe feed item, per platform
+  # Metrics are in item["metrics"] when expand=metrics is passed to the feed API
   defp extract_feed_analytics("instagram", item, account) do
+    m = item["metrics"] || %{}
+
     %{
-      view_count: item["play_count"] || item["video_views"] || 0,
-      like_count: item["like_count"] || item["likes_count"] || 0,
-      comment_count: item["comments_count"] || item["comment_count"] || 0,
-      save_count: item["saved"] || item["save_count"] || 0,
+      view_count: m["views"] || 0,
+      like_count: m["likes"] || 0,
+      comment_count: m["comments"] || 0,
+      save_count: m["saved"] || 0,
+      reach_count: m["reach"] || 0,
+      share_count: m["shares"] || 0,
       author_username: account.username,
       author_name: account.display_name,
       author_profile_image: account.profile_image_url
@@ -1076,11 +1070,15 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp extract_feed_analytics(platform, item, account) when platform in ["x", "twitter"] do
+    m = item["metrics"] || %{}
+    pm = m["public_metrics"] || %{}
+
     %{
-      view_count: item["view_count"] || item["views"] || item["impression_count"] || 0,
-      like_count: item["like_count"] || item["likes"] || item["favorite_count"] || 0,
-      comment_count: item["reply_count"] || item["replies"] || item["comment_count"] || 0,
-      share_count: item["retweet_count"] || item["retweets"] || item["share_count"] || 0,
+      view_count: pm["impression_count"] || 0,
+      like_count: pm["like_count"] || 0,
+      comment_count: pm["reply_count"] || 0,
+      share_count: pm["retweet_count"] || 0,
+      impressions_count: pm["impression_count"] || 0,
       author_username: account.username,
       author_name: account.display_name,
       author_profile_image: account.profile_image_url
@@ -1088,12 +1086,17 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp extract_feed_analytics("tiktok", item, account) do
+    m = item["metrics"] || %{}
+
+    # TikTok consumer: like_count, comment_count, share_count, view_count
+    # TikTok Business: likes, comments, shares, favorites, reach, video_views
     %{
-      view_count: item["play_count"] || item["view_count"] || item["views"] || 0,
-      like_count: item["digg_count"] || item["like_count"] || item["likes"] || 0,
-      comment_count: item["comment_count"] || item["comments"] || 0,
-      share_count: item["share_count"] || item["shares"] || 0,
-      save_count: item["collect_count"] || item["save_count"] || item["saves"] || 0,
+      view_count: m["view_count"] || m["video_views"] || 0,
+      like_count: m["like_count"] || m["likes"] || 0,
+      comment_count: m["comment_count"] || m["comments"] || 0,
+      share_count: m["share_count"] || m["shares"] || 0,
+      save_count: m["favorites"] || 0,
+      reach_count: m["reach"] || 0,
       author_username: account.username,
       author_name: account.display_name,
       author_profile_image: account.profile_image_url
@@ -1101,12 +1104,27 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   defp extract_feed_analytics("youtube", item, account) do
-    stats = item["statistics"] || %{}
+    m = item["metrics"] || %{}
 
     %{
-      view_count: item["view_count"] || item["views"] || stats["viewCount"] || 0,
-      like_count: item["like_count"] || item["likes"] || stats["likeCount"] || 0,
-      comment_count: item["comment_count"] || item["comments"] || stats["commentCount"] || 0,
+      view_count: m["views"] || 0,
+      like_count: m["likes"] || 0,
+      comment_count: m["comments"] || 0,
+      author_username: account.username,
+      author_name: account.display_name,
+      author_profile_image: account.profile_image_url
+    }
+  end
+
+  defp extract_feed_analytics("facebook", item, account) do
+    m = item["metrics"] || %{}
+
+    %{
+      view_count: m["video_views"] || m["media_views"] || 0,
+      like_count: m["reactions_total"] || m["reactions_like"] || 0,
+      comment_count: m["comments"] || 0,
+      share_count: m["shares"] || 0,
+      reach_count: m["reach"] || 0,
       author_username: account.username,
       author_name: account.display_name,
       author_profile_image: account.profile_image_url

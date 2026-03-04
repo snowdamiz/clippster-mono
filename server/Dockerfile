@@ -56,6 +56,9 @@ COPY sig_verify.js payment_verify.js fetch_metadata.js priv/js/
 # Copy runtime config
 COPY config/runtime.exs config/
 
+# Copy release overlay (env.sh.eex for dynamic node naming)
+COPY rel rel
+
 # Compile the release
 RUN mix compile
 

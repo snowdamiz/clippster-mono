@@ -98,7 +98,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [x] 04-01-PLAN.md — TwitterApiClient with retry + TwitterRateLimiter + PulseKit logging + DB migration
+- [x] 04-01-PLAN.md — TwitterApiClient with retry + TwitterRateLimiter + DB migration
 - [x] 04-02-PLAN.md — TwitterDuplicateDetector + wire into Twitter module and publishing flows
 
 ## Progress

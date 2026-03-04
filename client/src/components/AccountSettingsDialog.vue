@@ -318,6 +318,11 @@
                 </div>
               </template>
 
+              <!-- ==================== DELETE DATA TAB ==================== -->
+              <template v-if="activeTab === 'delete'">
+                <DeleteDataTab />
+              </template>
+
             </div>
           </div>
         </Transition>
@@ -328,9 +333,10 @@
 
 <script setup>
 import { ref, computed, markRaw } from 'vue';
-import { X, Settings, Mail, Lock, CheckCircle, AlertCircle, Info, Clock, Bell, User } from 'lucide-vue-next';
+import { X, Settings, Mail, Lock, CheckCircle, AlertCircle, Info, Clock, Bell, User, Trash2 } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
 import { useUserPreferencesStore } from '@/stores/userPreferences';
+import DeleteDataTab from '@/components/settings/DeleteDataTab.vue';
 
 const props = defineProps({
   show: {
@@ -349,6 +355,7 @@ const tabs = [
   { id: 'account', label: 'Account', icon: markRaw(User) },
   { id: 'preferences', label: 'Preferences', icon: markRaw(Clock) },
   { id: 'notifications', label: 'Notifications', icon: markRaw(Bell) },
+  { id: 'delete', label: 'Delete Data', icon: markRaw(Trash2) },
 ];
 const activeTab = ref('account');
 

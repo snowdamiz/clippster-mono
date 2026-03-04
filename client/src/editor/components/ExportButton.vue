@@ -11,6 +11,7 @@ import {
 	PencilRuler,
 	ChevronRight,
 	CropIcon,
+	Trash2,
 } from "lucide-vue-next";
 import ManualPOIEditor from "../../components/poi/ManualPOIEditor.vue";
 import type { ManualFramingConfig, ManualFramingConfigs } from "@/types";
@@ -27,6 +28,7 @@ const exportError = ref<string | null>(null);
 const copied = ref(false);
 const cancelRequested = ref(false);
 const exportedPath = ref<string | null>(null);
+const showSuccess = ref(false);
 
 const hasProject = computed(() => {
 	void version.value;
@@ -230,6 +232,8 @@ watch(isOpen, async (open) => {
 		progress.value = 0;
 		copied.value = false;
 		cancelRequested.value = false;
+		showSuccess.value = false;
+		exportedPath.value = null;
 		selectedRatios.value = ["16:9"];
 		framingMode.value = "manual";
 		manualFramingConfigs.value = {};
@@ -301,7 +305,7 @@ async function handleExport() {
 
 		if (result.success) {
 			exportedPath.value = result.outputPath || null;
-			isOpen.value = false;
+			showSuccess.value = true;
 			progress.value = 0;
 
 			// Register the exported file as a built clip so it appears in Built Clips
@@ -314,6 +318,12 @@ async function handleExport() {
 					if (clipSource?.source_id) {
 						await updateClipBuildStatus(clipSource.source_id, "completed", {
 							builtFilePath: result.outputPath,
+						});
+
+						// Trigger automatic background transcription for the exported video
+						// This ensures the exported composition (including imported videos and other clips) is fully searchable
+						transcribeExportedVideo(clipSource.source_id, result.outputPath).catch((err) => {
+							console.warn("[ExportButton] Background transcription failed:", err);
 						});
 					}
 				} catch (e) {
@@ -338,6 +348,142 @@ function handleClose() {
 		isOpen.value = false;
 		exportError.value = null;
 		progress.value = 0;
+		showSuccess.value = false;
+		exportedPath.value = null;
+	}
+}
+
+async function handleDownload() {
+	if (!exportedPath.value) return;
+
+	try {
+		const { save } = await import("@tauri-apps/plugin-dialog");
+		const { invoke } = await import("@tauri-apps/api/core");
+
+		// Extract filename from path
+		const filename = exportedPath.value.split(/[\\/]/).pop() || "export.mp4";
+
+		// Show save dialog
+		const savePath = await save({
+			defaultPath: filename,
+			filters: [{
+				name: "Video",
+				extensions: [format.value],
+			}],
+		});
+
+		if (savePath) {
+			// Copy file to selected location using the same command as clip building
+			await invoke("copy_clip_to_destination", {
+				sourcePath: exportedPath.value,
+				destinationPath: savePath,
+			});
+			
+			console.log("[ExportButton] File saved to:", savePath);
+			
+			// Show success toast
+			const { useToast } = await import("@/composables/useToast");
+			const { showToast } = useToast();
+			showToast(`Video saved to ${savePath}`, "success", "projects");
+			
+			// Keep dialog open - user can download multiple times or clean up project
+		}
+		// If user cancels the save dialog, stay on current screen
+	} catch (err) {
+		console.error("[ExportButton] Download failed:", err);
+		const { useToast } = await import("@/composables/useToast");
+		const { showToast } = useToast();
+		showToast(err instanceof Error ? err.message : "Failed to save file", "error", "projects");
+	}
+}
+
+async function transcribeExportedVideo(clipId: string, videoPath: string) {
+	try {
+		console.log("[ExportButton] Starting background transcription for exported video:", clipId);
+
+		// Import transcription utilities
+		const { useTranscriptionOnly } = await import("@/composables/useTranscriptionOnly");
+		const { createRawVideo, getRawVideosByProjectId } = await import("@/services/database");
+		const { getClipWithBuildStatus } = await import("@/services/database/clip-build");
+
+		// Get the clip to find its project
+		const clip = await getClipWithBuildStatus(clipId);
+		if (!clip || !clip.project_id) {
+			console.warn("[ExportButton] Could not find clip or project for transcription");
+			return;
+		}
+
+		// Create a temporary raw_video entry for the exported file so transcription can process it
+		// This allows the transcription system to work with the exported video file
+		const rawVideoId = await createRawVideo(videoPath, {
+			projectId: clip.project_id,
+			originalFilename: videoPath.split(/[\\/]/).pop() || "export.mp4",
+			duration: clip.built_duration || clip.duration || 0,
+		});
+
+		// Start transcription in the background (non-blocking)
+		const { transcribeProject } = useTranscriptionOnly();
+		const result = await transcribeProject(clip.project_id, {
+			organizationId: null, // Use user's own transcription
+		});
+
+		if (result.success && !result.alreadyTranscribed) {
+			console.log("[ExportButton] Background transcription completed for clip:", clipId);
+		} else if (result.alreadyTranscribed) {
+			console.log("[ExportButton] Transcript already exists for clip:", clipId);
+		}
+	} catch (error) {
+		// Don't throw - this is a background operation
+		console.error("[ExportButton] Background transcription error:", error);
+	}
+}
+
+async function handleCleanupProject() {
+	const project = activeProject.value;
+	if (!project) return;
+
+	// Show confirmation dialog
+	const confirmed = await confirm(
+		"Remove Editor Project?\n\nThis will delete the editor project and source files. The exported video will remain in Built Clips."
+	);
+
+	if (!confirmed) return;
+
+	try {
+		// Delete video editor project and its files
+		const { deleteVideoEditorProject } = await import("@/services/database/video-editor-projects");
+		const { invoke } = await import("@tauri-apps/api/core");
+
+		// Delete database records (project, sources, edits)
+		await deleteVideoEditorProject(project.metadata.id);
+
+		// Delete local files (editor-media/{project_id}/ directory)
+		const { appLocalDataDir } = await import("@tauri-apps/api/path");
+		const localDataDir = await appLocalDataDir();
+		const projectMediaDir = `${localDataDir}editor-media/${project.metadata.id}`;
+
+		try {
+			await invoke("delete_directory", { path: projectMediaDir });
+			console.log("[ExportButton] Deleted project media directory:", projectMediaDir);
+		} catch (err) {
+			console.warn("[ExportButton] Failed to delete project media directory:", err);
+		}
+
+		// Show success toast
+		const { useToast } = await import("@/composables/useToast");
+		const { showToast } = useToast();
+		showToast("Project files cleaned up", "success", "projects");
+
+		// Close dialog and navigate to video editor projects page
+		isOpen.value = false;
+		const { useRouter } = await import("vue-router");
+		const router = useRouter();
+		router.push("/video-editor");
+	} catch (err) {
+		console.error("[ExportButton] Failed to clean up project:", err);
+		const { useToast } = await import("@/composables/useToast");
+		const { showToast } = useToast();
+		showToast(err instanceof Error ? err.message : "Failed to clean up project", "error", "projects");
 	}
 }
 
@@ -393,8 +539,35 @@ async function handleCopyError() {
 
 							<!-- Content -->
 							<div class="export-dialog__content">
+								<!-- Success State -->
+								<div v-if="showSuccess && exportedPath && !isExporting" class="export-dialog__step-content">
+									<div class="export-dialog__success-section">
+										<div class="export-dialog__success-header">
+											<div class="export-dialog__success-icon">
+												<Check :size="32" />
+											</div>
+											<h3 class="export-dialog__success-title">Export Complete!</h3>
+											<p class="export-dialog__success-subtitle">Your video has been saved to Built Clips</p>
+										</div>
+
+										<div class="export-dialog__success-actions">
+											<button class="export-dialog__success-btn export-dialog__success-btn--primary" @click="handleDownload">
+												<Download :size="16" />
+												Download to Local File
+											</button>
+											<button class="export-dialog__success-btn export-dialog__success-btn--warning" @click="handleCleanupProject">
+												<Trash2 :size="16" />
+												Clean Up Project Files
+											</button>
+											<button class="export-dialog__success-btn" @click="handleClose">
+												Close
+											</button>
+										</div>
+									</div>
+								</div>
+
 								<!-- Error State -->
-								<div v-if="exportError && !isExporting" class="export-dialog__step-content">
+								<div v-else-if="exportError && !isExporting && !showSuccess" class="export-dialog__step-content">
 									<div class="export-dialog__error-section">
 										<div class="export-dialog__error-header">
 											<div class="export-dialog__error-icon">
@@ -700,7 +873,7 @@ async function handleCopyError() {
 										<span>Next</span>
 									</button>
 									<button
-						v-if="!isExporting && !exportError && isLastStep"
+						v-if="!isExporting && !exportError && !showSuccess && isLastStep"
 						@click="handleExport"
 						class="export-dialog__btn export-dialog__btn--primary"
 					>
@@ -1492,6 +1665,124 @@ async function handleCopyError() {
 	color: var(--sidebar-text-muted);
 	text-align: center;
 	padding: 0.25rem 0;
+}
+
+/* ===== Success State ===== */
+.export-dialog__success-section {
+	display: flex;
+	flex-direction: column;
+	gap: 1.5rem;
+	align-items: center;
+}
+
+.export-dialog__success-header {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.75rem;
+	text-align: center;
+}
+
+.export-dialog__success-icon {
+	width: 64px;
+	height: 64px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(22, 163, 74, 0.15));
+	border: 2px solid rgba(34, 197, 94, 0.3);
+	color: rgb(34, 197, 94);
+}
+
+.export-dialog__success-title {
+	font-size: 1.25rem;
+	font-weight: 700;
+	color: var(--sidebar-text);
+	margin: 0;
+}
+
+.export-dialog__success-subtitle {
+	font-size: 0.875rem;
+	color: var(--sidebar-text-muted);
+	margin: 0;
+}
+
+.export-dialog__success-path {
+	width: 100%;
+	padding: 1rem;
+	border-radius: 8px;
+	background-color: rgba(255, 255, 255, 0.03);
+	border: 1px solid var(--sidebar-border);
+}
+
+.export-dialog__success-path-label {
+	font-size: 0.6875rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--sidebar-text-muted);
+	margin-bottom: 0.5rem;
+}
+
+.export-dialog__success-path-value {
+	font-size: 0.75rem;
+	font-family: 'Courier New', monospace;
+	color: var(--sidebar-text);
+	word-break: break-all;
+	line-height: 1.4;
+}
+
+.export-dialog__success-actions {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	width: 100%;
+}
+
+.export-dialog__success-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.5rem;
+	padding: 0.75rem 1.25rem;
+	border-radius: 8px;
+	font-size: 0.875rem;
+	font-weight: 600;
+	border: 1px solid var(--sidebar-border);
+	background-color: rgba(255, 255, 255, 0.05);
+	color: var(--sidebar-text);
+	cursor: pointer;
+	transition: all 150ms ease;
+}
+
+.export-dialog__success-btn:hover {
+	background-color: rgba(255, 255, 255, 0.08);
+	border-color: rgba(255, 255, 255, 0.15);
+}
+
+.export-dialog__success-btn--primary {
+	background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.8));
+	border-color: var(--sidebar-accent);
+	color: white;
+}
+
+.export-dialog__success-btn--primary:hover {
+	background: linear-gradient(135deg, rgba(6, 182, 212, 0.9), rgba(6, 182, 212, 0.7));
+	transform: translateY(-1px);
+	box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+}
+
+.export-dialog__success-btn--warning {
+	background-color: rgba(239, 68, 68, 0.1);
+	border-color: rgba(239, 68, 68, 0.3);
+	color: rgb(239, 68, 68);
+}
+
+.export-dialog__success-btn--warning:hover {
+	background-color: rgba(239, 68, 68, 0.2);
+	border-color: rgba(239, 68, 68, 0.5);
+	transform: translateY(-1px);
 }
 
 /* ===== Slide-Fade Transition ===== */

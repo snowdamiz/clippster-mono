@@ -557,7 +557,7 @@
         {
           autoSegment: shouldAutoSegment,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: currentPlatformLink.value.platform as 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble' | 'twitter',
+          provider: currentPlatformLink.value.platform as 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter',
           creatorWatermarkSettings,
         }
       );

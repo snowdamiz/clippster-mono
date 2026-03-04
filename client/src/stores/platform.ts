@@ -430,6 +430,8 @@ export const usePlatformStore = defineStore('platform', {
           hasMore: boolean;
           total: number;
           error?: string;
+          fallbackUsed?: boolean;
+          actualTab?: 'streams' | 'videos';
         };
         let extractedId: string | null = null;
 
@@ -486,14 +488,20 @@ export const usePlatformStore = defineStore('platform', {
             // Otherwise, extract the channel name
             let channelInput: string;
             if (trimmedInput.includes('rumble.com/')) {
+              const extracted = extractRumbleChannel(trimmedInput);
+              if (!extracted) {
+                // extractRumbleChannel returns null for video URLs (e.g. rumble.com/v12abc-title.html)
+                this.error = "That's a Rumble video link, not a channel page. Enter the channel URL instead — e.g. rumble.com/c/ChannelName or rumble.com/user/Username.";
+                this.loading = false;
+                return { success: false, error: this.error };
+              }
+              extractedId = extracted;
               channelInput = trimmedInput;
-              // Extract channel name for currentSearchId (for display purposes)
-              extractedId = extractRumbleChannel(trimmedInput) || trimmedInput.trim();
             } else {
               extractedId = extractRumbleChannel(trimmedInput) || trimmedInput.trim();
               channelInput = extractedId;
             }
-            
+
             if (!extractedId) {
               this.error = 'Invalid Rumble channel URL or name';
               this.loading = false;
@@ -562,6 +570,8 @@ export const usePlatformStore = defineStore('platform', {
             clips: filteredClips,
             total: filteredClips.length,
             hasMore: result.hasMore,
+            fallbackUsed: result.fallbackUsed,
+            actualTab: result.actualTab,
           };
         } else {
           this.error = result.error || 'Failed to fetch VODs';
@@ -620,6 +630,8 @@ export const usePlatformStore = defineStore('platform', {
       hasMore: boolean;
       total: number;
       error?: string;
+      fallbackUsed?: boolean;
+      actualTab?: 'streams' | 'videos';
     }> {
       try {
         // Construct URL with /livestreams or /videos path based on tab
@@ -627,8 +639,9 @@ export const usePlatformStore = defineStore('platform', {
         
         // If it's already a full URL, extract the base and reconstruct with the correct path
         if (channelName.includes('rumble.com/')) {
-          // Extract base channel URL and add the appropriate path
-          const baseUrl = channelName.split(/\/(livestreams|videos)/)[0];
+          // Strip query string before appending path, then remove any existing /livestreams or /videos suffix
+          const withoutQuery = channelName.split('?')[0];
+          const baseUrl = withoutQuery.split(/\/(livestreams|videos)/)[0];
           urlToFetch = `${baseUrl}/${tab === 'streams' ? 'livestreams' : 'videos'}`;
         } else {
           // Construct URL from channel name
@@ -644,11 +657,30 @@ export const usePlatformStore = defineStore('platform', {
         // Filter VODs based on tab selection using was_live field
         // Note: Rumble's /livestreams and /videos URLs return the same content,
         // so we must filter client-side based on the was_live field from yt-dlp
-        const filteredVods = tab === 'streams' 
+        let filteredVods = tab === 'streams' 
           ? vods.filter(vod => vod.isLive)  // isLive = is_live || was_live from backend
           : vods.filter(vod => !vod.isLive);
         
         console.log('[Platform Store] Filtered', filteredVods.length, 'out of', vods.length, 'VODs for tab:', tab);
+        
+        let fallbackUsed = false;
+        let actualTab = tab;
+        
+        // If no results after filtering, try the other tab
+        if (filteredVods.length === 0 && vods.length > 0) {
+          const fallbackTab = tab === 'streams' ? 'videos' : 'streams';
+          console.log('[Platform Store] No results in', tab, 'tab, trying', fallbackTab, 'tab');
+          filteredVods = fallbackTab === 'streams'
+            ? vods.filter(vod => vod.isLive)
+            : vods.filter(vod => !vod.isLive);
+          console.log('[Platform Store] Fallback filtered', filteredVods.length, 'VODs');
+          
+          if (filteredVods.length > 0) {
+            fallbackUsed = true;
+            actualTab = fallbackTab;
+          }
+        }
+        
         const clips: PlatformClip[] = filteredVods.map((vod: RumbleVod) => {
           // upload_date from yt-dlp is YYYYMMDD — convert to ISO
           let createdAt: string | undefined;
@@ -680,6 +712,8 @@ export const usePlatformStore = defineStore('platform', {
           clips,
           hasMore: clips.length >= limit,
           total: clips.length,
+          fallbackUsed,
+          actualTab,
         };
       } catch (error) {
         return {
@@ -699,15 +733,38 @@ export const usePlatformStore = defineStore('platform', {
       hasMore: boolean;
       total: number;
       error?: string;
+      fallbackUsed?: boolean;
+      actualTab?: 'streams' | 'videos';
     }> {
       try {
         console.log('[Platform Store] getYouTubeClips - channelId:', channelId, 'tab:', tab);
         // Import getYouTubeVideos dynamically
         const { getYouTubeVideos } = await import('@/services/youtube');
-        const vods = tab === 'videos' 
+        
+        // Try primary tab first
+        let vods = tab === 'videos' 
           ? await getYouTubeVideos(channelId, limit)
           : await getYouTubeVods(channelId, limit);
         console.log('[Platform Store] Fetched', vods.length, tab === 'videos' ? 'videos' : 'streams');
+        
+        let fallbackUsed = false;
+        let actualTab = tab;
+        
+        // If no results, automatically try the other tab
+        if (vods.length === 0) {
+          const fallbackTab = tab === 'streams' ? 'videos' : 'streams';
+          console.log('[Platform Store] No results in', tab, 'tab, trying', fallbackTab, 'tab');
+          vods = fallbackTab === 'videos'
+            ? await getYouTubeVideos(channelId, limit)
+            : await getYouTubeVods(channelId, limit);
+          console.log('[Platform Store] Fallback fetched', vods.length, fallbackTab);
+          
+          if (vods.length > 0) {
+            fallbackUsed = true;
+            actualTab = fallbackTab;
+          }
+        }
+        
         const clips: PlatformClip[] = vods.map((vod: YouTubeVod, index: number) => {
           // Log first item to debug date fields
           if (index === 0) {
@@ -756,6 +813,8 @@ export const usePlatformStore = defineStore('platform', {
           clips,
           hasMore: clips.length >= limit,
           total: clips.length,
+          fallbackUsed,
+          actualTab,
         };
       } catch (error) {
         return {
@@ -775,6 +834,7 @@ export const usePlatformStore = defineStore('platform', {
       hasMore: boolean;
       total: number;
       error?: string;
+      warning?: string;
     }> {
       try {
         // Validate the URL
@@ -796,6 +856,13 @@ export const usePlatformStore = defineStore('platform', {
         const metadata = await getTwitterBroadcastInfo(validatedUrl);
         console.log('[Platform] Twitter metadata received:', metadata);
 
+        // Check if metadata fetch failed but we still have the URL
+        let warning: string | undefined;
+        if (metadata.error) {
+          warning = `Could not fetch broadcast details: ${metadata.error}. You can still download the VOD, but duration and thumbnail may not be available.`;
+          console.warn('[Platform] Twitter metadata fetch failed:', metadata.error);
+        }
+
         // For Twitter, we return a single "clip" representing the broadcast/space
         const clip: PlatformClip = {
           clipId: broadcastId,
@@ -805,18 +872,18 @@ export const usePlatformStore = defineStore('platform', {
           playlistUrl: validatedUrl,
           mp4Url: validatedUrl,
           clipType: 'COMPLETE' as const,
-          createdAt: new Date().toISOString(),
+          createdAt: metadata.timestamp || new Date().toISOString(), // Use actual broadcast timestamp, fallback to current date
           uploader: metadata.username || metadata.uploader,
         };
         
         // Add to recent searches with avatar
         // Store the full URL as both id and displayText so clicking works correctly
-        if (metadata.username) {
+        if (metadata.username || broadcastId) {
           this.addToRecentSearches(
             validatedUrl,
             validatedUrl, // displayText is the URL for searching
             'twitter',
-            metadata.username, // label is the username shown below avatar
+            metadata.username || broadcastId, // label is the username shown below avatar
             {
               name: metadata.title || `X Broadcast ${broadcastId}`, // name is the title shown in bold
               imageUrl: metadata.avatarUrl,
@@ -829,6 +896,7 @@ export const usePlatformStore = defineStore('platform', {
           clips: [clip],
           hasMore: false,
           total: 1,
+          warning,
         };
       } catch (error) {
         return {
