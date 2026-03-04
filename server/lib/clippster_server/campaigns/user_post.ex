@@ -100,6 +100,14 @@ defmodule ClippsterServer.Campaigns.UserPost do
     |> validate_inclusion(:status, @statuses)
   end
 
+  @doc """
+  Changeset for updating post fields like post_url.
+  """
+  def update_changeset(post, attrs) do
+    post
+    |> cast(attrs, [:post_url, :provider_post_id, :caption, :media_url, :thumbnail_url])
+  end
+
   def platforms, do: @known_platforms
 
   # Private functions
