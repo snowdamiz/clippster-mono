@@ -126,6 +126,7 @@
   }
 
   const aspectRatios: AspectRatio[] = [
+    { id: '16:9', label: '16:9 (Landscape)' },
     { id: '9:16', label: '9:16 (Portrait)' },
     { id: '1:1', label: '1:1 (Square)' },
     { id: '4:5', label: '4:5 (Portrait)' },
@@ -146,9 +147,10 @@
   const { success, error: showError } = useToast();
 
   // State
-  const activeRatio = ref<AspectRatioId>('9:16');
+  const activeRatio = ref<AspectRatioId>('16:9');
   const uploadingRatio = ref<AspectRatioId | null>(null);
   const ratioAssets = ref<Record<AspectRatioId, RatioAssetInfo | null>>({
+    '16:9': null,
     '9:16': null,
     '1:1': null,
     '4:5': null,
@@ -157,6 +159,7 @@
   // Fixed pixel dimensions for each ratio preview icon
   const ratioPreviewStyle = (ratioId: AspectRatioId): Record<string, string> => {
     switch (ratioId) {
+      case '16:9': return { width: '32px', height: '18px' };
       case '9:16': return { width: '18px', height: '32px' };
       case '1:1':  return { width: '28px', height: '28px' };
       case '4:5':  return { width: '24px', height: '30px' };
@@ -269,6 +272,7 @@
 
   const save = () => {
     const settings: RatioAssetMap = {
+      '16:9': ratioAssets.value['16:9'] ? { assetId: ratioAssets.value['16:9']!.assetId } : null,
       '9:16': ratioAssets.value['9:16'] ? { assetId: ratioAssets.value['9:16']!.assetId } : null,
       '1:1': ratioAssets.value['1:1'] ? { assetId: ratioAssets.value['1:1']!.assetId } : null,
       '4:5': ratioAssets.value['4:5'] ? { assetId: ratioAssets.value['4:5']!.assetId } : null,
@@ -280,7 +284,7 @@
 
   const initializeFromProps = async () => {
     // Reset all
-    ratioAssets.value = { '9:16': null, '1:1': null, '4:5': null };
+    ratioAssets.value = { '16:9': null, '9:16': null, '1:1': null, '4:5': null };
 
     if (!props.initialSettings) return;
 
@@ -304,7 +308,7 @@
   // Watch for show prop
   watch(() => props.show, (show) => {
     if (show) {
-      activeRatio.value = '9:16';
+      activeRatio.value = '16:9';
       uploadingRatio.value = null;
       initializeFromProps();
     }

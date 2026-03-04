@@ -7,13 +7,16 @@ import type { WatermarkSettings, IntroOutroRef } from '@/types';
 /**
  * Admin-configured branding for free tier users.
  * Fetched from server app_settings and cached locally.
+ * Server resolves org-asset-{id} references into presigned download URLs.
  */
-interface FreeTierBranding {
+export interface FreeTierBranding {
   watermark_id: string | null;
   watermark_settings: any | null; // Per-ratio position settings (like creator profiles)
-  watermark_url: string | null;
+  watermark_url: string | null; // Presigned download URL (resolved by server)
   intro: IntroOutroRef | null;
   outro: IntroOutroRef | null;
+  intro_settings: Record<string, { assetId: string; url?: string } | null> | null;
+  outro_settings: Record<string, { assetId: string; url?: string } | null> | null;
   intro_ratio_settings: string | null;
   outro_ratio_settings: string | null;
   layout_overlays: any[] | null;
@@ -21,7 +24,10 @@ interface FreeTierBranding {
 
 const cachedBranding = ref<FreeTierBranding | null>(null);
 const loading = ref(false);
-const fetched = ref(false);
+const fetchedAt = ref<number>(0);
+
+// Cache TTL: 5 minutes — ensures admin changes propagate reasonably fast
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * Composable for fetching and applying admin-configured free tier branding.
@@ -39,9 +45,10 @@ export function useFreeTierBranding() {
     return !status || status === 'none' || status === 'expired';
   });
 
-  /** Fetch free tier branding from server (cached after first fetch) */
+  /** Fetch free tier branding from server (cached with TTL) */
   async function fetchBranding(): Promise<FreeTierBranding | null> {
-    if (fetched.value && cachedBranding.value !== undefined) {
+    const now = Date.now();
+    if (fetchedAt.value > 0 && now - fetchedAt.value < CACHE_TTL_MS && cachedBranding.value !== undefined) {
       return cachedBranding.value;
     }
 
@@ -53,12 +60,12 @@ export function useFreeTierBranding() {
       } else {
         cachedBranding.value = null;
       }
-      fetched.value = true;
+      fetchedAt.value = Date.now();
       return cachedBranding.value;
     } catch (err) {
       console.warn('[useFreeTierBranding] Failed to fetch branding:', err);
       cachedBranding.value = null;
-      fetched.value = true;
+      fetchedAt.value = Date.now();
       return null;
     } finally {
       loading.value = false;
@@ -68,7 +75,7 @@ export function useFreeTierBranding() {
   /** Clear cached branding (e.g., when user upgrades) */
   function clearCache() {
     cachedBranding.value = null;
-    fetched.value = false;
+    fetchedAt.value = 0;
   }
 
   /** Get branding if user is free tier, null otherwise */
