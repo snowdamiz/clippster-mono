@@ -3802,6 +3802,17 @@
               height: adminBranding.watermark_settings.height || null,
               per_ratio_settings: adminBranding.watermark_settings.perRatioSettings || null,
             };
+            console.log('[Projects] Applied admin watermark settings:', {
+              enabled: watermarkSettings.enabled,
+              watermark_id: watermarkSettings.watermark_id,
+              file_path: watermarkSettings.file_path,
+              position_x: watermarkSettings.position_x,
+              position_y: watermarkSettings.position_y,
+              opacity: watermarkSettings.opacity,
+              scale: watermarkSettings.scale,
+            });
+          } else {
+            console.warn('[Projects] Failed to resolve watermark file path for ID:', adminBranding.watermark_settings.watermarkId);
           }
         }
         // Override intro/outro with admin versions (nullify user selections)
