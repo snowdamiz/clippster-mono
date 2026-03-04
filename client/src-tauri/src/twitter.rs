@@ -509,9 +509,41 @@ pub async fn get_twitter_broadcast_info(url: String) -> Result<String, String> {
     Ok(stdout.to_string())
 }
 
-/// Get duration for a Twitter broadcast using ffprobe on the m3u8 manifest
+/// Get duration for a Twitter broadcast using yt-dlp + ffprobe
+/// First extracts the direct stream URL using yt-dlp, then uses ffprobe to get duration
 #[tauri::command]
 pub async fn get_twitter_broadcast_duration(_app: tauri::AppHandle, manifest_url: String) -> Result<f64, String> {
+    println!("[Twitter] Getting duration for URL: {}", manifest_url);
+    
+    // Step 1: Use yt-dlp to extract the direct stream URL
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    
+    println!("[Twitter] Extracting stream URL via yt-dlp...");
+    let ytdlp_output = no_window(
+        tokio::process::Command::new(&ytdlp_path)
+            .arg("--get-url")
+            .arg("--no-download")
+            .arg("--no-warnings")
+            .arg("--impersonate").arg("chrome")
+            .arg(&manifest_url)
+    )
+    .output()
+    .await
+    .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+    
+    if !ytdlp_output.status.success() {
+        let stderr = String::from_utf8_lossy(&ytdlp_output.stderr);
+        return Err(format!("yt-dlp failed to extract stream URL: {}", stderr.chars().take(300).collect::<String>()));
+    }
+    
+    let stream_url = String::from_utf8_lossy(&ytdlp_output.stdout).trim().to_string();
+    if stream_url.is_empty() {
+        return Err("yt-dlp returned empty stream URL".to_string());
+    }
+    
+    println!("[Twitter] Got stream URL, probing duration with ffprobe...");
+    
+    // Step 2: Use ffprobe on the direct stream URL
     let ffprobe_path = resolve_sidecar_binary("ffprobe")?;
     
     let mut cmd = tokio::process::Command::new(&ffprobe_path);
@@ -522,7 +554,7 @@ pub async fn get_twitter_broadcast_duration(_app: tauri::AppHandle, manifest_url
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1",
-            &manifest_url
+            &stream_url
         ])
         .output()
         .await
@@ -535,6 +567,8 @@ pub async fn get_twitter_broadcast_duration(_app: tauri::AppHandle, manifest_url
     
     let stdout = String::from_utf8_lossy(&output.stdout);
     let duration_str = stdout.trim();
+    
+    println!("[Twitter] ffprobe duration output: {}", duration_str);
     
     if duration_str.is_empty() || duration_str == "N/A" {
         return Err("Duration not available".to_string());
