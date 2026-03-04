@@ -189,41 +189,57 @@ defmodule ClippsterServerWeb.SubscriptionController do
          {:ok, user} <- get_user(user_id),
          {:ok, tier_info} <- validate_tier(tier) do
       # Validate promo code if provided
-      promo_code_info =
+      # If it's not a promo code, check if it's an affiliate code
+      {promo_code_info, affiliate_code_info} =
         if promo_code do
           case PromoCodes.validate_promo(promo_code, tier, user_id) do
-            {:ok, promo} -> {:ok, promo}
-            error -> error
+            {:ok, promo} -> 
+              {{:ok, promo}, nil}
+            
+            {:error, :invalid_code} ->
+              # Not a promo code - check if it's an affiliate code
+              case ClippsterServer.Affiliates.get_affiliate_by_code(promo_code) do
+                %{status: "active"} = affiliate ->
+                  # Valid affiliate code
+                  {nil, {:ok, affiliate}}
+                
+                _ ->
+                  # Not a valid promo code or affiliate code
+                  {{:error, :invalid_code}, nil}
+              end
+            
+            error -> 
+              {error, nil}
           end
         else
-          nil
+          {nil, nil}
         end
 
-      # Return error if promo code is invalid
+      # Return error if promo code is invalid (and not an affiliate code)
       case promo_code_info do
-        {:error, reason} ->
+        {:error, reason} when is_nil(affiliate_code_info) ->
           error_message =
             case reason do
               :invalid_code ->
-                "Invalid promo code"
+                "Invalid code"
 
               :inactive_code ->
-                "This promo code is not active"
+                "This code is not active"
 
               :expired_code ->
-                "This promo code has expired"
+                "This code has expired"
 
               :tier_not_allowed ->
-                "This promo code is not valid for the selected plan"
+                "This code is not valid for the selected plan"
 
               :max_redemptions_reached ->
-                "This promo code has reached its maximum redemption limit"
+                "This code has reached its maximum redemption limit"
 
               :already_redeemed ->
-                "You have already used this promo code"
+                "You have already used this code"
 
               _ ->
-                "Invalid promo code"
+                "Invalid code"
             end
 
           conn
@@ -320,17 +336,22 @@ defmodule ClippsterServerWeb.SubscriptionController do
       }
 
       # Add promo code to Stripe session if valid
-      # Promo codes take priority over affiliate referral discounts
+      # Promo codes take priority over affiliate codes entered at checkout
       base_session_params =
-        case promo_code_info do
-          {:ok, promo} ->
+        case {promo_code_info, affiliate_code_info} do
+          {{:ok, promo}, _} ->
+            # Valid promo code - apply it
             base_session_params
             |> Map.put(:discounts, [%{promotion_code: promo.stripe_promo_code_id}])
             |> update_in([:metadata], &Map.put(&1, :promo_code_id, promo.id))
             |> update_in([:metadata], &Map.put(&1, :promo_code, promo.code))
 
+          {_, {:ok, affiliate}} ->
+            # Valid affiliate code entered at checkout - apply discount
+            apply_affiliate_code_discount(base_session_params, affiliate, promo_code)
+
           _ ->
-            # No promo code — check if user was referred by an affiliate with a discount
+            # No promo/affiliate code entered — check if user was referred by an affiliate
             apply_affiliate_referral_discount(base_session_params, user)
         end
 
@@ -409,6 +430,75 @@ defmodule ClippsterServerWeb.SubscriptionController do
         conn
         |> put_status(400)
         |> json(%{success: false, error: "Invalid subscription tier"})
+    end
+  end
+
+  # Applies an affiliate code discount when the code is entered at checkout.
+  # Called when user enters an affiliate code in the promo code field.
+  defp apply_affiliate_code_discount(session_params, affiliate, code) do
+    require Logger
+
+    if affiliate.discount_enabled do
+      # Determine Stripe coupon duration and percent based on affiliate discount_type
+      {pct, duration, duration_in_months} =
+        case affiliate.discount_type do
+          "recurring" ->
+            recurring_pct = affiliate.recurring_discount_pct || Decimal.new("0")
+
+            if Decimal.gt?(recurring_pct, Decimal.new("0")) do
+              {recurring_pct, "forever", nil}
+            else
+              {Decimal.new("0"), "once", nil}
+            end
+
+          "tiered" ->
+            first_pct = affiliate.first_month_discount_pct || Decimal.new("0")
+            {first_pct, "once", nil}
+
+          _ ->
+            first_pct = affiliate.first_month_discount_pct || Decimal.new("0")
+            {first_pct, "once", nil}
+        end
+
+      if Decimal.gt?(pct, Decimal.new("0")) do
+        pct_int = pct |> Decimal.round(0) |> Decimal.to_integer()
+
+        coupon_params =
+          %{
+            percent_off: pct_int,
+            duration: duration,
+            name: "Affiliate Code Discount (#{pct_int}%)"
+          }
+          |> then(fn p ->
+            if duration_in_months,
+              do: Map.put(p, :duration_in_months, duration_in_months),
+              else: p
+          end)
+
+        case Stripe.Coupon.create(coupon_params) do
+          {:ok, coupon} ->
+            Logger.info(
+              "[Affiliates] Applied #{pct_int}% affiliate code discount (#{code}) - coupon #{coupon.id}"
+            )
+
+            session_params
+            |> Map.put(:discounts, [%{coupon: coupon.id}])
+            |> update_in([:metadata], &Map.put(&1, :affiliate_code, code))
+
+          {:error, reason} ->
+            Logger.error(
+              "[Affiliates] Failed to create affiliate code discount coupon: #{inspect(reason)}"
+            )
+
+            session_params
+        end
+      else
+        # No discount configured, but code is still valid for tracking
+        update_in(session_params, [:metadata], &Map.put(&1, :affiliate_code, code))
+      end
+    else
+      # Discount not enabled, but code is still valid for tracking
+      update_in(session_params, [:metadata], &Map.put(&1, :affiliate_code, code))
     end
   end
 

@@ -456,9 +456,9 @@ pub async fn extract_and_chunk_audio(
     // Reset cancellation flag at the start of a new extraction
     AUDIO_EXTRACTION_CANCELLED.store(false, Ordering::SeqCst);
 
-    // Allow higher concurrency since each chunk extraction is I/O-bound (fast seeking).
-    // With -ss before -i, each FFmpeg process starts near-instantly.
-    let concurrency: usize = 6;
+    // Limit concurrent FFmpeg processes to avoid saturating CPU on lower-end machines.
+    // 3 concurrent processes gives a good speedup (3x) without destroying performance.
+    let concurrency: usize = 3;
     println!(
         "[Rust] Extracting {} chunks with concurrency={}",
         chunk_specs.len(),
