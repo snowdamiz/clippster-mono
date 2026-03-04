@@ -2671,6 +2671,81 @@
         }
       }
 
+      // Free tier branding override: replace user assets with admin-configured branding
+      const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
+      const { getBrandingIfFreeTier } = useFreeTierBranding();
+      const adminBranding = await getBrandingIfFreeTier();
+      if (adminBranding) {
+        console.log('[ClipsTab] Free tier user detected, applying admin branding');
+        
+        // Override watermark with admin watermark
+        if (adminBranding.watermark_settings) {
+          watermarkSettings = adminBranding.watermark_settings;
+          console.log('[ClipsTab] Applied admin watermark settings');
+        }
+        
+        // Override intro/outro with admin versions
+        if (adminBranding.intro) {
+          introPath = adminBranding.intro.file_path || null;
+          introDuration = adminBranding.intro.duration || null;
+          console.log('[ClipsTab] Applied admin intro:', adminBranding.intro.name);
+        } else {
+          introPath = null;
+          introDuration = null;
+        }
+        
+        if (adminBranding.outro) {
+          outroPath = adminBranding.outro.file_path || null;
+          outroDuration = adminBranding.outro.duration || null;
+          console.log('[ClipsTab] Applied admin outro:', adminBranding.outro.name);
+        } else {
+          outroPath = null;
+          outroDuration = null;
+        }
+        
+        // Override per-ratio intro/outro with admin settings if configured
+        if (adminBranding.intro_ratio_settings || adminBranding.outro_ratio_settings) {
+          const adminIntroRatios = adminBranding.intro_ratio_settings 
+            ? JSON.parse(adminBranding.intro_ratio_settings) 
+            : {};
+          const adminOutroRatios = adminBranding.outro_ratio_settings 
+            ? JSON.parse(adminBranding.outro_ratio_settings) 
+            : {};
+          
+          // Clear user-configured per-ratio settings
+          Object.keys(introOutroPerRatio).forEach(key => delete introOutroPerRatio[key]);
+          
+          // Apply admin per-ratio settings for selected aspect ratios
+          for (const ratio of settings.aspectRatios) {
+            const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
+            
+            if (adminIntroRatios[ratio]?.assetId) {
+              const introResolved = await resolveIntroOutroById(adminIntroRatios[ratio].assetId);
+              if (introResolved) {
+                ratioData.introPath = introResolved.filePath || undefined;
+                ratioData.introDuration = introResolved.duration || undefined;
+                console.log(`[ClipsTab] Applied admin intro for ${ratio}`);
+              }
+            }
+            
+            if (adminOutroRatios[ratio]?.assetId) {
+              const outroResolved = await resolveIntroOutroById(adminOutroRatios[ratio].assetId);
+              if (outroResolved) {
+                ratioData.outroPath = outroResolved.filePath || undefined;
+                ratioData.outroDuration = outroResolved.duration || undefined;
+                console.log(`[ClipsTab] Applied admin outro for ${ratio}`);
+              }
+            }
+            
+            if (ratioData.introPath || ratioData.outroPath) {
+              introOutroPerRatio[ratio] = ratioData;
+            }
+          }
+        }
+        
+        console.log('[ClipsTab] Free tier branding applied successfully');
+      }
+
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,

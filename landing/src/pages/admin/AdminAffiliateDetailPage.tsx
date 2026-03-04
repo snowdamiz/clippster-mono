@@ -33,6 +33,10 @@ interface EditFormState {
   solana_usdc_address: string
   paypal_email: string
   notes: string
+  discount_enabled: boolean
+  discount_type: string
+  first_month_discount_pct: number
+  recurring_discount_pct: number
 }
 
 interface PayoutFormState {
@@ -55,6 +59,10 @@ function createEditForm(affiliate: Affiliate): EditFormState {
     solana_usdc_address: affiliate.solana_usdc_address || '',
     paypal_email: affiliate.paypal_email || '',
     notes: affiliate.notes || '',
+    discount_enabled: affiliate.discount_enabled || false,
+    discount_type: affiliate.discount_type || '',
+    first_month_discount_pct: affiliate.first_month_discount_pct || 0,
+    recurring_discount_pct: affiliate.recurring_discount_pct || 0,
   }
 }
 
@@ -137,6 +145,10 @@ export function AdminAffiliateDetailPage() {
         solana_usdc_address: editForm.solana_usdc_address || undefined,
         paypal_email: editForm.paypal_email || undefined,
         notes: editForm.notes || undefined,
+        discount_enabled: editForm.discount_enabled,
+        discount_type: editForm.discount_type || undefined,
+        first_month_discount_pct: editForm.first_month_discount_pct,
+        recurring_discount_pct: editForm.recurring_discount_pct,
       })
       await load()
     } catch (err: any) {
@@ -406,6 +418,120 @@ export function AdminAffiliateDetailPage() {
                 >
                   {saving ? <Loader2 className="inline-block w-3.5 h-3.5 animate-spin mr-1" /> : <Save className="inline-block w-3.5 h-3.5 mr-1" />}
                   Save Settings
+                </button>
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+              <h2 className="m-0 text-sm font-semibold text-white">User Discount Settings</h2>
+              <p className="m-0 mt-1 text-xs text-zinc-500">Configure discounts for users referred by this affiliate.</p>
+
+              <div className="mt-3 grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <label className="text-xs text-zinc-400 flex items-end sm:col-span-3">
+                  <span className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={editForm.discount_enabled}
+                      onChange={(e) =>
+                        setEditForm((prev) =>
+                          prev ? { ...prev, discount_enabled: e.target.checked } : prev,
+                        )
+                      }
+                    />
+                    Enable Discount for Referred Users
+                  </span>
+                </label>
+
+                {editForm.discount_enabled && (
+                  <>
+                    <label className="text-xs text-zinc-400">
+                      Discount Type
+                      <select
+                        value={editForm.discount_type}
+                        onChange={(e) =>
+                          setEditForm((prev) =>
+                            prev ? { ...prev, discount_type: e.target.value } : prev,
+                          )
+                        }
+                        className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
+                      >
+                        <option value="">Select type...</option>
+                        <option value="one_time">One-time (First month only)</option>
+                        <option value="recurring">Recurring (Every month)</option>
+                        <option value="tiered">Tiered (Different first &amp; recurring)</option>
+                      </select>
+                    </label>
+
+                    {(editForm.discount_type === 'one_time' || editForm.discount_type === 'tiered') && (
+                      <label className="text-xs text-zinc-400">
+                        First Month Discount %
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.1}
+                          value={editForm.first_month_discount_pct}
+                          onChange={(e) =>
+                            setEditForm((prev) =>
+                              prev ? { ...prev, first_month_discount_pct: Number(e.target.value) } : prev,
+                            )
+                          }
+                          className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
+                        />
+                      </label>
+                    )}
+
+                    {(editForm.discount_type === 'recurring' || editForm.discount_type === 'tiered') && (
+                      <label className="text-xs text-zinc-400">
+                        Recurring Discount %
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={0.1}
+                          value={editForm.recurring_discount_pct}
+                          onChange={(e) =>
+                            setEditForm((prev) =>
+                              prev ? { ...prev, recurring_discount_pct: Number(e.target.value) } : prev,
+                            )
+                          }
+                          className="mt-1 w-full h-9 px-3 rounded-md border border-zinc-700 bg-[#0a0a0b] text-sm text-zinc-200"
+                        />
+                      </label>
+                    )}
+
+                    {editForm.discount_type && (
+                      <div className="sm:col-span-3 rounded-lg border border-zinc-800 bg-[#0c0c0f] p-3 text-xs text-zinc-300">
+                        <p className="m-0 font-semibold text-zinc-200 mb-1">Preview</p>
+                        {editForm.discount_type === 'one_time' && (
+                          <>
+                            <p className="m-0">✓ First month: <strong>{editForm.first_month_discount_pct || 0}% off</strong></p>
+                            <p className="m-0">• Subsequent months: <strong>Full price</strong></p>
+                          </>
+                        )}
+                        {editForm.discount_type === 'recurring' && (
+                          <p className="m-0">✓ Every month: <strong>{editForm.recurring_discount_pct || 0}% off</strong></p>
+                        )}
+                        {editForm.discount_type === 'tiered' && (
+                          <>
+                            <p className="m-0">✓ First month: <strong>{editForm.first_month_discount_pct || 0}% off</strong></p>
+                            <p className="m-0">✓ Subsequent months: <strong>{editForm.recurring_discount_pct || 0}% off</strong></p>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="px-3 py-2 rounded-md text-xs font-semibold text-black bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50"
+                >
+                  {saving ? <Loader2 className="inline-block w-3.5 h-3.5 animate-spin mr-1" /> : <Save className="inline-block w-3.5 h-3.5 mr-1" />}
+                  Save Discount Settings
                 </button>
               </div>
             </section>

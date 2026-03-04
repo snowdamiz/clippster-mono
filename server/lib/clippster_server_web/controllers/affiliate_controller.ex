@@ -32,6 +32,16 @@ defmodule ClippsterServerWeb.AffiliateController do
           credit_pack_commission_pct: Decimal.to_float(affiliate.credit_pack_commission_pct),
           payout_method: affiliate.payout_method,
           notes: affiliate.notes,
+          discount_enabled: affiliate.discount_enabled,
+          discount_type: affiliate.discount_type,
+          first_month_discount_pct:
+            if(affiliate.first_month_discount_pct,
+              do: Decimal.to_float(affiliate.first_month_discount_pct)
+            ),
+          recurring_discount_pct:
+            if(affiliate.recurring_discount_pct,
+              do: Decimal.to_float(affiliate.recurring_discount_pct)
+            ),
           stats: %{
             total_referrals: affiliate.stats.total_referrals,
             total_earned: Decimal.to_float(affiliate.stats.total_earned),
@@ -215,6 +225,16 @@ defmodule ClippsterServerWeb.AffiliateController do
             solana_usdc_address: affiliate.solana_usdc_address,
             paypal_email: affiliate.paypal_email,
             notes: affiliate.notes,
+            discount_enabled: affiliate.discount_enabled,
+            discount_type: affiliate.discount_type,
+            first_month_discount_pct:
+              if(affiliate.first_month_discount_pct,
+                do: Decimal.to_float(affiliate.first_month_discount_pct)
+              ),
+            recurring_discount_pct:
+              if(affiliate.recurring_discount_pct,
+                do: Decimal.to_float(affiliate.recurring_discount_pct)
+              ),
             approved_by:
               if(affiliate.approved_by_admin,
                 do: %{
@@ -247,6 +267,10 @@ defmodule ClippsterServerWeb.AffiliateController do
       |> maybe_put(params, "solana_usdc_address", :solana_usdc_address)
       |> maybe_put(params, "paypal_email", :paypal_email)
       |> maybe_put(params, "notes", :notes)
+      |> maybe_put(params, "discount_enabled", :discount_enabled)
+      |> maybe_put(params, "discount_type", :discount_type)
+      |> maybe_put(params, "first_month_discount_pct", :first_month_discount_pct)
+      |> maybe_put(params, "recurring_discount_pct", :recurring_discount_pct)
 
     case Affiliates.update_affiliate(parse_int(id), attrs) do
       {:ok, affiliate} ->
