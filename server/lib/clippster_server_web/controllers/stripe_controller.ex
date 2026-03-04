@@ -286,6 +286,7 @@ defmodule ClippsterServerWeb.StripeController do
     subscription_type = get_metadata_value(metadata, "subscription_type")
     addon_tier = get_metadata_value(metadata, "addon_tier")
     promo_code_id = get_metadata_value(metadata, "promo_code_id")
+    affiliate_code = get_metadata_value(metadata, "affiliate_code")
 
     session_id = safe_get(session, "id")
     payment_intent = safe_get(session, "payment_intent")
@@ -330,7 +331,8 @@ defmodule ClippsterServerWeb.StripeController do
           stripe_customer_id,
           promo_code_id,
           billing_interval,
-          amount_total
+          amount_total,
+          affiliate_code
         )
 
       # Handle credit pack purchase for organization
@@ -679,13 +681,31 @@ defmodule ClippsterServerWeb.StripeController do
          stripe_customer_id,
          promo_code_id,
          billing_interval,
-         amount_total_cents
+         amount_total_cents,
+         affiliate_code
        ) do
     user_id_int = if is_binary(user_id), do: String.to_integer(user_id), else: user_id
 
     IO.puts(
-      "[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, interval=#{billing_interval}, sub_id=#{stripe_subscription_id}, promo_code_id=#{promo_code_id}"
+      "[Stripe Webhook] Creating subscription: user=#{user_id_int}, tier=#{tier}, interval=#{billing_interval}, sub_id=#{stripe_subscription_id}, promo_code_id=#{promo_code_id}, affiliate_code=#{inspect(affiliate_code)}"
     )
+
+    # If an affiliate code was entered at checkout, link the user to that affiliate
+    # so that commission tracking works. This handles the case where the user signed up
+    # without a referral code but entered an affiliate code in the promo field at checkout.
+    if affiliate_code do
+      case Affiliates.link_user_to_affiliate(user_id_int, affiliate_code) do
+        {:ok, affiliate} ->
+          IO.puts(
+            "[Stripe Webhook] Linked user #{user_id_int} to affiliate #{affiliate.id} via checkout code '#{affiliate_code}'"
+          )
+
+        {:error, reason} ->
+          IO.puts(
+            "[Stripe Webhook] Could not link user #{user_id_int} to affiliate code '#{affiliate_code}': #{inspect(reason)}"
+          )
+      end
+    end
 
     case Subscriptions.create_stripe_subscription(
            user_id_int,

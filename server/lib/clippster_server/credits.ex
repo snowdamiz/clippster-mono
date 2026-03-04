@@ -588,6 +588,37 @@ defmodule ClippsterServer.Credits do
   end
 
   @doc """
+  Cancels all active processing jobs of a given type for a project and refunds
+  their credits. Used to refund transcription costs when a subsequent detect
+  step fails with insufficient credits.
+
+  Returns {:ok, total_refunded} where total_refunded is the sum of all credits
+  returned to the user.
+  """
+  def cancel_jobs_by_project_and_type(project_id, user_id, job_type, reason \\ "Subsequent step failed") do
+    jobs =
+      ProcessingJob
+      |> where([j], j.project_id == ^project_id)
+      |> where([j], j.user_id == ^user_id)
+      |> where([j], j.job_type == ^job_type)
+      |> where([j], j.status == "processing")
+      |> Repo.all()
+
+    total_refunded =
+      Enum.reduce(jobs, 0.0, fn job, acc ->
+        case cancel_processing_job(job.id, user_id, reason) do
+          {:ok, %{refunded: amount}} ->
+            acc + Decimal.to_float(amount)
+
+          _ ->
+            acc
+        end
+      end)
+
+    {:ok, total_refunded}
+  end
+
+  @doc """
   Marks a processing job as completed.
   """
   def complete_processing_job(job_id, result_data \\ nil) do

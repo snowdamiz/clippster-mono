@@ -241,7 +241,6 @@
         watermarkSettings.value = {
           ...getDefaultWatermarkSettings(),
           ...parsed,
-          enabled: false, // Always start with watermark preview off
         };
         emit('watermarkSettingsChanged', watermarkSettings.value);
       }

@@ -186,16 +186,37 @@ defmodule ClippsterServerWeb.ClipsController do
                       "[ClipsController] Insufficient credits: have #{Float.round(remaining, 3)}, need #{Float.round(needed, 3)}"
                     )
 
+                    # Refund any transcription credits already charged for this project
+                    # so the user is not billed for transcription when detection cannot proceed
+                    {:ok, refunded} =
+                      Credits.cancel_jobs_by_project_and_type(
+                        project_id,
+                        user_id,
+                        "transcription",
+                        "Detection step had insufficient credits"
+                      )
+
+                    IO.puts(
+                      "[ClipsController] Refunded #{Float.round(refunded, 3)} transcription credits for project #{project_id}"
+                    )
+
+                    details_msg =
+                      if refunded > 0 do
+                        "You have #{Float.round(remaining + refunded, 3)} credits remaining (#{Float.round(refunded, 3)} transcription credits refunded), but #{Float.round(needed, 3)} credits are required for detection."
+                      else
+                        "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation."
+                      end
+
                     {:halt,
                      conn
                      |> put_status(402)
                      |> json(%{
                        success: false,
                        error: "Insufficient credits",
-                       details:
-                         "You have #{Float.round(remaining, 3)} credits remaining, but #{Float.round(needed, 3)} credits are required for this operation.",
+                       details: details_msg,
                        credits_required: needed,
-                       credits_remaining: remaining
+                       credits_remaining: remaining + refunded,
+                       credits_refunded: refunded
                      })}
 
                   {:error, :not_a_member, details} ->
