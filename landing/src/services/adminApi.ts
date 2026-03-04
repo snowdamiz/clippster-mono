@@ -331,6 +331,10 @@ export interface Affiliate {
   solana_usdc_address?: string | null
   paypal_email?: string | null
   notes: string | null
+  discount_enabled?: boolean
+  discount_type?: string | null
+  first_month_discount_pct?: number | null
+  recurring_discount_pct?: number | null
   stats?: {
     total_referrals: number
     total_earned: number
@@ -1042,6 +1046,10 @@ export async function updateAffiliate(
     solana_usdc_address: string
     paypal_email: string
     notes: string
+    discount_enabled: boolean
+    discount_type: string
+    first_month_discount_pct: number
+    recurring_discount_pct: number
   }>,
 ) {
   return assertSuccess(

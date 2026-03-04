@@ -380,59 +380,63 @@ defmodule ClippsterServerWeb.SubscriptionController do
 
     with affiliate_id when not is_nil(affiliate_id) <- user.referred_by_affiliate_id,
          %{status: "active", discount_enabled: true} = affiliate <-
-           Affiliates.get_affiliate(affiliate_id),
-         pct when not is_nil(pct) <- affiliate.first_month_discount_pct,
-         true <- Decimal.gt?(pct, Decimal.new("0")) do
-      # Determine Stripe coupon duration based on affiliate discount_type
-      {duration, duration_in_months} =
+           Affiliates.get_affiliate(affiliate_id) do
+      # Determine Stripe coupon duration and percent based on affiliate discount_type
+      {pct, duration, duration_in_months} =
         case affiliate.discount_type do
           "recurring" ->
             recurring_pct = affiliate.recurring_discount_pct || Decimal.new("0")
 
             if Decimal.gt?(recurring_pct, Decimal.new("0")) do
-              # Use recurring_discount_pct for ongoing discount
-              {"forever", nil}
+              {recurring_pct, "forever", nil}
             else
-              {"once", nil}
+              {Decimal.new("0"), "once", nil}
             end
 
           "tiered" ->
-            # First month at first_month_discount_pct, then recurring_discount_pct
-            # We apply first_month here; Stripe doesn't support tiered natively,
-            # so we use "once" for the first month only
-            {"once", nil}
+            # First month at first_month_discount_pct; Stripe doesn't support
+            # tiered natively, so we use "once" for the first month only
+            first_pct = affiliate.first_month_discount_pct || Decimal.new("0")
+            {first_pct, "once", nil}
 
           _ ->
             # "one_time" or nil — discount applies to first payment only
-            {"once", nil}
+            first_pct = affiliate.first_month_discount_pct || Decimal.new("0")
+            {first_pct, "once", nil}
         end
 
-      pct_int = pct |> Decimal.round(0) |> Decimal.to_integer()
+      if Decimal.gt?(pct, Decimal.new("0")) do
+        pct_int = pct |> Decimal.round(0) |> Decimal.to_integer()
 
-      coupon_params =
-        %{
-          percent_off: pct_int,
-          duration: duration,
-          name: "Affiliate Referral Discount (#{pct_int}%)"
-        }
-        |> then(fn p ->
-          if duration_in_months, do: Map.put(p, :duration_in_months, duration_in_months), else: p
-        end)
+        coupon_params =
+          %{
+            percent_off: pct_int,
+            duration: duration,
+            name: "Affiliate Referral Discount (#{pct_int}%)"
+          }
+          |> then(fn p ->
+            if duration_in_months,
+              do: Map.put(p, :duration_in_months, duration_in_months),
+              else: p
+          end)
 
-      case Stripe.Coupon.create(coupon_params) do
-        {:ok, coupon} ->
-          Logger.info(
-            "[Affiliates] Applied #{pct_int}% referral discount coupon #{coupon.id} for user #{user.id} (affiliate #{affiliate_id})"
-          )
+        case Stripe.Coupon.create(coupon_params) do
+          {:ok, coupon} ->
+            Logger.info(
+              "[Affiliates] Applied #{pct_int}% referral discount coupon #{coupon.id} for user #{user.id} (affiliate #{affiliate_id})"
+            )
 
-          Map.put(session_params, :discounts, [%{coupon: coupon.id}])
+            Map.put(session_params, :discounts, [%{coupon: coupon.id}])
 
-        {:error, reason} ->
-          Logger.error(
-            "[Affiliates] Failed to create referral discount coupon: #{inspect(reason)}"
-          )
+          {:error, reason} ->
+            Logger.error(
+              "[Affiliates] Failed to create referral discount coupon: #{inspect(reason)}"
+            )
 
-          session_params
+            session_params
+        end
+      else
+        session_params
       end
     else
       _ -> session_params
