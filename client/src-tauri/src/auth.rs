@@ -230,7 +230,7 @@ fn oauth_result_html(title: &str, message: &str, color: &str) -> String {
 </body>
 </html>"#,
         title, color, message, icon
-    )
+    ))
 }
 
 #[tauri::command]
