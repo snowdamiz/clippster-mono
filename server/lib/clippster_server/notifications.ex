@@ -5,7 +5,6 @@ defmodule ClippsterServer.Notifications do
   import Ecto.Query
   alias ClippsterServer.Repo
   alias ClippsterServer.Notifications.Notification
-  alias ClippsterServer.Accounts.User
 
   @doc """
   Create a notification and broadcast it to the user.

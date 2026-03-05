@@ -785,9 +785,6 @@ defmodule ClippsterServer.Campaigns do
   # Payments
   # ============================================================================
 
-  @doc """
-  Calculate payment amount based on CPM formula.
-  """
   defp calculate_payment_amount(%CampaignSubmission{} = submission, %Campaign{} = campaign) do
     views = submission.view_count
     cpm = Decimal.to_float(campaign.cpm)
@@ -909,9 +906,6 @@ defmodule ClippsterServer.Campaigns do
         # Send in-app notification + email
         updated_payment = Repo.preload(updated_payment, [:campaign, :user])
         ClippsterServer.Notifications.notify_payment_verified(updated_payment)
-
-        ClippsterServer.Emails.payment_verified_email(updated_payment)
-        |> ClippsterServer.Mailer.deliver()
 
         updated_payment
       end)

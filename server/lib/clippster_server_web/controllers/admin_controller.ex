@@ -7,7 +7,6 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.AppSettings
   alias ClippsterServer.BetaCodes
   alias ClippsterServer.{Accounts, Credits, Subscriptions, Organizations, OrganizationSubscriptions}
-  alias ClippsterServer.Analytics
   alias ClippsterServer.Storage
   alias ClippsterServer.PromoCodes
   alias ClippsterServer.ClipperProfiles.LeaderboardWorker
