@@ -67,12 +67,11 @@ export interface Campaign {
   status: 'draft' | 'active' | 'paused' | 'completed';
   starts_at: string | null;
   ends_at: string | null;
-  global_watermarks: Record<string, number> | null;
-  global_intro_id: number | null;
-  global_outro_id: number | null;
-  require_watermark: boolean;
-  require_intro: boolean;
-  require_outro: boolean;
+  branding_profile_id: number | null;
+  payment_model: 'cpm' | 'per_clip';
+  per_clip_amount: string | null;
+  clips_per_profile: number;
+  assigned_streamer_ids: number[];
   inserted_at: string;
   updated_at: string;
   organization?: CampaignOrganization;
@@ -379,6 +378,7 @@ export async function createCampaign(
     creator_profile_id?: number;
     budget?: number;
     cpm?: number;
+    cpm_views?: number;
     min_views_for_payment?: number;
     join_type?: 'open' | 'application_required';
     allowed_platforms?: string[];
@@ -386,6 +386,10 @@ export async function createCampaign(
     status?: string;
     starts_at?: string;
     ends_at?: string;
+    payment_model?: 'cpm' | 'per_clip';
+    per_clip_amount?: number;
+    clips_per_profile?: number;
+    branding_profile_id?: number | null;
   }
 ): Promise<CampaignResponse> {
   const response = await api.post(`/organizations/${organizationId}/campaigns`, data);
@@ -405,6 +409,7 @@ export async function updateCampaign(
     creator_profile_id: number;
     budget: number;
     cpm: number;
+    cpm_views: number;
     min_views_for_payment: number;
     join_type: 'open' | 'application_required';
     allowed_platforms: string[];
@@ -412,6 +417,10 @@ export async function updateCampaign(
     status: string;
     starts_at: string;
     ends_at: string;
+    payment_model: 'cpm' | 'per_clip';
+    per_clip_amount: number;
+    clips_per_profile: number;
+    branding_profile_id: number | null;
   }>
 ): Promise<CampaignResponse> {
   const response = await api.put(`/organizations/${organizationId}/campaigns/${campaignId}`, data);

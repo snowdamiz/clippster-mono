@@ -288,7 +288,11 @@ defmodule ClippsterServerWeb.CampaignController do
           global_watermarks: Map.get(params, "global_watermarks"),
           require_watermark: Map.get(params, "require_watermark"),
           require_intro: Map.get(params, "require_intro"),
-          require_outro: Map.get(params, "require_outro")
+          require_outro: Map.get(params, "require_outro"),
+          payment_model: Map.get(params, "payment_model", "cpm"),
+          per_clip_amount: Map.get(params, "per_clip_amount"),
+          clips_per_profile: Map.get(params, "clips_per_profile", 5),
+          assigned_streamer_ids: Map.get(params, "assigned_streamer_ids", [])
         }
 
         case Campaigns.create_campaign(organization, attrs, user) do
@@ -338,7 +342,11 @@ defmodule ClippsterServerWeb.CampaignController do
           "global_outro_id",
           "require_watermark",
           "require_intro",
-          "require_outro"
+          "require_outro",
+          "payment_model",
+          "per_clip_amount",
+          "clips_per_profile",
+          "assigned_streamer_ids"
         ])
         |> maybe_add_dates(params)
         |> maybe_strip_cover_image_url()
@@ -973,6 +981,7 @@ defmodule ClippsterServerWeb.CampaignController do
       budget: campaign.budget,
       spent: campaign.spent,
       cpm: campaign.cpm,
+      cpm_views: campaign.cpm_views,
       min_views_for_payment: campaign.min_views_for_payment,
       join_type: campaign.join_type,
       allowed_platforms: campaign.allowed_platforms,
@@ -986,6 +995,10 @@ defmodule ClippsterServerWeb.CampaignController do
       require_watermark: campaign.require_watermark,
       require_intro: campaign.require_intro,
       require_outro: campaign.require_outro,
+      payment_model: campaign.payment_model,
+      per_clip_amount: campaign.per_clip_amount,
+      clips_per_profile: campaign.clips_per_profile,
+      assigned_streamer_ids: campaign.assigned_streamer_ids,
       inserted_at: campaign.inserted_at,
       updated_at: campaign.updated_at,
       organization:
