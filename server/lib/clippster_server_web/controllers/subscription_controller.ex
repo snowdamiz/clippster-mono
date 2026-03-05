@@ -932,7 +932,22 @@ defmodule ClippsterServerWeb.SubscriptionController do
       # Cancel Stripe subscription if active
       if user.subscription_status in ["active"] do
         if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
-          Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true})
+          case Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true}) do
+            {:ok, _} ->
+              IO.puts(
+                "[Subscriptions] Cancelled Stripe subscription for deactivating user #{user_id}"
+              )
+
+            {:error, %Stripe.Error{message: message}} ->
+              IO.puts(
+                "[Subscriptions] Failed to cancel Stripe subscription for deactivating user #{user_id}: #{message}"
+              )
+
+            {:error, reason} ->
+              IO.puts(
+                "[Subscriptions] Failed to cancel Stripe subscription for deactivating user #{user_id}: #{inspect(reason)}"
+              )
+          end
         end
 
         Subscriptions.cancel_subscription(user_id)

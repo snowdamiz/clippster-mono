@@ -304,6 +304,28 @@ defmodule ClippsterServer.Subscriptions do
         Repo.rollback(:not_active)
       end
 
+      # Cancel in Stripe if it's a Stripe subscription
+      if user.stripe_subscription_id && user.subscription_renewal_method == "stripe" do
+        case Stripe.Subscription.update(user.stripe_subscription_id, %{cancel_at_period_end: true}) do
+          {:ok, _} ->
+            IO.puts(
+              "[Subscriptions] Cancelled Stripe subscription #{user.stripe_subscription_id} for user #{user_id}"
+            )
+
+          {:error, %Stripe.Error{message: message}} ->
+            IO.puts(
+              "[Subscriptions] Failed to cancel Stripe subscription for user #{user_id}: #{message}"
+            )
+            # Continue anyway to mark as cancelled in DB
+
+          {:error, reason} ->
+            IO.puts(
+              "[Subscriptions] Failed to cancel Stripe subscription for user #{user_id}: #{inspect(reason)}"
+            )
+            # Continue anyway to mark as cancelled in DB
+        end
+      end
+
       # Update user status to cancelled
       {:ok, updated_user} =
         user
