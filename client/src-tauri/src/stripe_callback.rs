@@ -54,7 +54,7 @@ pub fn start_stripe_callback_server(app: tauri::AppHandle) {
                 let _ = app_handle_success.emit("stripe-payment-complete", result);
 
                 // Return HTML page
-                let html = r#"<!DOCTYPE html>
+                let html = r##"<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -96,7 +96,7 @@ pub fn start_stripe_callback_server(app: tauri::AppHandle) {
     </div>
   </div>
 </body>
-</html>"#;
+</html>"##;
                 warp::reply::html(html)
             });
 
@@ -121,7 +121,7 @@ pub fn start_stripe_callback_server(app: tauri::AppHandle) {
                 let _ = app_handle_cancel.emit("stripe-payment-complete", result);
 
                 // Return HTML page
-                let html = r#"<!DOCTYPE html>
+                let html = r##"<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -163,7 +163,7 @@ pub fn start_stripe_callback_server(app: tauri::AppHandle) {
     </div>
   </div>
 </body>
-</html>"#;
+</html>"##;
                 warp::reply::html(html)
             });
 
