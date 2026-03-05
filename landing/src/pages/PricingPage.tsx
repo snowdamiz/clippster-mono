@@ -311,7 +311,7 @@ const faqs = [
   },
   {
     q: 'What payment methods do you accept?',
-    a: 'We accept all major credit cards through Stripe, and cryptocurrency (SOL) through Phantom wallet integration.'
+    a: 'We accept all major credit cards through Stripe.'
   },
 ]
 

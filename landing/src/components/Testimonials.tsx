@@ -42,7 +42,7 @@ const testimonials = [
     initial: 'E',
     color: '#f59e0b',
     glowColor: 'amber',
-    content: "What sold me was the Solana integration. Sign in with wallet, pay with crypto. No corporate BS. Just pure creator tools.",
+    content: "The clip quality blew me away. I went from spending hours editing to having ready-to-post clips in minutes. Pure creator tools.",
     featured: false,
   },
 ]
