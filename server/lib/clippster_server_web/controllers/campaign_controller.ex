@@ -876,41 +876,34 @@ defmodule ClippsterServerWeb.CampaignController do
   # ============================================================================
 
   @doc """
-  Create a payment for a submission.
+  Calculate payments for all verified submissions in a campaign.
   """
-  def create_payment(
-        conn,
-        %{"organization_id" => _org_id, "submission_id" => submission_id} = params
-      ) do
+  def calculate_payments(conn, %{"organization_id" => org_id, "id" => campaign_id}) do
     user = conn.assigns.current_user
-    amount = Map.get(params, "amount")
 
-    case Campaigns.get_submission(submission_id) do
-      nil ->
-        conn
-        |> put_status(404)
-        |> json(%{success: false, error: "Submission not found"})
+    with campaign when not is_nil(campaign) <- Campaigns.get_campaign(String.to_integer(campaign_id)),
+         true <- campaign.organization_id == String.to_integer(org_id),
+         true <- Organizations.is_member?(org_id, user.id) do
+      case Campaigns.calculate_campaign_payments(campaign, user) do
+        {:ok, payments} ->
+          total_amount =
+            Enum.reduce(payments, Decimal.new(0), fn p, acc ->
+              Decimal.add(acc, p.amount)
+            end)
 
-      submission ->
-        case Campaigns.create_payment(submission, amount, user) do
-          {:ok, payment} ->
-            json(conn, %{success: true, payment: serialize_payment(payment)})
+          json(conn, %{
+            success: true,
+            payments_created: length(payments),
+            total_amount: Decimal.to_string(total_amount)
+          })
 
-          {:error, :unauthorized} ->
-            conn
-            |> put_status(403)
-            |> json(%{success: false, error: "Not authorized"})
-
-          {:error, changeset} ->
-            conn
-            |> put_status(422)
-            |> json(%{success: false, error: format_errors(changeset)})
-        end
-    end
-  end
-
-  @doc """
-  Mark a payment as completed.
+        {:error, reason} ->
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: inspect(reason)})
+      end
+    else
+      _ ->
   """
   def complete_payment(conn, %{"organization_id" => _org_id, "payment_id" => payment_id} = params) do
     user = conn.assigns.current_user

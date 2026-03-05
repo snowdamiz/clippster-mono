@@ -1239,6 +1239,13 @@
                 >
                   Submissions
                 </button>
+                <button
+                  class="campaigns-detail__tab"
+                  :class="{ 'campaigns-detail__tab--active': detailTab === 'payments' }"
+                  @click="detailTab = 'payments'; loadPayments();"
+                >
+                  Payments
+                </button>
               </div>
 
               <!-- Content -->
@@ -1448,6 +1455,72 @@
                         >
                           <DollarSign :size="14" />
                           Pay
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Payments Tab -->
+                <div v-else-if="detailTab === 'payments'" class="campaigns-detail__content">
+                  <div class="campaigns-detail__payments-header">
+                    <button
+                      v-if="isAdmin"
+                      class="campaigns-detail__calculate-btn"
+                      @click="calculatePaymentsAction"
+                      :disabled="calculatingPayments"
+                    >
+                      <Loader2 v-if="calculatingPayments" :size="16" class="spin" />
+                      <Calculator v-else :size="16" />
+                      Calculate Payments
+                    </button>
+                  </div>
+
+                  <div v-if="loadingPayments" class="campaigns-detail__loading">
+                    <Loader2 class="campaigns-dialog__spinner" />
+                  </div>
+                  <div v-else-if="payments.length === 0" class="campaigns-detail__empty">
+                    No payments yet. Calculate payments for verified submissions.
+                  </div>
+                  <div v-else class="campaigns-detail__list">
+                    <div v-for="payment in payments" :key="payment.id" class="campaigns-detail__payment">
+                      <div class="campaigns-detail__payment-info">
+                        <div class="campaigns-detail__payment-header">
+                          <span class="campaigns-detail__payment-user">
+                            {{ payment.user?.display_name || payment.user?.email }}
+                          </span>
+                          <span class="campaigns-detail__payment-amount">${{ payment.amount }}</span>
+                        </div>
+                        <div class="campaigns-detail__payment-meta">
+                          {{ payment.views_at_payment?.toLocaleString() || 0 }} views ·
+                          {{ formatRelativeTime(payment.inserted_at) }}
+                        </div>
+                        <div v-if="payment.verification_notes" class="campaigns-detail__payment-notes">
+                          {{ payment.verification_notes }}
+                        </div>
+                      </div>
+                      <div class="campaigns-detail__payment-actions">
+                        <span
+                          class="campaigns-detail__payment-status"
+                          :class="`campaigns-detail__payment-status--${payment.status}`"
+                        >
+                          {{ payment.status }}
+                        </span>
+                        <button
+                          v-if="isAdmin && payment.status === 'pending'"
+                          class="campaigns-detail__verify-btn"
+                          @click="openVerifyPaymentDialog(payment)"
+                        >
+                          <CheckCircle :size="14" />
+                          Submit Proof
+                        </button>
+                        <button
+                          v-if="payment.verification_screenshot_url"
+                          class="campaigns-detail__action-btn campaigns-detail__action-btn--secondary"
+                          @click="viewScreenshot(payment.verification_screenshot_url)"
+                          title="View proof"
+                        >
+                          <Image :size="14" />
                         </button>
                       </div>
                     </div>
@@ -1680,6 +1753,99 @@
       </Transition>
     </Teleport>
 
+    <!-- Verify Payment Dialog -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="showVerifyPaymentDialog"
+          class="campaigns-dialog__overlay"
+          @click.self="showVerifyPaymentDialog = false"
+          @keydown.esc="showVerifyPaymentDialog = false"
+        >
+          <Transition name="dialog" appear>
+            <div
+              v-if="showVerifyPaymentDialog"
+              class="campaigns-dialog campaigns-dialog--medium"
+              role="dialog"
+              aria-modal="true"
+            >
+              <div class="campaigns-dialog__accent campaigns-dialog__accent--green"></div>
+
+              <!-- Header -->
+              <div class="campaigns-dialog__header">
+                <button
+                  class="campaigns-dialog__close"
+                  @click="showVerifyPaymentDialog = false"
+                  :disabled="verifyingPayment"
+                >
+                  <X :size="18" />
+                </button>
+                <div class="campaigns-dialog__icon campaigns-dialog__icon--green">
+                  <CheckCircle :size="24" />
+                </div>
+                <h2 class="campaigns-dialog__title">Verify Payment</h2>
+                <p class="campaigns-dialog__subtitle">
+                  Submit proof of payment for ${{ selectedPayment?.amount }}
+                </p>
+              </div>
+
+              <!-- Content -->
+              <div class="campaigns-dialog__content">
+                <div class="campaigns-dialog__field">
+                  <label class="campaigns-dialog__label">Screenshot URL</label>
+                  <input
+                    v-model="verificationScreenshotUrl"
+                    type="url"
+                    placeholder="https://..."
+                    class="campaigns-dialog__input"
+                  />
+                  <p class="campaigns-dialog__hint">Upload screenshot to your assets and paste URL here</p>
+                </div>
+
+                <div class="campaigns-dialog__field">
+                  <label class="campaigns-dialog__label">Transaction ID / Notes *</label>
+                  <textarea
+                    v-model="verificationNotes"
+                    placeholder="Enter transaction ID, payment method details, or other notes..."
+                    class="campaigns-dialog__textarea"
+                    rows="3"
+                  ></textarea>
+                </div>
+
+                <div class="campaigns-dialog__field">
+                  <label class="campaigns-dialog__label">Payment Date</label>
+                  <input
+                    v-model="verificationPaymentDate"
+                    type="date"
+                    class="campaigns-dialog__input"
+                  />
+                </div>
+              </div>
+
+              <!-- Footer -->
+              <div class="campaigns-dialog__footer">
+                <button
+                  class="campaigns-dialog__btn campaigns-dialog__btn--secondary"
+                  @click="showVerifyPaymentDialog = false"
+                  :disabled="verifyingPayment"
+                >
+                  Cancel
+                </button>
+                <button
+                  class="campaigns-dialog__btn campaigns-dialog__btn--success"
+                  @click="verifyPaymentAction"
+                  :disabled="verifyingPayment || !verificationNotes"
+                >
+                  <Loader2 v-if="verifyingPayment" class="campaigns-dialog__btn-spinner" />
+                  {{ verifyingPayment ? 'Verifying...' : 'Submit Proof & Notify Clipper' }}
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Watermark Position Picker -->
     <WatermarkPositionPicker
       :show="showWatermarkPositionPicker"
@@ -1724,6 +1890,8 @@
     Clock,
     UserCheck,
     ShieldCheck,
+    Calculator,
+    Image,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import { Badge } from '@/components/ui/badge';
@@ -1765,9 +1933,13 @@
     updateSubmissionViews,
     uploadCampaignCoverImage,
     setCampaignCreatorProfiles,
+    calculateCampaignPayments,
+    listCampaignPayments,
+    verifyPayment,
     type Campaign,
     type CampaignParticipant,
     type CampaignSubmission,
+    type CampaignPayment,
     type CampaignCreatorProfile,
     getPlatformDisplayName,
   } from '@/services/campaignApi';
@@ -1814,6 +1986,17 @@
   const paymentSubmission = ref<CampaignSubmission | null>(null);
   const paymentAmount = ref(0);
   const creatingPayment = ref(false);
+
+  // Payments
+  const payments = ref<CampaignPayment[]>([]);
+  const loadingPayments = ref(false);
+  const calculatingPayments = ref(false);
+  const showVerifyPaymentDialog = ref(false);
+  const selectedPayment = ref<CampaignPayment | null>(null);
+  const verificationScreenshotUrl = ref('');
+  const verificationNotes = ref('');
+  const verificationPaymentDate = ref('');
+  const verifyingPayment = ref(false);
 
   // Update views
   const viewsSubmission = ref<CampaignSubmission | null>(null);
@@ -2385,7 +2568,7 @@
 
     loadingSubmissions.value = true;
     try {
-      const response = await listCampaignSubmissions(Number(props.organizationId), Number(selectedCampaign.value.id));
+      const response = await listCampaignSubmissions(Number(props.organizationId), selectedCampaign.value.id);
       if (response.success) {
         submissions.value = response.submissions;
       }
@@ -2394,6 +2577,83 @@
     } finally {
       loadingSubmissions.value = false;
     }
+  };
+
+  const loadPayments = async () => {
+    if (!selectedCampaign.value) return;
+
+    loadingPayments.value = true;
+    try {
+      const response = await listCampaignPayments(Number(props.organizationId), selectedCampaign.value.id);
+      if (response.success) {
+        payments.value = response.payments;
+      }
+    } catch (error) {
+      console.error('Failed to load payments:', error);
+    } finally {
+      loadingPayments.value = false;
+    }
+  };
+
+  const calculatePaymentsAction = async () => {
+    if (!selectedCampaign.value) return;
+
+    calculatingPayments.value = true;
+    try {
+      const response = await calculateCampaignPayments(Number(props.organizationId), selectedCampaign.value.id);
+      if (response.success) {
+        toast({
+          title: 'Success',
+          description: `Created ${response.payments_created} payments totaling $${response.total_amount}`,
+        });
+        await loadPayments();
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to calculate payments', type: 'error' });
+      }
+    } catch (error) {
+      console.error('Failed to calculate payments:', error);
+      toast({ title: 'Error', description: 'Failed to calculate payments', type: 'error' });
+    } finally {
+      calculatingPayments.value = false;
+    }
+  };
+
+  const openVerifyPaymentDialog = (payment: CampaignPayment) => {
+    selectedPayment.value = payment;
+    verificationScreenshotUrl.value = '';
+    verificationNotes.value = '';
+    verificationPaymentDate.value = new Date().toISOString().split('T')[0];
+    showVerifyPaymentDialog.value = true;
+  };
+
+  const verifyPaymentAction = async () => {
+    if (!selectedPayment.value) return;
+
+    verifyingPayment.value = true;
+    try {
+      const response = await verifyPayment(Number(props.organizationId), selectedPayment.value.id, {
+        screenshot_url: verificationScreenshotUrl.value,
+        notes: verificationNotes.value,
+        payment_date: verificationPaymentDate.value,
+      });
+
+      if (response.success) {
+        toast({ title: 'Success', description: 'Payment verified and clipper notified' });
+        showVerifyPaymentDialog.value = false;
+        await loadPayments();
+      } else {
+        toast({ title: 'Error', description: response.error || 'Failed to verify payment', type: 'error' });
+      }
+    } catch (error) {
+      console.error('Failed to verify payment:', error);
+      toast({ title: 'Error', description: 'Failed to verify payment', type: 'error' });
+    } finally {
+      verifyingPayment.value = false;
+    }
+  };
+
+  const viewScreenshot = (url: string) => {
+    window.open(url, '_blank');
   };
 
   const confirmDeleteCampaign = (campaign: Campaign) => {

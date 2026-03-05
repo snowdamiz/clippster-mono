@@ -332,12 +332,19 @@ defmodule ClippsterServer.Campaigns do
           |> Repo.update()
 
         # Grant profile access if campaign has a creator profile
-        if campaign.creator_profile_id do
-          {:ok, participant} = grant_profile_access(participant, campaign, approver.id)
-          participant
-        else
-          participant
-        end
+        participant =
+          if campaign.creator_profile_id do
+            {:ok, participant} = grant_profile_access(participant, campaign, approver.id)
+            participant
+          else
+            participant
+          end
+
+        # Send notification
+        participant = Repo.preload(participant, [:campaign, :user])
+        ClippsterServer.Notifications.notify_campaign_approved(participant)
+
+        participant
       end)
     else
       {:error, :unauthorized}
@@ -351,9 +358,18 @@ defmodule ClippsterServer.Campaigns do
     campaign = get_campaign(participant.campaign_id)
 
     if Organizations.is_admin?(campaign.organization_id, rejector.id) do
-      participant
-      |> CampaignParticipant.reject_changeset()
-      |> Repo.update()
+      case participant
+           |> CampaignParticipant.reject_changeset()
+           |> Repo.update() do
+        {:ok, updated_participant} ->
+          # Send notification
+          updated_participant = Repo.preload(updated_participant, [:campaign, :user])
+          ClippsterServer.Notifications.notify_campaign_rejected(updated_participant)
+          {:ok, updated_participant}
+
+        error ->
+          error
+      end
     else
       {:error, :unauthorized}
     end
@@ -637,9 +653,18 @@ defmodule ClippsterServer.Campaigns do
     campaign = get_campaign(submission.campaign_id)
 
     if Organizations.is_admin?(campaign.organization_id, verifier.id) do
-      submission
-      |> CampaignSubmission.verify_changeset(%{verified_by_user_id: verifier.id})
-      |> Repo.update()
+      case submission
+           |> CampaignSubmission.verify_changeset(%{verified_by_user_id: verifier.id})
+           |> Repo.update() do
+        {:ok, updated_submission} ->
+          # Send notification
+          updated_submission = Repo.preload(updated_submission, [:campaign, :user])
+          ClippsterServer.Notifications.notify_submission_verified(updated_submission)
+          {:ok, updated_submission}
+
+        error ->
+          error
+      end
     else
       {:error, :unauthorized}
     end
@@ -648,16 +673,22 @@ defmodule ClippsterServer.Campaigns do
   @doc """
   Rejects a submission.
   """
-  def reject_submission(%CampaignSubmission{} = submission, reason, %User{} = rejector) do
+  def reject_submission(%CampaignSubmission{} = submission, reason, %User{} = verifier) do
     campaign = get_campaign(submission.campaign_id)
 
-    if Organizations.is_admin?(campaign.organization_id, rejector.id) do
-      submission
-      |> CampaignSubmission.reject_changeset(%{
-        rejection_reason: reason,
-        verified_by_user_id: rejector.id
-      })
-      |> Repo.update()
+    if Organizations.is_admin?(campaign.organization_id, verifier.id) do
+      case submission
+           |> CampaignSubmission.reject_changeset(%{rejection_reason: reason})
+           |> Repo.update() do
+        {:ok, updated_submission} ->
+          # Send notification
+          updated_submission = Repo.preload(updated_submission, [:campaign, :user])
+          ClippsterServer.Notifications.notify_submission_rejected(updated_submission, reason)
+          {:ok, updated_submission}
+
+        error ->
+          error
+      end
     else
       {:error, :unauthorized}
     end
@@ -755,6 +786,70 @@ defmodule ClippsterServer.Campaigns do
   # ============================================================================
 
   @doc """
+  Calculate payment amount based on CPM formula.
+  """
+  defp calculate_payment_amount(%CampaignSubmission{} = submission, %Campaign{} = campaign) do
+    views = submission.view_count
+    cpm = Decimal.to_float(campaign.cpm)
+    cpm_views = campaign.cpm_views || 1000
+
+    amount = (views / cpm_views) * cpm
+    Decimal.from_float(amount) |> Decimal.round(2)
+  end
+
+  @doc """
+  Calculate and create pending payments for all verified submissions.
+  Only creates payments for submissions that:
+  - Have status 'verified'
+  - Meet minimum view threshold
+  - Don't already have a payment record
+  """
+  def calculate_campaign_payments(%Campaign{} = campaign, %User{} = creator) do
+    if Organizations.is_admin?(campaign.organization_id, creator.id) do
+      Repo.transaction(fn ->
+        # Get eligible submissions
+        submissions =
+          from(s in CampaignSubmission,
+            where: s.campaign_id == ^campaign.id,
+            where: s.status == "verified",
+            where: s.view_count >= ^campaign.min_views_for_payment,
+            where:
+              not exists(
+                from p in CampaignPayment,
+                  where: p.submission_id == s.id
+              ),
+            preload: [:user]
+          )
+          |> Repo.all()
+
+        # Calculate and create payments
+        payments =
+          Enum.map(submissions, fn submission ->
+            amount = calculate_payment_amount(submission, campaign)
+
+            {:ok, payment} =
+              %CampaignPayment{}
+              |> CampaignPayment.create_changeset(%{
+                campaign_id: campaign.id,
+                submission_id: submission.id,
+                user_id: submission.user_id,
+                amount: amount,
+                views_at_payment: submission.view_count,
+                status: "pending"
+              })
+              |> Repo.insert()
+
+            payment
+          end)
+
+        {:ok, payments}
+      end)
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
   Creates a payment for a submission.
   """
   def create_payment(%CampaignSubmission{} = submission, amount, %User{} = creator) do
@@ -770,6 +865,54 @@ defmodule ClippsterServer.Campaigns do
         views_at_payment: submission.view_count
       })
       |> Repo.insert()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Submit payment verification proof.
+  Uploads screenshot, stores transaction details, notifies clipper.
+  """
+  def verify_payment_completion(%CampaignPayment{} = payment, attrs, %User{} = verifier) do
+    campaign = get_campaign(payment.campaign_id)
+
+    if Organizations.is_admin?(campaign.organization_id, verifier.id) do
+      Repo.transaction(fn ->
+        # Update payment with verification details
+        {:ok, updated_payment} =
+          payment
+          |> CampaignPayment.verification_changeset(
+            Map.merge(attrs, %{
+              paid_by_user_id: verifier.id,
+              payment_date: attrs[:payment_date] || Date.utc_today()
+            })
+          )
+          |> Repo.update()
+
+        # Update campaign spent
+        campaign
+        |> Campaign.update_spent_changeset(%{
+          spent: Decimal.add(campaign.spent || Decimal.new(0), payment.amount)
+        })
+        |> Repo.update()
+
+        # Mark submission as paid
+        submission = Repo.get!(CampaignSubmission, payment.submission_id)
+
+        submission
+        |> CampaignSubmission.mark_paid_changeset()
+        |> Repo.update()
+
+        # Send in-app notification + email
+        updated_payment = Repo.preload(updated_payment, [:campaign, :user])
+        ClippsterServer.Notifications.notify_payment_verified(updated_payment)
+
+        ClippsterServer.Emails.payment_verified_email(updated_payment)
+        |> ClippsterServer.Mailer.deliver()
+
+        updated_payment
+      end)
     else
       {:error, :unauthorized}
     end

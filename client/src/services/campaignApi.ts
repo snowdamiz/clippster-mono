@@ -170,13 +170,23 @@ export interface CampaignPayment {
   user_id: number;
   amount: string;
   views_at_payment: number | null;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
+  status: 'pending' | 'verified' | 'completed' | 'failed';
   external_transaction_id: string | null;
   paid_at: string | null;
+  verification_screenshot_url?: string | null;
+  verification_notes?: string | null;
+  payment_date?: string | null;
+  clipper_notified_at?: string | null;
   inserted_at: string;
   campaign?: {
     id: number;
     title: string;
+  };
+  submission?: CampaignSubmission;
+  user?: {
+    id: number;
+    email: string;
+    display_name: string | null;
   };
 }
 
@@ -835,6 +845,54 @@ export async function removeCreatorProfileFromCampaign(
 ): Promise<CreatorProfileResponse> {
   const response = await api.delete(
     `/organizations/${organizationId}/campaigns/${campaignId}/creator-profiles/${creatorProfileId}`
+  );
+  return response.data;
+}
+
+/**
+ * Calculate payments for all verified submissions in a campaign
+ */
+export async function calculateCampaignPayments(
+  organizationId: number,
+  campaignId: number
+): Promise<{ success: boolean; payments_created: number; total_amount: string; error?: string }> {
+  const response = await api.post(
+    `/organizations/${organizationId}/campaigns/${campaignId}/calculate-payments`
+  );
+  return response.data;
+}
+
+/**
+ * List payments for a campaign (updated version with status filter)
+ */
+export async function listCampaignPaymentsWithFilter(
+  organizationId: number,
+  campaignId: number,
+  status?: string
+): Promise<{ success: boolean; payments: CampaignPayment[]; error?: string }> {
+  const params = status ? { status } : {};
+  const response = await api.get(
+    `/organizations/${organizationId}/campaigns/${campaignId}/payments`,
+    { params }
+  );
+  return response.data;
+}
+
+/**
+ * Verify payment completion with proof
+ */
+export async function verifyPayment(
+  organizationId: number,
+  paymentId: number,
+  data: {
+    screenshot_url?: string;
+    notes: string;
+    payment_date?: string;
+  }
+): Promise<{ success: boolean; payment: CampaignPayment; error?: string }> {
+  const response = await api.post(
+    `/organizations/${organizationId}/payments/${paymentId}/verify`,
+    data
   );
   return response.data;
 }

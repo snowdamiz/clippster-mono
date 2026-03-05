@@ -767,6 +767,12 @@ defmodule ClippsterServerWeb.Router do
     get("/user/submissions", CampaignController, :my_submissions)
     get("/user/earnings", CampaignController, :my_earnings)
 
+    # Notifications
+    get("/user/notifications", NotificationController, :index)
+    get("/user/notifications/unread-count", NotificationController, :unread_count)
+    post("/user/notifications/:id/read", NotificationController, :mark_read)
+    post("/user/notifications/read-all", NotificationController, :mark_all_read)
+
     # Clipper social accounts (for campaigns)
     get("/user/social-accounts", ClipperProfileController, :list_social_accounts)
     post("/user/social-accounts", ClipperProfileController, :create_social_account)
@@ -976,6 +982,13 @@ defmodule ClippsterServerWeb.Router do
     post("/organizations/:organization_id/campaigns/:id/activate", CampaignController, :activate)
     post("/organizations/:organization_id/campaigns/:id/complete", CampaignController, :complete)
 
+    # Calculate payments for campaign
+    post(
+      "/organizations/:organization_id/campaigns/:id/calculate-payments",
+      CampaignController,
+      :calculate_payments
+    )
+
     # Campaign creator profiles
     get(
       "/organizations/:organization_id/campaigns/:id/creator-profiles",
@@ -1068,6 +1081,12 @@ defmodule ClippsterServerWeb.Router do
       "/organizations/:organization_id/submissions/:submission_id/pay",
       CampaignController,
       :create_payment
+    )
+
+    post(
+      "/organizations/:organization_id/payments/:payment_id/verify",
+      CampaignController,
+      :verify_payment
     )
 
     post(
