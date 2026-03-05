@@ -137,15 +137,44 @@ defmodule ClippsterServerWeb.MessagingJSON do
       profile -> profile.avatar_url || user.avatar_url
     end
 
+    # Presign avatar URL if it's from R2 storage
+    presigned_avatar_url = maybe_presign_avatar(avatar_url)
+
     %{
       id: user.id,
       display_name: display_name,
       name: user.name,
       email: user.email,
-      avatar_url: avatar_url,
+      avatar_url: presigned_avatar_url,
       is_admin: user.is_admin || false,
       is_moderator: user.is_moderator || false
     }
+  end
+
+  # Presign avatar URL only if it's from R2 storage
+  defp maybe_presign_avatar(nil), do: nil
+  defp maybe_presign_avatar(""), do: nil
+
+  defp maybe_presign_avatar(url) when is_binary(url) do
+    base = Storage.public_url_base()
+
+    cond do
+      # If it's from our R2 public URL, presign it
+      base && String.starts_with?(url, base) ->
+        Storage.presigned_url!(url)
+
+      # If it contains R2 domain, presign it
+      String.contains?(url, ".r2.cloudflarestorage.com") ->
+        Storage.presigned_url!(url)
+
+      # If it starts with storage key format, presign it
+      String.starts_with?(url, "avatars/") ->
+        Storage.presigned_url!(url)
+
+      # Otherwise it's an external URL (e.g., Google), return as-is
+      true ->
+        url
+    end
   end
 
   defp render_read_by(nil), do: []
