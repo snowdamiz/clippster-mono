@@ -300,7 +300,7 @@ defmodule ClippsterServer.Subscriptions do
     Repo.transaction(fn ->
       user = Repo.get!(User, user_id)
 
-      unless user.subscription_status in ["active"] do
+      unless user.subscription_status in ["active", "cancelled"] do
         Repo.rollback(:not_active)
       end
 

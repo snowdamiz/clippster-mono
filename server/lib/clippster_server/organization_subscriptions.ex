@@ -518,7 +518,7 @@ defmodule ClippsterServer.OrganizationSubscriptions do
     Repo.transaction(fn ->
       org = Repo.get!(Organization, organization_id)
 
-      unless org.subscription_status in ["active"] do
+      unless org.subscription_status in ["active", "cancelled"] do
         Repo.rollback(:not_active)
       end
 
