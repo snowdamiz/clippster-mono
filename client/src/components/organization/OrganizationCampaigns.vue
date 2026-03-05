@@ -345,48 +345,77 @@
                       <DollarSign :size="28" />
                     </div>
                     <h2 class="campaign-wizard__title">Set your pricing</h2>
-                    <p class="campaign-wizard__subtitle">Configure CPM rates and budget</p>
+                    <p class="campaign-wizard__subtitle">Configure payment model and budget</p>
                   </div>
 
                   <div class="campaign-wizard__fields">
-                    <div class="campaign-wizard__row">
-                      <div class="campaign-wizard__field">
-                        <label class="campaign-wizard__label">CPM Price ($)</label>
-                        <input
-                          v-model.number="campaignForm.cpm"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          class="campaign-wizard__input"
-                          placeholder="0.00"
-                        />
-                      </div>
-                      <div class="campaign-wizard__field">
-                        <label class="campaign-wizard__label">Per Views</label>
-                        <CustomDropdown
-                          v-model="campaignForm.cpm_views"
-                          :options="cpmViewsOptions"
-                          placeholder="Select views"
-                          class="campaign-wizard__dropdown"
-                          trigger-class="campaign-wizard__dropdown-trigger"
-                        />
+                    <!-- Payment Model Toggle -->
+                    <div class="campaign-wizard__field">
+                      <label class="campaign-wizard__label">Payment Model</label>
+                      <div class="campaign-wizard__toggle-container">
+                        <span :class="{ 'campaign-wizard__toggle-label--active': campaignForm.payment_model === 'cpm' }">CPM (Cost Per Mille)</span>
+                        <label class="campaign-wizard__toggle-switch">
+                          <input type="checkbox" :checked="campaignForm.payment_model === 'per_clip'" @change="togglePaymentModel" />
+                          <span class="campaign-wizard__toggle-slider"></span>
+                        </label>
+                        <span :class="{ 'campaign-wizard__toggle-label--active': campaignForm.payment_model === 'per_clip' }">Pay Per Clip</span>
                       </div>
                     </div>
-                    <p class="campaign-wizard__hint">
-                      ${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views
-                    </p>
 
-                    <div class="campaign-wizard__row">
-                      <div class="campaign-wizard__field">
-                        <label class="campaign-wizard__label">Budget ($)</label>
-                        <input
-                          v-model.number="campaignForm.budget"
-                          type="number"
-                          step="1"
-                          min="0"
-                          class="campaign-wizard__input"
-                          placeholder="0"
-                        />
+                    <!-- CPM Fields -->
+                    <template v-if="campaignForm.payment_model === 'cpm'">
+                      <div class="campaign-wizard__row">
+                        <div class="campaign-wizard__field">
+                          <label class="campaign-wizard__label">CPM Price ($)</label>
+                          <input
+                            v-model.number="campaignForm.cpm"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            class="campaign-wizard__input"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div class="campaign-wizard__field">
+                          <label class="campaign-wizard__label">Per Views</label>
+                          <CustomDropdown
+                            v-model="campaignForm.cpm_views"
+                            :options="cpmViewsOptions"
+                            placeholder="Select views"
+                            class="campaign-wizard__dropdown"
+                            trigger-class="campaign-wizard__dropdown-trigger"
+                          />
+                        </div>
+                      </div>
+                      <p class="campaign-wizard__hint">
+                        ${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views
+                      </p>
+                    </template>
+
+                    <!-- Pay Per Clip Fields -->
+                    <template v-else>
+                      <div class="campaign-wizard__row">
+                        <div class="campaign-wizard__field">
+                          <label class="campaign-wizard__label">Amount Per Clip ($)</label>
+                          <input
+                            v-model.number="campaignForm.per_clip_amount"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            class="campaign-wizard__input"
+                            placeholder="0.00"
+                          />
+                        </div>
+                        <div class="campaign-wizard__field">
+                          <label class="campaign-wizard__label">Clips Per Profile</label>
+                          <input
+                            v-model.number="campaignForm.clips_per_profile"
+                            type="number"
+                            min="1"
+                            class="campaign-wizard__input"
+                            placeholder="5"
+                          />
+                        </div>
                       </div>
                       <div class="campaign-wizard__field">
                         <label class="campaign-wizard__label">Min Views for Payment</label>
@@ -398,6 +427,19 @@
                           placeholder="1000"
                         />
                       </div>
+                    </template>
+
+                    <!-- Budget (always shown) -->
+                    <div class="campaign-wizard__field">
+                      <label class="campaign-wizard__label">Budget ($)</label>
+                      <input
+                        v-model.number="campaignForm.budget"
+                        type="number"
+                        step="1"
+                        min="0"
+                        class="campaign-wizard__input"
+                        placeholder="0"
+                      />
                     </div>
                   </div>
                 </div>
@@ -2283,6 +2325,10 @@
     } else {
       campaignForm.payment_methods.push(method);
     }
+  };
+
+  const togglePaymentModel = () => {
+    campaignForm.payment_model = campaignForm.payment_model === 'cpm' ? 'per_clip' : 'cpm';
   };
 
   const loadCampaigns = async () => {
@@ -5955,6 +6001,69 @@
   }
 
   .campaign-edit__toggle-switch:hover .campaign-edit__toggle-slider {
+    opacity: 0.9;
+  }
+
+  /* Wizard Toggle Styles */
+  .campaign-wizard__toggle-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 0;
+  }
+
+  .campaign-wizard__toggle-label--active {
+    color: var(--sidebar-text);
+    font-weight: 600;
+  }
+
+  .campaign-wizard__toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  .campaign-wizard__toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .campaign-wizard__toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--sidebar-border);
+    transition: 0.3s;
+    border-radius: 24px;
+  }
+
+  .campaign-wizard__toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+  }
+
+  .campaign-wizard__toggle-switch input:checked + .campaign-wizard__toggle-slider {
+    background-color: var(--sidebar-accent);
+  }
+
+  .campaign-wizard__toggle-switch input:checked + .campaign-wizard__toggle-slider:before {
+    transform: translateX(24px);
+  }
+
+  .campaign-wizard__toggle-switch:hover .campaign-wizard__toggle-slider {
     opacity: 0.9;
   }
 

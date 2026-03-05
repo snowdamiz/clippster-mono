@@ -145,6 +145,229 @@
 
           <!-- Main Content Area -->
           <div v-else-if="creators.length > 0" class="creators__list-section">
+            <!-- Campaign Profiles Section -->
+            <div v-if="campaignProfiles.length > 0" class="creators__section">
+              <div class="creators__section-header">
+                <div class="creators__section-title-wrapper">
+                  <Trophy class="creators__section-icon" />
+                  <h2 class="creators__section-title">Campaign Profiles</h2>
+                </div>
+                <div class="creators__item-count">
+                  {{ campaignProfiles.length }} {{ campaignProfiles.length === 1 ? 'profile' : 'profiles' }}
+                </div>
+              </div>
+
+              <div class="creators__list">
+                <transition-group name="list" tag="div" class="creators__list-inner">
+                  <div 
+                    v-for="creator in campaignProfiles" 
+                    :key="creator.id" 
+                    class="creator-card"
+                    :class="{
+                      'creator-card--monitoring': isCreatorMonitored(creator),
+                      'creator-card--live': !isCreatorMonitored(creator) && isCreatorLive(creator)
+                    }"
+                  >
+                  <!-- Card Header: Avatar + Info + Menu -->
+                  <div class="creator-card__header">
+                    <div class="creator-card__avatar">
+                      <img
+                        v-if="getCreatorProfileImage(creator)"
+                        :src="getCreatorProfileImage(creator)"
+                        class="creator-card__avatar-img"
+                        @error="handleImageError($event, creator)"
+                      />
+                      <div v-else class="creator-card__avatar-fallback">
+                        <Users class="creator-card__avatar-icon" />
+                      </div>
+                    </div>
+                    <div class="creator-card__header-info">
+                      <div class="creator-card__name-row">
+                        <span class="creator-card__name">{{ creator.name }}</span>
+                        <span
+                          v-if="creator.campaign_title"
+                          class="creator-card__org-badge creator-card__campaign-badge"
+                          :title="`Campaign: ${creator.campaign_title}`"
+                        >
+                          <Trophy class="creator-card__org-badge-icon" />
+                          {{ creator.campaign_title }}
+                        </span>
+                      </div>
+                      <div class="creator-card__desc">
+                        {{ creator.organization_name || 'Campaign Profile' }}
+                      </div>
+                    </div>
+                    <!-- Menu Button -->
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
+                        <button class="creator-card__menu-btn" title="More actions">
+                          <MoreVertical class="creator-card__menu-icon" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" :side-offset="4" class="creator-dropdown">
+                        <DropdownMenuItem class="creator-dropdown__item" @click="viewCreatorVods(creator)">
+                          <Video class="creator-dropdown__item-icon" />
+                          View VODs
+                        </DropdownMenuItem>
+                        <DropdownMenuItem class="creator-dropdown__item" @click="openDownloadDialog(creator)">
+                          <Download class="creator-dropdown__item-icon" />
+                          Download VOD
+                        </DropdownMenuItem>
+                        <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                          <DropdownMenuSeparator class="creator-dropdown__separator" />
+                          <DropdownMenuItem class="creator-dropdown__item" @click="toggleCreatorAutoDvr(creator)">
+                            <HardDrive class="creator-dropdown__item-icon" />
+                            Auto DVR {{ isCreatorAutoDvrEnabled(creator) ? 'On' : 'Off' }}
+                            <span
+                              class="creator-dropdown__item-badge"
+                              :class="{ 'creator-dropdown__item-badge--active': isCreatorAutoDvrEnabled(creator) }"
+                            >
+                              {{ isCreatorAutoDvrEnabled(creator) ? 'ON' : 'OFF' }}
+                            </span>
+                          </DropdownMenuItem>
+                        </template>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <!-- Stats Row: Platforms | Branding | Status -->
+                  <div class="creator-card__stats-row">
+                    <!-- Platform Icons -->
+                    <div class="creator-card__platforms">
+                      <template v-if="creator.platform_links.length > 0">
+                        <div
+                          v-for="link in creator.platform_links.slice(0, 4)"
+                          :key="link.id"
+                          class="creator-card__platform-icon-wrapper"
+                          :title="link.display_name || link.platform_id"
+                        >
+                          <img
+                            :src="getPlatformIcon(link.platform)"
+                            :alt="link.platform"
+                            class="creator-card__platform-icon"
+                            :style="{ filter: getPlatformFilter(link.platform) }"
+                          />
+                        </div>
+                        <span v-if="creator.platform_links.length > 4" class="creator-card__more-badge">
+                          +{{ creator.platform_links.length - 4 }}
+                        </span>
+                      </template>
+                      <span v-else class="creator-card__empty-indicator">
+                        <Link class="creator-card__empty-icon" />
+                      </span>
+                    </div>
+
+                    <div class="creator-card__divider"></div>
+
+                    <!-- Branding Icons -->
+                    <div class="creator-card__branding">
+                      <div
+                        class="creator-card__branding-icon"
+                        :class="{ 'creator-card__branding-icon--active': creator.intro_id }"
+                        :title="creator.intro_id ? 'Intro configured' : 'No intro'"
+                      >
+                        <Play />
+                      </div>
+                      <div
+                        class="creator-card__branding-icon"
+                        :class="{ 'creator-card__branding-icon--active': creator.outro_id }"
+                        :title="creator.outro_id ? 'Outro configured' : 'No outro'"
+                      >
+                        <SkipForward />
+                      </div>
+                      <div
+                        class="creator-card__branding-icon"
+                        :class="{ 'creator-card__branding-icon--active': creator.watermark_id }"
+                        :title="creator.watermark_id ? 'Watermark configured' : 'No watermark'"
+                      >
+                        <ImageIcon />
+                      </div>
+                    </div>
+
+                    <div class="creator-card__divider"></div>
+                  </div>
+
+                  <!-- Footer: Status + Actions -->
+                  <div class="creator-card__footer">
+                    <!-- Left: Status -->
+                    <div class="creator-card__status">
+                      <div
+                        v-if="isLiveClipEnabled && isCreatorMonitored(creator)"
+                        class="creator-status creator-status--monitoring"
+                      >
+                        <span class="creator-status__dot"></span>
+                        {{ getCreatorStatusLabel(creator) }}
+                      </div>
+                      <template v-else-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                        <div v-if="isCreatorCheckingLive(creator)" class="creator-status creator-status--checking">
+                          <Loader2 class="creator-status__spinner" />
+                          Checking...
+                        </div>
+                        <div v-else-if="isCreatorLive(creator)" class="creator-status creator-status--live">
+                          <span class="creator-status__dot"></span>
+                          LIVE
+                        </div>
+                        <div v-else class="creator-status creator-status--offline">
+                          <span class="creator-status__dot"></span>
+                          Offline
+                        </div>
+                      </template>
+                      <span v-else class="creator-card__platform-count">
+                        {{ creator.platform_links.length }} platform{{ creator.platform_links.length !== 1 ? 's' : '' }}
+                      </span>
+                    </div>
+
+                    <!-- Right: Actions -->
+                    <div class="creator-card__actions">
+                      <template v-if="isLiveClipEnabled && hasMonitorableLink(creator)">
+                        <template v-if="!isCreatorMonitored(creator)">
+                          <div class="creator-action-group">
+                            <button
+                              @click.stop="startCreatorMonitoring(creator, false)"
+                              class="creator-action-group__btn"
+                              title="Record Only"
+                            >
+                              <span class="creator-action-group__rec-dot"></span>
+                              Rec
+                            </button>
+                            <button
+                              @click.stop="startCreatorMonitoring(creator, true)"
+                              class="creator-action-group__btn creator-action-group__btn--primary"
+                              title="Auto-Detect Clips"
+                            >
+                              <Sparkles class="creator-btn__icon" />
+                              Auto
+                            </button>
+                          </div>
+                        </template>
+                        <template v-else>
+                          <button
+                            @click.stop="stopCreatorMonitoring(creator)"
+                            class="creator-btn creator-btn--stop"
+                            title="Stop Monitoring"
+                          >
+                            <Square class="creator-btn__icon" />
+                            Stop
+                          </button>
+                        </template>
+                        <button
+                          @click.stop="watchCreator(creator)"
+                          :disabled="!canWatchCreator(creator)"
+                          class="creator-btn creator-btn--watch"
+                          :class="{ 'creator-btn--watch-disabled': !canWatchCreator(creator) }"
+                          :title="canWatchCreator(creator) ? 'Watch Live' : 'Watch becomes available when live'"
+                        >
+                          <Eye class="creator-btn__icon" />
+                          Watch
+                        </button>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </transition-group>
+            </div>
+          </div>
+
             <!-- Organization Profiles Section -->
             <div v-if="organizationProfiles.length > 0" class="creators__section">
               <div class="creators__section-header">
@@ -770,12 +993,13 @@
     getAllStreamerProfiles,
     type CreatorProfileWithLinks,
   } from '@/services/database';
-  import {
-    getUserAssignedCreatorProfiles,
+  import { getUserAssignedCreatorProfiles,
     updatePlatformLink as updateOrgPlatformLink,
     toggleCreatorProfileDisabled,
     type ServerOrganizationCreatorProfile,
   } from '@/services/organizationProfilesApi';
+  import { listMyCampaigns, type Campaign, type CampaignCreatorProfile } from '@/services/campaignApi';
+  import { useProfileContext } from '@/composables/useProfileContext';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
@@ -809,6 +1033,7 @@
     HardDrive,
     Link,
     Paintbrush,
+    Trophy,
   } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useLivestreamStore } from '@/stores/livestream';
@@ -816,8 +1041,6 @@
   // Extended type that can represent both local and org profiles
   interface DisplayCreatorProfile extends CreatorProfileWithLinks {
     isOrgProfile?: boolean;
-    organization_id?: number;
-    organization_name?: string;
     server_id?: number;
     disabled?: boolean;
   }
@@ -1043,17 +1266,17 @@
     });
   });
 
-  // Separate organization and user profiles
+  // Profile type filters
   const organizationProfiles = computed(() => {
-    return [...filteredCreators.value]
-      .filter((c) => c.isOrgProfile === true)
-      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    return sortedCreators.value.filter(c => c.isOrgProfile && !c.campaign_id);
+  });
+
+  const campaignProfiles = computed(() => {
+    return sortedCreators.value.filter(c => c.campaign_id != null);
   });
 
   const userProfiles = computed(() => {
-    return [...filteredCreators.value]
-      .filter((c) => !c.isOrgProfile)
-      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+    return sortedCreators.value.filter(c => !c.isOrgProfile && !c.campaign_id);
   });
 
   // Load creators on mount
@@ -1128,7 +1351,7 @@
             channelSlug: link.platform_id,
             hasProfileImage: Boolean(link.profile_image_url),
             isOrgLink,
-            organizationId: isOrgLink ? creator.organization_id : undefined,
+            organizationId: isOrgLink ? (creator.organization_id ?? undefined) : undefined,
             profileId: isOrgLink ? creator.server_id : undefined,
           });
         } else if (link.platform === 'twitch') {
@@ -1139,7 +1362,7 @@
             channelName: link.platform_id,
             hasProfileImage: Boolean(link.profile_image_url),
             isOrgLink,
-            organizationId: isOrgLink ? creator.organization_id : undefined,
+            organizationId: isOrgLink ? (creator.organization_id ?? undefined) : undefined,
             profileId: isOrgLink ? creator.server_id : undefined,
           });
         } else if (link.platform === 'YouTube') {
@@ -1150,7 +1373,7 @@
             channelId: link.platform_id,
             hasProfileImage: Boolean(link.profile_image_url),
             isOrgLink,
-            organizationId: isOrgLink ? creator.organization_id : undefined,
+            organizationId: isOrgLink ? (creator.organization_id ?? undefined) : undefined,
             profileId: isOrgLink ? creator.server_id : undefined,
           });
         } else if (link.platform === 'rumble') {
@@ -1161,7 +1384,7 @@
             channelName: link.platform_id,
             hasProfileImage: Boolean(link.profile_image_url),
             isOrgLink,
-            organizationId: isOrgLink ? creator.organization_id : undefined,
+            organizationId: isOrgLink ? (creator.organization_id ?? undefined) : undefined,
             profileId: isOrgLink ? creator.server_id : undefined,
           });
         }
@@ -1414,6 +1637,17 @@
           const orgDisplayProfiles = convertOrgProfilesToDisplay(orgResponse.profiles);
           displayProfiles.push(...orgDisplayProfiles);
         }
+
+        // Fetch campaign profiles
+        try {
+          const campaignsResponse = await listMyCampaigns();
+          if (campaignsResponse.success && campaignsResponse.campaigns.length > 0) {
+            const campaignDisplayProfiles = convertCampaignProfilesToDisplay(campaignsResponse.campaigns);
+            displayProfiles.push(...campaignDisplayProfiles);
+          }
+        } catch (err) {
+          console.warn('[CreatorProfiles] Failed to load campaign profiles:', err);
+        }
       }
 
       creators.value = displayProfiles;
@@ -1481,7 +1715,61 @@
       organization_id: profile.organization_id,
       organization_name: profile.organization_name,
       server_id: profile.id,
+      context_type: 'organization',
     }));
+  }
+
+  function convertCampaignProfilesToDisplay(campaigns: Campaign[]): DisplayCreatorProfile[] {
+    const profiles: DisplayCreatorProfile[] = [];
+    
+    for (const campaign of campaigns) {
+      const campaignProfiles = campaign.creator_profiles || [];
+      if (campaignProfiles.length === 0 && campaign.creator_profile) {
+        campaignProfiles.push(campaign.creator_profile);
+      }
+
+      for (const cp of campaignProfiles) {
+        profiles.push({
+          id: `campaign-${campaign.id}-${cp.id}`,
+          name: cp.name,
+          description: cp.description ?? null,
+          profile_image_path: cp.profile_image_url ?? null,
+          intro_id: cp.intro?.id ? `org-asset-${cp.intro.id}` : null,
+          outro_id: cp.outro?.id ? `org-asset-${cp.outro.id}` : null,
+          watermark_id: cp.watermark?.id ? `org-asset-${cp.watermark.id}` : null,
+          watermark_settings: cp.watermark_settings ? JSON.stringify(cp.watermark_settings) : null,
+          layout_overlays: null,
+          intro_outro_settings: null,
+          intro_ratio_settings: null,
+          outro_ratio_settings: null,
+          created_at: new Date(campaign.inserted_at).getTime(),
+          updated_at: new Date(campaign.updated_at).getTime(),
+          user_id: null,
+          platform_links: (cp.platform_links || []).map((link) => ({
+            id: `campaign-link-${campaign.id}-${link.id}`,
+            creator_profile_id: `campaign-${campaign.id}-${cp.id}`,
+            platform: link.platform as PlatformId,
+            platform_id: link.platform_id,
+            display_name: link.display_name ?? null,
+            profile_image_url: link.profile_image_url ?? null,
+            is_primary: link.is_primary,
+            created_at: Date.now(),
+            monitored_streamer_id: null,
+          })),
+          scope: 'streamer',
+          isOrgProfile: true,
+          organization_id: campaign.organization_id,
+          organization_name: campaign.organization?.name ?? `Campaign ${campaign.id}`,
+          campaign_id: campaign.id,
+          campaign_title: campaign.title,
+          server_id: cp.id,
+          context_type: 'campaign',
+          disabled: false,
+        });
+      }
+    }
+
+    return profiles;
   }
 
   function getCreatorProfileImage(creator: DisplayCreatorProfile): string | undefined {
@@ -1730,23 +2018,31 @@
     }
   }
 
-  function viewCreatorVods(creator: DisplayCreatorProfile) {
+  async function viewCreatorVods(creator: DisplayCreatorProfile) {
     const primaryLink = creator.platform_links.find((l) => l.is_primary) || creator.platform_links[0];
     if (!primaryLink) {
       showError('No Platform', 'This creator has no platform links configured');
       return;
     }
 
+    // Track profile usage context
+    const { trackProfileUsage } = useProfileContext();
+    await trackProfileUsage(creator);
+
     router.push({
       path: '/vods',
       query: {
         platform: primaryLink.platform,
-        search: primaryLink.platform_id,
+        id: primaryLink.platform_id,
       },
     });
   }
 
-  function openDownloadDialog(creator: DisplayCreatorProfile) {
+  async function openDownloadDialog(creator: DisplayCreatorProfile) {
+    // Track profile usage context
+    const { trackProfileUsage } = useProfileContext();
+    await trackProfileUsage(creator);
+
     creatorToDownload.value = creator;
     showDownloadDialog.value = true;
   }

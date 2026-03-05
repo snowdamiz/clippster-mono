@@ -786,12 +786,20 @@ defmodule ClippsterServer.Campaigns do
   # ============================================================================
 
   defp calculate_payment_amount(%CampaignSubmission{} = submission, %Campaign{} = campaign) do
-    views = submission.view_count
-    cpm = Decimal.to_float(campaign.cpm)
-    cpm_views = campaign.cpm_views || 1000
+    case campaign.payment_model do
+      "per_clip" ->
+        # Fixed amount per clip
+        campaign.per_clip_amount || Decimal.new(0)
 
-    amount = (views / cpm_views) * cpm
-    Decimal.from_float(amount) |> Decimal.round(2)
+      _ ->
+        # CPM (cost per mille/thousand views) - default
+        views = submission.view_count
+        cpm = Decimal.to_float(campaign.cpm)
+        cpm_views = campaign.cpm_views || 1000
+
+        amount = (views / cpm_views) * cpm
+        Decimal.from_float(amount) |> Decimal.round(2)
+    end
   end
 
   @doc """
