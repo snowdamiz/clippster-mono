@@ -6,8 +6,9 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.AI
   alias ClippsterServer.AppSettings
   alias ClippsterServer.BetaCodes
-  alias ClippsterServer.Subscriptions
-  alias ClippsterServer.OrganizationSubscriptions
+  alias ClippsterServer.{Accounts, Credits, Subscriptions, Organizations, OrganizationSubscriptions}
+  alias ClippsterServer.Analytics
+  alias ClippsterServer.Storage
   alias ClippsterServer.PromoCodes
   alias ClippsterServer.ClipperProfiles.LeaderboardWorker
 
@@ -1866,7 +1867,7 @@ defmodule ClippsterServerWeb.AdminController do
               wallet_address: user.wallet_address,
               email: user.email,
               name: user.name,
-              avatar_url: user.avatar_url,
+              avatar_url: maybe_presign_avatar(user.avatar_url),
               provider: user.provider,
               is_admin: user.is_admin,
               is_moderator: user.is_moderator,
@@ -1930,7 +1931,7 @@ defmodule ClippsterServerWeb.AdminController do
                       id: member.user.id,
                       name: member.user.name,
                       email: member.user.email,
-                      avatar_url: member.user.avatar_url
+                      avatar_url: maybe_presign_avatar(member.user.avatar_url)
                     }
                   else
                     nil
@@ -1952,7 +1953,7 @@ defmodule ClippsterServerWeb.AdminController do
                 id: owner.id,
                 name: owner.name,
                 email: owner.email,
-                avatar_url: owner.avatar_url
+                avatar_url: maybe_presign_avatar(owner.avatar_url)
               }
             else
               nil
@@ -2377,5 +2378,31 @@ defmodule ClippsterServerWeb.AdminController do
     Enum.map(errors, fn {:error, {email, reason}} ->
       %{email: email, error: inspect(reason)}
     end)
+  end
+
+  # Presign avatar URL only if it's from R2 storage
+  defp maybe_presign_avatar(nil), do: nil
+  defp maybe_presign_avatar(""), do: nil
+
+  defp maybe_presign_avatar(url) when is_binary(url) do
+    base = Storage.public_url_base()
+
+    cond do
+      # If it's from our R2 public URL, presign it
+      base && String.starts_with?(url, base) ->
+        Storage.presigned_url!(url)
+
+      # If it contains R2 domain, presign it
+      String.contains?(url, ".r2.cloudflarestorage.com") ->
+        Storage.presigned_url!(url)
+
+      # If it starts with storage key format, presign it
+      String.starts_with?(url, "avatars/") ->
+        Storage.presigned_url!(url)
+
+      # Otherwise it's an external URL (e.g., Google), return as-is
+      true ->
+        url
+    end
   end
 end
