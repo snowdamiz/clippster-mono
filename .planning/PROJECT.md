@@ -8,15 +8,21 @@ A desktop application for automated long-form to short-form video clip generatio
 
 Content creators can generate, edit, and distribute short-form clips from long-form video with minimal manual effort.
 
-## Current Milestone: v1.1 Admin Dashboard Web Parity
+## Current Milestone: v1.2 Stripe to Paddle Migration
 
-**Goal:** Deliver a browser-accessible admin dashboard with the same interface and behavior as the app admin dashboard.
+**Goal:** Replace all Stripe payment infrastructure with Paddle — subscriptions, one-time credit purchases, webhooks, coupons/promo codes, affiliate discounts, org billing, admin discounts — with zero functionality degradation.
 
 **Target features:**
-- Web route surface for admin (`/admin/*`) aligned with app route structure
-- Admin/moderator-only access control on website admin routes
-- Identical admin UI/behavior rendered in website context
-- Session continuity between website auth and admin dashboard context
+- Paddle SDK integration replacing Stripity Stripe library
+- Subscription management (create, upgrade, downgrade, cancel, renew) via Paddle
+- One-time credit pack purchases via Paddle Checkout
+- Webhook handling for full subscription lifecycle (Paddle notification events)
+- Promo code / coupon system via Paddle discounts
+- Affiliate discount and commission tracking via Paddle
+- Organization subscription and add-on billing via Paddle
+- Admin discount application via Paddle
+- Desktop (Tauri) and web checkout flow support
+- Removal of all Stripe code, config, and dependencies
 
 ## Requirements
 
@@ -41,10 +47,16 @@ Content creators can generate, edit, and distribute short-form clips from long-f
 
 ### Active
 
-- [ ] Web admin route parity (`/admin/*`)
-- [ ] Website admin/moderator route guard
-- [ ] Native React admin pages with app-parity UI and behavior
-- [ ] Verify full admin page coverage from website deep links
+- [ ] Paddle SDK backend integration (replace Stripity Stripe)
+- [ ] Subscription lifecycle via Paddle (create, upgrade, downgrade, cancel, renew)
+- [ ] One-time credit pack purchases via Paddle Checkout
+- [ ] Paddle webhook/notification handling for all billing events
+- [ ] Promo codes and discounts via Paddle
+- [ ] Affiliate discount and commission tracking via Paddle
+- [ ] Organization billing (base subscriptions + add-ons) via Paddle
+- [ ] Admin/moderator discount system via Paddle
+- [ ] Frontend checkout flows updated for Paddle (desktop + web)
+- [ ] Complete removal of Stripe code, config, and dependencies
 
 ### Out of Scope
 
@@ -76,4 +88,4 @@ Content creators can generate, edit, and distribute short-form clips from long-f
 | Support both `/admin/*` and `/dashboard/admin/*` route surfaces | Preserves deep-link compatibility while keeping one native React admin surface | Adopted |
 
 ---
-*Last updated: 2026-02-20 after milestone v1.1 started*
+*Last updated: 2026-03-04 after milestone v1.2 started*
