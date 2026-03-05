@@ -810,13 +810,15 @@ defmodule ClippsterServer.Campaigns do
         # Get eligible submissions
         submissions =
           from(s in CampaignSubmission,
+            as: :submission,
             where: s.campaign_id == ^campaign.id,
             where: s.status == "verified",
             where: s.view_count >= ^campaign.min_views_for_payment,
             where:
               not exists(
-                from p in CampaignPayment,
-                  where: p.submission_id == s.id
+                from(p in CampaignPayment,
+                  where: p.submission_id == parent_as(:submission).id
+                )
               ),
             preload: [:user]
           )

@@ -481,7 +481,8 @@ defmodule ClippsterServer.Credits do
       status: "processing",
       project_id: Keyword.get(opts, :project_id),
       video_url: Keyword.get(opts, :video_url),
-      job_type: Keyword.get(opts, :job_type, "clip_detection")
+      job_type: Keyword.get(opts, :job_type, "clip_detection"),
+      organization_id: Keyword.get(opts, :organization_id)
     }
 
     ProcessingJob.create_changeset(attrs)

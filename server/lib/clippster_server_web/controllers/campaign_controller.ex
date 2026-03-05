@@ -904,6 +904,14 @@ defmodule ClippsterServerWeb.CampaignController do
       end
     else
       _ ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Not authorized"})
+    end
+  end
+
+  @doc """
+  Complete a payment for a campaign submission.
   """
   def complete_payment(conn, %{"organization_id" => _org_id, "payment_id" => payment_id} = params) do
     user = conn.assigns.current_user
