@@ -445,28 +445,6 @@
               </div>
             </div>
 
-            <!-- Portfolio Preview -->
-            <div v-if="clipper.portfolio_clips?.length" class="org-clippers__portfolio-preview">
-              <div
-                v-for="clip in clipper.portfolio_clips.slice(0, 2)"
-                :key="clip.id"
-                class="org-clippers__portfolio-thumb"
-              >
-                <img
-                  v-if="clip.thumbnail_url"
-                  :src="clip.thumbnail_url"
-                  class="org-clippers__portfolio-img"
-                  alt="Portfolio clip"
-                />
-                <div v-else class="org-clippers__portfolio-placeholder">
-                  <Play class="org-clippers__portfolio-play-icon" />
-                </div>
-              </div>
-              <div v-if="clipper.portfolio_clips.length > 2" class="org-clippers__portfolio-more">
-                +{{ clipper.portfolio_clips.length - 2 }} more
-              </div>
-            </div>
-
             <!-- Tags + Languages -->
             <div class="org-clippers__tags-row">
               <div class="org-clippers__tags">
