@@ -1181,6 +1181,10 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/users/:user_id/ai-editor", AdminController, :enable_ai_editor)
     delete("/admin/users/:user_id/ai-editor", AdminController, :disable_ai_editor)
 
+    # Campaigns access management
+    post("/admin/users/:user_id/campaigns", AdminController, :enable_campaigns)
+    delete("/admin/users/:user_id/campaigns", AdminController, :disable_campaigns)
+
     # User restrictions
     post("/admin/users/:user_id/restrict", AdminController, :restrict_user)
     delete("/admin/users/:user_id/restrict", AdminController, :unrestrict_user)
@@ -1233,6 +1237,10 @@ defmodule ClippsterServerWeb.Router do
 
     put("/admin/organizations/:organization_id/seats", AdminController, :set_org_seats)
     delete("/admin/organizations/:id", AdminController, :delete_organization)
+
+    # Admin org feature flags
+    post("/admin/organizations/:organization_id/campaigns", AdminController, :enable_org_campaigns)
+    delete("/admin/organizations/:organization_id/campaigns", AdminController, :disable_org_campaigns)
 
     # Admin bug report management (delete route only - index/update in mod scope)
     delete("/admin/bug-reports/:id", BugReportsController, :delete)

@@ -1268,6 +1268,36 @@ defmodule ClippsterServer.Accounts do
     end
   end
 
+  @doc """
+  Enables campaigns access for a user.
+  """
+  def enable_campaigns(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> Ecto.Changeset.change(%{campaigns_enabled: true})
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Disables campaigns access for a user.
+  """
+  def disable_campaigns(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> Ecto.Changeset.change(%{campaigns_enabled: false})
+      |> Repo.update()
+    end
+  end
+
   # Private helper functions
 
   # Downloads an avatar from an external URL and stores it in R2

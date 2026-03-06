@@ -7,6 +7,18 @@ defmodule ClippsterServerWeb.CampaignController do
 
   plug ClippsterServerWeb.AuthPlug
 
+  defp can_access_campaigns?(user) do
+    # Admins always have access, or users explicitly enabled by admin
+    user.is_admin or user.campaigns_enabled
+  end
+
+  defp can_org_access_campaigns?(org_id) do
+    case Organizations.get_organization(org_id) do
+      nil -> false
+      org -> org.campaigns_enabled
+    end
+  end
+
   # ============================================================================
   # Public Campaign Routes (for marketplace)
   # ============================================================================
@@ -56,13 +68,21 @@ defmodule ClippsterServerWeb.CampaignController do
   def apply(conn, %{"id" => id} = params) do
     user = conn.assigns.current_user
 
-    # Free tier users cannot apply to campaigns
-    if is_free_tier?(user) do
-      conn
-      |> put_status(403)
-      |> json(%{success: false, error: "Campaign participation requires a paid subscription"})
-    else
-      application_note = Map.get(params, "application_note")
+    cond do
+      # Check if user has campaigns access enabled
+      not can_access_campaigns?(user) ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Campaigns access requires admin approval. Contact support to request access."})
+
+      # Free tier users cannot apply to campaigns
+      is_free_tier?(user) ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Campaign participation requires a paid subscription"})
+
+      true ->
+        application_note = Map.get(params, "application_note")
 
       case Campaigns.get_campaign(id) do
         nil ->
@@ -200,12 +220,21 @@ defmodule ClippsterServerWeb.CampaignController do
   def submit_clip(conn, %{"id" => campaign_id} = params) do
     user = conn.assigns.current_user
 
-    if is_free_tier?(user) do
-      conn
-      |> put_status(403)
-      |> json(%{success: false, error: "Campaign submissions require a paid subscription"})
-    else
-      case Campaigns.get_campaign(campaign_id) do
+    cond do
+      # Check if user has campaigns access enabled
+      not can_access_campaigns?(user) ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Campaigns access requires admin approval. Contact support to request access."})
+
+      # Free tier users cannot submit to campaigns
+      is_free_tier?(user) ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Campaign submissions require a paid subscription"})
+
+      true ->
+        case Campaigns.get_campaign(campaign_id) do
         nil ->
           conn
           |> put_status(404)
