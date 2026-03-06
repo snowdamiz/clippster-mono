@@ -4,16 +4,16 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Copy package files
-COPY package.json yarn.lock* package-lock.json* ./
+COPY package.json yarn.lock ./
 
 # Install dependencies
-RUN npm install
+RUN yarn install --frozen-lockfile
 
 # Copy source files
 COPY . .
 
 # Build the application
-RUN npm run build
+RUN yarn build
 
 # Production stage - serve with nginx
 FROM nginx:alpine
