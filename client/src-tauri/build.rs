@@ -130,6 +130,16 @@ fn main() {
     #[cfg(unix)]
     fix_ffmpeg_lib_permissions(&manifest_dir);
 
+    // Ensure ffmpeg-libs directory exists with at least one file so the
+    // "ffmpeg-libs/*" glob in tauri.conf.json doesn't fail on platforms
+    // that don't need dynamic FFmpeg libraries (macOS/Linux use static linking).
+    let ffmpeg_libs_dir = manifest_dir.join("ffmpeg-libs");
+    fs::create_dir_all(&ffmpeg_libs_dir).ok();
+    let placeholder = ffmpeg_libs_dir.join(".gitkeep");
+    if !placeholder.exists() {
+        File::create(&placeholder).ok();
+    }
+
     // Run tauri-build
     tauri_build::build();
 }
