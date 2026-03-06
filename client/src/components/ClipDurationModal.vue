@@ -482,7 +482,7 @@
           },
           'detected'
         );
-        await updateClip(clipId, { current_version_id: versionId });
+        await updateClip(clipId, { current_version_id: versionId, detection_session_id: manualSessionId });
         console.log('[ClipModal] Clip saved to database');
 
         // Update project thumbnail if it doesn't have one yet

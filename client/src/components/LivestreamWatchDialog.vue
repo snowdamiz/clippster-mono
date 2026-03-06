@@ -812,7 +812,7 @@
           },
           'detected'
         );
-        await updateClip(clipId, { current_version_id: versionId });
+        await updateClip(clipId, { current_version_id: versionId, detection_session_id: manualSessionId });
         console.log('[WatchDialog] Quick clip saved to database');
 
         // Update project thumbnail if it doesn't have one yet

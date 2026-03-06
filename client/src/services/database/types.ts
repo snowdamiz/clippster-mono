@@ -116,6 +116,7 @@ export interface Clip {
   built_duration: number | null;
   // Version tracking
   current_version_id: string | null;
+  detection_session_id: string | null;
   // Campaign integration
   campaign_id: number | null;
   created_at: number;
