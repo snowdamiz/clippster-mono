@@ -17,6 +17,14 @@ function run(cmd, opts = {}) {
   }
 }
 
+function removePackageLock(dir) {
+  const lockFile = path.join(dir, 'package-lock.json');
+  if (fs.existsSync(lockFile)) {
+    fs.unlinkSync(lockFile);
+    console.log(`Removed ${path.relative(ROOT, lockFile)}`);
+  }
+}
+
 function isDockerRunning() {
   try {
     execSync('docker info', { stdio: 'ignore' });
@@ -27,27 +35,49 @@ function isDockerRunning() {
 }
 
 function isPostgresContainerRunning() {
+  // Try docker compose ps (without --status flag which is unreliable on Windows)
   try {
     const output = execSync(
-      'docker compose -f server/docker-compose.yml ps --status running --format json',
+      'docker compose -f server/docker-compose.yml ps db --format json',
       { cwd: ROOT, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }
     );
-    return output.includes('"db"') || output.includes('"Service":"db"');
-  } catch {
-    return false;
-  }
+    if (output.includes('"running"')) return true;
+  } catch {}
+
+  // Fallback: check if port 5432 is already in use (handles containers
+  // started outside this compose project or native PostgreSQL installs)
+  try {
+    if (process.platform === 'win32') {
+      const output = execSync('netstat -ano | findstr :5432 | findstr LISTENING',
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
+      return output.trim().length > 0;
+    } else {
+      execSync('lsof -i :5432 -sTCP:LISTEN', { stdio: 'ignore' });
+      return true;
+    }
+  } catch {}
+
+  return false;
 }
 
 function isPostgresReady() {
+  // Try via docker compose exec first
   try {
     execSync(
       'docker compose -f server/docker-compose.yml exec -T db pg_isready -U postgres',
       { cwd: ROOT, stdio: 'ignore' }
     );
     return true;
-  } catch {
-    return false;
-  }
+  } catch {}
+
+  // Fallback: try connecting directly (handles non-compose postgres)
+  try {
+    execSync('docker run --rm --network host postgres:15 pg_isready -h localhost -U postgres',
+      { stdio: 'ignore' });
+    return true;
+  } catch {}
+
+  return false;
 }
 
 async function waitForPostgres(maxAttempts = 30) {
@@ -63,11 +93,14 @@ async function main() {
 
   // 1. Install root + workspace dependencies
   console.log('--- Installing dependencies ---');
+  removePackageLock(ROOT);
   run('yarn install');
 
   // 2. Install non-workspace dependencies
   console.log('\n--- Installing non-workspace dependencies ---');
+  removePackageLock(path.join(ROOT, 'client/src-tauri/pumpfun-service'));
   run('yarn install', { cwd: path.join(ROOT, 'client/src-tauri/pumpfun-service') });
+  removePackageLock(path.join(ROOT, 'server'));
   run('yarn install', { cwd: path.join(ROOT, 'server') });
 
   // 3. Install & build remotion-renderer sidecar
@@ -76,6 +109,7 @@ async function main() {
   const bundlePath = path.join(sidecarDir, 'dist/bundle.js');
 
   if (!fs.existsSync(bundlePath)) {
+    removePackageLock(sidecarDir);
     run('yarn install', { cwd: sidecarDir });
     run('yarn build', { cwd: sidecarDir });
   } else {
