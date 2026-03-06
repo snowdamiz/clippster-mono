@@ -409,17 +409,23 @@ async function handleExport() {
 					if (introResult.success && introResult.filePath) {
 						// Add intro video to the beginning of the timeline (track 0)
 						const introDuration = campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : 3;
-						const introElement = {
-							id: `intro-${Date.now()}`,
+						const introElement: any = {
 							type: "video" as const,
+							name: "Campaign Intro",
 							trackIndex: 0,
 							startTime: 0,
 							duration: introDuration,
 							mediaId: introResult.filePath,
 							trimStart: 0,
 							trimEnd: introDuration,
+							transform: { scale: 1, rotation: 0 },
+							opacity: 1,
 						};
-						editor.timeline.insertElement({ element: introElement, placement: "start" });
+						const tracks = editor.timeline.getTracks();
+						const videoTrack = tracks.find(t => t.type === "video");
+						if (videoTrack) {
+							editor.timeline.insertElement({ element: introElement, placement: { mode: "explicit", trackId: videoTrack.id } });
+						}
 						console.log("[ExportButton] Added campaign intro");
 					}
 				} catch (err) {
@@ -439,18 +445,23 @@ async function handleExport() {
 					if (outroResult.success && outroResult.filePath) {
 						// Add outro video to the end of the timeline (track 0)
 						const outroDuration = campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : 3;
-						const currentDuration = editor.timeline.getDuration();
-						const outroElement = {
-							id: `outro-${Date.now()}`,
+						const outroElement: any = {
 							type: "video" as const,
+							name: "Campaign Outro",
 							trackIndex: 0,
-							startTime: currentDuration,
+							startTime: 0,
 							duration: outroDuration,
 							mediaId: outroResult.filePath,
 							trimStart: 0,
 							trimEnd: outroDuration,
+							transform: { scale: 1, rotation: 0 },
+							opacity: 1,
 						};
-						editor.timeline.insertElement({ element: outroElement, placement: "end" });
+						const tracks = editor.timeline.getTracks();
+						const videoTrack = tracks.find(t => t.type === "video");
+						if (videoTrack) {
+							editor.timeline.insertElement({ element: outroElement, placement: { mode: "explicit", trackId: videoTrack.id } });
+						}
 						console.log("[ExportButton] Added campaign outro");
 					}
 				} catch (err) {
@@ -467,25 +478,28 @@ async function handleExport() {
 						const watermark = await getWatermarkImage(String(watermarkSettings.watermark_id));
 						if (watermark?.file_path) {
 							// Add watermark as image element on overlay track
-							const totalDuration = editor.timeline.getDuration();
-							const watermarkElement = {
-								id: `watermark-${Date.now()}`,
+							const position = String(watermarkSettings.position || "bottom-right");
+							const watermarkElement: any = {
 								type: "image" as const,
+								name: "Campaign Watermark",
 								trackIndex: 1,
 								startTime: 0,
-								duration: totalDuration,
+								duration: 999999,
 								mediaId: watermark.file_path,
+								trimStart: 0,
+								trimEnd: 999999,
 								transform: {
-									scale: watermarkSettings.scale || 0.15,
+									scale: Number(watermarkSettings.scale) || 0.15,
 									rotation: 0,
 								},
 								position: {
-									x: watermarkSettings.position?.includes("right") ? 200 : -200,
-									y: watermarkSettings.position?.includes("bottom") ? 150 : -150,
+									x: position.includes("right") ? 200 : -200,
+									y: position.includes("bottom") ? 150 : -150,
 								},
-								opacity: watermarkSettings.opacity || 0.8,
+								opacity: Number(watermarkSettings.opacity) || 0.8,
 							};
-							editor.timeline.insertElement({ element: watermarkElement, placement: "end" });
+							// Use auto placement for watermark (will create appropriate track)
+							editor.timeline.insertElement({ element: watermarkElement, placement: { mode: "auto" } });
 							console.log("[ExportButton] Added campaign watermark");
 						}
 					}
@@ -530,12 +544,23 @@ async function handleExport() {
 				try {
 					const { getVideoEditorSourcesByProjectId } = await import("@/services/database/video-editor-projects");
 					const { updateClipBuildStatus } = await import("@/services/database/clip-build");
+					const { updateClip } = await import("@/services/database/clips");
 					const sources = await getVideoEditorSourcesByProjectId(project.metadata.id);
 					const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
 					if (clipSource?.source_id) {
 						await updateClipBuildStatus(clipSource.source_id, "completed", {
 							builtFilePath: result.outputPath,
 						});
+
+						// Save campaign_id to clip record for payment tracking
+						if (isForCampaign.value && selectedCampaign.value) {
+							try {
+								await updateClip(clipSource.source_id, { campaign_id: selectedCampaign.value.id });
+								console.log("[ExportButton] Saved campaign_id to clip:", selectedCampaign.value.id);
+							} catch (err) {
+								console.warn("[ExportButton] Failed to save campaign_id:", err);
+							}
+						}
 
 						// Trigger automatic background transcription for the exported video
 						// This ensures the exported composition (including imported videos and other clips) is fully searchable
