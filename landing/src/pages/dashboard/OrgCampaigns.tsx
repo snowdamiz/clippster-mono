@@ -16,10 +16,8 @@ import {
   completeCampaign,
   uploadCampaignCoverImage,
   setCampaignCreatorProfiles,
-  listCampaignParticipants,
   approveParticipant,
   rejectParticipant,
-  listOrganizationCampaignSubmissions,
   verifySubmission,
   rejectSubmission
 } from '@/services/campaignApi'
@@ -164,12 +162,12 @@ export function OrgCampaigns() {
 
   // Detail dialog
   const [showDetailDialog, setShowDetailDialog] = useState(false)
-  const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null)
+  const [selectedCampaign, _setSelectedCampaign] = useState<Campaign | null>(null)
   const [detailTab, setDetailTab] = useState<'overview' | 'participants' | 'submissions'>('overview')
   const [participants, setParticipants] = useState<any[]>([])
   const [submissions, setSubmissions] = useState<any[]>([])
-  const [loadingParticipants, setLoadingParticipants] = useState(false)
-  const [loadingSubmissions, setLoadingSubmissions] = useState(false)
+  const [loadingParticipants, _setLoadingParticipants] = useState(false)
+  const [loadingSubmissions, _setLoadingSubmissions] = useState(false)
 
   // Delete dialog
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)

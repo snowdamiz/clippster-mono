@@ -146,7 +146,7 @@ export default function CampaignRewardsDialog({ campaign, onClose }: Props) {
           <button onClick={onClose} className="btn-primary">Close</button>
         </div>
 
-        <style jsx>{`
+        <style>{`
           .dialog-overlay {
             position: fixed;
             top: 0;

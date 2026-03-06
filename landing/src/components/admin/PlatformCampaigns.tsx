@@ -311,7 +311,7 @@ export default function PlatformCampaigns() {
         />
       )}
 
-      <style jsx>{`
+      <style>{`
         .platform-campaigns {
           padding: 24px;
           max-width: 1400px;

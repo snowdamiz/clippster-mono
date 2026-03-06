@@ -505,7 +505,7 @@ export default function CreatePlatformCampaignDialog({ revenueBalance, onClose, 
           </button>
         </div>
 
-        <style jsx>{`
+        <style>{`
           .dialog-overlay {
             position: fixed;
             top: 0;
