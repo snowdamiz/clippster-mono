@@ -126,7 +126,328 @@
                     />
                   </div>
 
-                  <!-- Reward toggles would go here - simplified for length -->
+                  <!-- Discount Percentage -->
+                  <div class="campaign-dialog__field">
+                    <label class="campaign-dialog__label">Subscription Discount</label>
+                    <div class="relative">
+                      <button
+                        @click="tier.showDiscountDropdown = !tier.showDiscountDropdown"
+                        class="campaign-dialog__input campaign-dialog__select"
+                      >
+                        <span>{{ tier.discount_percent > 0 ? tier.discount_percent + '% off' : 'No discount' }}</span>
+                        <ChevronDown
+                          :size="16"
+                          class="transition-transform"
+                          :class="{ 'rotate-180': tier.showDiscountDropdown }"
+                        />
+                      </button>
+                      <div v-if="tier.showDiscountDropdown" class="campaign-dialog__dropdown">
+                        <button
+                          @click="selectDiscountPercent(index, 0)"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.discount_percent === 0 }"
+                        >
+                          No discount
+                        </button>
+                        <button
+                          v-for="percent in [10, 15, 20, 25, 30, 40, 50, 75, 100]"
+                          :key="percent"
+                          @click="selectDiscountPercent(index, percent)"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.discount_percent === percent }"
+                        >
+                          {{ percent }}% off
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Discount Recurring Checkbox (only if discount > 0) -->
+                  <div v-if="tier.discount_percent > 0" class="campaign-dialog__field">
+                    <label class="campaign-dialog__checkbox-wrapper">
+                      <input
+                        type="checkbox"
+                        v-model="tier.discount_recurring"
+                        class="campaign-dialog__checkbox"
+                      />
+                      <span>Recurring discount</span>
+                    </label>
+                  </div>
+
+                  <!-- Discount Duration (only if discount > 0 and recurring) -->
+                  <div v-if="tier.discount_percent > 0 && tier.discount_recurring" class="campaign-dialog__field">
+                    <label class="campaign-dialog__label">Discount Duration</label>
+                    <div class="relative">
+                      <button
+                        @click="tier.showDiscountDurationDropdown = !tier.showDiscountDurationDropdown"
+                        class="campaign-dialog__input campaign-dialog__select"
+                      >
+                        <span>{{ tier.discount_duration_months }} month{{ tier.discount_duration_months !== 1 ? 's' : '' }}</span>
+                        <ChevronDown
+                          :size="16"
+                          class="transition-transform"
+                          :class="{ 'rotate-180': tier.showDiscountDurationDropdown }"
+                        />
+                      </button>
+                      <div v-if="tier.showDiscountDurationDropdown" class="campaign-dialog__dropdown">
+                        <button
+                          v-for="months in [1, 2, 3, 6, 12]"
+                          :key="months"
+                          @click="selectDiscountDuration(index, months)"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.discount_duration_months === months }"
+                        >
+                          {{ months }} month{{ months !== 1 ? 's' : '' }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Discount Applies To (only if discount > 0) -->
+                  <div v-if="tier.discount_percent > 0" class="campaign-dialog__field">
+                    <label class="campaign-dialog__label">Discount Applies To</label>
+                    <div class="relative">
+                      <button
+                        @click="tier.showDiscountTiersDropdown = !tier.showDiscountTiersDropdown"
+                        class="campaign-dialog__input campaign-dialog__select"
+                      >
+                        <span>{{ getAppliesTo(tier.discount_applies_to_tiers) }}</span>
+                        <ChevronDown
+                          :size="16"
+                          class="transition-transform"
+                          :class="{ 'rotate-180': tier.showDiscountTiersDropdown }"
+                        />
+                      </button>
+                      <div v-if="tier.showDiscountTiersDropdown" class="campaign-dialog__dropdown">
+                        <button
+                          @click="selectAppliesTo(index, 'discount_applies_to_tiers', [])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.discount_applies_to_tiers.length === 0 }"
+                        >
+                          All tiers
+                        </button>
+                        <button
+                          @click="selectAppliesTo(index, 'discount_applies_to_tiers', ['starter'])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': JSON.stringify(tier.discount_applies_to_tiers) === JSON.stringify(['starter']) }"
+                        >
+                          Starter only
+                        </button>
+                        <button
+                          @click="selectAppliesTo(index, 'discount_applies_to_tiers', ['creator'])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': JSON.stringify(tier.discount_applies_to_tiers) === JSON.stringify(['creator']) }"
+                        >
+                          Creator only
+                        </button>
+                        <button
+                          @click="selectAppliesTo(index, 'discount_applies_to_tiers', ['pro'])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': JSON.stringify(tier.discount_applies_to_tiers) === JSON.stringify(['pro']) }"
+                        >
+                          Pro only
+                        </button>
+                        <button
+                          @click="selectAppliesTo(index, 'discount_applies_to_tiers', ['starter', 'creator'])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': JSON.stringify(tier.discount_applies_to_tiers) === JSON.stringify(['starter', 'creator']) }"
+                        >
+                          Starter + Creator
+                        </button>
+                        <button
+                          @click="selectAppliesTo(index, 'discount_applies_to_tiers', ['creator', 'pro'])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': JSON.stringify(tier.discount_applies_to_tiers) === JSON.stringify(['creator', 'pro']) }"
+                        >
+                          Creator + Pro
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Free Months -->
+                  <div class="campaign-dialog__field">
+                    <label class="campaign-dialog__label">Free Subscription Months</label>
+                    <div class="relative">
+                      <button
+                        @click="tier.showFreeMonthsDropdown = !tier.showFreeMonthsDropdown"
+                        class="campaign-dialog__input campaign-dialog__select"
+                      >
+                        <span>{{ tier.free_months_count > 0 ? tier.free_months_count + ' month' + (tier.free_months_count !== 1 ? 's' : '') + (tier.free_months_recurring ? ' (recurring)' : '') : 'None' }}</span>
+                        <ChevronDown
+                          :size="16"
+                          class="transition-transform"
+                          :class="{ 'rotate-180': tier.showFreeMonthsDropdown }"
+                        />
+                      </button>
+                      <div v-if="tier.showFreeMonthsDropdown" class="campaign-dialog__dropdown">
+                        <button
+                          @click="selectFreeMonths(index, 0, false)"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.free_months_count === 0 }"
+                        >
+                          None
+                        </button>
+                        <button
+                          v-for="months in [1, 2, 3, 6, 12]"
+                          :key="months"
+                          @click="selectFreeMonths(index, months, false)"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.free_months_count === months && !tier.free_months_recurring }"
+                        >
+                          {{ months }} month{{ months !== 1 ? 's' : '' }}
+                        </button>
+                        <button
+                          v-for="months in [1, 2, 3, 6, 12]"
+                          :key="'recurring-' + months"
+                          @click="selectFreeMonths(index, months, true)"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.free_months_count === months && tier.free_months_recurring }"
+                        >
+                          {{ months }} month{{ months !== 1 ? 's' : '' }} (recurring)
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Free Months Applies To (only if free_months > 0) -->
+                  <div v-if="tier.free_months_count > 0" class="campaign-dialog__field">
+                    <label class="campaign-dialog__label">Free Months Apply To</label>
+                    <div class="relative">
+                      <button
+                        @click="tier.showFreeMonthsTiersDropdown = !tier.showFreeMonthsTiersDropdown"
+                        class="campaign-dialog__input campaign-dialog__select"
+                      >
+                        <span>{{ getAppliesTo(tier.free_months_applies_to_tiers) }}</span>
+                        <ChevronDown
+                          :size="16"
+                          class="transition-transform"
+                          :class="{ 'rotate-180': tier.showFreeMonthsTiersDropdown }"
+                        />
+                      </button>
+                      <div v-if="tier.showFreeMonthsTiersDropdown" class="campaign-dialog__dropdown">
+                        <button
+                          @click="selectAppliesTo(index, 'free_months_applies_to_tiers', [])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.free_months_applies_to_tiers.length === 0 }"
+                        >
+                          All tiers
+                        </button>
+                        <button
+                          @click="selectAppliesTo(index, 'free_months_applies_to_tiers', ['starter'])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': JSON.stringify(tier.free_months_applies_to_tiers) === JSON.stringify(['starter']) }"
+                        >
+                          Starter only
+                        </button>
+                        <button
+                          @click="selectAppliesTo(index, 'free_months_applies_to_tiers', ['creator'])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': JSON.stringify(tier.free_months_applies_to_tiers) === JSON.stringify(['creator']) }"
+                        >
+                          Creator only
+                        </button>
+                        <button
+                          @click="selectAppliesTo(index, 'free_months_applies_to_tiers', ['pro'])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': JSON.stringify(tier.free_months_applies_to_tiers) === JSON.stringify(['pro']) }"
+                        >
+                          Pro only
+                        </button>
+                        <button
+                          @click="selectAppliesTo(index, 'free_months_applies_to_tiers', ['starter', 'creator'])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': JSON.stringify(tier.free_months_applies_to_tiers) === JSON.stringify(['starter', 'creator']) }"
+                        >
+                          Starter + Creator
+                        </button>
+                        <button
+                          @click="selectAppliesTo(index, 'free_months_applies_to_tiers', ['creator', 'pro'])"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': JSON.stringify(tier.free_months_applies_to_tiers) === JSON.stringify(['creator', 'pro']) }"
+                        >
+                          Creator + Pro
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- AI Credits Amount -->
+                  <div class="campaign-dialog__field">
+                    <label class="campaign-dialog__label">AI Credits</label>
+                    <div class="relative">
+                      <button
+                        @click="tier.showAICreditsDropdown = !tier.showAICreditsDropdown"
+                        class="campaign-dialog__input campaign-dialog__select"
+                      >
+                        <span>{{ tier.ai_credits_amount > 0 ? tier.ai_credits_amount + ' minutes' : 'None' }}</span>
+                        <ChevronDown
+                          :size="16"
+                          class="transition-transform"
+                          :class="{ 'rotate-180': tier.showAICreditsDropdown }"
+                        />
+                      </button>
+                      <div v-if="tier.showAICreditsDropdown" class="campaign-dialog__dropdown">
+                        <button
+                          @click="selectAICreditsAmount(index, 0)"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.ai_credits_amount === 0 }"
+                        >
+                          None
+                        </button>
+                        <button
+                          v-for="amount in [50, 100, 200, 300, 500, 1000]"
+                          :key="amount"
+                          @click="selectAICreditsAmount(index, amount)"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.ai_credits_amount === amount }"
+                        >
+                          {{ amount }} minutes
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- AI Credits Recurring Checkbox (only if amount > 0) -->
+                  <div v-if="tier.ai_credits_amount > 0" class="campaign-dialog__field">
+                    <label class="campaign-dialog__checkbox-wrapper">
+                      <input
+                        type="checkbox"
+                        v-model="tier.ai_credits_recurring"
+                        class="campaign-dialog__checkbox"
+                      />
+                      <span>Recurring credits</span>
+                    </label>
+                  </div>
+
+                  <!-- AI Credits Duration (only if amount > 0 and recurring) -->
+                  <div v-if="tier.ai_credits_amount > 0 && tier.ai_credits_recurring" class="campaign-dialog__field">
+                    <label class="campaign-dialog__label">Credits Duration</label>
+                    <div class="relative">
+                      <button
+                        @click="tier.showAICreditsDurationDropdown = !tier.showAICreditsDurationDropdown"
+                        class="campaign-dialog__input campaign-dialog__select"
+                      >
+                        <span>{{ tier.ai_credits_duration_months }} month{{ tier.ai_credits_duration_months !== 1 ? 's' : '' }}</span>
+                        <ChevronDown
+                          :size="16"
+                          class="transition-transform"
+                          :class="{ 'rotate-180': tier.showAICreditsDurationDropdown }"
+                        />
+                      </button>
+                      <div v-if="tier.showAICreditsDurationDropdown" class="campaign-dialog__dropdown">
+                        <button
+                          v-for="months in [1, 2, 3, 6, 12]"
+                          :key="months"
+                          @click="selectAICreditsDuration(index, months)"
+                          class="campaign-dialog__dropdown-item"
+                          :class="{ 'campaign-dialog__dropdown-item--selected': tier.ai_credits_duration_months === months }"
+                        >
+                          {{ months }} month{{ months !== 1 ? 's' : '' }}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <button @click="addTier" class="campaign-dialog__btn-add">
                   <Plus :size="16" />
@@ -301,18 +622,23 @@ function addTier() {
   form.value.reward_tiers.push({
     tier_number: form.value.reward_tiers.length + 1,
     views_required: 10000,
-    discount_enabled: false,
-    discount_percent: 25,
+    discount_percent: 0,
     discount_duration_months: 1,
     discount_recurring: false,
     discount_applies_to_tiers: [],
-    free_months_enabled: false,
-    free_months_count: 1,
+    free_months_count: 0,
     free_months_recurring: false,
     free_months_applies_to_tiers: [],
-    ai_credits_enabled: false,
-    ai_credits_amount: 100,
-    ai_credits_recurring: false
+    ai_credits_amount: 0,
+    ai_credits_duration_months: 1,
+    ai_credits_recurring: false,
+    showDiscountDropdown: false,
+    showDiscountDurationDropdown: false,
+    showDiscountTiersDropdown: false,
+    showFreeMonthsDropdown: false,
+    showFreeMonthsTiersDropdown: false,
+    showAICreditsDropdown: false,
+    showAICreditsDurationDropdown: false
   });
 }
 
@@ -321,6 +647,53 @@ function removeTier(index: number) {
   form.value.reward_tiers.forEach((tier, i) => {
     tier.tier_number = i + 1;
   });
+}
+
+function selectDiscountPercent(index: number, percent: number) {
+  form.value.reward_tiers[index].discount_percent = percent;
+  form.value.reward_tiers[index].showDiscountDropdown = false;
+  if (percent === 0) {
+    form.value.reward_tiers[index].discount_recurring = false;
+  }
+}
+
+function selectDiscountDuration(index: number, months: number) {
+  form.value.reward_tiers[index].discount_duration_months = months;
+  form.value.reward_tiers[index].showDiscountDurationDropdown = false;
+}
+
+function selectFreeMonths(index: number, months: number, recurring: boolean) {
+  form.value.reward_tiers[index].free_months_count = months;
+  form.value.reward_tiers[index].free_months_recurring = recurring;
+  form.value.reward_tiers[index].showFreeMonthsDropdown = false;
+}
+
+function selectAICreditsAmount(index: number, amount: number) {
+  form.value.reward_tiers[index].ai_credits_amount = amount;
+  form.value.reward_tiers[index].showAICreditsDropdown = false;
+  if (amount === 0) {
+    form.value.reward_tiers[index].ai_credits_recurring = false;
+  }
+}
+
+function selectAICreditsDuration(index: number, months: number) {
+  form.value.reward_tiers[index].ai_credits_duration_months = months;
+  form.value.reward_tiers[index].showAICreditsDurationDropdown = false;
+}
+
+function selectAppliesTo(index: number, field: string, tiers: string[]) {
+  form.value.reward_tiers[index][field] = tiers;
+  if (field === 'discount_applies_to_tiers') {
+    form.value.reward_tiers[index].showDiscountTiersDropdown = false;
+  } else {
+    form.value.reward_tiers[index].showFreeMonthsTiersDropdown = false;
+  }
+}
+
+function getAppliesTo(tiers: string[]): string {
+  if (tiers.length === 0) return 'All tiers';
+  if (tiers.length === 1) return tiers[0].charAt(0).toUpperCase() + tiers[0].slice(1) + ' only';
+  return tiers.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' + ');
 }
 
 async function createCampaign() {
@@ -682,6 +1055,73 @@ function formatMoney(value: number): string {
   border-color: var(--sidebar-accent);
   color: var(--sidebar-accent);
   background-color: rgba(6, 182, 212, 0.05);
+}
+
+/* Checkbox */
+.campaign-dialog__checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--sidebar-text);
+  cursor: pointer;
+}
+
+.campaign-dialog__checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--sidebar-accent);
+}
+
+/* Dropdown */
+.campaign-dialog__dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  overflow: hidden;
+  z-index: 10;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.campaign-dialog__dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.campaign-dialog__dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.campaign-dialog__dropdown::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.campaign-dialog__dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--sidebar-text);
+  transition: background-color 150ms ease;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.campaign-dialog__dropdown-item:hover {
+  background-color: var(--sidebar-hover);
+}
+
+.campaign-dialog__dropdown-item--selected {
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
 }
 
 /* Alert */
