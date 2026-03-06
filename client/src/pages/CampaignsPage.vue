@@ -105,8 +105,12 @@
                     </div>
                   </div>
 
-                  <!-- Organization Badge -->
-                  <div v-if="campaign.organization" class="campaign-card__org-badge">
+                  <!-- Organization Badge or Platform Badge -->
+                  <div v-if="campaign.is_platform_campaign" class="campaign-card__org-badge campaign-card__org-badge--platform">
+                    <Sparkles class="campaign-card__org-icon" />
+                    <span class="campaign-card__org-name">Clippster Campaign</span>
+                  </div>
+                  <div v-else-if="campaign.organization" class="campaign-card__org-badge">
                     <img
                       v-if="campaign.organization.logo_url"
                       :src="campaign.organization.logo_url"
@@ -606,6 +610,20 @@
     background-color: rgba(0, 0, 0, 0.65);
     backdrop-filter: blur(8px);
     border-radius: 6px;
+  }
+
+  .campaign-card__org-badge--platform {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.9) 0%, rgba(16, 185, 129, 0.9) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .campaign-card__org-badge--platform .campaign-card__org-icon {
+    color: rgba(255, 255, 255, 1);
+  }
+
+  .campaign-card__org-badge--platform .campaign-card__org-name {
+    color: rgba(255, 255, 255, 1);
+    font-weight: 600;
   }
 
   .campaign-card__org-logo {

@@ -74,6 +74,8 @@ export interface Campaign {
   per_clip_amount: string | null;
   clips_per_profile: number;
   assigned_streamer_ids: number[];
+  is_platform_campaign: boolean;
+  platform_payment_model?: string | null;
   inserted_at: string;
   updated_at: string;
   organization?: CampaignOrganization;
