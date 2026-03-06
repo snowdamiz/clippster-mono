@@ -356,6 +356,11 @@ const router = createRouter({
           component: () => import('@/pages/admin/AdminOrgApplications.vue'),
         },
         {
+          path: 'platform-campaigns',
+          name: 'admin-platform-campaigns',
+          component: () => import('@/pages/admin/AdminPlatformCampaigns.vue'),
+        },
+        {
           path: 'affiliates',
           name: 'admin-affiliates',
           component: () => import('@/pages/admin/AdminAffiliates.vue'),
@@ -475,6 +480,11 @@ const router = createRouter({
           path: 'campaigns',
           name: 'org-campaigns',
           component: () => import('@/pages/organization/OrganizationCampaigns.vue'),
+        },
+        {
+          path: 'campaigns/:campaignId',
+          name: 'org-campaign-detail',
+          component: () => import('@/pages/CampaignDetailPage.vue'),
         },
         {
           path: 'clippers',
@@ -662,17 +672,6 @@ router.beforeEach(async (to, _from, next) => {
         // If we can't check, allow through (don't block on network errors)
       }
     }
-  }
-
-  // Block campaigns routes (Coming Soon)
-  if (to.path === '/campaigns' || to.name === 'campaigns-home') {
-    next('/creators');
-    return;
-  }
-  if (to.name === 'org-campaigns') {
-    const orgId = to.params.id as string;
-    next(`/organization/${orgId}`);
-    return;
   }
 
   // Check Live Clip feature flag for /live-clip route

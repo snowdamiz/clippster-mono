@@ -296,7 +296,6 @@
       icon: Target,
       route: `/organization/${organizationId.value}/campaigns`,
       color: 'violet',
-      comingSoon: true,
     },
     {
       id: 'clippers',

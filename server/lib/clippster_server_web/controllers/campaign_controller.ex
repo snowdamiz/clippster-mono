@@ -7,6 +7,18 @@ defmodule ClippsterServerWeb.CampaignController do
 
   plug ClippsterServerWeb.AuthPlug
 
+  defp can_access_campaigns?(user) do
+    # Admins always have access, or users explicitly enabled by admin
+    user.is_admin or user.campaigns_enabled
+  end
+
+  defp can_org_access_campaigns?(org_id) do
+    case Organizations.get_organization(org_id) do
+      nil -> false
+      org -> org.campaigns_enabled
+    end
+  end
+
   # ============================================================================
   # Public Campaign Routes (for marketplace)
   # ============================================================================
@@ -56,13 +68,21 @@ defmodule ClippsterServerWeb.CampaignController do
   def apply(conn, %{"id" => id} = params) do
     user = conn.assigns.current_user
 
-    # Free tier users cannot apply to campaigns
-    if is_free_tier?(user) do
-      conn
-      |> put_status(403)
-      |> json(%{success: false, error: "Campaign participation requires a paid subscription"})
-    else
-      application_note = Map.get(params, "application_note")
+    cond do
+      # Check if user has campaigns access enabled
+      not can_access_campaigns?(user) ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Campaigns access requires admin approval. Contact support to request access."})
+
+      # Free tier users cannot apply to campaigns
+      is_free_tier?(user) ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Campaign participation requires a paid subscription"})
+
+      true ->
+        application_note = Map.get(params, "application_note")
 
       case Campaigns.get_campaign(id) do
         nil ->
@@ -145,6 +165,25 @@ defmodule ClippsterServerWeb.CampaignController do
   end
 
   @doc """
+  List campaigns the current user has joined that use global branding (no creator profile).
+  Used during clip build to show global branding campaign options for any VOD.
+  """
+  def global_branding_campaigns(conn, _params) do
+    user = conn.assigns.current_user
+
+    participants = Campaigns.list_user_global_branding_campaigns(user.id)
+
+    json(conn, %{
+      success: true,
+      campaigns:
+        Enum.map(participants, fn p ->
+          serialize_campaign(p.campaign)
+          |> Map.put(:joined_at, p.inserted_at)
+        end)
+    })
+  end
+
+  @doc """
   List submissions for the current user.
   """
   def my_submissions(conn, params) do
@@ -181,12 +220,21 @@ defmodule ClippsterServerWeb.CampaignController do
   def submit_clip(conn, %{"id" => campaign_id} = params) do
     user = conn.assigns.current_user
 
-    if is_free_tier?(user) do
-      conn
-      |> put_status(403)
-      |> json(%{success: false, error: "Campaign submissions require a paid subscription"})
-    else
-      case Campaigns.get_campaign(campaign_id) do
+    cond do
+      # Check if user has campaigns access enabled
+      not can_access_campaigns?(user) ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Campaigns access requires admin approval. Contact support to request access."})
+
+      # Free tier users cannot submit to campaigns
+      is_free_tier?(user) ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Campaign submissions require a paid subscription"})
+
+      true ->
+        case Campaigns.get_campaign(campaign_id) do
         nil ->
           conn
           |> put_status(404)
@@ -288,7 +336,11 @@ defmodule ClippsterServerWeb.CampaignController do
           global_watermarks: Map.get(params, "global_watermarks"),
           require_watermark: Map.get(params, "require_watermark"),
           require_intro: Map.get(params, "require_intro"),
-          require_outro: Map.get(params, "require_outro")
+          require_outro: Map.get(params, "require_outro"),
+          payment_model: Map.get(params, "payment_model", "cpm"),
+          per_clip_amount: Map.get(params, "per_clip_amount"),
+          clips_per_profile: Map.get(params, "clips_per_profile", 5),
+          assigned_streamer_ids: Map.get(params, "assigned_streamer_ids", [])
         }
 
         case Campaigns.create_campaign(organization, attrs, user) do
@@ -338,7 +390,11 @@ defmodule ClippsterServerWeb.CampaignController do
           "global_outro_id",
           "require_watermark",
           "require_intro",
-          "require_outro"
+          "require_outro",
+          "payment_model",
+          "per_clip_amount",
+          "clips_per_profile",
+          "assigned_streamer_ids"
         ])
         |> maybe_add_dates(params)
         |> maybe_strip_cover_image_url()
@@ -798,6 +854,17 @@ defmodule ClippsterServerWeb.CampaignController do
             conn
             |> put_status(403)
             |> json(%{success: false, error: "Not authorized"})
+
+          {:error, :insufficient_views} ->
+            campaign = Campaigns.get_campaign(submission.campaign_id)
+            conn
+            |> put_status(400)
+            |> json(%{
+              success: false,
+              error: "Submission does not meet minimum view requirement",
+              min_views_required: campaign.min_views_for_payment,
+              current_views: submission.view_count
+            })
         end
     end
   end
@@ -856,6 +923,9 @@ defmodule ClippsterServerWeb.CampaignController do
         submission ->
           case Campaigns.update_submission_views(submission, view_count) do
             {:ok, updated} ->
+              # Check for platform campaign reward milestones
+              ClippsterServer.PlatformCampaigns.check_and_grant_rewards(updated.id)
+              
               json(conn, %{success: true, submission: serialize_submission(updated)})
 
             {:error, changeset} ->
@@ -876,41 +946,42 @@ defmodule ClippsterServerWeb.CampaignController do
   # ============================================================================
 
   @doc """
-  Create a payment for a submission.
+  Calculate payments for all verified submissions in a campaign.
   """
-  def create_payment(
-        conn,
-        %{"organization_id" => _org_id, "submission_id" => submission_id} = params
-      ) do
+  def calculate_payments(conn, %{"organization_id" => org_id, "id" => campaign_id}) do
     user = conn.assigns.current_user
-    amount = Map.get(params, "amount")
 
-    case Campaigns.get_submission(submission_id) do
-      nil ->
+    with campaign when not is_nil(campaign) <- Campaigns.get_campaign(String.to_integer(campaign_id)),
+         true <- campaign.organization_id == String.to_integer(org_id),
+         true <- Organizations.is_member?(org_id, user.id) do
+      case Campaigns.calculate_campaign_payments(campaign, user) do
+        {:ok, payments} ->
+          total_amount =
+            Enum.reduce(payments, Decimal.new(0), fn p, acc ->
+              Decimal.add(acc, p.amount)
+            end)
+
+          json(conn, %{
+            success: true,
+            payments_created: length(payments),
+            total_amount: Decimal.to_string(total_amount)
+          })
+
+        {:error, reason} ->
+          conn
+          |> put_status(422)
+          |> json(%{success: false, error: inspect(reason)})
+      end
+    else
+      _ ->
         conn
-        |> put_status(404)
-        |> json(%{success: false, error: "Submission not found"})
-
-      submission ->
-        case Campaigns.create_payment(submission, amount, user) do
-          {:ok, payment} ->
-            json(conn, %{success: true, payment: serialize_payment(payment)})
-
-          {:error, :unauthorized} ->
-            conn
-            |> put_status(403)
-            |> json(%{success: false, error: "Not authorized"})
-
-          {:error, changeset} ->
-            conn
-            |> put_status(422)
-            |> json(%{success: false, error: format_errors(changeset)})
-        end
+        |> put_status(403)
+        |> json(%{success: false, error: "Not authorized"})
     end
   end
 
   @doc """
-  Mark a payment as completed.
+  Complete a payment for a campaign submission.
   """
   def complete_payment(conn, %{"organization_id" => _org_id, "payment_id" => payment_id} = params) do
     user = conn.assigns.current_user
@@ -971,8 +1042,11 @@ defmodule ClippsterServerWeb.CampaignController do
       cover_image_url: presign_url(campaign.cover_image_url),
       budget: campaign.budget,
       spent: campaign.spent,
+      spent_budget: campaign.spent_budget,
       cpm: campaign.cpm,
+      cpm_views: campaign.cpm_views,
       min_views_for_payment: campaign.min_views_for_payment,
+      max_views: campaign.max_views,
       join_type: campaign.join_type,
       allowed_platforms: campaign.allowed_platforms,
       payment_methods: campaign.payment_methods,
@@ -985,6 +1059,10 @@ defmodule ClippsterServerWeb.CampaignController do
       require_watermark: campaign.require_watermark,
       require_intro: campaign.require_intro,
       require_outro: campaign.require_outro,
+      payment_model: campaign.payment_model,
+      per_clip_amount: campaign.per_clip_amount,
+      clips_per_profile: campaign.clips_per_profile,
+      assigned_streamer_ids: campaign.assigned_streamer_ids,
       inserted_at: campaign.inserted_at,
       updated_at: campaign.updated_at,
       organization:

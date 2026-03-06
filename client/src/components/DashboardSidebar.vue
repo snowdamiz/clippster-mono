@@ -519,6 +519,16 @@
           badge: hasAccess ? item.badge : 'Coming Soon',
         };
       }
+      // Dynamically disable Campaigns for non-authorized users
+      if (item.path === '/campaigns') {
+        const user = authStore.user as any;
+        const hasAccess = user?.is_admin || user?.campaigns_enabled;
+        return {
+          ...item,
+          disabled: !hasAccess,
+          badge: hasAccess ? item.badge : 'Coming Soon',
+        };
+      }
       return item;
     });
   }

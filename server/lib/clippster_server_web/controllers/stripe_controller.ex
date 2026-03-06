@@ -460,6 +460,16 @@ defmodule ClippsterServerWeb.StripeController do
                   :ok
               end
 
+              # Allocate revenue to platform fund if enabled
+              case Subscriptions.get_active_subscription(user.id) do
+                nil -> :ok
+                subscription ->
+                  ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(
+                    subscription.id,
+                    amount_usd
+                  )
+              end
+
             {:error, reason} ->
               IO.puts("[Stripe Webhook] Failed to renew subscription: #{inspect(reason)}")
           end
@@ -746,6 +756,16 @@ defmodule ClippsterServerWeb.StripeController do
             0 -> get_subscription_amount(tier)
             cents -> Decimal.div(Decimal.new(cents), Decimal.new(100))
           end
+
+        # Allocate revenue to platform fund if enabled
+        case Subscriptions.get_active_subscription(user_id_int) do
+          nil -> :ok
+          subscription ->
+            ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(
+              subscription.id,
+              amount
+            )
+        end
 
         case Affiliates.record_signup_commission(user_id_int, tier, amount) do
           {:ok, _} ->

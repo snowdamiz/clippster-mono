@@ -11,6 +11,16 @@ export interface MessageNotification {
   message: Message;
 }
 
+export interface AppNotification {
+  id: number;
+  type: string;
+  title: string;
+  message: string;
+  data: Record<string, any>;
+  action_url?: string;
+  inserted_at: string;
+}
+
 export interface TypingEvent {
   userId: number;
 }
@@ -23,6 +33,7 @@ export interface ReadEvent {
 export type MessageHandler = (message: Message) => void;
 export type ConversationHandler = (conversation: Conversation) => void;
 export type NotificationHandler = (notification: MessageNotification) => void;
+export type AppNotificationHandler = (notification: AppNotification) => void;
 export type TypingHandler = (event: TypingEvent) => void;
 export type ReadHandler = (event: ReadEvent) => void;
 export type DeleteHandler = (event: { messageId: number }) => void;
@@ -44,6 +55,7 @@ class MessagingSocket {
   private onNewMessageNotification: NotificationHandler | null = null;
   private onConversationCreated: ConversationHandler | null = null;
   private onMessageReadNotification: ReadHandler | null = null;
+  private onAppNotification: AppNotificationHandler | null = null;
   private onConnectionStateChange: ConnectionStateHandler | null = null;
   private conversationHandlers: Map<number, {
     onNewMessage?: MessageHandler;
@@ -184,6 +196,19 @@ class MessagingSocket {
           userId: payload.user_id ?? payload.userId,
           conversationId: payload.conversation_id ?? payload.conversationId,
         });
+      });
+
+      this.userChannel.on('notification', (payload: any) => {
+        const notification: AppNotification = {
+          id: payload.id,
+          type: payload.type,
+          title: payload.title,
+          message: payload.message,
+          data: payload.data ?? {},
+          action_url: payload.action_url,
+          inserted_at: payload.inserted_at,
+        };
+        this.onAppNotification?.(notification);
       });
 
       this.userChannel
@@ -387,6 +412,13 @@ class MessagingSocket {
   setOnConnectionStateChange(handler: ConnectionStateHandler | null): void {
     this.onConnectionStateChange = handler;
     this.onConnectionStateChange?.(this.isSocketOpen);
+  }
+
+  /**
+   * Set handler for app notifications (payment verified, etc.)
+   */
+  public setOnNotification(handler: AppNotificationHandler) {
+    this.onAppNotification = handler;
   }
 
   /**

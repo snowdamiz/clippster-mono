@@ -120,6 +120,7 @@
                   :aspect-ratio="selectedAspectRatio"
                   :creator-default-intro="creatorDefaultIntro"
                   :creator-default-outro="creatorDefaultOutro"
+                  :creator-profile-server-id="creatorProfileServerId"
                   :is-transcribing="isTranscribing"
                   :transcribe-progress="transcribeProgressValue"
                   :transcribe-stage="transcribeStage"
@@ -453,6 +454,7 @@
 
   // Creator profile associated with this project (for preconfiguring settings)
   const creatorProfile = ref<CreatorProfileWithLinks | null>(null);
+  const creatorProfileServerId = ref<number | null>(null);
 
   // Creator profile default intro/outro (auto-applied when building clips)
   const creatorDefaultIntro = ref<IntroOutro | null>(null);
@@ -1659,6 +1661,14 @@
       // Then try to find the branding profile (streamer-specific, global, or user-selected)
       const profile = await resolveBrandingProfile(projectId);
       creatorProfile.value = profile;
+
+      // Extract server ID for campaign lookup (org profiles have numeric string IDs)
+      if (profile && profile.context_type === 'organization' && profile.id && !profile.id.startsWith('campaign-')) {
+        const serverId = parseInt(profile.id, 10);
+        creatorProfileServerId.value = isNaN(serverId) ? null : serverId;
+      } else {
+        creatorProfileServerId.value = null;
+      }
 
       if (profile) {
         console.log(

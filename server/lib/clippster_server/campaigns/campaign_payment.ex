@@ -8,7 +8,7 @@ defmodule ClippsterServer.Campaigns.CampaignPayment do
   alias ClippsterServer.Accounts.User
   alias ClippsterServer.Campaigns.{Campaign, CampaignSubmission, ClipperPaymentMethod}
 
-  @statuses ~w(pending processing completed failed)
+  @statuses ~w(pending verified completed failed)
 
   schema "campaign_payments" do
     field :amount, :decimal
@@ -16,6 +16,10 @@ defmodule ClippsterServer.Campaigns.CampaignPayment do
     field :status, :string, default: "pending"
     field :external_transaction_id, :string
     field :paid_at, :utc_datetime
+    field :verification_screenshot_url, :string
+    field :verification_notes, :string
+    field :payment_date, :date
+    field :clipper_notified_at, :utc_datetime
 
     belongs_to :campaign, Campaign
     belongs_to :submission, CampaignSubmission
@@ -74,6 +78,24 @@ defmodule ClippsterServer.Campaigns.CampaignPayment do
   def fail_changeset(payment) do
     payment
     |> change(status: "failed")
+  end
+
+  @doc """
+  Changeset for payment verification (manual payment proof submission).
+  """
+  def verification_changeset(payment, attrs) do
+    payment
+    |> cast(attrs, [
+      :verification_screenshot_url,
+      :verification_notes,
+      :payment_date,
+      :paid_by_user_id
+    ])
+    |> put_change(:status, "verified")
+    |> put_change(:paid_at, DateTime.utc_now() |> DateTime.truncate(:second))
+    |> put_change(:clipper_notified_at, DateTime.utc_now() |> DateTime.truncate(:second))
+    |> validate_required([:verification_notes])
+    |> foreign_key_constraint(:paid_by_user_id)
   end
 
   def statuses, do: @statuses
