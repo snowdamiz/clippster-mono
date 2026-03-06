@@ -191,9 +191,77 @@ pub async fn check_youtube_livestream(channel: String) -> Result<String, String>
     Ok(serde_json::to_string(&status).unwrap())
 }
 
+/// Get a single YouTube video's metadata using yt-dlp
+#[tauri::command]
+pub async fn get_single_youtube_video(video_url: String) -> Result<String, String> {
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    
+    println!("[YouTube] Fetching single video: {}", video_url);
+
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut cmd);
+
+    cmd.arg("--dump-json")
+        .arg("--skip-download")
+        .arg("--no-warnings")
+        .arg("--impersonate").arg("chrome")
+        .arg(&video_url);
+
+    let output = cmd.output().await
+        .map_err(|e| format!("Failed to run yt-dlp: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if stdout.trim().is_empty() {
+        return Err(format!("yt-dlp returned no output. stderr: {}", &stderr[..stderr.len().min(500)]));
+    }
+
+    let json: serde_json::Value = serde_json::from_str(stdout.trim())
+        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+
+    let video_id = match json["id"].as_str() {
+        Some(id) if !id.is_empty() => id.to_string(),
+        _ => return Err("No video ID in response".to_string()),
+    };
+
+    let upload_date = if let Some(release_ts) = json["release_timestamp"].as_i64() {
+        Some(release_ts.to_string())
+    } else if let Some(ts) = json["timestamp"].as_i64() {
+        Some(ts.to_string())
+    } else {
+        json["upload_date"].as_str().map(String::from)
+    };
+
+    let thumbnail_url = json["thumbnail"].as_str().map(String::from)
+        .or_else(|| Some(format!("https://i.ytimg.com/vi/{}/hqdefault.jpg", video_id)));
+
+    let url = json["webpage_url"].as_str()
+        .map(String::from)
+        .unwrap_or_else(|| format!("https://www.youtube.com/watch?v={}", video_id));
+
+    let vod = YouTubeVod {
+        video_id,
+        title: json["title"].as_str().map(String::from),
+        duration: json["duration"].as_f64(),
+        view_count: json["view_count"].as_i64(),
+        thumbnail_url,
+        upload_date,
+        url,
+    };
+
+    Ok(serde_json::to_string(&vec![vod]).unwrap())
+}
+
 /// Get list of live stream VODs from a YouTube channel using yt-dlp
 #[tauri::command]
 pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<String, String> {
+    // Check if input is a direct video URL
+    if let Some(video_id) = extract_video_id(&channel) {
+        println!("[YouTube VODs] Detected video URL, fetching single video: {}", video_id);
+        return get_single_youtube_video(format!("https://www.youtube.com/watch?v={}", video_id)).await;
+    }
+    
     let channel_id = normalize_channel_input(&channel);
     let ytdlp_path = resolve_ytdlp_binary()?;
     
@@ -293,6 +361,12 @@ pub async fn get_youtube_vods(channel: String, limit: Option<u32>) -> Result<Str
 /// Get list of regular videos (not live streams) from a YouTube channel using yt-dlp
 #[tauri::command]
 pub async fn get_youtube_videos(channel: String, limit: Option<u32>) -> Result<String, String> {
+    // Check if input is a direct video URL
+    if let Some(video_id) = extract_video_id(&channel) {
+        println!("[YouTube Videos] Detected video URL, fetching single video: {}", video_id);
+        return get_single_youtube_video(format!("https://www.youtube.com/watch?v={}", video_id)).await;
+    }
+    
     let channel_id = normalize_channel_input(&channel);
     let ytdlp_path = resolve_ytdlp_binary()?;
     
@@ -1237,6 +1311,53 @@ pub async fn get_youtube_channel_info(channel: String) -> Result<String, String>
 }
 
 // Helper functions
+
+/// Extract YouTube video ID from various URL formats
+/// Returns Some(video_id) if input is a video URL, None if it's a channel URL or other
+fn extract_video_id(input: &str) -> Option<String> {
+    let trimmed = input.trim();
+    
+    // youtube.com/watch?v=VIDEO_ID
+    if let Some(v_param) = trimmed.split("watch?v=").nth(1) {
+        let video_id = v_param.split('&').next().unwrap_or(v_param);
+        if !video_id.is_empty() && video_id.len() == 11 {
+            return Some(video_id.to_string());
+        }
+    }
+    
+    // youtu.be/VIDEO_ID
+    if trimmed.contains("youtu.be/") {
+        if let Some(id_part) = trimmed.split("youtu.be/").nth(1) {
+            let video_id = id_part.split('?').next().unwrap_or(id_part).split('/').next().unwrap_or("");
+            if !video_id.is_empty() && video_id.len() == 11 {
+                return Some(video_id.to_string());
+            }
+        }
+    }
+    
+    // youtube.com/embed/VIDEO_ID
+    if let Some(embed_part) = trimmed.split("/embed/").nth(1) {
+        let video_id = embed_part.split('?').next().unwrap_or(embed_part).split('/').next().unwrap_or("");
+        if !video_id.is_empty() && video_id.len() == 11 {
+            return Some(video_id.to_string());
+        }
+    }
+    
+    // youtube.com/v/VIDEO_ID
+    if let Some(v_part) = trimmed.split("/v/").nth(1) {
+        let video_id = v_part.split('?').next().unwrap_or(v_part).split('/').next().unwrap_or("");
+        if !video_id.is_empty() && video_id.len() == 11 {
+            return Some(video_id.to_string());
+        }
+    }
+    
+    // Direct 11-character video ID
+    if trimmed.len() == 11 && !trimmed.contains('/') && !trimmed.contains('@') {
+        return Some(trimmed.to_string());
+    }
+    
+    None
+}
 
 fn normalize_channel_input(input: &str) -> String {
     let trimmed = input.trim();

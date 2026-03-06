@@ -23,6 +23,37 @@ export interface RumbleVod {
 }
 
 /**
+ * Extract Rumble video ID from various URL formats
+ * Returns video ID if input is a video URL, null otherwise
+ */
+export function extractRumbleVideoId(input: string): string | null {
+  if (!input || typeof input !== 'string') {
+    return null;
+  }
+
+  const trimmed = input.trim();
+
+  // rumble.com/v[id]-title.html format
+  if (trimmed.includes('/v')) {
+    const match = trimmed.match(/\/v([a-z0-9]+)[-\.]/i);
+    if (match) return 'v' + match[1];
+  }
+
+  // rumble.com/embed/v[id] format
+  if (trimmed.includes('/embed/v')) {
+    const match = trimmed.match(/\/embed\/v([a-z0-9]+)/i);
+    if (match) return 'v' + match[1];
+  }
+
+  // Direct video ID (starts with 'v' followed by alphanumeric)
+  if (/^v[a-z0-9]+$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
+}
+
+/**
  * Extract Rumble channel name from URL
  */
 export function extractRumbleChannel(input: string): string | null {
@@ -31,6 +62,11 @@ export function extractRumbleChannel(input: string): string | null {
   }
 
   const trimmed = input.trim();
+
+  // If it's a video URL, return null (not a channel)
+  if (extractRumbleVideoId(trimmed)) {
+    return null;
+  }
 
   // URL parsing
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
@@ -118,12 +154,26 @@ export async function getRumbleChannelInfo(channel: string): Promise<RumbleChann
 }
 
 /**
+ * Get a single Rumble video by URL or ID
+ */
+export async function getSingleRumbleVideo(videoUrl: string): Promise<RumbleVod[]> {
+  try {
+    const result = await invoke<string>('get_single_rumble_video', { videoUrl });
+    return JSON.parse(result);
+  } catch (error: unknown) {
+    console.error('[Rumble] Failed to get video:', error);
+    return [];
+  }
+}
+
+/**
  * Get VODs for a Rumble channel
+ * Also supports direct video URLs
  */
 export async function getRumbleVods(channel: string, limit: number = 20): Promise<RumbleVod[]> {
   try {
-    const channelName = extractRumbleChannel(channel) || channel.trim();
-    const result = await invoke<string>('get_rumble_vods', { channel: channelName, limit });
+    // Backend now handles video URL detection automatically
+    const result = await invoke<string>('get_rumble_vods', { channel: channel.trim(), limit });
     return JSON.parse(result);
   } catch (error: unknown) {
     console.error('[Rumble] Failed to get VODs:', error);
