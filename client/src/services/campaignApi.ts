@@ -58,6 +58,7 @@ export interface Campaign {
   cover_image_url: string | null;
   budget: string;
   spent: string;
+  spent_budget: string;
   cpm: string;
   cpm_views: number;
   min_views_for_payment: number;

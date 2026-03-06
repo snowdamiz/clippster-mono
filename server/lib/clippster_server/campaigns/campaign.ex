@@ -31,6 +31,7 @@ defmodule ClippsterServer.Campaigns.Campaign do
     field :cover_image_url, :string
     field :budget, :decimal, default: Decimal.new(0)
     field :spent, :decimal, default: Decimal.new(0)
+    field :spent_budget, :decimal, default: Decimal.new(0)
     field :cpm, :decimal, default: Decimal.new(0)
     field :cpm_views, :integer, default: 1000
     field :min_views_for_payment, :integer, default: 0

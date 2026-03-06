@@ -199,7 +199,7 @@
               ></div>
             </div>
             <span class="campaigns__budget-text">
-              ${{ formatBudget(campaign.spent || 0) }} / ${{ formatBudget(campaign.budget) }}
+              ${{ formatBudget(campaign.spent_budget || 0) }} spent / ${{ formatBudget(campaign.budget) }} total
             </span>
           </div>
 
@@ -387,6 +387,19 @@
                           />
                         </div>
                       </div>
+                      <div class="campaign-wizard__field">
+                        <label class="campaign-wizard__label">Min Views for Payment</label>
+                        <input
+                          v-model.number="campaignForm.min_views_for_payment"
+                          type="number"
+                          min="0"
+                          class="campaign-wizard__input"
+                          placeholder="1000"
+                        />
+                        <p class="campaign-wizard__hint">
+                          Submissions must reach this view count before payment is eligible
+                        </p>
+                      </div>
                       <p class="campaign-wizard__hint">
                         ${{ campaignForm.cpm }} per {{ formatViews(campaignForm.cpm_views) }} views
                       </p>
@@ -416,16 +429,6 @@
                             placeholder="5"
                           />
                         </div>
-                      </div>
-                      <div class="campaign-wizard__field">
-                        <label class="campaign-wizard__label">Min Views for Payment</label>
-                        <input
-                          v-model.number="campaignForm.min_views_for_payment"
-                          type="number"
-                          min="0"
-                          class="campaign-wizard__input"
-                          placeholder="1000"
-                        />
                       </div>
                     </template>
 
@@ -2195,7 +2198,7 @@
   };
 
   const getBudgetPercentage = (campaign: Campaign) => {
-    const spent = parseFloat(campaign.spent || '0');
+    const spent = parseFloat(campaign.spent_budget || '0');
     const budget = parseFloat(campaign.budget || '0');
     if (budget === 0) return 0;
     return Math.min((spent / budget) * 100, 100);

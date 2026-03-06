@@ -806,6 +806,17 @@ defmodule ClippsterServerWeb.CampaignController do
             conn
             |> put_status(403)
             |> json(%{success: false, error: "Not authorized"})
+
+          {:error, :insufficient_views} ->
+            campaign = Campaigns.get_campaign(submission.campaign_id)
+            conn
+            |> put_status(400)
+            |> json(%{
+              success: false,
+              error: "Submission does not meet minimum view requirement",
+              min_views_required: campaign.min_views_for_payment,
+              current_views: submission.view_count
+            })
         end
     end
   end
@@ -980,6 +991,7 @@ defmodule ClippsterServerWeb.CampaignController do
       cover_image_url: presign_url(campaign.cover_image_url),
       budget: campaign.budget,
       spent: campaign.spent,
+      spent_budget: campaign.spent_budget,
       cpm: campaign.cpm,
       cpm_views: campaign.cpm_views,
       min_views_for_payment: campaign.min_views_for_payment,
