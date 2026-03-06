@@ -13,13 +13,14 @@ ARG RUNNER_IMAGE="debian:${DEBIAN_VERSION}"
 
 FROM ${BUILDER_IMAGE} as builder
 
-# Install build dependencies including Node.js
+# Install build dependencies including Node.js and Yarn
 RUN apt-get update -y && apt-get install -y \
     build-essential \
     git \
     curl \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
+    && npm install -g yarn \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
 
 # Set build environment
@@ -46,8 +47,8 @@ COPY priv priv
 COPY lib lib
 
 # Install Node.js dependencies
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+COPY package.json yarn.lock ./
+RUN yarn install --production --frozen-lockfile
 
 # Copy JS scripts to priv/js for release
 RUN mkdir -p priv/js
