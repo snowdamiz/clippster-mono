@@ -119,58 +119,76 @@
           </div>
 
           <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <router-link v-for="clipper in clippers" :key="clipper.id" :to="`/clippers/${clipper.slug}`" class="block">
+            <div v-for="clipper in clippers" :key="clipper.id" class="relative">
+              <router-link :to="`/clippers/${clipper.slug}`" class="block">
+                <div
+                  class="bg-card border border-border/60 rounded-xl p-4 hover:border-primary/30 hover:shadow-lg transition-all"
+                >
+                  <!-- Header -->
+                  <div class="flex items-start gap-3 mb-3">
+                    <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+                      <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="w-full h-full object-cover" />
+                      <UserCircle v-else class="w-6 h-6 text-primary" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-1.5">
+                        <span class="font-semibold text-foreground truncate">
+                          {{ clipper.display_name || 'Unnamed' }}
+                        </span>
+                        <CheckCircle v-if="clipper.is_verified" class="w-4 h-4 text-blue-500 flex-shrink-0" />
+                      </div>
+                      <div class="text-xs text-muted-foreground">
+                        {{ getExperienceLevelLabel(clipper.experience_level || '') }}
+                      </div>
+                    </div>
+                    <div
+                      v-if="clipper.looking_for_work"
+                      class="px-2 py-0.5 bg-green-500/10 text-green-500 text-[10px] font-medium rounded-full"
+                    >
+                      Available
+                    </div>
+                  </div>
+
+                  <!-- Bio -->
+                  <p v-if="clipper.bio" class="text-sm text-muted-foreground line-clamp-2 mb-3">
+                    {{ clipper.bio }}
+                  </p>
+
+                  <!-- Tags -->
+                  <div class="flex flex-wrap gap-1 mb-3">
+                    <span
+                      v-for="tag in clipper.specialty_tags.slice(0, 3)"
+                      :key="tag"
+                      class="px-2 py-0.5 bg-muted/50 text-muted-foreground text-[10px] rounded-full"
+                    >
+                      {{ getSpecialtyTagLabel(tag) }}
+                    </span>
+                  </div>
+
+                  <!-- Stats -->
+                  <div class="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>{{ clipper.total_campaigns_completed }} campaigns</span>
+                    <span>{{ clipper.total_endorsements }} endorsements</span>
+                  </div>
+                </div>
+              </router-link>
+
+              <!-- Invite Button (only for org admins) -->
               <div
-                class="bg-card border border-border/60 rounded-xl p-4 hover:border-primary/30 hover:shadow-lg transition-all"
+                v-if="canInviteClippers"
+                class="absolute bottom-4 right-4 z-10"
+                @click.stop.prevent
               >
-                <!-- Header -->
-                <div class="flex items-start gap-3 mb-3">
-                  <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
-                    <img v-if="clipper.avatar_url" :src="clipper.avatar_url" class="w-full h-full object-cover" />
-                    <UserCircle v-else class="w-6 h-6 text-primary" />
-                  </div>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-1.5">
-                      <span class="font-semibold text-foreground truncate">
-                        {{ clipper.display_name || 'Unnamed' }}
-                      </span>
-                      <CheckCircle v-if="clipper.is_verified" class="w-4 h-4 text-blue-500 flex-shrink-0" />
-                    </div>
-                    <div class="text-xs text-muted-foreground">
-                      {{ getExperienceLevelLabel(clipper.experience_level || '') }}
-                    </div>
-                  </div>
-                  <div
-                    v-if="clipper.looking_for_work"
-                    class="px-2 py-0.5 bg-green-500/10 text-green-500 text-[10px] font-medium rounded-full"
-                  >
-                    Available
-                  </div>
-                </div>
-
-                <!-- Bio -->
-                <p v-if="clipper.bio" class="text-sm text-muted-foreground line-clamp-2 mb-3">
-                  {{ clipper.bio }}
-                </p>
-
-                <!-- Tags -->
-                <div class="flex flex-wrap gap-1 mb-3">
-                  <span
-                    v-for="tag in clipper.specialty_tags.slice(0, 3)"
-                    :key="tag"
-                    class="px-2 py-0.5 bg-muted/50 text-muted-foreground text-[10px] rounded-full"
-                  >
-                    {{ getSpecialtyTagLabel(tag) }}
-                  </span>
-                </div>
-
-                <!-- Stats -->
-                <div class="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span>{{ clipper.total_campaigns_completed }} campaigns</span>
-                  <span>{{ clipper.total_endorsements }} endorsements</span>
-                </div>
+                <Button
+                  size="sm"
+                  @click="openInviteDialog(clipper)"
+                  class="bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg"
+                >
+                  <UserPlus class="w-3.5 h-3.5 mr-1.5" />
+                  Invite
+                </Button>
               </div>
-            </router-link>
+            </div>
           </div>
         </div>
       </div>
@@ -179,8 +197,10 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, onMounted } from 'vue';
-  import { Users, Trophy, UserCircle, CheckCircle } from 'lucide-vue-next';
+  import { ref, reactive, onMounted, computed } from 'vue';
+  import { Users, Trophy, UserCircle, CheckCircle, UserPlus } from 'lucide-vue-next';
+  import { useAuthStore } from '@/stores/auth';
+  import { useToast } from '@/composables/useToast';
   import PageLayout from '@/components/PageLayout.vue';
   import { Button } from '@/components/ui/button';
   import { Label } from '@/components/ui/label';
@@ -195,6 +215,10 @@
     getExperienceLevelLabel,
     getSpecialtyTagLabel,
   } from '@/services/clipperProfilesApi';
+  import { inviteUserToOrganization } from '@/services/organizationsApi';
+
+  const authStore = useAuthStore();
+  const { showToast } = useToast();
 
   const loading = ref(true);
   const clippers = ref<ClipperProfile[]>([]);
@@ -205,6 +229,20 @@
     experience_level: 'any',
     specialty_tags: [] as string[],
     preferred_platforms: [] as string[],
+  });
+
+  // Check if user can invite clippers (must be org admin)
+  const canInviteClippers = computed(() => {
+    const user = authStore.user;
+    if (!user) return false;
+    
+    // User must be an organization account
+    if (user.account_type !== 'organization') return false;
+    
+    // User must have an owned organization
+    if (!user.owned_organization_id) return false;
+    
+    return true;
   });
 
   const loadClippers = async () => {
@@ -245,6 +283,23 @@
     filters.specialty_tags = [];
     filters.preferred_platforms = [];
     loadClippers();
+  };
+
+  const openInviteDialog = async (clipper: ClipperProfile) => {
+    const user = authStore.user;
+    if (!user || !user.owned_organization_id) {
+      showToast('You must be an organization admin to invite clippers', 'error');
+      return;
+    }
+
+    // Send invitation
+    const result = await inviteUserToOrganization(user.owned_organization_id, clipper.user_id, 'member');
+    
+    if (result.success) {
+      showToast(`Invitation sent to ${clipper.display_name}`, 'success');
+    } else {
+      showToast(result.error || 'Failed to send invitation', 'error');
+    }
   };
 
   onMounted(() => {

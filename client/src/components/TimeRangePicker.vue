@@ -49,10 +49,6 @@
         <span class="text-muted-foreground">Selected Duration:</span>
         <span class="font-medium text-foreground">{{ formatDuration(selectedDuration) }}</span>
       </div>
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-muted-foreground">Estimated Size:</span>
-        <span class="font-medium text-foreground">{{ estimatedSize }}</span>
-      </div>
       <div v-if="selectionError" class="text-xs text-red-400">
         {{ selectionError }}
       </div>
@@ -96,16 +92,6 @@
   });
 
   const selectedDuration = computed(() => Math.max(0, endTime.value - startTime.value));
-
-  const estimatedSize = computed(() => {
-    // Rough estimate: 1MB per minute of video
-    const sizeMB = (selectedDuration.value / 60) * 1;
-    if (sizeMB < 1024) {
-      return `~${sizeMB.toFixed(1)} MB`;
-    } else {
-      return `~${(sizeMB / 1024).toFixed(1)} GB`;
-    }
-  });
 
   const selectionError = computed(() => {
     if (startTime.value >= endTime.value) {

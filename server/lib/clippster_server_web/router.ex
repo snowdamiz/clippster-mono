@@ -382,6 +382,16 @@ defmodule ClippsterServerWeb.Router do
 
     post("/invitations/:token/accept", OrganizationController, :accept_invitation)
 
+    # Invite user by user_id (for Clipper Directory)
+    post(
+      "/organizations/:organization_id/invite-user",
+      OrganizationController,
+      :invite_user
+    )
+
+    # List current user's pending invitations
+    get("/me/invitations", OrganizationController, :list_my_invitations)
+
     # Create member account directly (admin creates account for user)
     post(
       "/organizations/:organization_id/create-member",
