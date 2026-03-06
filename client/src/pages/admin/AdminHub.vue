@@ -181,6 +181,7 @@
     ScrollText,
     Mail,
     Megaphone,
+    Sparkles,
   } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import PageLayout from '@/components/PageLayout.vue';
@@ -299,6 +300,13 @@
     if (!isAdmin.value) return [];
     
     return [
+      {
+        id: 'platform-campaigns',
+        title: 'Platform Campaigns',
+        description: 'Manage Clippster-owned campaigns and rewards',
+        icon: Sparkles,
+        route: '/admin/platform-campaigns',
+      },
       {
         id: 'affiliates',
         title: 'Affiliates',

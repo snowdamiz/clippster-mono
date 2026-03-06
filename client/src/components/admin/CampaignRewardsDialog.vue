@@ -1,338 +1,440 @@
 <template>
-  <div class="dialog-overlay" @click.self="$emit('close')">
-    <div class="dialog">
-      <div class="dialog-header">
-        <h3>Campaign Rewards - {{ campaign.title }}</h3>
-        <button @click="$emit('close')" class="close-btn">&times;</button>
-      </div>
+  <Teleport to="body">
+    <Transition name="modal">
+      <div v-if="modelValue" class="campaign-dialog__overlay" @click.self="close">
+        <Transition name="dialog" appear>
+          <div v-if="modelValue" class="campaign-dialog" role="dialog" aria-modal="true">
+            <div class="campaign-dialog__accent"></div>
 
-      <div class="dialog-content">
-        <div v-if="loading" class="loading">Loading rewards...</div>
-        <div v-else-if="rewards.length === 0" class="empty-state">
-          No rewards granted yet for this campaign.
-        </div>
-        <div v-else>
-          <div class="rewards-list">
-            <div v-for="reward in rewards" :key="reward.id" class="reward-card">
-              <div class="reward-header">
-                <div class="user-info">
-                  <strong>{{ reward.user_email }}</strong>
-                  <span class="user-id">User ID: {{ reward.user_id }}</span>
-                </div>
-                <span class="reward-date">{{ formatDate(reward.granted_at) }}</span>
+            <div class="campaign-dialog__header">
+              <button class="campaign-dialog__close" @click="close" title="Close">
+                <X :size="18" />
+              </button>
+              <div class="campaign-dialog__icon">
+                <Gift :size="24" />
+              </div>
+              <h2 class="campaign-dialog__title">Campaign Rewards</h2>
+              <p class="campaign-dialog__subtitle">View granted rewards for this campaign</p>
+            </div>
+
+            <div class="campaign-dialog__content">
+              <div v-if="loading" class="campaign-dialog__loading">
+                <Loader2 :size="24" class="campaign-dialog__spinner" />
+                <p>Loading rewards...</p>
               </div>
 
-              <div class="reward-details">
-                <div class="detail-row">
-                  <span>Tier:</span>
-                  <strong>Tier {{ reward.tier_number }} ({{ formatNumber(reward.views_required) }} views)</strong>
-                </div>
-                <div class="detail-row">
-                  <span>Submission ID:</span>
-                  <strong>{{ reward.submission_id.substring(0, 8) }}...</strong>
-                </div>
+              <div v-else-if="error" class="campaign-dialog__alert campaign-dialog__alert--error">
+                <AlertTriangle :size="16" />
+                <p>{{ error }}</p>
               </div>
 
-              <div class="rewards-granted">
-                <h5>Rewards Granted:</h5>
-                <div class="reward-items">
-                  <div v-if="reward.stripe_coupon_id" class="reward-item discount">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-                      <circle cx="9" cy="7" r="4"></circle>
-                      <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-                      <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-                    </svg>
-                    <span>Subscription Discount</span>
-                    <code>{{ reward.stripe_coupon_id }}</code>
+              <div v-else-if="rewards.length === 0" class="campaign-dialog__empty">
+                <div class="campaign-dialog__empty-icon">
+                  <Gift :size="32" />
+                </div>
+                <p class="campaign-dialog__empty-text">No rewards granted yet</p>
+              </div>
+
+              <div v-else class="campaign-dialog__rewards">
+                <div v-for="reward in rewards" :key="reward.id" class="campaign-dialog__reward">
+                  <div class="campaign-dialog__reward-header">
+                    <div class="campaign-dialog__reward-user">
+                      <User :size="16" />
+                      <span>{{ reward.user?.username || 'Unknown User' }}</span>
+                    </div>
+                    <div class="campaign-dialog__reward-date">
+                      {{ formatDate(reward.granted_at) }}
+                    </div>
                   </div>
-                  <div v-if="reward.free_months_granted" class="reward-item free-months">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                      <line x1="16" y1="2" x2="16" y2="6"></line>
-                      <line x1="8" y1="2" x2="8" y2="6"></line>
-                      <line x1="3" y1="10" x2="21" y2="10"></line>
-                    </svg>
-                    <span>{{ reward.free_months_granted }} Free Month{{ reward.free_months_granted > 1 ? 's' : '' }}</span>
-                  </div>
-                  <div v-if="reward.ai_credits_granted" class="reward-item ai-credits">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
-                    </svg>
-                    <span>{{ formatNumber(reward.ai_credits_granted) }} AI Credits</span>
+
+                  <div class="campaign-dialog__reward-details">
+                    <div class="campaign-dialog__reward-tier">
+                      Tier {{ reward.reward_tier?.tier_number || '?' }} - {{ formatNumber(reward.reward_tier?.views_required || 0) }} views
+                    </div>
+
+                    <div class="campaign-dialog__reward-items">
+                      <div v-if="reward.stripe_coupon_id" class="campaign-dialog__reward-item">
+                        <Percent :size="14" />
+                        <span>Discount Code: {{ reward.stripe_coupon_id }}</span>
+                      </div>
+                      <div v-if="reward.free_months_granted" class="campaign-dialog__reward-item">
+                        <Calendar :size="14" />
+                        <span>{{ reward.free_months_granted }} Free Month{{ reward.free_months_granted > 1 ? 's' : '' }}</span>
+                      </div>
+                      <div v-if="reward.ai_credits_granted" class="campaign-dialog__reward-item">
+                        <Sparkles :size="14" />
+                        <span>{{ reward.ai_credits_granted }} AI Credits</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
 
-      <div class="dialog-footer">
-        <button @click="$emit('close')" class="btn-primary">Close</button>
+            <div class="campaign-dialog__footer">
+              <button @click="close" class="campaign-dialog__btn campaign-dialog__btn--primary">
+                Close
+              </button>
+            </div>
+          </div>
+        </Transition>
       </div>
-    </div>
-  </div>
+    </Transition>
+  </Teleport>
 </template>
 
-<script setup>
-import { ref, onMounted } from 'vue'
-import { api } from '@/services/api'
+<script setup lang="ts">
+import { ref, watch } from 'vue';
+import { X, Gift, User, Percent, Calendar, Sparkles, Loader2, AlertTriangle } from 'lucide-vue-next';
+import api from '@/services/api';
 
-const props = defineProps({
-  campaign: {
-    type: Object,
-    required: true
-  }
-})
+interface Props {
+  modelValue: boolean;
+  campaignId: number | null;
+}
 
-const emit = defineEmits(['close'])
+const props = defineProps<Props>();
+const emit = defineEmits<{
+  'update:modelValue': [value: boolean];
+}>();
 
-const rewards = ref([])
-const loading = ref(false)
+const loading = ref(false);
+const error = ref('');
+const rewards = ref<any[]>([]);
 
-onMounted(() => {
-  loadRewards()
-})
+function close() {
+  emit('update:modelValue', false);
+}
 
 async function loadRewards() {
-  loading.value = true
+  if (!props.campaignId) return;
+
+  loading.value = true;
+  error.value = '';
+  rewards.value = [];
+
   try {
-    const response = await api.get(`/admin/platform-campaigns/${props.campaign.id}/rewards`)
-    rewards.value = response.data.grants
-  } catch (error) {
-    console.error('Failed to load rewards:', error)
+    const response = await api.get(`/admin/platform-campaigns/${props.campaignId}/rewards`);
+    rewards.value = response.data.rewards || [];
+  } catch (err: any) {
+    console.error('Failed to load rewards:', err);
+    error.value = err.response?.data?.error || err.message || 'Failed to load rewards';
   } finally {
-    loading.value = false
+    loading.value = false;
   }
 }
 
-function formatDate(dateString) {
-  if (!dateString) return 'N/A'
-  const date = new Date(dateString)
-  return date.toLocaleDateString('en-US', {
+function formatDate(dateString: string): string {
+  if (!dateString) return 'Unknown';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { 
+    month: 'short', 
+    day: 'numeric', 
     year: 'numeric',
-    month: 'short',
-    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
-  })
+  });
 }
 
-function formatNumber(num) {
-  if (!num) return '0'
-  return num.toLocaleString()
+function formatNumber(num: number): string {
+  return num.toLocaleString();
 }
+
+watch(() => props.modelValue, (isOpen) => {
+  if (isOpen) {
+    loadRewards();
+  }
+});
 </script>
 
 <style scoped>
-.dialog-overlay {
+.campaign-dialog__overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.8);
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  padding: 20px;
+  z-index: 10000;
 }
 
-.dialog {
-  background: #1a1a1a;
-  border: 1px solid #333;
-  border-radius: 8px;
+.campaign-dialog {
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 12px;
   width: 100%;
-  max-width: 900px;
-  max-height: 90vh;
+  max-width: 600px;
+  margin: 1rem;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-.dialog-header {
+.campaign-dialog__accent {
+  height: 3px;
+  background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+  flex-shrink: 0;
+}
+
+.campaign-dialog__header {
+  position: relative;
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
   align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid #333;
+  padding: 1.5rem 1.5rem 1rem;
+  text-align: center;
 }
 
-.dialog-header h3 {
-  margin: 0;
-  font-size: 20px;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: #888;
-  font-size: 28px;
-  cursor: pointer;
-  padding: 0;
+.campaign-dialog__close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
   width: 32px;
   height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--sidebar-text-muted);
+  cursor: pointer;
+  transition: all 150ms ease;
 }
 
-.close-btn:hover {
-  color: #fff;
+.campaign-dialog__close:hover {
+  background-color: var(--sidebar-hover);
+  color: var(--sidebar-text);
 }
 
-.dialog-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-}
-
-.loading,
-.empty-state {
-  text-align: center;
-  padding: 40px;
-  color: #888;
-}
-
-.rewards-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.reward-card {
-  background: #0a0a0a;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 16px;
-}
-
-.reward-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #333;
-}
-
-.user-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.user-info strong {
-  font-size: 14px;
-  color: #fff;
-}
-
-.user-id {
-  font-size: 12px;
-  color: #666;
-}
-
-.reward-date {
-  font-size: 12px;
-  color: #888;
-}
-
-.reward-details {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.detail-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-}
-
-.detail-row span {
-  color: #888;
-}
-
-.detail-row strong {
-  color: #fff;
-}
-
-.rewards-granted h5 {
-  margin: 0 0 12px 0;
-  font-size: 13px;
-  color: #aaa;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.reward-items {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.reward-item {
+.campaign-dialog__icon {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  font-size: 13px;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+  margin-bottom: 0.875rem;
 }
 
-.reward-item svg {
-  flex-shrink: 0;
+.campaign-dialog__title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--sidebar-text);
+  margin: 0;
+  letter-spacing: -0.02em;
 }
 
-.reward-item.discount {
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  color: #60a5fa;
+.campaign-dialog__subtitle {
+  font-size: 0.8125rem;
+  color: var(--sidebar-text-muted);
+  margin: 0.25rem 0 0;
 }
 
-.reward-item.free-months {
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  color: #34d399;
+.campaign-dialog__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem 1.5rem 1.5rem;
 }
 
-.reward-item.ai-credits {
-  background: rgba(168, 85, 247, 0.1);
-  border: 1px solid rgba(168, 85, 247, 0.3);
-  color: #a78bfa;
+.campaign-dialog__content::-webkit-scrollbar {
+  width: 6px;
 }
 
-.reward-item code {
-  margin-left: auto;
-  padding: 2px 6px;
-  background: rgba(0, 0, 0, 0.3);
+.campaign-dialog__content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.campaign-dialog__content::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
-  font-size: 11px;
-  font-family: monospace;
 }
 
-.dialog-footer {
+.campaign-dialog__loading {
   display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 20px;
-  border-top: 1px solid #333;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  gap: 1rem;
+  color: var(--sidebar-text-muted);
 }
 
-.btn-primary {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
-  font-size: 14px;
+.campaign-dialog__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  gap: 1rem;
+}
+
+.campaign-dialog__empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  background-color: var(--sidebar-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--sidebar-text-muted);
+}
+
+.campaign-dialog__empty-text {
+  font-size: 0.875rem;
+  color: var(--sidebar-text-muted);
+  margin: 0;
+}
+
+.campaign-dialog__rewards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.campaign-dialog__reward {
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.campaign-dialog__reward-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.campaign-dialog__reward-user {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--sidebar-text);
+}
+
+.campaign-dialog__reward-date {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+}
+
+.campaign-dialog__reward-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.campaign-dialog__reward-tier {
+  font-size: 0.8125rem;
+  color: var(--sidebar-accent);
   font-weight: 500;
-  cursor: pointer;
-  background: #3b82f6;
-  color: #fff;
 }
 
-.btn-primary:hover {
-  background: #2563eb;
+.campaign-dialog__reward-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.campaign-dialog__reward-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--sidebar-text);
+  padding: 0.5rem;
+  background-color: rgba(6, 182, 212, 0.05);
+  border-radius: 6px;
+}
+
+.campaign-dialog__alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem;
+  border-radius: 8px;
+}
+
+.campaign-dialog__alert--error {
+  background-color: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.campaign-dialog__footer {
+  display: flex;
+  gap: 0.625rem;
+  padding: 1.25rem 1.5rem;
+  border-top: 1px solid var(--sidebar-border);
+}
+
+.campaign-dialog__btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.campaign-dialog__btn--primary {
+  background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+  color: #000;
+}
+
+.campaign-dialog__btn--primary:hover {
+  opacity: 0.9;
+}
+
+.campaign-dialog__spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 200ms ease;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.dialog-enter-active {
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dialog-leave-active {
+  transition: all 150ms ease-in;
+}
+
+.dialog-enter-from {
+  opacity: 0;
+  transform: scale(0.96) translateY(8px);
+}
+
+.dialog-leave-to {
+  opacity: 0;
+  transform: scale(0.98);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

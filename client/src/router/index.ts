@@ -356,6 +356,11 @@ const router = createRouter({
           component: () => import('@/pages/admin/AdminOrgApplications.vue'),
         },
         {
+          path: 'platform-campaigns',
+          name: 'admin-platform-campaigns',
+          component: () => import('@/pages/admin/AdminPlatformCampaigns.vue'),
+        },
+        {
           path: 'affiliates',
           name: 'admin-affiliates',
           component: () => import('@/pages/admin/AdminAffiliates.vue'),
