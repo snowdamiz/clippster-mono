@@ -830,7 +830,9 @@
     _promptId: string,
     promptContent: string,
     organizationId: number | null = null,
-    multimodal: boolean = false
+    multimodal: boolean = false,
+    startTime?: number,
+    endTime?: number
   ) {
     console.log('[ProjectWorkspaceDialog] === DETECT CLIPS CONFIRMED ===');
     console.log('[ProjectWorkspaceDialog] _promptId:', _promptId);
@@ -911,6 +913,8 @@
           forceReprocess: false,
           organizationId: organizationId,
           multimodal: multimodal,
+          startTime,
+          endTime,
         });
 
         if (result.success) {
