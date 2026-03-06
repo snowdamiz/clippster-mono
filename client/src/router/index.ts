@@ -477,6 +477,11 @@ const router = createRouter({
           component: () => import('@/pages/organization/OrganizationCampaigns.vue'),
         },
         {
+          path: 'campaigns/:campaignId',
+          name: 'org-campaign-detail',
+          component: () => import('@/pages/CampaignDetailPage.vue'),
+        },
+        {
           path: 'clippers',
           name: 'org-clippers',
           component: () => import('@/pages/organization/OrganizationClippers.vue'),

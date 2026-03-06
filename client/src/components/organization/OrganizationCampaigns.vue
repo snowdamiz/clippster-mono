@@ -1845,6 +1845,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, watch } from 'vue';
+  import { useRouter } from 'vue-router';
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     Megaphone,
@@ -1944,6 +1945,7 @@
     isAdmin: boolean;
   }>();
 
+  const router = useRouter();
   const { toast } = useToast();
 
   const loading = ref(true);
@@ -2501,11 +2503,7 @@
   };
 
   const viewCampaign = async (campaign: Campaign) => {
-    selectedCampaign.value = campaign;
-    detailTab.value = 'overview';
-    showDetailDialog.value = true;
-    await loadParticipants();
-    await loadSubmissions();
+    router.push(`/organizations/${props.organizationId}/campaigns/${campaign.id}`);
   };
 
   const loadParticipants = async () => {

@@ -896,9 +896,6 @@ defmodule ClippsterServer.Campaigns do
             |> Repo.all()
           end
 
-        # Calculate remaining budget
-        remaining_budget = Decimal.sub(campaign.budget, campaign.spent_budget)
-        
         # Calculate and create payments within budget
         {payments, final_spent} =
           Enum.reduce_while(submissions, {[], campaign.spent_budget}, fn submission, {acc_payments, current_spent} ->
