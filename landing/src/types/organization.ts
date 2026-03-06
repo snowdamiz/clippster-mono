@@ -218,9 +218,11 @@ export interface Campaign {
   cover_image_url: string | null
   budget: string
   spent: string
+  spent_budget: string
   cpm: string
   cpm_views: number
   min_views_for_payment: number
+  max_views?: number
   join_type: 'open' | 'application_required'
   allowed_platforms: string[]
   payment_methods: string[]
@@ -233,6 +235,11 @@ export interface Campaign {
   require_watermark: boolean
   require_intro: boolean
   require_outro: boolean
+  payment_model: 'cpm' | 'per_clip'
+  per_clip_amount: string | null
+  clips_per_profile: number
+  branding_profile_id: number | null
+  assigned_streamer_ids: number[]
   inserted_at: string
   updated_at: string
   organization?: { id: number; name: string; logo_url: string | null }

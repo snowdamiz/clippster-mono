@@ -49,6 +49,7 @@ defmodule ClippsterServer.Campaigns.Campaign do
     field :per_clip_amount, :decimal
     field :clips_per_profile, :integer, default: 5
     field :assigned_streamer_ids, {:array, :integer}, default: []
+    field :max_views, :integer
 
     belongs_to :organization, Organization
     belongs_to :creator_profile, OrganizationCreatorProfile
@@ -79,6 +80,7 @@ defmodule ClippsterServer.Campaigns.Campaign do
       :cpm,
       :cpm_views,
       :min_views_for_payment,
+      :max_views,
       :join_type,
       :allowed_platforms,
       :payment_methods,
@@ -131,6 +133,7 @@ defmodule ClippsterServer.Campaigns.Campaign do
       :cpm,
       :cpm_views,
       :min_views_for_payment,
+      :max_views,
       :join_type,
       :allowed_platforms,
       :payment_methods,
@@ -157,6 +160,7 @@ defmodule ClippsterServer.Campaigns.Campaign do
     |> validate_number(:cpm, greater_than_or_equal_to: 0)
     |> validate_number(:cpm_views, greater_than: 0)
     |> validate_number(:min_views_for_payment, greater_than_or_equal_to: 0)
+    |> validate_number(:max_views, greater_than_or_equal_to: 0)
     |> validate_platforms()
     |> validate_payment_methods()
     |> validate_payment_model()

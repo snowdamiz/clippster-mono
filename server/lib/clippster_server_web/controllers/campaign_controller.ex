@@ -995,6 +995,7 @@ defmodule ClippsterServerWeb.CampaignController do
       cpm: campaign.cpm,
       cpm_views: campaign.cpm_views,
       min_views_for_payment: campaign.min_views_for_payment,
+      max_views: campaign.max_views,
       join_type: campaign.join_type,
       allowed_platforms: campaign.allowed_platforms,
       payment_methods: campaign.payment_methods,

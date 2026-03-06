@@ -851,7 +851,19 @@ defmodule ClippsterServer.Campaigns do
 
       _ ->
         # CPM (cost per mille/thousand views) - default
-        views = submission.view_count
+        # Enforce min/max views range for payment calculation
+        # Views must be >= min_views_for_payment (already filtered in query)
+        # Views are capped at max_views if set
+        views = cond do
+          # If max_views is set and submission exceeds it, cap at max_views
+          campaign.max_views && submission.view_count > campaign.max_views ->
+            campaign.max_views
+          
+          # Otherwise use actual view count
+          true ->
+            submission.view_count
+        end
+        
         cpm = Decimal.to_float(campaign.cpm)
         cpm_views = campaign.cpm_views || 1000
 

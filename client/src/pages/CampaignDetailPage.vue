@@ -13,6 +13,8 @@
         </button>
       </template>
 
+      <Breadcrumbs :items="breadcrumbItems" />
+
       <!-- Loading State -->
       <div v-if="loading" class="campaign-detail__loading">
         <div class="skeleton-header"></div>
@@ -185,9 +187,49 @@
                   <span class="detail-label">Min Views for Payment</span>
                   <span class="detail-value">{{ formatViews(campaign.min_views_for_payment) }}</span>
                 </div>
+                <div v-if="campaign.max_views" class="detail-item">
+                  <span class="detail-label">Max Views Cap</span>
+                  <span class="detail-value">{{ formatViews(campaign.max_views) }}</span>
+                </div>
                 <div class="detail-item">
                   <span class="detail-label">Join Type</span>
                   <span class="detail-value">{{ campaign.join_type === 'open' ? 'Open to All' : 'Application Required' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="overview-section">
+              <h2 class="section-title">Streamers to Clip</h2>
+              <div v-if="!campaign.creator_profile_id && (!campaign.assigned_streamer_ids || campaign.assigned_streamer_ids.length === 0)" class="global-branding-notice">
+                <div class="global-branding-notice__icon">
+                  <Globe :size="24" />
+                </div>
+                <div class="global-branding-notice__content">
+                  <h3 class="global-branding-notice__title">Any Streamers Qualify</h3>
+                  <p class="global-branding-notice__description">
+                    This campaign uses global branding. Clippers can create clips from any streamer, and the organization's branding will be applied automatically.
+                  </p>
+                </div>
+              </div>
+              <div v-else-if="campaign.creator_profile_id" class="creator-profile-info">
+                <p class="text-sm text-gray-400 mb-4">This campaign is assigned to a specific creator profile:</p>
+                <div v-if="campaign.creator_profile" class="p-4 bg-gray-800 border border-gray-700 rounded-lg">
+                  <div class="flex items-center gap-3">
+                    <img v-if="campaign.creator_profile.profile_image_url" :src="campaign.creator_profile.profile_image_url" class="w-12 h-12 rounded-full" />
+                    <div>
+                      <div class="font-semibold">{{ campaign.creator_profile.name }}</div>
+                      <div class="text-sm text-gray-400">Creator Profile</div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="p-4 bg-gray-800 border border-gray-700 rounded-lg text-center text-gray-400 text-sm">
+                  Creator profile assigned
+                </div>
+              </div>
+              <div v-else class="streamers-list">
+                <p class="streamers-list__description">Clippers can only create clips from the following streamers:</p>
+                <div class="streamers-list__placeholder">
+                  {{ campaign.assigned_streamer_ids.length }} streamer(s) assigned
                 </div>
               </div>
             </div>
@@ -245,8 +287,10 @@
     TrendingUp,
     Calendar,
     AlertCircle,
+    Globe,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import Breadcrumbs from '@/components/Breadcrumbs.vue';
   import { getCampaign, getPlatformDisplayName, type Campaign, type CampaignStats } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
   import { useAuthStore } from '@/stores/auth';
@@ -255,6 +299,13 @@
   const router = useRouter();
   const { toast } = useToast();
   const authStore = useAuthStore();
+
+  const breadcrumbItems = computed(() => [
+    { label: 'Organizations', to: '/organizations' },
+    { label: campaign.value?.organization?.name || 'Organization', to: `/organization/${route.params.orgId}` },
+    { label: 'Campaigns', to: `/organization/${route.params.orgId}/campaigns` },
+    { label: campaign.value?.title || 'Campaign' }
+  ]);
 
   const loading = ref(true);
   const campaign = ref<Campaign | null>(null);
@@ -804,6 +855,73 @@
     font-size: 1rem;
     font-weight: 600;
     color: var(--sidebar-text);
+  }
+
+  /* Overview Section */
+  .overview-section {
+    margin-bottom: 1.5rem;
+  }
+
+  .overview-section:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Global Branding Notice */
+  .global-branding-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1.5rem;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-radius: 12px;
+  }
+
+  .global-branding-notice__icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: rgba(59, 130, 246, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #3b82f6;
+    flex-shrink: 0;
+  }
+
+  .global-branding-notice__content {
+    flex: 1;
+  }
+
+  .global-branding-notice__title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .global-branding-notice__description {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  /* Streamers List */
+  .streamers-list__description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1rem;
+  }
+
+  .streamers-list__placeholder {
+    padding: 1rem;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    text-align: center;
+    color: var(--sidebar-text-muted);
+    font-size: 0.875rem;
   }
 
   /* Placeholder States */

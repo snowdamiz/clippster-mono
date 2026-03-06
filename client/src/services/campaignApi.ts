@@ -62,6 +62,7 @@ export interface Campaign {
   cpm: string;
   cpm_views: number;
   min_views_for_payment: number;
+  max_views?: number;
   join_type: 'open' | 'application_required';
   allowed_platforms: string[];
   payment_methods: string[];

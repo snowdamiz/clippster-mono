@@ -397,7 +397,20 @@
                           placeholder="1000"
                         />
                         <p class="campaign-wizard__hint">
-                          Submissions must reach this view count before payment is eligible
+                          Minimum views required before payment is eligible
+                        </p>
+                      </div>
+                      <div class="campaign-wizard__field">
+                        <label class="campaign-wizard__label">Max Views (Optional)</label>
+                        <input
+                          v-model.number="campaignForm.max_views"
+                          type="number"
+                          min="0"
+                          class="campaign-wizard__input"
+                          placeholder="500000"
+                        />
+                        <p class="campaign-wizard__hint">
+                          Maximum views counted for payment. Payment calculated only for views between min and max (e.g., 10K min to 500K max)
                         </p>
                       </div>
                       <p class="campaign-wizard__hint">
@@ -621,7 +634,7 @@
                         trigger-class="campaign-wizard__dropdown-trigger"
                       />
                       <p class="campaign-wizard__hint">
-                        Select which creator profile to use for this campaign
+                        Select a specific creator profile, or choose "Global Branding" to allow clippers to use any streamer
                       </p>
                     </div>
 
@@ -2033,7 +2046,7 @@
   ]);
 
   const creatorProfileOptions = computed(() => [
-    { label: 'Select creator profile', value: null },
+    { label: 'Global Branding (Any Streamer)', value: null },
     ...availableCreatorProfiles.value.map((p) => ({ label: p.name, value: p.id })),
   ]);
 
@@ -2049,6 +2062,7 @@
     cpm_views: 1000,
     budget: 0,
     min_views_for_payment: 1000,
+    max_views: null as number | null,
     join_type: 'open' as 'open' | 'application_required',
     allowed_platforms: [] as string[],
     payment_methods: [] as string[],
@@ -2503,7 +2517,7 @@
   };
 
   const viewCampaign = async (campaign: Campaign) => {
-    router.push(`/organizations/${props.organizationId}/campaigns/${campaign.id}`);
+    router.push(`/organization/${props.organizationId}/campaigns/${campaign.id}`);
   };
 
   const loadParticipants = async () => {
