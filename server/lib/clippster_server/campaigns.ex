@@ -506,16 +506,66 @@ defmodule ClippsterServer.Campaigns do
   end
 
   @doc """
-  Lists campaigns a user has joined that include a specific creator profile.
+  Lists campaigns a user has joined that include a specific creator profile OR have global branding.
+  Returns campaigns matching the creator profile + all global branding campaigns (creator_profile_id = null).
   """
   def list_user_campaigns_by_creator_profile(user_id, creator_profile_id) do
-    from(p in CampaignParticipant,
+    # Query 1: Campaigns with specific creator profile
+    specific_campaigns = from(p in CampaignParticipant,
       where: p.user_id == ^user_id and p.status == "approved",
       join: c in Campaign,
       on: c.id == p.campaign_id,
       join: ccp in CampaignCreatorProfile,
       on: ccp.campaign_id == c.id,
       where: ccp.creator_profile_id == ^creator_profile_id,
+      where: c.status == "active",
+      preload: [
+        campaign: [
+          :organization,
+          :creator_profile,
+          :global_intro,
+          :global_outro,
+          creator_profiles: :platform_links
+        ]
+      ],
+      distinct: true
+    )
+
+    # Query 2: Global branding campaigns (creator_profile_id = null, no assigned streamers)
+    global_campaigns = from(p in CampaignParticipant,
+      where: p.user_id == ^user_id and p.status == "approved",
+      join: c in Campaign,
+      on: c.id == p.campaign_id,
+      where: is_nil(c.creator_profile_id),
+      where: c.status == "active",
+      preload: [
+        campaign: [
+          :organization,
+          :creator_profile,
+          :global_intro,
+          :global_outro,
+          creator_profiles: :platform_links
+        ]
+      ],
+      distinct: true
+    )
+
+    # Combine both queries and remove duplicates, order by joined date
+    (Repo.all(specific_campaigns) ++ Repo.all(global_campaigns))
+    |> Enum.uniq_by(& &1.campaign_id)
+    |> Enum.sort_by(& &1.inserted_at, {:desc, DateTime})
+  end
+
+  @doc """
+  Lists all active campaigns a user has joined that use global branding (creator_profile_id = null).
+  Used during clip build to show global branding campaign options for any VOD.
+  """
+  def list_user_global_branding_campaigns(user_id) do
+    from(p in CampaignParticipant,
+      where: p.user_id == ^user_id and p.status == "approved",
+      join: c in Campaign,
+      on: c.id == p.campaign_id,
+      where: is_nil(c.creator_profile_id),
       where: c.status == "active",
       order_by: [desc: p.inserted_at],
       preload: [

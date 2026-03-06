@@ -135,6 +135,7 @@
       :subtitle-settings="props.subtitleSettings"
       :creator-default-intro="props.creatorDefaultIntro"
       :creator-default-outro="props.creatorDefaultOutro"
+      :creator-profile-server-id="props.creatorProfileServerId"
       :hide-header="true"
       :vod-preset-config="props.vodPresetConfig"
       @detect-clips="handleDetectClips"

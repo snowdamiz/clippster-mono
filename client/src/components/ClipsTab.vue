@@ -632,6 +632,7 @@
       :initial-framing-mode="savedFramingMode"
       :initial-framing-configs="savedFramingConfigs"
       :vod-preset-config="vodPresetConfig"
+      :creator-profile-server-id="creatorProfileServerId"
       @confirm="onBuildConfirm"
     />
   </div>
@@ -841,6 +842,7 @@
     creatorDefaultIntro?: IntroOutroRef | null;
     creatorDefaultOutro?: IntroOutroRef | null;
     creatorProfile?: any; // Full creator profile for per-ratio intro/outro
+    creatorProfileServerId?: number | null;
     videoThumbnailUrl?: string | null;
     hideHeader?: boolean;
     playOnCardClick?: boolean;
@@ -868,6 +870,7 @@
     creatorDefaultIntro: null,
     creatorDefaultOutro: null,
     creatorProfile: null,
+    creatorProfileServerId: null,
     videoThumbnailUrl: null,
     playOnCardClick: false,
     vodPresetConfig: null,
@@ -2555,10 +2558,125 @@
         console.log('[ClipsTab] Merged subtitle overrides from clip editor:', finalSubtitleOverrides);
       }
 
-      // Determine effective intro/outro: creator profile defaults take precedence, then dialog selection
-      // Creator profile intro/outro MUST be applied when set - they are mandatory defaults
-      const effectiveIntro = props.creatorDefaultIntro || settings.intro;
-      const effectiveOutro = props.creatorDefaultOutro || settings.outro;
+      // ── Campaign Branding Override ────────────────────────────────────────────
+      // When user selected a campaign, its branding COMPLETELY replaces creator profile branding.
+      // Use local shadowing variables so we don't mutate props.
+      let campaignOverrideIntro: IntroOutroRef | null = null;
+      let campaignOverrideOutro: IntroOutroRef | null = null;
+      let campaignOverrideWatermark: WatermarkSettings | null = null;
+
+      if (settings.campaignId && settings.selectedCampaign) {
+        const campaign = settings.selectedCampaign;
+        console.log('[ClipsTab] Applying campaign branding for:', campaign.title, '(id:', campaign.id, ')');
+
+        if (campaign.global_intro) {
+          const introResult = await ensureAssetDownloaded({
+            id: campaign.global_intro.id,
+            name: campaign.global_intro.name,
+            asset_type: 'intro',
+            url: campaign.global_intro.url,
+            organization_id: campaign.organization_id,
+            organization_name: campaign.organization?.name || '',
+            duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : undefined,
+            inserted_at: campaign.inserted_at,
+            updated_at: campaign.updated_at,
+          } as unknown as ServerOrganizationAsset);
+          if (introResult.success && introResult.filePath) {
+            campaignOverrideIntro = {
+              id: `org-asset-${campaign.global_intro.id}`,
+              type: 'intro',
+              name: campaign.global_intro.name,
+              file_path: introResult.filePath,
+              duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : null,
+              thumbnail_path: campaign.global_intro.thumbnail_url || null,
+            };
+            console.log('[ClipsTab] Campaign global intro applied:', campaign.global_intro.name);
+          }
+        }
+
+        if (campaign.global_outro) {
+          const outroResult = await ensureAssetDownloaded({
+            id: campaign.global_outro.id,
+            name: campaign.global_outro.name,
+            asset_type: 'outro',
+            url: campaign.global_outro.url,
+            organization_id: campaign.organization_id,
+            organization_name: campaign.organization?.name || '',
+            duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : undefined,
+            inserted_at: campaign.inserted_at,
+            updated_at: campaign.updated_at,
+          } as unknown as ServerOrganizationAsset);
+          if (outroResult.success && outroResult.filePath) {
+            campaignOverrideOutro = {
+              id: `org-asset-${campaign.global_outro.id}`,
+              type: 'outro',
+              name: campaign.global_outro.name,
+              file_path: outroResult.filePath,
+              duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : null,
+              thumbnail_path: campaign.global_outro.thumbnail_url || null,
+            };
+            console.log('[ClipsTab] Campaign global outro applied:', campaign.global_outro.name);
+          }
+        }
+
+        const campaignCreatorProfile = campaign.creator_profiles?.[0] || campaign.creator_profile;
+        if (campaignCreatorProfile?.watermark?.url) {
+          try {
+            const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
+            const filePath = await invoke<string>('download_org_asset_from_url', {
+              url: campaignCreatorProfile.watermark.url,
+              filename,
+              assetType: 'watermarks',
+              organizationId: String(campaign.organization_id),
+            });
+            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+            if (campaignCreatorProfile.watermark_settings) {
+              try {
+                const wmSettings = typeof campaignCreatorProfile.watermark_settings === 'string'
+                  ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
+                  : campaignCreatorProfile.watermark_settings;
+                const ratioConfig = wmSettings['16:9'];
+                if (ratioConfig?.position) defaultPos = ratioConfig.position;
+              } catch (e) {
+                console.warn('[ClipsTab] Failed to parse campaign watermark settings:', e);
+              }
+            }
+            campaignOverrideWatermark = {
+              enabled: true,
+              watermarkId: `org-asset-${campaignCreatorProfile.watermark.id}`,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+              perRatioSettings: (campaignCreatorProfile.watermark_settings as any) ?? null,
+            };
+            console.log('[ClipsTab] Campaign watermark applied:', campaignCreatorProfile.watermark.name);
+          } catch (e) {
+            console.warn('[ClipsTab] Failed to download campaign watermark:', e);
+          }
+        }
+
+        // Save campaign_id to the clip for payment tracking
+        try {
+          const { updateClip } = await import('@/services/database/clips');
+          await updateClip(clip.id, { campaign_id: settings.campaignId });
+          console.log('[ClipsTab] Saved campaign_id', settings.campaignId, 'to clip', clip.id);
+        } catch (e) {
+          console.warn('[ClipsTab] Failed to save campaign_id to clip:', e);
+        }
+      }
+      // ── End Campaign Branding Override ───────────────────────────────────────
+
+      // Determine effective intro/outro:
+      // Campaign branding > creator profile defaults > dialog selection
+      const effectiveIntro = campaignOverrideIntro ?? (settings.campaignId ? null : (props.creatorDefaultIntro || settings.intro));
+      const effectiveOutro = campaignOverrideOutro ?? (settings.campaignId ? null : (props.creatorDefaultOutro || settings.outro));
+      // If campaign selected, use campaign watermark; otherwise fall through to existing settings.watermark
+      if (settings.campaignId && campaignOverrideWatermark) {
+        (settings as any).watermark = campaignOverrideWatermark;
+      } else if (settings.campaignId) {
+        (settings as any).watermark = null;
+      }
 
       let introPath: string | null = null;
       let outroPath: string | null = null;

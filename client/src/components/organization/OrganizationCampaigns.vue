@@ -577,6 +577,33 @@
                       <p>No creator profiles available. Create profiles in the Creator Profiles tab first.</p>
                     </div>
                     <div v-else class="campaign-wizard__profiles-list">
+                      <!-- Global Branding Option -->
+                      <button
+                        type="button"
+                        @click="toggleCreatorProfile(null)"
+                        class="campaign-wizard__profile"
+                        :class="{
+                          'campaign-wizard__profile--selected': selectedCreatorProfileIds.includes(null),
+                        }"
+                      >
+                        <div class="campaign-wizard__profile-avatar">
+                          <Globe class="campaign-wizard__profile-avatar-icon" />
+                        </div>
+                        <div class="campaign-wizard__profile-info">
+                          <span class="campaign-wizard__profile-name">Global Branding</span>
+                          <span class="campaign-wizard__profile-desc">
+                            Allow clippers to use any streamer with organization branding
+                          </span>
+                        </div>
+                        <div
+                          v-if="selectedCreatorProfileIds.includes(null)"
+                          class="campaign-wizard__profile-check"
+                        >
+                          <Check class="campaign-wizard__profile-check-icon" />
+                        </div>
+                      </button>
+
+                      <!-- Creator Profiles -->
                       <button
                         v-for="profile in availableCreatorProfiles"
                         :key="profile.id"
@@ -2015,7 +2042,7 @@
   const availableCreatorProfiles = ref<ServerOrganizationCreatorProfile[]>([]);
   const availableAssets = ref<ServerOrganizationAsset[]>([]);
   const loadingProfiles = ref(false);
-  const selectedCreatorProfileIds = ref<number[]>([]);
+  const selectedCreatorProfileIds = ref<(number | null)[]>([]);
 
   // Dropdown options
   const cpmViewsOptions = [
@@ -2390,12 +2417,19 @@
     }
   };
 
-  const toggleCreatorProfile = (profileId: number) => {
+  const toggleCreatorProfile = (profileId: number | null) => {
     const idx = selectedCreatorProfileIds.value.indexOf(profileId);
     if (idx >= 0) {
       selectedCreatorProfileIds.value.splice(idx, 1);
     } else {
-      selectedCreatorProfileIds.value.push(profileId);
+      // If selecting Global Branding (null), clear other selections
+      if (profileId === null) {
+        selectedCreatorProfileIds.value = [null];
+      } else {
+        // If selecting a specific profile, remove Global Branding if present
+        selectedCreatorProfileIds.value = selectedCreatorProfileIds.value.filter(id => id !== null);
+        selectedCreatorProfileIds.value.push(profileId);
+      }
     }
   };
 
@@ -2489,12 +2523,13 @@
       }
 
       if (response.success && response.campaign) {
-        // Save creator profiles assignment
-        if (selectedCreatorProfileIds.value.length > 0) {
+        // Save creator profiles assignment (filter out null for Global Branding)
+        const profileIds = selectedCreatorProfileIds.value.filter((id): id is number => id !== null);
+        if (profileIds.length > 0) {
           await setCampaignCreatorProfiles(
             Number(props.organizationId),
             response.campaign.id,
-            selectedCreatorProfileIds.value
+            profileIds
           );
         }
 

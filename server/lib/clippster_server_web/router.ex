@@ -764,6 +764,8 @@ defmodule ClippsterServerWeb.Router do
       :campaigns_by_creator_profile
     )
 
+    get("/user/campaigns/global-branding", CampaignController, :global_branding_campaigns)
+
     get("/user/submissions", CampaignController, :my_submissions)
     get("/user/earnings", CampaignController, :my_earnings)
 

@@ -792,6 +792,15 @@ export async function getCampaignsByCreatorProfile(
 }
 
 /**
+ * Get all campaigns the current user has joined that use global branding (no creator profile).
+ * Used during clip build to allow users to select a global branding campaign for any VOD.
+ */
+export async function getMyGlobalBrandingCampaigns(): Promise<ListCampaignsResponse> {
+  const response = await api.get('/user/campaigns/global-branding');
+  return response.data;
+}
+
+/**
  * Get campaign details by ID (for applying assets during build).
  * Returns campaign with global assets.
  */

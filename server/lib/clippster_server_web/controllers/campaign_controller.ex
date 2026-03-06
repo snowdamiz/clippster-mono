@@ -145,6 +145,25 @@ defmodule ClippsterServerWeb.CampaignController do
   end
 
   @doc """
+  List campaigns the current user has joined that use global branding (no creator profile).
+  Used during clip build to show global branding campaign options for any VOD.
+  """
+  def global_branding_campaigns(conn, _params) do
+    user = conn.assigns.current_user
+
+    participants = Campaigns.list_user_global_branding_campaigns(user.id)
+
+    json(conn, %{
+      success: true,
+      campaigns:
+        Enum.map(participants, fn p ->
+          serialize_campaign(p.campaign)
+          |> Map.put(:joined_at, p.inserted_at)
+        end)
+    })
+  end
+
+  @doc """
   List submissions for the current user.
   """
   def my_submissions(conn, params) do
