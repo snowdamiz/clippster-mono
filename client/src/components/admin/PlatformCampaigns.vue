@@ -130,7 +130,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { api } from '@/services/api'
+import api from '@/services/api'
 import CreatePlatformCampaignDialog from './CreatePlatformCampaignDialog.vue'
 import EditPlatformCampaignDialog from './EditPlatformCampaignDialog.vue'
 import CampaignRewardsDialog from './CampaignRewardsDialog.vue'
