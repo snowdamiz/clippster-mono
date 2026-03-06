@@ -105,8 +105,12 @@
                     </div>
                   </div>
 
-                  <!-- Organization Badge -->
-                  <div v-if="campaign.organization" class="campaign-card__org-badge">
+                  <!-- Organization Badge or Platform Badge -->
+                  <div v-if="campaign.is_platform_campaign" class="campaign-card__org-badge campaign-card__org-badge--platform">
+                    <Sparkles class="campaign-card__org-icon" />
+                    <span class="campaign-card__org-name">Clippster Campaign</span>
+                  </div>
+                  <div v-else-if="campaign.organization" class="campaign-card__org-badge">
                     <img
                       v-if="campaign.organization.logo_url"
                       :src="campaign.organization.logo_url"
@@ -183,9 +187,26 @@
                       <Users class="campaign-card__stat-icon" />
                       <span>{{ campaign.participants_count || 0 }} clippers</span>
                     </div>
-                    <div class="campaign-card__stat">
-                      <Wallet class="campaign-card__stat-icon" />
-                      <span>${{ formatBudget(campaign.budget) }} budget</span>
+                  </div>
+
+                  <!-- Budget Progress -->
+                  <div class="campaign-card__budget">
+                    <div class="campaign-card__budget-header">
+                      <Wallet class="campaign-card__budget-icon" />
+                      <span class="campaign-card__budget-text">
+                        ${{ formatBudget(campaign.spent_budget || 0) }} / ${{ formatBudget(campaign.budget) }}
+                      </span>
+                    </div>
+                    <div class="campaign-card__budget-bar">
+                      <div
+                        class="campaign-card__budget-fill"
+                        :style="{ width: getBudgetPercentage(campaign) + '%' }"
+                        :class="{
+                          'campaign-card__budget-fill--low': getBudgetPercentage(campaign) < 50,
+                          'campaign-card__budget-fill--medium': getBudgetPercentage(campaign) >= 50 && getBudgetPercentage(campaign) < 80,
+                          'campaign-card__budget-fill--high': getBudgetPercentage(campaign) >= 80,
+                        }"
+                      ></div>
                     </div>
                   </div>
                 </div>
@@ -286,6 +307,13 @@
       return `${(value / 1000).toFixed(1)}K`;
     }
     return value.toFixed(0);
+  };
+
+  const getBudgetPercentage = (campaign: Campaign) => {
+    const spent = parseFloat(campaign.spent_budget || '0');
+    const budget = parseFloat(campaign.budget || '0');
+    if (budget === 0) return 0;
+    return Math.min((spent / budget) * 100, 100);
   };
 
   const viewCampaign = (campaign: Campaign) => {
@@ -584,6 +612,20 @@
     border-radius: 6px;
   }
 
+  .campaign-card__org-badge--platform {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.9) 0%, rgba(16, 185, 129, 0.9) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .campaign-card__org-badge--platform .campaign-card__org-icon {
+    color: rgba(255, 255, 255, 1);
+  }
+
+  .campaign-card__org-badge--platform .campaign-card__org-name {
+    color: rgba(255, 255, 255, 1);
+    font-weight: 600;
+  }
+
   .campaign-card__org-logo {
     width: 18px;
     height: 18px;
@@ -827,6 +869,65 @@
     width: 13px;
     height: 13px;
     opacity: 0.5;
+  }
+
+  /* Budget Progress */
+  .campaign-card__budget {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    margin-top: 0.75rem;
+  }
+
+  .campaign-card__budget-header {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+
+  .campaign-card__budget-icon {
+    width: 13px;
+    height: 13px;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  .campaign-card__budget-text {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    font-weight: 500;
+  }
+
+  .campaign-card__budget-bar {
+    width: 100%;
+    height: 5px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 3px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .campaign-card__budget-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1), background-color 200ms ease;
+  }
+
+  .campaign-card__budget-fill--low {
+    background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.3);
+  }
+
+  .campaign-card__budget-fill--medium {
+    background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
+    box-shadow: 0 0 6px rgba(245, 158, 11, 0.3);
+  }
+
+  .campaign-card__budget-fill--high {
+    background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.3);
   }
 
   /* ===== Empty State ===== */

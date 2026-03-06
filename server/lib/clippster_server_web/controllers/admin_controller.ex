@@ -7,7 +7,6 @@ defmodule ClippsterServerWeb.AdminController do
   alias ClippsterServer.AppSettings
   alias ClippsterServer.BetaCodes
   alias ClippsterServer.{Accounts, Credits, Subscriptions, Organizations, OrganizationSubscriptions}
-  alias ClippsterServer.Analytics
   alias ClippsterServer.Storage
   alias ClippsterServer.PromoCodes
   alias ClippsterServer.ClipperProfiles.LeaderboardWorker
@@ -1136,6 +1135,66 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   # ============================================================================
+  # Organization Feature Flags
+  # ============================================================================
+
+  @doc """
+  Enables campaigns access for an organization.
+  """
+  def enable_org_campaigns(conn, %{"organization_id" => org_id_string}) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        case Organizations.enable_campaigns(org_id) do
+          {:ok, org} ->
+            json(conn, %{
+              success: true,
+              message: "Campaigns access enabled",
+              organization: %{id: org.id, campaigns_enabled: org.campaigns_enabled}
+            })
+
+          {:error, :organization_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "Organization not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  @doc """
+  Disables campaigns access for an organization.
+  """
+  def disable_org_campaigns(conn, %{"organization_id" => org_id_string}) do
+    case parse_integer(org_id_string) do
+      {:ok, org_id} ->
+        case Organizations.disable_campaigns(org_id) do
+          {:ok, org} ->
+            json(conn, %{
+              success: true,
+              message: "Campaigns access disabled",
+              organization: %{id: org.id, campaigns_enabled: org.campaigns_enabled}
+            })
+
+          {:error, :organization_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "Organization not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid organization ID"})
+    end
+  end
+
+  # ============================================================================
   # Organization Subscription Management
   # ============================================================================
 
@@ -1602,6 +1661,62 @@ defmodule ClippsterServerWeb.AdminController do
     end
   end
 
+  @doc """
+  Enables campaigns access for a user.
+  """
+  def enable_campaigns(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.enable_campaigns(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Campaigns access enabled",
+              user: %{id: user.id, campaigns_enabled: user.campaigns_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Disables campaigns access for a user.
+  """
+  def disable_campaigns(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.disable_campaigns(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Campaigns access disabled",
+              user: %{id: user.id, campaigns_enabled: user.campaigns_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
   # ============================================
   # User Restrictions
   # ============================================
@@ -1878,6 +1993,7 @@ defmodule ClippsterServerWeb.AdminController do
               account_type: user.account_type,
               owned_organization_id: user.owned_organization_id,
               ai_editor_enabled: user.ai_editor_enabled,
+              campaigns_enabled: user.campaigns_enabled,
               created_at: user.inserted_at,
               last_active_at: user.last_active_at,
               credits: %{

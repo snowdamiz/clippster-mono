@@ -447,6 +447,7 @@
       :watermark-settings="folderCreatorWatermarkSettings"
       :default-intro="folderCreatorDefaultIntro"
       :default-outro="folderCreatorDefaultOutro"
+      :creator-profile-server-id="folderCreatorProfileServerId"
       @confirm="onFolderBuildConfirm"
     />
 
@@ -2012,6 +2013,7 @@
   const folderClipsLoading = ref(false);
   const folderClipToBuild = ref<ClipWithVersionAndSegment | null>(null);
   const showFolderBuildDialog = ref(false);
+  const folderCreatorProfileServerId = ref<number | null>(null);
   const folderDownloadDropdownId = ref<string | null>(null);
   const folderPrompts = ref<Prompt[]>([]);
 
@@ -3449,6 +3451,7 @@
     folderCreatorDefaultOutro.value = null;
     folderCreatorWatermarkSettings.value = null;
     folderCreatorProfile.value = null;
+    folderCreatorProfileServerId.value = null;
 
     // Look up branding profile for this clip's project (streamer, global, or user-selected)
     try {
@@ -3459,6 +3462,14 @@
       if (profile) {
         console.log('[Projects] Found creator profile for folder build:', profile.name);
         folderCreatorProfile.value = profile;
+
+        // Extract numeric server ID for campaign lookup (org profiles have numeric string IDs)
+        if (profile.context_type === 'organization' && profile.id && !profile.id.startsWith('campaign-')) {
+          const serverId = parseInt(profile.id, 10);
+          if (!isNaN(serverId)) {
+            folderCreatorProfileServerId.value = serverId;
+          }
+        }
 
         // Load creator's default intro
         if (profile.intro_id) {
@@ -3752,6 +3763,142 @@
           }
         }
       }
+
+      // ── Campaign Branding Override ────────────────────────────────────────────
+      // When user selected a campaign, its branding COMPLETELY replaces creator profile branding.
+      // Also save campaign_id on the clip for payment tracking.
+      if (settings.campaignId && settings.selectedCampaign) {
+        const campaign = settings.selectedCampaign;
+        console.log('[Projects] Applying campaign branding for:', campaign.title, '(id:', campaign.id, ')');
+
+        // Override creator profile defaults with campaign global assets
+        if (campaign.global_intro) {
+          const { ensureAssetDownloaded } = await import('@/services/orgAssetSync');
+          const introResult = await ensureAssetDownloaded({
+            id: campaign.global_intro.id,
+            name: campaign.global_intro.name,
+            asset_type: 'intro',
+            url: campaign.global_intro.url,
+            organization_id: campaign.organization_id,
+            organization_name: campaign.organization?.name || '',
+            duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : undefined,
+            inserted_at: campaign.inserted_at,
+            updated_at: campaign.updated_at,
+          } as unknown as import('@/services/orgAssetSync').ServerOrganizationAsset);
+          if (introResult.success && introResult.filePath) {
+            folderCreatorDefaultIntro.value = {
+              id: `org-asset-${campaign.global_intro.id}`,
+              type: 'intro',
+              name: campaign.global_intro.name,
+              file_path: introResult.filePath,
+              duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : null,
+              thumbnail_path: campaign.global_intro.thumbnail_url || null,
+              thumbnail_generation_status: 'completed' as const,
+              organization_id: String(campaign.organization_id),
+              organization_name: campaign.organization?.name || null,
+              created_at: Date.now(),
+              updated_at: Date.now(),
+            };
+            console.log('[Projects] Campaign global intro applied:', campaign.global_intro.name);
+          }
+        } else {
+          // No campaign global intro — clear creator default so no intro is forced
+          folderCreatorDefaultIntro.value = null;
+        }
+
+        if (campaign.global_outro) {
+          const { ensureAssetDownloaded } = await import('@/services/orgAssetSync');
+          const outroResult = await ensureAssetDownloaded({
+            id: campaign.global_outro.id,
+            name: campaign.global_outro.name,
+            asset_type: 'outro',
+            url: campaign.global_outro.url,
+            organization_id: campaign.organization_id,
+            organization_name: campaign.organization?.name || '',
+            duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : undefined,
+            inserted_at: campaign.inserted_at,
+            updated_at: campaign.updated_at,
+          } as unknown as import('@/services/orgAssetSync').ServerOrganizationAsset);
+          if (outroResult.success && outroResult.filePath) {
+            folderCreatorDefaultOutro.value = {
+              id: `org-asset-${campaign.global_outro.id}`,
+              type: 'outro',
+              name: campaign.global_outro.name,
+              file_path: outroResult.filePath,
+              duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : null,
+              thumbnail_path: campaign.global_outro.thumbnail_url || null,
+              thumbnail_generation_status: 'completed' as const,
+              organization_id: String(campaign.organization_id),
+              organization_name: campaign.organization?.name || null,
+              created_at: Date.now(),
+              updated_at: Date.now(),
+            };
+
+            console.log('[Projects] Campaign global outro applied:', campaign.global_outro.name);
+          }
+        } else {
+          // No campaign global outro — clear creator default
+          folderCreatorDefaultOutro.value = null;
+        }
+
+        // Override watermark with campaign branding profile watermark (if available via creator profile)
+        const campaignCreatorProfile = campaign.creator_profiles?.[0] || campaign.creator_profile;
+        if (campaignCreatorProfile?.watermark?.url) {
+          const { invoke } = await import('@tauri-apps/api/core');
+          const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
+          try {
+            const filePath = await invoke<string>('download_org_asset_from_url', {
+              url: campaignCreatorProfile.watermark.url,
+              filename,
+              assetType: 'watermarks',
+              organizationId: String(campaign.organization_id),
+            });
+
+            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+            if (campaignCreatorProfile.watermark_settings) {
+              try {
+                const wmSettings = typeof campaignCreatorProfile.watermark_settings === 'string'
+                  ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
+                  : campaignCreatorProfile.watermark_settings;
+                const ratioConfig = wmSettings['16:9'];
+                if (ratioConfig?.position) defaultPos = ratioConfig.position;
+              } catch (e) {
+                console.warn('[Projects] Failed to parse campaign watermark settings:', e);
+              }
+            }
+
+            folderCreatorWatermarkSettings.value = {
+              enabled: true,
+              watermarkId: `org-asset-${campaignCreatorProfile.watermark.id}`,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+              perRatioSettings: (campaignCreatorProfile.watermark_settings as any) ?? null,
+            };
+            console.log('[Projects] Campaign watermark applied:', campaignCreatorProfile.watermark.name);
+          } catch (e) {
+            console.warn('[Projects] Failed to download campaign watermark:', e);
+            folderCreatorWatermarkSettings.value = null;
+          }
+        } else {
+          // No campaign watermark — clear creator default
+          folderCreatorWatermarkSettings.value = null;
+        }
+
+        // Clear the creator profile so it doesn't override the campaign branding
+        folderCreatorProfile.value = null;
+
+        // Save campaign_id to the clip for payment tracking
+        try {
+          const { updateClip } = await import('@/services/database/clips');
+          await updateClip(clip.id, { campaign_id: settings.campaignId });
+          console.log('[Projects] Saved campaign_id', settings.campaignId, 'to clip', clip.id);
+        } catch (e) {
+          console.warn('[Projects] Failed to save campaign_id to clip:', e);
+        }
+      }
+      // ── End Campaign Branding Override ───────────────────────────────────────
 
       // Determine effective intro/outro: creator profile defaults take precedence (mandatory), then dialog selection
       // Creator profile intro/outro MUST be applied when set - they are mandatory defaults

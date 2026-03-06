@@ -487,6 +487,132 @@
                     </div>
 
                     <div class="build-dialog__addons-section">
+
+                      <!-- Campaign Selection (shown only when user has qualifying campaigns) -->
+                      <div v-if="availableCampaigns.length > 0" class="build-dialog__field build-dialog__campaign-section">
+                        <!-- Checkbox row -->
+                        <button
+                          type="button"
+                          @click="toggleIsForCampaign"
+                          class="build-dialog__campaign-toggle"
+                        >
+                          <div
+                            class="build-dialog__campaign-checkbox"
+                            :class="{ 'build-dialog__campaign-checkbox--checked': isForCampaign }"
+                          >
+                            <CheckIcon v-if="isForCampaign" class="build-dialog__campaign-checkbox-icon" />
+                          </div>
+                          <div class="build-dialog__campaign-toggle-info">
+                            <span class="build-dialog__campaign-toggle-label">
+                              <Megaphone class="build-dialog__campaign-toggle-icon" />
+                              This clip is for a campaign
+                            </span>
+                            <span class="build-dialog__campaign-toggle-hint">
+                              Campaign branding will be applied instead of creator profile branding
+                            </span>
+                          </div>
+                        </button>
+
+                        <!-- Campaign dropdown (shown when checkbox is checked) -->
+                        <Transition name="slide-fade">
+                          <div v-if="isForCampaign" class="build-dialog__campaign-picker">
+                            <label class="build-dialog__field-label">Select Campaign</label>
+                            <div class="build-dialog__dropdown-wrapper">
+                              <button
+                                ref="campaignButtonRef"
+                                @click="toggleCampaignDropdown"
+                                class="build-dialog__dropdown-trigger"
+                              >
+                                <div v-if="selectedCampaign" class="build-dialog__campaign-selected">
+                                  <div class="build-dialog__campaign-selected-icon">
+                                    <img
+                                      v-if="selectedCampaign.cover_image_url"
+                                      :src="selectedCampaign.cover_image_url"
+                                      class="build-dialog__campaign-cover"
+                                    />
+                                    <Megaphone v-else class="build-dialog__campaign-cover-icon" />
+                                  </div>
+                                  <div class="build-dialog__campaign-selected-info">
+                                    <span class="build-dialog__campaign-selected-title">{{ selectedCampaign.title }}</span>
+                                    <span class="build-dialog__campaign-selected-org">{{ selectedCampaign.organization?.name }}</span>
+                                  </div>
+                                  <span v-if="!selectedCampaign.creator_profile_id" class="build-dialog__badge build-dialog__badge--global">
+                                    <Globe class="build-dialog__badge-icon" />
+                                    Global
+                                  </span>
+                                </div>
+                                <span v-else class="build-dialog__dropdown-text build-dialog__dropdown-text--placeholder">
+                                  Select a campaign...
+                                </span>
+                                <ChevronDown
+                                  class="build-dialog__dropdown-icon"
+                                  :class="{ 'build-dialog__dropdown-icon--open': showCampaignDropdown }"
+                                />
+                              </button>
+
+                              <!-- Campaign dropdown list - Teleported -->
+                              <Teleport to="body">
+                                <div
+                                  v-if="showCampaignDropdown"
+                                  ref="campaignDropdownRef"
+                                  class="build-dialog__dropdown-menu"
+                                  :style="{
+                                    top: campaignDropdownPosition.top,
+                                    left: campaignDropdownPosition.left,
+                                    width: campaignDropdownPosition.width,
+                                    maxHeight: campaignDropdownPosition.maxHeight,
+                                  }"
+                                  @click.stop
+                                >
+                                  <div v-if="loadingCampaigns" class="build-dialog__dropdown-loading">Loading campaigns...</div>
+                                  <template v-else>
+                                    <button
+                                      v-for="campaign in availableCampaigns"
+                                      :key="campaign.id"
+                                      @click="selectCampaign(campaign)"
+                                      class="build-dialog__dropdown-item build-dialog__campaign-item"
+                                      :class="{ 'build-dialog__dropdown-item--selected': selectedCampaign?.id === campaign.id }"
+                                    >
+                                      <div class="build-dialog__campaign-item-icon">
+                                        <img
+                                          v-if="campaign.cover_image_url"
+                                          :src="campaign.cover_image_url"
+                                          class="build-dialog__campaign-cover"
+                                        />
+                                        <Megaphone v-else class="build-dialog__campaign-cover-icon" />
+                                      </div>
+                                      <div class="build-dialog__campaign-item-info">
+                                        <span class="build-dialog__campaign-item-title">{{ campaign.title }}</span>
+                                        <span class="build-dialog__campaign-item-org">{{ campaign.organization?.name }}</span>
+                                      </div>
+                                      <span v-if="!campaign.creator_profile_id" class="build-dialog__badge build-dialog__badge--global">
+                                        <Globe class="build-dialog__badge-icon" />
+                                        Global
+                                      </span>
+                                    </button>
+                                  </template>
+                                </div>
+                              </Teleport>
+                            </div>
+
+                            <!-- Campaign branding info notice -->
+                            <div v-if="selectedCampaign" class="build-dialog__campaign-notice">
+                              <div class="build-dialog__campaign-notice-icon">
+                                <CheckIcon class="h-3.5 w-3.5" />
+                              </div>
+                              <p class="build-dialog__campaign-notice-text">
+                                <template v-if="selectedCampaign.creator_profile_id">
+                                  Campaign creator profile branding will be applied to this clip.
+                                </template>
+                                <template v-else>
+                                  {{ selectedCampaign.organization?.name }}'s global branding will be applied to this clip.
+                                </template>
+                              </p>
+                            </div>
+                          </div>
+                        </Transition>
+                      </div>
+
                       <!-- Intro/Outro section - hidden for free tier users (admin-controlled) -->
                       <div v-if="!isFreeTier" class="build-dialog__intro-outro-section">
                       <!-- Intro Compact Selector -->
@@ -771,6 +897,8 @@
     SettingsIcon,
     SparkleIcon,
     Building2,
+    Megaphone,
+    Globe,
   } from 'lucide-vue-next';
   import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
   import { getAllIntroOutros, type IntroOutro } from '@/services/database';
@@ -780,6 +908,11 @@
   import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
+  import {
+    getMyGlobalBrandingCampaigns,
+    getCampaignsByCreatorProfile,
+    type Campaign,
+  } from '@/services/campaignApi';
   import type {
     ManualFramingConfig,
     SubtitleOverride,
@@ -829,6 +962,8 @@
     initialFramingMode?: 'auto' | 'manual' | null;
     initialFramingConfigs?: import('@/types').ManualFramingConfigs | null;
     vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
+    // Server ID of the creator profile for this clip (used to fetch profile-specific campaigns)
+    creatorProfileServerId?: number | null;
   }>();
 
   const emit = defineEmits<{
@@ -849,6 +984,8 @@
     manualFramingConfigs?: import('@/types').ManualFramingConfigs;
     subtitleOverrides?: SubtitleOverrides;
     layoutOverlays?: import('@/types').LayoutOverlay[];
+    campaignId?: number | null;
+    selectedCampaign?: import('@/services/campaignApi').Campaign | null;
   }
 
   // Re-export the IntroOutroItem type for use in other components
@@ -859,6 +996,21 @@
 
   // Free tier limits composable
   const { isFreeTier } = useFreeTierLimits();
+
+  // Campaign selection state
+  const isForCampaign = ref(false);
+  const availableCampaigns = ref<Campaign[]>([]);
+  const selectedCampaign = ref<Campaign | null>(null);
+  const loadingCampaigns = ref(false);
+  const showCampaignDropdown = ref(false);
+  const campaignButtonRef = ref<HTMLElement | null>(null);
+  const campaignDropdownRef = ref<HTMLElement | null>(null);
+  const campaignDropdownPosition = ref<{ top: string; left: string; width: string; maxHeight: string }>({
+    top: '0px',
+    left: '0px',
+    width: '0px',
+    maxHeight: '192px',
+  });
 
   // State
   const selectedRatios = ref<string[]>(['16:9']);
@@ -1092,6 +1244,14 @@
           await loadIntroOutros();
         }
 
+        // Reset campaign selection state
+        isForCampaign.value = false;
+        selectedCampaign.value = null;
+        showCampaignDropdown.value = false;
+
+        // Load available campaigns (global branding + creator profile specific)
+        await loadAvailableCampaigns();
+
         // Pre-select creator profile defaults
         if (props.defaultIntro) {
           // Find the matching intro in the loaded list
@@ -1138,6 +1298,9 @@
         selectedIntro.value = null;
         selectedOutro.value = null;
         videoPath.value = null;
+        isForCampaign.value = false;
+        selectedCampaign.value = null;
+        availableCampaigns.value = [];
       }
     }
   );
@@ -1282,6 +1445,16 @@
       !outroDropdownRef.value.contains(target)
     ) {
       showOutroDropdown.value = false;
+    }
+
+    if (
+      showCampaignDropdown.value &&
+      campaignButtonRef.value &&
+      !campaignButtonRef.value.contains(target) &&
+      campaignDropdownRef.value &&
+      !campaignDropdownRef.value.contains(target)
+    ) {
+      showCampaignDropdown.value = false;
     }
   }
 
@@ -1494,6 +1667,60 @@
   // Guard to prevent double submissions (e.g., from double-clicks)
   const isSubmitting = ref(false);
 
+  // Load available campaigns for campaign selection
+  async function loadAvailableCampaigns() {
+    loadingCampaigns.value = true;
+    try {
+      const results: Campaign[] = [];
+
+      // 1. Fetch global branding campaigns (work with ANY VOD)
+      const globalRes = await getMyGlobalBrandingCampaigns();
+      if (globalRes.success && globalRes.campaigns) {
+        results.push(...globalRes.campaigns);
+      }
+
+      // 2. If this clip has a creator profile, also fetch campaigns for that profile
+      if (props.creatorProfileServerId) {
+        const profileRes = await getCampaignsByCreatorProfile(props.creatorProfileServerId);
+        if (profileRes.success && profileRes.campaigns) {
+          // Add campaigns not already in list (no duplicates)
+          for (const c of profileRes.campaigns) {
+            if (!results.find((r) => r.id === c.id)) {
+              results.push(c);
+            }
+          }
+        }
+      }
+
+      availableCampaigns.value = results;
+    } catch (e) {
+      console.warn('[ClipBuildSettingsDialog] Failed to load campaigns:', e);
+      availableCampaigns.value = [];
+    } finally {
+      loadingCampaigns.value = false;
+    }
+  }
+
+  // Toggle campaign checkbox
+  function toggleIsForCampaign() {
+    isForCampaign.value = !isForCampaign.value;
+    if (!isForCampaign.value) {
+      selectedCampaign.value = null;
+    }
+  }
+
+  function toggleCampaignDropdown() {
+    if (!campaignButtonRef.value) return;
+    const pos = calculateDropdownPosition(campaignButtonRef.value);
+    campaignDropdownPosition.value = pos;
+    showCampaignDropdown.value = !showCampaignDropdown.value;
+  }
+
+  function selectCampaign(campaign: Campaign) {
+    selectedCampaign.value = campaign;
+    showCampaignDropdown.value = false;
+  }
+
   // Reset isSubmitting when dialog opens so subsequent builds work
   watch(
     () => props.modelValue,
@@ -1546,6 +1773,8 @@
       layoutOverlays: props.vodPresetConfig?.layoutOverlays?.length
         ? props.vodPresetConfig.layoutOverlays
         : undefined,
+      campaignId: isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.id : null,
+      selectedCampaign: isForCampaign.value ? selectedCampaign.value : null,
     };
 
     console.log('[ClipBuildSettingsDialog] Emitting confirm with aspectRatios:', settings.aspectRatios);
@@ -2345,9 +2574,236 @@
     border: 1px solid rgba(139, 92, 246, 0.3);
   }
 
+  .build-dialog__badge--global {
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    border: 1px solid rgba(6, 182, 212, 0.25);
+    font-size: 0.625rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+
   .build-dialog__badge-icon {
     width: 10px;
     height: 10px;
+  }
+
+  /* ===== Campaign Section ===== */
+  .build-dialog__campaign-section {
+    padding: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    gap: 0;
+  }
+
+  .build-dialog__campaign-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    width: 100%;
+    background: transparent;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
+    color: var(--sidebar-text);
+  }
+
+  .build-dialog__campaign-checkbox {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1.5px solid var(--sidebar-border);
+    background-color: var(--sidebar-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 150ms ease;
+    margin-top: 1px;
+  }
+
+  .build-dialog__campaign-checkbox--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .build-dialog__campaign-checkbox-icon {
+    width: 11px;
+    height: 11px;
+    color: #000;
+  }
+
+  .build-dialog__campaign-toggle-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    flex: 1;
+  }
+
+  .build-dialog__campaign-toggle-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .build-dialog__campaign-toggle-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .build-dialog__campaign-toggle-hint {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    line-height: 1.4;
+  }
+
+  .build-dialog__campaign-picker {
+    margin-top: 0.875rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid var(--sidebar-border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .build-dialog__campaign-selected {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .build-dialog__campaign-selected-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: var(--sidebar-surface);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .build-dialog__campaign-cover {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .build-dialog__campaign-cover-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__campaign-selected-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .build-dialog__campaign-selected-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    truncate: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .build-dialog__campaign-selected-org {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__dropdown-text--placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  .build-dialog__campaign-item {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  .build-dialog__campaign-item-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .build-dialog__campaign-item-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .build-dialog__campaign-item-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .build-dialog__campaign-item-org {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .build-dialog__campaign-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    background-color: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.15);
+    border-radius: 6px;
+  }
+
+  .build-dialog__campaign-notice-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background-color: var(--sidebar-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #000;
+    margin-top: 1px;
+  }
+
+  .build-dialog__campaign-notice-text {
+    font-size: 0.8125rem;
+    color: var(--sidebar-accent);
+    margin: 0;
+    line-height: 1.4;
   }
 
   .build-dialog__dropdown-wrapper {

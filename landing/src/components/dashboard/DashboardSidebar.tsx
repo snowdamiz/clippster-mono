@@ -54,7 +54,7 @@ const orgNavGroups: NavGroup[] = [
   {
     header: 'Content',
     items: [
-      { label: 'Campaigns', icon: Megaphone, path: 'campaigns', comingSoon: true },
+      { label: 'Campaigns', icon: Megaphone, path: 'campaigns' },
       { label: 'Clippers', icon: Scissors, path: 'clippers' },
       { label: 'Shared Clips', icon: Share2, path: 'shared' },
       { label: 'Social Accounts', icon: Globe, path: 'social' },

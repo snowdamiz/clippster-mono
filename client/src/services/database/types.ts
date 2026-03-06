@@ -564,4 +564,9 @@ export interface CreatorPlatformLink {
 
 export interface CreatorProfileWithLinks extends CreatorProfile {
   platform_links: CreatorPlatformLink[];
+  organization_id?: number | null;
+  organization_name?: string | null;
+  campaign_id?: number | null;
+  campaign_title?: string | null;
+  context_type?: 'personal' | 'organization' | 'campaign';
 }

@@ -12,9 +12,11 @@ import {
 	ChevronRight,
 	CropIcon,
 	Trash2,
+	Megaphone,
 } from "lucide-vue-next";
 import ManualPOIEditor from "../../components/poi/ManualPOIEditor.vue";
 import type { ManualFramingConfig, ManualFramingConfigs } from "@/types";
+import type { Campaign } from "@/services/campaignApi";
 
 const { editor, version } = useEditor();
 
@@ -132,13 +134,22 @@ const exportCanvasSize = computed(() => {
 	return projectCanvasSize.value;
 });
 
-// Steps: platforms -> framing (conditional) -> settings
-type ExportStep = "platforms" | "framing" | "settings";
+// Campaign selection state
+const isForCampaign = ref(false);
+const availableCampaigns = ref<Campaign[]>([]);
+const selectedCampaign = ref<Campaign | null>(null);
+const loadingCampaigns = ref(false);
+const sourceClipId = ref<string | null>(null);
+const creatorProfileServerId = ref<number | null>(null);
+
+// Steps: platforms -> framing (conditional) -> campaign (conditional) -> settings
+type ExportStep = "platforms" | "framing" | "campaign" | "settings";
 const currentStep = ref<ExportStep>("settings");
 
 const visibleSteps = computed(() => {
 	const steps: ExportStep[] = ["platforms"];
 	if (hasPortraitRatio.value) steps.push("framing");
+	if (availableCampaigns.value.length > 0) steps.push("campaign");
 	steps.push("settings");
 	return steps;
 });
@@ -195,6 +206,25 @@ function onManualConfigConfirm(config: ManualFramingConfig) {
 	showManualPOIEditor.value = false;
 }
 
+// Campaign selection helpers
+function toggleIsForCampaign() {
+	isForCampaign.value = !isForCampaign.value;
+	if (!isForCampaign.value) {
+		selectedCampaign.value = null;
+	}
+}
+
+function selectCampaign(campaign: Campaign) {
+	selectedCampaign.value = campaign;
+}
+
+const campaignBadgeText = computed(() => {
+	if (!selectedCampaign.value) return "None";
+	const c = selectedCampaign.value;
+	if (c.creator_profile_id === null) return "Global";
+	return c.creator_profile?.name || "Campaign";
+});
+
 // Load video frame for POI editor preview
 async function loadVideoFrame() {
 	if (loadingVideoFrame.value) return;
@@ -225,6 +255,78 @@ async function loadVideoFrame() {
 	}
 }
 
+// Load available campaigns for the source clip
+async function loadAvailableCampaigns() {
+	const project = activeProject.value;
+	if (!project) return;
+
+	loadingCampaigns.value = true;
+	availableCampaigns.value = [];
+	sourceClipId.value = null;
+	creatorProfileServerId.value = null;
+
+	try {
+		// Get the source clip from video_editor_sources
+		const { getVideoEditorSourcesByProjectId } = await import("@/services/database/video-editor-projects");
+		const sources = await getVideoEditorSourcesByProjectId(project.metadata.id);
+		const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
+		
+		if (!clipSource?.source_id) {
+			console.log("[ExportButton] No clip source found, skipping campaign fetch");
+			return;
+		}
+
+		sourceClipId.value = clipSource.source_id;
+
+		// Get the clip to find its creator profile
+		const { getClip } = await import("@/services/database");
+		const clip = await getClip(clipSource.source_id);
+		
+		if (clip?.project_id) {
+			// Resolve creator profile for this clip's project
+			const { resolveBrandingProfile } = await import("@/composables/useBrandingProfileSelection");
+			const profile = await resolveBrandingProfile(clip.project_id);
+			
+			if (profile && profile.context_type === "organization" && profile.id && !profile.id.startsWith("campaign-")) {
+				const serverId = parseInt(profile.id, 10);
+				if (!isNaN(serverId)) {
+					creatorProfileServerId.value = serverId;
+				}
+			}
+		}
+
+		// Fetch campaigns (global branding + creator-profile-specific)
+		const { getMyGlobalBrandingCampaigns, getCampaignsByCreatorProfile } = await import("@/services/campaignApi");
+		const results: Campaign[] = [];
+
+		// 1. Fetch global branding campaigns (work with ANY VOD)
+		const globalRes = await getMyGlobalBrandingCampaigns();
+		if (globalRes.success && globalRes.campaigns) {
+			results.push(...globalRes.campaigns);
+		}
+
+		// 2. If this clip has a creator profile, also fetch campaigns for that profile
+		if (creatorProfileServerId.value) {
+			const profileRes = await getCampaignsByCreatorProfile(creatorProfileServerId.value);
+			if (profileRes.success && profileRes.campaigns) {
+				// Add campaigns not already in list (no duplicates)
+				for (const c of profileRes.campaigns) {
+					if (!results.find((r) => r.id === c.id)) {
+						results.push(c);
+					}
+				}
+			}
+		}
+
+		availableCampaigns.value = results;
+		console.log("[ExportButton] Loaded campaigns:", availableCampaigns.value.length);
+	} catch (error) {
+		console.error("[ExportButton] Failed to load campaigns:", error);
+	} finally {
+		loadingCampaigns.value = false;
+	}
+}
+
 // Reset state when dialog opens
 watch(isOpen, async (open) => {
 	if (open) {
@@ -239,11 +341,16 @@ watch(isOpen, async (open) => {
 		manualFramingConfigs.value = {};
 		videoFrameUrl.value = null;
 		firstVideoPath.value = null;
+		isForCampaign.value = false;
+		selectedCampaign.value = null;
 		currentStep.value = isProjectLandscape.value ? "platforms" : "settings";
 
 		if (isProjectLandscape.value) {
 			await loadVideoFrame();
 		}
+		
+		// Load campaigns in background
+		loadAvailableCampaigns();
 	}
 });
 
@@ -283,6 +390,130 @@ async function handleExport() {
 	progress.value = 0;
 	exportError.value = null;
 
+	// ── Campaign Branding Application ────────────────────────────────────────
+	if (isForCampaign.value && selectedCampaign.value) {
+		try {
+			console.log("[ExportButton] Applying campaign branding:", selectedCampaign.value.title);
+			const campaign = selectedCampaign.value;
+			const { invoke } = await import("@tauri-apps/api/core");
+
+			// Download and add intro if campaign has one
+			if (campaign.global_intro) {
+				try {
+					const introResult = await invoke<{ success: boolean; filePath: string }>("download_campaign_asset", {
+						assetUrl: campaign.global_intro.url,
+						assetId: `org-asset-${campaign.global_intro.id}`,
+						assetType: "intro",
+					});
+
+					if (introResult.success && introResult.filePath) {
+						// Add intro video to the beginning of the timeline (track 0)
+						const introDuration = campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : 3;
+						const introElement: any = {
+							type: "video" as const,
+							name: "Campaign Intro",
+							trackIndex: 0,
+							startTime: 0,
+							duration: introDuration,
+							mediaId: introResult.filePath,
+							trimStart: 0,
+							trimEnd: introDuration,
+							transform: { scale: 1, rotation: 0 },
+							opacity: 1,
+						};
+						const tracks = editor.timeline.getTracks();
+						const videoTrack = tracks.find(t => t.type === "video");
+						if (videoTrack) {
+							editor.timeline.insertElement({ element: introElement, placement: { mode: "explicit", trackId: videoTrack.id } });
+						}
+						console.log("[ExportButton] Added campaign intro");
+					}
+				} catch (err) {
+					console.warn("[ExportButton] Failed to add campaign intro:", err);
+				}
+			}
+
+			// Download and add outro if campaign has one
+			if (campaign.global_outro) {
+				try {
+					const outroResult = await invoke<{ success: boolean; filePath: string }>("download_campaign_asset", {
+						assetUrl: campaign.global_outro.url,
+						assetId: `org-asset-${campaign.global_outro.id}`,
+						assetType: "outro",
+					});
+
+					if (outroResult.success && outroResult.filePath) {
+						// Add outro video to the end of the timeline (track 0)
+						const outroDuration = campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : 3;
+						const outroElement: any = {
+							type: "video" as const,
+							name: "Campaign Outro",
+							trackIndex: 0,
+							startTime: 0,
+							duration: outroDuration,
+							mediaId: outroResult.filePath,
+							trimStart: 0,
+							trimEnd: outroDuration,
+							transform: { scale: 1, rotation: 0 },
+							opacity: 1,
+						};
+						const tracks = editor.timeline.getTracks();
+						const videoTrack = tracks.find(t => t.type === "video");
+						if (videoTrack) {
+							editor.timeline.insertElement({ element: outroElement, placement: { mode: "explicit", trackId: videoTrack.id } });
+						}
+						console.log("[ExportButton] Added campaign outro");
+					}
+				} catch (err) {
+					console.warn("[ExportButton] Failed to add campaign outro:", err);
+				}
+			}
+
+			// Add watermark if campaign has one (via creator profile)
+			if (campaign.creator_profile?.watermark_settings) {
+				try {
+					const watermarkSettings = campaign.creator_profile.watermark_settings;
+					if (watermarkSettings.watermark_id) {
+						const { getWatermarkImage } = await import("@/services/database/watermarks");
+						const watermark = await getWatermarkImage(String(watermarkSettings.watermark_id));
+						if (watermark?.file_path) {
+							// Add watermark as image element on overlay track
+							const position = String(watermarkSettings.position || "bottom-right");
+							const watermarkElement: any = {
+								type: "image" as const,
+								name: "Campaign Watermark",
+								trackIndex: 1,
+								startTime: 0,
+								duration: 999999,
+								mediaId: watermark.file_path,
+								trimStart: 0,
+								trimEnd: 999999,
+								transform: {
+									scale: Number(watermarkSettings.scale) || 0.15,
+									rotation: 0,
+								},
+								position: {
+									x: position.includes("right") ? 200 : -200,
+									y: position.includes("bottom") ? 150 : -150,
+								},
+								opacity: Number(watermarkSettings.opacity) || 0.8,
+							};
+							// Use auto placement for watermark (will create appropriate track)
+							editor.timeline.insertElement({ element: watermarkElement, placement: { mode: "auto" } });
+							console.log("[ExportButton] Added campaign watermark");
+						}
+					}
+				} catch (err) {
+					console.warn("[ExportButton] Failed to add campaign watermark:", err);
+				}
+			}
+		} catch (err) {
+			console.error("[ExportButton] Campaign branding failed:", err);
+			// Continue with export even if branding fails
+		}
+	}
+	// ── End Campaign Branding Application ───────────────────────────────────
+
 	try {
 		const result = await editor.project.export({
 			options: {
@@ -313,12 +544,23 @@ async function handleExport() {
 				try {
 					const { getVideoEditorSourcesByProjectId } = await import("@/services/database/video-editor-projects");
 					const { updateClipBuildStatus } = await import("@/services/database/clip-build");
+					const { updateClip } = await import("@/services/database/clips");
 					const sources = await getVideoEditorSourcesByProjectId(project.metadata.id);
 					const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
 					if (clipSource?.source_id) {
 						await updateClipBuildStatus(clipSource.source_id, "completed", {
 							builtFilePath: result.outputPath,
 						});
+
+						// Save campaign_id to clip record for payment tracking
+						if (isForCampaign.value && selectedCampaign.value) {
+							try {
+								await updateClip(clipSource.source_id, { campaign_id: selectedCampaign.value.id });
+								console.log("[ExportButton] Saved campaign_id to clip:", selectedCampaign.value.id);
+							} catch (err) {
+								console.warn("[ExportButton] Failed to save campaign_id:", err);
+							}
+						}
 
 						// Trigger automatic background transcription for the exported video
 						// This ensures the exported composition (including imported videos and other clips) is fully searchable
@@ -788,6 +1030,78 @@ async function handleCopyError() {
 													</button>
 												</div>
 												<div v-if="loadingVideoFrame" class="export-dialog__loading-hint">Loading video preview...</div>
+											</div>
+										</Transition>
+									</div>
+								</div>
+
+								<!-- Step 3: Campaign Selection (conditional) -->
+								<div v-else-if="currentStep === 'campaign'" class="export-dialog__step-content">
+									<div class="export-dialog__step-header">
+										<h3 class="export-dialog__step-title">Campaign Selection</h3>
+										<p class="export-dialog__step-subtitle">Optionally export this clip for a campaign</p>
+									</div>
+
+									<div class="export-dialog__campaign-section">
+										<!-- Campaign Toggle -->
+										<button
+											type="button"
+											@click="toggleIsForCampaign"
+											class="export-dialog__campaign-toggle"
+										>
+											<div class="export-dialog__campaign-toggle-left">
+												<div class="export-dialog__campaign-checkbox" :class="{ 'export-dialog__campaign-checkbox--checked': isForCampaign }">
+													<Check v-if="isForCampaign" class="export-dialog__campaign-checkbox-icon" />
+												</div>
+												<span class="export-dialog__campaign-toggle-text">This clip is for a campaign/organization</span>
+											</div>
+											<div class="export-dialog__campaign-toggle-right">
+												<Megaphone class="export-dialog__campaign-toggle-icon" />
+											</div>
+										</button>
+
+										<!-- Campaign Dropdown (shown when checkbox is checked) -->
+										<Transition name="slide-fade">
+											<div v-if="isForCampaign" class="export-dialog__campaign-picker">
+												<label class="export-dialog__campaign-label">Select Campaign</label>
+												<div class="export-dialog__campaign-list">
+													<button
+														v-for="campaign in availableCampaigns"
+														:key="campaign.id"
+														@click="selectCampaign(campaign)"
+														class="export-dialog__campaign-item"
+														:class="{ 'export-dialog__campaign-item--selected': selectedCampaign?.id === campaign.id }"
+													>
+														<div class="export-dialog__campaign-item-left">
+															<div
+																class="export-dialog__campaign-radio"
+																:class="{ 'export-dialog__campaign-radio--selected': selectedCampaign?.id === campaign.id }"
+															>
+																<div v-if="selectedCampaign?.id === campaign.id" class="export-dialog__campaign-radio-dot" />
+															</div>
+															<div class="export-dialog__campaign-item-info">
+																<div class="export-dialog__campaign-item-header">
+																	<span class="export-dialog__campaign-item-title">{{ campaign.title }}</span>
+																	<span
+																		v-if="campaign.creator_profile_id === null"
+																		class="export-dialog__campaign-badge export-dialog__campaign-badge--global"
+																	>
+																		Global Branding
+																	</span>
+																	<span
+																		v-else
+																		class="export-dialog__campaign-badge export-dialog__campaign-badge--creator"
+																	>
+																		{{ campaign.creator_profile?.name }}
+																	</span>
+																</div>
+																<p class="export-dialog__campaign-item-org">{{ campaign.organization?.name }}</p>
+															</div>
+														</div>
+													</button>
+												</div>
+												<p v-if="loadingCampaigns" class="export-dialog__campaign-loading">Loading campaigns...</p>
+												<p v-else-if="availableCampaigns.length === 0" class="export-dialog__campaign-empty">No campaigns available</p>
 											</div>
 										</Transition>
 									</div>
@@ -1783,6 +2097,213 @@ async function handleCopyError() {
 	background-color: rgba(239, 68, 68, 0.2);
 	border-color: rgba(239, 68, 68, 0.5);
 	transform: translateY(-1px);
+}
+
+/* ===== Campaign Selection ===== */
+.export-dialog__campaign-section {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
+.export-dialog__campaign-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0.875rem 1rem;
+	border-radius: 10px;
+	border: 1px solid var(--sidebar-border);
+	background-color: rgba(255, 255, 255, 0.03);
+	cursor: pointer;
+	transition: all 150ms ease;
+	width: 100%;
+}
+
+.export-dialog__campaign-toggle:hover {
+	background-color: rgba(255, 255, 255, 0.06);
+	border-color: rgba(255, 255, 255, 0.15);
+}
+
+.export-dialog__campaign-toggle-left {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+}
+
+.export-dialog__campaign-checkbox {
+	width: 18px;
+	height: 18px;
+	border-radius: 4px;
+	border: 2px solid var(--sidebar-border);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: all 150ms ease;
+}
+
+.export-dialog__campaign-checkbox--checked {
+	background-color: var(--sidebar-accent);
+	border-color: var(--sidebar-accent);
+}
+
+.export-dialog__campaign-checkbox-icon {
+	width: 12px;
+	height: 12px;
+	color: white;
+}
+
+.export-dialog__campaign-toggle-text {
+	font-size: 0.875rem;
+	font-weight: 500;
+	color: var(--sidebar-text);
+}
+
+.export-dialog__campaign-toggle-right {
+	display: flex;
+	align-items: center;
+}
+
+.export-dialog__campaign-toggle-icon {
+	width: 18px;
+	height: 18px;
+	color: var(--sidebar-text-muted);
+}
+
+.export-dialog__campaign-picker {
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.export-dialog__campaign-label {
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: var(--sidebar-text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.export-dialog__campaign-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.375rem;
+	max-height: 240px;
+	overflow-y: auto;
+}
+
+.export-dialog__campaign-item {
+	display: flex;
+	align-items: center;
+	padding: 0.75rem;
+	border-radius: 8px;
+	border: 1px solid var(--sidebar-border);
+	background-color: rgba(255, 255, 255, 0.03);
+	cursor: pointer;
+	transition: all 150ms ease;
+	width: 100%;
+}
+
+.export-dialog__campaign-item:hover {
+	background-color: rgba(255, 255, 255, 0.06);
+	border-color: rgba(255, 255, 255, 0.15);
+}
+
+.export-dialog__campaign-item--selected {
+	border-color: var(--sidebar-accent);
+	background-color: rgba(6, 182, 212, 0.08);
+}
+
+.export-dialog__campaign-item-left {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	flex: 1;
+}
+
+.export-dialog__campaign-radio {
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	border: 2px solid var(--sidebar-border);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	transition: all 150ms ease;
+	flex-shrink: 0;
+}
+
+.export-dialog__campaign-radio--selected {
+	border-color: var(--sidebar-accent);
+}
+
+.export-dialog__campaign-radio-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background-color: var(--sidebar-accent);
+}
+
+.export-dialog__campaign-item-info {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	flex: 1;
+	min-width: 0;
+}
+
+.export-dialog__campaign-item-header {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	flex-wrap: wrap;
+}
+
+.export-dialog__campaign-item-title {
+	font-size: 0.875rem;
+	font-weight: 600;
+	color: var(--sidebar-text);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.export-dialog__campaign-badge {
+	padding: 0.125rem 0.5rem;
+	border-radius: 4px;
+	font-size: 0.6875rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+}
+
+.export-dialog__campaign-badge--global {
+	background-color: rgba(168, 85, 247, 0.15);
+	color: rgb(168, 85, 247);
+	border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.export-dialog__campaign-badge--creator {
+	background-color: rgba(6, 182, 212, 0.15);
+	color: var(--sidebar-accent);
+	border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.export-dialog__campaign-item-org {
+	font-size: 0.75rem;
+	color: var(--sidebar-text-muted);
+	margin: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.export-dialog__campaign-loading,
+.export-dialog__campaign-empty {
+	font-size: 0.75rem;
+	color: var(--sidebar-text-muted);
+	text-align: center;
+	padding: 1rem;
+	margin: 0;
 }
 
 /* ===== Slide-Fade Transition ===== */

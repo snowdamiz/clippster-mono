@@ -63,6 +63,10 @@
                   <span class="status-badge__dot"></span>
                   Active
                 </span>
+                <span v-if="org.campaigns_enabled" class="status-badge status-badge--campaigns">
+                  <Target :size="12" />
+                  Campaigns Enabled
+                </span>
               </div>
               <p v-if="org.description" class="org-bio">{{ org.description }}</p>
             </div>
@@ -192,6 +196,30 @@
                 </div>
               </div>
             </div>
+
+            <!-- Feature Flags Card -->
+            <div class="sidebar-card">
+              <div class="sidebar-card__header">
+                <Settings class="sidebar-card__icon" />
+                <h3 class="sidebar-card__title">Feature Flags</h3>
+              </div>
+              <div class="sidebar-card__content">
+                <div class="feature-flags">
+                  <div class="feature-flag">
+                    <div class="feature-flag__info">
+                      <Target :size="16" class="feature-flag__icon" />
+                      <div class="feature-flag__label">Campaigns Access</div>
+                    </div>
+                    <button 
+                      @click="org.campaigns_enabled ? disableOrgCampaigns() : enableOrgCampaigns()"
+                      :class="['feature-flag__toggle', org.campaigns_enabled ? 'feature-flag__toggle--enabled' : '']"
+                    >
+                      {{ org.campaigns_enabled ? 'Enabled' : 'Disabled' }}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </aside>
         </div>
       </div>
@@ -215,6 +243,8 @@ import {
   User,
   Shield,
   Info,
+  Target,
+  Settings,
 } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import PageLayout from '@/components/PageLayout.vue';
@@ -267,6 +297,30 @@ const messageOwner = () => {
 
 const navigateToUserProfile = (userId: number) => {
   router.push(`/admin/users/${userId}`);
+};
+
+const enableOrgCampaigns = async () => {
+  try {
+    const response = await api.post(`/admin/organizations/${orgId}/campaigns`);
+    if (response.data.success) {
+      toast('Campaigns access enabled for organization');
+      await loadOrgDetails();
+    }
+  } catch (err: any) {
+    toastError(err.response?.data?.error || 'Failed to enable campaigns');
+  }
+};
+
+const disableOrgCampaigns = async () => {
+  try {
+    const response = await api.delete(`/admin/organizations/${orgId}/campaigns`);
+    if (response.data.success) {
+      toast('Campaigns access disabled for organization');
+      await loadOrgDetails();
+    }
+  } catch (err: any) {
+    toastError(err.response?.data?.error || 'Failed to disable campaigns');
+  }
 };
 
 onMounted(() => {
@@ -850,6 +904,71 @@ onMounted(() => {
   font-family: 'Courier New', monospace;
   font-size: 0.75rem;
   color: var(--sidebar-accent);
+}
+
+/* Feature Flags */
+.feature-flags {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.feature-flag {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.feature-flag__info {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.feature-flag__icon {
+  color: var(--sidebar-accent);
+}
+
+.feature-flag__label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+}
+
+.feature-flag__toggle {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 0.375rem;
+  border: 1px solid var(--sidebar-border);
+  background: var(--sidebar-bg-secondary);
+  color: var(--sidebar-text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.feature-flag__toggle:hover {
+  background: var(--sidebar-bg-hover);
+  border-color: var(--sidebar-accent);
+}
+
+.feature-flag__toggle--enabled {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: rgb(34, 197, 94);
+}
+
+.feature-flag__toggle--enabled:hover {
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+/* Status Badge for Campaigns */
+.status-badge--campaigns {
+  background: rgba(147, 51, 234, 0.1);
+  color: rgb(147, 51, 234);
+  border: 1px solid rgba(147, 51, 234, 0.2);
 }
 
 /* ===== Responsive ===== */

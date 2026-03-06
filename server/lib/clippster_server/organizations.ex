@@ -2479,4 +2479,34 @@ defmodule ClippsterServer.Organizations do
       application -> Repo.delete(application)
     end
   end
+
+  @doc """
+  Enables campaigns access for an organization.
+  """
+  def enable_campaigns(org_id) do
+    org = get_organization(org_id)
+
+    if is_nil(org) do
+      {:error, :organization_not_found}
+    else
+      org
+      |> Ecto.Changeset.change(%{campaigns_enabled: true})
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Disables campaigns access for an organization.
+  """
+  def disable_campaigns(org_id) do
+    org = get_organization(org_id)
+
+    if is_nil(org) do
+      {:error, :organization_not_found}
+    else
+      org
+      |> Ecto.Changeset.change(%{campaigns_enabled: false})
+      |> Repo.update()
+    end
+  end
 end
