@@ -20,6 +20,7 @@ defmodule ClippsterServer.Credits.ProcessingJob do
     field :result_data, :map
     field :project_id, :string
     field :job_type, :string, default: "clip_detection"
+    field :organization_id, :id
     field :cancelled_at, :utc_datetime
     field :refund_reason, :string
 
@@ -38,7 +39,8 @@ defmodule ClippsterServer.Credits.ProcessingJob do
       :status,
       :video_url,
       :project_id,
-      :job_type
+      :job_type,
+      :organization_id
     ])
     |> validate_required([:user_id, :video_duration_hours, :credits_deducted, :status])
     |> validate_inclusion(:status, ["processing", "completed", "failed", "cancelled"])

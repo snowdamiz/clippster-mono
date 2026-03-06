@@ -12,9 +12,11 @@ import {
 	ChevronRight,
 	CropIcon,
 	Trash2,
+	Megaphone,
 } from "lucide-vue-next";
 import ManualPOIEditor from "../../components/poi/ManualPOIEditor.vue";
 import type { ManualFramingConfig, ManualFramingConfigs } from "@/types";
+import type { Campaign } from "@/services/campaignApi";
 
 const { editor, version } = useEditor();
 
@@ -132,13 +134,22 @@ const exportCanvasSize = computed(() => {
 	return projectCanvasSize.value;
 });
 
-// Steps: platforms -> framing (conditional) -> settings
-type ExportStep = "platforms" | "framing" | "settings";
+// Campaign selection state
+const isForCampaign = ref(false);
+const availableCampaigns = ref<Campaign[]>([]);
+const selectedCampaign = ref<Campaign | null>(null);
+const loadingCampaigns = ref(false);
+const sourceClipId = ref<string | null>(null);
+const creatorProfileServerId = ref<number | null>(null);
+
+// Steps: platforms -> framing (conditional) -> campaign (conditional) -> settings
+type ExportStep = "platforms" | "framing" | "campaign" | "settings";
 const currentStep = ref<ExportStep>("settings");
 
 const visibleSteps = computed(() => {
 	const steps: ExportStep[] = ["platforms"];
 	if (hasPortraitRatio.value) steps.push("framing");
+	if (availableCampaigns.value.length > 0) steps.push("campaign");
 	steps.push("settings");
 	return steps;
 });
@@ -225,6 +236,78 @@ async function loadVideoFrame() {
 	}
 }
 
+// Load available campaigns for the source clip
+async function loadAvailableCampaigns() {
+	const project = activeProject.value;
+	if (!project) return;
+
+	loadingCampaigns.value = true;
+	availableCampaigns.value = [];
+	sourceClipId.value = null;
+	creatorProfileServerId.value = null;
+
+	try {
+		// Get the source clip from video_editor_sources
+		const { getVideoEditorSourcesByProjectId } = await import("@/services/database/video-editor-projects");
+		const sources = await getVideoEditorSourcesByProjectId(project.metadata.id);
+		const clipSource = sources.find((s) => s.source_type === "clip" && s.source_id);
+		
+		if (!clipSource?.source_id) {
+			console.log("[ExportButton] No clip source found, skipping campaign fetch");
+			return;
+		}
+
+		sourceClipId.value = clipSource.source_id;
+
+		// Get the clip to find its creator profile
+		const { getClip } = await import("@/services/database");
+		const clip = await getClip(clipSource.source_id);
+		
+		if (clip?.project_id) {
+			// Resolve creator profile for this clip's project
+			const { resolveBrandingProfile } = await import("@/composables/useBrandingProfileSelection");
+			const profile = await resolveBrandingProfile(clip.project_id);
+			
+			if (profile && profile.context_type === "organization" && profile.id && !profile.id.startsWith("campaign-")) {
+				const serverId = parseInt(profile.id, 10);
+				if (!isNaN(serverId)) {
+					creatorProfileServerId.value = serverId;
+				}
+			}
+		}
+
+		// Fetch campaigns (global branding + creator-profile-specific)
+		const { getMyGlobalBrandingCampaigns, getCampaignsByCreatorProfile } = await import("@/services/campaignApi");
+		const results: Campaign[] = [];
+
+		// 1. Fetch global branding campaigns (work with ANY VOD)
+		const globalRes = await getMyGlobalBrandingCampaigns();
+		if (globalRes.success && globalRes.campaigns) {
+			results.push(...globalRes.campaigns);
+		}
+
+		// 2. If this clip has a creator profile, also fetch campaigns for that profile
+		if (creatorProfileServerId.value) {
+			const profileRes = await getCampaignsByCreatorProfile(creatorProfileServerId.value);
+			if (profileRes.success && profileRes.campaigns) {
+				// Add campaigns not already in list (no duplicates)
+				for (const c of profileRes.campaigns) {
+					if (!results.find((r) => r.id === c.id)) {
+						results.push(c);
+					}
+				}
+			}
+		}
+
+		availableCampaigns.value = results;
+		console.log("[ExportButton] Loaded campaigns:", availableCampaigns.value.length);
+	} catch (error) {
+		console.error("[ExportButton] Failed to load campaigns:", error);
+	} finally {
+		loadingCampaigns.value = false;
+	}
+}
+
 // Reset state when dialog opens
 watch(isOpen, async (open) => {
 	if (open) {
@@ -239,11 +322,16 @@ watch(isOpen, async (open) => {
 		manualFramingConfigs.value = {};
 		videoFrameUrl.value = null;
 		firstVideoPath.value = null;
+		isForCampaign.value = false;
+		selectedCampaign.value = null;
 		currentStep.value = isProjectLandscape.value ? "platforms" : "settings";
 
 		if (isProjectLandscape.value) {
 			await loadVideoFrame();
 		}
+		
+		// Load campaigns in background
+		loadAvailableCampaigns();
 	}
 });
 

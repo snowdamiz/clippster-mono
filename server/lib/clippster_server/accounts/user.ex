@@ -14,6 +14,7 @@ defmodule ClippsterServer.Accounts.User do
     field :is_admin, :boolean, default: false
     field :is_moderator, :boolean, default: false
     field :ai_editor_enabled, :boolean, default: false
+    field :campaigns_enabled, :boolean, default: false
 
     # Associations
     has_one :clipper_profile, ClipperProfile

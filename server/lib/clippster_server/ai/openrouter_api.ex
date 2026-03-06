@@ -23,9 +23,9 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
         IO.puts("[OpenRouterAPI] API key configured")
 
         # Get model from environment or use default
-        model = System.get_env("OPENROUTER_MODEL", "z-ai/glm-4.7")
+        model = System.get_env("OPENROUTER_MODEL", "x-ai/grok-4.1-fast")
         IO.puts("[OpenRouterAPI] Using model: #{model}")
-        IO.puts("[OpenRouterAPI] Using Responses API with high reasoning effort")
+        IO.puts("[OpenRouterAPI] Using Responses API")
 
         # Start with the initial request
         generate_clips_with_retry(
@@ -99,7 +99,7 @@ defmodule ClippsterServer.AI.OpenRouterAPI do
       "reasoning" => %{
         "effort" => "high"
       },
-      "max_output_tokens" => 16000
+      "max_output_tokens" => 32000
     }
 
     IO.puts("[OpenRouterAPI] Request payload prepared for Responses API")

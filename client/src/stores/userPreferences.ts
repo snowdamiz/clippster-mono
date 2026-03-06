@@ -16,7 +16,8 @@ export type ToastCategory =
   | 'projects'
   | 'social'
   | 'organization'
-  | 'system';
+  | 'system'
+  | 'campaigns';
 
 export const useUserPreferencesStore = defineStore('userPreferences', () => {
   // State

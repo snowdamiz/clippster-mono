@@ -130,13 +130,16 @@ function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProf
       is_primary: Boolean(link.is_primary),
       created_at: new Date(link.inserted_at).getTime(),
     })),
+    organization_id: sp.organization_id,
+    organization_name: sp.organization_name,
+    context_type: 'organization',
   };
 }
 
 /**
  * Convert a campaign creator profile to the local CreatorProfileWithLinks format.
  */
-function campaignProfileToLocal(cp: CampaignCreatorProfile): CreatorProfileWithLinks {
+function campaignProfileToLocal(cp: CampaignCreatorProfile, campaign: any): CreatorProfileWithLinks {
   return {
     id: `campaign-${cp.id}`,
     name: cp.name,
@@ -166,6 +169,11 @@ function campaignProfileToLocal(cp: CampaignCreatorProfile): CreatorProfileWithL
       is_primary: Boolean(link.is_primary),
       created_at: Date.now(),
     })),
+    organization_id: campaign.organization_id,
+    organization_name: campaign.organization?.name || null,
+    campaign_id: campaign.id,
+    campaign_title: campaign.title,
+    context_type: 'campaign',
   };
 }
 
@@ -241,10 +249,11 @@ export async function resolveApplicableProfiles(
           // Check if this campaign profile matches the project's streamer
           if (linksMatchStreamer(cp.platform_links || [], projectPlatform, projectPlatformId)) {
             hasCampaignMatch = true;
+            const orgName = campaign.organization?.name || 'Unknown Org';
             profiles.push({
               source: 'campaign',
-              profile: campaignProfileToLocal(cp),
-              label: `Campaign: ${campaign.title}`,
+              profile: campaignProfileToLocal(cp, campaign),
+              label: `Campaign (${orgName}): ${campaign.title}`,
             });
             console.log('[BrandingProfile] Found campaign streamer match:', cp.name, 'for campaign:', campaign.title);
           }
@@ -266,7 +275,7 @@ export async function resolveApplicableProfiles(
           profiles.push({
             source: 'org-streamer',
             profile: serverProfileToLocal(sp),
-            label: sourceLabel('org-streamer'),
+            label: `${sp.organization_name}: ${sp.name}`,
           });
           console.log('[BrandingProfile] Found org streamer match:', sp.name);
         } else if (scope === 'global') {
@@ -274,7 +283,7 @@ export async function resolveApplicableProfiles(
           profiles.push({
             source: 'org-global',
             profile: serverProfileToLocal(sp),
-            label: sourceLabel('org-global'),
+            label: `${sp.organization_name}: ${sp.name}`,
           });
         }
       }

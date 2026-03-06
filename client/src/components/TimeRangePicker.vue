@@ -78,7 +78,6 @@
 
   const props = withDefaults(defineProps<Props>(), {
     totalDuration: 0,
-    modelValue: () => ({ startTime: 0, endTime: 0 }),
   });
 
   const emit = defineEmits<Emits>();
@@ -206,8 +205,11 @@
     const start = startTime.value;
     const end = endTime.value;
 
-    emit('update:modelValue', { startTime: start, endTime: end });
-    emit('change', { startTime: start, endTime: end });
+    // Only emit if we have a valid time range
+    if (start < end && end > 0) {
+      emit('update:modelValue', { startTime: start, endTime: end });
+      emit('change', { startTime: start, endTime: end });
+    }
   }
 
   // Initialize with provided values or defaults

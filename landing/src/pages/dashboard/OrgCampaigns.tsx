@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
+import { useNavigate } from 'react-router-dom'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useOrganization } from '@/hooks/useOrganization'
 import { useToast } from '@/hooks/useToast'
@@ -143,6 +144,7 @@ const emptyForm = (): CampaignForm => ({
 
 export function OrgCampaigns() {
   const { organizationId, isAdmin, creatorProfiles, loadCreatorProfiles } = useOrganization()
+  const navigate = useNavigate()
   const toast = useToast()
 
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -354,29 +356,9 @@ export function OrgCampaigns() {
     if (r.success) loadCampaigns()
   }
 
-  // Detail dialog
-  async function viewCampaign(campaign: Campaign) {
-    setSelectedCampaign(campaign)
-    setDetailTab('overview')
-    setParticipants([])
-    setSubmissions([])
-    setShowDetailDialog(true)
-    if (organizationId) {
-      setLoadingParticipants(true)
-      try {
-        const r = await listCampaignParticipants(Number(organizationId), campaign.id)
-        if (r.success) setParticipants(r.participants || [])
-      } finally {
-        setLoadingParticipants(false)
-      }
-      setLoadingSubmissions(true)
-      try {
-        const r = await listOrganizationCampaignSubmissions(organizationId, { campaign_id: campaign.id })
-        if (r.success) setSubmissions(r.submissions || [])
-      } finally {
-        setLoadingSubmissions(false)
-      }
-    }
+  // Navigate to detail page
+  function viewCampaign(campaign: Campaign) {
+    navigate(`/dashboard/org/${organizationId}/campaigns/${campaign.id}`)
   }
 
   async function handleApproveParticipant(participant: any) {
