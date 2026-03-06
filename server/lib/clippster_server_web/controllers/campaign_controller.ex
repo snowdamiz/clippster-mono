@@ -894,6 +894,9 @@ defmodule ClippsterServerWeb.CampaignController do
         submission ->
           case Campaigns.update_submission_views(submission, view_count) do
             {:ok, updated} ->
+              # Check for platform campaign reward milestones
+              ClippsterServer.PlatformCampaigns.check_and_grant_rewards(updated.id)
+              
               json(conn, %{success: true, submission: serialize_submission(updated)})
 
             {:error, changeset} ->

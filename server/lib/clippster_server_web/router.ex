@@ -1291,6 +1291,20 @@ defmodule ClippsterServerWeb.Router do
     # Admin messaging (bulk email campaigns)
     post("/admin/messaging/send", AdminMessagingController, :send_campaign)
     get("/admin/messaging/campaigns", AdminMessagingController, :list_campaigns)
+
+    # Platform campaigns management
+    get("/admin/platform-campaigns", PlatformCampaignController, :list_campaigns)
+    get("/admin/platform-campaigns/stats", PlatformCampaignController, :get_stats)
+    get("/admin/platform-campaigns/:id", PlatformCampaignController, :get_campaign)
+    post("/admin/platform-campaigns", PlatformCampaignController, :create_campaign)
+    put("/admin/platform-campaigns/:id", PlatformCampaignController, :update_campaign)
+    delete("/admin/platform-campaigns/:id", PlatformCampaignController, :delete_campaign)
+    get("/admin/platform-campaigns/:campaign_id/rewards", PlatformCampaignController, :get_campaign_rewards)
+
+    # Revenue allocation settings
+    get("/admin/revenue-allocation/settings", PlatformCampaignController, :get_revenue_settings)
+    put("/admin/revenue-allocation/settings", PlatformCampaignController, :update_revenue_settings)
+    get("/admin/revenue-allocation/transactions", PlatformCampaignController, :get_revenue_transactions)
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

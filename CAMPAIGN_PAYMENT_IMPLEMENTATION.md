@@ -5,7 +5,7 @@ Implemented a complete manual payment verification system for campaigns with in-
 
 ---
 
-## Backend Implementation ✅
+## Backend Implementation 
 
 ### 1. Database Migrations
 

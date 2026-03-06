@@ -50,6 +50,8 @@ defmodule ClippsterServer.Campaigns.Campaign do
     field :clips_per_profile, :integer, default: 5
     field :assigned_streamer_ids, {:array, :integer}, default: []
     field :max_views, :integer
+    field :is_platform_campaign, :boolean, default: false
+    field :platform_payment_model, :string
 
     belongs_to :organization, Organization
     belongs_to :creator_profile, OrganizationCreatorProfile
@@ -97,7 +99,9 @@ defmodule ClippsterServer.Campaigns.Campaign do
       :payment_model,
       :per_clip_amount,
       :clips_per_profile,
-      :assigned_streamer_ids
+      :assigned_streamer_ids,
+      :is_platform_campaign,
+      :platform_payment_model
     ])
     |> validate_required([:organization_id, :title])
     |> validate_length(:title, min: 3, max: 200)
@@ -150,7 +154,9 @@ defmodule ClippsterServer.Campaigns.Campaign do
       :payment_model,
       :per_clip_amount,
       :clips_per_profile,
-      :assigned_streamer_ids
+      :assigned_streamer_ids,
+      :is_platform_campaign,
+      :platform_payment_model
     ])
     |> validate_length(:title, min: 3, max: 200)
     |> validate_length(:description, max: 5000)
