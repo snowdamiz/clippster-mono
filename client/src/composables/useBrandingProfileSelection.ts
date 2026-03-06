@@ -292,21 +292,20 @@ export async function resolveApplicableProfiles(
     console.warn('[BrandingProfile] Failed to fetch org-assigned profiles:', e);
   }
 
-  // 3. Local streamer-specific profile (only if no org streamer match)
-  if (!hasOrgStreamerMatch) {
-    try {
-      const streamerProfile = await getCreatorProfileByProjectId(projectId);
-      if (streamerProfile) {
-        hasLocalStreamerMatch = true;
-        profiles.push({
-          source: 'streamer',
-          profile: streamerProfile,
-          label: sourceLabel('streamer'),
-        });
-      }
-    } catch (e) {
-      console.warn('[BrandingProfile] Failed to resolve local streamer profile:', e);
+  // 3. Local streamer-specific profile
+  // Always check for personal streamer profile - user may want to choose between personal and org profiles
+  try {
+    const streamerProfile = await getCreatorProfileByProjectId(projectId);
+    if (streamerProfile) {
+      hasLocalStreamerMatch = true;
+      profiles.push({
+        source: 'streamer',
+        profile: streamerProfile,
+        label: sourceLabel('streamer'),
+      });
     }
+  } catch (e) {
+    console.warn('[BrandingProfile] Failed to resolve local streamer profile:', e);
   }
 
   // 4. User's personal global profiles (only if no org streamer match and no campaign match)
@@ -328,18 +327,16 @@ export async function resolveApplicableProfiles(
   const hasAnyStreamerMatch = hasOrgStreamerMatch || hasLocalStreamerMatch || hasCampaignMatch;
 
   // Apply priority filtering:
-  // - If any streamer match exists, remove org-global profiles
+  // IMPORTANT: 
+  // - org-global profiles come from getMyAssignedCreatorProfiles() which only returns
+  //   profiles explicitly assigned to the user by an org admin. These should ALWAYS be available.
+  // - org-streamer and campaign profiles should coexist with personal streamer profiles.
+  //   Users should be able to choose between using org branding vs their personal profile.
+  // - Only filter out personal-global profiles when there's a streamer-specific match.
   if (hasAnyStreamerMatch) {
-    const filtered = profiles.filter((p) => p.source !== 'org-global');
-
-    // Campaign + personal-only streamer (no org) → campaign auto-wins, remove personal streamer
-    if (hasCampaignMatch && hasLocalStreamerMatch && !hasOrgStreamerMatch) {
-      return filtered.filter((p) => p.source !== 'streamer');
-    }
-
-    // Campaign + org streamer → keep both, user selects
-    // Org streamer only → already excluded personal-global above
-    return filtered;
+    // Filter out personal-global profiles (user's own global profiles)
+    // but keep all streamer-specific profiles (personal, org, campaign) for user selection
+    return profiles.filter((p) => p.source !== 'personal-global');
   }
 
   return profiles;
