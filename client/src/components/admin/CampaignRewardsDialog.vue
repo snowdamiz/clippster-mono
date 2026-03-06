@@ -90,7 +90,7 @@ import api from '@/services/api';
 
 interface Props {
   modelValue: boolean;
-  campaignId: number | null;
+  campaignId?: number | null;
 }
 
 const props = defineProps<Props>();

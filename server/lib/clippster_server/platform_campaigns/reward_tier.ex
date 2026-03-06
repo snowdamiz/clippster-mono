@@ -2,9 +2,6 @@ defmodule ClippsterServer.PlatformCampaigns.RewardTier do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
-
   schema "platform_campaign_reward_tiers" do
     field :tier_number, :integer
     field :views_required, :integer

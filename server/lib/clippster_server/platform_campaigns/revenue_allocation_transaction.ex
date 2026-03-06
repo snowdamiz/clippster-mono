@@ -2,9 +2,6 @@ defmodule ClippsterServer.PlatformCampaigns.RevenueAllocationTransaction do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
-
   schema "revenue_allocation_transactions" do
     field :transaction_type, :string
     field :amount, :decimal

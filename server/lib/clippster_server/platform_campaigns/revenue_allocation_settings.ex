@@ -2,9 +2,6 @@ defmodule ClippsterServer.PlatformCampaigns.RevenueAllocationSettings do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
-
   schema "revenue_allocation_settings" do
     field :enabled, :boolean, default: false
     field :allocation_percentage, :decimal

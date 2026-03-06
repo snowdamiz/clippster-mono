@@ -2,9 +2,6 @@ defmodule ClippsterServer.PlatformCampaigns.RewardGrant do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @primary_key {:id, :binary_id, autogenerate: true}
-  @foreign_key_type :binary_id
-
   schema "platform_campaign_reward_grants" do
     field :granted_at, :utc_datetime
     field :expiration_date, :utc_datetime
