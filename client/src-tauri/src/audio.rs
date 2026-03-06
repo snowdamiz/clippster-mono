@@ -344,7 +344,10 @@ pub async fn extract_and_chunk_audio(
 
     // Determine the actual range to chunk based on start_time and end_time
     let chunk_start = start_time.unwrap_or(0.0).max(0.0);
-    let chunk_end = end_time.unwrap_or(video_duration).min(video_duration);
+    let chunk_end = end_time
+        .filter(|&t| t > 0.0)
+        .unwrap_or(video_duration)
+        .min(video_duration);
     
     if chunk_start >= chunk_end {
         return Err(format!(
