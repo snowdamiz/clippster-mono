@@ -80,8 +80,6 @@ server/priv/static/
 # Fetch files
 server/.fetch
 
-server/yarn.lock
-
 # ===========================
 # Environment & Secrets
 # ===========================
