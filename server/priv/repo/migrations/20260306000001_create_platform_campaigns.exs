@@ -3,9 +3,8 @@ defmodule ClippsterServer.Repo.Migrations.CreatePlatformCampaigns do
 
   def change do
     # Platform campaign reward tiers
-    create table(:platform_campaign_reward_tiers, primary_key: false) do
-      add :id, :uuid, primary_key: true
-      add :campaign_id, references(:clipping_campaigns, type: :uuid, on_delete: :delete_all), null: false
+    create table(:platform_campaign_reward_tiers) do
+      add :campaign_id, references(:clipping_campaigns, on_delete: :delete_all), null: false
       add :tier_number, :integer, null: false
       add :views_required, :integer, null: false
 
@@ -34,12 +33,11 @@ defmodule ClippsterServer.Repo.Migrations.CreatePlatformCampaigns do
     create unique_index(:platform_campaign_reward_tiers, [:campaign_id, :tier_number])
 
     # Reward grants tracking
-    create table(:platform_campaign_reward_grants, primary_key: false) do
-      add :id, :uuid, primary_key: true
-      add :campaign_id, references(:clipping_campaigns, type: :uuid, on_delete: :delete_all), null: false
-      add :submission_id, references(:campaign_submissions, type: :uuid, on_delete: :delete_all), null: false
-      add :user_id, references(:users, type: :uuid, on_delete: :delete_all), null: false
-      add :reward_tier_id, references(:platform_campaign_reward_tiers, type: :uuid, on_delete: :delete_all), null: false
+    create table(:platform_campaign_reward_grants) do
+      add :campaign_id, references(:clipping_campaigns, on_delete: :delete_all), null: false
+      add :submission_id, references(:campaign_submissions, on_delete: :delete_all), null: false
+      add :user_id, references(:users, on_delete: :delete_all), null: false
+      add :reward_tier_id, references(:platform_campaign_reward_tiers, on_delete: :delete_all), null: false
       
       add :granted_at, :utc_datetime, null: false
       add :expiration_date, :utc_datetime
@@ -62,8 +60,7 @@ defmodule ClippsterServer.Repo.Migrations.CreatePlatformCampaigns do
     create index(:platform_campaign_reward_grants, [:reward_tier_id])
 
     # Revenue allocation settings
-    create table(:revenue_allocation_settings, primary_key: false) do
-      add :id, :uuid, primary_key: true
+    create table(:revenue_allocation_settings) do
       add :enabled, :boolean, default: false, null: false
       add :allocation_percentage, :decimal, precision: 5, scale: 2, default: 0.0, null: false
       add :current_balance, :decimal, precision: 12, scale: 2, default: 0.0, null: false
@@ -74,22 +71,21 @@ defmodule ClippsterServer.Repo.Migrations.CreatePlatformCampaigns do
     end
 
     # Revenue allocation transactions
-    create table(:revenue_allocation_transactions, primary_key: false) do
-      add :id, :uuid, primary_key: true
+    create table(:revenue_allocation_transactions) do
       add :transaction_type, :string, null: false # "allocation", "campaign_spend", "manual_adjustment"
       add :amount, :decimal, precision: 12, scale: 2, null: false
       add :balance_after, :decimal, precision: 12, scale: 2, null: false
       add :description, :text
-      add :campaign_id, references(:clipping_campaigns, type: :uuid, on_delete: :nilify_all)
-      add :subscription_id, references(:subscriptions, type: :uuid, on_delete: :nilify_all)
-      add :created_by_user_id, references(:users, type: :uuid, on_delete: :nilify_all)
+      add :campaign_id, references(:clipping_campaigns, on_delete: :nilify_all)
+      add :subscription_id, references(:subscriptions, on_delete: :nilify_all)
+      add :created_by_user_id, references(:users, on_delete: :nilify_all)
 
       timestamps()
     end
 
     create index(:revenue_allocation_transactions, [:transaction_type])
     create index(:revenue_allocation_transactions, [:campaign_id])
-    create index(:revenue_allocation_transactions, [:created_at])
+    create index(:revenue_allocation_transactions, [:inserted_at])
 
     # Add platform campaign flag to campaigns table
     alter table(:clipping_campaigns) do

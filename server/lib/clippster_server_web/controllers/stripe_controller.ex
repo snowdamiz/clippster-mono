@@ -461,7 +461,7 @@ defmodule ClippsterServerWeb.StripeController do
               end
 
               # Allocate revenue to platform fund if enabled
-              case Subscriptions.get_subscription_by_user(user.id) do
+              case Subscriptions.get_active_subscription(user.id) do
                 nil -> :ok
                 subscription ->
                   ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(
@@ -758,7 +758,7 @@ defmodule ClippsterServerWeb.StripeController do
           end
 
         # Allocate revenue to platform fund if enabled
-        case Subscriptions.get_subscription_by_user(user_id_int) do
+        case Subscriptions.get_active_subscription(user_id_int) do
           nil -> :ok
           subscription ->
             ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(

@@ -102,26 +102,29 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
   Create a platform campaign
   """
   def create_campaign(conn, params) do
-    user = conn.assigns.current_user
+    _user = conn.assigns.current_user
 
     # Build campaign attributes
     campaign_attrs = %{
       title: params["title"],
       description: params["description"],
-      budget: params["budget"],
-      start_date: params["start_date"],
-      end_date: params["end_date"],
+      budget: params["budget"] || 0,
+      starts_at: params["start_date"],
+      ends_at: params["end_date"],
       join_type: params["join_type"] || "open",
       allowed_platforms: params["allowed_platforms"] || [],
-      payment_model: params["payment_model"],
-      cpm_rate: params["cpm_rate"],
+      payment_model: params["payment_model"] || "cpm",
+      cpm: params["cpm_rate"] || 0,
+      per_clip_amount: params["per_clip_amount"],
       is_platform_campaign: true,
       platform_payment_model: params["platform_payment_model"],
-      status: "active",
-      organization_id: nil # Platform campaigns have no org
+      status: params["status"] || "active"
     }
 
-    case Campaigns.create_campaign(campaign_attrs) do
+    # Create campaign directly via changeset (no org required for platform campaigns)
+    changeset = Campaigns.Campaign.create_changeset(%Campaigns.Campaign{}, campaign_attrs)
+    
+    case Repo.insert(changeset) do
       {:ok, campaign} ->
         # Create reward tiers if milestone_rewards model
         if params["platform_payment_model"] == "milestone_rewards" && params["reward_tiers"] do
@@ -156,7 +159,10 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
     campaign = Campaigns.get_campaign(campaign_id)
 
     if campaign && campaign.is_platform_campaign do
-      case Campaigns.update_campaign(campaign, params) do
+      # Update campaign directly via changeset (no org check for platform campaigns)
+      changeset = Campaigns.Campaign.update_changeset(campaign, params)
+      
+      case Repo.update(changeset) do
         {:ok, updated_campaign} ->
           # Update reward tiers if provided
           if params["reward_tiers"] do
@@ -191,11 +197,14 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
   List all platform campaigns
   """
   def list_campaigns(conn, _params) do
+    import Ecto.Query
+    
     campaigns = 
-      Campaigns.Campaign
-      |> Ecto.Query.where([c], c.is_platform_campaign == true)
-      |> Ecto.Query.preload([:reward_tiers])
-      |> Ecto.Query.order_by([c], desc: c.inserted_at)
+      from(c in Campaigns.Campaign,
+        where: c.is_platform_campaign == true,
+        order_by: [desc: c.inserted_at],
+        preload: [:reward_tiers]
+      )
       |> Repo.all()
 
     campaigns_data = Enum.map(campaigns, &format_campaign/1)
@@ -234,7 +243,8 @@ defmodule ClippsterServerWeb.PlatformCampaignController do
     campaign = Campaigns.get_campaign(campaign_id)
 
     if campaign && campaign.is_platform_campaign do
-      case Campaigns.delete_campaign(campaign) do
+      # Delete campaign directly (no org check for platform campaigns)
+      case Repo.delete(campaign) do
         {:ok, _} ->
           json(conn, %{success: true})
 

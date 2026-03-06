@@ -6,10 +6,9 @@ defmodule ClippsterServer.PlatformCampaigns do
   import Ecto.Query, warn: false
   alias ClippsterServer.Repo
   alias ClippsterServer.PlatformCampaigns.{RewardTier, RewardGrant, RevenueAllocationSettings, RevenueAllocationTransaction}
-  alias ClippsterServer.Campaigns.{Campaign, CampaignSubmission}
-  alias ClippsterServer.Accounts.User
+  alias ClippsterServer.Repo
+  alias ClippsterServer.Campaigns
   alias ClippsterServer.Credits
-  alias ClippsterServer.Subscriptions
 
   ## Revenue Allocation Settings
 
@@ -254,7 +253,7 @@ defmodule ClippsterServer.PlatformCampaigns do
 
         # Grant AI credits
         grant_attrs = if tier.ai_credits_enabled do
-          Credits.add_credits(submission.user_id, tier.ai_credits_amount, "Platform campaign reward")
+          Credits.add_credits(submission.user_id, tier.ai_credits_amount)
           Map.put(grant_attrs, :ai_credits_granted, tier.ai_credits_amount)
         else
           grant_attrs
@@ -363,7 +362,7 @@ defmodule ClippsterServer.PlatformCampaigns do
   @doc """
   Checks if a campaign is a platform campaign.
   """
-  def platform_campaign?(%Campaign{is_platform_campaign: true}), do: true
+  def platform_campaign?(%Campaigns.Campaign{is_platform_campaign: true}), do: true
   def platform_campaign?(_), do: false
 
   @doc """
@@ -371,12 +370,12 @@ defmodule ClippsterServer.PlatformCampaigns do
   """
   def get_platform_campaign_stats do
     total_campaigns = 
-      Campaign
+      Campaigns.Campaign
       |> where([c], c.is_platform_campaign == true)
       |> Repo.aggregate(:count)
 
     active_campaigns = 
-      Campaign
+      Campaigns.Campaign
       |> where([c], c.is_platform_campaign == true and c.status == "active")
       |> Repo.aggregate(:count)
 
@@ -385,7 +384,7 @@ defmodule ClippsterServer.PlatformCampaigns do
       |> Repo.aggregate(:count)
 
     total_budget_spent = 
-      Campaign
+      Campaigns.Campaign
       |> where([c], c.is_platform_campaign == true)
       |> select([c], sum(c.spent_budget))
       |> Repo.one() || Decimal.new("0")
