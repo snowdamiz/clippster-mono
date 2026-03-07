@@ -908,19 +908,37 @@ defmodule ClippsterServer.Emails do
                       <tr>
                         <td style="padding: 6px 0;">
                           <span style="color: #22c55e; margin-right: 8px;">•</span>
-                          <span style="color: #d4d4d8; font-size: 13px;">Full AI clip detection</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Full AI Clip Detection</span>
                         </td>
                       </tr>
                       <tr>
                         <td style="padding: 6px 0;">
                           <span style="color: #22c55e; margin-right: 8px;">•</span>
-                          <span style="color: #d4d4d8; font-size: 13px;">HD export (1080p)</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">HD Export (1080p)</span>
                         </td>
                       </tr>
                       <tr>
                         <td style="padding: 6px 0;">
                           <span style="color: #22c55e; margin-right: 8px;">•</span>
-                          <span style="color: #d4d4d8; font-size: 13px;">Credits roll over</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Credits Roll Over</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #22c55e; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Full Video Editor</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #22c55e; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">All Major Streaming Platforms Supported</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #22c55e; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Posting to all Major Social Media Platforms</span>
                         </td>
                       </tr>
                     </table>
@@ -1068,6 +1086,368 @@ defmodule ClippsterServer.Emails do
     • Full AI clip detection
     • HD export (1080p)
     • Credits roll over
+    • Full video editor
+    • All major streaming platforms
+    • Posting to all major social media
+
+    ---
+
+    WHAT YOU GET ACCESS TO:
+    • AI-powered clip detection
+    • Professional timeline editor
+    • Auto-generated captions
+    • Export to all platforms
+
+    ---
+
+    JOIN OUR DISCORD COMMUNITY:
+    🎮 Connect with other beta testers, share feedback, and get help!
+    Discord: https://discord.gg/4kTCvKEVuV
+
+    NEED HELP?
+    The app includes built-in support tools:
+    • Bug Reporter - Report issues directly from the app
+    • Customer Service Chat - Get instant help from our team
+
+    ---
+
+    Get Started: https://clippster.app
+
+    Need help? Reply to this email or contact support@clippster.app
+
+    You're receiving this because you joined the #{app_name} waitlist.
+    """
+  end
+
+  @doc """
+  Creates a waitlist reinvite email with new beta code and discount code.
+  Includes notice that previous codes are invalidated.
+  """
+  def waitlist_reinvite_email(email, beta_code, discount_code, discount_percent) do
+    config = Application.get_env(:clippster_server, :email_auth, [])
+    from_email = Keyword.get(config, :from_email, "noreply@clippster.app")
+    app_name = Keyword.get(config, :app_name, "Clippster")
+
+    new()
+    |> to(email)
+    |> from({app_name, from_email})
+    |> subject("Updated #{app_name} Beta Access - New Codes Inside")
+    |> html_body(waitlist_reinvite_html(beta_code, discount_code, discount_percent, app_name))
+    |> text_body(waitlist_reinvite_text(beta_code, discount_code, discount_percent, app_name))
+  end
+
+  defp waitlist_reinvite_html(beta_code, discount_code, discount_percent, app_name) do
+    """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Updated #{app_name} Beta Access</title>
+    </head>
+    <body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #0a0a0a;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="min-height: 100vh;">
+        <tr>
+          <td align="center" style="padding: 40px 20px;">
+            <table role="presentation" width="100%" style="max-width: 520px;">
+              <!-- Logo/Header -->
+              <tr>
+                <td align="center" style="padding-bottom: 24px;">
+                  <h1 style="margin: 0 0 8px 0; font-size: 36px; font-weight: 700; color: #ffffff; letter-spacing: -0.02em;">#{app_name}</h1>
+                  <p style="margin: 0; font-size: 14px; color: #06b6d4; font-weight: 500;">The AI-Powered Clipping Studio</p>
+                </td>
+              </tr>
+
+              <!-- Main Card -->
+              <tr>
+                <td style="background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 40px;">
+                  <!-- Accent Bar -->
+                  <div style="height: 4px; background: linear-gradient(90deg, #06b6d4 0%, #0891b2 100%); border-radius: 2px; margin-bottom: 32px;"></div>
+
+                  <!-- Important Notice -->
+                  <div style="background: rgba(245, 158, 11, 0.15); border: 2px solid rgba(245, 158, 11, 0.5); border-radius: 12px; padding: 24px; margin-bottom: 32px;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 700; color: #fbbf24; text-transform: uppercase; letter-spacing: 1px; text-align: center;">
+                      ⚠️ IMPORTANT NOTICE - PREVIOUS CODES INVALIDATED
+                    </h3>
+                    <p style="margin: 0; font-size: 14px; color: #fcd34d; text-align: center; line-height: 1.6;">
+                      All beta codes and discount codes from your previous invite email are no longer valid. Please use only the new codes provided below to access #{app_name} Beta. If you already have the app downloaded but have not entered a discount code at checkout, you need to use the discount code from this email. 
+                    </p>
+                  </div>
+
+                  <!-- Title -->
+                  <h2 style="margin: 0 0 8px 0; font-size: 24px; font-weight: 600; color: #ffffff; text-align: center;">
+                    Updated Beta Access
+                  </h2>
+                  <p style="margin: 0 0 32px 0; font-size: 14px; color: #a1a1aa; text-align: center; line-height: 1.6;">
+                    We've issued you new access codes. Use these to continue your beta experience.
+                  </p>
+
+                  <!-- Beta Code Box -->
+                  <div style="background: rgba(6, 182, 212, 0.1); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+                    <p style="margin: 0 0 8px 0; font-size: 12px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
+                      YOUR NEW BETA CODE
+                    </p>
+                    <p style="margin: 0 0 12px 0; font-size: 36px; font-weight: 700; color: #06b6d4; font-family: 'SF Mono', Monaco, 'Courier New', monospace; letter-spacing: 4px;">
+                      #{beta_code}
+                    </p>
+                    <p style="margin: 0; font-size: 13px; color: #a1a1aa; line-height: 1.5;">
+                      Enter this code at <strong style="color: #ffffff;">clippster.app</strong> to unlock downloads
+                    </p>
+                  </div>
+
+                  <!-- How to Get Started -->
+                  <div style="background: rgba(39, 39, 42, 0.5); border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                    <h3 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 600; color: #ffffff; text-transform: uppercase; letter-spacing: 0.5px;">
+                      How to Get Started
+                    </h3>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <span style="display: inline-block; width: 24px; height: 24px; background: #06b6d4; color: #0a0a0a; border-radius: 50%; text-align: center; line-height: 24px; font-weight: 700; font-size: 12px; margin-right: 12px;">1</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Visit <strong style="color: #ffffff;">clippster.app</strong></span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <span style="display: inline-block; width: 24px; height: 24px; background: #06b6d4; color: #0a0a0a; border-radius: 50%; text-align: center; line-height: 24px; font-weight: 700; font-size: 12px; margin-right: 12px;">2</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Enter Your New Beta Code Above</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <span style="display: inline-block; width: 24px; height: 24px; background: #06b6d4; color: #0a0a0a; border-radius: 50%; text-align: center; line-height: 24px; font-weight: 700; font-size: 12px; margin-right: 12px;">3</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Download for Mac or Windows</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 8px 0;">
+                          <span style="display: inline-block; width: 24px; height: 24px; background: #06b6d4; color: #0a0a0a; border-radius: 50%; text-align: center; line-height: 24px; font-weight: 700; font-size: 12px; margin-right: 12px;">4</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Use New Discount Code at Signup</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <!-- Divider -->
+                  <div style="height: 1px; background: rgba(255, 255, 255, 0.1); margin: 32px 0;"></div>
+
+                  <!-- Discount Code Box -->
+                  <div style="background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+                    <p style="margin: 0 0 8px 0; font-size: 12px; color: #a1a1aa; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;">
+                      YOUR NEW EXCLUSIVE DISCOUNT
+                    </p>
+                    <p style="margin: 0 0 12px 0; font-size: 24px; font-weight: 700; color: #22c55e; font-family: 'SF Mono', Monaco, 'Courier New', monospace; letter-spacing: 2px;">
+                      #{discount_code}
+                    </p>
+                    <p style="margin: 0 0 8px 0; font-size: 16px; color: #ffffff; font-weight: 600;">
+                      Save #{discount_percent}% off First Month
+                    </p>
+                    <p style="margin: 0 0 16px 0; font-size: 13px; color: #a1a1aa;">
+                      Creator Tier - $54.99/month
+                    </p>
+                    <p style="margin: 0; font-size: 18px; color: #22c55e; font-weight: 700;">
+                      $38.49 <span style="font-size: 14px; color: #71717a; text-decoration: line-through; font-weight: 400;">$54.99</span>
+                    </p>
+                  </div>
+
+                  <!-- What's Included -->
+                  <div style="background: rgba(39, 39, 42, 0.5); border-radius: 12px; padding: 20px; margin-bottom: 32px;">
+                    <h3 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 600; color: #ffffff; text-transform: uppercase; letter-spacing: 0.5px;">
+                      What's Included
+                    </h3>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #22c55e; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">1,800 credits/month (30 hours)</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #22c55e; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Full AI Clip Detection</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #22c55e; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">HD Export (1080p)</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #22c55e; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Credits Roll oOver</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #22c55e; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Full Video Editor</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #22c55e; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">All Major Streaming Platforms Supported</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #22c55e; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Posting to all Major Social Media Platforms</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <!-- What You Get Access To -->
+                  <div style="background: rgba(39, 39, 42, 0.5); border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                    <h3 style="margin: 0 0 16px 0; font-size: 14px; font-weight: 600; color: #ffffff; text-transform: uppercase; letter-spacing: 0.5px;">
+                      What You Get Access To
+                    </h3>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #06b6d4; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">AI-powered clip detection</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #06b6d4; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Professional timeline editor</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #06b6d4; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Auto-generated captions</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #06b6d4; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Export to all platforms</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <!-- Join Our Community -->
+                  <div style="background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 24px;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 16px; font-weight: 600; color: #ffffff;">
+                      🎮 Join Our Discord Community
+                    </h3>
+                    <p style="margin: 0 0 16px 0; font-size: 14px; color: #d4d4d8; line-height: 1.6;">
+                      Connect with other beta testers, share feedback, get help, and be the first to hear about new features!
+                    </p>
+                    <a href="https://discord.gg/4kTCvKEVuV" style="display: inline-block; background: #5865F2; color: #ffffff; text-decoration: none; padding: 12px 32px; border-radius: 8px; font-weight: 600; font-size: 14px;">
+                      Join Discord →
+                    </a>
+                  </div>
+
+                  <!-- Need Help? -->
+                  <div style="background: rgba(39, 39, 42, 0.5); border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                    <h3 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600; color: #ffffff; text-transform: uppercase; letter-spacing: 0.5px;">
+                      Need Help?
+                    </h3>
+                    <p style="margin: 0 0 12px 0; font-size: 13px; color: #d4d4d8; line-height: 1.6;">
+                      The app includes built-in support tools to help you:
+                    </p>
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #06b6d4; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;"><strong style="color: #ffffff;">Bug Reporter</strong> - Report issues directly from the app</span>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0;">
+                          <span style="color: #06b6d4; margin-right: 8px;">•</span>
+                          <span style="color: #d4d4d8; font-size: 13px;"><strong style="color: #ffffff;">Customer Service Chat</strong> - Get instant help from our team</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+
+                  <!-- CTA Button -->
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                    <tr>
+                      <td align="center">
+                        <a href="https://clippster.app" style="display: inline-block; background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 10px; font-weight: 600; font-size: 15px; box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);">
+                          Get Started Now →
+                        </a>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+
+              <!-- Footer -->
+              <tr>
+                <td style="padding-top: 32px; text-align: center;">
+                  <p style="margin: 0 0 8px 0; font-size: 13px; color: #71717a;">
+                    Need help? Reply to this email or contact us at
+                  </p>
+                  <p style="margin: 0 0 16px 0;">
+                    <a href="mailto:support@clippster.app" style="color: #06b6d4; text-decoration: none; font-size: 13px;">support@clippster.app</a>
+                  </p>
+                  <p style="margin: 0; font-size: 12px; color: #52525b;">
+                    You're receiving this because you joined the #{app_name} waitlist.
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+    """
+  end
+
+  defp waitlist_reinvite_text(beta_code, discount_code, discount_percent, app_name) do
+    """
+    Updated #{app_name} Beta Access - Your New Codes Inside
+
+    #{app_name} - The AI-Powered Clipping Studio
+
+    ⚠️ IMPORTANT NOTICE - PREVIOUS CODES INVALIDATED
+
+    All beta codes and discount codes from your previous invite email are no longer valid. Please use only the new codes provided below to access #{app_name} Beta.
+
+    ---
+
+    YOUR NEW BETA CODE: #{beta_code}
+
+    Enter this code at clippster.app to unlock downloads
+
+    ---
+
+    HOW TO GET STARTED:
+
+    1. Visit clippster.app
+    2. Enter your new beta code above
+    3. Download for Mac or Windows
+    4. Use new discount code at signup
+
+    ---
+
+    YOUR NEW EXCLUSIVE DISCOUNT: #{discount_code}
+
+    Save #{discount_percent}% off first month
+    Creator Tier - $54.99/month
+    Pay only $38.49 (save $16.50)
+
+    WHAT'S INCLUDED:
+    • 1,800 credits/month (30 hours)
+    • Full AI clip detection
+    • HD export (1080p)
+    • Credits roll over
+    • Full video editor
+    • All major streaming platforms
+    • Posting to all major social media
 
     ---
 

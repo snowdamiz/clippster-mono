@@ -6,7 +6,6 @@
   import TitleBar from '@/components/TitleBar.vue';
   import LoadingScreen from '@/components/LoadingScreen.vue';
   import AuthModal from '@/components/AuthModal.vue';
-  import BetaActivationDialog from '@/components/BetaActivationDialog.vue';
   import LivestreamWatchDialog from '@/components/LivestreamWatchDialog.vue';
   import MandatoryUpdateDialog from '@/components/MandatoryUpdateDialog.vue';
   import SubscriptionGate from '@/components/SubscriptionGate.vue';
@@ -46,7 +45,7 @@
   const authStore = useAuthStore();
   const preferencesStore = useUserPreferencesStore();
   const livestreamStore = useLivestreamStore();
-  const { isBetaModeEnabled, fetchFeatureFlags } = useFeatureFlags();
+  const { fetchFeatureFlags } = useFeatureFlags();
   const { state: updateState, checkForUpdates } = useAppUpdater();
   const messagingStore = useMessagingStore();
   const { success } = useToast();
@@ -185,30 +184,7 @@
   // Sidebar should be disabled when subscription gate is active
   const sidebarDisabled = computed(() => requiresSubscriptionGate.value);
 
-  // Show beta activation dialog when:
-  // - User is authenticated
-  // - Beta mode is enabled
-  // - User is not an admin (admins bypass beta requirement)
-  // - User has not activated their beta access
-  const showBetaActivationDialog = computed(() => {
-    return (
-      authStore.isAuthenticated &&
-      isBetaModeEnabled.value &&
-      !authStore.user?.is_admin &&
-      !authStore.user?.beta_activated
-    );
-  });
-
-  // Handle beta activation success
-  const handleBetaActivated = async () => {
-    // Refresh user data to get updated beta_activated status
-    await authStore.checkAuth();
-  };
-
-  // Handle logout from beta dialog
-  const handleBetaLogout = async () => {
-    await authStore.logout();
-  };
+  // Beta activation removed - beta codes are now only required for downloads on landing page
 
   // Handle clip created from global livestream dialog
   function handleClipCreated(clipPath: string, projectId: string) {
@@ -585,13 +561,6 @@
       <AppCloseDialog />
       <!-- Authentication Modal (optional, for manual trigger) -->
       <AuthModal v-model="showAuthModal" />
-
-      <!-- Beta Activation Dialog -->
-      <BetaActivationDialog
-        :show="showBetaActivationDialog"
-        @activated="handleBetaActivated"
-        @logout="handleBetaLogout"
-      />
 
       <!-- Subscription Gate Dialog (triggered on protected actions) -->
       <SubscriptionGate />

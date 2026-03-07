@@ -1288,6 +1288,7 @@ defmodule ClippsterServerWeb.Router do
     post("/admin/waitlist", AdminController, :add_to_waitlist)
     post("/admin/waitlist/invite", AdminController, :invite_waitlist)
     post("/admin/waitlist/:id/invite", AdminController, :invite_waitlist_entry)
+    post("/admin/waitlist/:id/reinvite", AdminController, :reinvite_waitlist_entry)
 
     # Admin affiliate management
     get("/admin/affiliates", AffiliateController, :list_affiliates)

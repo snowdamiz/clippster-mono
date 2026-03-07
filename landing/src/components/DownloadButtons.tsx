@@ -1,5 +1,6 @@
 import { Apple, Monitor, Download, Loader2, Clock } from 'lucide-react'
 import { useDownloads, type PlatformDownload } from '../hooks/usePlatform'
+import { useDownloadContext } from '../context/DownloadContext'
 
 interface DownloadButtonsProps {
   variant?: 'default' | 'hero' | 'compact'
@@ -10,6 +11,7 @@ interface DownloadButtonsProps {
 
 export function DownloadButtons({ variant = 'default', className = '', disabled = false, onDisabledClick }: DownloadButtonsProps) {
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
+  const { openBetaCodeModal } = useDownloadContext()
   
   // Get the first "other" download for the secondary button
   const secondaryDownload = otherDownloads[0]
@@ -26,6 +28,12 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
   const handleDisabledClick = (e: React.MouseEvent) => {
     e.preventDefault()
     onDisabledClick?.()
+  }
+
+  const handleDownloadClick = (e: React.MouseEvent) => {
+    // Always show beta code modal on download click
+    e.preventDefault()
+    openBetaCodeModal()
   }
 
   if (isLoading) {
@@ -91,6 +99,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
         {/* Primary download button */}
         <a
           href={primaryDownload.downloadUrl}
+          onClick={handleDownloadClick}
           className="group relative px-8 py-4 rounded-full bg-white text-black font-semibold text-sm overflow-hidden transition-all duration-300 flex items-center gap-3 shadow-[0_0_40px_rgba(255,255,255,0.15)] hover:shadow-[0_0_50px_rgba(255,255,255,0.2)]"
         >
           {getIcon(primaryDownload, 'lg')}
@@ -101,6 +110,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
         {secondaryDownload && (
           <a
             href={secondaryDownload.downloadUrl}
+            onClick={handleDownloadClick}
             className="group px-6 py-4 text-neutral-400 hover:text-white transition-colors font-medium text-sm flex items-center gap-2"
           >
             {getIcon(secondaryDownload, 'md')}
@@ -116,6 +126,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
       <div className={`flex items-center gap-2 ${className}`}>
         <a
           href={primaryDownload.downloadUrl}
+          onClick={handleDownloadClick}
           className="px-5 py-2 rounded-full bg-white text-black font-medium text-sm hover:bg-neutral-100 transition-colors flex items-center gap-2"
         >
           <Download className="w-4 h-4" />
@@ -124,6 +135,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
         {secondaryDownload && (
           <a
             href={secondaryDownload.downloadUrl}
+            onClick={handleDownloadClick}
             className="px-4 py-2 text-neutral-400 hover:text-white transition-colors text-sm flex items-center gap-1.5"
             title={`Download for ${secondaryDownload.label}`}
           >
@@ -139,6 +151,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
     <div className={`flex items-center gap-3 ${className}`}>
       <a
         href={primaryDownload.downloadUrl}
+        onClick={handleDownloadClick}
         className="group px-8 py-4 rounded-full bg-white text-black font-semibold hover:bg-neutral-100 transition-colors flex items-center gap-2 text-base"
       >
         {getIcon(primaryDownload, 'lg')}
@@ -147,6 +160,7 @@ export function DownloadButtons({ variant = 'default', className = '', disabled 
       {secondaryDownload && (
         <a
           href={secondaryDownload.downloadUrl}
+          onClick={handleDownloadClick}
           className="px-6 py-4 text-neutral-400 hover:text-white transition-colors font-medium flex items-center gap-2"
         >
           {getIcon(secondaryDownload, 'md')}
@@ -164,11 +178,18 @@ interface DownloadButtonsHeaderProps {
 
 export function DownloadButtonsHeader({ disabled = false, onDisabledClick }: DownloadButtonsHeaderProps) {
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
+  const { openBetaCodeModal } = useDownloadContext()
   const secondaryDownload = otherDownloads[0]
 
   const handleDisabledClick = (e: React.MouseEvent) => {
     e.preventDefault()
     onDisabledClick?.()
+  }
+
+  const handleDownloadClick = (e: React.MouseEvent) => {
+    // Always show beta code modal on download click
+    e.preventDefault()
+    openBetaCodeModal()
   }
 
   if (isLoading || !primaryDownload) {
@@ -201,6 +222,7 @@ export function DownloadButtonsHeader({ disabled = false, onDisabledClick }: Dow
       {secondaryDownload && (
         <a
           href={secondaryDownload.downloadUrl}
+          onClick={handleDownloadClick}
           className="p-2 text-neutral-400 hover:text-white transition-colors"
           title={`Download for ${secondaryDownload.label}`}
         >
@@ -213,6 +235,7 @@ export function DownloadButtonsHeader({ disabled = false, onDisabledClick }: Dow
       )}
       <a
         href={primaryDownload.downloadUrl}
+        onClick={handleDownloadClick}
         className="px-4 py-2 rounded-full bg-white text-black font-medium text-sm hover:bg-neutral-100 transition-colors flex items-center gap-2"
       >
         {primaryDownload.platform.os === 'mac' ? (
