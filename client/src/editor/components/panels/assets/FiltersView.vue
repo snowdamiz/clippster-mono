@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { FILTER_PRESETS, FILTER_CATEGORIES } from "../../../constants/filter-constants";
-import type { FilterCategory, FilterPreset } from "../../../types/filters";
+import { FILTER_PRESETS } from "../../../constants/filter-constants";
+import type { FilterPreset } from "../../../types/filters";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
 import { Palette, Check } from "lucide-vue-next";
@@ -10,27 +10,15 @@ import PanelSearchBar from "./PanelSearchBar.vue";
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
 
-const activeCategory = ref<FilterCategory | "all">("all");
 const searchQuery = ref("");
 
 const filteredPresets = computed(() => {
-	let presets = FILTER_PRESETS;
-	if (activeCategory.value !== "all") {
-		presets = presets.filter((p) => p.category === activeCategory.value);
-	}
-	if (searchQuery.value.trim()) {
-		const q = searchQuery.value.toLowerCase();
-		presets = presets.filter(
-			(p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
-		);
-	}
-	return presets;
+	if (!searchQuery.value.trim()) return FILTER_PRESETS;
+	const q = searchQuery.value.toLowerCase();
+	return FILTER_PRESETS.filter(
+		(p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
+	);
 });
-
-const categoryTabs = computed(() => [
-	{ key: "all" as const, label: "All" },
-	...FILTER_CATEGORIES,
-]);
 
 const selectedElement = computed(() => {
 	if (selectedElements.value.length !== 1) return null;
@@ -60,7 +48,6 @@ function applyFilter(preset: FilterPreset) {
 	const isActive = activeFilterId.value === preset.id;
 
 	if (isActive) {
-		// Remove filter — reset color adjustments
 		editor.timeline.updateElement({
 			trackId: sel.trackId,
 			elementId: sel.element.id,
@@ -72,7 +59,6 @@ function applyFilter(preset: FilterPreset) {
 		return;
 	}
 
-	// Build effects array: keep non-sepia/grayscale effects, add filter blend effects
 	const el = sel.element as any;
 	const existingEffects = (el.effects ?? []).filter(
 		(e: any) => e.type !== "sepia" && e.type !== "grayscale",
@@ -129,28 +115,9 @@ function getFilterPreviewStyle(preset: FilterPreset) {
 
 <template>
 	<div class="flex h-full flex-col">
-		<!-- Search -->
 		<PanelSearchBar v-model="searchQuery" placeholder="Search filters..." />
 
-		<!-- Category tabs -->
-		<div class="flex items-center gap-0.5 overflow-x-auto border-b border-white/10 px-2 py-1">
-			<button
-				v-for="cat in categoryTabs"
-				:key="cat.key"
-				:class="[
-					'whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-					activeCategory === cat.key
-						? 'bg-blue-500/20 text-blue-400'
-						: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-				]"
-				@click="activeCategory = cat.key"
-			>
-				{{ cat.label }}
-			</button>
-		</div>
-
-		<!-- Filters grid -->
-		<div class="flex-1 overflow-y-auto p-3">
+		<div class="flex-1 overflow-y-auto p-2">
 			<!-- No element selected hint -->
 			<div v-if="!selectedElement" class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
 				<Palette class="size-8 text-zinc-600" :stroke-width="1" />
@@ -158,55 +125,55 @@ function getFilterPreviewStyle(preset: FilterPreset) {
 			</div>
 
 			<template v-else>
-				<!-- None / Reset option -->
-				<button
-					:class="[
-						'mb-3 flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
-						!activeFilterId
-							? 'border-blue-500/30 bg-blue-500/10 text-blue-400'
-							: 'border-white/5 bg-white/[0.02] text-zinc-400 hover:border-white/10 hover:bg-white/5',
-					]"
-					@click="applyFilter({ id: '__none__', label: 'None', description: '', category: 'warm', adjustments: { brightness: 0, contrast: 0, saturation: 0, temperature: 0 } })"
-				>
-					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
-						<span class="text-lg">⊘</span>
-					</div>
-					<span>None</span>
-					<Check v-if="!activeFilterId" class="ml-auto size-3.5" />
-				</button>
-
 				<div v-if="filteredPresets.length === 0" class="flex items-center justify-center py-8">
 					<p class="text-xs text-zinc-500">No filters found</p>
 				</div>
 
-				<div v-else class="grid grid-cols-2 gap-2">
+				<div v-else class="grid grid-cols-2 gap-1.5">
+					<!-- None / Reset option -->
+					<button
+						class="group relative cursor-pointer overflow-hidden rounded-lg border transition-all"
+						:class="!activeFilterId
+							? 'border-white/20 bg-white/[0.06]'
+							: 'border-white/[0.06] bg-zinc-950 hover:border-white/15'"
+						@click="applyFilter({ id: '__none__', label: 'None', description: '', category: 'warm', adjustments: { brightness: 0, contrast: 0, saturation: 0, temperature: 0 } })"
+					>
+						<div class="flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-zinc-900">
+							<span class="text-2xl text-zinc-600">⊘</span>
+						</div>
+						<div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-4">
+							<p class="text-[10px] font-medium leading-tight" :class="!activeFilterId ? 'text-white' : 'text-zinc-200 group-hover:text-white'">None</p>
+						</div>
+						<div v-if="!activeFilterId" class="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-white/20">
+							<Check class="size-2.5 text-white" />
+						</div>
+					</button>
+
 					<button
 						v-for="preset in filteredPresets"
 						:key="preset.id"
-						:class="[
-							'group flex flex-col items-center gap-1.5 rounded-lg border p-2 transition-all',
-							activeFilterId === preset.id
-								? 'border-blue-500/40 bg-blue-500/10'
-								: 'border-white/5 bg-white/[0.02] hover:border-[#E040FB]/30 hover:bg-[#E040FB]/5',
-						]"
+						class="group relative cursor-pointer overflow-hidden rounded-lg border transition-all"
+						:class="activeFilterId === preset.id
+							? 'border-white/20 bg-white/[0.06]'
+							: 'border-white/[0.06] bg-zinc-950 hover:border-white/15'"
 						@click="applyFilter(preset)"
 					>
-						<!-- Filter preview (gradient with filter applied) -->
-						<div class="relative w-full overflow-hidden rounded-md">
-							<div
-								class="aspect-video w-full"
-								:style="{
-									background: 'linear-gradient(135deg, #f97316 0%, #06b6d4 50%, #8b5cf6 100%)',
-									filter: getFilterPreviewStyle(preset),
-								}"
+						<!-- Filter preview -->
+						<div class="aspect-[4/3] w-full overflow-hidden">
+							<img
+								src="/editor/stock/city-sunset.jpg"
+								:alt="preset.label"
+								class="size-full object-cover"
+								:style="{ filter: getFilterPreviewStyle(preset) }"
 							/>
-							<div v-if="activeFilterId === preset.id" class="absolute inset-0 flex items-center justify-center bg-black/30">
-								<Check class="size-4 text-blue-400" />
-							</div>
 						</div>
-						<div class="text-center">
-							<p class="text-[11px] font-medium" :class="activeFilterId === preset.id ? 'text-blue-400' : 'text-zinc-300 group-hover:text-zinc-100'">{{ preset.label }}</p>
-							<p class="mt-0.5 text-[9px] leading-tight text-zinc-600">{{ preset.description }}</p>
+						<!-- Label overlay -->
+						<div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-4">
+							<p class="text-[10px] font-medium leading-tight" :class="activeFilterId === preset.id ? 'text-white' : 'text-zinc-200 group-hover:text-white'">{{ preset.label }}</p>
+						</div>
+						<!-- Active checkmark -->
+						<div v-if="activeFilterId === preset.id" class="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-white/20">
+							<Check class="size-2.5 text-white" />
 						</div>
 					</button>
 				</div>
