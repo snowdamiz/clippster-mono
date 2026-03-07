@@ -9,7 +9,7 @@ import type { VideoEffect } from "../../../types/effects";
 import { getEffectPreset } from "../../../constants/effect-constants";
 import type { ChromakeySettings } from "../../../types/chromakey";
 import { DEFAULT_CHROMAKEY } from "../../../types/chromakey";
-import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette } from "lucide-vue-next";
+import { Film, Trash2, RotateCcw, VolumeX, Volume2, FlipHorizontal, FlipVertical, Gauge, Wand2, Eye, EyeOff, X, ChevronDown, Crop, RectangleHorizontal, Square, RectangleVertical, Pipette, SlidersHorizontal, Sparkles } from "lucide-vue-next";
 import { useKeyframes } from "../../../composables/useKeyframes";
 import { toRef } from "vue";
 import KeyframeToggle from "./KeyframeToggle.vue";
@@ -34,23 +34,22 @@ const activeTransition = computed<Transition | null>(() => {
 });
 
 type TopTab = 'video' | 'audio' | 'speed' | 'adjust' | 'animate';
-type VideoSubTab = 'basic' | 'crop' | 'effects' | 'chromakey';
 const activeTab = ref<TopTab>('video');
-const activeVideoSub = ref<VideoSubTab>('basic');
 
-const topTabs: { id: TopTab; label: string }[] = [
-	{ id: 'video', label: 'Video' },
-	{ id: 'audio', label: 'Audio' },
-	{ id: 'speed', label: 'Speed' },
-	{ id: 'adjust', label: 'Adjust' },
-	{ id: 'animate', label: 'Animate' },
+const topTabs: { id: TopTab; label: string; icon: any }[] = [
+	{ id: 'video', label: 'Video', icon: Film },
+	{ id: 'audio', label: 'Audio', icon: Volume2 },
+	{ id: 'speed', label: 'Speed', icon: Gauge },
+	{ id: 'adjust', label: 'Adjust', icon: SlidersHorizontal },
+	{ id: 'animate', label: 'Animate', icon: Sparkles },
 ];
-const videoSubTabs: { id: VideoSubTab; label: string }[] = [
-	{ id: 'basic', label: 'Basic' },
-	{ id: 'crop', label: 'Crop' },
-	{ id: 'effects', label: 'Effects' },
-	{ id: 'chromakey', label: 'Chroma Key' },
-];
+
+const openVideoSections = ref<Set<string>>(new Set(['basic']));
+function toggleVideoSection(section: string) {
+	const next = new Set(openVideoSections.value);
+	if (next.has(section)) { next.delete(section); } else { next.add(section); }
+	openVideoSections.value = next;
+}
 
 const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
@@ -124,12 +123,11 @@ const ca = computed(() => ({ ...DEFAULT_COLOR_ADJUSTMENTS, ...props.element.colo
 // --- Crop ---
 const cropDefaults: CropRect = { top: 0, right: 0, bottom: 0, left: 0 };
 const cropVal = computed(() => props.element.crop ?? cropDefaults);
-const showCrop = ref(cropVal.value.top > 0 || cropVal.value.right > 0 || cropVal.value.bottom > 0 || cropVal.value.left > 0);
-
 // Watch for toolbar crop button request
 watch(cropPanelRequested, (requested) => {
 	if (requested) {
-		showCrop.value = true;
+		activeTab.value = 'video';
+		openVideoSections.value = new Set([...openVideoSections.value, 'crop']);
 		clearCropPanelRequest();
 	}
 });
@@ -145,7 +143,6 @@ watch(() => props.element.crop, (v) => {
 	cropRightInput.value = Math.round(c.right * 100).toString();
 	cropBottomInput.value = Math.round(c.bottom * 100).toString();
 	cropLeftInput.value = Math.round(c.left * 100).toString();
-	if (c.top > 0 || c.right > 0 || c.bottom > 0 || c.left > 0) showCrop.value = true;
 }, { deep: true });
 
 function updateCrop(partial: Partial<CropRect>) {
@@ -436,46 +433,23 @@ function formatTime(seconds: number): string {
 </script>
 
 <template>
-	<div class="flex h-full flex-col">
-		<!-- ══════ Top Tabs ══════ -->
-		<div class="flex border-b border-white/10">
-			<button
-				v-for="tab in topTabs"
-				:key="tab.id"
-				:class="[
-					'flex-1 py-2 text-center text-xs font-medium transition-colors',
-					activeTab === tab.id
-						? 'text-primary border-b-2 border-primary'
-						: 'text-zinc-500 hover:text-zinc-300',
-				]"
-				@click="activeTab = tab.id"
-			>
-				{{ tab.label }}
-			</button>
-		</div>
+	<div class="flex h-full flex-row">
+		<!-- ══════ Content Area ══════ -->
+		<div class="flex flex-1 min-w-0 flex-col overflow-hidden">
 
 		<!-- ══════ Video Tab ══════ -->
 		<template v-if="activeTab === 'video'">
-			<!-- Sub-tabs -->
-			<div class="flex gap-1 border-b border-white/5 px-3 py-1.5">
-				<button
-					v-for="sub in videoSubTabs"
-					:key="sub.id"
-					:class="[
-						'rounded-md px-3 py-1 text-xs font-medium transition-colors',
-						activeVideoSub === sub.id
-							? 'bg-white/10 text-zinc-200'
-							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-					]"
-					@click="activeVideoSub = sub.id"
-				>
-					{{ sub.label }}
-				</button>
-			</div>
-
 			<div class="flex-1 overflow-y-auto">
-				<!-- ── Basic sub-tab ── -->
-				<div v-if="activeVideoSub === 'basic'" class="space-y-4 p-3">
+				<!-- ── Basic ── -->
+				<button
+					class="flex w-full items-center justify-between border-b border-white/5 px-3 py-2 text-xs font-medium transition-colors"
+					:class="openVideoSections.has('basic') ? 'text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+					@click="toggleVideoSection('basic')"
+				>
+					<span>Basic</span>
+					<ChevronDown class="size-3.5 transition-transform duration-150" :class="{ 'rotate-180': openVideoSections.has('basic') }" />
+				</button>
+				<div v-if="openVideoSections.has('basic')" class="space-y-4 p-3">
 					<!-- Transform -->
 					<div class="space-y-3">
 						<div class="flex items-center justify-between">
@@ -610,8 +584,16 @@ function formatTime(seconds: number): string {
 					</div>
 				</div>
 
-				<!-- ── Crop sub-tab ── -->
-				<div v-else-if="activeVideoSub === 'crop'" class="space-y-4 p-3">
+				<!-- ── Crop ── -->
+				<button
+					class="flex w-full items-center justify-between border-b border-white/5 px-3 py-2 text-xs font-medium transition-colors"
+					:class="openVideoSections.has('crop') ? 'text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+					@click="toggleVideoSection('crop')"
+				>
+					<span>Crop</span>
+					<ChevronDown class="size-3.5 transition-transform duration-150" :class="{ 'rotate-180': openVideoSections.has('crop') }" />
+				</button>
+				<div v-if="openVideoSections.has('crop')" class="space-y-4 p-3">
 					<!-- Aspect ratio presets -->
 					<div class="space-y-1.5">
 						<label class="text-[11px] text-zinc-500">Aspect Ratio</label>
@@ -665,8 +647,16 @@ function formatTime(seconds: number): string {
 					</button>
 				</div>
 
-				<!-- ── Effects sub-tab ── -->
-				<div v-else-if="activeVideoSub === 'effects'" class="space-y-3 p-3">
+				<!-- ── Effects ── -->
+				<button
+					class="flex w-full items-center justify-between border-b border-white/5 px-3 py-2 text-xs font-medium transition-colors"
+					:class="openVideoSections.has('effects') ? 'text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+					@click="toggleVideoSection('effects')"
+				>
+					<span>Effects</span>
+					<ChevronDown class="size-3.5 transition-transform duration-150" :class="{ 'rotate-180': openVideoSections.has('effects') }" />
+				</button>
+				<div v-if="openVideoSections.has('effects')" class="space-y-3 p-3">
 					<div v-if="effects.length === 0" class="rounded-md border border-dashed border-white/10 px-3 py-6 text-center">
 						<Wand2 class="mx-auto mb-1.5 size-5 text-zinc-600" />
 						<p class="text-[11px] text-zinc-600">No effects applied</p>
@@ -963,8 +953,16 @@ function formatTime(seconds: number): string {
 					</div>
 				</div>
 
-				<!-- ── Chroma Key sub-tab ── -->
-				<div v-else-if="activeVideoSub === 'chromakey'" class="space-y-3 p-3">
+				<!-- ── Chroma Key ── -->
+				<button
+					class="flex w-full items-center justify-between border-b border-white/5 px-3 py-2 text-xs font-medium transition-colors"
+					:class="openVideoSections.has('chromakey') ? 'text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'"
+					@click="toggleVideoSection('chromakey')"
+				>
+					<span>Chroma Key</span>
+					<ChevronDown class="size-3.5 transition-transform duration-150" :class="{ 'rotate-180': openVideoSections.has('chromakey') }" />
+				</button>
+				<div v-if="openVideoSections.has('chromakey')" class="space-y-3 p-3">
 					<div class="flex items-center justify-between">
 						<span class="text-[11px] text-zinc-500">Enabled</span>
 						<button
@@ -1131,6 +1129,26 @@ function formatTime(seconds: number): string {
 		<!-- ══════ Transition (shown at bottom if element has one) ══════ -->
 		<div v-if="activeTransition" class="shrink-0 border-t border-white/10 p-3">
 			<TransitionProperties :transition="activeTransition" />
+		</div>
+		</div>
+
+		<!-- ══════ Right Tab Strip ══════ -->
+		<div class="flex w-10 shrink-0 flex-col items-center gap-2 border-l border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
+			<button
+				v-for="tab in topTabs"
+				:key="tab.id"
+				type="button"
+				:title="tab.label"
+				:class="[
+					'flex flex-col items-center justify-center rounded-md p-1.5 transition-colors',
+					activeTab === tab.id
+						? 'text-blue-400'
+						: 'text-zinc-500 hover:text-zinc-300',
+				]"
+				@click="activeTab = tab.id"
+			>
+				<component :is="tab.icon" class="size-[15px]" />
+			</button>
 		</div>
 	</div>
 </template>

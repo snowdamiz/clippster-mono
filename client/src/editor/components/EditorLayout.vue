@@ -140,7 +140,7 @@ onUnmounted(() => {
 			</div>
 
 			<!-- Left panel: Assets content -->
-			<div v-if="activeTab !== null" class="w-72 shrink-0 border-r border-white/10 bg-[#18181b] overflow-hidden">
+			<div v-if="activeTab !== null" class="w-64 shrink-0 border-r border-white/10 bg-[#18181b] overflow-hidden">
 				<AssetsPanel :active-tab="activeTab" />
 			</div>
 
