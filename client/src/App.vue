@@ -12,8 +12,10 @@
   import SubscriptionGate from '@/components/SubscriptionGate.vue';
   import BrandingProfileSelector from '@/components/BrandingProfileSelector.vue';
   import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
+  import OrganizationInviteDialog from '@/components/OrganizationInviteDialog.vue';
   import FloatingChat from '@/components/chat/FloatingChat.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
+  import { listMyInvitations, acceptInvitation, type OrganizationInvitation } from '@/services/organizationsApi';
   import {
     initDatabase,
     seedDefaultPrompt,
@@ -54,6 +56,66 @@
   const { startTracking } = useActivityTracker();
 
   const { fetchAndEnqueue, subscribeToChannel, unsubscribe } = useAnnouncements();
+
+  // Organization invites state
+  const pendingInvitations = ref<OrganizationInvitation[]>([]);
+  const currentInvitation = ref<OrganizationInvitation | null>(null);
+  const showInviteDialog = ref(false);
+
+  // Fetch pending organization invitations
+  const fetchPendingInvitations = async () => {
+    if (!authStore.isAuthenticated) return;
+    
+    const response = await listMyInvitations();
+    if (response.success && response.invitations.length > 0) {
+      pendingInvitations.value = response.invitations;
+      // Show the first invitation
+      if (!showInviteDialog.value && pendingInvitations.value.length > 0) {
+        currentInvitation.value = pendingInvitations.value[0];
+        showInviteDialog.value = true;
+      }
+    }
+  };
+
+  // Handle invitation acceptance
+  const handleAcceptInvitation = async (invitation: OrganizationInvitation) => {
+    const result = await acceptInvitation(invitation.id.toString());
+    
+    if (result.success) {
+      success(`You've joined ${invitation.organization_name}!`);
+      // Remove from pending list
+      pendingInvitations.value = pendingInvitations.value.filter(inv => inv.id !== invitation.id);
+      showInviteDialog.value = false;
+      
+      // Refresh auth to get updated organization membership
+      await authStore.checkAuth();
+      
+      // Show next invitation if any
+      if (pendingInvitations.value.length > 0) {
+        setTimeout(() => {
+          currentInvitation.value = pendingInvitations.value[0];
+          showInviteDialog.value = true;
+        }, 500);
+      }
+    } else {
+      success(result.error || 'Failed to accept invitation', 'error');
+    }
+  };
+
+  // Handle invitation decline
+  const handleDeclineInvitation = (invitation: OrganizationInvitation) => {
+    // Remove from pending list
+    pendingInvitations.value = pendingInvitations.value.filter(inv => inv.id !== invitation.id);
+    showInviteDialog.value = false;
+    
+    // Show next invitation if any
+    if (pendingInvitations.value.length > 0) {
+      setTimeout(() => {
+        currentInvitation.value = pendingInvitations.value[0];
+        showInviteDialog.value = true;
+      }, 500);
+    }
+  };
 
   // Update check must complete before app continues
   const isCheckingForUpdates = ref(true);
@@ -226,11 +288,18 @@
       // Fetch and show any unseen announcements for the newly logged-in user
       await fetchAndEnqueue();
       subscribeToChannel(authStore.user?.account_type ?? 'personal');
+      
+      // Fetch pending organization invitations
+      await fetchPendingInvitations();
     } else if (!event.detail?.userId) {
       // User logged out — clear announcement queue and leave channel
       unsubscribe();
       // Clear plan selection flag
       localStorage.removeItem('has_selected_plan');
+      // Clear pending invitations
+      pendingInvitations.value = [];
+      currentInvitation.value = null;
+      showInviteDialog.value = false;
     }
 
     // Increment key to force Vue to re-mount all route components
@@ -532,6 +601,14 @@
 
       <!-- Global Announcement Dialog -->
       <AnnouncementDialog />
+
+      <!-- Organization Invite Dialog -->
+      <OrganizationInviteDialog
+        v-model="showInviteDialog"
+        :invitation="currentInvitation"
+        @accept="handleAcceptInvitation"
+        @decline="handleDeclineInvitation"
+      />
 
       <!-- Floating Chat Widget (Messenger-style popout) -->
       <FloatingChat />

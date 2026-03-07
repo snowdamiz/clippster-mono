@@ -486,7 +486,7 @@
             <button
               v-if="!isOwnProfile(clipper)"
               class="org-clippers__action-btn org-clippers__action-btn--invite"
-              @click="openInviteDialog(clipper, $event)"
+              @click="handleInvite(clipper, $event)"
             >
               <Send class="org-clippers__action-icon" />
               Invite

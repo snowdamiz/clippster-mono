@@ -12,13 +12,6 @@ defmodule ClippsterServerWeb.CampaignController do
     user.is_admin or user.campaigns_enabled
   end
 
-  defp can_org_access_campaigns?(org_id) do
-    case Organizations.get_organization(org_id) do
-      nil -> false
-      org -> org.campaigns_enabled
-    end
-  end
-
   # ============================================================================
   # Public Campaign Routes (for marketplace)
   # ============================================================================

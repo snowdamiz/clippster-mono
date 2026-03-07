@@ -17,9 +17,13 @@ import {
   AlertCircle,
   Send,
   Link2,
+  Menu,
+  X as XIcon,
 } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
 import PageLayout from '@/components/PageLayout.vue';
+import ClipsSidebar from '@/components/calendar/ClipsSidebar.vue';
+import ScheduleClipDialog from '@/components/calendar/ScheduleClipDialog.vue';
 import { listScheduledPosts, listOrgScheduledPosts, listExternalPosts, type ScheduledPost, type ExternalPostSubmission } from '@/services/schedulingApi';
 import { listOrganizationCampaigns, listMyCampaigns, type Campaign } from '@/services/campaignApi';
 import { listUserPosts, type UserPost } from '@/services/userInstagramApi';
@@ -37,6 +41,25 @@ const userPosts = ref<UserPost[]>([]);
 // Calendar state
 const currentDate = ref(new Date());
 const viewMode = ref<'month' | 'week'>('month');
+
+// Clips sidebar state
+const showClipsSidebar = ref(true);
+const clipsSidebarRef = ref<InstanceType<typeof ClipsSidebar> | null>(null);
+
+// Schedule dialog state
+const scheduleDialogOpen = ref(false);
+const scheduleDialogData = ref<{
+  clipId: string;
+  clipName: string;
+  mediaUrl: string;
+  thumbnailUrl?: string;
+  duration?: number;
+  projectName?: string;
+  selectedDate: Date;
+} | null>(null);
+
+// Drag state
+const dragOverDay = ref<Date | null>(null);
 
 // ── Computed ──
 const currentYear = computed(() => currentDate.value.getFullYear());
@@ -462,6 +485,74 @@ const stats = computed(() => {
   return { upcoming, published, activeCampaigns, thisMonthEvents, linkSubmissions };
 });
 
+// ── Drag & Drop Handlers ──
+
+function handleDragOver(event: DragEvent, date: Date) {
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy';
+  }
+  dragOverDay.value = date;
+}
+
+function handleDragLeave() {
+  dragOverDay.value = null;
+}
+
+function handleDrop(event: DragEvent, date: Date) {
+  event.preventDefault();
+  dragOverDay.value = null;
+
+  try {
+    const data = event.dataTransfer?.getData('application/json');
+    if (!data) return;
+
+    const clipData = JSON.parse(data);
+    openScheduleDialog(clipData, date);
+  } catch (error) {
+    console.error('[ContentCalendar] Failed to parse drop data:', error);
+  }
+}
+
+function openScheduleDialog(clipData: any, date: Date) {
+  scheduleDialogData.value = {
+    clipId: clipData.clipId,
+    clipName: clipData.clipName || 'Untitled Clip',
+    mediaUrl: clipData.mediaUrl,
+    thumbnailUrl: clipData.thumbnailUrl,
+    duration: clipData.duration,
+    projectName: clipData.projectName,
+    selectedDate: date,
+  };
+  scheduleDialogOpen.value = true;
+}
+
+function handleScheduleClip(clip: any) {
+  // When clicking schedule button on clip card
+  const today = new Date();
+  today.setHours(today.getHours() + 1); // Default to 1 hour from now
+  openScheduleDialog({
+    clipId: clip.id,
+    clipName: clip.name,
+    mediaUrl: clip.built_file_path,
+    thumbnailUrl: clip.built_thumbnail_path,
+    duration: clip.built_duration,
+    projectName: clip.project_name,
+  }, today);
+}
+
+function handleScheduled() {
+  // Reload calendar data after successful scheduling
+  loadData();
+  // Reload clips sidebar to update any state
+  clipsSidebarRef.value?.reload();
+}
+
+function closeScheduleDialog() {
+  scheduleDialogOpen.value = false;
+  scheduleDialogData.value = null;
+}
+
 // ── Lifecycle ──
 onMounted(() => {
   loadData();
@@ -476,25 +567,38 @@ onMounted(() => {
     :icon="CalendarDays"
   >
     <template #actions>
-      <div class="flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
+      <div class="flex items-center gap-2">
+        <!-- Toggle Clips Sidebar (mobile) -->
         <button
-          @click="viewMode = 'month'"
-          :class="[
-            'px-3 py-1 text-xs font-medium rounded-md transition-colors',
-            viewMode === 'month' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
-          ]"
+          @click="showClipsSidebar = !showClipsSidebar"
+          class="lg:hidden p-2 text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors"
+          :title="showClipsSidebar ? 'Hide clips' : 'Show clips'"
         >
-          Month
+          <Menu v-if="!showClipsSidebar" :size="18" />
+          <XIcon v-else :size="18" />
         </button>
-        <button
-          @click="viewMode = 'week'"
-          :class="[
-            'px-3 py-1 text-xs font-medium rounded-md transition-colors',
-            viewMode === 'week' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
-          ]"
-        >
-          Week
-        </button>
+
+        <!-- View Mode Toggle -->
+        <div class="flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
+          <button
+            @click="viewMode = 'month'"
+            :class="[
+              'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+              viewMode === 'month' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
+            ]"
+          >
+            Month
+          </button>
+          <button
+            @click="viewMode = 'week'"
+            :class="[
+              'px-3 py-1 text-xs font-medium rounded-md transition-colors',
+              viewMode === 'week' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
+            ]"
+          >
+            Week
+          </button>
+        </div>
       </div>
     </template>
 
@@ -568,6 +672,36 @@ onMounted(() => {
 
     <!-- Calendar content -->
     <div v-else class="flex-1 flex overflow-hidden">
+      <!-- Clips Sidebar -->
+      <div
+        v-if="showClipsSidebar"
+        class="w-80 flex-shrink-0 hidden lg:block"
+      >
+        <ClipsSidebar
+          ref="clipsSidebarRef"
+          @schedule-clip="handleScheduleClip"
+        />
+      </div>
+
+      <!-- Mobile Clips Sidebar Overlay -->
+      <Transition name="sidebar">
+        <div
+          v-if="showClipsSidebar"
+          class="fixed inset-0 z-40 lg:hidden"
+          @click="showClipsSidebar = false"
+        >
+          <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            class="absolute left-0 top-0 bottom-0 w-80 bg-zinc-950"
+            @click.stop
+          >
+            <ClipsSidebar
+              ref="clipsSidebarRef"
+              @schedule-clip="handleScheduleClip"
+            />
+          </div>
+        </div>
+      </Transition>
       <!-- Calendar grid -->
       <div class="flex-1 flex flex-col overflow-hidden">
         <!-- Day headers -->
@@ -586,14 +720,18 @@ onMounted(() => {
           <div
             v-for="(day, idx) in calendarDays"
             :key="idx"
-            class="border-b border-r border-white/5 p-1 overflow-hidden cursor-pointer transition-colors"
+            class="border-b border-r border-white/5 p-1 overflow-hidden cursor-pointer transition-colors relative"
             :class="{
               'bg-white/[0.02]': day.isCurrentMonth,
               'bg-transparent': !day.isCurrentMonth,
               'ring-1 ring-blue-500/40 ring-inset': day.isToday,
               'bg-blue-500/5': selectedDay && isSameDay(selectedDay, day.date),
+              'ring-2 ring-blue-400/50 bg-blue-500/10': dragOverDay && isSameDay(dragOverDay, day.date),
             }"
             @click="selectDay(day.date)"
+            @dragover="handleDragOver($event, day.date)"
+            @dragleave="handleDragLeave"
+            @drop="handleDrop($event, day.date)"
           >
             <!-- Day number -->
             <div class="flex items-center justify-between mb-0.5">
@@ -647,10 +785,14 @@ onMounted(() => {
           <div
             v-for="day in weekDays"
             :key="day.toISOString()"
-            class="flex border-b border-white/5 min-h-[80px]"
+            class="flex border-b border-white/5 min-h-[80px] relative"
             :class="{
               'bg-blue-500/5': isSameDay(day, new Date()),
+              'ring-2 ring-blue-400/50 bg-blue-500/10': dragOverDay && isSameDay(dragOverDay, day),
             }"
+            @dragover="handleDragOver($event, day)"
+            @dragleave="handleDragLeave"
+            @drop="handleDrop($event, day)"
           >
             <!-- Day label -->
             <div class="w-20 shrink-0 p-2 border-r border-white/5">
@@ -859,5 +1001,46 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- Schedule Clip Dialog -->
+    <ScheduleClipDialog
+      v-if="scheduleDialogData"
+      :open="scheduleDialogOpen"
+      :clip-id="scheduleDialogData.clipId"
+      :clip-name="scheduleDialogData.clipName"
+      :media-url="scheduleDialogData.mediaUrl"
+      :thumbnail-url="scheduleDialogData.thumbnailUrl"
+      :duration="scheduleDialogData.duration"
+      :project-name="scheduleDialogData.projectName"
+      :selected-date="scheduleDialogData.selectedDate"
+      @close="closeScheduleDialog"
+      @scheduled="handleScheduled"
+    />
   </PageLayout>
 </template>
+
+<style scoped>
+/* Sidebar transition */
+.sidebar-enter-active,
+.sidebar-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.sidebar-enter-from,
+.sidebar-leave-to {
+  opacity: 0;
+}
+
+.sidebar-enter-active .w-80,
+.sidebar-leave-active .w-80 {
+  transition: transform 0.3s ease;
+}
+
+.sidebar-enter-from .w-80 {
+  transform: translateX(-100%);
+}
+
+.sidebar-leave-to .w-80 {
+  transform: translateX(-100%);
+}
+</style>
