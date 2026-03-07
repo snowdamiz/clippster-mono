@@ -10,6 +10,7 @@ interface VideoSinkData {
 	sink: CanvasSink;
 	iterator: AsyncGenerator<WrappedCanvas, void, unknown> | null;
 	currentFrame: WrappedCanvas | null;
+	currentFrameStartTime: number;
 	nextFrame: WrappedCanvas | null;
 	lastTime: number;
 	prefetching: boolean;
@@ -41,13 +42,18 @@ export class VideoCache {
 
 		if (sinkData.nextFrame && sinkData.nextFrame.timestamp <= time) {
 			sinkData.currentFrame = sinkData.nextFrame;
+			sinkData.currentFrameStartTime = sinkData.nextFrame.timestamp;
 			sinkData.nextFrame = null;
 			this.startPrefetch({ sinkData });
 		}
 
 		if (
 			sinkData.currentFrame &&
-			this.isFrameValid({ frame: sinkData.currentFrame, time })
+			this.isFrameValid({
+				frame: sinkData.currentFrame,
+				frameStartTime: sinkData.currentFrameStartTime,
+				time,
+			})
 		) {
 			if (!sinkData.nextFrame && !sinkData.prefetching) {
 				this.startPrefetch({ sinkData });
@@ -95,12 +101,14 @@ export class VideoCache {
 
 	private isFrameValid({
 		frame,
+		frameStartTime,
 		time,
 	}: {
 		frame: WrappedCanvas;
+		frameStartTime: number;
 		time: number;
 	}): boolean {
-		return time >= frame.timestamp && time < frame.timestamp + frame.duration;
+		return time >= frameStartTime && time < frame.timestamp + frame.duration;
 	}
 	private async iterateToTime({
 		sinkData,
@@ -124,6 +132,7 @@ export class VideoCache {
 					sinkData.nextFrame.timestamp <= targetTime + 0.05 // Tolerance
 				) {
 					sinkData.currentFrame = sinkData.nextFrame;
+					sinkData.currentFrameStartTime = sinkData.nextFrame.timestamp;
 					sinkData.nextFrame = null;
 				} else {
 					const { value: frame, done } = await sinkData.iterator.next();
@@ -131,6 +140,7 @@ export class VideoCache {
 					if (done || !frame) break;
 
 					sinkData.currentFrame = frame;
+					sinkData.currentFrameStartTime = frame.timestamp;
 				}
 
 				const frame = sinkData.currentFrame;
@@ -138,7 +148,11 @@ export class VideoCache {
 
 				sinkData.lastTime = frame.timestamp;
 
-				if (this.isFrameValid({ frame, time: targetTime })) {
+				if (this.isFrameValid({
+					frame,
+					frameStartTime: sinkData.currentFrameStartTime,
+					time: targetTime,
+				})) {
 					return frame;
 				}
 
@@ -177,6 +191,11 @@ export class VideoCache {
 
 			if (frame) {
 				sinkData.currentFrame = frame;
+				// Some media starts with its first decodable frame after the requested
+				// time (for example at ~0.5s). Hold that frame from the seek target so
+				// playback can reuse it instead of re-seeking on every tick until the
+				// decoder catches up.
+				sinkData.currentFrameStartTime = Math.min(time, frame.timestamp);
 
 				// Aggressively fetch next frame immediately to fill buffer
 				// This matches the mediaplayer example which fetches 2 frames on start
@@ -292,6 +311,7 @@ export class VideoCache {
 				sink,
 				iterator: null,
 				currentFrame: null,
+				currentFrameStartTime: 0,
 				nextFrame: null,
 				lastTime: -1,
 				prefetching: false,
