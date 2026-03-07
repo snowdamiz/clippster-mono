@@ -744,16 +744,14 @@ async function handleCopyError() {
 		<button
 			type="button"
 			:class="[
-				'flex items-center gap-1.5 rounded-md bg-[#38BDF8] px-[0.12rem] py-[0.12rem] text-white',
+				'export-trigger',
 				hasProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
 			]"
 			:disabled="!hasProject"
 			@click="hasProject && (isOpen = true)"
 		>
-			<div class="relative flex items-center gap-1.5 rounded-[0.6rem] bg-gradient-to-l from-[#2567EC] to-[#37B6F7] px-4 py-1 shadow-[0_1px_3px_0px_rgba(0,0,0,0.65)]">
-				<Download class="z-50 size-4" />
-				<span class="z-50 text-[0.875rem]">Export</span>
-			</div>
+			<Download class="export-trigger__icon" />
+			Export
 		</button>
 
 		<!-- Export Dialog (full modal) -->
@@ -2352,6 +2350,37 @@ async function handleCopyError() {
 .dialog-leave-to {
 	opacity: 0;
 	transform: scale(0.98);
+}
+
+/* ===== Export Trigger Button ===== */
+.export-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 32px;
+  padding: 0 0.875rem;
+  background-color: var(--sidebar-accent);
+  color: var(--sidebar-bg);
+  border: none;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.export-trigger:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.export-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.export-trigger__icon {
+  width: 14px;
+  height: 14px;
 }
 
 /* ===== Responsive ===== */
