@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, toRef, watch } from "vue";
+import { computed, ref, shallowRef, toRef, watch, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useTimelineElementResize } from "../../composables/timeline/element/useElementResize";
 import { useElementFade } from "../../composables/timeline/element/useElementFade";
@@ -34,6 +34,7 @@ const props = defineProps<{
 	snappingEnabled: boolean;
 	rippleShifts?: Map<string, number>;
 	isEffectDropTarget?: boolean;
+	isPlayheadScrubbing?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -46,10 +47,22 @@ const emit = defineEmits<{
 	(e: "keyframeClick", payload: { elementId: string; offset: number; rect: DOMRect }): void;
 }>();
 
-const { editor, version } = useEditor();
+const { editor, version } = useEditor({
+	subscribe: {
+		playback: false,
+		timeline: false,
+		scenes: false,
+		project: false,
+		media: true,
+		selection: false,
+	},
+});
 const { selectedElements } = useElementSelection();
 
-const mediaAssets = computed(() => editor.media.getAssets());
+const mediaAssets = computed(() => {
+	void version.value;
+	return editor.media.getAssets();
+});
 
 const mediaAsset = computed<MediaAsset | null>(() => {
 	const el = props.element;
@@ -184,9 +197,36 @@ const audioWaveformCanvas = ref<HTMLCanvasElement | null>(null);
 // Video waveform support (audio track rendered under filmstrip)
 const videoWaveformCanvas = ref<HTMLCanvasElement | null>(null);
 
-const playheadTime = computed(() => {
-	void version.value;
-	return editor.playback.getCurrentTime();
+const playheadTime = shallowRef(editor.playback.getCurrentTime());
+
+function syncPlayheadTime(time?: number) {
+	if (props.isPlayheadScrubbing) return;
+	playheadTime.value = time ?? editor.playback.getCurrentTime();
+}
+
+function handlePlaybackEvent(event: Event) {
+	syncPlayheadTime((event as CustomEvent<{ time?: number }>).detail?.time);
+}
+
+watch(
+	() => props.isPlayheadScrubbing,
+	(scrubbing) => {
+		if (!scrubbing) {
+			playheadTime.value = editor.playback.getCurrentTime();
+		}
+	},
+);
+
+onMounted(() => {
+	if (!isAudioElement.value && !isVideoElement.value) return;
+	window.addEventListener("playback-update", handlePlaybackEvent as EventListener);
+	window.addEventListener("playback-seek", handlePlaybackEvent as EventListener);
+});
+
+onUnmounted(() => {
+	if (!isAudioElement.value && !isVideoElement.value) return;
+	window.removeEventListener("playback-update", handlePlaybackEvent as EventListener);
+	window.removeEventListener("playback-seek", handlePlaybackEvent as EventListener);
 });
 
 const { isLoading: waveformLoading, isLoaded: waveformLoaded } = useAudioWaveform({
