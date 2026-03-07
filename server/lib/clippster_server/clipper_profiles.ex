@@ -769,7 +769,8 @@ defmodule ClippsterServer.ClipperProfiles do
       ClippsterServer.Campaigns.UserPost
       |> where([p], p.user_id == ^user_id)
       |> where([p], p.status == "published")
-      |> where([p], p.inserted_at >= ^start_dt and p.inserted_at <= ^end_dt)
+      |> where([p], not is_nil(p.posted_at))
+      |> where([p], p.posted_at >= ^start_dt and p.posted_at <= ^end_dt)
       |> select([p], coalesce(sum(p.view_count), 0))
       |> Repo.one()
 
@@ -800,7 +801,8 @@ defmodule ClippsterServer.ClipperProfiles do
       ClippsterServer.Campaigns.UserPost
       |> where([p], p.user_id == ^user_id)
       |> where([p], p.status == "published")
-      |> where([p], p.inserted_at >= ^start_dt and p.inserted_at <= ^end_dt)
+      |> where([p], not is_nil(p.posted_at))
+      |> where([p], p.posted_at >= ^start_dt and p.posted_at <= ^end_dt)
       |> Repo.aggregate(:count)
 
     post_submission_count + user_post_count

@@ -630,6 +630,9 @@ defmodule ClippsterServerWeb.AdminController do
             else
               nil
             end,
+          assigned_email: code.assigned_email,
+          verified_at: code.verified_at,
+          verified_from_ip: code.verified_from_ip,
           created_at: code.inserted_at
         }
       end)
