@@ -46,6 +46,12 @@ import {
 	Trash2,
 	ImageIcon,
 	ArrowRightLeft,
+	Film,
+	Music,
+	Type,
+	Smile,
+	Sparkles,
+	MessageSquare,
 } from "lucide-vue-next";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -79,6 +85,26 @@ function closeContextMenu() {
 // Track management
 function addTrack(type: TrackType) {
 	editor.timeline.addTrack({ type });
+}
+
+function getTrackAccentColor(type: TrackType): string {
+	const colors: Record<TrackType, string> = {
+		video: '#71717a',
+		text: '#7CCDB8',
+		audio: '#A87BD4',
+		sticker: '#F59E0B',
+		effect: '#E040FB',
+		caption: '#38BDF8',
+	};
+	return colors[type];
+}
+
+function getTrackPaddingY(type: TrackType): string {
+	const h = getTrackHeight({ type });
+	if (h >= 70) return '12px';
+	if (h >= 45) return '8px';
+	if (h >= 30) return '4px';
+	return '2px';
 }
 
 function removeTrack(trackId: string) {
@@ -551,37 +577,34 @@ function onTrackDragEnd() {
 
 			<div class="flex flex-1 overflow-hidden">
 				<!-- Track labels sidebar -->
-				<div class="flex w-28 shrink-0 flex-col border-r border-white/10 bg-[#18181b]">
-					<div class="flex h-4 items-center justify-between bg-[#18181b] px-1">
-						<span class="opacity-0">.</span>
+				<div class="flex w-44 shrink-0 flex-col border-r border-white/10 bg-[#18181b]">
+					<!-- Header — must be same height as TimelineRuler so track rows align -->
+					<div class="flex h-4 shrink-0 items-center justify-between bg-[#18181b] pl-3 pr-1">
+						<span class="text-[10px] font-semibold uppercase tracking-widest text-white/25">Tracks</span>
+						<div class="flex items-center gap-0.5">
+							<button
+								class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-white/10 hover:text-zinc-300"
+								@click="addTrack('video')"
+								title="Add video track"
+							><Plus class="size-2.5" />V</button>
+							<button
+								class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-white/10 hover:text-zinc-300"
+								@click="addTrack('audio')"
+								title="Add audio track"
+							><Plus class="size-2.5" />A</button>
+							<button
+								class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-white/10 hover:text-zinc-300"
+								@click="addTrack('text')"
+								title="Add text track"
+							><Plus class="size-2.5" />T</button>
+						</div>
 					</div>
-					<div class="flex h-4 items-center justify-center gap-1 bg-[#18181b] px-1">
-						<button
-							class="flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
-							@click="addTrack('video')"
-							title="Add video track"
-						>
-							<Plus class="size-2.5" />V
-						</button>
-						<button
-							class="flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
-							@click="addTrack('audio')"
-							title="Add audio track"
-						>
-							<Plus class="size-2.5" />A
-						</button>
-						<button
-							class="flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
-							@click="addTrack('text')"
-							title="Add text track"
-						>
-							<Plus class="size-2.5" />T
-						</button>
-					</div>
+
+					<!-- Track labels list -->
 					<div
 						v-if="tracks.length > 0"
 						ref="trackLabelsRef"
-						class="flex-1 overflow-y-auto bg-[#18181b]"
+						class="flex-1 overflow-hidden bg-[#18181b]"
 						:style="{ paddingTop: `${TIMELINE_CONSTANTS.PADDING_TOP_PX}px` }"
 					>
 						<div ref="trackLabelsScrollRef" class="size-full overflow-auto">
@@ -590,11 +613,11 @@ function onTrackDragEnd() {
 									v-for="track in tracks"
 									:key="track.id"
 									:draggable="!('isMain' in track && track.isMain)"
-									class="group flex items-center px-1 transition-colors relative"
+									class="group relative flex flex-col items-start justify-center gap-2 transition-colors"
 									:class="{
 										'bg-primary/10': trackDragOverId === track.id,
 										'cursor-move': !('isMain' in track && track.isMain),
-										'cursor-not-allowed opacity-60': 'isMain' in track && track.isMain && trackDragId
+										'cursor-not-allowed opacity-60': 'isMain' in track && track.isMain && trackDragId,
 									}"
 									:style="{ height: `${getTrackHeight({ type: track.type })}px` }"
 									@dragstart="onTrackDragStart($event, track.id)"
@@ -602,73 +625,88 @@ function onTrackDragEnd() {
 									@drop="onTrackDrop($event, track.id)"
 									@dragend="onTrackDragEnd"
 								>
-									<!-- Drop insertion indicator -->
+									<!-- Drop indicator -->
+									<div v-if="trackDragOverId === track.id" class="absolute left-0 right-0 top-0 z-10 h-0.5 bg-primary" />
+
+									<!-- Left accent bar -->
 									<div
-										v-if="trackDragOverId === track.id"
-										class="absolute left-0 right-0 top-0 h-0.5 bg-primary z-10"
+										class="absolute left-0 inset-y-1.5 w-[3px] rounded-r-sm"
+										:style="{ background: getTrackAccentColor(track.type) }"
 									/>
 
-									<div class="flex min-w-0 flex-1 items-center justify-between gap-0.5">
-										<div class="flex flex-col min-w-0">
-											<span
-												class="text-zinc-500 text-[10px] capitalize truncate cursor-pointer hover:text-zinc-300 transition-colors"
-												title="Select all elements in track"
-												@click="selectAllInTrack({ trackId: track.id })"
-											>{{ track.name }}</span>
-											<button
-												v-if="'isMain' in track && track.isMain"
-												class="flex items-center gap-0.5 rounded px-0.5 py-0 text-[8px] text-primary/80 hover:text-primary hover:bg-white/5 w-fit"
-												@click="openCoverEditor"
-												title="Edit cover image"
-											>
-												<ImageIcon class="size-2.5" />
-												Cover
-											</button>
-										</div>
-										<div class="flex items-center gap-0 opacity-0 group-hover:opacity-100 transition-opacity" :class="{ '!opacity-100': track.locked }">
-											<button
-												class="p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300"
-												:class="{ '!text-yellow-500': track.locked }"
-												@click="toggleTrackLock(track.id)"
-												:title="track.locked ? 'Unlock track' : 'Lock track'"
-											>
-												<Lock v-if="track.locked" class="size-3" />
-												<Unlock v-else class="size-3" />
-											</button>
-											<button
-												v-if="canTracktHaveAudio(track)"
-												class="p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300"
-												:class="{ '!text-red-400': track.muted }"
-												@click="toggleTrackMute(track.id)"
-												:title="track.muted ? 'Unmute' : 'Mute'"
-											>
-												<VolumeX v-if="track.muted" class="size-3" />
-												<Volume2 v-else class="size-3" />
-											</button>
-											<button
-												v-if="canTrackBeHidden(track)"
-												class="p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-zinc-300"
-												:class="{ '!text-red-400': ('hidden' in track && track.hidden) }"
-												@click="toggleTrackVisibility(track.id)"
-												:title="('hidden' in track && track.hidden) ? 'Show' : 'Hide'"
-											>
-												<EyeOff v-if="'hidden' in track && track.hidden" class="size-3" />
-												<Eye v-else class="size-3" />
-											</button>
-											<button
-												v-if="!('isMain' in track && track.isMain)"
-												class="p-0.5 rounded hover:bg-white/10 text-zinc-500 hover:text-red-400"
-												@click="removeTrack(track.id)"
-												title="Remove track"
-											>
-												<Trash2 class="size-3" />
-											</button>
-										</div>
+									<!-- Row 1: icon + name -->
+									<div class="flex min-w-0 items-center gap-1.5 pl-4 pr-2">
+										<Film v-if="track.type === 'video'" class="size-3.5 shrink-0 opacity-50" :style="{ color: getTrackAccentColor(track.type) }" />
+										<Music v-else-if="track.type === 'audio'" class="size-3.5 shrink-0 opacity-50" :style="{ color: getTrackAccentColor(track.type) }" />
+										<Type v-else-if="track.type === 'text'" class="size-3.5 shrink-0 opacity-50" :style="{ color: getTrackAccentColor(track.type) }" />
+										<Smile v-else-if="track.type === 'sticker'" class="size-3.5 shrink-0 opacity-50" :style="{ color: getTrackAccentColor(track.type) }" />
+										<Sparkles v-else-if="track.type === 'effect'" class="size-3.5 shrink-0 opacity-50" :style="{ color: getTrackAccentColor(track.type) }" />
+										<MessageSquare v-else class="size-3.5 shrink-0 opacity-50" :style="{ color: getTrackAccentColor(track.type) }" />
+										<span
+											class="min-w-0 flex-1 truncate text-[11px] font-medium leading-none text-white/60 transition-colors group-hover:text-white/85 cursor-pointer"
+											title="Select all elements in track"
+											@click="selectAllInTrack({ trackId: track.id })"
+										>{{ track.name }}</span>
+									</div>
+
+									<!-- Row 2: control buttons -->
+									<div class="flex items-center gap-0.5 pl-3 pr-1.5">
+										<!-- Cover (main video track only) -->
+										<button
+											v-if="'isMain' in track && track.isMain"
+											class="rounded p-1 text-zinc-600 transition-colors hover:bg-white/10 hover:text-[#0ea5e9]"
+											@click="openCoverEditor"
+											title="Edit cover image"
+										>
+											<ImageIcon class="size-3.5" />
+										</button>
+										<!-- Lock -->
+										<button
+											class="rounded p-1 transition-colors hover:bg-white/10"
+											:class="track.locked ? 'text-yellow-400' : 'text-zinc-600 hover:text-zinc-300'"
+											@click="toggleTrackLock(track.id)"
+											:title="track.locked ? 'Unlock track' : 'Lock track'"
+										>
+											<Lock v-if="track.locked" class="size-3.5" />
+											<Unlock v-else class="size-3.5" />
+										</button>
+										<!-- Mute -->
+										<button
+											v-if="canTracktHaveAudio(track)"
+											class="rounded p-1 transition-colors hover:bg-white/10"
+											:class="track.muted ? 'text-red-400' : 'text-zinc-600 hover:text-zinc-300'"
+											@click="toggleTrackMute(track.id)"
+											:title="track.muted ? 'Unmute' : 'Mute'"
+										>
+											<VolumeX v-if="track.muted" class="size-3.5" />
+											<Volume2 v-else class="size-3.5" />
+										</button>
+										<!-- Visibility -->
+										<button
+											v-if="canTrackBeHidden(track)"
+											class="rounded p-1 transition-colors hover:bg-white/10"
+											:class="('hidden' in track && track.hidden) ? 'text-red-400' : 'text-zinc-600 hover:text-zinc-300'"
+											@click="toggleTrackVisibility(track.id)"
+											:title="('hidden' in track && track.hidden) ? 'Show' : 'Hide'"
+										>
+											<EyeOff v-if="'hidden' in track && track.hidden" class="size-3.5" />
+											<Eye v-else class="size-3.5" />
+										</button>
+										<!-- Delete (non-main, reveals on hover) -->
+										<button
+											v-if="!('isMain' in track && track.isMain)"
+											class="rounded p-1 text-zinc-700 transition-all hover:bg-white/10 hover:text-red-400 opacity-0 group-hover:opacity-100"
+											@click="removeTrack(track.id)"
+											title="Remove track"
+										>
+											<Trash2 class="size-3.5" />
+										</button>
 									</div>
 								</div>
 							</div>
 						</div>
 					</div>
+
 				</div>
 
 				<!-- Main timeline content area -->
