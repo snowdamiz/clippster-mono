@@ -288,14 +288,14 @@
                         @click="openClipModal"
                         class="px-3 py-2 bg-gradient-to-r from-[var(--sidebar-accent)] to-[#0891b2] hover:opacity-90 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2"
                         :disabled="
-                          viewer.state.value.totalRecordedDuration < 5 ||
+                          viewer.state.value.totalRecordedDuration < 180 ||
                           viewer.state.value.availableSegments.length === 0
                         "
                         :title="
                           viewer.state.value.availableSegments.length === 0
                             ? 'Waiting for segments to load...'
-                            : viewer.state.value.totalRecordedDuration < 5
-                              ? 'Wait for more content to be recorded'
+                            : viewer.state.value.totalRecordedDuration < 180
+                              ? `DVR buffer building... ${formatTime(180 - viewer.state.value.totalRecordedDuration)} remaining`
                               : 'Create clip (C)'
                         "
                       >
@@ -331,21 +331,21 @@
             <!-- Clip Modal -->
             <LivestreamClipSelector
               v-if="showClipModal"
-              :available-duration="viewer.state.value.totalRecordedDuration"
+              :available-duration="frozenClipDuration"
               :project-id="sessionProjectId || viewer.state.value.projectId"
               :session-id="viewer.state.value.sessionId"
               :temp-session-id="viewer.state.value.tempSessionId"
-              :playback-position="viewer.state.value.playbackPosition"
+              :playback-position="frozenClipDuration"
               :watermark-settings="viewer.state.value.watermarkSettings"
               :watermark-id="viewer.state.value.watermarkId"
-              :segments="viewer.state.value.availableSegments"
+              :segments="frozenSegments"
               :display-name="props.displayName"
               :mint-id="props.mintId"
               :is-temp-recording="viewer.state.value.isTempRecording"
               :streamer-id="props.streamerId"
               :platform="props.platform"
-              :video-element="hlsVideoRef"
-              @close="showClipModal = false"
+              :hls-output-dir="viewer.hlsOutputDir.value"
+              @close="handleClipSelectorClose"
               @clip-created="handleClipCreated"
               @publish-clip="handlePublishClip"
             />
@@ -358,22 +358,23 @@
               :watermark-settings="(viewer.state.value.watermarkSettings as any) || null"
               :thumbnail-url="currentClipForPublish.thumbnail_path || null"
               :publish-mode="true"
+              :single-ratio-mode="true"
               @confirm="handleBuildConfirm"
-              @build-complete="handleBuildComplete"
             />
 
-            <!-- Aspect Ratio Selector (when multiple ratios built) -->
-            <AspectRatioPublishSelector
-              v-model="showAspectRatioSelector"
-              :available-ratios="builtAspectRatios"
-              @select="handleAspectRatioSelected"
-            />
-
-            <!-- Platform Select Dialog -->
-            <PlatformSelectDialog
-              :open="showPlatformSelectDialog"
-              @close="showPlatformSelectDialog = false"
-              @select-platform="handlePlatformSelected"
+            <!-- Schedule/Publish Dialog (after build completes) -->
+            <ScheduleClipDialog
+              :open="showScheduleDialog"
+              :clip-id="scheduleDialogData?.clipId || ''"
+              :clip-name="scheduleDialogData?.clipName || ''"
+              :media-url="scheduleDialogData?.mediaUrl || ''"
+              :thumbnail-url="scheduleDialogData?.thumbnailUrl"
+              :duration="scheduleDialogData?.duration"
+              :project-name="props.displayName"
+              :selected-date="new Date()"
+              :immediate-mode="true"
+              @close="showScheduleDialog = false"
+              @scheduled="handleScheduleComplete"
             />
           </div>
         </Transition>
@@ -414,8 +415,7 @@
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
   import LivestreamClipSelector from './LivestreamClipSelector.vue';
   import ClipBuildSettingsDialog from './ClipBuildSettingsDialog.vue';
-  import AspectRatioPublishSelector from './AspectRatioPublishSelector.vue';
-  import PlatformSelectDialog from './PlatformSelectDialog.vue';
+  import ScheduleClipDialog from './calendar/ScheduleClipDialog.vue';
   import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
   import { getWatermarkImage, resolveWatermarkById } from '@/services/database/watermarks';
   import { createClipVersion } from '@/services/database/clip-versions';
@@ -459,6 +459,14 @@
   const viewer = useLivestreamViewer();
   const livestreamStore = useLivestreamStore();
 
+  interface SegmentInfo {
+    segmentNumber: number;
+    filePath: string;
+    startTime: number;
+    duration: number;
+    endTime: number;
+  }
+
   // UI State
   const isFullscreen = ref(false);
   const showControls = ref(true);
@@ -468,15 +476,24 @@
   const watermarkDimensions = ref<{ width: number; height: number } | null>(null);
   let controlsTimeout: number | null = null;
 
+  // Frozen clip selector state (snapshot at moment user clicks Clip)
+  const frozenSegments = ref<SegmentInfo[]>([]);
+  const frozenClipDuration = ref(0);
+  const wasPlayingBeforeClip = ref(false);
+
   // Build and publish workflow state
   const showBuildDialog = ref(false);
-  const showAspectRatioSelector = ref(false);
-  const showPlatformSelectDialog = ref(false);
+  const showScheduleDialog = ref(false);
   const publishClipData = ref<{ clipId: string; clipPath: string; projectId: string } | null>(null);
-  const builtClipIds = ref<string[]>([]);
   const currentClipForPublish = ref<any>(null);
-  const builtAspectRatios = ref<string[]>([]);
-  const selectedClipIdForPublish = ref<string | null>(null);
+  const scheduleDialogData = ref<{
+    clipId: string;
+    clipName: string;
+    mediaUrl: string;
+    thumbnailUrl?: string;
+    duration?: number;
+  } | null>(null);
+  let buildCompleteUnlisten: UnlistenFn | null = null;
 
   // PiP state tracking
   const isInPipMode = ref(false);
@@ -722,7 +739,48 @@
   function openClipModal() {
     // Prevent opening if already open
     if (showClipModal.value) return;
+
+    // Snapshot the frozen segments: take only the last 3 minutes of available segments
+    const allSegments = viewer.state.value.availableSegments;
+    const totalDuration = viewer.state.value.totalRecordedDuration;
+    const maxClipWindow = 180; // 3 minutes
+
+    if (totalDuration >= maxClipWindow) {
+      // Filter to segments that fall within the last 3 minutes
+      const cutoffTime = totalDuration - maxClipWindow;
+      const relevantSegments = allSegments.filter((s: SegmentInfo) => s.endTime > cutoffTime);
+
+      // Re-base segment times to start from 0 within the 3-minute window
+      frozenSegments.value = relevantSegments.map((s: SegmentInfo) => ({
+        ...s,
+        startTime: Math.max(0, s.startTime - cutoffTime),
+        endTime: s.endTime - cutoffTime,
+      }));
+      frozenClipDuration.value = maxClipWindow;
+    } else {
+      // Less than 3 minutes available, use all segments as-is
+      frozenSegments.value = [...allSegments];
+      frozenClipDuration.value = totalDuration;
+    }
+
+    // Pause the main HLS video to avoid audio overlap
+    wasPlayingBeforeClip.value = viewer.state.value.isPlaying;
+    viewer.pause();
+
     showClipModal.value = true;
+  }
+
+  function handleClipSelectorClose() {
+    showClipModal.value = false;
+
+    // Resume playback if it was playing before opening the clip selector
+    if (wasPlayingBeforeClip.value) {
+      viewer.togglePlayPause();
+    }
+
+    // Clear frozen state
+    frozenSegments.value = [];
+    frozenClipDuration.value = 0;
   }
 
   // Quick clip: Create a 30-second clip without any dialog
@@ -892,7 +950,8 @@
   }
 
   function handleClipCreated(clipPath: string, projectId: string) {
-    showClipModal.value = false;
+    // Don't close modal — let user see success state with Publish Now / Not Now buttons.
+    // Modal closes when user clicks "Not Now" (close) or "Publish Now" (publish-clip).
 
     // Track the project and clip count for this session
     if (projectId) {
@@ -938,16 +997,28 @@
     // Build settings confirmed, trigger the build process
     console.log('[WatchDialog] Build settings confirmed:', settings);
     
-    if (!publishClipData.value) return;
+    if (!publishClipData.value || !currentClipForPublish.value) return;
+
+    const clipId = publishClipData.value.clipId;
+    const clip = currentClipForPublish.value;
+    const projectId = publishClipData.value.projectId;
 
     try {
-      // Import build functions
-      const { createClipBuild } = await import('@/services/database/clip-build');
-      const { invoke } = await import('@tauri-apps/api/core');
-      
-      const clipId = publishClipData.value.clipId;
+      const { createClipBuild, getClipBuilds, updateClipBuildStatus } = await import('@/services/database/clip-build');
+      const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
+      const { resolveWatermarkById } = await import('@/services/database/watermarks');
 
-      // Create a single build record with all aspect ratios
+      // Update database status to building
+      await updateClipBuildStatus(clipId, 'building', { progress: 0 });
+
+      // Calculate build number
+      let buildNumber = 1;
+      try {
+        const existingBuilds = await getClipBuilds(clipId);
+        buildNumber = existingBuilds.length + 1;
+      } catch { buildNumber = 1; }
+
+      // Create build record
       const buildId = await createClipBuild(clipId, {
         aspectRatios: settings.aspectRatios,
         quality: settings.quality,
@@ -955,71 +1026,201 @@
         outputFormat: settings.format,
       });
 
-      // Start the build process via Tauri
-      await invoke('build_clip', {
-        clipId,
-        settings: {
-          aspectRatios: settings.aspectRatios,
-          quality: settings.quality,
-          frameRate: settings.frameRate,
-          format: settings.format,
-          watermark: settings.watermark,
-          framingMode: settings.framingMode,
-          manualFramingConfigs: settings.manualFramingConfigs,
-          intro: settings.intro,
-          outro: settings.outro,
-          campaignId: settings.campaignId,
-        },
+      // Video path: livestream clips have file_path set to the extracted clip
+      const videoPath = clip.file_path || publishClipData.value.clipPath;
+
+      // Load segments from DB or create synthetic
+      let segments: { id: string; start_time: number; end_time: number; duration: number; transcript: string | null }[] = [];
+      if (clip.current_version_id) {
+        try {
+          const dbSegments = await getClipSegmentsByVersionId(clip.current_version_id);
+          if (dbSegments.length > 0) {
+            segments = dbSegments.map((s: any) => ({
+              id: s.id,
+              start_time: s.start_time,
+              end_time: s.end_time,
+              duration: s.duration,
+              transcript: s.transcript,
+            }));
+          }
+        } catch (err) {
+          console.warn('[WatchDialog] Could not load segments from DB:', err);
+        }
+      }
+
+      // Create synthetic segment if none found
+      if (segments.length === 0) {
+        const startTime = clip.start_time ?? 0;
+        const endTime = clip.end_time ?? clip.duration ?? 0;
+        if (endTime > startTime) {
+          segments = [{
+            id: `synthetic-${clipId}`,
+            start_time: startTime,
+            end_time: endTime,
+            duration: endTime - startTime,
+            transcript: null,
+          }];
+        }
+      }
+
+      // Resolve watermark settings
+      let watermarkSettings = null;
+      if (settings.watermark?.enabled && settings.watermark?.watermarkId) {
+        const defaultWatermark = await resolveWatermarkById(settings.watermark.watermarkId);
+        if (defaultWatermark) {
+          const buildPerRatioSettings: Record<string, any> = {};
+          const allRatios = ['16:9', '9:16', '1:1', '4:5'];
+          for (const ratio of allRatios) {
+            const perRatioConfig = settings.watermark.perRatioSettings?.[ratio];
+            if (perRatioConfig === null) {
+              buildPerRatioSettings[ratio] = null;
+            } else if (perRatioConfig) {
+              let filePath = defaultWatermark.filePath;
+              let width = defaultWatermark.width;
+              let height = defaultWatermark.height;
+              if (perRatioConfig.watermarkId && perRatioConfig.watermarkId !== settings.watermark.watermarkId) {
+                const ratioWm = await resolveWatermarkById(perRatioConfig.watermarkId);
+                if (ratioWm) { filePath = ratioWm.filePath; width = ratioWm.width; height = ratioWm.height; }
+              }
+              buildPerRatioSettings[ratio] = {
+                watermarkId: perRatioConfig.watermarkId || settings.watermark.watermarkId,
+                filePath, width, height,
+                position: perRatioConfig.position || {
+                  x: settings.watermark.positionX, y: settings.watermark.positionY,
+                  opacity: settings.watermark.opacity, scale: settings.watermark.scale,
+                },
+              };
+            } else {
+              buildPerRatioSettings[ratio] = {
+                watermarkId: settings.watermark.watermarkId,
+                filePath: defaultWatermark.filePath, width: defaultWatermark.width, height: defaultWatermark.height,
+                position: {
+                  x: settings.watermark.positionX, y: settings.watermark.positionY,
+                  opacity: settings.watermark.opacity, scale: settings.watermark.scale,
+                },
+              };
+            }
+          }
+          watermarkSettings = {
+            enabled: true,
+            watermarkId: settings.watermark.watermarkId,
+            filePath: defaultWatermark.filePath,
+            width: defaultWatermark.width,
+            height: defaultWatermark.height,
+            positionX: settings.watermark.positionX,
+            positionY: settings.watermark.positionY,
+            opacity: settings.watermark.opacity,
+            scale: settings.watermark.scale,
+            perRatioSettings: buildPerRatioSettings,
+          };
+        }
+      }
+
+      // Resolve intro/outro paths
+      let introPath: string | null = null;
+      let introDuration: number | null = null;
+      let outroPath: string | null = null;
+      let outroDuration: number | null = null;
+      if (settings.intro) {
+        introPath = settings.intro.file_path || null;
+        introDuration = settings.intro.duration || null;
+      }
+      if (settings.outro) {
+        outroPath = settings.outro.file_path || null;
+        outroDuration = settings.outro.duration || null;
+      }
+
+      // Listen for build completion event from Tauri
+      if (buildCompleteUnlisten) { buildCompleteUnlisten(); }
+      buildCompleteUnlisten = await listen<{
+        clip_id: string;
+        success: boolean;
+        output_path: string | null;
+        thumbnail_path: string | null;
+        duration: number | null;
+        error: string | null;
+      }>('clip-build-complete', (event) => {
+        const payload = event.payload;
+        if (payload.clip_id !== clipId) return;
+        if (buildCompleteUnlisten) { buildCompleteUnlisten(); buildCompleteUnlisten = null; }
+        if (payload.success && payload.output_path) {
+          handleBuildComplete(payload.output_path, payload.thumbnail_path, payload.duration);
+        } else {
+          showError('Build Failed', payload.error || 'Clip build failed');
+          showBuildDialog.value = false;
+        }
       });
 
-      // Simulate build completion for now (in production, this would come from Tauri events)
-      // TODO: Listen to actual build completion events from Tauri
-      setTimeout(() => {
-        handleBuildComplete([buildId]);
-      }, 2000);
+      // Start the build via the correct Tauri command
+      await invoke('build_clip_from_segments', {
+        projectId,
+        clipId,
+        clipName: clip.current_version_name || clip.name || 'Livestream Clip',
+        videoPath,
+        segments,
+        subtitleSettings: null,
+        subtitleOverrides: null,
+        transcriptWords: [],
+        transcriptSegments: [],
+        maxWords: 3,
+        aspectRatios: settings.aspectRatios,
+        quality: settings.quality,
+        frameRate: settings.frameRate,
+        outputFormat: settings.format,
+        runNumber: clip.run_number || null,
+        buildNumber,
+        buildId,
+        introPath,
+        introDuration,
+        outroPath,
+        outroDuration,
+        introOutroPerRatio: null,
+        watermarkSettings,
+        audioSettings: null,
+        framingStrategy: null,
+        manualFramingConfigs: settings.manualFramingConfigs || null,
+        segmentFramingConfigs: null,
+        videoFilterSegments: null,
+        textOverlays: null,
+        stickers: null,
+        clipWatermarks: null,
+        clipEffects: null,
+        audioEffects: null,
+        layoutOverlays: null,
+      });
 
     } catch (err) {
       console.error('[WatchDialog] Failed to start build:', err);
       showError('Build Failed', 'Failed to start the build process');
       showBuildDialog.value = false;
+      if (buildCompleteUnlisten) { buildCompleteUnlisten(); buildCompleteUnlisten = null; }
     }
   }
 
-  function handleBuildComplete(buildIds: string[]) {
-    // Build completed, store build IDs
-    builtClipIds.value = buildIds;
+  function handleBuildComplete(outputPath: string, thumbnailPath: string | null, duration: number | null) {
     showBuildDialog.value = false;
 
-    // If multiple aspect ratios were built, show selector
-    // Otherwise, proceed directly to publish
-    if (buildIds.length > 1) {
-      // Get aspect ratios from the builds
-      // For now, use common ratios as placeholder
-      builtAspectRatios.value = ['16:9', '9:16', '1:1'];
-      showAspectRatioSelector.value = true;
-    } else if (buildIds.length === 1) {
-      selectedClipIdForPublish.value = buildIds[0];
-      showPlatformSelectDialog.value = true;
-    }
+    // Get clip info for the schedule dialog
+    const clip = currentClipForPublish.value;
+    const clipName = clip?.name || clip?.current_version_name || 'Livestream Clip';
+
+    // Open the schedule/publish dialog with the built clip
+    scheduleDialogData.value = {
+      clipId: publishClipData.value?.clipId || '',
+      clipName,
+      mediaUrl: outputPath,
+      thumbnailUrl: thumbnailPath || undefined,
+      duration: duration || undefined,
+    };
+    showScheduleDialog.value = true;
   }
 
-  function handleAspectRatioSelected(ratio: string) {
-    // User selected an aspect ratio to publish
-    // Find the corresponding build ID (for now, use first one as placeholder)
-    if (builtClipIds.value.length > 0) {
-      selectedClipIdForPublish.value = builtClipIds.value[0];
-      showAspectRatioSelector.value = false;
-      showPlatformSelectDialog.value = true;
-    }
-  }
-
-  function handlePlatformSelected(platformId: string) {
-    // User selected a platform to publish to
-    // This will open the platform-specific publish dialog
-    console.log('[WatchDialog] Platform selected:', platformId);
-    showPlatformSelectDialog.value = false;
-    // TODO: Open platform-specific publish dialog (PublishDestinationDialog, then platform dialog)
-    showSuccess('Ready to Publish', `Selected ${platformId} - Platform-specific dialogs coming soon`);
+  function handleScheduleComplete() {
+    showScheduleDialog.value = false;
+    scheduleDialogData.value = null;
+    publishClipData.value = null;
+    currentClipForPublish.value = null;
+    showSuccess('Scheduled', 'Your clip has been scheduled for publishing!');
   }
 
   async function handleClose() {
@@ -1039,6 +1240,12 @@
 
     // Cleanup global shortcut
     await unregisterGlobalShortcut();
+
+    // Cleanup build listener if active
+    if (buildCompleteUnlisten) {
+      buildCompleteUnlisten();
+      buildCompleteUnlisten = null;
+    }
 
     // Stop playback locally to avoid lingering audio when switching streams
     viewer.pause();

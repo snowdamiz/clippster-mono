@@ -171,18 +171,24 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   end
 
   defp process_single_post(%PostSubmission{} = post) do
-    # Try to lock the post
-    case Social.lock_post_for_publishing(post) do
-      {:ok, locked_post} ->
-        publish_post(locked_post)
+    # Skip posts whose media hasn't been uploaded to R2 yet (still a local file path)
+    if post.media_url && String.starts_with?(post.media_url, "http") do
+      # Try to lock the post
+      case Social.lock_post_for_publishing(post) do
+        {:ok, locked_post} ->
+          publish_post(locked_post)
 
-      {:error, :already_locked} ->
-        Logger.debug("[ScheduledPostWorker] Post #{post.id} already locked, skipping")
-        :skipped
+        {:error, :already_locked} ->
+          Logger.debug("[ScheduledPostWorker] Post #{post.id} already locked, skipping")
+          :skipped
 
-      {:error, reason} ->
-        Logger.warning("[ScheduledPostWorker] Failed to lock post #{post.id}: #{inspect(reason)}")
-        :failed
+        {:error, reason} ->
+          Logger.warning("[ScheduledPostWorker] Failed to lock post #{post.id}: #{inspect(reason)}")
+          :failed
+      end
+    else
+      Logger.debug("[ScheduledPostWorker] Post #{post.id} media not yet uploaded (#{post.media_url}), skipping until upload completes")
+      :skipped
     end
   end
 

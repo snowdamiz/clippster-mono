@@ -53,15 +53,23 @@ defmodule ClippsterServerWeb.SchedulingController do
       owner_type = determine_owner_type(params)
 
       # Validate org membership and settings if org post
+      immediate = params["immediate"] == true
+
       with :ok <- validate_scheduling_request(params, user, owner_type),
            attrs <- build_scheduling_attrs(params, owner_type),
-           {:ok, post} <- Social.schedule_post(attrs, user) do
+           # For immediate publish: override scheduled_at to now and use create_immediate_post
+           # (bypasses the 5-min minimum validation in schedule_changeset)
+           attrs <- if(immediate, do: Map.put(attrs, :scheduled_at, DateTime.utc_now()), else: attrs),
+           {:ok, post} <- if(immediate,
+             do: Social.create_immediate_post(attrs, user),
+             else: Social.schedule_post(attrs, user)
+           ) do
         conn
         |> put_status(201)
         |> json(%{
           success: true,
           post: serialize_post(post),
-          message: "Post scheduled successfully"
+          message: if(immediate, do: "Post queued for immediate publishing", else: "Post scheduled successfully")
         })
       else
         {:error, :unauthorized} ->

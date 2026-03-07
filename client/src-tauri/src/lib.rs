@@ -1259,6 +1259,8 @@ commands::file_utils::generate_video_thumbnail,
     hls::cleanup_hls_recordings,
     hls::get_recording_output_dir,
     hls::get_hls_segments,
+    hls::create_vod_playlist,
+    hls::delete_vod_playlist,
 
 // Video Editor Export commands
 video_editor_export::export_video_editor_project_simple,

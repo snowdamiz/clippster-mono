@@ -18,10 +18,11 @@
                 <X :size="18" />
               </button>
               <div class="schedule-dialog__icon">
-                <Calendar :size="24" />
+                <Calendar v-if="!immediateMode" :size="24" />
+                <Share2 v-else :size="24" />
               </div>
-              <h2 class="schedule-dialog__title">Schedule Clip</h2>
-              <p class="schedule-dialog__subtitle">Schedule this clip to your social media platforms</p>
+              <h2 class="schedule-dialog__title">{{ immediateMode ? 'Publish Clip' : 'Schedule Clip' }}</h2>
+              <p class="schedule-dialog__subtitle">{{ immediateMode ? 'Publish this clip to your social media platforms' : 'Schedule this clip to your social media platforms' }}</p>
             </div>
 
             <!-- Content -->
@@ -46,8 +47,8 @@
                   </div>
                 </div>
 
-                <!-- Selected Date -->
-                <div class="schedule-dialog__field">
+                <!-- Selected Date (hidden in immediate mode) -->
+                <div v-if="!immediateMode" class="schedule-dialog__field">
                   <label class="schedule-dialog__label">Scheduled Date</label>
                   <div class="schedule-dialog__date-display">
                     <CalendarDays :size="16" />
@@ -80,8 +81,8 @@
                   </p>
                 </div>
 
-                <!-- Time Mode Toggle -->
-                <div v-if="selectedPlatforms.length > 1" class="schedule-dialog__field">
+                <!-- Time Mode Toggle (hidden in immediate mode) -->
+                <div v-if="selectedPlatforms.length > 1 && !immediateMode" class="schedule-dialog__field">
                   <div class="schedule-dialog__toggle-row">
                     <label class="schedule-dialog__label">Same time for all platforms</label>
                     <button
@@ -95,8 +96,8 @@
                   </div>
                 </div>
 
-                <!-- Single Time Picker (Same time for all) -->
-                <div v-if="sameTimeForAll || selectedPlatforms.length === 1" class="schedule-dialog__field">
+                <!-- Single Time Picker (Same time for all, hidden in immediate mode) -->
+                <div v-if="(sameTimeForAll || selectedPlatforms.length === 1) && !immediateMode" class="schedule-dialog__field">
                   <label class="schedule-dialog__label">Time *</label>
                   <CustomTimePicker
                     v-model="globalTime"
@@ -107,8 +108,8 @@
                   </p>
                 </div>
 
-                <!-- Per-Platform Configuration -->
-                <div v-else class="schedule-dialog__field">
+                <!-- Per-Platform Configuration (hidden in immediate mode) -->
+                <div v-else-if="!immediateMode" class="schedule-dialog__field">
                   <label class="schedule-dialog__label">Platform Settings</label>
                   <div class="schedule-dialog__platform-configs">
                     <div
@@ -315,8 +316,11 @@
                 class="schedule-dialog__btn schedule-dialog__btn--primary"
               >
                 <Loader2 v-if="scheduling" :size="16" class="schedule-dialog__spinner" />
-                <Calendar v-else :size="16" />
-                {{ scheduling ? 'Scheduling...' : `Schedule ${selectedPlatforms.length > 0 ? `(${selectedPlatforms.length})` : ''}` }}
+                <template v-else>
+                  <Share2 v-if="immediateMode" :size="16" />
+                  <Calendar v-else :size="16" />
+                </template>
+                {{ scheduling ? (immediateMode ? 'Publishing...' : 'Scheduling...') : (immediateMode ? `Publish Now ${selectedPlatforms.length > 0 ? `(${selectedPlatforms.length})` : ''}` : `Schedule ${selectedPlatforms.length > 0 ? `(${selectedPlatforms.length})` : ''}`) }}
               </button>
             </div>
           </div>
@@ -328,7 +332,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
-import { X, Calendar, CalendarDays, FileVideo, Loader2, AlertCircle, CheckCircle2, Instagram, Youtube, ChevronDown } from 'lucide-vue-next';
+import { X, Calendar, CalendarDays, FileVideo, Loader2, AlertCircle, CheckCircle2, Instagram, Youtube, ChevronDown, Share2 } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
 import CustomTimePicker from '@/components/CustomTimePicker.vue';
@@ -349,6 +353,8 @@ interface Props {
   duration?: number;
   projectName?: string;
   selectedDate: Date;
+  // When true, skips date/time picker and publishes immediately (scheduled_at = now + 2 min)
+  immediateMode?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -383,6 +389,9 @@ const scheduling = ref(false);
 const error = ref<string | null>(null);
 const successCount = ref(0);
 const openDropdown = ref<string | null>(null);
+
+// Background R2 upload promise (started when dialog opens in immediate mode)
+let immediateUploadPromise: Promise<{ media_url: string; thumbnail_url?: string }> | null = null;
 
 const orgName = computed(() => 'Organization');
 const orgId = computed(() => authStore.user?.owned_organization_id);
@@ -483,13 +492,16 @@ const canSchedule = computed(() => {
   if (selectedPlatforms.value.length === 0) return false;
   if (scheduling.value) return false;
   
-  // Check time validity
-  if (sameTimeForAll.value || selectedPlatforms.value.length === 1) {
-    if (!globalTime.value || !isValidTime(globalTime.value)) return false;
-  } else {
-    for (const platformId of selectedPlatforms.value) {
-      const time = platformTimes.value[platformId];
-      if (!time || !isValidTime(time)) return false;
+  // In immediate mode, skip time validation
+  if (!props.immediateMode) {
+    // Check time validity
+    if (sameTimeForAll.value || selectedPlatforms.value.length === 1) {
+      if (!globalTime.value || !isValidTime(globalTime.value)) return false;
+    } else {
+      for (const platformId of selectedPlatforms.value) {
+        const time = platformTimes.value[platformId];
+        if (!time || !isValidTime(time)) return false;
+      }
     }
   }
   
@@ -553,17 +565,24 @@ async function handleSchedule() {
       const accountId = Number(accountIdStr);
       
       // Determine scheduled time
-      const time = sameTimeForAll.value || selectedPlatforms.value.length === 1
-        ? globalTime.value
-        : platformTimes.value[platformId];
+      let scheduledDateTime: Date;
+      if (props.immediateMode) {
+        // Immediate mode: schedule now — server skips 5-min check when immediate=true
+        // Media will be uploaded in background and updated via update-media endpoint
+        scheduledDateTime = new Date();
+      } else {
+        const time = sameTimeForAll.value || selectedPlatforms.value.length === 1
+          ? globalTime.value
+          : platformTimes.value[platformId];
+        
+        if (!time) continue;
+        
+        const [hours, minutes] = time.split(':').map(Number);
+        scheduledDateTime = new Date(props.selectedDate);
+        scheduledDateTime.setHours(hours, minutes, 0, 0);
+      }
       
-      if (!time) continue;
-      
-      const [hours, minutes] = time.split(':').map(Number);
-      const scheduledDateTime = new Date(props.selectedDate);
-      scheduledDateTime.setHours(hours, minutes, 0, 0);
-      
-      // Create schedule data with local path (will be uploaded in background)
+      // Create schedule data with local path (will be updated with R2 URL after upload)
       const scheduleData: any = {
         platform: platformId as 'instagram' | 'tiktok' | 'twitter' | 'youtube',
         media_url: props.mediaUrl,
@@ -573,6 +592,11 @@ async function handleSchedule() {
         media_type: 'video',
         clip_id: props.clipId,
       };
+
+      // Flag for server to skip 5-min validation
+      if (props.immediateMode) {
+        scheduleData.immediate = true;
+      }
       
       // Add account info
       if (accountType === 'org') {
@@ -609,23 +633,48 @@ async function handleSchedule() {
     successCount.value = successful;
     
     if (successful > 0) {
-      showToast(`Successfully scheduled ${successful} post${successful !== 1 ? 's' : ''}`, 'success');
+      const verb = props.immediateMode ? 'queued for publishing' : 'scheduled';
+      showToast(`Successfully ${verb} ${successful} post${successful !== 1 ? 's' : ''}`, 'success');
       
       emit('scheduled');
       
       console.log('[ScheduleClipDialog] Checking if should close - failed count:', failed);
       if (failed === 0) {
-        // All succeeded, close immediately
-        console.log('[ScheduleClipDialog] Calling handleClose()');
-        handleClose();
+        // All succeeded, close immediately (bypass handleClose guard since scheduling is still true)
+        console.log('[ScheduleClipDialog] All succeeded, closing dialog');
+        emit('close');
         
-        // Start background upload AFTER closing (don't block on this)
+        // Background upload: wait for R2 upload to complete, then update post media URLs
         if (scheduledPostIds.length > 0) {
-          console.log('[ScheduleClipDialog] Starting background upload for', scheduledPostIds.length, 'posts');
-          startBackgroundUpload(scheduledPostIds).catch(err => {
-            console.error('[ScheduleClipDialog] Background upload failed:', err);
-            showToast('Upload failed - posts may not publish', 'error');
-          });
+          if (props.immediateMode && immediateUploadPromise) {
+            // In immediate mode, await the upload that started when dialog opened
+            console.log('[ScheduleClipDialog] Waiting for background R2 upload to finish for', scheduledPostIds.length, 'posts');
+            immediateUploadPromise.then(async (result) => {
+              console.log('[ScheduleClipDialog] Background upload complete, updating posts with R2 URL:', result.media_url);
+              const updateResult = await updateScheduledPostMedia(
+                scheduledPostIds,
+                result.media_url,
+                result.thumbnail_url
+              );
+              if (updateResult.success) {
+                console.log(`[ScheduleClipDialog] Updated ${updateResult.updated} post(s) with R2 URL`);
+                showToast('Upload complete - publishing now!', 'success');
+              } else {
+                console.error('[ScheduleClipDialog] Failed to update posts:', updateResult.error);
+                showToast('Upload done but failed to update posts', 'error');
+              }
+            }).catch(err => {
+              console.error('[ScheduleClipDialog] Background R2 upload failed:', err);
+              showToast('Upload failed - post may not publish', 'error');
+            });
+          } else {
+            // Normal scheduled mode: start background upload now
+            console.log('[ScheduleClipDialog] Starting background upload for', scheduledPostIds.length, 'posts');
+            startBackgroundUpload(scheduledPostIds).catch(err => {
+              console.error('[ScheduleClipDialog] Background upload failed:', err);
+              showToast('Upload failed - posts may not publish', 'error');
+            });
+          }
         }
       } else {
         console.log('[ScheduleClipDialog] NOT closing - some posts failed');
@@ -761,6 +810,47 @@ watch(selectedPlatforms, (newPlatforms) => {
   }
 });
 
+// Start R2 upload in background for immediate mode
+function startImmediateUpload() {
+  console.log('[ScheduleClipDialog] Starting background R2 upload for immediate publish...');
+  immediateUploadPromise = (async () => {
+    const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath: props.mediaUrl });
+    const fileName = props.mediaUrl.split(/[/\\]/).pop() || 'video.mp4';
+    const videoFile = dataUrlToFile(videoDataUrl, fileName);
+
+    let thumbnailFile: File | undefined;
+    if (props.thumbnailUrl) {
+      try {
+        const thumbPath = props.thumbnailUrl.startsWith('file://') 
+          ? props.thumbnailUrl.replace('file://', '') 
+          : props.thumbnailUrl;
+        if (thumbPath.startsWith('data:')) {
+          thumbnailFile = dataUrlToFile(thumbPath, 'thumbnail.jpg');
+        } else if (!thumbPath.startsWith('http')) {
+          const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
+          thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
+        }
+      } catch (thumbErr) {
+        console.warn('[ScheduleClipDialog] Could not read thumbnail:', thumbErr);
+      }
+    }
+
+    let uploadResult;
+    if (orgId.value) {
+      uploadResult = await uploadMediaForPost(orgId.value, videoFile, thumbnailFile);
+    } else {
+      uploadResult = await uploadUserMediaForPost(videoFile, thumbnailFile);
+    }
+
+    if (!uploadResult.success || !uploadResult.media_url) {
+      throw new Error(uploadResult.error || 'Upload failed');
+    }
+
+    console.log('[ScheduleClipDialog] Background R2 upload complete:', uploadResult.media_url);
+    return { media_url: uploadResult.media_url, thumbnail_url: uploadResult.thumbnail_url };
+  })();
+}
+
 // Reset state when dialog opens
 watch(() => props.open, (isOpen) => {
   console.log('[ScheduleClipDialog] Watch triggered, isOpen:', isOpen);
@@ -772,8 +862,14 @@ watch(() => props.open, (isOpen) => {
     caption.value = '';
     error.value = null;
     successCount.value = 0;
+    immediateUploadPromise = null;
     initializeDefaultTime();
     loadAccounts();
+
+    // In immediate mode, start R2 upload right away while user fills in the form
+    if (props.immediateMode) {
+      startImmediateUpload();
+    }
   }
 }, { immediate: true });
 

@@ -966,6 +966,8 @@
     creatorProfileServerId?: number | null;
     // Publish mode - when true, shows "Build & Publish" and emits build-complete event
     publishMode?: boolean;
+    // Single ratio mode - when true, only one aspect ratio can be selected at a time
+    singleRatioMode?: boolean;
   }>();
 
   const emit = defineEmits<{
@@ -1647,6 +1649,11 @@
 
   // Methods
   function toggleRatio(ratio: string) {
+    if (props.singleRatioMode) {
+      // In single ratio mode, replace the selection instead of toggling
+      selectedRatios.value = [ratio];
+      return;
+    }
     const index = selectedRatios.value.indexOf(ratio);
     if (index > -1) {
       selectedRatios.value.splice(index, 1);

@@ -1,243 +1,191 @@
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div
-        v-if="!hidden"
-        class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[100]"
-        @click.self="() => handleClose(true)"
-      >
+      <div v-if="!hidden" class="clip-selector__overlay" @click.self="() => handleClose(true)">
         <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-2xl w-full mx-4 border border-white/10 overflow-hidden"
-          >
-            <!-- Decorative top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
+          <div v-if="!hidden" class="clip-selector" role="dialog" aria-modal="true">
+            <!-- Accent bar -->
+            <div class="clip-selector__accent"></div>
 
-            <div class="p-6">
-              <!-- Header -->
-              <div class="flex items-center justify-between mb-6">
-                <h3 class="text-lg font-semibold text-white">Create Clip</h3>
-                <button
-                  @click="handleClose(true)"
-                  class="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                  :title="isCreating ? 'Cancel and close' : 'Close'"
-                >
-                  <X class="w-5 h-5" />
-                </button>
+            <!-- Header -->
+            <div class="clip-selector__header">
+              <button class="clip-selector__close" @click="handleClose(true)" :disabled="isCreating" title="Close">
+                <X :size="18" />
+              </button>
+              <div class="clip-selector__icon">
+                <Scissors :size="24" />
               </div>
+              <h2 class="clip-selector__title">Create Clip</h2>
+              <p class="clip-selector__subtitle">Select a range from the last {{ formatTime(maxDuration) }}</p>
+            </div>
 
+            <!-- Content -->
+            <div class="clip-selector__content">
               <!-- Progress State -->
-              <div v-if="isCreating" class="text-center py-8">
-                <div class="relative w-16 h-16 mx-auto mb-4">
-                  <svg class="w-full h-full -rotate-90">
-                    <circle cx="32" cy="32" r="28" stroke-width="6" stroke="rgb(39 39 42)" fill="none" />
+              <div v-if="isCreating" class="clip-selector__state-panel">
+                <div class="clip-selector__progress-ring">
+                  <svg class="clip-selector__progress-svg">
+                    <circle cx="32" cy="32" r="28" stroke-width="6" stroke="var(--sidebar-hover)" fill="none" />
                     <circle
-                      cx="32"
-                      cy="32"
-                      r="28"
-                      stroke-width="6"
-                      stroke="url(#progressGradient)"
-                      fill="none"
+                      cx="32" cy="32" r="28" stroke-width="6"
+                      stroke="var(--sidebar-accent)" fill="none"
                       :stroke-dasharray="176"
                       :stroke-dashoffset="176 - (176 * progress) / 100"
                       stroke-linecap="round"
-                      class="transition-all duration-300"
+                      class="clip-selector__progress-circle"
                     />
-                    <defs>
-                      <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stop-color="#8b5cf6" />
-                        <stop offset="100%" stop-color="#a855f7" />
-                      </linearGradient>
-                    </defs>
                   </svg>
-                  <div class="absolute inset-0 flex items-center justify-center">
-                    <span class="text-white font-semibold">{{ Math.round(progress) }}%</span>
-                  </div>
+                  <div class="clip-selector__progress-text">{{ Math.round(progress) }}%</div>
                 </div>
-                <p class="text-white font-medium">Creating clip...</p>
-                <p class="text-sm text-zinc-400 mt-1">{{ progressMessage }}</p>
+                <p class="clip-selector__state-title">Creating clip...</p>
+                <p class="clip-selector__state-subtitle">{{ progressMessage }}</p>
               </div>
 
               <!-- Success State -->
-              <div v-else-if="clipCreated" class="text-center py-8">
-                <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-green-500/20 flex items-center justify-center">
-                  <Check class="w-8 h-8 text-green-400" />
+              <div v-else-if="clipCreated" class="clip-selector__state-panel">
+                <div class="clip-selector__success-icon">
+                  <Check :size="32" />
                 </div>
-                <p class="text-white font-medium">Clip created successfully!</p>
-                <p class="text-sm text-zinc-400 mt-1">{{ clipName }}</p>
-                <div class="flex justify-center gap-3 mt-6">
-                  <button
-                    @click="handleViewClip"
-                    class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    <ExternalLink class="w-4 h-4" />
-                    View Clip
-                  </button>
-                  <button
-                    @click="handlePublishNow"
-                    class="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white font-medium rounded-lg transition-colors flex items-center gap-2"
-                  >
-                    <Share2 class="w-4 h-4" />
-                    Publish Now
-                  </button>
-                  <button
-                    @click="() => handleClose()"
-                    class="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white font-medium rounded-lg transition-colors"
-                  >
-                    Done
-                  </button>
-                </div>
+                <p class="clip-selector__state-title">Clip created successfully!</p>
+                <p class="clip-selector__state-subtitle">{{ clipName }}</p>
               </div>
 
               <!-- Error State -->
-              <div v-else-if="error" class="text-center py-8">
-                <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center">
-                  <AlertCircle class="w-8 h-8 text-red-400" />
+              <div v-else-if="error" class="clip-selector__state-panel">
+                <div class="clip-selector__error-icon">
+                  <AlertCircle :size="32" />
                 </div>
-                <p class="text-white font-medium">Failed to create clip</p>
-                <p class="text-sm text-red-400 mt-1">{{ error }}</p>
-                <button
-                  @click="resetState"
-                  class="mt-6 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white font-medium rounded-lg transition-colors"
-                >
+                <p class="clip-selector__state-title">Failed to create clip</p>
+                <p class="clip-selector__state-subtitle clip-selector__state-subtitle--error">{{ error }}</p>
+                <button @click="resetState" class="clip-selector__btn clip-selector__btn--secondary" style="margin-top: 1rem;">
                   Try Again
                 </button>
               </div>
 
               <!-- Selection State -->
-              <div v-else>
+              <template v-else>
                 <!-- Video Preview -->
-                <div class="mb-4 bg-zinc-800 rounded-lg aspect-video overflow-hidden relative">
+                <div class="clip-selector__preview" @click="togglePlayPause">
                   <video
-                    v-if="props.videoElement"
                     ref="previewVideoRef"
-                    class="w-full h-full object-contain"
-                    muted
+                    class="clip-selector__video"
+                    @timeupdate="onVideoTimeUpdate"
+                    @ended="onVideoEnded"
                   />
-                  <div v-else class="w-full h-full flex items-center justify-center">
-                    <div class="text-zinc-500 text-sm">Video Preview</div>
+                  <!-- Play/Pause overlay -->
+                  <div class="clip-selector__play-overlay" :class="{ 'clip-selector__play-overlay--playing': isPreviewPlaying }">
+                    <div class="clip-selector__play-btn">
+                      <Play v-if="!isPreviewPlaying" :size="24" style="margin-left: 2px;" />
+                      <Pause v-else :size="24" />
+                    </div>
+                  </div>
+                  <!-- Loading indicator -->
+                  <div v-if="isLoadingPreview" class="clip-selector__loading">
+                    <svg class="clip-selector__spinner" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Loading preview...
+                  </div>
+                  <!-- Time badge -->
+                  <div class="clip-selector__time-badge">
+                    {{ formatTime(currentPlaybackTime) }} / {{ formatTime(maxDuration) }}
                   </div>
                 </div>
 
                 <!-- Clip Name -->
-                <div class="mb-4">
+                <div class="clip-selector__field">
                   <input
                     v-model="clipName"
                     type="text"
                     :placeholder="defaultClipName"
                     maxlength="50"
-                    class="w-full px-4 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all"
+                    class="clip-selector__input"
                   />
-                  <div class="text-xs text-zinc-500 mt-1">{{ clipName.length }}/50</div>
+                  <div class="clip-selector__char-count">{{ clipName.length }}/50</div>
                 </div>
 
-                <!-- Interactive Timeline -->
-                <div class="mb-6">
-                  <div class="relative">
-                    <!-- Waveform-style bars (decorative) -->
-                    <div class="flex items-end justify-between h-16 gap-0.5 mb-2">
-                      <div
-                        v-for="i in 60"
-                        :key="i"
-                        class="flex-1 bg-zinc-700 rounded-sm transition-all"
-                        :style="{ height: `${20 + Math.random() * 80}%` }"
-                      />
-                    </div>
-
-                    <!-- Timeline Track -->
+                <!-- Timeline -->
+                <div class="clip-selector__field">
+                  <div
+                    ref="timelineRef"
+                    class="clip-selector__timeline"
+                    @mousedown="handleTimelineMouseDown"
+                    @mousemove="handleTimelineMouseMove"
+                    @mouseleave="isTimelineHovering = false"
+                    @mouseenter="isTimelineHovering = true"
+                  >
+                    <!-- Selected Range -->
                     <div
-                      ref="timelineRef"
-                      class="relative h-8 bg-zinc-800 rounded-lg cursor-pointer"
-                      @mousedown="handleTimelineMouseDown"
-                      @mousemove="handleTimelineMouseMove"
-                      @mouseleave="isTimelineHovering = false"
-                      @mouseenter="isTimelineHovering = true"
-                    >
-                      <!-- Selected Range -->
-                      <div
-                        class="absolute top-0 h-full bg-violet-500/30 border-l-2 border-r-2 border-violet-500"
-                        :style="{
-                          left: `${startPercentage}%`,
-                          width: `${endPercentage - startPercentage}%`,
-                        }"
-                      />
-
-                      <!-- Start Handle -->
-                      <div
-                        class="absolute top-0 h-full w-3 bg-violet-500 cursor-ew-resize flex items-center justify-center"
-                        :style="{ left: `calc(${startPercentage}% - 6px)` }"
-                        @mousedown.stop="handleStartHandleMouseDown"
-                      >
-                        <div class="w-0.5 h-4 bg-white rounded-full" />
-                      </div>
-
-                      <!-- End Handle -->
-                      <div
-                        class="absolute top-0 h-full w-3 bg-violet-500 cursor-ew-resize flex items-center justify-center"
-                        :style="{ left: `calc(${endPercentage}% - 6px)` }"
-                        @mousedown.stop="handleEndHandleMouseDown"
-                      >
-                        <div class="w-0.5 h-4 bg-white rounded-full" />
-                      </div>
-
-                      <!-- Hover indicator -->
-                      <div
-                        v-if="isTimelineHovering && !isDragging"
-                        class="absolute top-0 h-full w-0.5 bg-white/50 pointer-events-none"
-                        :style="{ left: `${hoverPercentage}%` }"
-                      />
-                    </div>
-
-                    <!-- Time Labels -->
-                    <div class="flex justify-between items-center mt-2 text-xs text-zinc-400">
-                      <div>{{ formatTime(startTime) }}</div>
-                      <div class="text-white font-medium">{{ formatTime(endTime - startTime) }}</div>
-                      <div>{{ formatTime(endTime) }}</div>
-                    </div>
-                    <div class="text-center text-xs text-zinc-500 mt-1">
-                      0:00 - {{ formatTime(maxDuration) }}
-                    </div>
+                      class="clip-selector__range"
+                      :style="{ left: `${startPercentage}%`, width: `${endPercentage - startPercentage}%` }"
+                    />
+                    <!-- Start Handle -->
+                    <div
+                      class="clip-selector__handle"
+                      :style="{ left: `calc(${startPercentage}% - 6px)` }"
+                      @mousedown.stop="handleStartHandleMouseDown"
+                    ><div class="clip-selector__handle-grip" /></div>
+                    <!-- End Handle -->
+                    <div
+                      class="clip-selector__handle"
+                      :style="{ left: `calc(${endPercentage}% - 6px)` }"
+                      @mousedown.stop="handleEndHandleMouseDown"
+                    ><div class="clip-selector__handle-grip" /></div>
+                    <!-- Playhead -->
+                    <div class="clip-selector__playhead" :style="{ left: `${playheadPercentage}%` }" />
+                    <!-- Hover indicator -->
+                    <div
+                      v-if="isTimelineHovering && !isDragging"
+                      class="clip-selector__hover-line"
+                      :style="{ left: `${hoverPercentage}%` }"
+                    />
                   </div>
+                  <!-- Time Labels -->
+                  <div class="clip-selector__time-labels">
+                    <span>{{ formatTime(startTime) }}</span>
+                    <span class="clip-selector__duration-label">{{ formatTime(endTime - startTime) }}</span>
+                    <span>{{ formatTime(endTime) }}</span>
+                  </div>
+                  <div class="clip-selector__range-info">0:00 - {{ formatTime(maxDuration) }}</div>
                 </div>
 
-                <!-- Quick Presets -->
-                <div class="mb-6">
-                  <div class="flex gap-2">
-                    <button
-                      v-for="preset in [30, 60, 90]"
-                      :key="preset"
-                      @click="applyPreset(preset)"
-                      :disabled="preset > maxDuration"
-                      class="flex-1 py-2 rounded-lg text-sm font-medium transition-all"
-                      :class="
-                        preset > maxDuration
-                          ? 'bg-zinc-800/50 text-zinc-600 cursor-not-allowed'
-                          : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white'
-                      "
-                    >
-                      {{ preset }}s
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Actions -->
-                <div class="flex gap-3">
+                <!-- Presets -->
+                <div class="clip-selector__presets">
                   <button
-                    @click="() => handleClose()"
-                    class="flex-1 px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium rounded-lg transition-colors"
+                    v-for="preset in [30, 60, 90]"
+                    :key="preset"
+                    @click="applyPreset(preset)"
+                    :disabled="preset > maxDuration"
+                    class="clip-selector__preset-btn"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    @click="handleCreateClip"
-                    :disabled="!isValidSelection"
-                    class="flex-1 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-medium rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    <Scissors class="w-4 h-4" />
-                    Publish
+                    {{ preset }}s
                   </button>
                 </div>
-              </div>
+              </template>
+            </div>
+
+            <!-- Footer -->
+            <div class="clip-selector__footer">
+              <template v-if="clipCreated">
+                <button @click="() => handleClose()" class="clip-selector__btn clip-selector__btn--secondary">
+                  Not Now
+                </button>
+                <button @click="handlePublishNow" class="clip-selector__btn clip-selector__btn--primary">
+                  <Share2 :size="16" />
+                  Publish Now
+                </button>
+              </template>
+              <template v-else-if="!isCreating && !error">
+                <button @click="() => handleClose()" class="clip-selector__btn clip-selector__btn--secondary">
+                  Cancel
+                </button>
+                <button
+                  @click="handleCreateClip"
+                  :disabled="!isValidSelection"
+                  class="clip-selector__btn clip-selector__btn--primary"
+                >
+                  <Scissors :size="16" />
+                  Clip
+                </button>
+              </template>
             </div>
           </div>
         </Transition>
@@ -251,13 +199,14 @@
   import { invoke } from '@tauri-apps/api/core';
   import { formatTime as formatTimeUtil } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-  import { Scissors, X, Check, AlertCircle, ExternalLink, Share2 } from 'lucide-vue-next';
-  import { useRouter } from 'vue-router';
+  import { Scissors, X, Check, AlertCircle, Share2, Play, Pause } from 'lucide-vue-next';
   import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
   import { createClipVersion } from '@/services/database/clip-versions';
   import { updateClip } from '@/services/database/clips';
   import { getOrCreateManualSession } from '@/services/database/clip-detection-sessions';
   import { useLivestreamStore } from '@/stores/livestream';
+  import Hls from 'hls.js';
+  import { TauriHlsLoader, getTauriHlsUrl } from '@/composables/useTauriHlsLoader';
 
   interface SegmentInfo {
     segmentNumber: number;
@@ -281,7 +230,7 @@
     isTempRecording?: boolean;
     streamerId?: string;
     platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual';
-    videoElement?: HTMLVideoElement | null;
+    hlsOutputDir?: string | null;
   }
 
   interface Emits {
@@ -293,7 +242,6 @@
   const props = defineProps<Props>();
   const emit = defineEmits<Emits>();
 
-  const router = useRouter();
   const livestreamStore = useLivestreamStore();
 
   // State
@@ -315,6 +263,13 @@
   const isDragging = ref(false);
   const dragTarget = ref<'start' | 'end' | null>(null);
   const hoverPercentage = ref(0);
+
+  // VOD preview playback state
+  const isPreviewPlaying = ref(false);
+  const isLoadingPreview = ref(true);
+  const currentPlaybackTime = ref(0);
+  const vodPlaylistPath = ref<string | null>(null);
+  let hlsInstance: Hls | null = null;
 
   // Clip selection (in seconds from start of the 3-minute window)
   // These will be initialized in onMounted to default to the last 30 seconds
@@ -340,6 +295,11 @@
     return (endTime.value / maxDuration.value) * 100;
   });
 
+  const playheadPercentage = computed(() => {
+    if (maxDuration.value <= 0) return 0;
+    return (currentPlaybackTime.value / maxDuration.value) * 100;
+  });
+
   const isValidSelection = computed(() => {
     return endTime.value > startTime.value && endTime.value <= maxDuration.value;
   });
@@ -358,11 +318,12 @@
     { immediate: true }
   );
 
-  // Sync preview video with HLS video element
-  onMounted(() => {
+  // Initialize VOD preview playback
+  onMounted(async () => {
     // Safety check: ensure availableDuration is a valid number
     if (!props.availableDuration || !isFinite(props.availableDuration) || props.availableDuration <= 0) {
       console.warn('[ClipSelector] Invalid availableDuration:', props.availableDuration);
+      isLoadingPreview.value = false;
       return;
     }
 
@@ -376,47 +337,128 @@
       endTime.value = Math.max(0, availableDur);
     }
 
-    if (props.videoElement && previewVideoRef.value && props.videoElement.src) {
-      // Copy the video source to the preview
-      previewVideoRef.value.src = props.videoElement.src;
-      
-      // Calculate the offset from the beginning of the DVR buffer
-      // availableDuration is total DVR buffer, we want to show the last 3 minutes
-      const bufferOffset = Math.max(0, props.availableDuration - maxDuration.value);
-      
-      // Seek to the selected position within the 3-minute window
-      const seekToPosition = () => {
-        if (previewVideoRef.value && props.videoElement && isFinite(props.playbackPosition)) {
-          // Calculate absolute position in the DVR buffer
-          const absolutePosition = bufferOffset + startTime.value;
-          // Seek the preview video to that position
-          const seekTime = props.videoElement.currentTime - props.playbackPosition + absolutePosition;
-          
-          // Safety check: ensure seekTime is finite before setting
-          if (isFinite(seekTime) && seekTime >= 0) {
-            previewVideoRef.value.currentTime = seekTime;
-          }
-        }
-      };
-      
-      seekToPosition();
-    }
+    // Create VOD playlist and initialize HLS playback
+    await initializeVodPlayback();
   });
 
-  // Update preview video when start time changes
-  watch(startTime, () => {
-    if (previewVideoRef.value && props.videoElement && isFinite(props.availableDuration) && isFinite(props.playbackPosition)) {
-      // Calculate offset for the 3-minute window
-      const bufferOffset = Math.max(0, props.availableDuration - maxDuration.value);
-      const absolutePosition = bufferOffset + startTime.value;
-      const seekTime = props.videoElement.currentTime - props.playbackPosition + absolutePosition;
-      
-      // Safety check: ensure seekTime is finite before setting
-      if (isFinite(seekTime) && seekTime >= 0) {
-        previewVideoRef.value.currentTime = seekTime;
-      }
+  async function initializeVodPlayback() {
+    if (!props.hlsOutputDir || !props.segments || props.segments.length === 0) {
+      console.warn('[ClipSelector] No hlsOutputDir or segments for VOD playback');
+      isLoadingPreview.value = false;
+      return;
     }
-  });
+
+    try {
+      // Build segment list for VOD playlist (extract filenames from full paths)
+      const vodSegments = props.segments.map((seg) => {
+        const filename = seg.filePath.split(/[/\\]/).pop() || '';
+        return { filename, duration: seg.duration };
+      });
+
+      // Create static VOD playlist via Tauri
+      const playlistFilename = 'clip_preview.m3u8';
+      const playlistPath = await invoke<string>('create_vod_playlist', {
+        outputDir: props.hlsOutputDir,
+        segments: vodSegments,
+        filename: playlistFilename,
+      });
+      vodPlaylistPath.value = playlistPath;
+
+      console.log('[ClipSelector] VOD playlist created:', playlistPath, `(${vodSegments.length} segments)`);
+
+      // Initialize hls.js in VOD mode
+      if (!previewVideoRef.value) {
+        console.warn('[ClipSelector] No video element available');
+        isLoadingPreview.value = false;
+        return;
+      }
+
+      const hlsUrl = getTauriHlsUrl(props.hlsOutputDir, playlistFilename);
+
+      hlsInstance = new Hls({
+        loader: TauriHlsLoader,
+        liveDurationInfinity: false,
+        enableWorker: false,
+        maxBufferLength: 60,
+        backBufferLength: 300,
+      });
+
+      hlsInstance.loadSource(hlsUrl);
+      hlsInstance.attachMedia(previewVideoRef.value);
+
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('[ClipSelector] VOD manifest parsed, starting playback');
+        isLoadingPreview.value = false;
+
+        // Seek to the start of the selected range and auto-play
+        if (previewVideoRef.value) {
+          previewVideoRef.value.currentTime = startTime.value;
+          previewVideoRef.value.play().then(() => {
+            isPreviewPlaying.value = true;
+          }).catch((err) => {
+            console.warn('[ClipSelector] Auto-play failed:', err);
+            isPreviewPlaying.value = false;
+          });
+        }
+      });
+
+      hlsInstance.on(Hls.Events.ERROR, (_event, data) => {
+        console.error('[ClipSelector] HLS error:', data.type, data.details);
+        if (data.fatal) {
+          isLoadingPreview.value = false;
+        }
+      });
+    } catch (err) {
+      console.error('[ClipSelector] Failed to initialize VOD playback:', err);
+      isLoadingPreview.value = false;
+    }
+  }
+
+  // Video playback controls
+  function togglePlayPause() {
+    if (!previewVideoRef.value) return;
+
+    if (isPreviewPlaying.value) {
+      previewVideoRef.value.pause();
+      isPreviewPlaying.value = false;
+    } else {
+      // If playhead is outside selected range, seek to startTime first
+      const ct = previewVideoRef.value.currentTime;
+      if (ct < startTime.value || ct >= endTime.value) {
+        previewVideoRef.value.currentTime = startTime.value;
+      }
+      previewVideoRef.value.play().then(() => {
+        isPreviewPlaying.value = true;
+      }).catch(() => {
+        isPreviewPlaying.value = false;
+      });
+    }
+  }
+
+  function onVideoTimeUpdate() {
+    if (!previewVideoRef.value) return;
+    currentPlaybackTime.value = previewVideoRef.value.currentTime;
+
+    // Stop/loop at endTime boundary
+    if (isPreviewPlaying.value && previewVideoRef.value.currentTime >= endTime.value) {
+      previewVideoRef.value.currentTime = startTime.value;
+    }
+  }
+
+  function onVideoEnded() {
+    // If video element fires ended, loop back to startTime
+    if (previewVideoRef.value) {
+      previewVideoRef.value.currentTime = startTime.value;
+      isPreviewPlaying.value = false;
+    }
+  }
+
+  function seekPreviewTo(time: number) {
+    if (previewVideoRef.value && isFinite(time) && time >= 0) {
+      previewVideoRef.value.currentTime = Math.min(time, maxDuration.value);
+      currentPlaybackTime.value = previewVideoRef.value.currentTime;
+    }
+  }
 
   // Format time helper
   function formatTime(seconds: number): string {
@@ -446,11 +488,10 @@
   }
 
   function handleTimelineMouseDown(event: MouseEvent) {
-    // Click on timeline to scrub/preview
+    // Click on timeline to scrub/seek the preview video
     const percentage = getPercentageFromEvent(event);
     const time = getTimeFromPercentage(percentage);
-    // TODO: Emit seek event to video player when integrated
-    console.log('Scrub to:', time);
+    seekPreviewTo(time);
   }
 
   function handleStartHandleMouseDown(event: MouseEvent) {
@@ -483,20 +524,42 @@
   }
 
   function handleDocumentMouseUp() {
+    const wasDragging = dragTarget.value;
     isDragging.value = false;
     dragTarget.value = null;
     document.removeEventListener('mousemove', handleDocumentMouseMove);
     document.removeEventListener('mouseup', handleDocumentMouseUp);
+
+    // After releasing handle, seek and auto-play from new position
+    if (wasDragging === 'start') {
+      seekPreviewTo(startTime.value);
+      autoPlayFromRange();
+    } else if (wasDragging === 'end') {
+      if (currentPlaybackTime.value > endTime.value) {
+        seekPreviewTo(startTime.value);
+      }
+      autoPlayFromRange();
+    }
   }
 
-  // Apply preset duration
+  function autoPlayFromRange() {
+    if (!previewVideoRef.value) return;
+    previewVideoRef.value.play().then(() => {
+      isPreviewPlaying.value = true;
+    }).catch(() => {
+      isPreviewPlaying.value = false;
+    });
+  }
+
+  // Apply preset duration — selects the most recent N seconds of the window
   function applyPreset(duration: number) {
     if (duration > maxDuration.value) return;
-    
-    // Set end time to current playback position or max duration
-    const targetEnd = Math.min(props.playbackPosition, maxDuration.value);
-    endTime.value = targetEnd;
-    startTime.value = Math.max(0, targetEnd - duration);
+
+    endTime.value = maxDuration.value;
+    startTime.value = maxDuration.value - duration;
+
+    // Seek preview to start of selected range
+    seekPreviewTo(startTime.value);
   }
 
   // Progress event listener
@@ -516,9 +579,33 @@
     }
   }
 
+  // Cleanup HLS instance and VOD playlist
+  async function cleanupVodPlayback() {
+    if (hlsInstance) {
+      hlsInstance.destroy();
+      hlsInstance = null;
+    }
+
+    if (vodPlaylistPath.value) {
+      try {
+        await invoke('delete_vod_playlist', { playlistPath: vodPlaylistPath.value });
+        console.log('[ClipSelector] VOD playlist cleaned up');
+      } catch (err) {
+        console.warn('[ClipSelector] Failed to cleanup VOD playlist:', err);
+      }
+      vodPlaylistPath.value = null;
+    }
+  }
+
   // Create clip
   async function handleCreateClip() {
     if (isCreating.value || !isValidSelection.value) return;
+
+    // Pause preview during clip creation
+    if (previewVideoRef.value && isPreviewPlaying.value) {
+      previewVideoRef.value.pause();
+      isPreviewPlaying.value = false;
+    }
 
     const clipDuration = endTime.value - startTime.value;
     const clipStartTime = startTime.value;
@@ -553,7 +640,7 @@
 
     let effectiveProjectId = createdProjectId.value || props.projectId;
 
-    if (!effectiveProjectId && (props.isTempRecording || !props.sessionId) && props.displayName && props.mintId) {
+    if (!effectiveProjectId && props.displayName && props.mintId) {
       try {
         progressMessage.value = 'Creating project folder...';
         effectiveProjectId = await createLivestreamClipProject(props.displayName, props.mintId, props.platform);
@@ -647,15 +734,6 @@
     }
   }
 
-  // Navigate to clip in projects
-  function handleViewClip() {
-    const projectId = createdProjectId.value || props.projectId;
-    if (projectId) {
-      router.push({ name: 'projects', query: { projectId } });
-      handleClose();
-    }
-  }
-
   // Publish now
   function handlePublishNow() {
     const projectId = createdProjectId.value || props.projectId;
@@ -681,6 +759,7 @@
       console.warn('[ClipSelector] Force closing while clip creation in progress');
     }
     cleanupProgressListener();
+    cleanupVodPlayback();
     isCreating.value = false;
     emit('close');
   }
@@ -688,6 +767,7 @@
   // Cleanup on unmount
   onUnmounted(() => {
     cleanupProgressListener();
+    cleanupVodPlayback();
     if (isDragging.value) {
       document.removeEventListener('mousemove', handleDocumentMouseMove);
       document.removeEventListener('mouseup', handleDocumentMouseUp);
@@ -696,30 +776,503 @@
 </script>
 
 <style scoped>
-  /* Transitions */
+  /* ===== Overlay ===== */
+  .clip-selector__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+
+  /* ===== Dialog Container ===== */
+  .clip-selector {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 540px;
+    margin: 1rem;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ===== Accent Bar ===== */
+  .clip-selector__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  /* ===== Header ===== */
+  .clip-selector__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .clip-selector__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clip-selector__close:hover:not(:disabled) {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .clip-selector__close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .clip-selector__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .clip-selector__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .clip-selector__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Content ===== */
+  .clip-selector__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 1.5rem 1.5rem;
+  }
+
+  .clip-selector__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .clip-selector__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .clip-selector__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  /* ===== State Panels (progress, success, error) ===== */
+  .clip-selector__state-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 2rem 0;
+  }
+
+  .clip-selector__state-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .clip-selector__state-subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  .clip-selector__state-subtitle--error {
+    color: #f87171;
+  }
+
+  .clip-selector__progress-ring {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 1rem;
+  }
+
+  .clip-selector__progress-svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .clip-selector__progress-circle {
+    transition: stroke-dashoffset 300ms ease;
+  }
+
+  .clip-selector__progress-text {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .clip-selector__success-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
+
+  .clip-selector__error-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
+
+  /* ===== Video Preview ===== */
+  .clip-selector__preview {
+    position: relative;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    cursor: pointer;
+    margin-bottom: 1rem;
+  }
+
+  .clip-selector__video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .clip-selector__play-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 150ms ease;
+  }
+
+  .clip-selector__play-overlay--playing {
+    opacity: 0;
+  }
+
+  .clip-selector__preview:hover .clip-selector__play-overlay--playing {
+    opacity: 1;
+  }
+
+  .clip-selector__play-btn {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+  }
+
+  .clip-selector__loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
+    font-size: 0.8125rem;
+  }
+
+  .clip-selector__spinner {
+    width: 16px;
+    height: 16px;
+    animation: clip-selector-spin 0.8s linear infinite;
+  }
+
+  .clip-selector__time-badge {
+    position: absolute;
+    bottom: 0.5rem;
+    right: 0.5rem;
+    padding: 0.125rem 0.5rem;
+    background-color: rgba(0, 0, 0, 0.7);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: monospace;
+    color: white;
+  }
+
+  /* ===== Form Field ===== */
+  .clip-selector__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin-bottom: 1rem;
+  }
+
+  .clip-selector__input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .clip-selector__input::placeholder {
+    color: var(--sidebar-text-muted);
+    opacity: 0.6;
+  }
+
+  .clip-selector__input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+  }
+
+  .clip-selector__char-count {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    text-align: right;
+  }
+
+  /* ===== Timeline ===== */
+  .clip-selector__timeline {
+    position: relative;
+    height: 32px;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 8px;
+    cursor: pointer;
+    overflow: hidden;
+  }
+
+  .clip-selector__range {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background-color: rgba(6, 182, 212, 0.2);
+    border-left: 2px solid var(--sidebar-accent);
+    border-right: 2px solid var(--sidebar-accent);
+  }
+
+  .clip-selector__handle {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 12px;
+    background-color: var(--sidebar-accent);
+    cursor: ew-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+  }
+
+  .clip-selector__handle-grip {
+    width: 2px;
+    height: 16px;
+    background-color: white;
+    border-radius: 1px;
+  }
+
+  .clip-selector__playhead {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 2px;
+    background-color: white;
+    pointer-events: none;
+    z-index: 3;
+  }
+
+  .clip-selector__hover-line {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    width: 1px;
+    background-color: rgba(255, 255, 255, 0.4);
+    pointer-events: none;
+  }
+
+  .clip-selector__time-labels {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .clip-selector__duration-label {
+    font-weight: 600;
+    color: var(--sidebar-text);
+  }
+
+  .clip-selector__range-info {
+    text-align: center;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+  }
+
+  /* ===== Presets ===== */
+  .clip-selector__presets {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .clip-selector__preset-btn {
+    flex: 1;
+    padding: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    border-radius: 8px;
+    border: 1px solid var(--sidebar-border);
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clip-selector__preset-btn:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .clip-selector__preset-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* ===== Footer ===== */
+  .clip-selector__footer {
+    display: flex;
+    gap: 0.625rem;
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+  }
+
+  /* ===== Buttons ===== */
+  .clip-selector__btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .clip-selector__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .clip-selector__btn--secondary {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .clip-selector__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+
+  .clip-selector__btn--primary {
+    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
+    color: #000;
+  }
+
+  .clip-selector__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition:
-      opacity 0.2s ease,
-      backdrop-filter 0.2s ease;
+    transition: opacity 200ms ease;
   }
+
   .modal-enter-from,
   .modal-leave-to {
     opacity: 0;
   }
 
-  .dialog-enter-active,
+  .dialog-enter-active {
+    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
   .dialog-leave-active {
-    transition:
-      transform 0.3s ease,
-      opacity 0.2s ease;
+    transition: all 150ms ease-in;
   }
+
   .dialog-enter-from {
-    transform: scale(0.95) translateY(10px);
     opacity: 0;
+    transform: scale(0.96) translateY(8px);
   }
+
   .dialog-leave-to {
-    transform: scale(0.95) translateY(10px);
     opacity: 0;
+    transform: scale(0.98);
+  }
+
+  @keyframes clip-selector-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
 </style>
