@@ -426,6 +426,10 @@ async function loadScheduledPosts() {
     
     scheduledPosts.value = allPosts;
     console.log('[ContentCalendar] Total scheduled posts:', allPosts.length);
+    // Debug: Check thumbnail_url in posts
+    allPosts.forEach(post => {
+      console.log(`[ContentCalendar] Post ${post.id} thumbnail_url:`, post.thumbnail_url ? `${post.thumbnail_url.substring(0, 50)}...` : 'null');
+    });
   } catch (err) {
     console.warn('[ContentCalendar] Failed to load scheduled posts:', err);
   }
@@ -866,11 +870,15 @@ onMounted(() => {
                 :key="event.id"
                 class="flex items-center gap-1 px-1 py-px rounded text-[9px] truncate"
                 :class="[
-                  event.type === 'scheduled-post' ? 'bg-blue-500/10 text-blue-300' :
-                  event.type === 'external-submission' ? 'bg-violet-500/10 text-violet-300' :
-                  event.type === 'campaign-start' ? 'bg-emerald-500/10 text-emerald-300' :
-                  event.type === 'campaign-end' ? 'bg-orange-500/10 text-orange-300' :
-                  'bg-red-500/10 text-red-300'
+                  event.color === 'bg-emerald-500' ? 'bg-emerald-500/10 text-emerald-300' :
+                  event.color === 'bg-blue-500' ? 'bg-blue-500/10 text-blue-300' :
+                  event.color === 'bg-yellow-500' ? 'bg-yellow-500/10 text-yellow-300' :
+                  event.color === 'bg-sky-500' ? 'bg-sky-500/10 text-sky-300' :
+                  event.color === 'bg-red-500' ? 'bg-red-500/10 text-red-300' :
+                  event.color === 'bg-zinc-500' ? 'bg-zinc-500/10 text-zinc-300' :
+                  event.color === 'bg-violet-500' ? 'bg-violet-500/10 text-violet-300' :
+                  event.color === 'bg-orange-500' ? 'bg-orange-500/10 text-orange-300' :
+                  'bg-zinc-500/10 text-zinc-300'
                 ]"
                 :title="event.title"
               >
@@ -922,11 +930,15 @@ onMounted(() => {
                 :key="event.id"
                 class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs border transition-colors hover:bg-white/5 cursor-default"
                 :class="[
-                  event.type === 'scheduled-post' ? 'bg-blue-500/10 border-blue-500/20 text-blue-300' :
-                  event.type === 'external-submission' ? 'bg-violet-500/10 border-violet-500/20 text-violet-300' :
-                  event.type === 'campaign-start' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' :
-                  event.type === 'campaign-end' ? 'bg-orange-500/10 border-orange-500/20 text-orange-300' :
-                  'bg-red-500/10 border-red-500/20 text-red-300'
+                  event.color === 'bg-emerald-500' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' :
+                  event.color === 'bg-blue-500' ? 'bg-blue-500/10 border-blue-500/20 text-blue-300' :
+                  event.color === 'bg-yellow-500' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-300' :
+                  event.color === 'bg-sky-500' ? 'bg-sky-500/10 border-sky-500/20 text-sky-300' :
+                  event.color === 'bg-red-500' ? 'bg-red-500/10 border-red-500/20 text-red-300' :
+                  event.color === 'bg-zinc-500' ? 'bg-zinc-500/10 border-zinc-500/20 text-zinc-300' :
+                  event.color === 'bg-violet-500' ? 'bg-violet-500/10 border-violet-500/20 text-violet-300' :
+                  event.color === 'bg-orange-500' ? 'bg-orange-500/10 border-orange-500/20 text-orange-300' :
+                  'bg-zinc-500/10 border-zinc-500/20 text-zinc-300'
                 ]"
               >
                 <component

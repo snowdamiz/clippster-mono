@@ -608,57 +608,6 @@
                 </div>
               </div>
             </section>
-
-            <!-- Submitted Post Links -->
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon">
-                  <Link2 />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section-title">Submitted Post Links</h2>
-                  <p class="section-subtitle">External posts you've manually tracked</p>
-                </div>
-                <button class="action-btn" @click="showAddPostDialog = true">
-                  <Plus />
-                  Add Post
-                </button>
-              </div>
-
-              <div v-if="loadingExternalPosts" class="loading-rows">
-                <div v-for="i in 3" :key="i" class="skeleton-row"></div>
-              </div>
-              <div v-else-if="externalPosts.length === 0" class="empty-state empty-state--compact">
-                <Link2 class="empty-state__icon" />
-                <p class="empty-state__title">No submitted posts yet</p>
-                <p class="empty-state__text">Add a post link to track it here</p>
-                <button class="empty-state__btn empty-state__btn--primary" @click="showAddPostDialog = true">
-                  <Plus />
-                  Add Post
-                </button>
-              </div>
-              <div v-else class="submission-list">
-                <div v-for="post in externalPosts" :key="post.id" class="submission-row">
-                  <div class="submission-row__platform" :class="getSubmissionPlatformClass(post.platform)">
-                    <component :is="getPlatformIcon(post.platform)" />
-                  </div>
-                  <div class="submission-row__content">
-                    <a :href="post.post_url" target="_blank" class="submission-row__link">
-                      {{ truncateUrl(post.post_url) }}
-                    </a>
-                    <span class="submission-row__meta">
-                      <template v-if="post.creator_profile">{{ post.creator_profile.name }} · </template>
-                      <template v-else>Personal · </template>
-                      {{ formatViews(post.analytics?.view_count || 0) }} views
-                    </span>
-                  </div>
-                  <span class="status-badge" :class="`status-badge--${post.status}`">
-                    {{ post.status }}
-                  </span>
-                  <span class="submission-row__date">{{ formatDate(post.inserted_at) }}</span>
-                </div>
-              </div>
-            </section>
           </template>
 
           <!-- Hiring Tab -->
@@ -1349,6 +1298,7 @@
     getUserAnalyticsSummary,
     listUserPosts,
     syncUserAnalytics,
+    generatePostThumbnail,
     type UserInstagramAccount,
     type UserPost,
     type UserAnalyticsSummary,
@@ -1727,6 +1677,24 @@
       const postsRes = await listUserPosts();
       if (postsRes.success) {
         userPosts.value = postsRes.posts;
+        
+        // Generate thumbnails for posts missing them
+        const postsNeedingThumbnails = postsRes.posts.filter(post => !post.thumbnail_url && post.media_url);
+        if (postsNeedingThumbnails.length > 0) {
+          console.log(`Generating thumbnails for ${postsNeedingThumbnails.length} posts...`);
+          for (const post of postsNeedingThumbnails) {
+            try {
+              await generatePostThumbnail(post.id);
+            } catch (error) {
+              console.error(`Failed to generate thumbnail for post ${post.id}:`, error);
+            }
+          }
+          // Reload posts to get updated thumbnails
+          const updatedPostsRes = await listUserPosts();
+          if (updatedPostsRes.success) {
+            userPosts.value = updatedPostsRes.posts;
+          }
+        }
       }
     } catch (error) {
       console.error('Failed to load posts analytics:', error);

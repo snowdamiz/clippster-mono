@@ -815,6 +815,7 @@ defmodule ClippsterServerWeb.Router do
     post("/user/posts/sync-analytics", UserPostsController, :sync_user_analytics)
     get("/user/posts/:id", UserPostsController, :show)
     post("/user/posts/:id/sync", UserPostsController, :sync_analytics)
+    post("/user/posts/:id/generate-thumbnail", UserPostsController, :generate_thumbnail)
 
     # ============================================================================
     # Social Media Scheduling

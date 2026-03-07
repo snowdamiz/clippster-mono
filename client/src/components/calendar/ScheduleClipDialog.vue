@@ -665,7 +665,7 @@ async function startBackgroundUpload(postIds: number[]) {
     const fileName = props.mediaUrl.split(/[/\\]/).pop() || 'video.mp4';
     const videoFile = dataUrlToFile(videoDataUrl, fileName);
 
-    // Read thumbnail if it's a local path
+    // Read thumbnail if it's a local path or convert data URL
     let thumbnailFile: File | undefined;
     if (props.thumbnailUrl) {
       try {
@@ -673,10 +673,15 @@ async function startBackgroundUpload(postIds: number[]) {
           ? props.thumbnailUrl.replace('file://', '') 
           : props.thumbnailUrl;
         
-        if (!thumbPath.startsWith('data:') && !thumbPath.startsWith('http')) {
+        if (thumbPath.startsWith('data:')) {
+          // Already a data URL - convert directly to File
+          thumbnailFile = dataUrlToFile(thumbPath, 'thumbnail.jpg');
+        } else if (!thumbPath.startsWith('http')) {
+          // Local file path - read as data URL then convert
           const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
           thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
         }
+        // If it's already an http(s) URL, skip (already uploaded)
       } catch (thumbError) {
         console.warn('[ScheduleClipDialog] Could not read thumbnail:', thumbError);
       }

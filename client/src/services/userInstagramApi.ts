@@ -399,6 +399,14 @@ export async function syncUserAnalytics(): Promise<{ success: boolean; message?:
   }
 }
 
+/**
+ * Generate thumbnail for a post that's missing one
+ */
+export async function generatePostThumbnail(postId: number): Promise<PostResponse> {
+  const response = await api.post(`/user/posts/${postId}/generate-thumbnail`);
+  return response.data;
+}
+
 export interface UserAnalyticsSummary {
   total_posts: number;
   total_views: number;

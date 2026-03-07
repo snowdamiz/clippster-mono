@@ -94,8 +94,8 @@ const selectedPeriod = ref<'AM' | 'PM'>('PM');
 // Generate hours (1-12)
 const hours = Array.from({ length: 12 }, (_, i) => i + 1);
 
-// Generate minutes (0, 15, 30, 45)
-const minutes = [0, 15, 30, 45];
+// Generate minutes (0-59)
+const minutes = Array.from({ length: 60 }, (_, i) => i);
 
 const displayValue = computed(() => {
   if (!props.modelValue) return '10:30 PM';
