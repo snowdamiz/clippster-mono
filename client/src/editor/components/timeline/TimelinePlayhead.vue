@@ -46,18 +46,27 @@ function handleKeyDown(event: KeyboardEvent) {
 		tabindex="0"
 		class="pointer-events-auto absolute z-60 cursor-col-resize"
 		:style="{
-			left: `${leftPosition - 7}px`,
+			left: `${leftPosition - 6}px`,
 			top: 0,
 			height: `${totalHeight}px`,
-			width: '16px',
+			width: '12px',
 		}"
 		@mousedown="emit('playheadMouseDown', $event)"
 		@keydown="handleKeyDown"
 	>
-		<div class="bg-foreground absolute left-[7px] h-full w-0.5" />
+		<!-- 1px white line -->
+		<div class="absolute left-[5px] h-full w-px bg-white/80" />
+		<!-- Downward triangle head in cyan, sits above the line -->
 		<div
-			class="absolute top-1 left-1/2 size-3 -translate-x-1/2 transform cursor-grab rounded-full border-2 shadow-xs active:cursor-grabbing"
-			:class="isSnappingToPlayhead ? 'bg-foreground border-foreground' : 'bg-foreground border-foreground/50'"
+			class="absolute -top-[1px] left-1/2 -translate-x-1/2 cursor-grab active:cursor-grabbing"
+			:style="{
+				width: 0,
+				height: 0,
+				borderLeft: '8px solid transparent',
+				borderRight: '8px solid transparent',
+				borderTop: '12px solid rgba(255,255,255,0.9)',
+				filter: isSnappingToPlayhead ? 'drop-shadow(0 0 4px #0ea5e9)' : 'none',
+			}"
 		/>
 	</div>
 </template>

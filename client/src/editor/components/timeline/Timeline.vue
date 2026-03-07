@@ -402,7 +402,7 @@ const tracksVerticalOffset = computed(() => {
 	const containerH = tracksContainerClientHeight.value;
 	const contentH = totalTracksHeight.value;
 	if (containerH <= 0 || contentH >= containerH) return 0;
-	return Math.min(16, Math.floor((containerH - contentH) / 2));
+	return Math.min(16, Math.floor((containerH - contentH) ));
 });
 
 function onScrollAreaWheel(event: WheelEvent) {
@@ -579,7 +579,7 @@ function onTrackDragEnd() {
 				<!-- Track labels sidebar -->
 				<div class="flex w-44 shrink-0 flex-col border-r border-white/10 bg-[#18181b]">
 					<!-- Header — must be same height as TimelineRuler so track rows align -->
-					<div class="flex h-4 shrink-0 items-center justify-between bg-[#18181b] pl-3 pr-1">
+					<div class="flex h-4 shrink-0 items-center justify-between bg-[#18181b] pl-3 pr-1 mt-1.5">
 						<span class="text-[10px] font-semibold uppercase tracking-widest text-white/25">Tracks</span>
 						<div class="flex items-center gap-0.5">
 							<button
@@ -605,7 +605,6 @@ function onTrackDragEnd() {
 						v-if="tracks.length > 0"
 						ref="trackLabelsRef"
 						class="flex-1 overflow-hidden bg-[#18181b]"
-						:style="{ paddingTop: `${TIMELINE_CONSTANTS.PADDING_TOP_PX}px` }"
 					>
 						<div ref="trackLabelsScrollRef" class="size-full overflow-auto">
 							<div class="flex flex-col gap-1" :style="{ paddingTop: `${tracksVerticalOffset}px` }">
