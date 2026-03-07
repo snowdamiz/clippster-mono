@@ -101,6 +101,7 @@ export async function searchIcons(
 	limit: number = 64,
 	prefixes?: string[],
 	category?: string,
+	start: number = 0,
 ): Promise<IconSearchResult> {
 	const params = new URLSearchParams({
 		query,
@@ -115,6 +116,8 @@ export async function searchIcons(
 	if (category) {
 		params.append("category", category);
 	}
+
+	if (start > 0) params.append("start", start.toString());
 
 	try {
 		const response = await fetchWithFallback(`/search?${params}`);
@@ -201,23 +204,6 @@ export function svgToFile(svgText: string, fileName: string): File {
 }
 
 export const POPULAR_COLLECTIONS = {
-	general: [
-		{ prefix: "mdi", name: "Material Design Icons" },
-		{ prefix: "ic", name: "Google Material Icons" },
-		{ prefix: "ph", name: "Phosphor" },
-		{ prefix: "heroicons", name: "Heroicons" },
-		{ prefix: "lucide", name: "Lucide" },
-		{ prefix: "tabler", name: "Tabler Icons" },
-		{ prefix: "fe", name: "Feather Icons" },
-		{ prefix: "bi", name: "Bootstrap Icons" },
-	],
-	brands: [
-		{ prefix: "simple-icons", name: "Simple Icons" },
-		{ prefix: "logos", name: "SVG Logos" },
-		{ prefix: "skill-icons", name: "Skill Icons" },
-		{ prefix: "devicon", name: "Devicon" },
-		{ prefix: "fa-brands", name: "Font Awesome Brands" },
-	],
 	emoji: [
 		{ prefix: "noto", name: "Noto Emoji" },
 		{ prefix: "twemoji", name: "Twemoji" },
@@ -225,6 +211,11 @@ export const POPULAR_COLLECTIONS = {
 		{ prefix: "fluent-emoji-flat", name: "Fluent Emoji Flat" },
 		{ prefix: "emojione", name: "EmojiOne" },
 		{ prefix: "openmoji", name: "OpenMoji" },
+	],
+	brands: [
+		{ prefix: "logos", name: "SVG Logos" },
+		{ prefix: "skill-icons", name: "Skill Icons" },
+		{ prefix: "devicon", name: "Devicon" },
 	],
 };
 

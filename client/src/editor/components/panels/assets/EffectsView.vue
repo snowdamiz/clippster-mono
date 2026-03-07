@@ -1,30 +1,22 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
-import { EFFECT_PRESETS, EFFECT_CATEGORIES } from "../../../constants/effect-constants";
-import type { VideoEffectCategory, VideoEffectPreset } from "../../../types/effects";
+import { EFFECT_PRESETS } from "../../../constants/effect-constants";
+import type { VideoEffectPreset } from "../../../types/effects";
 import { setDragData } from "../../../lib/drag-data";
 import { useEffectPreviews } from "../../../composables/usePreviewThumbnails";
-import { GripVertical } from "lucide-vue-next";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
-const activeCategory = ref<VideoEffectCategory | "all">("all");
 const searchQuery = ref("");
 
 const effectTypes = EFFECT_PRESETS.map((p) => p.type);
 const previews = useEffectPreviews(effectTypes);
 
 const filteredPresets = computed(() => {
-	let presets = EFFECT_PRESETS;
-	if (activeCategory.value !== "all") {
-		presets = presets.filter((p) => p.category === activeCategory.value);
-	}
-	if (searchQuery.value.trim()) {
-		const q = searchQuery.value.toLowerCase();
-		presets = presets.filter(
-			(p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
-		);
-	}
-	return presets;
+	const q = searchQuery.value.trim().toLowerCase();
+	if (!q) return EFFECT_PRESETS;
+	return EFFECT_PRESETS.filter(
+		(p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
+	);
 });
 
 function handleDragStart(e: DragEvent, preset: VideoEffectPreset) {
@@ -32,9 +24,7 @@ function handleDragStart(e: DragEvent, preset: VideoEffectPreset) {
 	const params: Record<string, number | string> = {};
 	for (const [key, value] of Object.entries(preset.defaults)) {
 		if (key === "type" || key === "enabled" || key === "intensity") continue;
-		if (typeof value === "number" || typeof value === "string") {
-			params[key] = value;
-		}
+		if (typeof value === "number" || typeof value === "string") params[key] = value;
 	}
 	setDragData({
 		dataTransfer: e.dataTransfer,
@@ -49,56 +39,27 @@ function handleDragStart(e: DragEvent, preset: VideoEffectPreset) {
 	});
 	e.dataTransfer.effectAllowed = "copy";
 }
-
-const categoryTabs = computed(() => [
-	{ key: "all" as const, label: "All" },
-	...EFFECT_CATEGORIES,
-]);
 </script>
 
 <template>
 	<div class="flex h-full flex-col">
-		<!-- Search -->
 		<PanelSearchBar v-model="searchQuery" placeholder="Search effects..." />
 
-		<!-- Category tabs -->
-		<div class="flex items-center gap-0.5 overflow-x-auto border-b border-white/10 px-2 py-1">
-			<button
-				v-for="cat in categoryTabs"
-				:key="cat.key"
-				:class="[
-					'whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-					activeCategory === cat.key
-						? 'bg-blue-500/20 text-blue-400'
-						: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-				]"
-				@click="activeCategory = cat.key"
-			>
-				{{ cat.label }}
-			</button>
-		</div>
-
-		<!-- Effects grid -->
-		<div class="flex-1 overflow-y-auto p-3">
-			<div class="mb-3 flex items-center gap-2 rounded-md border border-white/5 bg-white/[0.02] px-2.5 py-1.5">
-				<GripVertical class="size-3.5 shrink-0 text-zinc-600" />
-				<p class="text-[11px] text-zinc-500">Drag onto a clip to apply, or onto empty space for a track effect</p>
-			</div>
-
+		<div class="flex-1 overflow-y-auto p-2">
 			<div v-if="filteredPresets.length === 0" class="flex h-full items-center justify-center">
 				<p class="text-xs text-zinc-500">No effects found</p>
 			</div>
 
-			<div v-else class="grid grid-cols-2 gap-2.5">
+			<div v-else class="grid grid-cols-2 gap-1.5">
 				<div
 					v-for="preset in filteredPresets"
 					:key="preset.type"
-					class="group cursor-grab overflow-hidden rounded-xl border border-white/[0.08] bg-zinc-900/40 transition-all hover:border-[#E040FB]/40 hover:bg-[#E040FB]/[0.08] active:cursor-grabbing active:scale-[0.97]"
+					class="group relative cursor-grab overflow-hidden rounded-lg border border-white/[0.06] bg-zinc-950 transition-all hover:border-white/15 active:cursor-grabbing active:scale-[0.97]"
 					draggable="true"
 					@dragstart="(e: DragEvent) => handleDragStart(e, preset)"
 				>
-					<!-- Effect preview thumbnail -->
-					<div class="relative aspect-[4/3] w-full overflow-hidden bg-zinc-950">
+					<!-- Thumbnail -->
+					<div class="aspect-[4/3] w-full overflow-hidden">
 						<img
 							v-if="previews[preset.type]"
 							:src="previews[preset.type]"
@@ -106,11 +67,12 @@ const categoryTabs = computed(() => [
 							class="size-full object-cover"
 						/>
 						<div v-else class="flex size-full items-center justify-center">
-							<div class="size-5 animate-pulse rounded-full bg-white/10" />
+							<div class="size-4 animate-pulse rounded-full bg-white/10" />
 						</div>
 					</div>
-					<div class="px-2.5 py-2 text-center">
-						<p class="text-[11px] font-medium text-zinc-200 group-hover:text-white">{{ preset.label }}</p>
+					<!-- Label overlay -->
+					<div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-4">
+						<p class="text-[10px] font-medium leading-tight text-zinc-200 group-hover:text-white">{{ preset.label }}</p>
 					</div>
 				</div>
 			</div>
