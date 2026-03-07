@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { buildLibraryAudioElement } from "../../../lib/timeline/element-utils";
 import {
@@ -22,7 +22,6 @@ import {
 const { editor } = useEditor();
 
 const searchQuery = ref("");
-const activeSubTab = ref<"search" | "saved">("search");
 const isSearching = ref(false);
 const searchResponse = ref<FreesoundSearchResponse | null>(null);
 const currentPage = ref(1);
@@ -32,7 +31,22 @@ const addingSound = ref<number | null>(null);
 const playingId = ref<number | null>(null);
 const audioElement = ref<HTMLAudioElement | null>(null);
 
-const savedSounds = ref<SavedSound[]>([]);
+const SAVED_SOUNDS_KEY = "clippster:saved-sounds";
+
+function loadSavedSounds(): SavedSound[] {
+	try {
+		const raw = localStorage.getItem(SAVED_SOUNDS_KEY);
+		return raw ? JSON.parse(raw) : [];
+	} catch {
+		return [];
+	}
+}
+
+const savedSounds = ref<SavedSound[]>(loadSavedSounds());
+
+watch(savedSounds, (val) => {
+	localStorage.setItem(SAVED_SOUNDS_KEY, JSON.stringify(val));
+}, { deep: true });
 
 const configured = computed(() => isFreesoundConfigured());
 
@@ -222,6 +236,10 @@ function savedToSoundEffect(saved: SavedSound): SoundEffect {
 	};
 }
 
+const unsavedResults = computed(() =>
+	searchResponse.value?.results.filter((s) => !isSoundSaved(s.id)) ?? [],
+);
+
 function formatDuration(seconds: number): string {
 	const min = Math.floor(seconds / 60);
 	const sec = Math.floor(seconds % 60);
@@ -257,161 +275,34 @@ onUnmounted(() => {
 
 		<!-- Configured: full UI -->
 		<template v-else>
-			<!-- Sub-tabs -->
-			<div class="flex border-b border-white/10">
-				<button
-					type="button"
-					:class="[
-						'flex-1 py-2 text-xs font-medium transition-colors',
-						activeSubTab === 'search'
-							? 'border-b-2 border-white/30 text-zinc-200'
-							: 'text-zinc-500 hover:text-zinc-300',
-					]"
-					@click="activeSubTab = 'search'"
-				>
-					Search
-				</button>
-				<button
-					type="button"
-					:class="[
-						'flex-1 py-2 text-xs font-medium transition-colors',
-						activeSubTab === 'saved'
-							? 'border-b-2 border-white/30 text-zinc-200'
-							: 'text-zinc-500 hover:text-zinc-300',
-					]"
-					@click="activeSubTab = 'saved'"
-				>
-					Saved ({{ savedSounds.length }})
-				</button>
+			<!-- Search bar -->
+			<div class="border-b border-white/10 px-3 py-2">
+				<div class="relative">
+					<Search class="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
+					<input
+						v-model="searchQuery"
+						type="text"
+						placeholder="Search sound effects..."
+						class="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-8 pr-3 text-sm text-zinc-200 placeholder-zinc-500 outline-none focus:border-white/20"
+						@input="handleSearchInput"
+						@keydown.enter="() => doSearch()"
+					/>
+				</div>
 			</div>
 
-			<!-- Search tab -->
-			<template v-if="activeSubTab === 'search'">
-				<!-- Search bar -->
-				<div class="border-b border-white/10 px-3 py-2">
-					<div class="relative">
-						<Search class="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
-						<input
-							v-model="searchQuery"
-							type="text"
-							placeholder="Search sound effects..."
-							class="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-8 pr-3 text-sm text-zinc-200 placeholder-zinc-500 outline-none focus:border-white/20"
-							@input="handleSearchInput"
-							@keydown.enter="() => doSearch()"
-						/>
+			<!-- Scrollable content -->
+			<div class="flex-1 overflow-y-auto">
+				<!-- Saved sounds section -->
+				<template v-if="savedSounds.length > 0">
+					<div class="px-3 py-1.5">
+						<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Saved</span>
 					</div>
-				</div>
-
-				<!-- Results -->
-				<div class="flex-1 overflow-y-auto">
-					<!-- Loading -->
-					<div v-if="isSearching && !searchResponse" class="flex items-center justify-center py-12">
-						<Loader2 class="size-6 animate-spin text-zinc-500" />
-					</div>
-
-					<!-- Empty state (only shown if search failed) -->
-					<div v-else-if="!searchResponse && searchQuery" class="flex flex-col items-center justify-center gap-3 p-6 pt-12">
-						<Headphones class="size-10 text-zinc-600" :stroke-width="1" />
-						<div class="flex flex-col gap-1 text-center">
-							<p class="text-sm text-zinc-400">Search for sound effects</p>
-							<p class="text-xs text-zinc-500">
-								Powered by Freesound.org
-							</p>
-						</div>
-					</div>
-
-					<!-- No results -->
-					<div v-else-if="searchResponse && searchResponse.results.length === 0" class="flex flex-col items-center justify-center gap-2 py-12 text-center">
-						<p class="text-sm text-zinc-400">No sounds found</p>
-						<p class="text-xs text-zinc-500">Try a different search term</p>
-					</div>
-
-					<!-- Results list -->
-					<div v-else-if="searchResponse && searchResponse.results.length > 0" class="flex flex-col">
-						<div
-							v-for="sound in searchResponse.results"
-							:key="sound.id"
-							class="group flex items-center gap-3 border-b border-white/5 px-3 py-2 transition-colors hover:bg-white/5"
-						>
-							<!-- Play button -->
-							<button
-								type="button"
-								class="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/5"
-								@click="playSound(sound)"
-							>
-								<div class="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-transparent" />
-								<Play v-if="playingId !== sound.id" class="size-4 text-zinc-300" />
-								<Pause v-else class="size-4 text-zinc-300" />
-							</button>
-
-							<!-- Info -->
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-sm font-medium text-zinc-200">{{ sound.name }}</p>
-								<div class="flex items-center gap-2">
-									<span class="text-xs text-zinc-500">{{ sound.username }}</span>
-									<span class="text-xs text-zinc-600">{{ formatDuration(sound.duration) }}</span>
-								</div>
-							</div>
-
-							<!-- Actions -->
-							<div class="flex items-center gap-1">
-								<button
-									type="button"
-									class="rounded p-1.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
-									:class="addingSound === sound.id && 'pointer-events-none opacity-50'"
-									title="Add to timeline"
-									@click="addSoundToTimeline(sound)"
-								>
-									<Loader2 v-if="addingSound === sound.id" class="size-4 animate-spin" />
-									<Plus v-else class="size-4" />
-								</button>
-								<button
-									type="button"
-									class="rounded p-1.5 transition-colors hover:bg-white/5"
-									:class="isSoundSaved(sound.id) ? 'text-red-400 hover:text-red-300' : 'text-zinc-500 hover:text-zinc-300'"
-									:title="isSoundSaved(sound.id) ? 'Remove from saved' : 'Save sound'"
-									@click="toggleSaveSound(sound)"
-								>
-									<Heart class="size-4" :class="isSoundSaved(sound.id) && 'fill-current'" />
-								</button>
-							</div>
-						</div>
-
-						<!-- Load more -->
-						<button
-							v-if="searchResponse.next"
-							type="button"
-							class="flex items-center justify-center gap-2 px-3 py-3 text-xs text-zinc-400 transition-colors hover:text-zinc-200"
-							:disabled="isLoadingMore"
-							@click="loadMore"
-						>
-							<Loader2 v-if="isLoadingMore" class="size-3.5 animate-spin" />
-							<span>{{ isLoadingMore ? 'Loading...' : 'Load more' }}</span>
-						</button>
-					</div>
-				</div>
-			</template>
-
-			<!-- Saved tab -->
-			<template v-else>
-				<div class="flex-1 overflow-y-auto">
-					<div v-if="savedSounds.length === 0" class="flex flex-col items-center justify-center gap-3 p-6 pt-12">
-						<Heart class="size-10 text-zinc-600" :stroke-width="1" />
-						<div class="flex flex-col gap-1 text-center">
-							<p class="text-sm text-zinc-400">No saved sounds</p>
-							<p class="text-xs text-zinc-500">
-								Search for sounds and click the heart to save them
-							</p>
-						</div>
-					</div>
-
-					<div v-else class="flex flex-col">
+					<div class="flex flex-col">
 						<div
 							v-for="saved in savedSounds"
 							:key="saved.id"
 							class="group flex items-center gap-3 border-b border-white/5 px-3 py-2 transition-colors hover:bg-white/5"
 						>
-							<!-- Play button -->
 							<button
 								type="button"
 								class="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/5"
@@ -421,8 +312,6 @@ onUnmounted(() => {
 								<Play v-if="playingId !== saved.id" class="size-4 text-zinc-300" />
 								<Pause v-else class="size-4 text-zinc-300" />
 							</button>
-
-							<!-- Info -->
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-sm font-medium text-zinc-200">{{ saved.name }}</p>
 								<div class="flex items-center gap-2">
@@ -430,8 +319,6 @@ onUnmounted(() => {
 									<span class="text-xs text-zinc-600">{{ formatDuration(saved.duration) }}</span>
 								</div>
 							</div>
-
-							<!-- Actions -->
 							<div class="flex items-center gap-1">
 								<button
 									type="button"
@@ -454,8 +341,90 @@ onUnmounted(() => {
 							</div>
 						</div>
 					</div>
+					<div v-if="searchResponse" class="px-3 py-1.5">
+						<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Results</span>
+					</div>
+				</template>
+
+				<!-- Loading -->
+				<div v-if="isSearching && !searchResponse" class="flex items-center justify-center py-12">
+					<Loader2 class="size-6 animate-spin text-zinc-500" />
 				</div>
-			</template>
+
+				<!-- No results -->
+				<div v-else-if="searchResponse && unsavedResults.length === 0" class="flex flex-col items-center justify-center gap-2 py-12 text-center">
+					<p class="text-sm text-zinc-400">No sounds found</p>
+					<p class="text-xs text-zinc-500">Try a different search term</p>
+				</div>
+
+				<!-- Search results list -->
+				<div v-else-if="searchResponse && unsavedResults.length > 0" class="flex flex-col">
+					<div
+						v-for="sound in unsavedResults"
+						:key="sound.id"
+						class="group flex items-center gap-3 border-b border-white/5 px-3 py-2 transition-colors hover:bg-white/5"
+					>
+						<button
+							type="button"
+							class="relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/5"
+							@click="playSound(sound)"
+						>
+							<div class="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-transparent" />
+							<Play v-if="playingId !== sound.id" class="size-4 text-zinc-300" />
+							<Pause v-else class="size-4 text-zinc-300" />
+						</button>
+						<div class="min-w-0 flex-1">
+							<p class="truncate text-sm font-medium text-zinc-200">{{ sound.name }}</p>
+							<div class="flex items-center gap-2">
+								<span class="text-xs text-zinc-500">{{ sound.username }}</span>
+								<span class="text-xs text-zinc-600">{{ formatDuration(sound.duration) }}</span>
+							</div>
+						</div>
+						<div class="flex items-center gap-1">
+							<button
+								type="button"
+								class="rounded p-1.5 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
+								:class="addingSound === sound.id && 'pointer-events-none opacity-50'"
+								title="Add to timeline"
+								@click="addSoundToTimeline(sound)"
+							>
+								<Loader2 v-if="addingSound === sound.id" class="size-4 animate-spin" />
+								<Plus v-else class="size-4" />
+							</button>
+							<button
+								type="button"
+								class="rounded p-1.5 transition-colors hover:bg-white/5"
+								:class="isSoundSaved(sound.id) ? 'text-red-400 hover:text-red-300' : 'text-zinc-500 hover:text-zinc-300'"
+								:title="isSoundSaved(sound.id) ? 'Remove from saved' : 'Save sound'"
+								@click="toggleSaveSound(sound)"
+							>
+								<Heart class="size-4" :class="isSoundSaved(sound.id) && 'fill-current'" />
+							</button>
+						</div>
+					</div>
+
+					<!-- Load more -->
+					<button
+						v-if="searchResponse.next"
+						type="button"
+						class="flex items-center justify-center gap-2 px-3 py-3 text-xs text-zinc-400 transition-colors hover:text-zinc-200"
+						:disabled="isLoadingMore"
+						@click="loadMore"
+					>
+						<Loader2 v-if="isLoadingMore" class="size-3.5 animate-spin" />
+						<span>{{ isLoadingMore ? 'Loading...' : 'Load more' }}</span>
+					</button>
+				</div>
+
+				<!-- Empty state when nothing saved and no search yet -->
+				<div v-else-if="savedSounds.length === 0 && !searchQuery" class="flex flex-col items-center justify-center gap-3 p-6 pt-12">
+					<Headphones class="size-10 text-zinc-600" :stroke-width="1" />
+					<div class="flex flex-col gap-1 text-center">
+						<p class="text-sm text-zinc-400">Search for sound effects</p>
+						<p class="text-xs text-zinc-500">Powered by Freesound.org</p>
+					</div>
+				</div>
+			</div>
 		</template>
 	</div>
 </template>

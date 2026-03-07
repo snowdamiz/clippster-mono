@@ -202,7 +202,7 @@ const cursorStyle = computed(() => {
 					:width="hoveredScreenBounds.width"
 					:height="hoveredScreenBounds.height"
 					fill="none"
-					stroke="rgba(255,255,255,0.4)"
+					stroke="rgba(255,255,255,0.15)"
 					stroke-width="1"
 					stroke-dasharray="4 3"
 				/>

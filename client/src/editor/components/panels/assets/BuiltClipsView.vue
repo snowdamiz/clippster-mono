@@ -248,7 +248,7 @@ onMounted(loadClips);
 			<div
 				v-else
 				class="grid gap-2"
-				style="grid-template-columns: repeat(auto-fill, minmax(100px, 1fr))"
+				style="grid-template-columns: repeat(3, 1fr)"
 			>
 				<div
 					v-for="clip in filteredClips"
