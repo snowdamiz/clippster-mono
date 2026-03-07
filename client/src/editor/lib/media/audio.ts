@@ -8,6 +8,7 @@ import type { MediaAsset } from "../../types/assets";
 import { canElementHaveAudio } from "../../lib/timeline/element-utils";
 import { canTracktHaveAudio } from "../../lib/timeline";
 import { mediaSupportsAudio } from "../../lib/media/media-utils";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 export type CollectedAudioElement = Omit<
 	AudioElement,
@@ -123,7 +124,8 @@ async function resolveAudioBufferForElement({
 
 		if (element.buffer) return element.buffer;
 
-		const response = await fetch(element.sourceUrl);
+		const url = convertFileSrc(element.sourceUrl);
+		const response = await fetch(url);
 		if (!response.ok) {
 			throw new Error(`Library audio fetch failed: ${response.status}`);
 		}
@@ -166,7 +168,8 @@ async function fetchLibraryAudioSource({
 	element: LibraryAudioElement;
 }): Promise<AudioMixSource | null> {
 	try {
-		const response = await fetch(element.sourceUrl);
+		const url = convertFileSrc(element.sourceUrl);
+		const response = await fetch(url);
 		if (!response.ok) {
 			throw new Error(`Library audio fetch failed: ${response.status}`);
 		}
@@ -205,7 +208,8 @@ async function fetchLibraryAudioClip({
 	fadeOut: number;
 }): Promise<AudioClipSource | null> {
 	try {
-		const response = await fetch(element.sourceUrl);
+		const url = convertFileSrc(element.sourceUrl);
+		const response = await fetch(url);
 		if (!response.ok) {
 			throw new Error(`Library audio fetch failed: ${response.status}`);
 		}
