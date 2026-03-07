@@ -76,12 +76,16 @@ defmodule ClippsterServer.AdminMessaging do
   end
 
   defp deliver_emails(recipients, subject, body) do
-    emails =
-      Enum.map(recipients, fn email ->
-        Emails.admin_broadcast_email(email, subject, body)
-      end)
-
-    Mailer.deliver_many(emails)
+    recipients
+    |> Enum.map(fn email ->
+      Emails.admin_broadcast_email(email, subject, body)
+    end)
+    |> Enum.chunk_every(50)
+    |> Enum.with_index()
+    |> Enum.each(fn {batch, index} ->
+      if index > 0, do: Process.sleep(1000)
+      Mailer.deliver_many(batch)
+    end)
   end
 
   defp create_campaign_record(attrs, user_id, recipient_count, status) do

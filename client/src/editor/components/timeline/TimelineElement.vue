@@ -279,7 +279,7 @@ const elementTooltip = computed(() => {
 				isBeingDragged ? 'z-30' : 'z-10',
 				isHidden ? 'opacity-50' : '',
 			]"
-			:style="{ borderColor: borderColor }"
+			:style="{ borderColor: borderColor, outline: isSelected ? '1.5px solid rgba(14, 165, 233, 0.6)' : 'none', outlineOffset: '0px' }"
 		>
 			<!-- Track name label (sits in the top blue bar, not over content) -->
 			<div class="pointer-events-none absolute top-0 left-1 right-0 z-30 h-[16px] flex items-center justify-between">
@@ -480,19 +480,19 @@ const elementTooltip = computed(() => {
 			<template v-if="isSelected">
 				<button
 					type="button"
-					class="bg-primary/70 absolute top-0 bottom-0 left-0 z-50 flex w-[4px] cursor-w-resize items-center justify-center"
+					class="absolute top-0 bottom-0 left-0 z-50 flex w-[6px] cursor-w-resize items-center justify-center"
 					@mousedown="handleResizeStart({ e: $event, elementId: element.id, side: 'left' })"
 					aria-label="Left resize handle"
 				>
-					<div class="bg-foreground/80 h-[12px] w-[2px] rounded-full" />
+					<div class="bg-white/50 h-[12px] w-[2px] rounded-full" />
 				</button>
 				<button
 					type="button"
-					class="bg-primary/70 absolute top-0 bottom-0 right-0 z-50 flex w-[4px] cursor-e-resize items-center justify-center"
+					class="absolute top-0 bottom-0 right-0 z-50 flex w-[6px] cursor-w-resize items-center justify-center"
 					@mousedown="handleResizeStart({ e: $event, elementId: element.id, side: 'right' })"
 					aria-label="Right resize handle"
 				>
-					<div class="bg-foreground/80 h-[12px] w-[2px] rounded-full" />
+					<div class="bg-white/50 h-[12px] w-[2px] rounded-full" />
 				</button>
 			</template>
 		</div>

@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { useEditorActions } from "../composables/actions/useEditorActions";
 import { useKeybindingsListener } from "../composables/useKeybindings";
 import { useAutoSave } from "../composables/useAutoSave";
+import { useElementSelection } from "../composables/timeline/element/useElementSelection";
 import KeyboardShortcutsModal from "./KeyboardShortcutsModal.vue";
 import EditorHeader from "./EditorHeader.vue";
 import Timeline from "./timeline/Timeline.vue";
@@ -28,6 +29,10 @@ import {
 useEditorActions();
 useKeybindingsListener();
 useAutoSave();
+
+const { selectedElements } = useElementSelection();
+
+const previewPanelRef = ref<InstanceType<typeof PreviewPanel> | null>(null);
 
 const TAB_KEYS = [
 	"media",
@@ -61,7 +66,7 @@ const tabConfig: Record<Tab, { icon: any; label: string }> = {
 	settings: { icon: Settings, label: "Settings" },
 };
 
-const activeTab = ref<Tab>("media");
+const activeTab = ref<Tab | null>("media");
 const shortcutsOpen = ref(false);
 
 function toggleShortcutsModal() {
@@ -113,12 +118,12 @@ onUnmounted(() => {
 <template>
 	<div class="flex h-full w-full flex-col overflow-hidden bg-[#0e0e10] text-white">
 		<!-- Header -->
-		<EditorHeader />
+		<EditorHeader :preview-container="previewPanelRef?.containerRef ?? null" />
 
 		<!-- Main content row -->
 		<div class="flex flex-1 min-h-0 overflow-hidden">
-			<!-- Icon sidebar -->
-			<div class="flex w-12 shrink-0 flex-col items-center gap-4 border-r border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
+			<!-- Icon sidebar (left border) -->
+			<div class="flex w-10 shrink-0 flex-col items-center gap-2 border-r border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
 				<button
 					v-for="tabKey in TAB_KEYS"
 					:key="tabKey"
@@ -130,24 +135,24 @@ onUnmounted(() => {
 							? 'text-blue-400'
 							: 'text-zinc-500 hover:text-zinc-300',
 					]"
-					@click="activeTab = tabKey"
+					@click="activeTab = activeTab === tabKey ? null : tabKey"
 				>
-					<component :is="tabConfig[tabKey].icon" class="size-[18px]" />
+					<component :is="tabConfig[tabKey].icon" class="size-[15px]" />
 				</button>
 			</div>
 
 			<!-- Left panel: Assets content -->
-			<div class="w-64 shrink-0 border-r border-white/10 bg-[#18181b] overflow-hidden">
+			<div v-if="activeTab !== null" class="w-64 shrink-0 border-r border-white/10 bg-[#18181b] overflow-hidden">
 				<AssetsPanel :active-tab="activeTab" />
 			</div>
 
 			<!-- Center: Preview -->
 			<div class="flex-1 min-w-0 overflow-hidden bg-[#0e0e10]">
-				<PreviewPanel />
+				<PreviewPanel ref="previewPanelRef" />
 			</div>
 
 			<!-- Right panel: Properties -->
-			<div class="w-72 shrink-0 border-l border-white/10 bg-[#18181b] overflow-hidden">
+			<div v-if="selectedElements.length > 0" class="w-80 shrink-0 border-l border-white/10 bg-[#18181b] overflow-hidden">
 				<PropertiesPanel />
 			</div>
 		</div>

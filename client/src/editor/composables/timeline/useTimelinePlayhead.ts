@@ -44,6 +44,15 @@ export function useTimelinePlayhead({
 	const isDraggingRuler = ref(false);
 	const hasDraggedRuler = ref(false);
 	let lastMouseX = 0;
+	let seekDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function debouncedSeek(time: number) {
+		if (seekDebounceTimer !== null) clearTimeout(seekDebounceTimer);
+		seekDebounceTimer = setTimeout(() => {
+			editor.playback.seek({ time });
+			seekDebounceTimer = null;
+		}, 10);
+	}
 
 	const playheadPosition = computed(() =>
 		isScrubbing.value && scrubTime.value !== null
@@ -88,7 +97,7 @@ export function useTimelinePlayhead({
 		const time = getSnappedSeekTime({ rawTime, duration: duration.value, fps: framesPerSecond });
 
 		scrubTime.value = time;
-		editor.playback.seek({ time });
+		debouncedSeek(time);
 		lastMouseX = event.clientX;
 	}
 
@@ -124,6 +133,10 @@ export function useTimelinePlayhead({
 
 			const onMouseUp = (event: MouseEvent) => {
 				isScrubbing.value = false;
+				if (seekDebounceTimer !== null) {
+					clearTimeout(seekDebounceTimer);
+					seekDebounceTimer = null;
+				}
 				if (scrubTime.value !== null) {
 					editor.playback.seek({ time: scrubTime.value });
 					editor.project.setTimelineViewState({
@@ -189,6 +202,7 @@ export function useTimelinePlayhead({
 
 	onUnmounted(() => {
 		cleanupGlobalListeners?.();
+		if (seekDebounceTimer !== null) clearTimeout(seekDebounceTimer);
 	});
 
 	return {

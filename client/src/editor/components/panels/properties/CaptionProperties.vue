@@ -25,6 +25,9 @@ import {
 	Plus,
 	Trash2,
 	Check,
+	Captions,
+	Type,
+	Zap,
 } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -38,6 +41,11 @@ const { allFonts, ensureFontLoaded, uploadCustomFont } = useFontManager();
 // ── Top-level tabs (CapCut style) ──
 type TopTab = "captions" | "text" | "animation";
 const activeTopTab = ref<TopTab>("captions");
+const topTabs: { id: TopTab; label: string; icon: any }[] = [
+	{ id: 'captions', label: 'Captions', icon: Captions },
+	{ id: 'text', label: 'Text', icon: Type },
+	{ id: 'animation', label: 'Animation', icon: Zap },
+];
 
 // ── Text sub-tabs ──
 type TextSubTab = "basic" | "templates" | "effects";
@@ -457,19 +465,9 @@ async function handleUploadFont() {
 </script>
 
 <template>
-	<div class="flex flex-col text-xs">
-		<!-- ═══ Top-level tab bar (CapCut style) ═══ -->
-		<div class="flex border-b border-white/10">
-			<button
-				v-for="tab in (['captions', 'text', 'animation'] as TopTab[])"
-				:key="tab"
-				class="flex-1 py-2 text-center text-xs font-medium capitalize transition-colors"
-				:class="activeTopTab === tab ? 'text-primary border-b-2 border-primary' : 'text-zinc-500 hover:text-zinc-300'"
-				@click="activeTopTab = tab"
-			>
-				{{ tab === 'captions' ? 'Captions' : tab === 'text' ? 'Text' : 'Animation' }}
-			</button>
-		</div>
+	<div class="flex h-full flex-row text-xs">
+		<!-- ═══ Content Area ═══ -->
+		<div class="flex flex-1 min-w-0 flex-col overflow-hidden">
 
 		<!-- ═══════════════════════════════════════════ -->
 		<!-- TAB: Captions — line-by-line breakdown     -->
@@ -1050,6 +1048,26 @@ async function handleUploadFont() {
 					</button>
 				</div>
 			</div>
+		</div>
+		</div>
+
+		<!-- ═══ Right Tab Strip ═══ -->
+		<div class="flex w-10 shrink-0 flex-col items-center gap-2 border-l border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
+			<button
+				v-for="tab in topTabs"
+				:key="tab.id"
+				type="button"
+				:title="tab.label"
+				:class="[
+					'flex flex-col items-center justify-center rounded-md p-1.5 transition-colors',
+					activeTopTab === tab.id
+						? 'text-blue-400'
+						: 'text-zinc-500 hover:text-zinc-300',
+				]"
+				@click="activeTopTab = tab.id"
+			>
+				<component :is="tab.icon" class="size-[15px]" />
+			</button>
 		</div>
 	</div>
 </template>

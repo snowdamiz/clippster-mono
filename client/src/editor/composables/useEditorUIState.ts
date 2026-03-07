@@ -1,9 +1,11 @@
 import { ref } from "vue";
 import type { CropRect } from "../types/timeline";
+import type { SocialOverlayPreset } from "../types/social-overlays";
 
 // Shared reactive state for cross-component UI coordination
 const cropPanelRequested = ref(false);
 const isCropMode = ref(false);
+const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
 
 // Snapshot of crop values when entering crop mode — used for cancel/revert
 const originalCrop = ref<CropRect | null>(null);
@@ -62,6 +64,7 @@ export function useEditorUIState() {
 		isCropMode,
 		originalCrop,
 		pendingCrop,
+		activeSocialOverlay,
 		requestCropPanel,
 		clearCropPanelRequest,
 		enterCropMode,
