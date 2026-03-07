@@ -313,7 +313,15 @@ async function addClipToEditor(clip: Clip) {
 		const encodedPath = btoa(outputPath);
 		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
-		const file = new File([], getClipName(clip), { type: "video/mp4" });
+		const response = await fetch(url);
+		if (!response.ok) {
+			throw new Error(`Failed to load extracted clip (${response.status})`);
+		}
+		const blob = await response.blob();
+		const file = new File([blob], getClipName(clip), {
+			type: blob.type || "video/mp4",
+			lastModified: Date.now(),
+		});
 		(file as File & { path?: string }).path = outputPath;
 
 		const asset: Omit<MediaAsset, "id"> = {
