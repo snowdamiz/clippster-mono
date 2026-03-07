@@ -5,7 +5,7 @@ import { useEditorUIState } from "../composables/useEditorUIState";
 import { useRouter } from "vue-router";
 import ExportButton from "./ExportButton.vue";
 import { Button } from "@/components/ui/button";
-import { ChevronDown, ArrowLeft, Pencil, Trash2, Keyboard, X, Maximize, Minimize, Smartphone } from "lucide-vue-next";
+import { ArrowLeft, ChevronDown, Maximize, Minimize, Smartphone } from "lucide-vue-next";
 import ShortcutsDialog from "./dialogs/ShortcutsDialog.vue";
 import ChatFab from "@/components/chat/ChatFab.vue";
 import {
@@ -19,12 +19,15 @@ import { getPlatformConfig } from "@/config/platforms";
 import { SOCIAL_OVERLAY_PRESETS } from "../constants/social-overlay-constants";
 import type { SocialOverlayPreset } from "../types/social-overlays";
 
+const props = defineProps<{
+	previewContainer: HTMLDivElement | null;
+}>();
+
 const { editor, version } = useEditor();
 const { activeSocialOverlay } = useEditorUIState();
 const router = useRouter();
 
 const isExiting = ref(false);
-const showDropdown = ref(false);
 const showRenameDialog = ref(false);
 const showShortcutsDialog = ref(false);
 const showAspectMenu = ref(false);
@@ -105,8 +108,9 @@ function toggleSocialOverlay(preset: SocialOverlayPreset) {
 }
 
 function toggleFullscreen() {
+	const target = props.previewContainer ?? document.documentElement;
 	if (!isFullscreen.value) {
-		document.documentElement.requestFullscreen?.();
+		target.requestFullscreen?.();
 	} else {
 		document.exitFullscreen?.();
 	}
@@ -235,80 +239,31 @@ function openRename() {
 
 <template>
 	<header class="relative z-10 flex h-[3.2rem] items-center justify-between border-b border-white/10 bg-[#0e0e10] px-3 pt-0.5">
-		<div class="relative flex items-center gap-2">
-			<!-- VOD info + project name + Menu button -->
-			<div class="flex items-center gap-2">
-				<template v-if="vodInfo">
-					<img
-						:src="getPlatformConfig(vodInfo.platform)?.icon"
-						class="size-4 object-contain"
-						:alt="vodInfo.platform"
-					/>
-					<span v-if="vodInfo.streamerName" class="text-[0.8rem] text-zinc-300">
-						{{ vodInfo.streamerName }}
-					</span>
-					<span class="text-zinc-600">|</span>
-				</template>
-
-				<span class="text-[0.85rem] text-zinc-200">{{ activeProject?.metadata.name }}</span>
-
-				<Button
-					variant="secondary"
-					class="flex h-auto items-center justify-center gap-1 px-2.5 py-1.5"
-					@click="showDropdown = !showDropdown"
-				>
-					<span class="text-[0.85rem]">Menu</span>
-					<ChevronDown class="text-zinc-400 size-4" />
-				</Button>
-			</div>
-
-			<!-- Dropdown menu -->
-			<div
-				v-if="showDropdown"
-				class="absolute top-full left-0 z-50 mt-1 w-52 rounded-md border border-white/10 bg-[#1e1e22] shadow-md"
+		<div class="flex items-center gap-2">
+			<!-- Back arrow -->
+			<button
+				type="button"
+				class="flex items-center justify-center rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+				:disabled="isExiting"
+				@click="handleExit"
 			>
-				<button
-					type="button"
-					class="flex w-full items-center gap-1.5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/5"
-					:disabled="isExiting"
-					@click="handleExit(); showDropdown = false"
-				>
-					<ArrowLeft class="size-4" />
-					Exit project
-				</button>
-				<button
-					type="button"
-					class="flex w-full items-center gap-1.5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/5"
-					@click="openRename"
-				>
-					<Pencil class="size-4" />
-					Rename project
-				</button>
-				<button
-					type="button"
-					class="flex w-full items-center gap-1.5 px-3 py-2 text-sm text-red-400 hover:bg-white/5"
-					@click="handleDelete(); showDropdown = false"
-				>
-					<Trash2 class="size-4" />
-					Delete project
-				</button>
-				<div class="border-t border-white/10" />
-				<button
-					type="button"
-					class="flex w-full items-center gap-1.5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/5"
-					@click="showShortcutsDialog = true; showDropdown = false"
-				>
-					<Keyboard class="size-4" />
-					Keyboard shortcuts
-				</button>
-			</div>
+				<ArrowLeft class="size-4" />
+			</button>
 
-			<!-- Click-away overlay -->
-			<div
-				v-if="showDropdown"
-				class="fixed inset-0 z-40"
-				@click="showDropdown = false"
-			/>
+			<!-- VOD info + project name -->
+			<template v-if="vodInfo">
+				<img
+					:src="getPlatformConfig(vodInfo.platform)?.icon"
+					class="size-4 object-contain"
+					:alt="vodInfo.platform"
+				/>
+				<span v-if="vodInfo.streamerName" class="text-[0.8rem] text-zinc-300">
+					{{ vodInfo.streamerName }}
+				</span>
+				<span class="text-zinc-600">|</span>
+			</template>
+
+			<span class="text-[0.85rem] text-zinc-200">{{ activeProject?.metadata.name }}</span>
 		</div>
 
 	<!-- Center: Aspect ratio + Social overlay + Fullscreen -->
@@ -419,15 +374,6 @@ function openRename() {
 		<nav class="flex items-center gap-2">
 			<ChatFab compact />
 			<ExportButton />
-			<button
-				type="button"
-				class="flex items-center justify-center rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
-				:disabled="isExiting"
-				title="Close (Esc)"
-				@click="handleExit"
-			>
-				<X :size="16" />
-			</button>
 		</nav>
 
 		<!-- Rename dialog -->

@@ -9,7 +9,6 @@ import {
 } from "../../../lib/freesound-api";
 import type { SoundEffect, SavedSound } from "../../../types/sounds";
 import {
-	Search,
 	Loader2,
 	Play,
 	Pause,
@@ -18,6 +17,7 @@ import {
 	Headphones,
 	ExternalLink,
 } from "lucide-vue-next";
+import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor();
 
@@ -276,19 +276,12 @@ onUnmounted(() => {
 		<!-- Configured: full UI -->
 		<template v-else>
 			<!-- Search bar -->
-			<div class="border-b border-white/10 px-3 py-2">
-				<div class="relative">
-					<Search class="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
-					<input
-						v-model="searchQuery"
-						type="text"
-						placeholder="Search sound effects..."
-						class="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-8 pr-3 text-sm text-zinc-200 placeholder-zinc-500 outline-none focus:border-white/20"
-						@input="handleSearchInput"
-						@keydown.enter="() => doSearch()"
-					/>
-				</div>
-			</div>
+			<PanelSearchBar
+				v-model="searchQuery"
+				placeholder="Search sound effects..."
+				@input="handleSearchInput"
+				@keydown.enter="doSearch"
+			/>
 
 			<!-- Scrollable content -->
 			<div class="flex-1 overflow-y-auto">

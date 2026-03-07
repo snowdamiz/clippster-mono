@@ -18,6 +18,7 @@ const { isCropMode, activeSocialOverlay } = useEditorUIState();
 const { selectedElements } = useElementSelection();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const containerRef = ref<HTMLDivElement | null>(null);
 let lastFrame = -1;
 let lastScene: any = null;
 let rendering = false;
@@ -258,6 +259,8 @@ watch(
 	{ immediate: true },
 );
 
+defineExpose({ containerRef });
+
 function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number; opacity: number; rotation: number; isFullFrameOverlay?: boolean }) {
 	if (overlay.isFullFrameOverlay) {
 		return {
@@ -282,7 +285,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 </script>
 
 <template>
-	<div class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
+	<div ref="containerRef" class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
 		<!-- Canvas + Interactive Overlay -->
 		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
 			<div class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"

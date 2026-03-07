@@ -13,8 +13,8 @@ const { togglePopover, hasNewMessagePulse, isPopoverOpen } = useChatPopout();
   <!-- Compact header variant -->
   <button
     v-if="compact"
-    class="relative flex size-8 items-center justify-center rounded-md bg-zinc-800 text-zinc-300 transition-colors hover:bg-zinc-700 hover:text-white"
-    :class="{ 'bg-zinc-700 text-white': isPopoverOpen }"
+    class="relative flex size-8 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+    :class="{ 'bg-white/5 text-zinc-200': isPopoverOpen }"
     @click="togglePopover"
     title="Messages"
   >

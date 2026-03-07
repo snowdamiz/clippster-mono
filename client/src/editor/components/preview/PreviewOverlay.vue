@@ -26,6 +26,7 @@ const {
 	hoveredElementId,
 	showCenterGuideX,
 	showCenterGuideY,
+	previewFocused,
 	handleCanvasMouseDown,
 	handleHandleMouseDown,
 	handleCanvasMouseMove,
@@ -245,9 +246,9 @@ const cursorStyle = computed(() => {
 			:canvas-height="canvasHeight"
 		/>
 
-		<!-- Selection bounding box + handles (hidden in crop mode) -->
+		<!-- Selection bounding box + handles (hidden in crop mode, only shown when preview is focused) -->
 		<svg
-			v-if="selectedScreenBounds && !isCropMode"
+			v-if="selectedScreenBounds && !isCropMode && previewFocused"
 			class="pointer-events-none absolute inset-0 size-full overflow-visible"
 		>
 			<g

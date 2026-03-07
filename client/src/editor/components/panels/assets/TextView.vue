@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
+// activeCategory removed
 import { useEditor } from "../../../composables/useEditor";
 import { useFontManager } from "../../../composables/useFontManager";
 import { DEFAULT_TEXT_ELEMENT, TEXT_PRESETS, type TextPresetCategory } from "../../../constants/text-constants";
 import { buildTextElement } from "../../../lib/timeline/element-utils";
-import { Upload, Plus } from "lucide-vue-next";
+import { Plus } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
+import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor();
 const { uploadCustomFont } = useFontManager();
@@ -133,28 +136,12 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 
 <template>
 	<div class="flex h-full flex-col overflow-hidden">
-		<!-- Header -->
-		<div class="flex items-center justify-between border-b border-white/5 px-3 py-2">
-			<span class="text-xs font-medium uppercase tracking-wider text-zinc-400">Text</span>
-			<button
-				class="flex items-center gap-1 px-2 py-1 text-[10px] text-primary hover:text-primary/80 bg-primary/10 rounded transition-colors border border-primary/20"
-				title="Upload custom font"
-				@click="handleUploadFont"
-			>
-				<Upload class="size-3" />
-				Upload Font
-			</button>
-		</div>
-
 		<!-- Search bar -->
-		<div class="px-2 pt-1.5">
-			<input
-				type="text"
-				v-model="searchQuery"
-				placeholder="Search presets..."
-				class="w-full rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-primary/50 focus:outline-none"
-			/>
-		</div>
+		<PanelSearchBar v-model="searchQuery" placeholder="Search presets...">
+			<Button variant="ghost" size="icon" class="size-6 mr-1" title="Upload custom font" @click="handleUploadFont">
+				<Plus class="size-3" />
+			</Button>
+		</PanelSearchBar>
 
 		<!-- Category tabs -->
 		<div class="scrollbar-none flex gap-0.5 overflow-x-auto border-b border-white/5 px-2 py-1.5">

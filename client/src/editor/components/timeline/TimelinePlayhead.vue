@@ -55,7 +55,7 @@ function handleKeyDown(event: KeyboardEvent) {
 		@keydown="handleKeyDown"
 	>
 		<!-- 1px white line -->
-		<div class="absolute left-[5px] h-full w-px bg-white/80" />
+		<div class="absolute left-[5px] h-full w-px bg-white/50" />
 		<!-- Downward triangle head in cyan, sits above the line -->
 		<div
 			class="absolute -top-[1px] left-1/2 -translate-x-1/2 cursor-grab active:cursor-grabbing"

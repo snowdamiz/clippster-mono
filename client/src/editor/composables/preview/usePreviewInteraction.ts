@@ -10,6 +10,7 @@
 import { computed, nextTick, ref, type Ref } from "vue";
 import { useEditor } from "../useEditor";
 import { useElementSelection } from "../timeline/element/useElementSelection";
+import { usePreviewFocus } from "./usePreviewFocus";
 import type {
 	TimelineTrack,
 	TimelineElement,
@@ -84,6 +85,7 @@ export function usePreviewInteraction({
 }) {
 	const { editor, version } = useEditor();
 	const { selectedElements, selectElement, clearElementSelection, isElementSelected } = useElementSelection();
+	const { previewFocused, setPreviewFocused } = usePreviewFocus();
 
 	const dragState = ref<DragState | null>(null);
 	const hoveredElementId = ref<string | null>(null);
@@ -392,6 +394,7 @@ export function usePreviewInteraction({
 				// and any subsequent mousemove produces a phantom delta, making the element jump.
 				await nextTick();
 			}
+			setPreviewFocused(true);
 			// Prevent drag on locked tracks (still allow selection)
 			if (isTrackLocked(hit.trackId)) return;
 			startDrag(event, hit, "move");
@@ -632,6 +635,7 @@ export function usePreviewInteraction({
 		hoveredElementId,
 		showCenterGuideX,
 		showCenterGuideY,
+		previewFocused,
 		screenToCanvas,
 		canvasToScreen,
 		handleCanvasMouseDown,

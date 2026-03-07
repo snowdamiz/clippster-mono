@@ -257,9 +257,11 @@ function handleAction(action: string, event?: MouseEvent) {
 							variant="ghost"
 							size="icon"
 							:disabled="!hasVideoOrImageSelected"
-							:class="{ 'bg-primary/20 text-primary': isCropMode }"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': isCropMode }"
 							@click="toggleCropMode(selectedVideoOrImage?.crop)"
 						>
+							<span v-if="isCropMode" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<Crop class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -297,9 +299,11 @@ function handleAction(action: string, event?: MouseEvent) {
 							variant="ghost"
 							size="icon"
 							:disabled="!hasTimelineContent"
-							:class="{ 'bg-primary/20 text-primary': razorMode }"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': razorMode }"
 							@click="emit('toggleRazorMode')"
 						>
+							<span v-if="razorMode" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<MousePointerClick class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -313,9 +317,11 @@ function handleAction(action: string, event?: MouseEvent) {
 							variant="ghost"
 							size="icon"
 							:disabled="!hasTimelineContent"
-							:class="{ 'bg-primary/20 text-primary': autoFollow }"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': autoFollow }"
 							@click="emit('toggleAutoFollow')"
 						>
+							<span v-if="autoFollow" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<Navigation2 class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -334,9 +340,11 @@ function handleAction(action: string, event?: MouseEvent) {
 							variant="ghost"
 							size="icon"
 							:disabled="!hasTimelineContent"
-							:class="{ 'bg-primary/20 text-primary': mainTrackMagnet }"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': mainTrackMagnet }"
 							@click="emit('toggleMainTrackMagnet')"
 						>
+							<span v-if="mainTrackMagnet" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<Magnet class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -350,9 +358,11 @@ function handleAction(action: string, event?: MouseEvent) {
 							variant="ghost"
 							size="icon"
 							:disabled="!hasTimelineContent"
-							:class="{ 'bg-primary/20 text-primary': autoSnapping }"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': autoSnapping }"
 							@click="emit('toggleAutoSnapping')"
 						>
+							<span v-if="autoSnapping" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<SplitSquareHorizontal class="size-4" />
 						</Button>
 					</TooltipTrigger>
@@ -366,9 +376,11 @@ function handleAction(action: string, event?: MouseEvent) {
 							variant="ghost"
 							size="icon"
 							:disabled="!hasTimelineContent"
-							:class="{ 'bg-primary/20 text-primary': linkage }"
+							class="relative overflow-visible"
+							:class="{ 'text-cyan-400': linkage }"
 							@click="emit('toggleLinkage')"
 						>
+							<span v-if="linkage" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
 							<Link class="size-4" />
 						</Button>
 					</TooltipTrigger>

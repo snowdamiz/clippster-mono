@@ -32,6 +32,8 @@ useAutoSave();
 
 const { selectedElements } = useElementSelection();
 
+const previewPanelRef = ref<InstanceType<typeof PreviewPanel> | null>(null);
+
 const TAB_KEYS = [
 	"media",
 	"sounds",
@@ -116,7 +118,7 @@ onUnmounted(() => {
 <template>
 	<div class="flex h-full w-full flex-col overflow-hidden bg-[#0e0e10] text-white">
 		<!-- Header -->
-		<EditorHeader />
+		<EditorHeader :preview-container="previewPanelRef?.containerRef ?? null" />
 
 		<!-- Main content row -->
 		<div class="flex flex-1 min-h-0 overflow-hidden">
@@ -146,7 +148,7 @@ onUnmounted(() => {
 
 			<!-- Center: Preview -->
 			<div class="flex-1 min-w-0 overflow-hidden bg-[#0e0e10]">
-				<PreviewPanel />
+				<PreviewPanel ref="previewPanelRef" />
 			</div>
 
 			<!-- Right panel: Properties -->

@@ -578,8 +578,8 @@ function onTrackDragEnd() {
 			<div class="flex flex-1 overflow-hidden">
 				<!-- Track labels sidebar -->
 				<div class="flex w-44 shrink-0 flex-col border-r border-white/10 bg-[#18181b]">
-					<!-- Header — must be same height as TimelineRuler so track rows align -->
-					<div class="flex h-4 shrink-0 items-center justify-between bg-[#18181b] pl-3 pr-1 mt-1.5">
+					<!-- Header — same h-4 as TimelineRuler so track list starts at identical offset -->
+					<div class="flex h-4 shrink-0 items-end justify-between bg-[#18181b] pb-px pl-3 pr-1 mt-2">
 						<span class="text-[10px] font-semibold uppercase tracking-widest text-white/25">Tracks</span>
 						<div class="flex items-center gap-0.5">
 							<button
@@ -604,7 +604,7 @@ function onTrackDragEnd() {
 					<div
 						v-if="tracks.length > 0"
 						ref="trackLabelsRef"
-						class="flex-1 overflow-hidden bg-[#18181b]"
+						class="flex-1 overflow-hidden -mt-2"
 					>
 						<div ref="trackLabelsScrollRef" class="size-full overflow-auto">
 							<div class="flex flex-col gap-1" :style="{ paddingTop: `${tracksVerticalOffset}px` }">
@@ -612,7 +612,7 @@ function onTrackDragEnd() {
 									v-for="track in tracks"
 									:key="track.id"
 									:draggable="!('isMain' in track && track.isMain)"
-									class="group relative flex flex-col items-start justify-center gap-2 transition-colors"
+									class="group relative flex flex-col items-start justify-center gap-1.5 transition-colors"
 									:class="{
 										'bg-primary/10': trackDragOverId === track.id,
 										'cursor-move': !('isMain' in track && track.isMain),
@@ -653,7 +653,8 @@ function onTrackDragEnd() {
 										<!-- Cover (main video track only) -->
 										<button
 											v-if="'isMain' in track && track.isMain"
-											class="rounded p-1 text-zinc-600 transition-colors hover:bg-white/10 hover:text-[#0ea5e9]"
+											class="rounded p-1 text-zinc-600 transition-colors hover:bg-white/10 hover:text-[#0ea5e9] disabled:pointer-events-none disabled:opacity-40"
+											:disabled="!track.elements.length"
 											@click="openCoverEditor"
 											title="Edit cover image"
 										>
@@ -661,8 +662,9 @@ function onTrackDragEnd() {
 										</button>
 										<!-- Lock -->
 										<button
-											class="rounded p-1 transition-colors hover:bg-white/10"
+											class="rounded p-1 transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:opacity-40"
 											:class="track.locked ? 'text-yellow-400' : 'text-zinc-600 hover:text-zinc-300'"
+											:disabled="!track.elements.length"
 											@click="toggleTrackLock(track.id)"
 											:title="track.locked ? 'Unlock track' : 'Lock track'"
 										>
@@ -672,8 +674,9 @@ function onTrackDragEnd() {
 										<!-- Mute -->
 										<button
 											v-if="canTracktHaveAudio(track)"
-											class="rounded p-1 transition-colors hover:bg-white/10"
+											class="rounded p-1 transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:opacity-40"
 											:class="track.muted ? 'text-red-400' : 'text-zinc-600 hover:text-zinc-300'"
+											:disabled="!track.elements.length"
 											@click="toggleTrackMute(track.id)"
 											:title="track.muted ? 'Unmute' : 'Mute'"
 										>
@@ -683,8 +686,9 @@ function onTrackDragEnd() {
 										<!-- Visibility -->
 										<button
 											v-if="canTrackBeHidden(track)"
-											class="rounded p-1 transition-colors hover:bg-white/10"
+											class="rounded p-1 transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:opacity-40"
 											:class="('hidden' in track && track.hidden) ? 'text-red-400' : 'text-zinc-600 hover:text-zinc-300'"
+											:disabled="!track.elements.length"
 											@click="toggleTrackVisibility(track.id)"
 											:title="('hidden' in track && track.hidden) ? 'Show' : 'Hide'"
 										>
@@ -694,7 +698,8 @@ function onTrackDragEnd() {
 										<!-- Delete (non-main, reveals on hover) -->
 										<button
 											v-if="!('isMain' in track && track.isMain)"
-											class="rounded p-1 text-zinc-700 transition-all hover:bg-white/10 hover:text-red-400 opacity-0 group-hover:opacity-100"
+											class="rounded p-1 text-zinc-700 transition-all hover:bg-white/10 hover:text-red-400 opacity-0 group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
+											:disabled="!track.elements.length"
 											@click="removeTrack(track.id)"
 											title="Remove track"
 										>
