@@ -120,8 +120,8 @@ onUnmounted(() => {
 
 		<!-- Main content row -->
 		<div class="flex flex-1 min-h-0 overflow-hidden">
-			<!-- Icon sidebar -->
-			<div class="flex w-12 shrink-0 flex-col items-center gap-2 border-r border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
+			<!-- Icon sidebar (left border) -->
+			<div class="flex w-10 shrink-0 flex-col items-center gap-2 border-r border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
 				<button
 					v-for="tabKey in TAB_KEYS"
 					:key="tabKey"
@@ -140,7 +140,7 @@ onUnmounted(() => {
 			</div>
 
 			<!-- Left panel: Assets content -->
-			<div v-if="activeTab !== null" class="w-80 shrink-0 border-r border-white/10 bg-[#18181b] overflow-hidden">
+			<div v-if="activeTab !== null" class="w-72 shrink-0 border-r border-white/10 bg-[#18181b] overflow-hidden">
 				<AssetsPanel :active-tab="activeTab" />
 			</div>
 
@@ -150,7 +150,7 @@ onUnmounted(() => {
 			</div>
 
 			<!-- Right panel: Properties -->
-			<div v-if="selectedElements.length > 0" class="w-72 shrink-0 border-l border-white/10 bg-[#18181b] overflow-hidden">
+			<div v-if="selectedElements.length > 0" class="w-80 shrink-0 border-l border-white/10 bg-[#18181b] overflow-hidden">
 				<PropertiesPanel />
 			</div>
 		</div>
