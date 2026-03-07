@@ -612,8 +612,10 @@ function onTrackDragEnd() {
 									v-for="track in tracks"
 									:key="track.id"
 									:draggable="!('isMain' in track && track.isMain)"
-									class="group relative flex flex-col items-start justify-center gap-1.5 transition-colors"
+									class="group relative flex transition-colors"
 									:class="{
+										'flex-col items-start justify-center gap-1.5': track.type === 'video',
+										'flex-row items-center': track.type !== 'video',
 										'bg-primary/10': trackDragOverId === track.id,
 										'cursor-move': !('isMain' in track && track.isMain),
 										'cursor-not-allowed opacity-60': 'isMain' in track && track.isMain && trackDragId,
@@ -634,7 +636,10 @@ function onTrackDragEnd() {
 									/>
 
 									<!-- Row 1: icon + name -->
-									<div class="flex min-w-0 items-center gap-1.5 pl-4 pr-2">
+									<div
+										class="flex min-w-0 items-center gap-1.5 pl-4"
+										:class="track.type === 'video' ? 'pr-2' : 'flex-1 pr-1'"
+									>
 										<Film v-if="track.type === 'video'" class="size-3.5 shrink-0 opacity-50" :style="{ color: getTrackAccentColor(track.type) }" />
 										<Music v-else-if="track.type === 'audio'" class="size-3.5 shrink-0 opacity-50" :style="{ color: getTrackAccentColor(track.type) }" />
 										<Type v-else-if="track.type === 'text'" class="size-3.5 shrink-0 opacity-50" :style="{ color: getTrackAccentColor(track.type) }" />
@@ -649,7 +654,10 @@ function onTrackDragEnd() {
 									</div>
 
 									<!-- Row 2: control buttons -->
-									<div class="flex items-center gap-0.5 pl-3 pr-1.5">
+									<div
+										class="flex items-center gap-0.5 pr-1"
+										:class="track.type === 'video' ? 'pl-3' : 'pl-1'"
+									>
 										<!-- Cover (main video track only) -->
 										<button
 											v-if="'isMain' in track && track.isMain"

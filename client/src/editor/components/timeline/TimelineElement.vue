@@ -274,7 +274,8 @@ const elementTooltip = computed(() => {
 		<!-- Element inner -->
 		<div
 			:class="[
-				'relative h-full cursor-pointer overflow-hidden rounded-[0.5rem] border-2',
+				'group relative h-full cursor-pointer overflow-hidden border-2',
+				(track.type === 'text' || track.type === 'audio') ? 'rounded-[3px]' : 'rounded-[0.5rem]',
 				trackClasses,
 				isBeingDragged ? 'z-30' : 'z-10',
 				isHidden ? 'opacity-50' : '',
@@ -282,7 +283,10 @@ const elementTooltip = computed(() => {
 			:style="{ borderColor: borderColor, outline: isSelected ? '1.5px solid rgba(14, 165, 233, 0.6)' : 'none', outlineOffset: '0px' }"
 		>
 			<!-- Track name label (sits in the top blue bar, not over content) -->
-			<div class="pointer-events-none absolute top-0 left-1 right-0 z-30 h-[16px] flex items-center justify-between">
+			<div
+				class="pointer-events-none absolute top-0 left-1 right-0 z-30 h-[16px] flex items-center justify-between transition-opacity duration-150"
+				:class="track.type === 'audio' ? 'group-hover:opacity-0' : ''"
+			>
 				<span class="truncate text-[10px] leading-none font-medium text-white/90">{{ element.name }}</span>
 				<!-- Layer indicator badge -->
 				<span
@@ -318,8 +322,8 @@ const elementTooltip = computed(() => {
 					<div v-else-if="element.type === 'audio'" class="relative w-full h-full">
 						<canvas
 							ref="audioWaveformCanvas"
-							class="absolute left-0 right-0 w-full pointer-events-none"
-							style="top: 16px; height: calc(100% - 16px); mix-blend-mode: normal; z-index: 5"
+							class="absolute inset-0 w-full h-full pointer-events-none"
+							style="mix-blend-mode: normal; z-index: 5"
 						/>
 						<div
 							v-if="waveformLoading"

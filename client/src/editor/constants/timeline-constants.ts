@@ -7,11 +7,11 @@ export const TRACK_COLORS: Record<TrackType, { background: string; border: strin
 		border: "#3f3f46",
 	},
 	text: {
-		background: "bg-[#5DBAA0]",
+		background: "bg-[#5DBAA0]/60",
 		border: "#7CCDB8",
 	},
 	audio: {
-		background: "bg-[#915DBE]",
+		background: "bg-[#915DBE]/60",
 		border: "#A87BD4",
 	},
 	sticker: {
@@ -31,7 +31,7 @@ export const TRACK_COLORS: Record<TrackType, { background: string; border: strin
 export const TRACK_HEIGHTS: Record<TrackType, number> = {
 	video: 80,
 	text: 25,
-	audio: 50,
+	audio: 25,
 	sticker: 50,
 	effect: 30,
 	caption: 30,
