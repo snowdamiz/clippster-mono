@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
-import { Button } from "@/components/ui/button";
-import { ChevronDown } from "lucide-vue-next";
 
 const { editor, version } = useEditor();
 
@@ -12,6 +10,22 @@ const activeProject = computed(() => {
 });
 
 const activeSettingsTab = ref<"project-info" | "background">("project-info");
+
+const editingName = ref(false);
+const nameInput = ref("");
+
+function startEditingName() {
+	nameInput.value = activeProject.value?.metadata?.name ?? "";
+	editingName.value = true;
+}
+
+async function commitName() {
+	editingName.value = false;
+	const id = activeProject.value?.metadata?.id;
+	const trimmed = nameInput.value.trim();
+	if (!id || !trimmed || trimmed === activeProject.value?.metadata?.name) return;
+	await editor.project.renameProject({ id, name: trimmed });
+}
 
 // Canvas presets
 const canvasPresets = [
@@ -72,34 +86,69 @@ const currentBlurIntensity = computed(() => isBlurBg.value ? (currentBackground.
 
 <template>
 	<div class="flex h-full flex-col">
-		<!-- Tabs -->
-		<div class="flex border-b border-white/10">
-			<button
-				type="button"
-				:class="['px-4 py-2 text-xs', activeSettingsTab === 'project-info' ? 'text-zinc-200 border-b-2 border-primary' : 'text-zinc-500']"
-				@click="activeSettingsTab = 'project-info'"
-			>
-				Project info
-			</button>
-			<button
-				type="button"
-				:class="['px-4 py-2 text-xs', activeSettingsTab === 'background' ? 'text-zinc-200 border-b-2 border-primary' : 'text-zinc-500']"
-				@click="activeSettingsTab = 'background'"
-			>
-				Background
-			</button>
+		<!-- Header -->
+		<div class="flex items-center justify-between border-b border-white/10 px-3 py-2">
+			<span class="text-sm text-zinc-400">Settings</span>
+			<div class="flex items-center gap-1">
+				<button
+					type="button"
+					:class="[
+						'rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors',
+						activeSettingsTab === 'project-info'
+							? 'bg-blue-500/15 text-blue-400'
+							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
+					]"
+					@click="activeSettingsTab = 'project-info'"
+				>
+					Info
+				</button>
+				<button
+					type="button"
+					:class="[
+						'rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors',
+						activeSettingsTab === 'background'
+							? 'bg-blue-500/15 text-blue-400'
+							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
+					]"
+					@click="activeSettingsTab = 'background'"
+				>
+					Background
+				</button>
+			</div>
 		</div>
 
 		<!-- Project Info -->
-		<div v-if="activeSettingsTab === 'project-info'" class="flex-1 space-y-4 overflow-y-auto p-5">
-			<div class="space-y-1.5">
-				<label class="text-zinc-500 text-xs">Name</label>
-				<p class="text-sm">{{ activeProject?.metadata?.name ?? 'Untitled' }}</p>
+		<div v-if="activeSettingsTab === 'project-info'" class="flex-1 overflow-y-auto">
+			<!-- Name -->
+			<div class="px-3 pb-1 pt-3">
+				<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Name</span>
+			</div>
+			<div class="border-b border-white/5 px-3 py-1.5">
+				<input
+					v-if="editingName"
+					v-model="nameInput"
+					class="w-full bg-transparent text-xs text-zinc-100 outline-none"
+					autofocus
+					@blur="commitName"
+					@keydown.enter="commitName"
+					@keydown.escape="editingName = false"
+				/>
+				<button
+					v-else
+					type="button"
+					class="w-full text-left text-xs text-zinc-200 hover:text-zinc-100"
+					@click="startEditingName"
+				>
+					{{ activeProject?.metadata?.name ?? 'Untitled' }}
+				</button>
 			</div>
 
-			<div class="space-y-1.5">
-				<label class="text-zinc-500 text-xs">Aspect ratio</label>
-				<div class="grid grid-cols-3 gap-2">
+			<!-- Aspect ratio -->
+			<div class="px-3 pb-1 pt-3">
+				<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Aspect ratio</span>
+			</div>
+			<div class="border-b border-white/5 px-3 pb-3">
+				<div class="grid grid-cols-3 gap-1.5 pt-2">
 					<button
 						v-for="preset in canvasPresets"
 						:key="preset.label"
@@ -107,8 +156,8 @@ const currentBlurIntensity = computed(() => isBlurBg.value ? (currentBackground.
 						:class="[
 							'rounded-md border px-3 py-1.5 text-xs transition-colors',
 							currentCanvasSize.width === preset.width && currentCanvasSize.height === preset.height
-								? 'border-primary bg-primary/10 text-primary'
-								: 'border-white/10 hover:border-blue-400/50',
+								? 'border-white/40 text-zinc-100'
+								: 'border-white/10 text-zinc-500 hover:border-white/20 hover:text-zinc-300',
 						]"
 						@click="handleAspectRatioChange(preset)"
 					>
@@ -117,9 +166,12 @@ const currentBlurIntensity = computed(() => isBlurBg.value ? (currentBackground.
 				</div>
 			</div>
 
-			<div class="space-y-1.5">
-				<label class="text-zinc-500 text-xs">Frame rate</label>
-				<div class="grid grid-cols-3 gap-2">
+			<!-- Frame rate -->
+			<div class="px-3 pb-1 pt-3">
+				<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Frame rate</span>
+			</div>
+			<div class="px-3 pb-3">
+				<div class="grid grid-cols-3 gap-1.5 pt-2">
 					<button
 						v-for="preset in fpsPresets"
 						:key="preset.value"
@@ -127,8 +179,8 @@ const currentBlurIntensity = computed(() => isBlurBg.value ? (currentBackground.
 						:class="[
 							'rounded-md border px-3 py-1.5 text-xs transition-colors',
 							currentFps === Number(preset.value)
-								? 'border-primary bg-primary/10 text-primary'
-								: 'border-white/10 hover:border-blue-400/50',
+								? 'border-white/40 text-zinc-100'
+								: 'border-white/10 text-zinc-500 hover:border-white/20 hover:text-zinc-300',
 						]"
 						@click="handleFpsChange(Number(preset.value))"
 					>
@@ -139,21 +191,20 @@ const currentBlurIntensity = computed(() => isBlurBg.value ? (currentBackground.
 		</div>
 
 		<!-- Background -->
-		<div v-else class="flex-1 space-y-4 overflow-y-auto p-5">
-			<!-- Blur section -->
-			<div class="space-y-2">
-				<button type="button" class="flex items-center gap-1.5 text-xs text-zinc-500" @click="() => {}">
-					Blur
-					<ChevronDown class="size-3" />
-				</button>
-				<div class="grid grid-cols-4 gap-2">
+		<div v-else class="flex-1 overflow-y-auto">
+			<!-- Blur -->
+			<div class="px-3 pb-1 pt-3">
+				<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Blur</span>
+			</div>
+			<div class="border-b border-white/5 px-3 pb-3">
+				<div class="grid grid-cols-4 gap-1.5 pt-2">
 					<button
 						v-for="blur in blurPresets"
 						:key="blur.value"
 						type="button"
 						:class="[
 							'aspect-square rounded-sm border overflow-hidden relative',
-							isBlurBg && currentBlurIntensity === blur.value ? 'border-primary border-2' : 'border-white/10 hover:border-blue-400/50',
+							isBlurBg && currentBlurIntensity === blur.value ? 'border-white/40 border-2' : 'border-white/10 hover:border-white/20',
 						]"
 						@click="handleBackgroundBlur(blur.value)"
 					>
@@ -163,17 +214,19 @@ const currentBlurIntensity = computed(() => isBlurBg.value ? (currentBackground.
 				</div>
 			</div>
 
-			<!-- Colors section -->
-			<div class="space-y-2">
-				<span class="text-zinc-500 text-xs">Colors</span>
-				<div class="grid grid-cols-5 gap-2">
+			<!-- Colors -->
+			<div class="px-3 pb-1 pt-3">
+				<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Colors</span>
+			</div>
+			<div class="px-3 pb-3">
+				<div class="grid grid-cols-5 gap-1.5 pt-2">
 					<button
 						v-for="color in solidColors"
 						:key="color"
 						type="button"
 						:class="[
 							'aspect-square w-full rounded-sm border',
-							isColorBg && currentBgColor === color ? 'border-primary border-2' : 'border-white/10 hover:border-blue-400/50',
+							isColorBg && currentBgColor === color ? 'border-white/60 border-2' : 'border-white/10 hover:border-white/20',
 						]"
 						:style="{ backgroundColor: color }"
 						@click="handleBackgroundColor(color)"
