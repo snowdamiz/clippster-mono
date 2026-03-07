@@ -16,7 +16,6 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
   require Logger
 
   alias ClippsterServer.Social.Providers.PostForMe
-  alias ClippsterServer.Storage
 
   @behaviour ClippsterServer.Social.Platform
 
@@ -24,7 +23,6 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
   @x_authorize_url "https://x.com/i/oauth2/authorize"
   @x_token_url "https://api.x.com/2/oauth2/token"
   @x_users_me_url "https://api.x.com/2/users/me"
-  @tweets_url "https://api.x.com/2/tweets"
 
   # HTTP timeout configuration - X API can be slow
   # 30 seconds
@@ -95,10 +93,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
       {"Authorization", auth_header}
     ]
 
-    case TwitterApiClient.post(@x_token_url, body, headers,
-           endpoint: "/2/oauth2/token",
-           http_options: @http_options
-         ) do
+    case HTTPoison.post(@x_token_url, body, headers, @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
         case Jason.decode(response_body) do
           {:ok, %{"access_token" => access_token} = data} ->
@@ -152,10 +147,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
         {"Authorization", auth_header}
       ]
 
-      case TwitterApiClient.post(@x_token_url, body, headers,
-             endpoint: "/2/oauth2/token",
-             http_options: @http_options
-           ) do
+      case HTTPoison.post(@x_token_url, body, headers, @http_options) do
         {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
           case Jason.decode(response_body) do
             {:ok, %{"access_token" => access_token} = data} ->
@@ -195,7 +187,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
       {"Authorization", "Bearer #{access_token}"}
     ]
 
-    case TwitterApiClient.get(url, headers, endpoint: "/2/users/me", http_options: @http_options) do
+    case HTTPoison.get(url, headers, @http_options) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
           {:ok, %{"data" => user_data}} ->

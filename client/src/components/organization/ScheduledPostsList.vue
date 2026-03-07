@@ -199,11 +199,9 @@
                   </div>
                   <div class="space-y-1.5">
                     <label class="block text-xs font-medium text-zinc-400">Time</label>
-                    <input
-                      type="time"
+                    <CustomTimePicker
                       v-model="editTime"
                       :disabled="saving"
-                      class="w-full px-3 py-2.5 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-pink-500/50"
                     />
                   </div>
                 </div>
@@ -318,6 +316,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
+import CustomTimePicker from '@/components/CustomTimePicker.vue';
 import {
   Calendar,
   Clock,

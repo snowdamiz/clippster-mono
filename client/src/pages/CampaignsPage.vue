@@ -150,6 +150,21 @@
                     </p>
                   </div>
 
+                  <!-- Campaign Dates -->
+                  <div v-if="campaign.starts_at || campaign.ends_at" class="campaign-card__dates">
+                    <Calendar class="campaign-card__dates-icon" />
+                    <div class="campaign-card__dates-text">
+                      <template v-if="campaign.starts_at">{{ formatDate(campaign.starts_at) }}</template>
+                      <template v-if="campaign.starts_at && campaign.ends_at"> – </template>
+                      <template v-if="campaign.ends_at">{{ formatDate(campaign.ends_at) }}</template>
+                    </div>
+                    <div v-if="campaign.ends_at && getDaysRemaining(campaign) !== null" class="campaign-card__days-remaining">
+                      <Clock class="campaign-card__days-icon" />
+                      <span v-if="getDaysRemaining(campaign)! > 0">{{ getDaysRemaining(campaign) }}d left</span>
+                      <span v-else>Ending today</span>
+                    </div>
+                  </div>
+
                   <!-- Creator Profiles -->
                   <div
                     v-if="campaign.creator_profiles && campaign.creator_profiles.length > 0"
@@ -244,6 +259,8 @@
     Globe,
     Sparkles,
     Wallet,
+    Calendar,
+    Clock,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Input } from '@/components/ui/input';
@@ -252,6 +269,7 @@
   import { listActiveCampaigns, type Campaign, getPlatformDisplayName } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
   import { useAuthStore } from '@/stores/auth';
+  import { formatDate } from '@/utils/dateTimeUtils';
 
   const { toast } = useToast();
   const authStore = useAuthStore();
@@ -310,10 +328,19 @@
   };
 
   const getBudgetPercentage = (campaign: Campaign) => {
-    const spent = parseFloat(campaign.spent_budget || '0');
-    const budget = parseFloat(campaign.budget || '0');
+    const spent = typeof campaign.spent_budget === 'string' ? parseFloat(campaign.spent_budget) : campaign.spent_budget || 0;
+    const budget = typeof campaign.budget === 'string' ? parseFloat(campaign.budget) : campaign.budget || 0;
     if (budget === 0) return 0;
     return Math.min((spent / budget) * 100, 100);
+  };
+
+  const getDaysRemaining = (campaign: Campaign) => {
+    if (!campaign.ends_at) return null;
+    const now = new Date();
+    const endDate = new Date(campaign.ends_at);
+    const diffMs = endDate.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffMs / 86400000);
+    return diffDays;
   };
 
   const viewCampaign = (campaign: Campaign) => {
@@ -727,6 +754,49 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  /* Campaign Dates */
+  .campaign-card__dates {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+    margin-top: 0.25rem;
+  }
+
+  .campaign-card__dates-icon {
+    width: 13px;
+    height: 13px;
+    color: var(--sidebar-accent);
+    flex-shrink: 0;
+  }
+
+  .campaign-card__dates-text {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .campaign-card__days-remaining {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.1875rem 0.5rem;
+    background-color: rgba(6, 182, 212, 0.15);
+    border-radius: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+    white-space: nowrap;
+  }
+
+  .campaign-card__days-icon {
+    width: 11px;
+    height: 11px;
   }
 
   /* Creators */

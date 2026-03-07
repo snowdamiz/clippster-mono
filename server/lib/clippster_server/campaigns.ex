@@ -318,9 +318,17 @@ defmodule ClippsterServer.Campaigns do
   For open campaigns, automatically approves.
   """
   def apply_to_campaign(%Campaign{} = campaign, %User{} = user, application_note \\ nil) do
+    now = DateTime.utc_now()
+    
     cond do
       campaign.status != "active" ->
         {:error, :campaign_not_active}
+      
+      not is_nil(campaign.starts_at) and DateTime.compare(now, campaign.starts_at) == :lt ->
+        {:error, :campaign_not_started}
+      
+      not is_nil(campaign.ends_at) and DateTime.compare(now, campaign.ends_at) == :gt ->
+        {:error, :campaign_ended}
 
       already_participant?(campaign.id, user.id) ->
         {:error, :already_participating}
@@ -628,6 +636,7 @@ defmodule ClippsterServer.Campaigns do
   """
   def submit_clip(%Campaign{} = campaign, %User{} = user, attrs) do
     participant = get_participant_by_campaign_and_user(campaign.id, user.id)
+    now = DateTime.utc_now()
 
     cond do
       is_nil(participant) or participant.status != "approved" ->
@@ -635,6 +644,12 @@ defmodule ClippsterServer.Campaigns do
 
       campaign.status != "active" ->
         {:error, :campaign_not_active}
+      
+      not is_nil(campaign.starts_at) and DateTime.compare(now, campaign.starts_at) == :lt ->
+        {:error, :campaign_not_started}
+      
+      not is_nil(campaign.ends_at) and DateTime.compare(now, campaign.ends_at) == :gt ->
+        {:error, :campaign_ended}
 
       true ->
         clip_url = Map.get(attrs, :clip_url) || Map.get(attrs, "clip_url")

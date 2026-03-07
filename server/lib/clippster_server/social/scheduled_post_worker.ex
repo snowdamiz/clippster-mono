@@ -406,14 +406,6 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     end
   end
 
-  defp get_platform_user_id(%SocialAccount{platform_user_id: id}), do: id
-  defp get_platform_user_id(%ClipperSocialAccount{platform_user_id: id}), do: id
-  defp get_platform_user_id(_), do: nil
-
-  defp get_account_id(%PostSubmission{} = post) do
-    post.organization_social_account_id || post.user_social_account_id
-  end
-
   defp handle_publish_success(%PostSubmission{} = post, result, content_hash \\ nil) do
     Logger.info("[ScheduledPostWorker] Successfully published post #{post.id}")
 

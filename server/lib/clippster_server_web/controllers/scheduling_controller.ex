@@ -1324,6 +1324,7 @@ defmodule ClippsterServerWeb.SchedulingController do
     %{
       platform: params["platform"],
       media_url: params["media_url"],
+      thumbnail_url: params["thumbnail_url"],
       caption: params["caption"],
       media_type: params["media_type"],
       scheduled_at: parse_datetime(params["scheduled_at"]),
@@ -1340,6 +1341,7 @@ defmodule ClippsterServerWeb.SchedulingController do
     %{
       platform: params["platform"],
       media_url: params["media_url"],
+      thumbnail_url: params["thumbnail_url"],
       caption: params["caption"],
       media_type: params["media_type"],
       scheduled_at: parse_datetime(params["scheduled_at"]),

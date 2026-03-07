@@ -83,7 +83,7 @@
                       </div>
                       <div class="tk-dialog__field" style="flex: 1">
                         <label for="tk-scheduleTime" class="tk-dialog__label-sm">Time</label>
-                        <input id="tk-scheduleTime" type="time" v-model="scheduleTime" :disabled="publishing" class="tk-dialog__input" />
+                        <CustomTimePicker v-model="scheduleTime" :disabled="publishing" />
                       </div>
                     </div>
                     <p v-if="scheduledDateTime" class="tk-dialog__field-hint" style="display: flex; align-items: center; gap: 0.375rem">
@@ -119,6 +119,7 @@
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
   import { FileVideo, Loader2, ChevronDown, Calendar, X, AlertCircle } from 'lucide-vue-next';
+  import CustomTimePicker from '@/components/CustomTimePicker.vue';
   import { useToast } from '@/composables/useToast';
   import { getMyAssignedAccounts, listSocialAccounts, publishPost, type SocialAccount } from '@/services/socialAccountsApi';
   import { listUserTiktokAccounts, publishToUserTiktok, type UserTiktokAccount } from '@/services/userTiktokApi';

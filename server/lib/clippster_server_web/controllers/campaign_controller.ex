@@ -100,6 +100,16 @@ defmodule ClippsterServerWeb.CampaignController do
               conn
               |> put_status(400)
               |> json(%{success: false, error: "Campaign is not active"})
+            
+            {:error, :campaign_not_started} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Campaign has not started yet"})
+            
+            {:error, :campaign_ended} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Campaign has ended"})
 
             {:error, :already_participating} ->
               conn
@@ -256,6 +266,16 @@ defmodule ClippsterServerWeb.CampaignController do
               conn
               |> put_status(400)
               |> json(%{success: false, error: "Campaign is not active"})
+            
+            {:error, :campaign_not_started} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Campaign has not started yet"})
+            
+            {:error, :campaign_ended} ->
+              conn
+              |> put_status(400)
+              |> json(%{success: false, error: "Campaign has ended"})
 
             {:error, :platform_not_allowed} ->
               conn
@@ -373,7 +393,9 @@ defmodule ClippsterServerWeb.CampaignController do
           "creator_profile_id",
           "budget",
           "cpm",
+          "cpm_views",
           "min_views_for_payment",
+          "max_views",
           "join_type",
           "allowed_platforms",
           "payment_methods",

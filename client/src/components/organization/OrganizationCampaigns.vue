@@ -2491,6 +2491,13 @@
     await loadCreatorProfilesAndAssets();
   };
 
+  const convertToISO8601 = (datetimeLocal: string): string | undefined => {
+    if (!datetimeLocal) return undefined;
+    // datetime-local format: "2024-03-06T21:15"
+    // Convert to ISO 8601 with timezone: "2024-03-06T21:15:00Z"
+    return `${datetimeLocal}:00Z`;
+  };
+
   const saveCampaign = async () => {
     saving.value = true;
     error.value = null;
@@ -2506,8 +2513,8 @@
         allowed_platforms: campaignForm.allowed_platforms,
         payment_methods: campaignForm.payment_methods,
         cover_image_url: campaignForm.cover_image_url || undefined,
-        starts_at: campaignForm.starts_at || undefined,
-        ends_at: campaignForm.ends_at || undefined,
+        starts_at: convertToISO8601(campaignForm.starts_at),
+        ends_at: convertToISO8601(campaignForm.ends_at),
         payment_model: campaignForm.payment_model,
         per_clip_amount: campaignForm.payment_model === 'per_clip' ? campaignForm.per_clip_amount : undefined,
         clips_per_profile: campaignForm.payment_model === 'per_clip' ? campaignForm.clips_per_profile : undefined,

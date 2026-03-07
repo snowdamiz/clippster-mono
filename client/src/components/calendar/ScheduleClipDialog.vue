@@ -98,11 +98,9 @@
                 <!-- Single Time Picker (Same time for all) -->
                 <div v-if="sameTimeForAll || selectedPlatforms.length === 1" class="schedule-dialog__field">
                   <label class="schedule-dialog__label">Time *</label>
-                  <input
-                    type="time"
+                  <CustomTimePicker
                     v-model="globalTime"
                     :disabled="scheduling"
-                    class="schedule-dialog__input"
                   />
                   <p v-if="globalTime && !isValidTime(globalTime)" class="schedule-dialog__field-hint schedule-dialog__field-hint--error">
                     Time must be at least 5 minutes in the future
@@ -126,11 +124,9 @@
                       <div class="schedule-dialog__platform-config-fields">
                         <div class="schedule-dialog__field" style="flex: 1">
                           <label class="schedule-dialog__label-sm">Time</label>
-                          <input
-                            type="time"
+                          <CustomTimePicker
                             v-model="platformTimes[platformId]"
                             :disabled="scheduling"
-                            class="schedule-dialog__input"
                           />
                         </div>
                         
@@ -335,6 +331,7 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { X, Calendar, CalendarDays, FileVideo, Loader2, AlertCircle, CheckCircle2, Instagram, Youtube, ChevronDown } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
+import CustomTimePicker from '@/components/CustomTimePicker.vue';
 import { useToast } from '@/composables/useToast';
 import { useAuthStore } from '@/stores/auth';
 import { listSocialAccounts, uploadMediaForPost, type SocialAccount } from '@/services/socialAccountsApi';
