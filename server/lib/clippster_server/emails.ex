@@ -1277,7 +1277,7 @@ defmodule ClippsterServer.Emails do
                       <tr>
                         <td style="padding: 6px 0;">
                           <span style="color: #22c55e; margin-right: 8px;">•</span>
-                          <span style="color: #d4d4d8; font-size: 13px;">Credits Roll oOver</span>
+                          <span style="color: #d4d4d8; font-size: 13px;">Credits Roll Over</span>
                         </td>
                       </tr>
                       <tr>
