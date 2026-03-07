@@ -45,9 +45,7 @@
       <div
         v-for="clip in filteredClips"
         :key="clip.id"
-        :draggable="true"
-        @dragstart="handleDragStart($event, clip)"
-        @dragend="handleDragEnd"
+        @mousedown="handleMouseDown($event, clip)"
         class="group relative bg-white/[0.02] hover:bg-white/[0.05] border border-white/10 rounded-lg overflow-hidden cursor-move transition-all"
         :class="{ 'opacity-50': draggingClipId === clip.id }"
       >
@@ -69,7 +67,7 @@
           </div>
 
           <!-- Drag hint -->
-          <div class="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">
+          <div class="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all pointer-events-none">
             <div class="bg-blue-500/90 text-white px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1">
               <GripVertical class="size-3" />
               Drag to schedule
@@ -91,8 +89,10 @@
 
         <!-- Schedule button (alternative to drag) -->
         <button
-          @click="$emit('scheduleClip', clip)"
-          class="absolute top-2 right-2 p-1.5 bg-blue-500/90 hover:bg-blue-500 text-white rounded-md opacity-0 group-hover:opacity-100 transition-all"
+          @click.stop="$emit('scheduleClip', clip)"
+          @mousedown.stop
+          @dragstart.stop.prevent
+          class="absolute top-2 right-2 p-1.5 bg-blue-500/90 hover:bg-blue-500 text-white rounded-md opacity-0 group-hover:opacity-100 transition-all z-10"
           title="Schedule this clip"
         >
           <Calendar class="size-3" />
@@ -133,24 +133,26 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Film, Search, Loader2, FileVideo, Calendar, GripVertical } from 'lucide-vue-next';
-import { getAllClipsWithBuilds } from '@/services/database/clip-build';
-import type { Clip, ClipBuild } from '@/services/database/types';
+import { getAllClips } from '@/services/database/clips';
+import { getThumbnailByClipId } from '@/services/database/thumbnails';
+import { getStoragePath } from '@/services/storage';
+import type { Clip } from '@/services/database/types';
 import { invoke } from '@tauri-apps/api/core';
 
-interface ClipWithBuilds extends Clip {
-  builds: ClipBuild[];
-}
-
 const emit = defineEmits<{
-  (e: 'scheduleClip', clip: ClipWithBuilds): void;
+  (e: 'scheduleClip', clip: Clip): void;
+  (e: 'dragStart', clipData: { clipId: string; clipName: string | null; mediaUrl: string | null; thumbnailUrl: string | null; duration: number | null; projectName: string | null }): void;
+  (e: 'dragMove', position: { x: number; y: number }): void;
+  (e: 'dragEnd', position: { x: number; y: number }): void;
 }>();
 
 const loading = ref(true);
-const clips = ref<ClipWithBuilds[]>([]);
+const clips = ref<Clip[]>([]);
 const searchQuery = ref('');
-const draggingClip = ref<ClipWithBuilds | null>(null);
+const draggingClip = ref<Clip | null>(null);
 const draggingClipId = ref<string | null>(null);
 const dragPosition = ref({ x: 0, y: 0 });
+const thumbnailCache = ref<Map<string, string>>(new Map());
 
 // Filter to only built clips
 const builtClips = computed(() => {
@@ -171,10 +173,9 @@ const filteredClips = computed(() => {
   });
 });
 
-// Get thumbnail URL (convert file path to asset URL)
-function getThumbnailUrl(clip: ClipWithBuilds): string | null {
-  if (!clip.built_thumbnail_path) return null;
-  return `asset://localhost/${clip.built_thumbnail_path}`;
+// Get thumbnail URL from cache
+function getThumbnailUrl(clip: Clip): string | null {
+  return thumbnailCache.value.get(clip.id) || null;
 }
 
 // Format duration (seconds to MM:SS)
@@ -197,49 +198,82 @@ function formatDate(timestamp: number): string {
   return date.toLocaleDateString('default', { month: 'short', day: 'numeric' });
 }
 
-// Drag handlers
-function handleDragStart(event: DragEvent, clip: ClipWithBuilds) {
-  if (!event.dataTransfer) return;
+// Mouse-based drag handlers (not HTML5 drag-and-drop)
+let isDragging = false;
+let dragStartPos = { x: 0, y: 0 };
+const DRAG_THRESHOLD = 5; // pixels before drag starts
 
-  // Set transparent drag image
-  const emptyImg = new Image();
-  emptyImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
-  event.dataTransfer.setDragImage(emptyImg, 0, 0);
-
-  // Store clip data
-  const dragData = {
-    clipId: clip.id,
-    clipName: clip.name,
-    mediaUrl: clip.built_file_path,
-    thumbnailUrl: clip.built_thumbnail_path,
-    duration: clip.built_duration,
-    projectName: clip.project_name,
+function handleMouseDown(event: MouseEvent, clip: Clip) {
+  // Only left mouse button
+  if (event.button !== 0) return;
+  
+  // Ignore if clicking on the schedule button
+  if ((event.target as HTMLElement).closest('button')) return;
+  
+  event.preventDefault();
+  isDragging = false;
+  dragStartPos = { x: event.clientX, y: event.clientY };
+  
+  // Store the clip we might drag
+  const potentialDragClip = clip;
+  
+  const handleMouseMove = (e: MouseEvent) => {
+    const dx = e.clientX - dragStartPos.x;
+    const dy = e.clientY - dragStartPos.y;
+    
+    // Check if we've moved enough to start dragging
+    if (!isDragging && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+      isDragging = true;
+      console.log('[ClipsSidebar] Drag start for clip:', potentialDragClip.id, potentialDragClip.name);
+      
+      draggingClip.value = potentialDragClip;
+      draggingClipId.value = potentialDragClip.id;
+      
+      // Emit drag data to parent
+      const dragData = {
+        clipId: potentialDragClip.id,
+        clipName: potentialDragClip.name,
+        mediaUrl: potentialDragClip.built_file_path,
+        thumbnailUrl: thumbnailCache.value.get(potentialDragClip.id) || null,
+        duration: potentialDragClip.built_duration,
+        projectName: potentialDragClip.project_name,
+      };
+      console.log('[ClipsSidebar] Emitting drag data:', dragData);
+      emit('dragStart', dragData);
+    }
+    
+    if (isDragging) {
+      dragPosition.value = { x: e.clientX, y: e.clientY };
+      emit('dragMove', { x: e.clientX, y: e.clientY });
+    }
   };
-
-  event.dataTransfer.setData('application/json', JSON.stringify(dragData));
-  event.dataTransfer.effectAllowed = 'copy';
-
-  draggingClip.value = clip;
-  draggingClipId.value = clip.id;
-  dragPosition.value = { x: event.clientX, y: event.clientY };
+  
+  const handleMouseUp = (e: MouseEvent) => {
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+    
+    if (isDragging) {
+      console.log('[ClipsSidebar] Drag end at:', e.clientX, e.clientY);
+      emit('dragEnd', { x: e.clientX, y: e.clientY });
+      draggingClip.value = null;
+      draggingClipId.value = null;
+    }
+    
+    isDragging = false;
+  };
+  
+  document.addEventListener('mousemove', handleMouseMove);
+  document.addEventListener('mouseup', handleMouseUp);
 }
 
-function handleDragEnd() {
-  draggingClip.value = null;
-  draggingClipId.value = null;
-}
-
-function onDocumentDragOver(event: DragEvent) {
-  if (draggingClip.value) {
-    dragPosition.value = { x: event.clientX, y: event.clientY };
-  }
-}
-
-// Load clips
+// Load clips and their thumbnails
 async function loadClips() {
   loading.value = true;
   try {
-    clips.value = await getAllClipsWithBuilds();
+    clips.value = await getAllClips();
+    console.log('[ClipsSidebar] Loaded clips:', clips.value.length, 'built:', builtClips.value.length);
+    await loadThumbnails();
+    console.log('[ClipsSidebar] Thumbnails loaded:', thumbnailCache.value.size);
   } catch (error) {
     console.error('[ClipsSidebar] Failed to load clips:', error);
   } finally {
@@ -247,13 +281,113 @@ async function loadClips() {
   }
 }
 
+// Derive the expected thumbnail path from a video file path
+// Thumbnails are named: {video_filename_without_ext}_thumb.jpg
+async function getThumbnailPathForVideoFile(videoPath: string): Promise<string | null> {
+  try {
+    const basePath = await getStoragePath('thumbnails');
+    const videoFileName = videoPath.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') || '';
+    return `${basePath}/${videoFileName}_thumb.jpg`;
+  } catch {
+    return null;
+  }
+}
+
+// Load thumbnails using the same approach as Clips.vue
+async function loadThumbnails() {
+  const clipsNeedingThumbs = builtClips.value.filter(
+    (c) => !thumbnailCache.value.has(c.id)
+  );
+  console.log('[ClipsSidebar] Clips needing thumbnails:', clipsNeedingThumbs.length);
+  if (clipsNeedingThumbs.length === 0) return;
+
+  let hasNew = false;
+  const batchSize = 5;
+  for (let i = 0; i < clipsNeedingThumbs.length; i += batchSize) {
+    const batch = clipsNeedingThumbs.slice(i, i + batchSize);
+    await Promise.all(
+      batch.map(async (clip) => {
+        try {
+          const dataUrl = await loadClipThumbnail(clip);
+          if (dataUrl) {
+            thumbnailCache.value.set(clip.id, dataUrl);
+            hasNew = true;
+          }
+        } catch (err) {
+          // Silently skip
+        }
+      })
+    );
+  }
+  console.log('[ClipsSidebar] Thumbnail loading complete:', thumbnailCache.value.size);
+  // Trigger reactivity by creating new Map
+  if (hasNew) {
+    thumbnailCache.value = new Map(thumbnailCache.value);
+  }
+}
+
+// Load thumbnail for a single clip - tries multiple sources and regenerates if needed
+async function loadClipThumbnail(clip: Clip): Promise<string | null> {
+  // Source 1: Derive thumbnail path from built_file_path (most reliable)
+  if (clip.built_file_path) {
+    const derivedPath = await getThumbnailPathForVideoFile(clip.built_file_path);
+    if (derivedPath) {
+      try {
+        const exists = await invoke<boolean>('check_file_exists', { path: derivedPath });
+        if (exists) {
+          return await invoke<string>('read_file_as_data_url', { filePath: derivedPath });
+        }
+      } catch { /* try next source */ }
+    }
+  }
+
+  // Source 2: built_thumbnail_path field
+  if (clip.built_thumbnail_path) {
+    try {
+      const exists = await invoke<boolean>('check_file_exists', { path: clip.built_thumbnail_path });
+      if (exists) {
+        return await invoke<string>('read_file_as_data_url', { filePath: clip.built_thumbnail_path });
+      }
+    } catch { /* try next source */ }
+  }
+
+  // Source 3: Thumbnails table
+  try {
+    const thumbnail = await getThumbnailByClipId(clip.id);
+    if (thumbnail?.file_path) {
+      const exists = await invoke<boolean>('check_file_exists', { path: thumbnail.file_path });
+      if (exists) {
+        return await invoke<string>('read_file_as_data_url', { filePath: thumbnail.file_path });
+      }
+    }
+  } catch { /* try regeneration */ }
+
+  // Source 4: Regenerate from video file
+  if (clip.built_file_path) {
+    try {
+      const videoExists = await invoke<boolean>('check_file_exists', { path: clip.built_file_path });
+      if (videoExists) {
+        const newThumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
+          videoPath: clip.built_file_path,
+          timestampSeconds: 1.0,
+          outputFilename: null,
+        });
+        return await invoke<string>('read_file_as_data_url', { filePath: newThumbnailPath });
+      }
+    } catch (err) {
+      console.warn(`[ClipsSidebar] Failed to regenerate thumbnail for ${clip.id}:`, err);
+    }
+  }
+
+  return null;
+}
+
 onMounted(() => {
   loadClips();
-  document.addEventListener('dragover', onDocumentDragOver);
 });
 
 onUnmounted(() => {
-  document.removeEventListener('dragover', onDocumentDragOver);
+  // Cleanup handled in mouseup handler
 });
 
 // Expose reload method

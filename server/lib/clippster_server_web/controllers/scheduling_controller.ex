@@ -96,6 +96,67 @@ defmodule ClippsterServerWeb.SchedulingController do
   end
 
   # ============================================================================
+  # Update Scheduled Post Media URL (for background uploads)
+  # ============================================================================
+
+  @doc """
+  Update media_url for scheduled posts after background upload completes.
+  PATCH /social/scheduled/update-media
+
+  Body:
+  {
+    "post_ids": [1, 2, 3],
+    "media_url": "https://...r2.cloudflarestorage.com/...",
+    "thumbnail_url": "https://...r2.cloudflarestorage.com/..."
+  }
+  """
+  def update_media(conn, %{"post_ids" => post_ids, "media_url" => media_url} = params) do
+    user = conn.assigns.current_user
+    thumbnail_url = params["thumbnail_url"]
+
+    results =
+      Enum.map(post_ids, fn post_id ->
+        case Social.get_post_submission(post_id) do
+          nil ->
+            {:error, "Post #{post_id} not found"}
+
+          post ->
+            # Verify user owns this post
+            if post.submitted_by_user_id == user.id do
+              attrs = %{
+                media_url: media_url,
+                thumbnail_url: thumbnail_url,
+                status: "scheduled"
+              }
+
+              case Social.update_post_submission(post, attrs) do
+                {:ok, _updated} -> {:ok, post_id}
+                {:error, _} -> {:error, "Failed to update post #{post_id}"}
+              end
+            else
+              {:error, "Unauthorized for post #{post_id}"}
+            end
+        end
+      end)
+
+    successful = Enum.count(results, fn r -> match?({:ok, _}, r) end)
+    failed = Enum.count(results, fn r -> match?({:error, _}, r) end)
+
+    if successful > 0 do
+      json(conn, %{
+        success: true,
+        updated: successful,
+        failed: failed,
+        message: "Updated #{successful} post(s)"
+      })
+    else
+      conn
+      |> put_status(400)
+      |> json(%{success: false, error: "Failed to update any posts"})
+    end
+  end
+
+  # ============================================================================
   # Update Scheduled Post
   # ============================================================================
 

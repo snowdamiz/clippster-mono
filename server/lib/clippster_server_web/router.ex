@@ -829,6 +829,7 @@ defmodule ClippsterServerWeb.Router do
     # Get/update/cancel/retry a scheduled post
     get("/social/scheduled/:id", SchedulingController, :show)
     put("/social/scheduled/:id", SchedulingController, :update)
+    patch("/social/scheduled/update-media", SchedulingController, :update_media)
     post("/social/scheduled/:id/cancel", SchedulingController, :cancel)
     post("/social/scheduled/:id/retry", SchedulingController, :retry)
 

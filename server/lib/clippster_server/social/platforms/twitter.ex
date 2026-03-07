@@ -355,31 +355,62 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
     end
   end
 
-  # Fetch video binary from URL with 120-second timeout
+  # Fetch video binary from URL or local file path with 120-second timeout
   defp fetch_video_binary(url) do
-    Logger.info("[Twitter] Fetching video from URL...")
+    # Check if this is a local file path (Windows or Unix)
+    if is_local_file_path?(url) do
+      Logger.info("[Twitter] Reading video from local file: #{url}")
+      
+      case File.read(url) do
+        {:ok, body} ->
+          size_mb = Float.round(byte_size(body) / 1_024 / 1_024, 2)
+          Logger.info("[Twitter] Video read successfully: #{size_mb} MB")
+          {:ok, body}
 
-    http_options = [
-      timeout: 120_000,
-      recv_timeout: 120_000,
-      follow_redirect: true
-    ]
+        {:error, reason} ->
+          Logger.error("[Twitter] Failed to read local file: #{inspect(reason)}")
+          {:error, {:file_read_failed, reason}}
+      end
+    else
+      Logger.info("[Twitter] Fetching video from URL...")
 
-    case HTTPoison.get(url, [], http_options) do
-      {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
-        size_mb = Float.round(byte_size(body) / 1_024 / 1_024, 2)
-        Logger.info("[Twitter] Video downloaded successfully: #{size_mb} MB")
-        {:ok, body}
+      http_options = [
+        timeout: 120_000,
+        recv_timeout: 120_000,
+        follow_redirect: true
+      ]
 
-      {:ok, %HTTPoison.Response{status_code: status}} ->
-        Logger.error("[Twitter] Video download failed: HTTP #{status}")
-        {:error, {:download_failed, status}}
+      case HTTPoison.get(url, [], http_options) do
+        {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
+          size_mb = Float.round(byte_size(body) / 1_024 / 1_024, 2)
+          Logger.info("[Twitter] Video downloaded successfully: #{size_mb} MB")
+          {:ok, body}
 
-      {:error, %HTTPoison.Error{reason: reason}} ->
-        Logger.error("[Twitter] Video download failed: #{inspect(reason)}")
-        {:error, {:download_failed, reason}}
+        {:ok, %HTTPoison.Response{status_code: status}} ->
+          Logger.error("[Twitter] Video download failed: HTTP #{status}")
+          {:error, {:download_failed, status}}
+
+        {:error, %HTTPoison.Error{reason: reason}} ->
+          Logger.error("[Twitter] Video download failed: #{inspect(reason)}")
+          {:error, {:download_failed, reason}}
+      end
     end
   end
+
+  # Check if a path is a local file path (not a URL)
+  defp is_local_file_path?(path) when is_binary(path) do
+    cond do
+      # Windows absolute path (C:\, D:\, etc.)
+      String.match?(path, ~r/^[A-Za-z]:[\\\/]/) -> true
+      # Unix absolute path
+      String.starts_with?(path, "/") and not String.starts_with?(path, "//") -> true
+      # Not a URL scheme
+      not String.match?(path, ~r/^https?:\/\//) and File.exists?(path) -> true
+      true -> false
+    end
+  end
+
+  defp is_local_file_path?(_), do: false
 
   # Upload video via TwitterChunkedUpload
   defp upload_video(access_token, video_binary, opts) do

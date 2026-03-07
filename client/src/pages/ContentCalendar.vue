@@ -17,8 +17,6 @@ import {
   AlertCircle,
   Send,
   Link2,
-  Menu,
-  X as XIcon,
 } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
 import PageLayout from '@/components/PageLayout.vue';
@@ -26,7 +24,9 @@ import ClipsSidebar from '@/components/calendar/ClipsSidebar.vue';
 import ScheduleClipDialog from '@/components/calendar/ScheduleClipDialog.vue';
 import { listScheduledPosts, listOrgScheduledPosts, listExternalPosts, type ScheduledPost, type ExternalPostSubmission } from '@/services/schedulingApi';
 import { listOrganizationCampaigns, listMyCampaigns, type Campaign } from '@/services/campaignApi';
-import { listUserPosts, type UserPost } from '@/services/userInstagramApi';
+import { listUserPosts, uploadUserMediaForPost, type UserPost } from '@/services/userInstagramApi';
+import { uploadMediaForPost } from '@/services/socialAccountsApi';
+import { invoke } from '@tauri-apps/api/core';
 
 // ── State ──
 const authStore = useAuthStore();
@@ -45,6 +45,7 @@ const viewMode = ref<'month' | 'week'>('month');
 // Clips sidebar state
 const showClipsSidebar = ref(true);
 const clipsSidebarRef = ref<InstanceType<typeof ClipsSidebar> | null>(null);
+const draggingClipData = ref<{ clipId: string; clipName: string | null; mediaUrl: string | null; thumbnailUrl: string | null; duration: number | null; projectName: string | null } | null>(null);
 
 // Schedule dialog state
 const scheduleDialogOpen = ref(false);
@@ -389,17 +390,41 @@ async function loadData() {
 async function loadScheduledPosts() {
   try {
     const orgId = authStore.user?.owned_organization_id;
-    if (orgId) {
-      const response = await listOrgScheduledPosts(Number(orgId));
-      if (response.success && response.posts) {
-        scheduledPosts.value = response.posts;
+    console.log('[ContentCalendar] loadScheduledPosts, orgId:', orgId);
+    
+    const allPosts: ScheduledPost[] = [];
+    
+    // Always load user's personal scheduled posts
+    try {
+      const userResponse = await listScheduledPosts();
+      console.log('[ContentCalendar] User scheduled posts response:', userResponse);
+      if (userResponse.success && userResponse.posts) {
+        allPosts.push(...userResponse.posts);
+        console.log('[ContentCalendar] Loaded', userResponse.posts.length, 'user scheduled posts');
       }
-    } else {
-      const response = await listScheduledPosts();
-      if (response.success && response.posts) {
-        scheduledPosts.value = response.posts;
+    } catch (err) {
+      console.warn('[ContentCalendar] Failed to load user scheduled posts:', err);
+    }
+    
+    // Also load org scheduled posts if user owns an org
+    if (orgId) {
+      try {
+        const orgResponse = await listOrgScheduledPosts(Number(orgId));
+        console.log('[ContentCalendar] Org scheduled posts response:', orgResponse);
+        if (orgResponse.success && orgResponse.posts) {
+          // Merge org posts, avoiding duplicates by ID
+          const existingIds = new Set(allPosts.map(p => p.id));
+          const newOrgPosts = orgResponse.posts.filter(p => !existingIds.has(p.id));
+          allPosts.push(...newOrgPosts);
+          console.log('[ContentCalendar] Loaded', newOrgPosts.length, 'additional org scheduled posts');
+        }
+      } catch (err) {
+        console.warn('[ContentCalendar] Failed to load org scheduled posts:', err);
       }
     }
+    
+    scheduledPosts.value = allPosts;
+    console.log('[ContentCalendar] Total scheduled posts:', allPosts.length);
   } catch (err) {
     console.warn('[ContentCalendar] Failed to load scheduled posts:', err);
   }
@@ -485,33 +510,65 @@ const stats = computed(() => {
   return { upcoming, published, activeCampaigns, thisMonthEvents, linkSubmissions };
 });
 
-// ── Drag & Drop Handlers ──
+// ── Mouse-based Drag Handlers ──
 
-function handleDragOver(event: DragEvent, date: Date) {
-  event.preventDefault();
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'copy';
-  }
-  dragOverDay.value = date;
+function handleSidebarDragStart(clipData: typeof draggingClipData.value) {
+  console.log('[ContentCalendar] Sidebar drag start:', clipData);
+  draggingClipData.value = clipData;
 }
 
-function handleDragLeave() {
+function handleSidebarDragMove(position: { x: number; y: number }) {
+  if (!draggingClipData.value) return;
+  
+  // Find the calendar day element under the cursor
+  const element = document.elementFromPoint(position.x, position.y);
+  if (!element) {
+    dragOverDay.value = null;
+    return;
+  }
+  
+  // Look for a calendar day cell (has data-calendar-date attribute)
+  const dayCell = element.closest('[data-calendar-date]') as HTMLElement;
+  if (dayCell) {
+    const dateStr = dayCell.dataset.calendarDate;
+    if (dateStr) {
+      const date = new Date(dateStr);
+      if (!isNaN(date.getTime())) {
+        dragOverDay.value = date;
+        return;
+      }
+    }
+  }
   dragOverDay.value = null;
 }
 
-function handleDrop(event: DragEvent, date: Date) {
-  event.preventDefault();
-  dragOverDay.value = null;
-
-  try {
-    const data = event.dataTransfer?.getData('application/json');
-    if (!data) return;
-
-    const clipData = JSON.parse(data);
-    openScheduleDialog(clipData, date);
-  } catch (error) {
-    console.error('[ContentCalendar] Failed to parse drop data:', error);
+function handleSidebarDragEnd(position: { x: number; y: number }) {
+  console.log('[ContentCalendar] Sidebar drag end at:', position);
+  
+  if (!draggingClipData.value) {
+    dragOverDay.value = null;
+    return;
   }
+  
+  // Find the calendar day element under the cursor
+  const element = document.elementFromPoint(position.x, position.y);
+  if (element) {
+    const dayCell = element.closest('[data-calendar-date]') as HTMLElement;
+    if (dayCell) {
+      const dateStr = dayCell.dataset.calendarDate;
+      if (dateStr) {
+        const date = new Date(dateStr);
+        if (!isNaN(date.getTime())) {
+          console.log('[ContentCalendar] Drop on date:', date);
+          openScheduleDialog(draggingClipData.value, date);
+        }
+      }
+    }
+  }
+  
+  // Clean up
+  draggingClipData.value = null;
+  dragOverDay.value = null;
 }
 
 function openScheduleDialog(clipData: any, date: Date) {
@@ -527,21 +584,26 @@ function openScheduleDialog(clipData: any, date: Date) {
   scheduleDialogOpen.value = true;
 }
 
-function handleScheduleClip(clip: any) {
+async function handleScheduleClip(clip: any) {
   // When clicking schedule button on clip card
   const today = new Date();
   today.setHours(today.getHours() + 1); // Default to 1 hour from now
+  
+  // Load thumbnail as data URL
+  const thumbnailUrl = await toDataUrl(clip.built_thumbnail_path);
+  
   openScheduleDialog({
     clipId: clip.id,
     clipName: clip.name,
     mediaUrl: clip.built_file_path,
-    thumbnailUrl: clip.built_thumbnail_path,
+    thumbnailUrl,
     duration: clip.built_duration,
     projectName: clip.project_name,
   }, today);
 }
 
 function handleScheduled() {
+  console.log('[ContentCalendar] handleScheduled called, reloading data...');
   // Reload calendar data after successful scheduling
   loadData();
   // Reload clips sidebar to update any state
@@ -551,6 +613,19 @@ function handleScheduled() {
 function closeScheduleDialog() {
   scheduleDialogOpen.value = false;
   scheduleDialogData.value = null;
+}
+
+// ── Helpers ──
+
+// Convert file path to data URL via Tauri
+async function toDataUrl(filePath: string | null | undefined): Promise<string | undefined> {
+  if (!filePath) return undefined;
+  try {
+    return await invoke<string>('read_file_as_data_url', { filePath });
+  } catch (err) {
+    console.warn('[ContentCalendar] Failed to load thumbnail:', err);
+    return undefined;
+  }
 }
 
 // ── Lifecycle ──
@@ -568,16 +643,6 @@ onMounted(() => {
   >
     <template #actions>
       <div class="flex items-center gap-2">
-        <!-- Toggle Clips Sidebar (mobile) -->
-        <button
-          @click="showClipsSidebar = !showClipsSidebar"
-          class="lg:hidden p-2 text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 transition-colors"
-          :title="showClipsSidebar ? 'Hide clips' : 'Show clips'"
-        >
-          <Menu v-if="!showClipsSidebar" :size="18" />
-          <XIcon v-else :size="18" />
-        </button>
-
         <!-- View Mode Toggle -->
         <div class="flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
           <button
@@ -675,33 +740,16 @@ onMounted(() => {
       <!-- Clips Sidebar -->
       <div
         v-if="showClipsSidebar"
-        class="w-80 flex-shrink-0 hidden lg:block"
+        class="w-80 flex-shrink-0"
       >
         <ClipsSidebar
           ref="clipsSidebarRef"
           @schedule-clip="handleScheduleClip"
+          @drag-start="handleSidebarDragStart"
+          @drag-move="handleSidebarDragMove"
+          @drag-end="handleSidebarDragEnd"
         />
       </div>
-
-      <!-- Mobile Clips Sidebar Overlay -->
-      <Transition name="sidebar">
-        <div
-          v-if="showClipsSidebar"
-          class="fixed inset-0 z-40 lg:hidden"
-          @click="showClipsSidebar = false"
-        >
-          <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-          <div
-            class="absolute left-0 top-0 bottom-0 w-80 bg-zinc-950"
-            @click.stop
-          >
-            <ClipsSidebar
-              ref="clipsSidebarRef"
-              @schedule-clip="handleScheduleClip"
-            />
-          </div>
-        </div>
-      </Transition>
       <!-- Calendar grid -->
       <div class="flex-1 flex flex-col overflow-hidden">
         <!-- Day headers -->
@@ -716,22 +764,23 @@ onMounted(() => {
         </div>
 
         <!-- Month view -->
-        <div v-if="viewMode === 'month'" class="flex-1 grid grid-cols-7 grid-rows-6 overflow-hidden">
+        <div 
+          v-if="viewMode === 'month'" 
+          class="flex-1 grid grid-cols-7 grid-rows-6 overflow-hidden"
+        >
           <div
             v-for="(day, idx) in calendarDays"
             :key="idx"
-            class="border-b border-r border-white/5 p-1 overflow-hidden cursor-pointer transition-colors relative"
+            :data-calendar-date="day.date.toISOString()"
+            class="border-b border-r border-white/5 p-1 overflow-hidden cursor-pointer transition-all relative"
             :class="{
               'bg-white/[0.02]': day.isCurrentMonth,
               'bg-transparent': !day.isCurrentMonth,
               'ring-1 ring-blue-500/40 ring-inset': day.isToday,
               'bg-blue-500/5': selectedDay && isSameDay(selectedDay, day.date),
-              'ring-2 ring-blue-400/50 bg-blue-500/10': dragOverDay && isSameDay(dragOverDay, day.date),
+              'ring-2 ring-blue-400/60 bg-blue-500/20 scale-[1.02] z-10': dragOverDay && isSameDay(dragOverDay, day.date),
             }"
             @click="selectDay(day.date)"
-            @dragover="handleDragOver($event, day.date)"
-            @dragleave="handleDragLeave"
-            @drop="handleDrop($event, day.date)"
           >
             <!-- Day number -->
             <div class="flex items-center justify-between mb-0.5">
@@ -785,14 +834,12 @@ onMounted(() => {
           <div
             v-for="day in weekDays"
             :key="day.toISOString()"
-            class="flex border-b border-white/5 min-h-[80px] relative"
+            :data-calendar-date="day.toISOString()"
+            class="flex border-b border-white/5 min-h-[80px] relative transition-all"
             :class="{
               'bg-blue-500/5': isSameDay(day, new Date()),
-              'ring-2 ring-blue-400/50 bg-blue-500/10': dragOverDay && isSameDay(dragOverDay, day),
+              'ring-2 ring-blue-400/60 bg-blue-500/20 scale-[1.01] z-10': dragOverDay && isSameDay(dragOverDay, day),
             }"
-            @dragover="handleDragOver($event, day)"
-            @dragleave="handleDragLeave"
-            @drop="handleDrop($event, day)"
           >
             <!-- Day label -->
             <div class="w-20 shrink-0 p-2 border-r border-white/5">
@@ -1004,15 +1051,14 @@ onMounted(() => {
 
     <!-- Schedule Clip Dialog -->
     <ScheduleClipDialog
-      v-if="scheduleDialogData"
-      :open="scheduleDialogOpen"
-      :clip-id="scheduleDialogData.clipId"
-      :clip-name="scheduleDialogData.clipName"
-      :media-url="scheduleDialogData.mediaUrl"
-      :thumbnail-url="scheduleDialogData.thumbnailUrl"
-      :duration="scheduleDialogData.duration"
-      :project-name="scheduleDialogData.projectName"
-      :selected-date="scheduleDialogData.selectedDate"
+      :open="scheduleDialogOpen && !!scheduleDialogData"
+      :clip-id="scheduleDialogData?.clipId || ''"
+      :clip-name="scheduleDialogData?.clipName || ''"
+      :media-url="scheduleDialogData?.mediaUrl || ''"
+      :thumbnail-url="scheduleDialogData?.thumbnailUrl"
+      :duration="scheduleDialogData?.duration"
+      :project-name="scheduleDialogData?.projectName"
+      :selected-date="scheduleDialogData?.selectedDate || new Date()"
       @close="closeScheduleDialog"
       @scheduled="handleScheduled"
     />

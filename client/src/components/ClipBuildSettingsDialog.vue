@@ -839,7 +839,7 @@
                   :class="{ 'build-dialog__btn--disabled': !canProceed }"
                 >
                   <WrenchIcon class="build-dialog__btn-icon" />
-                  <span>Build {{ selectedRatios.length > 1 ? `${selectedRatios.length} Videos` : 'Video' }}</span>
+                  <span>{{ publishMode ? 'Build & Publish' : `Build ${selectedRatios.length > 1 ? `${selectedRatios.length} Videos` : 'Video'}` }}</span>
                 </button>
               </div>
             </div>
@@ -964,11 +964,14 @@
     vodPresetConfig?: import('@/types').ActiveVodPresetConfig | null;
     // Server ID of the creator profile for this clip (used to fetch profile-specific campaigns)
     creatorProfileServerId?: number | null;
+    // Publish mode - when true, shows "Build & Publish" and emits build-complete event
+    publishMode?: boolean;
   }>();
 
   const emit = defineEmits<{
     'update:modelValue': [value: boolean];
     confirm: [settings: BuildSettings];
+    'build-complete': [buildIds: string[]];
   }>();
 
   export interface BuildSettings {
@@ -1779,7 +1782,12 @@
 
     console.log('[ClipBuildSettingsDialog] Emitting confirm with aspectRatios:', settings.aspectRatios);
     emit('confirm', settings);
-    close();
+    
+    // In publish mode, keep dialog open and wait for build completion
+    // The parent component will handle the build and emit build-complete event
+    if (!props.publishMode) {
+      close();
+    }
   }
 </script>
 

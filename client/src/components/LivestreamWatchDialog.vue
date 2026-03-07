@@ -329,9 +329,9 @@
             </div>
 
             <!-- Clip Modal -->
-            <ClipDurationModal
+            <LivestreamClipSelector
               v-if="showClipModal"
-              :available-duration="viewer.availableClipDuration.value"
+              :available-duration="viewer.state.value.totalRecordedDuration"
               :project-id="sessionProjectId || viewer.state.value.projectId"
               :session-id="viewer.state.value.sessionId"
               :temp-session-id="viewer.state.value.tempSessionId"
@@ -344,8 +344,36 @@
               :is-temp-recording="viewer.state.value.isTempRecording"
               :streamer-id="props.streamerId"
               :platform="props.platform"
+              :video-element="hlsVideoRef"
               @close="showClipModal = false"
               @clip-created="handleClipCreated"
+              @publish-clip="handlePublishClip"
+            />
+
+            <!-- Build Settings Dialog (for publish workflow) -->
+            <ClipBuildSettingsDialog
+              v-if="publishClipData && currentClipForPublish"
+              v-model="showBuildDialog"
+              :clip="currentClipForPublish"
+              :watermark-settings="(viewer.state.value.watermarkSettings as any) || null"
+              :thumbnail-url="currentClipForPublish.thumbnail_path || null"
+              :publish-mode="true"
+              @confirm="handleBuildConfirm"
+              @build-complete="handleBuildComplete"
+            />
+
+            <!-- Aspect Ratio Selector (when multiple ratios built) -->
+            <AspectRatioPublishSelector
+              v-model="showAspectRatioSelector"
+              :available-ratios="builtAspectRatios"
+              @select="handleAspectRatioSelected"
+            />
+
+            <!-- Platform Select Dialog -->
+            <PlatformSelectDialog
+              :open="showPlatformSelectDialog"
+              @close="showPlatformSelectDialog = false"
+              @select-platform="handlePlatformSelected"
             />
           </div>
         </Transition>
@@ -384,7 +412,10 @@
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
   import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
-  import ClipDurationModal from './ClipDurationModal.vue';
+  import LivestreamClipSelector from './LivestreamClipSelector.vue';
+  import ClipBuildSettingsDialog from './ClipBuildSettingsDialog.vue';
+  import AspectRatioPublishSelector from './AspectRatioPublishSelector.vue';
+  import PlatformSelectDialog from './PlatformSelectDialog.vue';
   import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
   import { getWatermarkImage, resolveWatermarkById } from '@/services/database/watermarks';
   import { createClipVersion } from '@/services/database/clip-versions';
@@ -436,6 +467,16 @@
   const watermarkUrl = ref<string | null>(null);
   const watermarkDimensions = ref<{ width: number; height: number } | null>(null);
   let controlsTimeout: number | null = null;
+
+  // Build and publish workflow state
+  const showBuildDialog = ref(false);
+  const showAspectRatioSelector = ref(false);
+  const showPlatformSelectDialog = ref(false);
+  const publishClipData = ref<{ clipId: string; clipPath: string; projectId: string } | null>(null);
+  const builtClipIds = ref<string[]>([]);
+  const currentClipForPublish = ref<any>(null);
+  const builtAspectRatios = ref<string[]>([]);
+  const selectedClipIdForPublish = ref<string | null>(null);
 
   // PiP state tracking
   const isInPipMode = ref(false);
@@ -860,6 +901,125 @@
     }
 
     emit('clip-created', clipPath, projectId);
+  }
+
+  async function handlePublishClip(clipId: string, clipPath: string, projectId: string) {
+    // Close the clip selector modal
+    showClipModal.value = false;
+
+    // Track the project and clip count for this session
+    if (projectId) {
+      sessionProjectId.value = projectId;
+      clipsCreatedCount.value++;
+    }
+
+    // Store clip data for publish workflow
+    publishClipData.value = { clipId, clipPath, projectId };
+
+    // Load clip data from database
+    try {
+      const { getClip } = await import('@/services/database/clips');
+      const clip = await getClip(clipId);
+      
+      if (clip) {
+        currentClipForPublish.value = clip;
+        // Open build dialog in publish mode
+        showBuildDialog.value = true;
+      } else {
+        showError('Error', 'Failed to load clip data');
+      }
+    } catch (err) {
+      console.error('[WatchDialog] Failed to load clip for publishing:', err);
+      showError('Error', 'Failed to load clip data');
+    }
+  }
+
+  async function handleBuildConfirm(settings: any) {
+    // Build settings confirmed, trigger the build process
+    console.log('[WatchDialog] Build settings confirmed:', settings);
+    
+    if (!publishClipData.value) return;
+
+    try {
+      // Import build functions
+      const { createClipBuild } = await import('@/services/database/clip-build');
+      const { invoke } = await import('@tauri-apps/api/core');
+      
+      const clipId = publishClipData.value.clipId;
+
+      // Create a single build record with all aspect ratios
+      const buildId = await createClipBuild(clipId, {
+        aspectRatios: settings.aspectRatios,
+        quality: settings.quality,
+        frameRate: settings.frameRate,
+        outputFormat: settings.format,
+      });
+
+      // Start the build process via Tauri
+      await invoke('build_clip', {
+        clipId,
+        settings: {
+          aspectRatios: settings.aspectRatios,
+          quality: settings.quality,
+          frameRate: settings.frameRate,
+          format: settings.format,
+          watermark: settings.watermark,
+          framingMode: settings.framingMode,
+          manualFramingConfigs: settings.manualFramingConfigs,
+          intro: settings.intro,
+          outro: settings.outro,
+          campaignId: settings.campaignId,
+        },
+      });
+
+      // Simulate build completion for now (in production, this would come from Tauri events)
+      // TODO: Listen to actual build completion events from Tauri
+      setTimeout(() => {
+        handleBuildComplete([buildId]);
+      }, 2000);
+
+    } catch (err) {
+      console.error('[WatchDialog] Failed to start build:', err);
+      showError('Build Failed', 'Failed to start the build process');
+      showBuildDialog.value = false;
+    }
+  }
+
+  function handleBuildComplete(buildIds: string[]) {
+    // Build completed, store build IDs
+    builtClipIds.value = buildIds;
+    showBuildDialog.value = false;
+
+    // If multiple aspect ratios were built, show selector
+    // Otherwise, proceed directly to publish
+    if (buildIds.length > 1) {
+      // Get aspect ratios from the builds
+      // For now, use common ratios as placeholder
+      builtAspectRatios.value = ['16:9', '9:16', '1:1'];
+      showAspectRatioSelector.value = true;
+    } else if (buildIds.length === 1) {
+      selectedClipIdForPublish.value = buildIds[0];
+      showPlatformSelectDialog.value = true;
+    }
+  }
+
+  function handleAspectRatioSelected(ratio: string) {
+    // User selected an aspect ratio to publish
+    // Find the corresponding build ID (for now, use first one as placeholder)
+    if (builtClipIds.value.length > 0) {
+      selectedClipIdForPublish.value = builtClipIds.value[0];
+      showAspectRatioSelector.value = false;
+      showPlatformSelectDialog.value = true;
+    }
+  }
+
+  function handlePlatformSelected(platformId: string) {
+    // User selected a platform to publish to
+    // This will open the platform-specific publish dialog
+    console.log('[WatchDialog] Platform selected:', platformId);
+    showPlatformSelectDialog.value = false;
+    // TODO: Open platform-specific publish dialog (PublishDestinationDialog, then platform dialog)
+    showSuccess('Ready to Publish', `Selected ${platformId} - Platform-specific dialogs coming soon`);
   }
 
   async function handleClose() {

@@ -13,6 +13,7 @@ import {
 	CropIcon,
 	Trash2,
 	Megaphone,
+	Share2,
 } from "lucide-vue-next";
 import ManualPOIEditor from "../../components/poi/ManualPOIEditor.vue";
 import type { ManualFramingConfig, ManualFramingConfigs } from "@/types";
@@ -736,6 +737,13 @@ async function handleCopyError() {
 		setTimeout(() => { copied.value = false; }, 1000);
 	}
 }
+
+function handlePublishNow() {
+	// TODO: Open ClipBuildSettingsDialog in publish mode with exported clip
+	console.log('[ExportButton] Publish Now clicked for exported clip:', exportedPath.value);
+	// For now, show a toast notification
+	alert('Publish workflow will open ClipBuildSettingsDialog in publish mode - coming soon!');
+}
 </script>
 
 <template>
@@ -791,7 +799,11 @@ async function handleCopyError() {
 										</div>
 
 										<div class="export-dialog__success-actions">
-											<button class="export-dialog__success-btn export-dialog__success-btn--primary" @click="handleDownload">
+											<button class="export-dialog__success-btn export-dialog__success-btn--primary" @click="handlePublishNow">
+												<Share2 :size="16" />
+												Publish Now
+											</button>
+											<button class="export-dialog__success-btn" @click="handleDownload">
 												<Download :size="16" />
 												Download to Local File
 											</button>

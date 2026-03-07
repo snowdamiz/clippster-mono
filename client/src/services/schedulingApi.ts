@@ -197,6 +197,22 @@ export async function schedulePost(data: SchedulePostData): Promise<ScheduleResp
 }
 
 /**
+ * Update media URLs for scheduled posts after background upload
+ */
+export async function updateScheduledPostMedia(
+  postIds: number[],
+  mediaUrl: string,
+  thumbnailUrl?: string
+): Promise<{ success: boolean; updated: number; failed: number; error?: string }> {
+  const response = await api.patch('/social/scheduled/update-media', {
+    post_ids: postIds,
+    media_url: mediaUrl,
+    thumbnail_url: thumbnailUrl,
+  });
+  return response.data;
+}
+
+/**
  * List user's scheduled posts
  */
 export async function listScheduledPosts(status?: string): Promise<ScheduledPostsListResponse> {

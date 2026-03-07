@@ -2481,6 +2481,9 @@
         clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
       }
       console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
+      
+      // Show success toast with Publish Now option
+      success('Build Complete', 'Your clip has been built successfully. Ready to publish!');
     } else if (isCancelled) {
       clip.build_status = 'pending';
       clip.build_progress = 0;
