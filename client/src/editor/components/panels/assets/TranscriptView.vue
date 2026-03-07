@@ -7,7 +7,6 @@ import ConfirmDialog from "../../dialogs/ConfirmDialog.vue";
 import {
 	FileText,
 	Loader2,
-	Search,
 	ChevronUp,
 	ChevronDown,
 	X as XIcon,
@@ -20,6 +19,7 @@ import {
 	Undo2,
 	RefreshCw,
 } from "lucide-vue-next";
+import PanelSearchBar from "./PanelSearchBar.vue";
 
 // ── Types ──
 interface TranscriptWord {
@@ -79,7 +79,6 @@ const strikethroughIndices = ref<Set<number>>(new Set());
 // Search
 const searchQuery = ref("");
 const debouncedSearchQuery = ref("");
-const searchInputRef = ref<HTMLInputElement>();
 const currentMatchIndex = ref(0);
 let searchDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -996,22 +995,12 @@ watch(
 <template>
 	<div class="flex h-full flex-col overflow-hidden">
 		<!-- Toolbar -->
-		<div class="flex items-center gap-1 border-b border-white/10 px-3 py-2">
-			<!-- Search -->
-			<div class="relative flex-1">
-				<div class="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">
-					<Search class="size-3 text-zinc-500" />
-				</div>
-				<input
-					ref="searchInputRef"
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search..."
-					class="w-full pl-7 pr-2 py-1 text-[11px] bg-white/5 border border-white/10 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500/50 text-zinc-200 placeholder:text-zinc-600"
-					@keydown.enter.prevent="navigateMatch(1)"
-					@keydown.shift.enter.prevent="navigateMatch(-1)"
-				/>
-			</div>
+		<PanelSearchBar
+			v-model="searchQuery"
+			placeholder="Search..."
+			@keydown.enter.prevent="navigateMatch(1)"
+			@keydown.shift.enter.prevent="navigateMatch(-1)"
+		>
 			<template v-if="searchQuery.trim() && matchOccurrences.length > 0">
 				<span class="text-[9px] tabular-nums text-zinc-500 whitespace-nowrap">
 					{{ currentMatchIndex + 1 }}/{{ matchOccurrences.length }}
@@ -1053,7 +1042,7 @@ watch(
 			>
 				<Strikethrough class="size-3.5" />
 			</button>
-		</div>
+		</PanelSearchBar>
 
 		<!-- Strikethrough action bar -->
 		<div

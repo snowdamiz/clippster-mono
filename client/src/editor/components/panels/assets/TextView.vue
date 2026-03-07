@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { ref, computed } from "vue";
-// activeCategory removed
 import { useEditor } from "../../../composables/useEditor";
 import { useFontManager } from "../../../composables/useFontManager";
-import { DEFAULT_TEXT_ELEMENT, TEXT_PRESETS, type TextPresetCategory } from "../../../constants/text-constants";
+import { DEFAULT_TEXT_ELEMENT, TEXT_PRESETS } from "../../../constants/text-constants";
 import { buildTextElement } from "../../../lib/timeline/element-utils";
 import { Plus } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
@@ -12,29 +11,12 @@ import PanelSearchBar from "./PanelSearchBar.vue";
 const { editor } = useEditor();
 const { uploadCustomFont } = useFontManager();
 
-const activeCategory = ref<TextPresetCategory | "all">("all");
-
-const categories: { value: TextPresetCategory | "all"; label: string }[] = [
-	{ value: "all", label: "All" },
-	{ value: "basic", label: "Basic" },
-	{ value: "titles", label: "Titles" },
-	{ value: "subtitles", label: "Subs" },
-	{ value: "lower-thirds", label: "L3" },
-	{ value: "social", label: "Social" },
-	{ value: "gaming", label: "Gaming" },
-	{ value: "neon", label: "Neon" },
-	{ value: "bubbles", label: "Bubbles" },
-	{ value: "handwritten", label: "Hand" },
-];
-
-const hoveredPreset = ref<string | null>(null);
 const searchQuery = ref("");
 
 const filteredPresets = computed(() => {
-	let presets = activeCategory.value === "all" ? TEXT_PRESETS : TEXT_PRESETS.filter((p) => p.category === activeCategory.value);
 	const q = searchQuery.value.trim().toLowerCase();
-	if (q) presets = presets.filter((p) => p.name.toLowerCase().includes(q) || p.element.content?.toLowerCase().includes(q));
-	return presets;
+	if (!q) return TEXT_PRESETS;
+	return TEXT_PRESETS.filter((p) => p.name.toLowerCase().includes(q) || p.element.content?.toLowerCase().includes(q));
 });
 
 function addPreset(presetId: string) {
@@ -49,12 +31,6 @@ function addPreset(presetId: string) {
 		element,
 		placement: { mode: "auto" },
 	});
-}
-
-function addDefaultText() {
-	const currentTime = editor.playback.getCurrentTime();
-	const element = buildTextElement({ raw: DEFAULT_TEXT_ELEMENT, startTime: currentTime });
-	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
 }
 
 async function handleUploadFont() {
@@ -143,79 +119,29 @@ function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 			</Button>
 		</PanelSearchBar>
 
-		<!-- Category tabs -->
-		<div class="scrollbar-none flex gap-0.5 overflow-x-auto border-b border-white/5 px-2 py-1.5">
+		<!-- Presets list -->
+		<div class="flex-1 overflow-y-auto">
 			<button
-				v-for="cat in categories"
-				:key="cat.value"
+				v-for="preset in filteredPresets"
+				:key="preset.id"
 				type="button"
-				:class="[
-					'shrink-0 rounded px-2.5 py-1 text-xs font-medium transition-all',
-					activeCategory === cat.value
-						? 'bg-primary/15 text-primary'
-						: 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5',
-				]"
-				@click="activeCategory = cat.value"
+				class="group flex w-full items-center gap-3 border-b border-white/[0.05] px-3 py-2 transition-colors hover:bg-white/[0.03]"
+				@click="addPreset(preset.id)"
 			>
-				{{ cat.label }}
-			</button>
-		</div>
-
-		<!-- Presets grid -->
-		<div class="flex-1 overflow-y-auto p-2">
-			<!-- Add default text button -->
-			<button
-				type="button"
-				class="mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/30 bg-primary/5 py-3 text-xs text-primary transition-colors hover:border-primary/50 hover:bg-primary/10"
-				@click="addDefaultText"
-			>
-				<Plus class="size-4" />
-				Add Default Text
-			</button>
-
-			<div class="grid grid-cols-2 gap-1.5">
-				<button
-					v-for="preset in filteredPresets"
-					:key="preset.id"
-					type="button"
-					class="group relative flex flex-col items-center justify-center overflow-hidden rounded-lg border border-white/5 transition-all hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5"
+				<!-- Styled preview swatch -->
+				<div
+					class="flex h-9 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md"
 					:class="getPresetCardBg(preset)"
-					style="min-height: 96px"
-					@click="addPreset(preset.id)"
-					@mouseenter="hoveredPreset = preset.id"
-					@mouseleave="hoveredPreset = null"
 				>
-					<!-- Preview area -->
-					<div class="flex flex-1 items-center justify-center px-3 py-3">
-						<div :style="getPresetBgStyle(preset)" class="relative flex items-center justify-center">
-							<span
-								:style="getPresetPreviewStyle(preset)"
-								class="select-none truncate whitespace-nowrap leading-tight"
-							>
-								Sample
-							</span>
-						</div>
+					<div :style="getPresetBgStyle(preset)" class="flex items-center justify-center px-1.5">
+						<span :style="getPresetPreviewStyle(preset)" class="select-none whitespace-nowrap leading-tight">
+							Sample
+						</span>
 					</div>
-					<!-- Label -->
-					<div class="w-full border-t border-white/[0.03] bg-black/20 px-1.5 py-1">
-						<span class="block truncate text-center text-[9px] leading-none text-zinc-600 group-hover:text-zinc-400">{{ preset.name }}</span>
-					</div>
-					<!-- Hover tooltip -->
-					<div
-						v-if="hoveredPreset === preset.id"
-						class="pointer-events-none absolute inset-x-0 -top-10 z-10 flex items-center justify-center"
-					>
-						<div class="rounded bg-zinc-800 px-2 py-1 shadow-lg border border-white/10">
-							<span
-								:style="{ ...getPresetPreviewStyle(preset), fontSize: '16px' }"
-								class="select-none whitespace-nowrap leading-tight"
-							>
-								Sample Text
-							</span>
-						</div>
-					</div>
-				</button>
-			</div>
+				</div>
+				<!-- Name -->
+				<span class="truncate text-xs text-zinc-400 transition-colors group-hover:text-zinc-200">{{ preset.name }}</span>
+			</button>
 		</div>
 	</div>
 </template>

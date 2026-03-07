@@ -4,7 +4,8 @@ import { FILTER_PRESETS, FILTER_CATEGORIES } from "../../../constants/filter-con
 import type { FilterCategory, FilterPreset } from "../../../types/filters";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
-import { Palette, Search, Check } from "lucide-vue-next";
+import { Palette, Check } from "lucide-vue-next";
+import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor();
 const { selectedElements } = useElementSelection();
@@ -129,17 +130,7 @@ function getFilterPreviewStyle(preset: FilterPreset) {
 <template>
 	<div class="flex h-full flex-col">
 		<!-- Search -->
-		<div class="border-b border-white/10 px-3 py-2">
-			<div class="flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-2">
-				<Search class="size-3.5 shrink-0 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search filters..."
-					class="h-7 w-full bg-transparent text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
-				/>
-			</div>
-		</div>
+		<PanelSearchBar v-model="searchQuery" placeholder="Search filters..." />
 
 		<!-- Category tabs -->
 		<div class="flex items-center gap-0.5 overflow-x-auto border-b border-white/10 px-2 py-1">

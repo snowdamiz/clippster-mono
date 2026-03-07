@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { Search } from "lucide-vue-next";
 
-defineProps<{
+defineOptions({ inheritAttrs: false });
+
+const props = defineProps<{
 	modelValue: string;
 	placeholder?: string;
 }>();
 
-defineEmits<{
+const emit = defineEmits<{
 	"update:modelValue": [value: string];
-	input: [event: Event];
-	"keydown.enter": [];
 }>();
+
+function onInput(e: Event) {
+	emit("update:modelValue", (e.target as HTMLInputElement).value);
+}
 </script>
 
 <template>
@@ -22,8 +26,8 @@ defineEmits<{
 				type="text"
 				:placeholder="placeholder"
 				class="w-full bg-transparent py-2 pl-8 pr-3 text-sm text-zinc-200 placeholder-zinc-500 outline-none"
-				@input="$emit('update:modelValue', ($event.target as HTMLInputElement).value); $emit('input', $event)"
-				@keydown.enter="$emit('keydown.enter')"
+				v-bind="$attrs"
+				@input="onInput"
 			/>
 		</div>
 		<slot />

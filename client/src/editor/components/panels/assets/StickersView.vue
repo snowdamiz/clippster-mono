@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { buildStickerElement } from "../../../lib/timeline/element-utils";
 import {
@@ -12,20 +12,15 @@ import {
 	type CollectionInfo,
 	type IconSearchResult,
 } from "../../../lib/iconify-api";
-import {
-	STICKER_CATEGORIES,
-	STICKER_CATEGORY_CONFIG,
-} from "../../../constants/stickers-constants";
-import type { StickerCategory } from "../../../types/stickers";
 import StickerItem from "./StickerItem.vue";
-import { Search, ArrowLeft, Loader2, ChevronRight, Smile } from "lucide-vue-next";
+import { ArrowLeft, Loader2, ChevronRight, Smile } from "lucide-vue-next";
+import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor();
 
 type ViewMode = "search" | "browse" | "collection";
 
 const searchQuery = ref("");
-const selectedCategory = ref<StickerCategory>("all");
 const selectedCollection = ref<string | null>(null);
 const viewMode = ref<ViewMode>("browse");
 
@@ -43,29 +38,11 @@ const MAX_RECENT_STICKERS = 50;
 
 let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
-const popularForCategory = computed(() => {
-	const cat = selectedCategory.value;
-	if (cat === "all") {
-		return [
-			...POPULAR_COLLECTIONS.emoji,
-			...POPULAR_COLLECTIONS.general,
-			...POPULAR_COLLECTIONS.brands,
-		];
-	}
-	return POPULAR_COLLECTIONS[cat as keyof typeof POPULAR_COLLECTIONS] ?? [];
-});
-
-const filteredCollections = computed(() => {
-	const cat = selectedCategory.value;
-	if (cat === "all") return collections.value;
-	const categoryName = STICKER_CATEGORY_CONFIG[cat];
-	if (!categoryName) return collections.value;
-	return Object.fromEntries(
-		Object.entries(collections.value).filter(
-			([, info]) => info.category === categoryName,
-		),
-	);
-});
+const popularForCategory = [
+	...POPULAR_COLLECTIONS.emoji,
+	...POPULAR_COLLECTIONS.general,
+	...POPULAR_COLLECTIONS.brands,
+];
 
 const collectionIcons = computed(() => {
 	if (!currentCollection.value) return [];
@@ -128,8 +105,7 @@ async function doSearch(query: string) {
 	isSearching.value = true;
 	viewMode.value = "search";
 	try {
-		const category = STICKER_CATEGORY_CONFIG[selectedCategory.value];
-		searchResults.value = await searchIcons(query, 100, undefined, category);
+		searchResults.value = await searchIcons(query, 100);
 	} catch (error) {
 		console.error("Search failed:", error);
 		searchResults.value = null;
@@ -164,12 +140,6 @@ function goBack() {
 	}
 }
 
-function selectCategory(cat: StickerCategory) {
-	selectedCategory.value = cat;
-	viewMode.value = "browse";
-	selectedCollection.value = null;
-	currentCollection.value = null;
-}
 
 function addStickerToTimeline(iconName: string) {
 	addingSticker.value = iconName;
@@ -191,11 +161,6 @@ function addToRecent(iconName: string) {
 	recentStickers.value = recent.slice(0, MAX_RECENT_STICKERS);
 }
 
-watch(selectedCategory, () => {
-	if (searchQuery.value.trim()) {
-		doSearch(searchQuery.value);
-	}
-});
 
 onMounted(() => {
 	loadCollections();
@@ -205,36 +170,11 @@ onMounted(() => {
 <template>
 	<div class="flex h-full flex-col overflow-hidden">
 		<!-- Search bar -->
-		<div class="shrink-0 border-b border-white/10 px-3 py-2">
-			<div class="relative">
-				<Search class="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search stickers..."
-					class="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-8 pr-3 text-sm text-zinc-200 placeholder-zinc-500 outline-none focus:border-white/20"
-					@input="handleSearchInput"
-				/>
-			</div>
-		</div>
-
-		<!-- Category tabs -->
-		<div class="flex shrink-0 gap-1 border-b border-white/10 px-3 py-1.5">
-			<button
-				v-for="cat in STICKER_CATEGORIES"
-				:key="cat"
-				type="button"
-				:class="[
-					'rounded-md px-2.5 py-1 text-xs capitalize transition-colors',
-					selectedCategory === cat
-						? 'bg-white/10 text-zinc-200'
-						: 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5',
-				]"
-				@click="selectCategory(cat)"
-			>
-				{{ cat }}
-			</button>
-		</div>
+		<PanelSearchBar
+			v-model="searchQuery"
+			placeholder="Search stickers..."
+			@input="handleSearchInput"
+		/>
 
 		<!-- Back button -->
 		<button
@@ -359,11 +299,11 @@ onMounted(() => {
 				</div>
 
 				<!-- All collections -->
-				<div v-if="Object.keys(filteredCollections).length > popularForCategory.length" class="border-t border-white/5 p-2">
+				<div v-if="Object.keys(collections).length > popularForCategory.length" class="border-t border-white/5 p-2">
 					<p class="mb-1.5 px-1 text-[11px] font-medium uppercase tracking-wider text-zinc-500">All Collections</p>
 					<div class="flex flex-col gap-0.5">
 						<button
-							v-for="(info, prefix) in filteredCollections"
+							v-for="(info, prefix) in collections"
 							:key="prefix"
 							type="button"
 							class="group flex items-center justify-between rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/5"
