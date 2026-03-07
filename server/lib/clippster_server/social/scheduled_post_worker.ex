@@ -370,9 +370,13 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
       case PostForMe.create_social_post(post_params) do
         {:ok, pfm_post} ->
+          # Try to fetch post_url and provider_post_id from feed
+          {post_url, provider_post_id} = fetch_post_data_from_feed(provider_account_id, pfm_post.id)
+          
           result = %{
             post_id: pfm_post.id || "pfm_#{post.id}",
-            post_url: nil  # Will be fetched from feed later
+            post_url: post_url,
+            provider_post_id: provider_post_id
           }
           handle_publish_success(post, result)
 
@@ -416,6 +420,13 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
       post_url: result.post_url,
       posted_at: DateTime.utc_now()
     }
+
+    # Add provider_post_id if available
+    attrs = if Map.has_key?(result, :provider_post_id) && result.provider_post_id do
+      Map.put(attrs, :provider_post_id, result.provider_post_id)
+    else
+      attrs
+    end
 
     attrs = if content_hash, do: Map.put(attrs, :content_hash, content_hash), else: attrs
 
@@ -479,5 +490,30 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     end
   end
 
-  defp classify_error(_), do: :transient
+  defp classify_error(_reason), do: :transient
+
+  # Fetch post_url and provider_post_id from PostForMe feed
+  defp fetch_post_data_from_feed(provider_account_id, post_id) do
+    case PostForMe.get_social_account_feed(provider_account_id) do
+      {:ok, feed_items} ->
+        # Find the post in the feed by social_post_id
+        case Enum.find(feed_items, fn item ->
+          item["social_post_id"] == post_id
+        end) do
+          nil ->
+            Logger.warning("[ScheduledPostWorker] Post #{post_id} not found in feed yet")
+            {nil, nil}
+          
+          item ->
+            post_url = item["platform_url"]
+            provider_post_id = item["platform_post_id"]
+            Logger.info("[ScheduledPostWorker] Found post data in feed: url=#{post_url}, provider_id=#{provider_post_id}")
+            {post_url, provider_post_id}
+        end
+
+      {:error, reason} ->
+        Logger.warning("[ScheduledPostWorker] Failed to fetch feed: #{inspect(reason)}")
+        {nil, nil}
+    end
+  end
 end

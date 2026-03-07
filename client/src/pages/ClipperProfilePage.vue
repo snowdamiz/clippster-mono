@@ -585,7 +585,7 @@
                         {{ post.status }}
                       </span>
                       <a v-if="post.post_url" :href="post.post_url" target="_blank" class="post-card__link">
-                        View on Instagram
+                        View on {{ getPlatformDisplayName(post.platform) }}
                       </a>
                     </div>
                     <p v-if="post.caption" class="post-card__caption">
@@ -1556,6 +1556,18 @@
     if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M';
     if (views >= 1000) return (views / 1000).toFixed(1) + 'K';
     return views.toString();
+  };
+
+  const getPlatformDisplayName = (platform: string): string => {
+    const platformNames: Record<string, string> = {
+      'instagram': 'Instagram',
+      'x': 'X',
+      'twitter': 'X',
+      'youtube': 'YouTube',
+      'tiktok': 'TikTok',
+      'facebook': 'Facebook'
+    };
+    return platformNames[platform?.toLowerCase()] || platform || 'Platform';
   };
 
   const switchLeaderboardPeriod = (period: 'weekly' | 'monthly') => {

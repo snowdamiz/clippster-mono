@@ -11,6 +11,7 @@ defmodule ClippsterServerWeb.UserPostsController do
   alias ClippsterServer.Campaigns.UserPost
   alias ClippsterServer.Organizations
   alias ClippsterServer.Social
+  alias ClippsterServer.Social.PostSubmission
   alias ClippsterServer.Social.Providers.PostForMe
 
   @doc """
@@ -281,15 +282,15 @@ defmodule ClippsterServerWeb.UserPostsController do
   def generate_thumbnail(conn, %{"id" => id}) do
     user = conn.assigns.current_user
 
-    with {:ok, post} <- get_user_post(user.id, id),
+    with {:ok, post, post_type} <- find_user_post_for_thumbnail(user.id, id),
          :ok <- validate_needs_thumbnail(post),
          {:ok, thumbnail_url} <- generate_thumbnail_from_video(post.media_url) do
-      case Campaigns.update_user_post(post, %{thumbnail_url: thumbnail_url}) do
+      case update_post_thumbnail(post, post_type, thumbnail_url) do
         {:ok, updated_post} ->
           conn
           |> json(%{
             success: true,
-            post: serialize_post(updated_post),
+            post: serialize_post_map(updated_post),
             thumbnail_url: thumbnail_url,
             message: "Thumbnail generated successfully"
           })
@@ -701,14 +702,27 @@ defmodule ClippsterServerWeb.UserPostsController do
   end
 
   defp serialize_post(%{} = post) when is_map(post) do
+    # Generate presigned URLs for R2 storage URLs
+    thumbnail_url = if post.thumbnail_url && String.contains?(post.thumbnail_url, ".r2.cloudflarestorage.com") do
+      ClippsterServer.Storage.presigned_url!(post.thumbnail_url, expires_in: 3600)
+    else
+      post.thumbnail_url
+    end
+
+    media_url = if post.media_url && String.contains?(post.media_url, ".r2.cloudflarestorage.com") do
+      ClippsterServer.Storage.presigned_url!(post.media_url, expires_in: 3600)
+    else
+      post.media_url
+    end
+
     %{
       id: post.id,
       platform: post.platform,
       post_id: post.post_id,
       post_url: post.post_url,
       caption: post.caption,
-      media_url: post.media_url,
-      thumbnail_url: post.thumbnail_url,
+      media_url: media_url,
+      thumbnail_url: thumbnail_url,
       media_type: post.media_type,
       status: post.status,
       view_count: post.view_count || 0,
@@ -1058,6 +1072,105 @@ defmodule ClippsterServerWeb.UserPostsController do
     }
   end
 
+  defp extract_feed_analytics("youtube", item, _account) do
+    m = item["metrics"] || %{}
+
+    %{
+      view_count: m["views"] || 0,
+      like_count: m["likes"] || 0,
+      comment_count: m["comments"] || 0
+    }
+  end
+
+  defp extract_feed_analytics("facebook", item, _account) do
+    m = item["metrics"] || %{}
+
+    %{
+      view_count: m["video_views"] || m["media_views"] || 0,
+      like_count: m["reactions_total"] || m["reactions_like"] || 0,
+      comment_count: m["comments"] || 0,
+      share_count: m["shares"] || 0,
+      reach_count: m["reach"] || 0
+    }
+  end
+
+  defp extract_feed_analytics(_platform, _item, _account), do: %{}
+
+  # Thumbnail generation helpers
+
+  defp find_user_post_for_thumbnail(user_id, post_id) do
+    # Try user_posts table first
+    case Campaigns.get_user_post(post_id) do
+      %UserPost{user_id: ^user_id} = post ->
+        {:ok, post, :user_post}
+
+      %UserPost{} ->
+        {:error, :not_found}
+
+      nil ->
+        # Try post_submissions table
+        case Social.get_post_submission(post_id) do
+          %PostSubmission{submitted_by_user_id: ^user_id} = post ->
+            {:ok, post, :post_submission}
+
+          %PostSubmission{} ->
+            {:error, :not_found}
+
+          nil ->
+            {:error, :not_found}
+        end
+    end
+  end
+
+  defp update_post_thumbnail(post, :user_post, thumbnail_url) do
+    Campaigns.update_user_post(post, %{thumbnail_url: thumbnail_url})
+  end
+
+  defp update_post_thumbnail(post, :post_submission, thumbnail_url) do
+    # Use Repo.update directly with a simple changeset
+    post
+    |> Ecto.Changeset.change(%{thumbnail_url: thumbnail_url})
+    |> ClippsterServer.Repo.update()
+  end
+
+  defp serialize_post_map(%UserPost{} = post), do: serialize_post(post)
+
+  defp serialize_post_map(%PostSubmission{} = post) do
+    # Generate presigned URLs for R2 storage URLs
+    thumbnail_url = if post.thumbnail_url && String.contains?(post.thumbnail_url, ".r2.cloudflarestorage.com") do
+      ClippsterServer.Storage.presigned_url!(post.thumbnail_url, expires_in: 3600)
+    else
+      post.thumbnail_url
+    end
+
+    media_url = if post.media_url && String.contains?(post.media_url, ".r2.cloudflarestorage.com") do
+      ClippsterServer.Storage.presigned_url!(post.media_url, expires_in: 3600)
+    else
+      post.media_url
+    end
+
+    %{
+      id: post.id,
+      platform: post.platform,
+      post_id: post.post_id,
+      post_url: post.post_url,
+      caption: post.caption,
+      media_url: media_url,
+      thumbnail_url: thumbnail_url,
+      media_type: post.media_type,
+      status: post.status,
+      view_count: post.view_count || 0,
+      like_count: post.like_count || 0,
+      comment_count: post.comment_count || 0,
+      save_count: post.save_count || 0,
+      reach_count: post.reach_count || 0,
+      impressions_count: post.impressions_count || 0,
+      published_at: post.posted_at,
+      inserted_at: post.inserted_at,
+      source: "organization"
+    }
+  end
+
   defp validate_needs_thumbnail(post) do
     cond do
       is_nil(post.media_url) or post.media_url == "" ->
@@ -1091,10 +1204,40 @@ defmodule ClippsterServerWeb.UserPostsController do
   end
 
   defp download_video(url) do
-    case HTTPoison.get(url, [], timeout: 30_000, recv_timeout: 30_000) do
-      {:ok, %{status_code: 200, body: body}} -> {:ok, body}
-      {:ok, %{status_code: status}} -> {:error, "HTTP #{status}"}
-      {:error, reason} -> {:error, reason}
+    # Extract the key from the R2 URL
+    case ClippsterServer.Storage.extract_key_from_url(url) do
+      {:ok, key} ->
+        # Download directly from R2 using ExAws
+        bucket = ClippsterServer.Storage.bucket()
+        config = ClippsterServer.Storage.config()
+        
+        case ExAws.S3.get_object(bucket, key) |> ExAws.request(config) do
+          {:ok, %{body: body}} ->
+            {:ok, body}
+          
+          {:error, reason} ->
+            Logger.error("[download_video] S3 download failed for key #{key}: #{inspect(reason)}")
+            {:error, reason}
+        end
+      
+      {:error, _} ->
+        # Not an R2 URL, try direct HTTP download
+        headers = [{"User-Agent", "ClippsterServer/1.0"}]
+        options = [timeout: 30_000, recv_timeout: 30_000, follow_redirect: true, max_redirect: 5]
+        
+        case HTTPoison.get(url, headers, options) do
+          {:ok, %{status_code: 200, body: body}} -> 
+            {:ok, body}
+          
+          {:ok, %{status_code: status, body: body}} -> 
+            Logger.error("[download_video] HTTP #{status} for URL: #{url}")
+            Logger.error("[download_video] Response body: #{inspect(body)}")
+            {:error, "HTTP #{status}"}
+          
+          {:error, reason} -> 
+            Logger.error("[download_video] Request failed: #{inspect(reason)}")
+            {:error, reason}
+        end
     end
   end
 
@@ -1145,30 +1288,6 @@ defmodule ClippsterServerWeb.UserPostsController do
       {:error, reason} -> {:error, reason}
     end
   end
-
-  defp extract_feed_analytics("youtube", item, _account) do
-    m = item["metrics"] || %{}
-
-    %{
-      view_count: m["views"] || 0,
-      like_count: m["likes"] || 0,
-      comment_count: m["comments"] || 0
-    }
-  end
-
-  defp extract_feed_analytics("facebook", item, _account) do
-    m = item["metrics"] || %{}
-
-    %{
-      view_count: m["video_views"] || m["media_views"] || 0,
-      like_count: m["reactions_total"] || m["reactions_like"] || 0,
-      comment_count: m["comments"] || 0,
-      share_count: m["shares"] || 0,
-      reach_count: m["reach"] || 0
-    }
-  end
-
-  defp extract_feed_analytics(_platform, _item, _account), do: %{}
 
   defp create_org_submission(user, account, post_data, params, platform, profile, campaign_id) do
     submission_attrs = %{
