@@ -252,7 +252,7 @@ class TauriStorageService {
 		const filePath = await this.resolveFilePath({ mediaAsset, projectId });
 
 		await db.execute(
-			`INSERT INTO opencut_media_assets 
+			`INSERT INTO opencut_media_assets
 			 (id, project_id, name, type, file_path, file_size, last_modified, width, height, duration, fps, thumbnail_url, ephemeral)
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(id) DO UPDATE SET
@@ -280,6 +280,13 @@ class TauriStorageService {
 				mediaAsset.ephemeral ? 1 : 0,
 			],
 		);
+
+		// Fire-and-forget: generate a persistent thumbnail for video assets that don't have one
+		const hasPersistentThumbnail =
+			mediaAsset.thumbnailUrl && !mediaAsset.thumbnailUrl.startsWith("blob:");
+		if (mediaAsset.type === "video" && !hasPersistentThumbnail) {
+			this.generateAndPersistThumbnail(mediaAsset.id, projectId, filePath).catch(() => {});
+		}
 
 		return filePath;
 	}
@@ -520,6 +527,43 @@ class TauriStorageService {
 		await db.execute("DELETE FROM opencut_media_assets");
 		await db.execute("DELETE FROM opencut_projects");
 		await db.execute("DELETE FROM opencut_saved_sounds");
+	}
+
+	/**
+	 * Get the thumbnail for the first video element in a project's video track.
+	 * Used by the project listing page to show a preview thumbnail for each project.
+	 */
+	async getProjectFirstVideoThumbnail({ projectId }: { projectId: string }): Promise<string | undefined> {
+		try {
+			const db = await getDatabase();
+			const rows = await db.select<ProjectRow[]>(
+				"SELECT project_data FROM opencut_projects WHERE id = ?",
+				[projectId],
+			);
+			if (!rows.length) return undefined;
+
+			const serialized: SerializedProject = JSON.parse(rows[0].project_data);
+			const firstScene = serialized.scenes?.[0];
+			const videoTrack = firstScene?.tracks?.find((t: any) => t.type === "video") as any;
+			const mediaId = videoTrack?.elements?.[0]?.mediaId;
+			if (!mediaId) return undefined;
+
+			const assetRows = await db.select<MediaAssetRow[]>(
+				"SELECT id, thumbnail_url, file_path, type FROM opencut_media_assets WHERE id = ? AND project_id = ?",
+				[mediaId, projectId],
+			);
+			if (!assetRows.length) return undefined;
+
+			const row = assetRows[0];
+			let thumbnailUrl = await this.resolveThumbnailUrl(row.thumbnail_url);
+			if (!thumbnailUrl && row.type === "video" && row.file_path) {
+				thumbnailUrl = await this.generateAndPersistThumbnail(row.id, projectId, row.file_path);
+			}
+			return thumbnailUrl;
+		} catch (err) {
+			console.warn("[TauriStorage] Failed to get project first video thumbnail:", err);
+			return undefined;
+		}
 	}
 
 	isOPFSSupported(): boolean {
