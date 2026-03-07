@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useEditor } from "../composables/useEditor";
 import { useRouter } from "vue-router";
 import ExportButton from "./ExportButton.vue";
@@ -7,6 +7,14 @@ import { Button } from "@/components/ui/button";
 import { ChevronDown, ArrowLeft, Pencil, Trash2, Keyboard, X } from "lucide-vue-next";
 import ShortcutsDialog from "./dialogs/ShortcutsDialog.vue";
 import ChatFab from "@/components/chat/ChatFab.vue";
+import {
+	getVideoEditorSourcesByProjectId,
+	getClip,
+	getProject,
+	getRawVideosByProjectId,
+	getRawVideo,
+} from "@/services/database";
+import { getPlatformConfig } from "@/config/platforms";
 
 const { editor, version } = useEditor();
 const router = useRouter();
@@ -16,6 +24,7 @@ const showDropdown = ref(false);
 const showRenameDialog = ref(false);
 const showShortcutsDialog = ref(false);
 const renameInput = ref("");
+const vodInfo = ref<{ platform: string; streamerName: string | null } | null>(null);
 
 const activeProject = computed(() => {
 	void version.value;
@@ -25,6 +34,56 @@ const activeProject = computed(() => {
 		return null;
 	}
 });
+
+function normalizePlatformKey(platform: string): string {
+	return platform === "YouTube" ? "YouTube" : platform.toLowerCase();
+}
+
+async function loadVodInfo() {
+	const projectId = activeProject.value?.metadata.id;
+	if (!projectId) {
+		vodInfo.value = null;
+		return;
+	}
+	try {
+		const sources = await getVideoEditorSourcesByProjectId(projectId);
+		const source = sources.find((s) => s.source_type === "clip" || s.source_type === "raw_video");
+		if (!source) {
+			vodInfo.value = null;
+			return;
+		}
+		if (source.source_type === "clip") {
+			const clip = await getClip(source.source_id);
+			if (!clip) { vodInfo.value = null; return; }
+			const project = await getProject(clip.project_id);
+			if (!project || !project.platform || project.platform === "Manual") {
+				vodInfo.value = null;
+				return;
+			}
+			const rawVideos = await getRawVideosByProjectId(project.id);
+			vodInfo.value = {
+				platform: normalizePlatformKey(project.platform),
+				streamerName: rawVideos[0]?.source_mint_id ?? null,
+			};
+		} else {
+			const rawVideo = await getRawVideo(source.source_id);
+			if (!rawVideo) { vodInfo.value = null; return; }
+			const project = await getProject(rawVideo.project_id);
+			if (!project || !project.platform || project.platform === "Manual") {
+				vodInfo.value = null;
+				return;
+			}
+			vodInfo.value = {
+				platform: normalizePlatformKey(project.platform),
+				streamerName: rawVideo.source_mint_id ?? null,
+			};
+		}
+	} catch {
+		vodInfo.value = null;
+	}
+}
+
+watch(() => activeProject.value?.metadata.id, loadVodInfo, { immediate: true });
 
 async function handleExit() {
 	if (isExiting.value) return;
@@ -88,15 +147,31 @@ function openRename() {
 <template>
 	<header class="flex h-[3.2rem] items-center justify-between border-b border-white/10 bg-[#0e0e10] px-3 pt-0.5">
 		<div class="relative flex items-center gap-2">
-			<!-- Project dropdown -->
-			<Button
-				variant="secondary"
-				class="flex h-auto items-center justify-center gap-1 px-2.5 py-1.5"
-				@click="showDropdown = !showDropdown"
-			>
-				<ChevronDown class="text-zinc-400 size-4" />
-				<span class="mr-2 text-[0.85rem]">{{ activeProject?.metadata.name }}</span>
-			</Button>
+			<!-- VOD info + project name + Menu button -->
+			<div class="flex items-center gap-2">
+				<template v-if="vodInfo">
+					<img
+						:src="getPlatformConfig(vodInfo.platform)?.icon"
+						class="size-4 object-contain"
+						:alt="vodInfo.platform"
+					/>
+					<span v-if="vodInfo.streamerName" class="text-[0.8rem] text-zinc-300">
+						{{ vodInfo.streamerName }}
+					</span>
+					<span class="text-zinc-600">|</span>
+				</template>
+
+				<span class="text-[0.85rem] text-zinc-200">{{ activeProject?.metadata.name }}</span>
+
+				<Button
+					variant="secondary"
+					class="flex h-auto items-center justify-center gap-1 px-2.5 py-1.5"
+					@click="showDropdown = !showDropdown"
+				>
+					<span class="text-[0.85rem]">Menu</span>
+					<ChevronDown class="text-zinc-400 size-4" />
+				</Button>
+			</div>
 
 			<!-- Dropdown menu -->
 			<div
@@ -148,7 +223,7 @@ function openRename() {
 		</div>
 
 		<nav class="flex items-center gap-2">
-			<ChatFab />
+			<ChatFab compact />
 			<ExportButton />
 			<button
 				type="button"
