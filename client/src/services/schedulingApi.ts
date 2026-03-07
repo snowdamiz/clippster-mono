@@ -249,6 +249,14 @@ export async function cancelScheduledPost(postId: number): Promise<ScheduleRespo
 }
 
 /**
+ * Permanently delete a scheduled post
+ */
+export async function deleteScheduledPost(postId: number): Promise<ScheduleResponse> {
+  const response = await api.delete(`/social/scheduled/${postId}`);
+  return response.data;
+}
+
+/**
  * Retry a failed scheduled post
  */
 export async function retryScheduledPost(postId: number): Promise<ScheduleResponse> {

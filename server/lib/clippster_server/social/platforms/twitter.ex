@@ -15,8 +15,7 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
 
   require Logger
 
-  alias ClippsterServer.Social.TwitterChunkedUpload
-  alias ClippsterServer.Social.TwitterApiClient
+  alias ClippsterServer.Social.Providers.PostForMe
   alias ClippsterServer.Storage
 
   @behaviour ClippsterServer.Social.Platform
@@ -226,59 +225,47 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
   end
 
   @impl true
-  def publish_media(access_token, media_url, opts) do
-    Logger.info("[Twitter] Publishing media from URL: #{media_url}")
+  def publish_media(_access_token, media_url, opts) do
+    Logger.info("[Twitter] Publishing via PostForMe API")
+    Logger.info("[Twitter] Media URL: #{media_url}")
+    Logger.info("[Twitter] Options: #{inspect(opts)}")
 
-    with {:ok, accessible_url} <- maybe_generate_presigned_url(media_url),
-         {:ok, video_binary} <- fetch_video_binary(accessible_url),
-         {:ok, media_id} <- upload_video(access_token, video_binary, opts) do
-      Logger.info("[Twitter] Media published successfully: media_id=#{media_id}")
-      {:ok, %{media_id: media_id}}
+    # Get provider account ID from opts
+    provider_account_id = opts[:provider_account_id]
+    caption = opts[:caption] || ""
+
+    unless provider_account_id do
+      Logger.error("[Twitter] Missing provider_account_id in opts")
+      {:error, :missing_provider_account_id}
     else
-      {:error, reason} = error ->
-        Logger.error("[Twitter] Failed to publish media: #{inspect(reason)}")
-        error
+      # Create post via PostForMe
+      post_attrs = %{
+        caption: caption,
+        social_accounts: [provider_account_id],
+        media: [%{url: media_url}]
+      }
+
+      case PostForMe.create_social_post(post_attrs) do
+        {:ok, post} ->
+          Logger.info("[Twitter] Post created via PostForMe: #{post.id}")
+          # Return format compatible with existing code
+          {:ok, %{post_id: post.id, post_url: "https://x.com/status/pending"}}
+
+        {:error, reason} ->
+          Logger.error("[Twitter] PostForMe API error: #{inspect(reason)}")
+          {:error, reason}
+      end
     end
   end
 
   @doc """
-  Creates a tweet with optional media attachments.
-
-  ## Parameters
-    - access_token: OAuth 2.0 access token
-    - text: Tweet text (max 280 characters)
-    - opts: Optional parameters
-      - :media_ids - List of media IDs from publish_media/3
-
-  ## Returns
-    - {:ok, %{post_id: String.t(), post_url: String.t()}}
-    - {:error, term()}
+  DEPRECATED: Twitter posts now go through PostForMe API.
+  This function is kept for backward compatibility but should not be used.
+  Use publish_media/3 instead which handles the entire flow via PostForMe.
   """
-  def create_tweet(access_token, text, opts \\ []) do
-    Logger.info("[Twitter] Creating tweet...")
-
-    body = build_tweet_body(text, opts)
-
-    headers = [
-      {"Authorization", "Bearer #{access_token}"},
-      {"Content-Type", "application/json"}
-    ]
-
-    case TwitterApiClient.post(@tweets_url, body, headers,
-           endpoint: "/2/tweets",
-           http_options: @http_options
-         ) do
-      {:ok, %HTTPoison.Response{status_code: 201, body: response_body}} ->
-        handle_tweet_success(response_body, access_token)
-
-      {:ok, %HTTPoison.Response{status_code: status, body: response_body}} ->
-        Logger.error("[Twitter] Tweet creation failed: #{status} - #{response_body}")
-        {:error, extract_error(response_body, :tweet_creation_failed)}
-
-      {:error, reason} ->
-        Logger.error("[Twitter] HTTP error during tweet creation: #{inspect(reason)}")
-        {:error, reason}
-    end
+  def create_tweet(_access_token, _text, _opts \\ []) do
+    Logger.warning("[Twitter] create_tweet is deprecated - use publish_media with PostForMe")
+    {:error, :deprecated_use_publish_media}
   end
 
   @impl true
@@ -330,147 +317,10 @@ defmodule ClippsterServer.Social.Platforms.Twitter do
   defp extract_error_from_errors(_), do: "Profile fetch failed"
 
   # ============================================================================
-  # Media Upload Helpers
+  # PostForMe Integration Helpers
   # ============================================================================
-
-  # Generate presigned URL for R2-hosted videos (6-hour expiry for X processing)
-  defp maybe_generate_presigned_url(media_url) do
-    if String.contains?(media_url, ".r2.cloudflarestorage.com") do
-      Logger.info("[Twitter] Generating presigned URL for R2 video (6-hour expiry)")
-
-      case Storage.presigned_url(media_url, expires_in: 21_600) do
-        {:ok, presigned_url} ->
-          Logger.info("[Twitter] Presigned URL generated successfully")
-          {:ok, presigned_url}
-
-        {:error, reason} ->
-          Logger.warning(
-            "[Twitter] Presigned URL generation failed: #{inspect(reason)}, trying original URL"
-          )
-
-          {:ok, media_url}
-      end
-    else
-      {:ok, media_url}
-    end
-  end
-
-  # Fetch video binary from URL or local file path with 120-second timeout
-  defp fetch_video_binary(url) do
-    # Check if this is a local file path (Windows or Unix)
-    if is_local_file_path?(url) do
-      Logger.info("[Twitter] Reading video from local file: #{url}")
-      
-      case File.read(url) do
-        {:ok, body} ->
-          size_mb = Float.round(byte_size(body) / 1_024 / 1_024, 2)
-          Logger.info("[Twitter] Video read successfully: #{size_mb} MB")
-          {:ok, body}
-
-        {:error, reason} ->
-          Logger.error("[Twitter] Failed to read local file: #{inspect(reason)}")
-          {:error, {:file_read_failed, reason}}
-      end
-    else
-      Logger.info("[Twitter] Fetching video from URL...")
-
-      http_options = [
-        timeout: 120_000,
-        recv_timeout: 120_000,
-        follow_redirect: true
-      ]
-
-      case HTTPoison.get(url, [], http_options) do
-        {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
-          size_mb = Float.round(byte_size(body) / 1_024 / 1_024, 2)
-          Logger.info("[Twitter] Video downloaded successfully: #{size_mb} MB")
-          {:ok, body}
-
-        {:ok, %HTTPoison.Response{status_code: status}} ->
-          Logger.error("[Twitter] Video download failed: HTTP #{status}")
-          {:error, {:download_failed, status}}
-
-        {:error, %HTTPoison.Error{reason: reason}} ->
-          Logger.error("[Twitter] Video download failed: #{inspect(reason)}")
-          {:error, {:download_failed, reason}}
-      end
-    end
-  end
-
-  # Check if a path is a local file path (not a URL)
-  defp is_local_file_path?(path) when is_binary(path) do
-    cond do
-      # Windows absolute path (C:\, D:\, etc.)
-      String.match?(path, ~r/^[A-Za-z]:[\\\/]/) -> true
-      # Unix absolute path
-      String.starts_with?(path, "/") and not String.starts_with?(path, "//") -> true
-      # Not a URL scheme
-      not String.match?(path, ~r/^https?:\/\//) and File.exists?(path) -> true
-      true -> false
-    end
-  end
-
-  defp is_local_file_path?(_), do: false
-
-  # Upload video via TwitterChunkedUpload
-  defp upload_video(access_token, video_binary, opts) do
-    upload_opts =
-      []
-      |> maybe_add_opt(:filename, opts[:filename])
-      |> maybe_add_opt(:duration_seconds, opts[:duration_seconds])
-
-    Logger.info("[Twitter] Starting chunked upload...")
-    TwitterChunkedUpload.upload_video(access_token, video_binary, upload_opts)
-  end
-
-  defp maybe_add_opt(opts, _key, nil), do: opts
-  defp maybe_add_opt(opts, key, value), do: Keyword.put(opts, key, value)
-
-  # ============================================================================
-  # Tweet Creation Helpers
-  # ============================================================================
-
-  # Build JSON body for tweet creation
-  defp build_tweet_body(text, opts) do
-    body = %{"text" => text}
-
-    body =
-      case opts[:media_ids] do
-        nil -> body
-        [] -> body
-        media_ids when is_list(media_ids) -> Map.put(body, "media", %{"media_ids" => media_ids})
-      end
-
-    Jason.encode!(body)
-  end
-
-  # Handle successful tweet creation response
-  defp handle_tweet_success(response_body, access_token) do
-    case Jason.decode(response_body) do
-      {:ok, %{"data" => %{"id" => post_id}}} ->
-        # Construct post URL using username from profile
-        post_url =
-          case get_user_profile(access_token) do
-            {:ok, %{username: username}} ->
-              "https://x.com/#{username}/status/#{post_id}"
-
-            {:error, _reason} ->
-              # Fallback to /i/ URL if profile fetch fails
-              Logger.warning("[Twitter] Profile fetch failed, using /i/ URL format")
-              "https://x.com/i/status/#{post_id}"
-          end
-
-        Logger.info("[Twitter] Tweet created successfully: #{post_url}")
-        {:ok, %{post_id: post_id, post_url: post_url}}
-
-      {:ok, %{"errors" => errors}} ->
-        error_message = extract_error_from_errors(errors)
-        {:error, error_message}
-
-      _ ->
-        {:error, :invalid_response}
-    end
-  end
+  # All Twitter posting now goes through PostForMe API
+  # No direct Twitter API calls, no chunked upload, no manual OAuth token management
 
   # ============================================================================
   # Analytics Functions (twitterapi.io - preserved from original implementation)

@@ -129,9 +129,11 @@ defmodule ClippsterServerWeb.SchedulingController do
                 status: "scheduled"
               }
 
-              case Social.update_post_submission(post, attrs) do
+              case Social.update_scheduled_post_media(post, attrs, user) do
                 {:ok, _updated} -> {:ok, post_id}
-                {:error, _} -> {:error, "Failed to update post #{post_id}"}
+                {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
+                  {:error, "Failed to update post #{post_id}: #{inspect(changeset.errors)}"}
+                {:error, reason} -> {:error, "Failed to update post #{post_id}: #{inspect(reason)}"}
               end
             else
               {:error, "Unauthorized for post #{post_id}"}
@@ -244,6 +246,41 @@ defmodule ClippsterServerWeb.SchedulingController do
             conn
             |> put_status(422)
             |> json(%{success: false, error: format_errors(changeset)})
+
+          {:error, reason} ->
+            conn
+            |> put_status(400)
+            |> json(%{success: false, error: to_string(reason)})
+        end
+    end
+  end
+
+  # ============================================================================
+  # Delete Scheduled Post
+  # ============================================================================
+
+  @doc """
+  Permanently delete a scheduled post.
+  DELETE /social/scheduled/:id
+  """
+  def delete(conn, %{"id" => post_id}) do
+    user = conn.assigns.current_user
+
+    case Social.get_post_submission(post_id) do
+      nil ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Post not found"})
+
+      post ->
+        case Social.delete_scheduled_post(post, user) do
+          {:ok, _deleted} ->
+            json(conn, %{success: true, message: "Post deleted successfully"})
+
+          {:error, :unauthorized} ->
+            conn
+            |> put_status(403)
+            |> json(%{success: false, error: "You don't have permission to delete this post"})
 
           {:error, reason} ->
             conn

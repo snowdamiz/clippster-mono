@@ -17,12 +17,13 @@ import {
   AlertCircle,
   Send,
   Link2,
+  Trash2,
 } from 'lucide-vue-next';
 import { useAuthStore } from '@/stores/auth';
 import PageLayout from '@/components/PageLayout.vue';
 import ClipsSidebar from '@/components/calendar/ClipsSidebar.vue';
 import ScheduleClipDialog from '@/components/calendar/ScheduleClipDialog.vue';
-import { listScheduledPosts, listOrgScheduledPosts, listExternalPosts, type ScheduledPost, type ExternalPostSubmission } from '@/services/schedulingApi';
+import { listScheduledPosts, listOrgScheduledPosts, listExternalPosts, cancelScheduledPost, deleteScheduledPost, type ScheduledPost, type ExternalPostSubmission } from '@/services/schedulingApi';
 import { listOrganizationCampaigns, listMyCampaigns, type Campaign } from '@/services/campaignApi';
 import { listUserPosts, uploadUserMediaForPost, type UserPost } from '@/services/userInstagramApi';
 import { uploadMediaForPost } from '@/services/socialAccountsApi';
@@ -222,11 +223,11 @@ const calendarEvents = computed((): CalendarEvent[] => {
       if (!isNaN(date.getTime())) {
         events.push({
           id: `campaign-end-${campaign.id}`,
-          title: `⏰ ${campaign.title} deadline`,
+          title: `⏰ ${campaign.title} ends`,
           date,
           type: 'campaign-end',
           status: campaign.status,
-          color: 'bg-red-500',
+          color: 'bg-orange-500',
           data: campaign,
         });
       }
@@ -462,11 +463,19 @@ async function loadCampaigns() {
       const response = await listOrganizationCampaigns(Number(orgId));
       if (response.success && response.campaigns) {
         campaigns.value = response.campaigns;
+        console.log('[ContentCalendar] Loaded campaigns:', response.campaigns);
+        response.campaigns.forEach(c => {
+          console.log(`[ContentCalendar] Campaign "${c.title}": starts_at=${c.starts_at}, ends_at=${c.ends_at}, status=${c.status}`);
+        });
       }
     } else {
       const response = await listMyCampaigns();
       if (response.success && response.campaigns) {
         campaigns.value = response.campaigns;
+        console.log('[ContentCalendar] Loaded campaigns:', response.campaigns);
+        response.campaigns.forEach(c => {
+          console.log(`[ContentCalendar] Campaign "${c.title}": starts_at=${c.starts_at}, ends_at=${c.ends_at}, status=${c.status}`);
+        });
       }
     }
   } catch (err) {
@@ -625,6 +634,54 @@ async function toDataUrl(filePath: string | null | undefined): Promise<string | 
   } catch (err) {
     console.warn('[ContentCalendar] Failed to load thumbnail:', err);
     return undefined;
+  }
+}
+
+// ── Cancel/Delete scheduled post ──
+const cancelingPostId = ref<number | null>(null);
+const deletingPostId = ref<number | null>(null);
+
+async function handleCancelScheduledPost(postId: number) {
+  if (!confirm('Cancel this scheduled post? It will remain in your history with "canceled" status.')) {
+    return;
+  }
+
+  cancelingPostId.value = postId;
+  try {
+    const response = await cancelScheduledPost(postId);
+    if (response.success) {
+      console.log('[ContentCalendar] Post canceled successfully');
+      await loadData();
+    } else {
+      alert(response.error || 'Failed to cancel post');
+    }
+  } catch (err: any) {
+    console.error('[ContentCalendar] Failed to cancel post:', err);
+    alert(err?.response?.data?.error || 'Failed to cancel post');
+  } finally {
+    cancelingPostId.value = null;
+  }
+}
+
+async function handleDeleteScheduledPost(postId: number) {
+  if (!confirm('Permanently delete this scheduled post? This cannot be undone.')) {
+    return;
+  }
+
+  deletingPostId.value = postId;
+  try {
+    const response = await deleteScheduledPost(postId);
+    if (response.success) {
+      console.log('[ContentCalendar] Post deleted successfully');
+      await loadData();
+    } else {
+      alert(response.error || 'Failed to delete post');
+    }
+  } catch (err: any) {
+    console.error('[ContentCalendar] Failed to delete post:', err);
+    alert(err?.response?.data?.error || 'Failed to delete post');
+  } finally {
+    deletingPostId.value = null;
   }
 }
 
@@ -812,6 +869,7 @@ onMounted(() => {
                   event.type === 'scheduled-post' ? 'bg-blue-500/10 text-blue-300' :
                   event.type === 'external-submission' ? 'bg-violet-500/10 text-violet-300' :
                   event.type === 'campaign-start' ? 'bg-emerald-500/10 text-emerald-300' :
+                  event.type === 'campaign-end' ? 'bg-orange-500/10 text-orange-300' :
                   'bg-red-500/10 text-red-300'
                 ]"
                 :title="event.title"
@@ -867,6 +925,7 @@ onMounted(() => {
                   event.type === 'scheduled-post' ? 'bg-blue-500/10 border-blue-500/20 text-blue-300' :
                   event.type === 'external-submission' ? 'bg-violet-500/10 border-violet-500/20 text-violet-300' :
                   event.type === 'campaign-start' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' :
+                  event.type === 'campaign-end' ? 'bg-orange-500/10 border-orange-500/20 text-orange-300' :
                   'bg-red-500/10 border-red-500/20 text-red-300'
                 ]"
               >
@@ -911,6 +970,7 @@ onMounted(() => {
               event.type === 'scheduled-post' ? 'bg-blue-500/5 border-blue-500/15' :
               event.type === 'external-submission' ? 'bg-violet-500/5 border-violet-500/15' :
               event.type === 'campaign-start' ? 'bg-emerald-500/5 border-emerald-500/15' :
+              event.type === 'campaign-end' ? 'bg-orange-500/5 border-orange-500/15' :
               'bg-red-500/5 border-red-500/15'
             ]"
           >
@@ -922,6 +982,7 @@ onMounted(() => {
                   event.type === 'scheduled-post' ? 'text-blue-400' :
                   event.type === 'external-submission' ? 'text-violet-400' :
                   event.type === 'campaign-start' ? 'text-emerald-400' :
+                  event.type === 'campaign-end' ? 'text-orange-400' :
                   'text-red-400'
                 ]"
               >
@@ -940,6 +1001,18 @@ onMounted(() => {
 
             <!-- Post-specific details -->
             <template v-if="event.type === 'scheduled-post'">
+              <!-- Thumbnail -->
+              <div
+                v-if="(event.data as ScheduledPost).thumbnail_url"
+                class="relative w-full aspect-video rounded-md overflow-hidden bg-zinc-900/50 border border-white/5"
+              >
+                <img
+                  :src="(event.data as ScheduledPost).thumbnail_url!"
+                  :alt="(event.data as ScheduledPost).caption ?? 'Post thumbnail'"
+                  class="w-full h-full object-cover"
+                />
+              </div>
+              
               <div class="flex items-center gap-2">
                 <component :is="getPlatformIcon((event.data as ScheduledPost).platform)" class="size-3 text-zinc-400" />
                 <span class="text-[10px] text-zinc-400 capitalize">{{ (event.data as ScheduledPost).platform }}</span>
@@ -1038,7 +1111,42 @@ onMounted(() => {
               >
                 {{ (event.data as Campaign).description }}
               </p>
+              <!-- Campaign dates -->
+              <div class="flex flex-col gap-1 text-[10px] text-zinc-500">
+                <div v-if="(event.data as Campaign).starts_at" class="flex items-center gap-1">
+                  <span class="text-emerald-400">Starts:</span>
+                  {{ new Date((event.data as Campaign).starts_at!).toLocaleDateString() }}
+                </div>
+                <div v-if="(event.data as Campaign).ends_at" class="flex items-center gap-1">
+                  <span class="text-red-400">Ends:</span>
+                  {{ new Date((event.data as Campaign).ends_at!).toLocaleDateString() }}
+                </div>
+              </div>
             </template>
+
+            <!-- Cancel/Delete buttons for scheduled posts -->
+            <div v-if="event.type === 'scheduled-post' && (event.data as ScheduledPost).status !== 'published'" class="mt-2 flex gap-2">
+              <!-- Cancel button (keeps record with canceled status) -->
+              <button
+                v-if="(event.data as ScheduledPost).status !== 'canceled'"
+                @click="handleCancelScheduledPost((event.data as ScheduledPost).id)"
+                :disabled="cancelingPostId === (event.data as ScheduledPost).id || deletingPostId === (event.data as ScheduledPost).id"
+                class="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[10px] font-medium text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20 rounded border border-yellow-500/20 hover:border-yellow-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <XCircle class="size-3" />
+                {{ cancelingPostId === (event.data as ScheduledPost).id ? 'Canceling...' : 'Cancel' }}
+              </button>
+              
+              <!-- Delete button (permanent removal) -->
+              <button
+                @click="handleDeleteScheduledPost((event.data as ScheduledPost).id)"
+                :disabled="deletingPostId === (event.data as ScheduledPost).id || cancelingPostId === (event.data as ScheduledPost).id"
+                class="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[10px] font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded border border-red-500/20 hover:border-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Trash2 class="size-3" />
+                {{ deletingPostId === (event.data as ScheduledPost).id ? 'Deleting...' : 'Delete' }}
+              </button>
+            </div>
           </div>
 
           <div v-if="selectedDayEvents.length === 0" class="text-center py-6">

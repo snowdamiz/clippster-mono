@@ -548,13 +548,38 @@ defmodule ClippsterServer.Social do
   end
 
   @doc """
+  Updates media URLs for a scheduled post after background upload completes.
+  """
+  def update_scheduled_post_media(%PostSubmission{} = post, attrs, %User{} = user) do
+    # Verify the user owns this post
+    if post.submitted_by_user_id == user.id do
+      post
+      |> PostSubmission.update_media_changeset(attrs)
+      |> Repo.update()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
   Cancels a scheduled post.
   """
   def cancel_scheduled_post(%PostSubmission{} = post, %User{} = user) do
-    if can_user_edit_post?(post, user) do
+    if can_user_cancel_or_delete_post?(post, user) do
       post
       |> PostSubmission.cancel_changeset()
       |> Repo.update()
+    else
+      {:error, :unauthorized}
+    end
+  end
+
+  @doc """
+  Permanently deletes a scheduled post.
+  """
+  def delete_scheduled_post(%PostSubmission{} = post, %User{} = user) do
+    if can_user_cancel_or_delete_post?(post, user) do
+      Repo.delete(post)
     else
       {:error, :unauthorized}
     end
@@ -926,6 +951,21 @@ defmodule ClippsterServer.Social do
       # User is an admin of the org
       post.organization_id && Organizations.is_admin?(post.organization_id, user.id) ->
         PostSubmission.can_edit?(post)
+
+      true ->
+        false
+    end
+  end
+
+  defp can_user_cancel_or_delete_post?(%PostSubmission{} = post, %User{} = user) do
+    cond do
+      # User submitted the post
+      post.submitted_by_user_id == user.id ->
+        PostSubmission.can_cancel_or_delete?(post)
+
+      # User is an admin of the org
+      post.organization_id && Organizations.is_admin?(post.organization_id, user.id) ->
+        PostSubmission.can_cancel_or_delete?(post)
 
       true ->
         false

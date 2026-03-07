@@ -14,7 +14,8 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
   require Logger
 
   alias ClippsterServer.Social
-  alias ClippsterServer.Social.{PostSubmission, SocialAccount, Platform, TwitterDuplicateDetector}
+  alias ClippsterServer.Social.{PostSubmission, SocialAccount, Platform}
+  alias ClippsterServer.Social.Providers.PostForMe
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.ClipperSocialAccount
 
@@ -248,9 +249,9 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     if SocialAccount.token_needs_refresh?(account) do
       Logger.info("[ScheduledPostWorker] Token needs refresh for org account #{account.id}")
 
-      access_token = SocialAccount.get_access_token(account)
+      refresh_token = SocialAccount.get_refresh_token(account)
 
-      case Platform.call(account.platform, :refresh_tokens, [access_token]) do
+      case Platform.call(account.platform, :refresh_tokens, [refresh_token]) do
         {:ok, new_tokens} ->
           expires_at =
             if new_tokens[:expires_in] do
@@ -303,9 +304,9 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     if ClipperSocialAccount.token_needs_refresh?(account) do
       Logger.info("[ScheduledPostWorker] Token needs refresh for user account #{account.id}")
 
-      access_token = ClipperSocialAccount.get_access_token(account)
+      refresh_token = ClipperSocialAccount.get_refresh_token(account)
 
-      case Platform.call(account.platform, :refresh_tokens, [access_token]) do
+      case Platform.call(account.platform, :refresh_tokens, [refresh_token]) do
         {:ok, new_tokens} ->
           expires_at =
             if new_tokens[:expires_in] do
@@ -353,77 +354,55 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     end
   end
 
-  # X/Twitter-specific publish: two-step flow (upload media, then create tweet)
-  defp do_publish(%PostSubmission{platform: platform} = post, account, access_token)
-       when platform in ["twitter", "x"] do
-    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to X (two-step flow)")
+  # All platforms publish via PostForMe API
+  defp do_publish(%PostSubmission{} = post, account, _access_token) do
+    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to #{post.platform} via PostForMe")
 
-    # Check for duplicate content before publishing
-    account_id = get_account_id(post)
-    caption = post.caption || ""
+    with {:ok, provider_account_id} <- get_provider_account_id(account),
+         {:ok, media_url} <- ensure_accessible_media_url(post.media_url) do
+      
+      post_params = %{
+        caption: post.caption || "",
+        social_accounts: [provider_account_id],
+        media: [%{url: media_url}],
+        external_id: "scheduled:#{post.id}"
+      }
 
-    case TwitterDuplicateDetector.check_duplicate(account_id, caption, []) do
-      {:ok, _content_hash} ->
-        # No duplicate, proceed with publish
-        publish_opts = %{
-          filename: "video.mp4",
-          ig_user_id: get_platform_user_id(account)
-        }
+      case PostForMe.create_social_post(post_params) do
+        {:ok, pfm_post} ->
+          result = %{
+            post_id: pfm_post.id || "pfm_#{post.id}",
+            post_url: nil  # Will be fetched from feed later
+          }
+          handle_publish_success(post, result)
 
-        # Step 1: Upload media
-        Logger.info("[ScheduledPostWorker] Twitter: uploading media for post #{post.id}")
-
-        case Platform.call("twitter", :publish_media, [access_token, post.media_url, publish_opts]) do
-          {:ok, %{media_id: media_id}} ->
-            # Step 2: Create tweet with media_id
-            Logger.info("[ScheduledPostWorker] Twitter: creating tweet with media_id #{media_id}")
-
-            case Platform.call("twitter", :create_tweet, [
-                   access_token,
-                   caption,
-                   [media_ids: [media_id]]
-                 ]) do
-              {:ok, result} ->
-                # Store content hash with media_id for accurate future duplicate detection
-                final_content_hash = TwitterDuplicateDetector.generate_hash(caption, [media_id])
-                handle_publish_success(post, result, final_content_hash)
-
-              {:error, reason} ->
-                error_type = classify_error(reason)
-                handle_publish_failure(post, inspect(reason), error_type)
-            end
-
-          {:error, reason} ->
-            error_type = classify_error(reason)
-            handle_publish_failure(post, inspect(reason), error_type)
-        end
-
-      {:error, :duplicate_content, existing_post} ->
-        # Duplicate detected, fail permanently
-        error_msg =
-          "Duplicate content detected (matches post #{existing_post.id} from #{existing_post.inserted_at})"
-
-        handle_publish_failure(post, error_msg, :permanent)
-    end
-  end
-
-  # Default platform publish: single-step flow (Instagram and others)
-  defp do_publish(%PostSubmission{} = post, account, access_token) do
-    Logger.info("[ScheduledPostWorker] Publishing post #{post.id} to #{post.platform}")
-
-    publish_opts = %{
-      caption: post.caption || "",
-      media_type: post.media_type || "reel",
-      ig_user_id: get_platform_user_id(account)
-    }
-
-    case Platform.call(post.platform, :publish_media, [access_token, post.media_url, publish_opts]) do
-      {:ok, result} ->
-        handle_publish_success(post, result)
-
+        {:error, reason} ->
+          error_type = classify_error(reason)
+          handle_publish_failure(post, inspect(reason), error_type)
+      end
+    else
+      {:error, :missing_provider_account_id} ->
+        handle_publish_failure(post, "Account missing PostForMe provider_account_id", :permanent)
+      
       {:error, reason} ->
         error_type = classify_error(reason)
         handle_publish_failure(post, inspect(reason), error_type)
+    end
+  end
+
+  defp get_provider_account_id(%SocialAccount{provider_account_id: id}) when is_binary(id) and id != "", do: {:ok, id}
+  defp get_provider_account_id(%ClipperSocialAccount{provider_account_id: id}) when is_binary(id) and id != "", do: {:ok, id}
+  defp get_provider_account_id(_), do: {:error, :missing_provider_account_id}
+
+  defp ensure_accessible_media_url(media_url) do
+    # Generate presigned URL for R2 storage
+    if String.contains?(media_url, ".r2.cloudflarestorage.com") do
+      case ClippsterServer.Storage.presigned_url(media_url, expires_in: 7_200) do
+        {:ok, url} -> {:ok, url}
+        {:error, _} -> {:ok, media_url}  # Fallback to original
+      end
+    else
+      {:ok, media_url}
     end
   end
 

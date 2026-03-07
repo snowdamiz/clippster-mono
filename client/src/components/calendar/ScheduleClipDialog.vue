@@ -599,8 +599,15 @@ async function handleSchedule() {
     const results = await Promise.allSettled(scheduledPosts);
     console.log('[ScheduleClipDialog] Schedule results:', results);
     
-    const successful = results.filter(r => r.status === 'fulfilled').length;
-    const failed = results.filter(r => r.status === 'rejected').length;
+    // Check actual API success, not just promise fulfillment
+    const successful = results.filter(r => 
+      r.status === 'fulfilled' && r.value?.success
+    ).length;
+    const failed = results.filter(r => 
+      r.status === 'rejected' || (r.status === 'fulfilled' && !r.value?.success)
+    ).length;
+    
+    console.log('[ScheduleClipDialog] Successful:', successful, 'Failed:', failed);
     
     successCount.value = successful;
     
@@ -609,15 +616,25 @@ async function handleSchedule() {
       
       emit('scheduled');
       
-      // Start background upload for scheduled posts
-      if (scheduledPostIds.length > 0) {
-        startBackgroundUpload(scheduledPostIds);
-      }
-      
+      console.log('[ScheduleClipDialog] Checking if should close - failed count:', failed);
       if (failed === 0) {
         // All succeeded, close immediately
+        console.log('[ScheduleClipDialog] Calling handleClose()');
         handleClose();
+        
+        // Start background upload AFTER closing (don't block on this)
+        if (scheduledPostIds.length > 0) {
+          console.log('[ScheduleClipDialog] Starting background upload for', scheduledPostIds.length, 'posts');
+          startBackgroundUpload(scheduledPostIds).catch(err => {
+            console.error('[ScheduleClipDialog] Background upload failed:', err);
+            showToast('Upload failed - posts may not publish', 'error');
+          });
+        }
+      } else {
+        console.log('[ScheduleClipDialog] NOT closing - some posts failed');
       }
+    } else {
+      console.log('[ScheduleClipDialog] NOT closing - no successful posts');
     }
     
     if (failed > 0) {

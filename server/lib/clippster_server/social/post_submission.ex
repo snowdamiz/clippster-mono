@@ -172,16 +172,33 @@ defmodule ClippsterServer.Social.PostSubmission do
   end
 
   @doc """
+  Changeset for updating media URLs after background upload completes.
+  Allows updating media_url, thumbnail_url, and status for scheduled/pending posts.
+  """
+  def update_media_changeset(submission, attrs) do
+    if submission.status in ["scheduled", "pending"] and is_nil(submission.locked_at) do
+      submission
+      |> cast(attrs, [:media_url, :thumbnail_url, :status])
+      |> validate_required([:media_url])
+      |> validate_inclusion(:status, ["scheduled", "pending"])
+    else
+      submission
+      |> change()
+      |> add_error(:status, "cannot update media for a post that is locked or already processing")
+    end
+  end
+
+  @doc """
   Changeset for canceling a scheduled post.
   """
   def cancel_changeset(submission) do
-    if submission.status in ["scheduled", "pending"] and is_nil(submission.locked_at) do
+    if submission.status in ["scheduled", "pending", "publishing", "failed"] do
       submission
       |> change(status: "canceled")
     else
       submission
       |> change()
-      |> add_error(:status, "cannot cancel a post that is locked or already processing")
+      |> add_error(:status, "cannot cancel a post that is already published or canceled")
     end
   end
 
@@ -375,6 +392,14 @@ defmodule ClippsterServer.Social.PostSubmission do
   Checks if a post can be canceled.
   """
   def can_cancel?(%__MODULE__{} = submission), do: can_edit?(submission)
+
+  @doc """
+  Checks if a post can be canceled or deleted.
+  More permissive than can_cancel? - allows failed and publishing posts.
+  """
+  def can_cancel_or_delete?(%__MODULE__{status: status}) do
+    status in ["pending", "scheduled", "publishing", "failed", "canceled"]
+  end
 
   @doc """
   Checks if a post should be retried after failure.
