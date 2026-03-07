@@ -497,6 +497,21 @@
   }
 
   /* ── Range slider: thin track + small round thumb ── */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    opacity: 0.6;
+    filter: invert(1);
+    margin-left: 6px;
+    margin-right: 4px;
+  }
+
+  input[type='number']:hover::-webkit-inner-spin-button,
+  input[type='number']:hover::-webkit-outer-spin-button,
+  input[type='number']:focus::-webkit-inner-spin-button,
+  input[type='number']:focus::-webkit-outer-spin-button {
+    opacity: 1;
+  }
+
   input[type='range'] {
     -webkit-appearance: none;
     appearance: none;
