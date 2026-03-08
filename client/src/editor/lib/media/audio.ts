@@ -21,7 +21,13 @@ export function createAudioContext(): AudioContext {
 		(window as typeof window & { webkitAudioContext?: typeof AudioContext })
 			.webkitAudioContext;
 
-	return new AudioContextConstructor();
+	try {
+		return new AudioContextConstructor({
+			latencyHint: "interactive",
+		});
+	} catch {
+		return new AudioContextConstructor();
+	}
 }
 
 export interface DecodedAudio {
@@ -358,12 +364,9 @@ export async function collectAudioClips({
 
 	for (const track of tracks) {
 		const isTrackMuted = canTracktHaveAudio(track) && track.muted;
-		console.log(`[collectAudioClips] Track ${track.id}: ${track.elements.length} elements, muted: ${isTrackMuted}`);
 
 		for (const element of track.elements) {
-			console.log(`[collectAudioClips] Processing element ${element.id} (${element.type})`);
 			if (!canElementHaveAudio(element)) {
-				console.log(`[collectAudioClips] Element ${element.id} (${element.type}) cannot have audio, skipping`);
 				continue;
 			}
 
@@ -404,9 +407,7 @@ export async function collectAudioClips({
 					continue;
 				}
 
-				console.log(`[collectAudioClips] Video element ${element.id}: mediaAsset type=${mediaAsset.type}, name=${mediaAsset.name}`);
 				if (mediaSupportsAudio({ media: mediaAsset })) {
-					console.log(`[collectAudioClips] Adding audio clip from video element ${element.id}`);
 					clips.push(
 						collectMediaAudioClip({
 							element,

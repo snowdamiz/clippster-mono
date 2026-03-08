@@ -20,8 +20,6 @@ interface VideoSinkData {
 export class VideoCache {
 	private sinks = new Map<string, VideoSinkData>();
 	private initPromises = new Map<string, Promise<void>>();
-	private debugFrameCount = 0;
-	private debugLogInterval = 30; // log every N frames
 
 	async getFrameAt({
 		sinkKey,
@@ -32,13 +30,10 @@ export class VideoCache {
 		file: File;
 		time: number;
 	}): Promise<WrappedCanvas | null> {
-		const t0 = performance.now();
 		await this.ensureSink({ sinkKey, file });
 
 		const sinkData = this.sinks.get(sinkKey);
 		if (!sinkData) return null;
-
-		let path = 'none';
 
 		if (sinkData.nextFrame && sinkData.nextFrame.timestamp <= time) {
 			sinkData.currentFrame = sinkData.nextFrame;
@@ -58,12 +53,6 @@ export class VideoCache {
 			if (!sinkData.nextFrame && !sinkData.prefetching) {
 				this.startPrefetch({ sinkData });
 			}
-			path = 'cache-hit';
-			const elapsed = performance.now() - t0;
-			this.debugFrameCount++;
-			if (this.debugFrameCount % this.debugLogInterval === 0) {
-				console.log(`[VideoCache] ${sinkKey.slice(0,8)} t=${time.toFixed(3)} path=${path} took=${elapsed.toFixed(1)}ms`);
-			}
 			return sinkData.currentFrame;
 		}
 
@@ -78,12 +67,6 @@ export class VideoCache {
 				if (!sinkData.nextFrame && !sinkData.prefetching) {
 					this.startPrefetch({ sinkData });
 				}
-				path = 'iterate';
-				const elapsed = performance.now() - t0;
-				this.debugFrameCount++;
-				if (elapsed > 10 || this.debugFrameCount % this.debugLogInterval === 0) {
-					console.log(`[VideoCache] ${sinkKey.slice(0,8)} t=${time.toFixed(3)} path=${path} took=${elapsed.toFixed(1)}ms`);
-				}
 				return frame;
 			}
 		}
@@ -92,10 +75,6 @@ export class VideoCache {
 		if (frame && !sinkData.nextFrame && !sinkData.prefetching) {
 			this.startPrefetch({ sinkData });
 		}
-		path = frame ? 'seek' : 'miss';
-		const elapsed = performance.now() - t0;
-		this.debugFrameCount++;
-		console.log(`[VideoCache] ${sinkKey.slice(0,8)} t=${time.toFixed(3)} path=${path} took=${elapsed.toFixed(1)}ms`);
 		return frame;
 	}
 
