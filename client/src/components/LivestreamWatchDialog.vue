@@ -350,31 +350,18 @@
               @publish-clip="handlePublishClip"
             />
 
-            <!-- Build Settings Dialog (for publish workflow) -->
-            <ClipBuildSettingsDialog
+            <!-- Quick Publish Wizard (unified build + publish flow) -->
+            <QuickPublishWizard
               v-if="publishClipData && currentClipForPublish"
-              v-model="showBuildDialog"
+              v-model="showQuickPublishWizard"
               :clip="currentClipForPublish"
+              :clip-path="publishClipData.clipPath"
+              :project-id="publishClipData.projectId"
               :watermark-settings="(viewer.state.value.watermarkSettings as any) || null"
               :thumbnail-url="currentClipForPublish.thumbnail_path || null"
-              :publish-mode="true"
-              :single-ratio-mode="true"
-              @confirm="handleBuildConfirm"
-            />
-
-            <!-- Schedule/Publish Dialog (after build completes) -->
-            <ScheduleClipDialog
-              :open="showScheduleDialog"
-              :clip-id="scheduleDialogData?.clipId || ''"
-              :clip-name="scheduleDialogData?.clipName || ''"
-              :media-url="scheduleDialogData?.mediaUrl || ''"
-              :thumbnail-url="scheduleDialogData?.thumbnailUrl"
-              :duration="scheduleDialogData?.duration"
-              :project-name="props.displayName"
-              :selected-date="new Date()"
-              :immediate-mode="true"
-              @close="showScheduleDialog = false"
-              @scheduled="handleScheduleComplete"
+              :platform="props.platform"
+              @published="handlePublishComplete"
+              @close="handleQuickPublishClose"
             />
           </div>
         </Transition>
@@ -414,8 +401,7 @@
   import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
   import LivestreamClipSelector from './LivestreamClipSelector.vue';
-  import ClipBuildSettingsDialog from './ClipBuildSettingsDialog.vue';
-  import ScheduleClipDialog from './calendar/ScheduleClipDialog.vue';
+  import QuickPublishWizard from './QuickPublishWizard.vue';
   import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
   import { getWatermarkImage, resolveWatermarkById } from '@/services/database/watermarks';
   import { createClipVersion } from '@/services/database/clip-versions';
@@ -482,18 +468,9 @@
   const wasPlayingBeforeClip = ref(false);
 
   // Build and publish workflow state
-  const showBuildDialog = ref(false);
-  const showScheduleDialog = ref(false);
+  const showQuickPublishWizard = ref(false);
   const publishClipData = ref<{ clipId: string; clipPath: string; projectId: string } | null>(null);
   const currentClipForPublish = ref<any>(null);
-  const scheduleDialogData = ref<{
-    clipId: string;
-    clipName: string;
-    mediaUrl: string;
-    thumbnailUrl?: string;
-    duration?: number;
-  } | null>(null);
-  let buildCompleteUnlisten: UnlistenFn | null = null;
 
   // PiP state tracking
   const isInPipMode = ref(false);
@@ -982,8 +959,8 @@
       
       if (clip) {
         currentClipForPublish.value = clip;
-        // Open build dialog in publish mode
-        showBuildDialog.value = true;
+        // Open the unified QuickPublishWizard
+        showQuickPublishWizard.value = true;
       } else {
         showError('Error', 'Failed to load clip data');
       }
@@ -993,234 +970,16 @@
     }
   }
 
-  async function handleBuildConfirm(settings: any) {
-    // Build settings confirmed, trigger the build process
-    console.log('[WatchDialog] Build settings confirmed:', settings);
-    
-    if (!publishClipData.value || !currentClipForPublish.value) return;
-
-    const clipId = publishClipData.value.clipId;
-    const clip = currentClipForPublish.value;
-    const projectId = publishClipData.value.projectId;
-
-    try {
-      const { createClipBuild, getClipBuilds, updateClipBuildStatus } = await import('@/services/database/clip-build');
-      const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
-      const { resolveWatermarkById } = await import('@/services/database/watermarks');
-
-      // Update database status to building
-      await updateClipBuildStatus(clipId, 'building', { progress: 0 });
-
-      // Calculate build number
-      let buildNumber = 1;
-      try {
-        const existingBuilds = await getClipBuilds(clipId);
-        buildNumber = existingBuilds.length + 1;
-      } catch { buildNumber = 1; }
-
-      // Create build record
-      const buildId = await createClipBuild(clipId, {
-        aspectRatios: settings.aspectRatios,
-        quality: settings.quality,
-        frameRate: settings.frameRate,
-        outputFormat: settings.format,
-      });
-
-      // Video path: livestream clips have file_path set to the extracted clip
-      const videoPath = clip.file_path || publishClipData.value.clipPath;
-
-      // Load segments from DB or create synthetic
-      let segments: { id: string; start_time: number; end_time: number; duration: number; transcript: string | null }[] = [];
-      if (clip.current_version_id) {
-        try {
-          const dbSegments = await getClipSegmentsByVersionId(clip.current_version_id);
-          if (dbSegments.length > 0) {
-            segments = dbSegments.map((s: any) => ({
-              id: s.id,
-              start_time: s.start_time,
-              end_time: s.end_time,
-              duration: s.duration,
-              transcript: s.transcript,
-            }));
-          }
-        } catch (err) {
-          console.warn('[WatchDialog] Could not load segments from DB:', err);
-        }
-      }
-
-      // Create synthetic segment if none found
-      if (segments.length === 0) {
-        const startTime = clip.start_time ?? 0;
-        const endTime = clip.end_time ?? clip.duration ?? 0;
-        if (endTime > startTime) {
-          segments = [{
-            id: `synthetic-${clipId}`,
-            start_time: startTime,
-            end_time: endTime,
-            duration: endTime - startTime,
-            transcript: null,
-          }];
-        }
-      }
-
-      // Resolve watermark settings
-      let watermarkSettings = null;
-      if (settings.watermark?.enabled && settings.watermark?.watermarkId) {
-        const defaultWatermark = await resolveWatermarkById(settings.watermark.watermarkId);
-        if (defaultWatermark) {
-          const buildPerRatioSettings: Record<string, any> = {};
-          const allRatios = ['16:9', '9:16', '1:1', '4:5'];
-          for (const ratio of allRatios) {
-            const perRatioConfig = settings.watermark.perRatioSettings?.[ratio];
-            if (perRatioConfig === null) {
-              buildPerRatioSettings[ratio] = null;
-            } else if (perRatioConfig) {
-              let filePath = defaultWatermark.filePath;
-              let width = defaultWatermark.width;
-              let height = defaultWatermark.height;
-              if (perRatioConfig.watermarkId && perRatioConfig.watermarkId !== settings.watermark.watermarkId) {
-                const ratioWm = await resolveWatermarkById(perRatioConfig.watermarkId);
-                if (ratioWm) { filePath = ratioWm.filePath; width = ratioWm.width; height = ratioWm.height; }
-              }
-              buildPerRatioSettings[ratio] = {
-                watermarkId: perRatioConfig.watermarkId || settings.watermark.watermarkId,
-                filePath, width, height,
-                position: perRatioConfig.position || {
-                  x: settings.watermark.positionX, y: settings.watermark.positionY,
-                  opacity: settings.watermark.opacity, scale: settings.watermark.scale,
-                },
-              };
-            } else {
-              buildPerRatioSettings[ratio] = {
-                watermarkId: settings.watermark.watermarkId,
-                filePath: defaultWatermark.filePath, width: defaultWatermark.width, height: defaultWatermark.height,
-                position: {
-                  x: settings.watermark.positionX, y: settings.watermark.positionY,
-                  opacity: settings.watermark.opacity, scale: settings.watermark.scale,
-                },
-              };
-            }
-          }
-          watermarkSettings = {
-            enabled: true,
-            watermarkId: settings.watermark.watermarkId,
-            filePath: defaultWatermark.filePath,
-            width: defaultWatermark.width,
-            height: defaultWatermark.height,
-            positionX: settings.watermark.positionX,
-            positionY: settings.watermark.positionY,
-            opacity: settings.watermark.opacity,
-            scale: settings.watermark.scale,
-            perRatioSettings: buildPerRatioSettings,
-          };
-        }
-      }
-
-      // Resolve intro/outro paths
-      let introPath: string | null = null;
-      let introDuration: number | null = null;
-      let outroPath: string | null = null;
-      let outroDuration: number | null = null;
-      if (settings.intro) {
-        introPath = settings.intro.file_path || null;
-        introDuration = settings.intro.duration || null;
-      }
-      if (settings.outro) {
-        outroPath = settings.outro.file_path || null;
-        outroDuration = settings.outro.duration || null;
-      }
-
-      // Listen for build completion event from Tauri
-      if (buildCompleteUnlisten) { buildCompleteUnlisten(); }
-      buildCompleteUnlisten = await listen<{
-        clip_id: string;
-        success: boolean;
-        output_path: string | null;
-        thumbnail_path: string | null;
-        duration: number | null;
-        error: string | null;
-      }>('clip-build-complete', (event) => {
-        const payload = event.payload;
-        if (payload.clip_id !== clipId) return;
-        if (buildCompleteUnlisten) { buildCompleteUnlisten(); buildCompleteUnlisten = null; }
-        if (payload.success && payload.output_path) {
-          handleBuildComplete(payload.output_path, payload.thumbnail_path, payload.duration);
-        } else {
-          showError('Build Failed', payload.error || 'Clip build failed');
-          showBuildDialog.value = false;
-        }
-      });
-
-      // Start the build via the correct Tauri command
-      await invoke('build_clip_from_segments', {
-        projectId,
-        clipId,
-        clipName: clip.current_version_name || clip.name || 'Livestream Clip',
-        videoPath,
-        segments,
-        subtitleSettings: null,
-        subtitleOverrides: null,
-        transcriptWords: [],
-        transcriptSegments: [],
-        maxWords: 3,
-        aspectRatios: settings.aspectRatios,
-        quality: settings.quality,
-        frameRate: settings.frameRate,
-        outputFormat: settings.format,
-        runNumber: clip.run_number || null,
-        buildNumber,
-        buildId,
-        introPath,
-        introDuration,
-        outroPath,
-        outroDuration,
-        introOutroPerRatio: null,
-        watermarkSettings,
-        audioSettings: null,
-        framingStrategy: null,
-        manualFramingConfigs: settings.manualFramingConfigs || null,
-        segmentFramingConfigs: null,
-        videoFilterSegments: null,
-        textOverlays: null,
-        stickers: null,
-        clipWatermarks: null,
-        clipEffects: null,
-        audioEffects: null,
-        layoutOverlays: null,
-      });
-
-    } catch (err) {
-      console.error('[WatchDialog] Failed to start build:', err);
-      showError('Build Failed', 'Failed to start the build process');
-      showBuildDialog.value = false;
-      if (buildCompleteUnlisten) { buildCompleteUnlisten(); buildCompleteUnlisten = null; }
-    }
+  function handlePublishComplete() {
+    // Publishing was initiated (dialog closes immediately, publish happens in background)
+    showSuccess('Publishing', 'Your clip is being published in the background');
+    handleQuickPublishClose();
   }
 
-  function handleBuildComplete(outputPath: string, thumbnailPath: string | null, duration: number | null) {
-    showBuildDialog.value = false;
-
-    // Get clip info for the schedule dialog
-    const clip = currentClipForPublish.value;
-    const clipName = clip?.name || clip?.current_version_name || 'Livestream Clip';
-
-    // Open the schedule/publish dialog with the built clip
-    scheduleDialogData.value = {
-      clipId: publishClipData.value?.clipId || '',
-      clipName,
-      mediaUrl: outputPath,
-      thumbnailUrl: thumbnailPath || undefined,
-      duration: duration || undefined,
-    };
-    showScheduleDialog.value = true;
-  }
-
-  function handleScheduleComplete() {
-    showScheduleDialog.value = false;
-    scheduleDialogData.value = null;
+  function handleQuickPublishClose() {
+    showQuickPublishWizard.value = false;
     publishClipData.value = null;
     currentClipForPublish.value = null;
-    showSuccess('Scheduled', 'Your clip has been scheduled for publishing!');
   }
 
   async function handleClose() {
@@ -1240,12 +999,6 @@
 
     // Cleanup global shortcut
     await unregisterGlobalShortcut();
-
-    // Cleanup build listener if active
-    if (buildCompleteUnlisten) {
-      buildCompleteUnlisten();
-      buildCompleteUnlisten = null;
-    }
 
     // Stop playback locally to avoid lingering audio when switching streams
     viewer.pause();

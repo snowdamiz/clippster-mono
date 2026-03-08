@@ -586,6 +586,36 @@ defmodule ClippsterServer.Social do
   end
 
   @doc """
+  Recovers posts stuck in 'publishing' status with stale locks (older than 5 minutes).
+  Resets them to 'scheduled' so the worker can retry.
+  """
+  def recover_stale_publishing_posts do
+    stale_threshold = DateTime.utc_now() |> DateTime.add(-300, :second) |> DateTime.truncate(:second)
+
+    {count, _} =
+      from(p in PostSubmission,
+        where: p.status == "publishing",
+        where: not is_nil(p.locked_at),
+        where: p.locked_at < ^stale_threshold
+      )
+      |> Repo.update_all(
+        set: [
+          status: "failed",
+          error_message: "Worker crashed during publishing - post may have been published externally",
+          locked_at: nil,
+          updated_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        ]
+      )
+
+    if count > 0 do
+      require Logger
+      Logger.warning("[Social] Recovered #{count} stale publishing post(s) → marked as failed")
+    end
+
+    count
+  end
+
+  @doc """
   Gets scheduled posts that are ready to publish.
   """
   def get_scheduled_posts_ready_to_publish(now, limit \\ 20) do

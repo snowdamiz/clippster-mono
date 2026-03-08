@@ -338,9 +338,11 @@ import TiktokLogo from '@/components/icons/TiktokLogo.vue';
 import CustomTimePicker from '@/components/CustomTimePicker.vue';
 import { useToast } from '@/composables/useToast';
 import { useAuthStore } from '@/stores/auth';
-import { listSocialAccounts, uploadMediaForPost, type SocialAccount } from '@/services/socialAccountsApi';
-import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
-import { uploadUserMediaForPost } from '@/services/userInstagramApi';
+import { listSocialAccounts, uploadMediaForPost, publishPost, type SocialAccount } from '@/services/socialAccountsApi';
+import { listUserTwitterAccounts, publishToUserTwitter, type UserTwitterAccount } from '@/services/userTwitterApi';
+import { listUserTiktokAccounts, publishToUserTiktok, type UserTiktokAccount } from '@/services/userTiktokApi';
+import { listUserInstagramAccounts, uploadUserMediaForPost, publishToUserInstagram, type UserInstagramAccount } from '@/services/userInstagramApi';
+import { listUserYoutubeAccounts, publishToUserYoutube, type UserYoutubeAccount } from '@/services/userYoutubeApi';
 import { schedulePost, updateScheduledPostMedia } from '@/services/schedulingApi';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -379,6 +381,9 @@ const availablePlatforms = [
 const loadingAccounts = ref(true);
 const orgAccounts = ref<SocialAccount[]>([]);
 const personalTwitterAccounts = ref<UserTwitterAccount[]>([]);
+const personalTiktokAccounts = ref<UserTiktokAccount[]>([]);
+const personalInstagramAccounts = ref<UserInstagramAccount[]>([]);
+const personalYoutubeAccounts = ref<UserYoutubeAccount[]>([]);
 const selectedPlatforms = ref<string[]>([]);
 const sameTimeForAll = ref(true);
 const globalTime = ref('');
@@ -423,10 +428,13 @@ function getOrgAccountsForPlatform(platformId: string) {
 }
 
 function getPersonalAccountsForPlatform(platformId: string) {
-  if (platformId === 'twitter') {
-    return personalTwitterAccounts.value.filter(a => a.is_active);
+  switch (platformId) {
+    case 'twitter': return personalTwitterAccounts.value.filter(a => a.is_active);
+    case 'tiktok': return personalTiktokAccounts.value.filter(a => a.is_active);
+    case 'instagram': return personalInstagramAccounts.value.filter(a => a.is_active);
+    case 'youtube': return personalYoutubeAccounts.value.filter(a => a.is_active);
+    default: return [];
   }
-  return [];
 }
 
 function toggleDropdown(platformId: string) {
@@ -453,7 +461,13 @@ function getSelectedAccountLabel(platformId: string): string {
     const account = orgAccounts.value.find(a => a.id === Number(id));
     return account ? `@${account.username}` : 'Select account';
   } else if (type === 'user') {
-    const account = personalTwitterAccounts.value.find(a => a.id === Number(id));
+    const allPersonal = [
+      ...personalTwitterAccounts.value,
+      ...personalTiktokAccounts.value,
+      ...personalInstagramAccounts.value,
+      ...personalYoutubeAccounts.value,
+    ];
+    const account = allPersonal.find(a => a.id === Number(id));
     return account ? `@${account.username}` : 'Select account';
   }
   return 'Select account';
@@ -528,22 +542,20 @@ async function loadAccounts() {
       }
     }
     
-    // Load personal Twitter accounts
-    try {
-      const twitterResponse = await listUserTwitterAccounts();
-      console.log('[ScheduleClipDialog] Personal Twitter accounts response:', twitterResponse);
-      if (twitterResponse.success) {
-        personalTwitterAccounts.value = twitterResponse.accounts;
-        console.log('[ScheduleClipDialog] Personal Twitter accounts loaded:', personalTwitterAccounts.value);
-      }
-    } catch (err) {
-      console.warn('[ScheduleClipDialog] Failed to load personal Twitter accounts:', err);
-    }
+    // Load personal accounts for all platforms
+    const personalLoaders = [
+      listUserTwitterAccounts().then(r => { if (r.success) personalTwitterAccounts.value = r.accounts; }).catch(() => {}),
+      listUserTiktokAccounts().then(r => { if (r.success) personalTiktokAccounts.value = r.accounts; }).catch(() => {}),
+      listUserInstagramAccounts().then(r => { if (r.success) personalInstagramAccounts.value = r.accounts; }).catch(() => {}),
+      listUserYoutubeAccounts().then(r => { if (r.success) personalYoutubeAccounts.value = r.accounts; }).catch(() => {}),
+    ];
+    await Promise.all(personalLoaders);
+    console.log('[ScheduleClipDialog] Personal accounts loaded — Twitter:', personalTwitterAccounts.value.length, 'TikTok:', personalTiktokAccounts.value.length, 'Instagram:', personalInstagramAccounts.value.length, 'YouTube:', personalYoutubeAccounts.value.length);
   } catch (err) {
     console.error('[ScheduleClipDialog] Failed to load accounts:', err);
   } finally {
     loadingAccounts.value = false;
-    console.log('[ScheduleClipDialog] Accounts loading complete. Org:', orgAccounts.value.length, 'Personal Twitter:', personalTwitterAccounts.value.length);
+    console.log('[ScheduleClipDialog] Accounts loading complete. Org:', orgAccounts.value.length);
   }
 }
 
@@ -554,6 +566,124 @@ async function handleSchedule() {
   scheduling.value = true;
   
   try {
+    // ── Immediate mode: close dialog, background R2 upload → direct publish via PostForMe ──
+    if (props.immediateMode) {
+      // Collect publish targets before closing
+      const publishTargets: { platformId: string; accountType: string; accountId: number }[] = [];
+      for (const platformId of selectedPlatforms.value) {
+        const accountValue = platformAccounts.value[platformId];
+        if (!accountValue) continue;
+        const [accountType, accountIdStr] = accountValue.split(':');
+        publishTargets.push({ platformId, accountType, accountId: Number(accountIdStr) });
+      }
+
+      if (publishTargets.length === 0) {
+        error.value = 'No accounts selected';
+        scheduling.value = false;
+        return;
+      }
+
+      const captionText = caption.value || '';
+      const thumbnailUrlValue = props.thumbnailUrl;
+      const clipId = props.clipId;
+      const currentOrgId = orgId.value;
+      const uploadPromise = immediateUploadPromise;
+
+      // Close dialog immediately so user can continue working
+      showToast(`Publishing ${publishTargets.length} post${publishTargets.length !== 1 ? 's' : ''} — uploading in background...`, 'success');
+      emit('scheduled');
+      emit('close');
+
+      // Background: await R2 upload, then publish each target via direct endpoints
+      (async () => {
+        try {
+          if (!uploadPromise) {
+            showToast('Upload was not started — cannot publish', 'error');
+            return;
+          }
+
+          console.log('[ScheduleClipDialog] Waiting for R2 upload to finish...');
+          const uploadResult = await uploadPromise;
+          const mediaUrl = uploadResult.media_url;
+          const thumbUrl = uploadResult.thumbnail_url || thumbnailUrlValue;
+          console.log('[ScheduleClipDialog] R2 upload done:', mediaUrl);
+
+          let successfulCount = 0;
+          let failedCount = 0;
+
+          for (const target of publishTargets) {
+            try {
+              let response: any;
+              if (target.accountType === 'org' && currentOrgId) {
+                // Org account — use publishPost
+                response = await publishPost(currentOrgId, {
+                  social_account_id: target.accountId,
+                  media_url: mediaUrl,
+                  caption: captionText,
+                  media_type: 'video',
+                  thumbnail_url: thumbUrl,
+                });
+              } else {
+                // Personal account — use platform-specific endpoint
+                const publishData = {
+                  account_id: target.accountId,
+                  media_url: mediaUrl,
+                  caption: captionText,
+                  media_type: 'video' as const,
+                  thumbnail_url: thumbUrl,
+                };
+                switch (target.platformId) {
+                  case 'twitter':
+                    console.log('[ScheduleClipDialog] Calling publishToUserTwitter with data:', publishData);
+                    response = await publishToUserTwitter(publishData);
+                    console.log('[ScheduleClipDialog] publishToUserTwitter response:', response);
+                    break;
+                  case 'instagram':
+                    response = await publishToUserInstagram(publishData);
+                    break;
+                  case 'tiktok':
+                    response = await publishToUserTiktok(publishData);
+                    break;
+                  case 'youtube':
+                    response = await publishToUserYoutube({ ...publishData, title: captionText || 'Video' });
+                    break;
+                  default:
+                    console.error('[ScheduleClipDialog] Unknown platform:', target.platformId);
+                    failedCount++;
+                    continue;
+                }
+              }
+
+              if (response?.success) {
+                successfulCount++;
+                console.log(`[ScheduleClipDialog] Published to ${target.platformId} successfully`);
+              } else {
+                failedCount++;
+                console.error(`[ScheduleClipDialog] Failed to publish to ${target.platformId}:`, response?.error);
+              }
+            } catch (publishErr) {
+              failedCount++;
+              console.error(`[ScheduleClipDialog] Error publishing to ${target.platformId}:`, publishErr);
+            }
+          }
+
+          if (successfulCount > 0) {
+            showToast(`Published to ${successfulCount} platform${successfulCount !== 1 ? 's' : ''} successfully!`, 'success');
+          }
+          if (failedCount > 0) {
+            showToast(`Failed to publish to ${failedCount} platform${failedCount !== 1 ? 's' : ''}`, 'error');
+          }
+        } catch (err) {
+          console.error('[ScheduleClipDialog] Background publish failed:', err);
+          showToast('Upload failed — could not publish', 'error');
+        }
+      })(); // ← CRITICAL FIX: Actually invoke the async function!
+
+      scheduling.value = false;
+      return;
+    }
+
+    // ── Normal scheduled mode: create scheduled posts, background R2 upload ──
     const scheduledPosts: Promise<any>[] = [];
     const scheduledPostIds: number[] = [];
     
@@ -565,22 +695,15 @@ async function handleSchedule() {
       const accountId = Number(accountIdStr);
       
       // Determine scheduled time
-      let scheduledDateTime: Date;
-      if (props.immediateMode) {
-        // Immediate mode: schedule now — server skips 5-min check when immediate=true
-        // Media will be uploaded in background and updated via update-media endpoint
-        scheduledDateTime = new Date();
-      } else {
-        const time = sameTimeForAll.value || selectedPlatforms.value.length === 1
-          ? globalTime.value
-          : platformTimes.value[platformId];
-        
-        if (!time) continue;
-        
-        const [hours, minutes] = time.split(':').map(Number);
-        scheduledDateTime = new Date(props.selectedDate);
-        scheduledDateTime.setHours(hours, minutes, 0, 0);
-      }
+      const time = sameTimeForAll.value || selectedPlatforms.value.length === 1
+        ? globalTime.value
+        : platformTimes.value[platformId];
+      
+      if (!time) continue;
+      
+      const [hours, minutes] = time.split(':').map(Number);
+      const scheduledDateTime = new Date(props.selectedDate);
+      scheduledDateTime.setHours(hours, minutes, 0, 0);
       
       // Create schedule data with local path (will be updated with R2 URL after upload)
       const scheduleData: any = {
@@ -592,11 +715,6 @@ async function handleSchedule() {
         media_type: 'video',
         clip_id: props.clipId,
       };
-
-      // Flag for server to skip 5-min validation
-      if (props.immediateMode) {
-        scheduleData.immediate = true;
-      }
       
       // Add account info
       if (accountType === 'org') {
@@ -633,54 +751,22 @@ async function handleSchedule() {
     successCount.value = successful;
     
     if (successful > 0) {
-      const verb = props.immediateMode ? 'queued for publishing' : 'scheduled';
-      showToast(`Successfully ${verb} ${successful} post${successful !== 1 ? 's' : ''}`, 'success');
+      showToast(`Successfully scheduled ${successful} post${successful !== 1 ? 's' : ''}`, 'success');
       
       emit('scheduled');
       
-      console.log('[ScheduleClipDialog] Checking if should close - failed count:', failed);
       if (failed === 0) {
-        // All succeeded, close immediately (bypass handleClose guard since scheduling is still true)
-        console.log('[ScheduleClipDialog] All succeeded, closing dialog');
         emit('close');
         
         // Background upload: wait for R2 upload to complete, then update post media URLs
         if (scheduledPostIds.length > 0) {
-          if (props.immediateMode && immediateUploadPromise) {
-            // In immediate mode, await the upload that started when dialog opened
-            console.log('[ScheduleClipDialog] Waiting for background R2 upload to finish for', scheduledPostIds.length, 'posts');
-            immediateUploadPromise.then(async (result) => {
-              console.log('[ScheduleClipDialog] Background upload complete, updating posts with R2 URL:', result.media_url);
-              const updateResult = await updateScheduledPostMedia(
-                scheduledPostIds,
-                result.media_url,
-                result.thumbnail_url
-              );
-              if (updateResult.success) {
-                console.log(`[ScheduleClipDialog] Updated ${updateResult.updated} post(s) with R2 URL`);
-                showToast('Upload complete - publishing now!', 'success');
-              } else {
-                console.error('[ScheduleClipDialog] Failed to update posts:', updateResult.error);
-                showToast('Upload done but failed to update posts', 'error');
-              }
-            }).catch(err => {
-              console.error('[ScheduleClipDialog] Background R2 upload failed:', err);
-              showToast('Upload failed - post may not publish', 'error');
-            });
-          } else {
-            // Normal scheduled mode: start background upload now
-            console.log('[ScheduleClipDialog] Starting background upload for', scheduledPostIds.length, 'posts');
-            startBackgroundUpload(scheduledPostIds).catch(err => {
-              console.error('[ScheduleClipDialog] Background upload failed:', err);
-              showToast('Upload failed - posts may not publish', 'error');
-            });
-          }
+          console.log('[ScheduleClipDialog] Starting background upload for', scheduledPostIds.length, 'posts');
+          startBackgroundUpload(scheduledPostIds).catch(err => {
+            console.error('[ScheduleClipDialog] Background upload failed:', err);
+            showToast('Upload failed - posts may not publish', 'error');
+          });
         }
-      } else {
-        console.log('[ScheduleClipDialog] NOT closing - some posts failed');
       }
-    } else {
-      console.log('[ScheduleClipDialog] NOT closing - no successful posts');
     }
     
     if (failed > 0) {

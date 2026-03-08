@@ -262,11 +262,21 @@ export interface PublishToUserTwitterResponse {
 export async function publishToUserTwitter(
   data: PublishToUserTwitterData
 ): Promise<PublishToUserTwitterResponse> {
+  console.log('[UserTwitterApi] publishToUserTwitter called with data:', data);
   try {
+    console.log('[UserTwitterApi] Making POST request to /user/twitter/publish');
     const response = await api.post<PublishToUserTwitterResponse>('/user/twitter/publish', data);
+    console.log('[UserTwitterApi] Received response:', response);
+    console.log('[UserTwitterApi] Response data:', response.data);
     return response.data;
   } catch (error: any) {
     console.error('[UserTwitterApi] Failed to publish to X:', error);
+    console.error('[UserTwitterApi] Error details:', {
+      message: error.message,
+      response: error.response,
+      request: error.request,
+      config: error.config
+    });
     return {
       success: false,
       error: error.response?.data?.error || error.message || 'Failed to publish to X',

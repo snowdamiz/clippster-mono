@@ -151,6 +151,9 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
     Appsignal.instrument("ScheduledPostWorker#process", fn ->
       now = DateTime.utc_now()
 
+      # Recover any posts stuck in 'publishing' with stale locks (crashed worker)
+      Social.recover_stale_publishing_posts()
+
       # Find posts that are scheduled and ready to publish
       posts = Social.get_scheduled_posts_ready_to_publish(now, @batch_size)
 
@@ -498,27 +501,57 @@ defmodule ClippsterServer.Social.ScheduledPostWorker do
 
   defp classify_error(_reason), do: :transient
 
-  # Fetch post_url and provider_post_id from PostForMe feed
-  defp fetch_post_data_from_feed(provider_account_id, post_id) do
+  # Fetch post_url and provider_post_id after publishing via PostForMe
+  defp fetch_post_data_from_feed(provider_account_id, pfm_post_id) do
+    try do
+      # First try social-post-results endpoint (most reliable)
+      case PostForMe.list_social_post_results(%{"social_post_id" => pfm_post_id}) do
+        {:ok, %{data: results}} when is_list(results) and results != [] ->
+          result = List.first(results)
+          platform_data = result.platform_data || %{}
+          post_url = platform_data["platform_url"] || platform_data["url"]
+          provider_post_id = platform_data["platform_post_id"] || platform_data["id"]
+
+          if post_url || provider_post_id do
+            Logger.info("[ScheduledPostWorker] Found post data from results: url=#{post_url}, provider_id=#{provider_post_id}")
+            {post_url, provider_post_id}
+          else
+            fetch_from_feed_fallback(provider_account_id, pfm_post_id)
+          end
+
+        _ ->
+          fetch_from_feed_fallback(provider_account_id, pfm_post_id)
+      end
+    rescue
+      e ->
+        Logger.warning("[ScheduledPostWorker] Error fetching post data (non-fatal): #{inspect(e)}")
+        {nil, nil}
+    end
+  end
+
+  # Fallback: search account feed for the most recent matching post
+  defp fetch_from_feed_fallback(provider_account_id, pfm_post_id) do
     case PostForMe.get_social_account_feed(provider_account_id) do
-      {:ok, feed_items} ->
-        # Find the post in the feed by social_post_id
-        case Enum.find(feed_items, fn item ->
-          item["social_post_id"] == post_id
-        end) do
+      {:ok, %{data: feed_items}} when is_list(feed_items) ->
+        # Feed items don't have social_post_id, so just grab the most recent post
+        # (it was just published, so it should be first)
+        case List.first(feed_items) do
           nil ->
-            Logger.warning("[ScheduledPostWorker] Post #{post_id} not found in feed yet")
+            Logger.warning("[ScheduledPostWorker] Post #{pfm_post_id} not found in feed")
             {nil, nil}
-          
-          item ->
+
+          item when is_map(item) ->
             post_url = item["platform_url"]
             provider_post_id = item["platform_post_id"]
-            Logger.info("[ScheduledPostWorker] Found post data in feed: url=#{post_url}, provider_id=#{provider_post_id}")
+            Logger.info("[ScheduledPostWorker] Using most recent feed item: url=#{post_url}, provider_id=#{provider_post_id}")
             {post_url, provider_post_id}
+
+          _ ->
+            {nil, nil}
         end
 
-      {:error, reason} ->
-        Logger.warning("[ScheduledPostWorker] Failed to fetch feed: #{inspect(reason)}")
+      _ ->
+        Logger.warning("[ScheduledPostWorker] Failed to fetch feed for #{provider_account_id}")
         {nil, nil}
     end
   end
