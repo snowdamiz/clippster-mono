@@ -9,7 +9,7 @@ import type { MediaAsset } from "../../../types/assets";
 import { Film, Plus, Loader2, Check, Search, Briefcase, Building2 } from "lucide-vue-next";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { buildVideoElement } from "../../../lib/timeline/element-utils";
-import { setDragData } from "../../../lib/drag-data";
+import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { CreateTimelineElement } from "../../../types/timeline";
 
 // Build entry combines clip info with specific build info
@@ -20,6 +20,7 @@ interface BuildEntry {
 }
 
 const { editor, version } = useEditor();
+const { startDrag, wasDragCompleted } = usePointerDrag();
 
 const clips = ref<Clip[]>([]);
 const allBuilds = ref<BuildEntry[]>([]); // Flattened list of all builds
@@ -129,6 +130,7 @@ function addToTimeline(entry: BuildEntry) {
 }
 
 function handleBuildClick(entry: BuildEntry) {
+	if (wasDragCompleted.value) return;
 	if (isAlreadyAdded(entry)) {
 		addToTimeline(entry);
 	} else {
@@ -136,13 +138,11 @@ function handleBuildClick(entry: BuildEntry) {
 	}
 }
 
-function handleDragStart(e: DragEvent, entry: BuildEntry) {
+function handlePointerDown(e: PointerEvent, entry: BuildEntry) {
+	if (!isAlreadyAdded(entry)) return;
 	const mediaId = getMediaAssetId(entry);
-	if (!mediaId || !e.dataTransfer) return;
-	setDragData({
-		dataTransfer: e.dataTransfer,
-		dragData: { id: mediaId, type: "media", mediaType: "video", name: getBuildDisplayName(entry) },
-	});
+	if (!mediaId) return;
+	startDrag(e, { id: mediaId, type: "media", mediaType: "video", name: getBuildDisplayName(entry) });
 }
 
 async function loadClips() {
@@ -320,10 +320,10 @@ onMounted(loadClips);
 					:key="entry.key"
 					class="group relative cursor-pointer overflow-hidden rounded-lg border border-white/10 transition-colors hover:border-white/20"
 					:class="{ 'ring-1 ring-green-500/30': isAlreadyAdded(entry) }"
-					:draggable="isAlreadyAdded(entry)"
 					@click="handleBuildClick(entry)"
 					@dblclick="addToTimeline(entry)"
-					@dragstart="(e: DragEvent) => handleDragStart(e, entry)"
+					@pointerdown="(e: PointerEvent) => handlePointerDown(e, entry)"
+					@dragstart.prevent
 				>
 					<!-- Thumbnail -->
 					<div class="relative aspect-video bg-zinc-800">
@@ -332,6 +332,7 @@ onMounted(loadClips);
 							:src="getCachedThumbnail(entry.build.id, entry.clip.id)!"
 							:alt="getClipName(entry.clip)"
 							class="size-full object-cover"
+							draggable="false"
 							@error="($event.target as HTMLImageElement).style.display = 'none'"
 						/>
 						<div v-else class="flex size-full items-center justify-center">

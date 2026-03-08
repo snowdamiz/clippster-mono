@@ -1,9 +1,13 @@
 /**
  * Vue composable equivalent of OpenCut's use-timeline-drag-drop.ts
  * Handles drag-and-drop of media, text, stickers, and files onto the timeline.
+ *
+ * Uses pointer-event-based drag (via usePointerDrag) for intra-webview drags.
+ * HTML5 DnD is kept only for OS file drops (from Finder/Explorer).
  */
-import { ref, computed, type Ref } from "vue";
+import { ref, computed, onMounted, onUnmounted, type Ref } from "vue";
 import { useEditor } from "../useEditor";
+import { usePointerDrag } from "../usePointerDrag";
 import { processMediaAssets } from "../../lib/media/processing";
 import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
 import { snapTimeToFrame } from "../../lib/time";
@@ -16,11 +20,10 @@ import {
 	buildEffectElement,
 } from "../../lib/timeline/element-utils";
 import { computeDropTarget } from "../../lib/timeline/drop-utils";
-import { getDragData, hasDragData } from "../../lib/drag-data";
 import { isMainTrack } from "../../lib/timeline/track-utils";
 import { getMainTrackMagnet } from "./useTimelineTools";
 import type { TrackType, DropTarget, ElementType } from "../../types/timeline";
-import type { MediaDragData, StickerDragData, EffectDragData, TransitionDragData } from "../../types/drag";
+import type { TimelineDragData, MediaDragData, TextDragData, StickerDragData, EffectDragData, TransitionDragData } from "../../types/drag";
 import { generateUUID } from "../../utils/id";
 import { SetTransitionCommand } from "../../lib/commands/scene";
 
@@ -41,6 +44,9 @@ export function useTimelineDragDrop({
 	const isDragOver = ref(false);
 	const dropTarget = ref<DropTarget | null>(null);
 	const dragElementType = ref<ElementType | null>(null);
+
+	// Pointer drag system
+	const { registerDropZone, unregisterDropZone } = usePointerDrag();
 
 	const tracks = computed(() => {
 		void version.value;
@@ -64,14 +70,12 @@ export function useTimelineDragDrop({
 		return snapTimeToFrame({ time, fps: projectFps });
 	}
 
-	function getElementType(dataTransfer: DataTransfer): ElementType | "transition" | null {
-		const dragData = getDragData({ dataTransfer });
-		if (!dragData) return null;
-		if (dragData.type === "text") return "text";
-		if (dragData.type === "sticker") return "sticker";
-		if (dragData.type === "effect") return "effect";
-		if (dragData.type === "transition") return "transition";
-		if (dragData.type === "media") return dragData.mediaType;
+	function getElementTypeFromData(data: TimelineDragData): ElementType | "transition" | null {
+		if (data.type === "text") return "text";
+		if (data.type === "sticker") return "sticker";
+		if (data.type === "effect") return "effect";
+		if (data.type === "transition") return "transition";
+		if (data.type === "media") return data.mediaType;
 		return null;
 	}
 
@@ -86,43 +90,24 @@ export function useTimelineDragDrop({
 		return TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 	}
 
-	function handleDragEnter(e: DragEvent) {
-		e.preventDefault();
-		if (!e.dataTransfer) return;
-		const hasAsset = hasDragData({ dataTransfer: e.dataTransfer });
-		const hasFiles = e.dataTransfer.types.includes("Files");
-		if (!hasAsset && !hasFiles) return;
-		isDragOver.value = true;
-	}
+	// ── Pointer-based drag callbacks (registered as drop zone) ──
 
-	function handleDragOver(e: DragEvent) {
-		e.preventDefault();
-		if (!e.dataTransfer) return;
+	function onDragOver(cursor: { x: number; y: number }, data: TimelineDragData) {
+		isDragOver.value = true;
 
 		const rect = containerRef.value?.getBoundingClientRect();
 		if (!rect) return;
 
 		const headerHeight = headerRef?.value?.getBoundingClientRect().height ?? 0;
-		const hasFiles = e.dataTransfer.types.includes("Files");
-		const isExternal = hasFiles && !hasDragData({ dataTransfer: e.dataTransfer });
-
-		const elType = getElementType(e.dataTransfer);
-
-		if (!elType && hasFiles && isExternal) {
-			dropTarget.value = null;
-			dragElementType.value = null;
-			return;
-		}
-
+		const elType = getElementTypeFromData(data);
 		if (!elType) return;
 
 		// Transitions don't use normal drop targets — just track cursor position
 		if (elType === "transition") {
 			dragElementType.value = null;
 			const sl = scrollRef?.value?.scrollLeft ?? 0;
-			const mouseX = e.clientX - rect.left + sl;
+			const mouseX = cursor.x - rect.left + sl;
 			const timeAtCursor = Math.max(0, mouseX / (TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value));
-			// Find nearest junction on a video track
 			const junction = findNearestJunction(timeAtCursor);
 			if (junction) {
 				dropTarget.value = {
@@ -136,21 +121,19 @@ export function useTimelineDragDrop({
 			} else {
 				dropTarget.value = null;
 			}
-			e.dataTransfer.dropEffect = "copy";
 			return;
 		}
 
 		dragElementType.value = elType as ElementType;
 
-		const dragData = getDragData({ dataTransfer: e.dataTransfer });
 		const duration = getElementDuration(
 			elType,
-			dragData?.type === "media" ? dragData.id : undefined,
+			data.type === "media" ? data.id : undefined,
 		);
 
 		const sl = scrollRef?.value?.scrollLeft ?? 0;
-		const mouseX = e.clientX - rect.left + sl;
-		const mouseY = Math.max(0, e.clientY - rect.top - headerHeight);
+		const mouseX = cursor.x - rect.left + sl;
+		const mouseY = Math.max(0, cursor.y - rect.top - headerHeight);
 
 		const target = computeDropTarget({
 			elementType: elType,
@@ -158,7 +141,7 @@ export function useTimelineDragDrop({
 			mouseY,
 			tracks: tracks.value,
 			playheadTime: currentTime.value,
-			isExternalDrop: isExternal,
+			isExternalDrop: false,
 			elementDuration: duration,
 			pixelsPerSecond: TIMELINE_CONSTANTS.PIXELS_PER_SECOND,
 			zoomLevel: zoomLevel.value,
@@ -166,28 +149,61 @@ export function useTimelineDragDrop({
 
 		target.xPosition = getSnappedTime(target.xPosition);
 		dropTarget.value = target;
-		e.dataTransfer.dropEffect = "copy";
 	}
 
-	function handleDragLeave(e: DragEvent) {
-		e.preventDefault();
-		const rect = containerRef.value?.getBoundingClientRect();
-		if (rect) {
-			const { clientX, clientY } = e;
-			if (
-				clientX < rect.left ||
-				clientX > rect.right ||
-				clientY < rect.top ||
-				clientY > rect.bottom
-			) {
-				isDragOver.value = false;
-				dropTarget.value = null;
-				dragElementType.value = null;
+	function onDragLeave() {
+		isDragOver.value = false;
+		dropTarget.value = null;
+		dragElementType.value = null;
+	}
+
+	function onDrop(cursor: { x: number; y: number }, data: TimelineDragData) {
+		const currentTarget = dropTarget.value;
+		isDragOver.value = false;
+		dropTarget.value = null;
+		dragElementType.value = null;
+
+		try {
+			if (data.type === "transition") {
+				const rect = containerRef.value?.getBoundingClientRect();
+				const sl = scrollRef?.value?.scrollLeft ?? 0;
+				const mouseX = rect ? cursor.x - rect.left + sl : 0;
+				executeTransitionDrop(data, mouseX);
+			} else if (data.type === "text") {
+				if (!currentTarget) return;
+				executeTextDrop(currentTarget, data);
+			} else if (data.type === "sticker") {
+				if (!currentTarget) return;
+				executeStickerDrop(currentTarget, data);
+			} else if (data.type === "effect") {
+				if (!currentTarget) return;
+				executeEffectDrop(currentTarget, data);
+			} else {
+				if (!currentTarget) return;
+				executeMediaDrop(currentTarget, data);
 			}
+		} catch (err) {
+			console.error("[TimelineDragDrop] Failed to process drop:", err);
 		}
 	}
 
-	function executeTextDrop(target: DropTarget, dragData: { name?: string; content?: string }) {
+	// Register as a drop zone for the pointer drag system
+	onMounted(() => {
+		registerDropZone({
+			containerRef,
+			onDragOver,
+			onDragLeave,
+			onDrop,
+		});
+	});
+
+	onUnmounted(() => {
+		unregisterDropZone();
+	});
+
+	// ── Execute drop functions (unchanged) ──
+
+	function executeTextDrop(target: DropTarget, dragData: TextDragData) {
 		let trackId: string;
 		if (target.isNewTrack) {
 			trackId = editor.timeline.addTrack({ type: "text", index: target.trackIndex });
@@ -197,8 +213,12 @@ export function useTimelineDragDrop({
 			trackId = track.id;
 		}
 
+		const raw = dragData.presetElement
+			? { ...dragData.presetElement, name: dragData.name ?? "", content: dragData.content ?? "" }
+			: { name: dragData.name ?? "", content: dragData.content ?? "" };
+
 		const element = buildTextElement({
-			raw: { name: dragData.name ?? "", content: dragData.content ?? "" },
+			raw,
 			startTime: target.xPosition,
 		});
 		editor.timeline.insertElement({ placement: { mode: "explicit", trackId }, element });
@@ -388,6 +408,8 @@ export function useTimelineDragDrop({
 		}
 	}
 
+	// ── OS file drop (HTML5 DnD — kept for external file drops from Finder) ──
+
 	async function executeFileDrop(files: File[], mouseX: number, mouseY: number) {
 		if (!activeProject.value) return;
 
@@ -461,52 +483,24 @@ export function useTimelineDragDrop({
 		}
 	}
 
-	async function handleDrop(e: DragEvent) {
+	/** Handle native file drops from the OS (Finder / Explorer) */
+	async function handleFileDrop(e: DragEvent) {
 		e.preventDefault();
 		if (!e.dataTransfer) return;
 
-		const hasAsset = hasDragData({ dataTransfer: e.dataTransfer });
 		const hasFiles = (e.dataTransfer.files?.length ?? 0) > 0;
+		if (!hasFiles) return;
 
-		if (!hasAsset && !hasFiles) return;
-
-		const currentTarget = dropTarget.value;
-		isDragOver.value = false;
-		dropTarget.value = null;
-		dragElementType.value = null;
+		const rect = containerRef.value?.getBoundingClientRect();
+		if (!rect) return;
+		const headerHeight = headerRef?.value?.getBoundingClientRect().height ?? 0;
+		const mouseX = e.clientX - rect.left;
+		const mouseY = Math.max(0, e.clientY - rect.top - headerHeight);
 
 		try {
-			if (hasAsset) {
-				const dragData = getDragData({ dataTransfer: e.dataTransfer });
-				if (!dragData) return;
-
-				if (dragData.type === "transition") {
-					const rect = containerRef.value?.getBoundingClientRect();
-					const mouseX = rect ? e.clientX - rect.left : 0;
-					executeTransitionDrop(dragData, mouseX);
-				} else if (dragData.type === "text") {
-					if (!currentTarget) return;
-					executeTextDrop(currentTarget, dragData);
-				} else if (dragData.type === "sticker") {
-					if (!currentTarget) return;
-					executeStickerDrop(currentTarget, dragData);
-				} else if (dragData.type === "effect") {
-					if (!currentTarget) return;
-					executeEffectDrop(currentTarget, dragData);
-				} else {
-					if (!currentTarget) return;
-					executeMediaDrop(currentTarget, dragData);
-				}
-			} else if (hasFiles) {
-				const rect = containerRef.value?.getBoundingClientRect();
-				if (!rect) return;
-				const mouseX = e.clientX - rect.left;
-				const headerHeight = headerRef?.value?.getBoundingClientRect().height ?? 0;
-				const mouseY = Math.max(0, e.clientY - rect.top - headerHeight);
-				await executeFileDrop(Array.from(e.dataTransfer.files), mouseX, mouseY);
-			}
+			await executeFileDrop(Array.from(e.dataTransfer.files), mouseX, mouseY);
 		} catch (err) {
-			console.error("[TimelineDragDrop] Failed to process drop:", err);
+			console.error("[TimelineDragDrop] Failed to process file drop:", err);
 		}
 	}
 
@@ -514,9 +508,6 @@ export function useTimelineDragDrop({
 		isDragOver,
 		dropTarget,
 		dragElementType,
-		handleDragEnter,
-		handleDragOver,
-		handleDragLeave,
-		handleDrop,
+		handleFileDrop,
 	};
 }

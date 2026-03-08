@@ -6,10 +6,13 @@ import { useEffectPreviews } from "../../../composables/usePreviewThumbnails";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
 import { buildEffectElement } from "../../../lib/timeline/element-utils";
+import { usePointerDrag } from "../../../composables/usePointerDrag";
+import type { EffectDragData } from "../../../types/drag";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor, version } = useEditor();
 const { selectedElements } = useElementSelection();
+const { startDrag, wasDragCompleted } = usePointerDrag();
 const searchQuery = ref("");
 
 const effectTypes = EFFECT_PRESETS.map((p) => p.type);
@@ -22,6 +25,24 @@ const filteredPresets = computed(() => {
 		(p) => p.label.toLowerCase().includes(q) || p.description.toLowerCase().includes(q),
 	);
 });
+
+function handlePointerDown(e: PointerEvent, preset: VideoEffectPreset) {
+	const params: Record<string, number | string> = {};
+	for (const [key, value] of Object.entries(preset.defaults)) {
+		if (key === "type" || key === "enabled" || key === "intensity") continue;
+		if (typeof value === "number" || typeof value === "string") params[key] = value;
+	}
+
+	const data: EffectDragData = {
+		id: `${preset.type}_${Date.now()}`,
+		name: preset.label,
+		type: "effect",
+		effectType: preset.type,
+		intensity: preset.defaults.intensity,
+		params,
+	};
+	startDrag(e, data);
+}
 
 function addEffectToTimeline(preset: VideoEffectPreset) {
 	const params: Record<string, number | string> = {};
@@ -82,8 +103,10 @@ function addEffectToTimeline(preset: VideoEffectPreset) {
 				<div
 					v-for="preset in filteredPresets"
 					:key="preset.type"
-					class="group relative cursor-pointer overflow-hidden rounded-lg border border-white/[0.06] bg-zinc-950 transition-colors hover:border-white/15 active:scale-[0.97] active:transition-transform"
-					@click="addEffectToTimeline(preset)"
+					class="group relative cursor-grab overflow-hidden rounded-lg border border-white/[0.06] bg-zinc-950 transition-colors hover:border-white/15 active:cursor-grabbing active:scale-[0.97] active:transition-transform"
+					@click="!wasDragCompleted && addEffectToTimeline(preset)"
+					@pointerdown="handlePointerDown($event, preset)"
+					@dragstart.prevent
 				>
 					<!-- Thumbnail -->
 					<div class="aspect-[4/3] w-full overflow-hidden">

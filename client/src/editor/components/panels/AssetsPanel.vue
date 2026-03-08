@@ -9,7 +9,7 @@ import {
 	buildUploadAudioElement,
 } from "../../lib/timeline/element-utils";
 import { processMediaAssets } from "../../lib/media/processing";
-import { setDragData } from "../../lib/drag-data";
+import { usePointerDrag } from "../../composables/usePointerDrag";
 import type { MediaAsset } from "../../types/assets";
 import type { CreateTimelineElement } from "../../types/timeline";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ const props = defineProps<{
 }>();
 
 const { editor, version } = useEditor();
+const { startDrag, wasDragCompleted } = usePointerDrag();
 const showMediaDialog = ref(false);
 const dialogTab = ref<"built" | "projects">("built");
 const viewMode = ref<"grid" | "list">("grid");
@@ -216,14 +217,12 @@ function getMediaIcon(type: string) {
 						v-for="item in filteredMedia"
 						:key="item.id"
 						:class="['group relative overflow-hidden rounded-lg border border-white/10', isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer']"
-						:draggable="!isItemProcessing(item.id)"
-						@dragstart="(e: DragEvent) => {
-							if (isItemProcessing(item.id)) { e.preventDefault(); return; }
-							if (e.dataTransfer) {
-								setDragData({ dataTransfer: e.dataTransfer, dragData: { id: item.id, type: 'media', mediaType: item.type, name: item.name } });
-							}
+						@pointerdown="(e: PointerEvent) => {
+							if (isItemProcessing(item.id)) return;
+							startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
 						}"
 						@dblclick="addToTimeline(item)"
+						@dragstart.prevent
 					>
 						<!-- Processing overlay -->
 						<div v-if="isItemProcessing(item.id)" class="absolute inset-0 z-10 flex items-center justify-center bg-black/40">
@@ -236,12 +235,14 @@ function getMediaIcon(type: string) {
 								:src="item.url"
 								:alt="item.name"
 								class="size-full object-cover"
+								draggable="false"
 							/>
 							<img
 								v-else-if="item.type === 'video' && item.thumbnailUrl"
 								:src="item.thumbnailUrl"
 								:alt="item.name"
 								class="size-full object-cover"
+								draggable="false"
 							/>
 							<div v-else class="flex size-full items-center justify-center">
 								<component :is="getMediaIcon(item.type)" class="text-zinc-500 size-6" />
@@ -269,14 +270,12 @@ function getMediaIcon(type: string) {
 						v-for="item in filteredMedia"
 						:key="item.id"
 						:class="['group flex items-center gap-2 rounded-md px-2 py-1', isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer hover:bg-white/5']"
-						:draggable="!isItemProcessing(item.id)"
-						@dragstart="(e: DragEvent) => {
-							if (isItemProcessing(item.id)) { e.preventDefault(); return; }
-							if (e.dataTransfer) {
-								setDragData({ dataTransfer: e.dataTransfer, dragData: { id: item.id, type: 'media', mediaType: item.type, name: item.name } });
-							}
+						@pointerdown="(e: PointerEvent) => {
+							if (isItemProcessing(item.id)) return;
+							startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
 						}"
 						@dblclick="addToTimeline(item)"
+						@dragstart.prevent
 					>
 						<Loader2 v-if="isItemProcessing(item.id)" class="size-4 shrink-0 animate-spin text-blue-400" />
 						<div class="size-8 shrink-0 overflow-hidden rounded bg-zinc-800">
@@ -285,6 +284,7 @@ function getMediaIcon(type: string) {
 								:src="item.type === 'image' ? item.url : item.thumbnailUrl"
 								:alt="item.name"
 								class="size-full object-cover"
+								draggable="false"
 							/>
 							<div v-else class="flex size-full items-center justify-center">
 								<component :is="getMediaIcon(item.type)" class="text-zinc-500 size-4" />

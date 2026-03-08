@@ -1,85 +1,145 @@
-# HTML5 Drag-and-Drop Is Broken in Tauri 2 / WKWebView
+# Pointer-Event Drag System — Partially Working
 
-## Summary
+## Status (latest test)
 
-HTML5 native drag-and-drop does not work for intra-webview operations in this app. The browser's `dragstart` event fires, but the native macOS drag operation is immediately cancelled by WKWebView before any `drag`, `dragover`, or `drop` events occur. This affects **all** drag sources, not just effects.
+- **Stickers drag-and-drop: WORKS** — can drag sticker from panel onto timeline, drop line appears, element is inserted
+- **Everything else: DOES NOT WORK** — no cursor change, no drop line, no feedback at all
+- **Effects: no drag handler exists** — EffectsView.vue is click-only, has no `@pointerdown`/`startDrag`
 
-## Evidence
+The fact that stickers work end-to-end proves the core pointer drag system (`usePointerDrag.ts`), the drop zone registration, the `isInsideDropZone` hit-test, `computeDropTarget`, and all `execute*Drop` functions are correct. The problem is on the **source side** — the other components' `@pointerdown` handlers are either not firing or `startDrag` is not being called.
 
-Diagnostic logging at every stage of the drag pipeline confirmed:
+## Critical Clue: What Makes StickerItem Different
 
-1. `dragstart` fires successfully — `dataTransfer` is populated, MIME types are set, `lastDragData` cache is stored
-2. `dragend` fires **immediately** after `dragstart` — no intermediate events
-3. Zero `drag` events fire on the source element (confirmed via `.once` handler)
-4. Zero `dragover` events fire on `document` (confirmed via global listener)
-5. Zero `handleDragEnter` / `handleDragOver` calls on the Timeline section
-6. `dropEffect` on `dragend` reports `"copy"` (reflects `effectAllowed`, not an actual drop)
+StickerItem is the ONLY source that works. Here's how it differs from the broken sources:
 
-The drag operation is killed by the native layer before a single animation frame.
+### StickerItem.vue (WORKS)
+```vue
+<!-- Dedicated component, usePointerDrag() in its own setup -->
+<button @pointerdown="handlePointerDown" @click="handleClick">
+  <div><img ... /></div>
+</button>
+```
+- Root element is a `<button>`
+- `@pointerdown` binds to a named function defined in the same component
+- `usePointerDrag()` is called in StickerItem's own `<script setup>`
+- `handlePointerDown` is a simple function: `startDrag(e, data)`
 
-## Root Cause
+### AssetsPanel.vue media items (BROKEN)
+```vue
+<!-- Inline lambda on a <div>, usePointerDrag() called in parent AssetsPanel -->
+<div @pointerdown="(e: PointerEvent) => {
+  if (isItemProcessing(item.id)) return;
+  startDrag(e, { id: item.id, type: 'media', ... });
+}" @dblclick="addToTimeline(item)">
+  <div class="aspect-video"><img :src="..." /></div>
+</div>
+```
+- Root element is a `<div>` (not a button)
+- `@pointerdown` uses an **inline lambda** (not a named function)
+- `usePointerDrag()` is called in the parent AssetsPanel's setup
+- Contains `<img>` children — **images are `draggable="true"` by default in HTML**, which may cause WKWebView to intercept and cancel pointer events when the user starts moving
 
-The app runs as a **Tauri 2** desktop application on macOS. Tauri 2 uses **WKWebView** as its webview engine. WKWebView has known limitations with the HTML5 Drag and Drop API for operations that start and end within the same webview. The native macOS drag system intercepts the operation and cancels it before the web content can process it.
+### TransitionsView.vue (BROKEN — but code looks correct)
+```vue
+<button @pointerdown="handlePointerDown($event, preset)"
+        @click="!wasDragCompleted && applyTransition(preset)">
+  <TransitionPreviewCanvas ... />
+</button>
+```
+- Root element IS a `<button>` (same as StickerItem)
+- Has a named `handlePointerDown` function
+- `usePointerDrag()` called in component setup
+- **This should work but doesn't** — need to verify with DevTools console logs
 
-This is not a bug in application code — the drag handlers, data transfer setup, drop target computation, and execution functions are all correctly implemented. The failure occurs at the native/webview boundary.
+### BuiltClipsView.vue / ProjectClipsView.vue (BROKEN — has a guard)
+```ts
+function handlePointerDown(e: PointerEvent, clip: Clip) {
+  if (!isAlreadyAdded(clip)) return;  // ← GUARD: only starts drag if clip is already in editor
+  const mediaId = getMediaAssetId(clip);
+  if (!mediaId) return;               // ← GUARD: needs valid media ID
+  startDrag(e, { ... });
+}
+```
+- Has TWO guards that silently bail — if clip isn't added yet OR media ID not found, drag silently does nothing
+- This is intentional (can't drag a clip that hasn't been imported) but confusing
 
-## What Works vs What Doesn't
+### EffectsView.vue (NO DRAG AT ALL)
+- Has `@click="addEffectToTimeline(preset)"` only
+- No `@pointerdown`, no `startDrag`, no `usePointerDrag()` import
+- **Needs to be converted** — add `usePointerDrag()` and `@pointerdown` with `startDrag` passing `EffectDragData`
 
-| Operation | Works? | Mechanism |
-|-----------|--------|-----------|
-| Click / double-click to add items | Yes | Standard DOM events |
-| Drag media from OS Finder into app | Yes | Native-to-webview file drop (Tauri handles this) |
-| Drag item within webview (e.g., panel → timeline) | **No** | HTML5 DnD — cancelled by WKWebView |
-| Track reorder via drag in timeline labels | **No** | HTML5 DnD — same issue |
+## Hypotheses (ordered by likelihood)
 
-Items that appear to "work" (media, stickers) are added via click/double-click handlers, not drag-and-drop.
+### 1. Native image drag interference (HIGH — explains media items)
+`<img>` elements are `draggable="true"` by default in HTML. When user pointerdowns on an `<img>` inside a media item `<div>` and starts moving, the browser may initiate a native image drag. In WKWebView, this native drag gets immediately cancelled (the original HTML5 DnD bug), and this cancellation may also kill the pointer event sequence.
 
-## Affected Components
+StickerItem also has `<img>` children but works — the difference might be that `<button>` elements suppress native child drag behavior, or that StickerItem's `<img>` has different sizing/CSS.
 
-All components using `draggable="true"` + `@dragstart` for intra-webview drag:
+**Fix to try**: Add `draggable="false"` to all `<img>` elements inside drag source containers, OR add `@dragstart.prevent` on the drag source elements to block native drag initiation.
 
-- `EffectsView.vue` — effect presets (now converted to click-to-add)
-- `StickerItem.vue` — sticker icons
-- `DraggableItem.vue` — generic draggable wrapper
-- `AssetsPanel.vue` — media items (grid and list views)
-- `TransitionsView.vue` — transition presets
-- `TranscriptView.vue` — transcript paragraphs
-- `BuiltClipsView.vue` / `ProjectClipsView.vue` — clip items
-- `Timeline.vue` — track label reordering
+### 2. TransitionsView: verify it's actually broken (MEDIUM)
+TransitionsView's code looks structurally identical to StickerItem. If TransitionsView also doesn't work despite identical code structure, the issue might be more subtle — perhaps related to the `<TransitionPreviewCanvas>` (a `<canvas>` element) inside the button.
 
-## Dead Code
+**To verify**: Open DevTools console, go to Transitions tab, try to drag a transition. Check if `[PointerDrag] startDrag called` appears. If it does, the issue is downstream. If it doesn't, the `@pointerdown` isn't firing.
 
-The entire DnD pipeline infrastructure works correctly but is never reached in Tauri:
+### 3. `@pointerdown` on `<div>` vs `<button>` (MEDIUM)
+Buttons have different default behavior for pointer events vs divs. A `<button>` may implicitly prevent the browser from starting a native drag on its children, while a `<div>` does not. This would explain why StickerItem (button) works and AssetsPanel media items (div) don't.
 
-- `useTimelineDragDrop.ts` — composable with `handleDragEnter`, `handleDragOver`, `handleDrop`
-- `drop-utils.ts` — `computeDropTarget()`, `getDropLineY()`
-- `drag-data.ts` — `setDragData()`, `getDragData()`, `hasDragData()`, `clearDragData()`
-- Drop target visual feedback (drop lines, effect highlight overlays)
-- All `execute*Drop()` functions in the composable
+**Fix to try**: Wrap media items in `<button>` instead of `<div>`, or add `@dragstart.prevent` to the `<div>` elements.
 
-This code would work correctly in a standard browser. It's only non-functional in the Tauri/WKWebView context.
+### 4. Inline lambda vs named function (LOW)
+Vue should handle inline lambdas identically to named functions for event handlers. But worth testing — replace the inline lambda in AssetsPanel with a named function to rule it out.
 
-## Possible Solutions
+## Diagnostic Steps for Next Agent
 
-### 1. Pointer-event-based drag system (recommended for full DnD UX)
+1. **Open DevTools Console**, filter for `[PointerDrag]`
+2. **Test each source type** and note which `console.debug` messages appear:
 
-Replace HTML5 DnD with `pointerdown` / `pointermove` / `pointerup` events. This bypasses the native drag system entirely and works in all webview environments.
+   | Source | Expected log on pointerdown | Tab in AssetsPanel |
+   |--------|---------------------------|-------------------|
+   | Media item | `startDrag called, type: media` | Media (first tab) |
+   | Sticker | `startDrag called, type: sticker` | Stickers |
+   | Transition | `startDrag called, type: transition` | Transitions |
+   | Built clip | `startDrag called, type: media` | Built Clips (only if clip is already added) |
+   | Effect | **NO LOG** (no handler) | Effects |
 
-- Track drag state manually (source element, position, drop target)
-- Render a custom drag ghost via a fixed-position element (DraggableItem already has this pattern via `<Teleport>`)
-- Hit-test the timeline on `pointermove` to compute drop targets
-- Execute the drop on `pointerup`
-- Reuse existing `computeDropTarget()` and `execute*Drop()` logic
+3. **If `startDrag called` appears but `Drag started` doesn't** → pointer events are being eaten after pointerdown. Try the `@dragstart.prevent` fix on the source element.
 
-### 2. Click-to-add (simpler, already partially implemented)
+4. **If `startDrag called` doesn't appear at all** → the `@pointerdown` handler isn't firing. Check if `pointer-events: none` is applied via CSS, or if a parent is intercepting the event.
 
-Convert all drag sources to click/double-click handlers. This matches the existing user workflow.
+5. **If both `startDrag called` and `Drag started` appear but not `Entered drop zone`** → the drop zone bounds check is failing. Add a log inside `isInsideDropZone` to print the rect bounds vs cursor position.
 
-- EffectsView: **already converted** — click applies effect to selected element or inserts at playhead
-- Stickers: already have `@click` to add
-- Media: already have `@dblclick` to add
-- Transitions, text, etc.: would need similar handlers
+## Quick Fixes to Try (in order)
 
-### 3. Tauri plugin or native bridge
+1. **Add `@dragstart.prevent` to all drag source elements** — prevents the browser from trying to start a native drag on images/canvases, which may cancel pointer events in WKWebView:
+   ```vue
+   <div @pointerdown="..." @dragstart.prevent>
+   ```
 
-Use Tauri's IPC to implement drag-and-drop at the native level, bridging between the webview and native macOS drag APIs. High complexity, likely not worth it for this use case.
+2. **Add `draggable="false"` to `<img>` elements inside drag sources** — explicitly tells the browser not to make images natively draggable:
+   ```vue
+   <img :src="..." draggable="false" />
+   ```
+
+3. **Add `@pointerdown` + `startDrag` to EffectsView.vue** — it currently has no drag handler at all
+
+4. **Test with `mousemove`/`mouseup` instead of `pointermove`/`pointerup`** — if WKWebView is interfering with pointer events specifically, mouse events may work (they're lower-level)
+
+## Files Reference
+
+| File | Path | Has drag? | Status |
+|------|------|-----------|--------|
+| usePointerDrag.ts | `composables/usePointerDrag.ts` | Provider | Has debug logs |
+| useTimelineDragDrop.ts | `composables/timeline/useTimelineDragDrop.ts` | Drop target | Registers via `onMounted` |
+| EditorLayout.vue | `components/EditorLayout.vue` | `providePointerDrag()` | OK |
+| StickerItem.vue | `components/panels/assets/StickerItem.vue` | `@pointerdown` → `startDrag` | **WORKS** |
+| AssetsPanel.vue | `components/panels/AssetsPanel.vue` | `@pointerdown` inline lambda → `startDrag` | **BROKEN** |
+| TransitionsView.vue | `components/panels/assets/TransitionsView.vue` | `@pointerdown` → `startDrag` | **BROKEN** (untested?) |
+| BuiltClipsView.vue | `components/panels/assets/BuiltClipsView.vue` | `@pointerdown` → guarded `startDrag` | **BROKEN** (guard may prevent) |
+| ProjectClipsView.vue | `components/panels/assets/ProjectClipsView.vue` | `@pointerdown` → guarded `startDrag` | **BROKEN** (guard may prevent) |
+| EffectsView.vue | `components/panels/assets/EffectsView.vue` | **NONE** — click-only | **NEEDS DRAG ADDED** |
+| TranscriptView.vue | `components/panels/assets/TranscriptView.vue` | Paragraph reorder via pointer | Untested |
+| Timeline.vue | `components/timeline/Timeline.vue` | Track label reorder via pointer | Untested |
+| drag-data.ts | `lib/drag-data.ts` | Dead code | Can be deleted |
+
+All paths are relative to `client/src/editor/`.

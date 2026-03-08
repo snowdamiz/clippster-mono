@@ -770,59 +770,64 @@ function clearStrikethrough() {
 }
 
 
-// ── Paragraph drag reorder ──
-function onParagraphDragStart(event: DragEvent, paragraphId: string) {
-	draggingParagraphId.value = paragraphId;
-	if (event.dataTransfer) {
-		event.dataTransfer.effectAllowed = "move";
-		event.dataTransfer.setData("text/plain", paragraphId);
+// ── Paragraph pointer-based reorder ──
+const PARAGRAPH_DRAG_THRESHOLD = 5;
+
+function onParagraphPointerDown(event: PointerEvent, paragraphId: string) {
+	if (event.button !== 0) return;
+
+	const startY = event.clientY;
+	let started = false;
+
+	function onMove(ev: PointerEvent) {
+		if (!started) {
+			if (Math.abs(ev.clientY - startY) < PARAGRAPH_DRAG_THRESHOLD) return;
+			started = true;
+			draggingParagraphId.value = paragraphId;
+		}
+
+		// Hit-test: find which paragraph the cursor is over
+		const el = document.elementFromPoint(ev.clientX, ev.clientY);
+		if (!el) return;
+		const paragraphEl = (el as HTMLElement).closest('[data-paragraph-id]') as HTMLElement | null;
+		if (paragraphEl) {
+			const overId = paragraphEl.dataset.paragraphId!;
+			if (overId !== paragraphId) {
+				dragOverParagraphId.value = overId;
+			} else {
+				dragOverParagraphId.value = null;
+			}
+		}
 	}
-}
 
-function onParagraphDragOver(event: DragEvent, paragraphId: string) {
-	event.preventDefault();
-	if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
-	dragOverParagraphId.value = paragraphId;
-}
+	function onUp() {
+		document.removeEventListener('pointermove', onMove);
+		document.removeEventListener('pointerup', onUp);
 
-function onParagraphDragLeave() {
-	dragOverParagraphId.value = null;
-}
+		if (started && draggingParagraphId.value && dragOverParagraphId.value) {
+			const targetParagraphId = dragOverParagraphId.value;
 
-function onParagraphDrop(event: DragEvent, targetParagraphId: string) {
-	event.preventDefault();
-	dragOverParagraphId.value = null;
+			const sourceIdx = paragraphs.value.findIndex((p) => p.id === draggingParagraphId.value);
+			const targetIdx = paragraphs.value.findIndex((p) => p.id === targetParagraphId);
+			if (sourceIdx !== -1 && targetIdx !== -1) {
+				const sourceOffset = paragraphWordOffsets.value[sourceIdx];
+				const sourceCount = paragraphs.value[sourceIdx].words.length;
 
-	if (!draggingParagraphId.value || draggingParagraphId.value === targetParagraphId) {
+				const newTargetOffset = targetIdx > sourceIdx
+					? paragraphWordOffsets.value[targetIdx] - sourceCount + paragraphs.value[targetIdx].words.length
+					: paragraphWordOffsets.value[targetIdx];
+
+				const command = new ReorderTranscriptWordsCommand(sourceOffset, sourceCount, newTargetOffset);
+				editor.command.execute({ command });
+			}
+		}
+
 		draggingParagraphId.value = null;
-		return;
+		dragOverParagraphId.value = null;
 	}
 
-	const sourceIdx = paragraphs.value.findIndex((p) => p.id === draggingParagraphId.value);
-	const targetIdx = paragraphs.value.findIndex((p) => p.id === targetParagraphId);
-	if (sourceIdx === -1 || targetIdx === -1) {
-		draggingParagraphId.value = null;
-		return;
-	}
-
-	// Reorder using command for undo/redo
-	const sourceOffset = paragraphWordOffsets.value[sourceIdx];
-	const sourceCount = paragraphs.value[sourceIdx].words.length;
-	
-	// Calculate target offset after removal
-	const newTargetOffset = targetIdx > sourceIdx
-		? paragraphWordOffsets.value[targetIdx] - sourceCount + paragraphs.value[targetIdx].words.length
-		: paragraphWordOffsets.value[targetIdx];
-
-	const command = new ReorderTranscriptWordsCommand(sourceOffset, sourceCount, newTargetOffset);
-	editor.command.execute({ command });
-
-	draggingParagraphId.value = null;
-}
-
-function onParagraphDragEnd() {
-	draggingParagraphId.value = null;
-	dragOverParagraphId.value = null;
+	document.addEventListener('pointermove', onMove);
+	document.addEventListener('pointerup', onUp);
 }
 
 // ── Timeline highlighting ──
@@ -1164,18 +1169,14 @@ watch(
 			<div
 				v-for="(paragraph, pIdx) in paragraphs"
 				:key="paragraph.id"
+				:data-paragraph-id="paragraph.id"
 				class="mb-3 rounded-md transition-all"
 				:class="{
 					'bg-blue-500/5 border border-blue-500/20': dragOverParagraphId === paragraph.id,
 					'opacity-50': draggingParagraphId === paragraph.id,
 					'bg-blue-500/10 border border-blue-500/30': hoveredParagraphId === paragraph.id,
 				}"
-				draggable="true"
-				@dragstart="onParagraphDragStart($event, paragraph.id)"
-				@dragover="onParagraphDragOver($event, paragraph.id)"
-				@dragleave="onParagraphDragLeave"
-				@drop="onParagraphDrop($event, paragraph.id)"
-				@dragend="onParagraphDragEnd"
+				@pointerdown="onParagraphPointerDown($event, paragraph.id)"
 				@mouseenter="onParagraphMouseEnter(paragraph.id)"
 				@mouseleave="onParagraphMouseLeave"
 			>

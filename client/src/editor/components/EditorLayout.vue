@@ -4,6 +4,7 @@ import { useEditorActions } from "../composables/actions/useEditorActions";
 import { useKeybindingsListener } from "../composables/useKeybindings";
 import { useAutoSave } from "../composables/useAutoSave";
 import { useElementSelection } from "../composables/timeline/element/useElementSelection";
+import { providePointerDrag } from "../composables/usePointerDrag";
 import KeyboardShortcutsModal from "./KeyboardShortcutsModal.vue";
 import EditorHeader from "./EditorHeader.vue";
 import Timeline from "./timeline/Timeline.vue";
@@ -29,6 +30,7 @@ import {
 useEditorActions();
 useKeybindingsListener();
 useAutoSave();
+providePointerDrag();
 
 const { selectedElements } = useElementSelection();
 

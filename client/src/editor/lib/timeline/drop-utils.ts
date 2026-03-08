@@ -264,3 +264,35 @@ export function getDropLineY({
 
 	return y;
 }
+
+export function getDropIndicatorGeometry({
+	dropTarget,
+	tracks,
+}: {
+	dropTarget: DropTarget;
+	tracks: TimelineTrack[];
+}): { y: number; height: number; isNewTrack: boolean } {
+	const safeTrackIndex = Math.min(
+		Math.max(dropTarget.trackIndex, 0),
+		tracks.length,
+	);
+
+	let y = 0;
+	for (let i = 0; i < safeTrackIndex; i++) {
+		y += TRACK_HEIGHTS[tracks[i].type] + TRACK_GAP;
+	}
+
+	if (dropTarget.isNewTrack) {
+		// Center in the gap between tracks (y is at the top of trackIndex,
+		// i.e. the bottom edge of the gap — shift up by half the gap)
+		const gapCenterY = safeTrackIndex > 0 ? y - TRACK_GAP / 2 : 0;
+		return { y: gapCenterY, height: TRACK_GAP, isNewTrack: true };
+	}
+
+	const trackHeight =
+		safeTrackIndex < tracks.length
+			? TRACK_HEIGHTS[tracks[safeTrackIndex].type]
+			: 0;
+
+	return { y, height: trackHeight, isNewTrack: false };
+}

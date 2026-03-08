@@ -246,7 +246,7 @@
   );
   const timelineHeight = computed(() => timelineRef.value?.offsetHeight ?? 400);
 
-  const { isDragOver, dropTarget, dragElementType, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } =
+  const { isDragOver, dropTarget, dragElementType, handleFileDrop } =
     useTimelineDragDrop({
       containerRef: tracksContainerRef,
       headerRef: timelineHeaderRef,
@@ -266,6 +266,60 @@
     },
     tracksScrollRef,
     zoomLevel,
+  });
+
+  // Derive element type for internal element drag (reorder/move)
+  const dragElementTypeForReorder = computed(() => {
+    if (!dragState.value.isDragging || !dragState.value.trackId || !dragState.value.elementId) return null;
+    const track = tracks.value.find(t => t.id === dragState.value.trackId);
+    if (!track) return null;
+    const element = track.elements.find(e => e.id === dragState.value.elementId);
+    return element?.type ?? null;
+  });
+
+  // ── New-track insert gap: spread tracks apart to show insertion point ──
+  const INSERT_GAP_SIZE = 20;
+
+  const DROP_COLORS: Record<string, string> = {
+    video: '#3b82f6', image: '#3b82f6', audio: '#22c55e',
+    text: '#f59e0b', sticker: '#ec4899', effect: '#a855f7',
+  };
+
+  const activeNewTrackDrop = computed(() => {
+    // Only show the insert gap at the main track boundary or below — not between overlay tracks at the top
+    const mainIdx = tracks.value.findIndex(t => 'isMain' in t && t.isMain);
+    function isValidInsertIndex(idx: number) {
+      return idx > 0 && (mainIdx < 0 || idx >= mainIdx);
+    }
+    if (isDragOver.value && dropTarget.value?.isNewTrack && isValidInsertIndex(dropTarget.value.trackIndex)) {
+      return { index: dropTarget.value.trackIndex, elementType: dragElementType.value };
+    }
+    if (dragState.value.isDragging && dragDropTarget.value?.isNewTrack && isValidInsertIndex(dragDropTarget.value.trackIndex)) {
+      return { index: dragDropTarget.value.trackIndex, elementType: dragElementTypeForReorder.value };
+    }
+    return null;
+  });
+
+  const insertIndicatorColor = computed(() => {
+    const type = activeNewTrackDrop.value?.elementType;
+    if (!type) return '#3b82f6';
+    return DROP_COLORS[type] ?? '#3b82f6';
+  });
+
+  function getTrackTopWithInsertGap(trackIndex: number): number {
+    const base = getCumulativeHeightBefore({ tracks: tracks.value, trackIndex }) + tracksVerticalOffset.value;
+    if (activeNewTrackDrop.value && trackIndex >= activeNewTrackDrop.value.index) {
+      return base + INSERT_GAP_SIZE;
+    }
+    return base;
+  }
+
+  const insertLineTop = computed(() => {
+    if (!activeNewTrackDrop.value) return 0;
+    const idx = activeNewTrackDrop.value.index;
+    const base = getCumulativeHeightBefore({ tracks: tracks.value, trackIndex: idx }) + tracksVerticalOffset.value;
+    // Center the line in the total gap (original TRACK_GAP + INSERT_GAP_SIZE)
+    return base + INSERT_GAP_SIZE / 2;
   });
 
   const effectDropTargetId = computed(() => {
@@ -367,9 +421,11 @@
 
   const totalTracksHeight = computed(() => getTotalTracksHeight({ tracks: tracks.value }));
 
-  const tracksAreaHeight = computed(() =>
-    Math.max(tracksContainerHeight.min, Math.min(tracksContainerHeight.max, totalTracksHeight.value))
-  );
+  const tracksAreaHeight = computed(() => {
+    const base = Math.max(tracksContainerHeight.min, Math.min(tracksContainerHeight.max, totalTracksHeight.value));
+    if (activeNewTrackDrop.value) return base + INSERT_GAP_SIZE;
+    return base;
+  });
 
   // Vertical centering: offset tracks when content is shorter than container
   const tracksContainerClientHeight = ref(0);
@@ -463,67 +519,66 @@
     scrollEl.scrollLeft = 0;
   }
 
-  // Track reorder drag-and-drop
+  // Track reorder via pointer events
   const trackDragId = ref<string | null>(null);
   const trackDragOverId = ref<string | null>(null);
+  const TRACK_DRAG_THRESHOLD = 5;
 
-  function onTrackDragStart(e: DragEvent, trackId: string) {
+  function onTrackLabelPointerDown(e: PointerEvent, trackId: string) {
+    if (e.button !== 0) return;
+
     // Prevent dragging Track 0 (main video track)
     const track = tracks.value.find((t) => t.id === trackId);
-    if (track && 'isMain' in track && track.isMain) {
-      e.preventDefault();
-      return;
+    if (track && 'isMain' in track && track.isMain) return;
+
+    const startY = e.clientY;
+    let started = false;
+
+    function onMove(ev: PointerEvent) {
+      if (!started) {
+        if (Math.abs(ev.clientY - startY) < TRACK_DRAG_THRESHOLD) return;
+        started = true;
+        trackDragId.value = trackId;
+      }
+
+      // Hit-test: find which track label the cursor is over
+      const el = document.elementFromPoint(ev.clientX, ev.clientY);
+      if (!el) return;
+      const labelEl = (el as HTMLElement).closest('[data-track-label-id]') as HTMLElement | null;
+      if (labelEl) {
+        const overId = labelEl.dataset.trackLabelId!;
+        if (overId !== trackId) {
+          trackDragOverId.value = overId;
+        } else {
+          trackDragOverId.value = null;
+        }
+      }
     }
 
-    trackDragId.value = trackId;
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', trackId);
-    }
-  }
+    function onUp() {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
 
-  function onTrackDragOver(e: DragEvent, trackId: string) {
-    e.preventDefault();
-    if (trackDragId.value && trackDragId.value !== trackId) {
-      trackDragOverId.value = trackId;
-    }
-  }
+      if (started && trackDragId.value && trackDragOverId.value) {
+        const targetTrackId = trackDragOverId.value;
 
-  function onTrackDrop(e: DragEvent, targetTrackId: string) {
-    e.preventDefault();
-    if (!trackDragId.value || trackDragId.value === targetTrackId) return;
+        // Prevent dropping onto Track 0 (main video track)
+        const targetTrack = tracks.value.find((t) => t.id === targetTrackId);
+        if (!(targetTrack && 'isMain' in targetTrack && targetTrack.isMain)) {
+          const oldIndex = tracks.value.findIndex((t) => t.id === trackDragId.value);
+          const targetIndex = tracks.value.findIndex((t) => t.id === targetTrackId);
+          if (oldIndex !== -1 && targetIndex !== -1) {
+            editor.timeline.reorderTrack({ trackId: trackDragId.value, newIndex: targetIndex });
+          }
+        }
+      }
 
-    // Prevent dropping onto Track 0 (main video track)
-    const targetTrack = tracks.value.find((t) => t.id === targetTrackId);
-    if (targetTrack && 'isMain' in targetTrack && targetTrack.isMain) {
       trackDragId.value = null;
       trackDragOverId.value = null;
-      return;
     }
 
-    const oldIndex = tracks.value.findIndex((t) => t.id === trackDragId.value);
-    const targetIndex = tracks.value.findIndex((t) => t.id === targetTrackId);
-
-    if (oldIndex === -1 || targetIndex === -1) return;
-
-    // Calculate correct new index accounting for drag direction
-    let newIndex = targetIndex;
-    if (oldIndex < targetIndex) {
-      // Dragging down: insert after target
-      newIndex = targetIndex;
-    } else {
-      // Dragging up: insert before target
-      newIndex = targetIndex;
-    }
-
-    editor.timeline.reorderTrack({ trackId: trackDragId.value, newIndex });
-    trackDragId.value = null;
-    trackDragOverId.value = null;
-  }
-
-  function onTrackDragEnd() {
-    trackDragId.value = null;
-    trackDragOverId.value = null;
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
   }
 </script>
 
@@ -531,10 +586,8 @@
   <section
     class="relative flex h-full flex-col overflow-hidden rounded-sm bg-[#18181b]"
     aria-label="Timeline"
-    @dragenter="handleDragEnter"
-    @dragover="handleDragOver"
-    @dragleave="handleDragLeave"
-    @drop="handleDrop"
+    @dragover.prevent
+    @drop="handleFileDrop"
   >
     <TimelineToolbar
       :zoom-level="zoomLevel"
@@ -603,9 +656,9 @@
             <div ref="trackLabelsScrollRef" class="size-full overflow-auto">
               <div class="flex flex-col gap-1" :style="{ paddingTop: `${tracksVerticalOffset}px` }">
                 <div
-                  v-for="track in tracks"
+                  v-for="(track, tIdx) in tracks"
                   :key="track.id"
-                  :draggable="!('isMain' in track && track.isMain)"
+                  :data-track-label-id="track.id"
                   class="group relative flex transition-colors"
                   :class="{
                     'flex-col items-start justify-center gap-1.5': track.type === 'video',
@@ -614,11 +667,11 @@
                     'cursor-move': !('isMain' in track && track.isMain),
                     'cursor-not-allowed opacity-60': 'isMain' in track && track.isMain && trackDragId,
                   }"
-                  :style="{ height: `${getTrackHeight({ type: track.type })}px` }"
-                  @dragstart="onTrackDragStart($event, track.id)"
-                  @dragover="onTrackDragOver($event, track.id)"
-                  @drop="onTrackDrop($event, track.id)"
-                  @dragend="onTrackDragEnd"
+                  :style="{
+                    height: `${getTrackHeight({ type: track.type })}px`,
+                    marginTop: activeNewTrackDrop && tIdx === activeNewTrackDrop.index ? `${INSERT_GAP_SIZE}px` : undefined,
+                  }"
+                  @pointerdown="onTrackLabelPointerDown($event, track.id)"
                 >
                   <!-- Drop indicator -->
                   <div
@@ -753,13 +806,19 @@
             :drop-target="dropTarget"
             :tracks="tracks"
             :is-visible="isDragOver"
-            :header-height="timelineHeaderHeight"
+            :header-height="timelineHeaderHeight + tracksVerticalOffset"
+            :drag-element-type="dragElementType"
+            :zoom-level="zoomLevel"
+            :scroll-left="scrollLeft"
           />
           <DragLine
             :drop-target="dragDropTarget"
             :tracks="tracks"
             :is-visible="dragState.isDragging"
-            :header-height="timelineHeaderHeight"
+            :header-height="timelineHeaderHeight + tracksVerticalOffset"
+            :drag-element-type="dragElementTypeForReorder"
+            :zoom-level="zoomLevel"
+            :scroll-left="scrollLeft"
           />
 
           <div
@@ -807,12 +866,22 @@
                 }"
               >
                 <div v-if="tracks.length === 0" />
+                <!-- New-track insert indicator line -->
+                <div
+                  v-if="activeNewTrackDrop"
+                  class="pointer-events-none absolute left-2 right-2 z-50 h-0.5 rounded-full opacity-50"
+                  :style="{
+                    top: `${insertLineTop}px`,
+                    transform: 'translateY(-50%)',
+                    backgroundColor: insertIndicatorColor,
+                  }"
+                />
                 <div
                   v-for="(track, index) in tracks"
                   :key="track.id"
                   class="absolute right-0 left-0"
                   :style="{
-                    top: `${getCumulativeHeightBefore({ tracks, trackIndex: index }) + tracksVerticalOffset}px`,
+                    top: `${getTrackTopWithInsertGap(index)}px`,
                     height: `${getTrackHeight({ type: track.type })}px`,
                   }"
                 >
