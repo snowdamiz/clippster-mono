@@ -615,13 +615,15 @@ pub async fn build_clip_internal_simple(
                                         // Create watermark settings from campaign profile
                                         let wm_settings = WatermarkSettings {
                                             enabled: true,
+                                            watermark_id: campaign_id.to_string(),
                                             file_path: watermark_path,
                                             width: None,
                                             height: None,
-                                            position: "bottom-right".to_string(),
+                                            position_x: 90, // 90% from left (bottom-right)
+                                            position_y: 90, // 90% from top (bottom-right)
                                             opacity: 100,
-                                            margin_x: 20,
-                                            margin_y: 20,
+                                            scale: 15, // 15% of video width
+                                            per_ratio_settings: None,
                                         };
                                         campaign_watermark_settings = Some(wm_settings);
                                     }
