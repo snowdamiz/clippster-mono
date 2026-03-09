@@ -286,11 +286,16 @@
                       <!-- Clip Button -->
                       <button
                         @click="openClipModal"
-                        class="px-3 py-2 bg-gradient-to-r from-[var(--sidebar-accent)] to-[#0891b2] hover:opacity-90 text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2"
                         :disabled="
                           viewer.state.value.totalRecordedDuration < 180 ||
                           viewer.state.value.availableSegments.length === 0
                         "
+                        :class="[
+                          'px-3 py-2 bg-gradient-to-r from-[var(--sidebar-accent)] to-[#0891b2] text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2',
+                          viewer.state.value.totalRecordedDuration >= 180 && viewer.state.value.availableSegments.length > 0
+                            ? 'hover:opacity-90 cursor-pointer'
+                            : 'opacity-50 cursor-not-allowed'
+                        ]"
                         :title="
                           viewer.state.value.availableSegments.length === 0
                             ? 'Waiting for segments to load...'

@@ -489,6 +489,14 @@ export class RendererManager {
 			// No scene transitions
 		}
 
+		// Adjust cover timestamp to account for intro duration
+		// If an intro is present, the cover timestamp needs to be offset by the intro duration
+		// so that FFmpeg extracts the frame from the main clip content, not the intro
+		let adjustedCoverTimestamp: number | null = coverTimestamp ?? null;
+		if (adjustedCoverTimestamp !== null && brandingExport.introDuration) {
+			adjustedCoverTimestamp += brandingExport.introDuration;
+		}
+
 		return {
 			video_sources: videoSources,
 			audio_tracks: audioTracks,
@@ -500,7 +508,7 @@ export class RendererManager {
 			total_duration: duration,
 			width: canvasSize.width,
 			height: canvasSize.height,
-			cover_timestamp: coverTimestamp ?? null,
+			cover_timestamp: adjustedCoverTimestamp,
 			branding_watermark: brandingExport.watermark,
 			branding_overlays: brandingExport.overlays,
 			intro_path: brandingExport.introPath,

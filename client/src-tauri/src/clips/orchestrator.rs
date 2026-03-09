@@ -1,6 +1,7 @@
 use futures::future::join_all;
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
+use tauri_plugin_shell::ShellExt;
 
 use super::audio_effect_renderer::{build_audio_effects_filter_chain, AudioEffectSettings};
 use super::effect_renderer::{build_effects_filter_chain, ClipEffectSettings};
@@ -1023,6 +1024,63 @@ pub async fn build_clip_internal_simple(
         return Err("Build cancelled by user".to_string());
     }
 
+    // Generate thumbnail from the first output video (at 1 second mark to avoid black frames)
+    let thumbnail_path = if let Some(ref first_output) = first_output_path {
+        println!("[Rust] Generating thumbnail from first output video...");
+        let paths = crate::storage::init_storage_dirs()
+            .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+        
+        let output_stem = std::path::Path::new(first_output)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("clip");
+        let thumbnail_filename = format!("{}_thumb.jpg", output_stem);
+        let thumbnail_path = paths.thumbnails.join(&thumbnail_filename);
+        
+        // Extract frame at 1 second (or halfway through if clip is shorter than 2 seconds)
+        let thumbnail_time = if let Some(dur) = clip_duration {
+            if dur < 2.0 {
+                dur / 2.0
+            } else {
+                1.0
+            }
+        } else {
+            1.0
+        };
+        
+        let thumbnail_result = app.shell()
+            .sidecar("ffmpeg")
+            .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
+            .args(&[
+                "-y",
+                "-ss", &thumbnail_time.to_string(),
+                "-i", first_output,
+                "-vframes", "1",
+                "-q:v", "2",
+                thumbnail_path.to_str().ok_or("Invalid thumbnail path")?,
+            ])
+            .output()
+            .await;
+        
+        match thumbnail_result {
+            Ok(output) if output.status.success() => {
+                println!("[Rust] Thumbnail generated: {}", thumbnail_path.display());
+                Some(thumbnail_path.to_string_lossy().to_string())
+            }
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                println!("[Rust] Thumbnail generation failed (non-fatal): {}", stderr);
+                None
+            }
+            Err(e) => {
+                println!("[Rust] Failed to run ffmpeg for thumbnail (non-fatal): {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Emit completion progress
     println!("[Rust] Emitting completion progress event...");
     let result = ClipBuildResult {
@@ -1031,7 +1089,7 @@ pub async fn build_clip_internal_simple(
         success: true,
         output_path: first_output_path,
         all_output_paths: all_output_paths.clone(),
-        thumbnail_path: None, // Thumbnail is generated during detection, not build
+        thumbnail_path,
         duration: clip_duration,
         file_size: Some(total_file_size),
         error: None,
