@@ -500,9 +500,13 @@
                           <div class="build-dialog__field-header">
                             <label class="build-dialog__field-label">Intro</label>
                             <div class="build-dialog__field-badges">
-                              <span v-if="introLockedByCampaign" class="build-dialog__badge build-dialog__badge--campaign">
+                              <span v-if="isForCampaign && campaignIntro" class="build-dialog__badge build-dialog__badge--campaign">
                                 <Megaphone class="build-dialog__badge-icon" />
                                 Campaign
+                              </span>
+                              <span v-else-if="!isForCampaign && creatorProfileIntro" class="build-dialog__badge build-dialog__badge--org">
+                                <Building2 class="build-dialog__badge-icon" />
+                                Creator Profile
                               </span>
                               <span v-else-if="selectedIntro?.isOrgAsset" class="build-dialog__badge build-dialog__badge--org">
                                 <Building2 class="build-dialog__badge-icon" />
@@ -582,9 +586,13 @@
                           <div class="build-dialog__field-header">
                             <label class="build-dialog__field-label">Outro</label>
                             <div class="build-dialog__field-badges">
-                              <span v-if="outroLockedByCampaign" class="build-dialog__badge build-dialog__badge--campaign">
+                              <span v-if="isForCampaign && campaignOutro" class="build-dialog__badge build-dialog__badge--campaign">
                                 <Megaphone class="build-dialog__badge-icon" />
                                 Campaign
+                              </span>
+                              <span v-else-if="!isForCampaign && creatorProfileOutro" class="build-dialog__badge build-dialog__badge--org">
+                                <Building2 class="build-dialog__badge-icon" />
+                                Creator Profile
                               </span>
                               <span v-else-if="selectedOutro?.isOrgAsset" class="build-dialog__badge build-dialog__badge--org">
                                 <Building2 class="build-dialog__badge-icon" />
@@ -1053,6 +1061,8 @@ const campaignDropdownRef = ref<HTMLElement | null>(null);
 const showCampaignDropdown = ref(false);
 const campaignDropdownPosition = ref({ top: '0px', left: '0px', width: '0px', maxHeight: '300px' });
 const loadingCampaigns = ref(false);
+const creatorProfileData = ref<any>(null);
+const globalBrandingProfile = ref<any>(null);
 
 // Publish settings (Step 5)
 interface PlatformConfig {
@@ -1183,19 +1193,94 @@ const campaignOutro = computed<IntroOutroItem | null>(() => {
   } as any;
 });
 
-// When campaign is selected with assets, use those; otherwise use manual selection
+// Creator profile intro/outro - when creator profile has assets, use those and lock the selection
+const creatorProfileIntro = computed<IntroOutroItem | null>(() => {
+  // Only apply creator profile branding if NOT in campaign mode
+  if (isForCampaign.value) return null;
+  
+  // Priority 1: Use assigned organization creator profile
+  // Organization creator profiles have their intro/outro assets loaded via getUserOrganizationAssets
+  // The creatorProfileServerId is the server-side creator profile ID
+  if (props.creatorProfileServerId && creatorProfileData.value?.intro_id) {
+    // Look for org asset with matching server ID
+    const introAsset = intros.value.find(i => 
+      i.isOrgAsset && i.serverId === creatorProfileData.value.intro_id
+    );
+    if (introAsset) return introAsset;
+  }
+  
+  // Priority 2: Fall back to local global branding if no creator profile assigned
+  if (!props.creatorProfileServerId && globalBrandingProfile.value?.intro_id) {
+    // For local global branding, match by local ID
+    const introAsset = intros.value.find(i => 
+      !i.isOrgAsset && i.id === globalBrandingProfile.value.intro_id
+    );
+    if (introAsset) return introAsset;
+  }
+  
+  return null;
+});
+
+const creatorProfileOutro = computed<IntroOutroItem | null>(() => {
+  // Only apply creator profile branding if NOT in campaign mode
+  if (isForCampaign.value) return null;
+  
+  // Priority 1: Use assigned organization creator profile
+  if (props.creatorProfileServerId && creatorProfileData.value?.outro_id) {
+    // Look for org asset with matching server ID
+    const outroAsset = outros.value.find(o => 
+      o.isOrgAsset && o.serverId === creatorProfileData.value.outro_id
+    );
+    if (outroAsset) return outroAsset;
+  }
+  
+  // Priority 2: Fall back to local global branding if no creator profile assigned
+  if (!props.creatorProfileServerId && globalBrandingProfile.value?.outro_id) {
+    // For local global branding, match by local ID
+    const outroAsset = outros.value.find(o => 
+      !o.isOrgAsset && o.id === globalBrandingProfile.value.outro_id
+    );
+    if (outroAsset) return outroAsset;
+  }
+  
+  return null;
+});
+
+// Priority order: Campaign > Creator Profile > Manual Selection
 const selectedIntro = computed(() => {
+  // Campaign takes highest priority
   if (isForCampaign.value && campaignIntro.value) return campaignIntro.value;
+  // Creator profile branding takes second priority
+  if (creatorProfileIntro.value) return creatorProfileIntro.value;
+  // Manual selection is lowest priority
   return intros.value.find((i) => i.id === selectedIntroId.value) || null;
 });
+
 const selectedOutro = computed(() => {
+  // Campaign takes highest priority
   if (isForCampaign.value && campaignOutro.value) return campaignOutro.value;
+  // Creator profile branding takes second priority
+  if (creatorProfileOutro.value) return creatorProfileOutro.value;
+  // Manual selection is lowest priority
   return outros.value.find((o) => o.id === selectedOutroId.value) || null;
 });
 
-// Check if intro/outro selection is locked by campaign
-const introLockedByCampaign = computed(() => isForCampaign.value && !!campaignIntro.value);
-const outroLockedByCampaign = computed(() => isForCampaign.value && !!campaignOutro.value);
+// Check if intro/outro selection is locked by campaign or creator profile
+const introLockedByCampaign = computed(() => {
+  // Locked if campaign has intro
+  if (isForCampaign.value && campaignIntro.value) return true;
+  // Locked if creator profile has intro (and not in campaign mode)
+  if (!isForCampaign.value && creatorProfileIntro.value) return true;
+  return false;
+});
+
+const outroLockedByCampaign = computed(() => {
+  // Locked if campaign has outro
+  if (isForCampaign.value && campaignOutro.value) return true;
+  // Locked if creator profile has outro (and not in campaign mode)
+  if (!isForCampaign.value && creatorProfileOutro.value) return true;
+  return false;
+});
 const orgId = computed<number | null>(() => {
   const campaignOrgId = isForCampaign.value ? selectedCampaign.value?.organization_id : null;
   if (typeof campaignOrgId === 'number') {
@@ -1379,6 +1464,7 @@ function selectCampaign(campaign: Campaign) {
   showCampaignDropdown.value = false;
   
   // Clear manual intro/outro selection when campaign has its own assets
+  // The computed properties will automatically use campaign assets
   if (campaign.global_intro) {
     selectedIntroId.value = null;
   }
@@ -1386,6 +1472,43 @@ function selectCampaign(campaign: Campaign) {
     selectedOutroId.value = null;
   }
 }
+
+// Watch for creator profile changes and reload data
+watch(
+  () => props.creatorProfileServerId,
+  async (newProfileId) => {
+    if (newProfileId) {
+      await loadCreatorProfileData();
+      // Clear manual selections to allow creator profile defaults to apply
+      if (!isForCampaign.value) {
+        if (creatorProfileIntro.value) {
+          selectedIntroId.value = null;
+        }
+        if (creatorProfileOutro.value) {
+          selectedOutroId.value = null;
+        }
+      }
+    }
+  }
+);
+
+// Watch for campaign mode toggle
+watch(
+  () => isForCampaign.value,
+  (isForCampaignMode) => {
+    if (!isForCampaignMode) {
+      // When exiting campaign mode, clear campaign selection
+      selectedCampaignId.value = null;
+      // Allow creator profile defaults to apply if available
+      if (creatorProfileIntro.value) {
+        selectedIntroId.value = null;
+      }
+      if (creatorProfileOutro.value) {
+        selectedOutroId.value = null;
+      }
+    }
+  }
+);
 
 // Platform helpers
 function getPlatformIcon(platformId: string) {
@@ -1665,9 +1788,9 @@ async function startBuildProcess() {
     });
 
     // Start R2 upload when build completes
-    if (buildState.value.status === 'complete' && buildState.value.outputPath) {
+    if (buildState.value.status === 'complete' && buildState.value.aspectRatioOutputPaths) {
       backgroundPublish.startUpload(
-        buildState.value.outputPath,
+        buildState.value.aspectRatioOutputPaths,
         buildState.value.thumbnailPath,
         orgId.value
       );
@@ -1805,6 +1928,38 @@ async function loadIntroOutros() {
   }
 }
 
+async function loadCreatorProfileData() {
+  try {
+    if (props.creatorProfileServerId) {
+      // Load organization creator profile from server
+      const { getMyAssignedCreatorProfiles } = await import('@/services/organizationProfilesApi');
+      const response = await getMyAssignedCreatorProfiles();
+      
+      if (response.success && response.profiles) {
+        // Find the specific creator profile by ID
+        const profile = response.profiles.find(p => p.id === props.creatorProfileServerId);
+        if (profile) {
+          creatorProfileData.value = profile;
+          console.warn('[QuickPublishWizard] Loaded org creator profile:', profile.name, 'intro_id:', profile.intro_id, 'outro_id:', profile.outro_id);
+          return;
+        }
+      }
+      console.warn('[QuickPublishWizard] Creator profile not found in assigned profiles');
+    }
+    
+    // Fall back to local global branding if no creator profile assigned
+    console.warn('[QuickPublishWizard] No creator profile assigned, checking for global branding...');
+    const { getAllGlobalProfiles } = await import('@/services/database/creator-profiles');
+    const globalProfiles = await getAllGlobalProfiles();
+    if (globalProfiles.length > 0) {
+      globalBrandingProfile.value = globalProfiles[0];
+      console.warn('[QuickPublishWizard] Loaded global branding profile:', globalBrandingProfile.value.name, 'intro_id:', globalBrandingProfile.value.intro_id, 'outro_id:', globalBrandingProfile.value.outro_id);
+    }
+  } catch (e) {
+    console.warn('[QuickPublishWizard] Failed to load creator profile data:', e);
+  }
+}
+
 async function loadAvailableCampaigns() {
   console.warn('[QuickPublishWizard] Loading campaigns... creatorProfileServerId:', props.creatorProfileServerId);
   try {
@@ -1932,6 +2087,7 @@ watch(
       
       await Promise.all([
         loadIntroOutros(),
+        loadCreatorProfileData(),
         loadAvailableCampaigns(),
         loadAccounts(),
         loadVideoFrame(),

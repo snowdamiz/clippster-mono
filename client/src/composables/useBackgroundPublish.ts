@@ -16,6 +16,7 @@ export interface PublishTarget {
 export interface BackgroundPublishMetadata {
   creatorProfileId?: number | null;
   campaignId?: number | null;
+  platformToRatioMap?: Record<string, string>; // Maps platformId to aspect ratio (e.g., 'instagram' -> '9:16')
 }
 
 export interface BackgroundPublishState {
@@ -23,6 +24,7 @@ export interface BackgroundPublishState {
   publishStatus: 'idle' | 'publishing' | 'complete' | 'error';
   uploadError: string | null;
   publishResults: { platformId: string; success: boolean; error?: string }[];
+  aspectRatioMediaUrls: Record<string, { media_url: string; thumbnail_url?: string }>; // Maps aspect ratio to uploaded URLs
 }
 
 function dataUrlToFile(dataUrl: string, filename: string): File {
@@ -43,9 +45,10 @@ const sharedState = ref<BackgroundPublishState>({
   publishStatus: 'idle',
   uploadError: null,
   publishResults: [],
+  aspectRatioMediaUrls: {},
 });
 
-let uploadPromise: Promise<{ media_url: string; thumbnail_url?: string }> | null = null;
+let uploadPromise: Promise<Record<string, { media_url: string; thumbnail_url?: string }>> | null = null;
 let pendingPublish: {
   targets: PublishTarget[];
   caption: string;
@@ -65,7 +68,7 @@ export function useBackgroundPublish() {
   const state = sharedState;
 
   async function startUpload(
-    outputPath: string,
+    aspectRatioOutputPaths: Record<string, string>,
     thumbnailPath: string | null,
     orgId: number | null
   ): Promise<void> {
@@ -75,12 +78,9 @@ export function useBackgroundPublish() {
     state.value.publishResults = [];
 
     uploadPromise = (async () => {
-      // Read video file as Blob
-      const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath: outputPath });
-      const fileName = outputPath.split(/[/\\]/).pop() || 'video.mp4';
-      const videoFile = dataUrlToFile(videoDataUrl, fileName);
+      const aspectRatioMediaUrls: Record<string, { media_url: string; thumbnail_url?: string }> = {};
 
-      // Read thumbnail if provided
+      // Read thumbnail once if provided
       let thumbnailFile: File | undefined;
       if (thumbnailPath) {
         const thumbnailDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbnailPath });
@@ -88,27 +88,41 @@ export function useBackgroundPublish() {
         thumbnailFile = dataUrlToFile(thumbnailDataUrl, thumbnailName);
       }
 
-      console.log('[BackgroundPublish] Uploading to server (server will upload to R2)...');
-      
-      // Upload via server endpoint (like ScheduleClipDialog does)
-      let uploadResult;
-      if (orgId) {
-        uploadResult = await uploadMediaForPost(orgId, videoFile, thumbnailFile);
-      } else {
-        uploadResult = await uploadUserMediaForPost(videoFile, thumbnailFile);
+      console.log('[BackgroundPublish] Uploading', Object.keys(aspectRatioOutputPaths).length, 'aspect ratio videos...');
+
+      // Upload each unique aspect ratio video
+      for (const [aspectRatio, outputPath] of Object.entries(aspectRatioOutputPaths)) {
+        console.log(`[BackgroundPublish] Uploading ${aspectRatio} video:`, outputPath);
+        
+        // Read video file as Blob
+        const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath: outputPath });
+        const fileName = outputPath.split(/[/\\]/).pop() || `video_${aspectRatio.replace(':', 'x')}.mp4`;
+        const videoFile = dataUrlToFile(videoDataUrl, fileName);
+
+        // Upload via server endpoint
+        let uploadResult;
+        if (orgId) {
+          uploadResult = await uploadMediaForPost(orgId, videoFile, thumbnailFile);
+        } else {
+          uploadResult = await uploadUserMediaForPost(videoFile, thumbnailFile);
+        }
+
+        if (!uploadResult.success || !uploadResult.media_url) {
+          throw new Error(uploadResult.error || `Failed to upload ${aspectRatio} media`);
+        }
+
+        console.log(`[BackgroundPublish] ${aspectRatio} upload complete:`, uploadResult.media_url);
+        aspectRatioMediaUrls[aspectRatio] = {
+          media_url: uploadResult.media_url,
+          thumbnail_url: uploadResult.thumbnail_url || undefined,
+        };
       }
 
-      if (!uploadResult.success || !uploadResult.media_url) {
-        throw new Error(uploadResult.error || 'Failed to upload media');
-      }
-
-      console.log('[BackgroundPublish] Server upload complete:', uploadResult.media_url);
       state.value.uploadStatus = 'complete';
+      state.value.aspectRatioMediaUrls = aspectRatioMediaUrls;
+      console.log('[BackgroundPublish] All uploads complete:', aspectRatioMediaUrls);
 
-      return { 
-        media_url: uploadResult.media_url, 
-        thumbnail_url: uploadResult.thumbnail_url || undefined 
-      };
+      return aspectRatioMediaUrls;
     })();
 
     // Handle upload errors
@@ -175,16 +189,36 @@ export function useBackgroundPublish() {
 
     try {
       console.log('[BackgroundPublish] Waiting for R2 upload to finish...');
-      const uploadResult = await uploadPromise;
-      const mediaUrl = uploadResult.media_url;
-      const thumbUrl = uploadResult.thumbnail_url || thumbnailUrl;
-      console.log('[BackgroundPublish] R2 upload done:', mediaUrl);
+      const aspectRatioMediaUrls = await uploadPromise;
+      console.log('[BackgroundPublish] R2 upload done:', aspectRatioMediaUrls);
 
       let successfulCount = 0;
       let failedCount = 0;
 
       for (const target of targets) {
         try {
+          // Determine which aspect ratio this platform needs
+          const platformAspectRatio = metadata?.platformToRatioMap?.[target.platformId];
+          if (!platformAspectRatio) {
+            console.error(`[BackgroundPublish] No aspect ratio mapping for platform: ${target.platformId}`);
+            state.value.publishResults.push({ platformId: target.platformId, success: false, error: 'No aspect ratio mapping' });
+            failedCount++;
+            continue;
+          }
+
+          // Get the media URL for this aspect ratio
+          const mediaData = aspectRatioMediaUrls[platformAspectRatio];
+          if (!mediaData) {
+            console.error(`[BackgroundPublish] No media uploaded for aspect ratio: ${platformAspectRatio}`);
+            state.value.publishResults.push({ platformId: target.platformId, success: false, error: `No media for ${platformAspectRatio}` });
+            failedCount++;
+            continue;
+          }
+
+          const mediaUrl = mediaData.media_url;
+          const thumbUrl = mediaData.thumbnail_url || thumbnailUrl;
+          console.log(`[BackgroundPublish] Publishing to ${target.platformId} with ${platformAspectRatio} video:`, mediaUrl);
+
           let response: any;
           if (target.accountType === 'org' && orgId) {
             // Org account — use publishPost
@@ -271,6 +305,7 @@ export function useBackgroundPublish() {
       publishStatus: 'idle',
       uploadError: null,
       publishResults: [],
+      aspectRatioMediaUrls: {},
     };
     clearActiveJob();
   }

@@ -11,6 +11,7 @@ export interface BuildPipelineState {
   thumbnailPath: string | null;
   duration: number | null;
   error: string | null;
+  aspectRatioOutputPaths: Record<string, string>; // Maps aspect ratio (e.g., '16:9') to file path
 }
 
 export interface BuildPipelineOptions {
@@ -28,6 +29,7 @@ export function useClipBuildPipeline() {
     thumbnailPath: null,
     duration: null,
     error: null,
+    aspectRatioOutputPaths: {},
   });
 
   let progressUnlisten: UnlistenFn | null = null;
@@ -45,6 +47,7 @@ export function useClipBuildPipeline() {
       thumbnailPath: null,
       duration: null,
       error: null,
+      aspectRatioOutputPaths: {},
     };
 
     try {
@@ -219,6 +222,7 @@ export function useClipBuildPipeline() {
           clip_id: string;
           success: boolean;
           output_path: string | null;
+          all_output_paths: string[];
           thumbnail_path: string | null;
           duration: number | null;
           error: string | null;
@@ -227,6 +231,16 @@ export function useClipBuildPipeline() {
           if (payload.clip_id !== clipId) return;
 
           if (payload.success && payload.output_path) {
+            // Map aspect ratios to their output paths
+            const aspectRatioOutputPaths: Record<string, string> = {};
+            if (payload.all_output_paths && payload.all_output_paths.length > 0) {
+              settings.aspectRatios.forEach((ratio, index) => {
+                if (payload.all_output_paths[index]) {
+                  aspectRatioOutputPaths[ratio] = payload.all_output_paths[index];
+                }
+              });
+            }
+
             state.value = {
               status: 'complete',
               progress: 100,
@@ -234,6 +248,7 @@ export function useClipBuildPipeline() {
               thumbnailPath: payload.thumbnail_path,
               duration: payload.duration,
               error: null,
+              aspectRatioOutputPaths,
             };
             resolve();
           } else {
@@ -244,6 +259,7 @@ export function useClipBuildPipeline() {
               thumbnailPath: null,
               duration: null,
               error: payload.error || 'Build failed',
+              aspectRatioOutputPaths: {},
             };
             reject(new Error(payload.error || 'Build failed'));
           }
@@ -327,6 +343,7 @@ export function useClipBuildPipeline() {
       thumbnailPath: null,
       duration: null,
       error: null,
+      aspectRatioOutputPaths: {},
     };
   }
 
