@@ -1,6 +1,7 @@
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 // Modules
+mod api;
 mod assets;
 mod audio;
 mod audio_peaks;

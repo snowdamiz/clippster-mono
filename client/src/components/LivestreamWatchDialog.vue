@@ -365,7 +365,7 @@
               :watermark-settings="(viewer.state.value.watermarkSettings as any) || null"
               :thumbnail-url="currentClipForPublish.thumbnail_path || null"
               :platform="props.platform"
-              :creator-profile-server-id="sessionCampaign?.creator_profile_id || null"
+              :creator-profile-server-id="null"
               @published="handlePublishComplete"
               @close="handleQuickPublishClose"
             />
@@ -535,8 +535,6 @@
     return viewer.state.value.watermarkId && viewer.state.value.watermarkSettings;
   });
 
-  // Get session campaign for this streamer (used for QuickPublishWizard)
-  const sessionCampaign = computed(() => livestreamStore.getSessionCampaign(props.streamerId));
 
   const watermarkStyle = computed<CSSProperties>(() => {
     const settings = viewer.state.value.watermarkSettings;
@@ -872,17 +870,12 @@
 
       // Save clip to database
       try {
-        // Get campaign ID from store if this streamer is associated with a campaign
-        const sessionCampaign = livestreamStore.getSessionCampaign(props.streamerId);
-        const campaignId = sessionCampaign?.id;
-
         const clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
           name: clipName,
           duration: QUICK_CLIP_DURATION,
           startTime: clipStartTime,
           endTime: clipEndTime,
           thumbnailPath: thumbnailFilePath || undefined,
-          campaignId,
         });
 
         const manualSessionId = await getOrCreateManualSession(effectiveProjectId);

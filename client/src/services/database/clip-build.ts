@@ -1,5 +1,28 @@
 import { getDatabase, timestamp, generateId, getCurrentUserId } from './core';
 import type { Clip, ClipWithVersion, ClipBuild } from './types';
+import { addColumnIfMissing } from './schema-healing';
+
+// Ensure clip_builds table has campaign-related columns
+async function ensureClipBuildsCampaignSchema(db: any): Promise<void> {
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'campaign_id',
+    'INTEGER'
+  );
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'branding_profile_id',
+    'TEXT'
+  );
+  await addColumnIfMissing(
+    db,
+    'clip_builds',
+    'branding_type',
+    "TEXT DEFAULT 'org'"
+  );
+}
 
 // Update clip build status
 export async function updateClipBuildStatus(
@@ -358,10 +381,15 @@ export async function createClipBuild(
     frameRate?: number;
     outputFormat?: string;
     includeSubtitles?: boolean;
+    campaignId?: number | null;
+    brandingProfileId?: string | null;
+    brandingType?: 'org' | 'campaign' | 'personal' | 'none';
   }
 ): Promise<string> {
   try {
     const db = await getDatabase();
+    await ensureClipBuildsCampaignSchema(db);
+    
     const buildId = generateId();
     const now = timestamp();
 
@@ -376,8 +404,9 @@ export async function createClipBuild(
       `INSERT INTO clip_builds (
         id, clip_id, aspect_ratios, quality, frame_rate, output_format, 
         include_subtitles, file_path, build_number, status, progress,
+        campaign_id, branding_profile_id, branding_type,
         started_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 'building', 0, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, 'building', 0, ?, ?, ?, ?, ?)`,
       [
         buildId,
         clipId,
@@ -387,13 +416,17 @@ export async function createClipBuild(
         settings.outputFormat || null,
         settings.includeSubtitles ? 1 : 0,
         nextBuildNumber,
+        settings.campaignId || null,
+        settings.brandingProfileId || null,
+        settings.brandingType || 'org',
         now,
         now,
       ]
     );
 
     console.log(
-      `[Database] Created clip build ${buildId} for clip ${clipId} (build #${nextBuildNumber})`
+      `[Database] Created clip build ${buildId} for clip ${clipId} (build #${nextBuildNumber})`,
+      settings.campaignId ? `with campaign ${settings.campaignId}` : ''
     );
     return buildId;
   } catch (error) {
@@ -414,6 +447,9 @@ export async function updateClipBuild(
     fileSize?: number;
     duration?: number;
     errorMessage?: string;
+    campaignId?: number | null;
+    brandingProfileId?: string | null;
+    brandingType?: 'org' | 'campaign' | 'personal' | 'none';
   }
 ): Promise<void> {
   try {
@@ -465,6 +501,21 @@ export async function updateClipBuild(
     if (updates.errorMessage !== undefined) {
       setClauses.push('error_message = ?');
       params.push(updates.errorMessage);
+    }
+
+    if (updates.campaignId !== undefined) {
+      setClauses.push('campaign_id = ?');
+      params.push(updates.campaignId);
+    }
+
+    if (updates.brandingProfileId !== undefined) {
+      setClauses.push('branding_profile_id = ?');
+      params.push(updates.brandingProfileId);
+    }
+
+    if (updates.brandingType !== undefined) {
+      setClauses.push('branding_type = ?');
+      params.push(updates.brandingType);
     }
 
     if (setClauses.length === 0) {

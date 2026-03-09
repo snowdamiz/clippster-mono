@@ -72,6 +72,9 @@ pub async fn build_clip_from_segments(
     clip_effects: Option<Vec<ClipEffectSettings>>,
     audio_effects: Option<Vec<AudioEffectSettings>>,
     layout_overlays: Option<Vec<LayoutOverlaySettings>>,
+    campaign_id: Option<i64>,
+    campaign_branding_profile_id: Option<i64>,
+    branding_type: Option<String>,
 ) -> Result<(), String> {
     println!("[Rust] build_clip_from_segments called with:");
     println!("[Rust]   project_id: {}", project_id);
@@ -161,6 +164,9 @@ pub async fn build_clip_from_segments(
         "[Rust]   layout_overlays count: {}",
         layout_overlays.as_ref().map(|v| v.len()).unwrap_or(0)
     );
+    println!("[Rust]   campaign_id: {:?}", campaign_id);
+    println!("[Rust]   campaign_branding_profile_id: {:?}", campaign_branding_profile_id);
+    println!("[Rust]   branding_type: {:?}", branding_type);
 
     // Check if clip is already being built and create cancellation token
     let cancel_rx = {
@@ -204,6 +210,9 @@ pub async fn build_clip_from_segments(
     let audio_effects_clone = audio_effects.clone();
     let segment_framing_configs_clone = segment_framing_configs.clone();
     let layout_overlays_clone = layout_overlays.clone();
+    let campaign_id_clone = campaign_id;
+    let campaign_branding_profile_id_clone = campaign_branding_profile_id;
+    let branding_type_clone = branding_type.clone();
 
     // Send initial progress
     let _ = app.emit(
@@ -261,6 +270,9 @@ pub async fn build_clip_from_segments(
             clip_effects_clone,
             audio_effects_clone,
             layout_overlays_clone,
+            campaign_id_clone,
+            campaign_branding_profile_id_clone,
+            branding_type_clone,
             cancel_rx,
         )
         .await

@@ -1154,21 +1154,23 @@
                         </p>
                       </div>
 
-                      <!-- Creator Profile Selection (disabled if global branding selected) -->
+                      <!-- Creator Profile Selection -->
                       <div class="campaign-edit__field">
                         <label class="campaign-edit__label">
                           Creator Profile{{ isGlobalBrandingSelected ? '' : 's' }}
                           <span v-if="isGlobalBrandingSelected" class="campaign-edit__optional">(for global branding assets)</span>
                         </label>
+                        <!-- Show dropdown when global branding is selected -->
                         <CustomDropdown
                           v-if="isGlobalBrandingSelected"
                           v-model="campaignForm.branding_profile_id"
-                          :options="brandingProfileOptions"
+                          :options="globalBrandingProfileOptions"
                           placeholder="Select branding profile"
                           class="campaign-edit__dropdown"
                           trigger-class="campaign-edit__dropdown-trigger"
                         />
-                        <div v-else class="campaign-edit__profiles-list">
+                        <!-- Show profile list when global branding is NOT selected -->
+                        <div v-if="!isGlobalBrandingSelected" class="campaign-edit__profiles-list">
                           <button
                             v-for="profile in availableCreatorProfiles"
                             :key="profile.id"
@@ -2123,6 +2125,12 @@
     ...availableCreatorProfiles.value.map((p) => ({ label: p.name, value: p.id })),
   ]);
 
+  // Options for global branding - only show profiles with scope='global'
+  const globalBrandingProfileOptions = computed(() => {
+    const globalProfiles = availableCreatorProfiles.value.filter(p => p.scope === 'global');
+    return globalProfiles.map((p) => ({ label: p.name, value: p.id }));
+  });
+
   const campaignForm = reactive({
     title: '',
     description: '',
@@ -2462,16 +2470,32 @@
   const selectGlobalBranding = () => {
     isGlobalBrandingSelected.value = true;
     selectedCreatorProfileIds.value = [];
-    // Set branding_profile_id to first available profile (assets are org-wide)
-    campaignForm.branding_profile_id = availableCreatorProfiles.value[0]?.id || null;
+    // Auto-select the only global profile if there's exactly one
+    const globalProfiles = availableCreatorProfiles.value.filter(p => p.scope === 'global');
+    if (globalProfiles.length === 1) {
+      campaignForm.branding_profile_id = globalProfiles[0].id;
+    } else {
+      campaignForm.branding_profile_id = globalProfiles[0]?.id || null;
+    }
   };
 
   const handleGlobalBrandingToggle = () => {
     if (isGlobalBrandingSelected.value) {
       // Global branding enabled - clear specific profile selections
       selectedCreatorProfileIds.value = [];
-      // Set branding_profile_id to first available profile (assets are org-wide)
-      campaignForm.branding_profile_id = availableCreatorProfiles.value[0]?.id || null;
+      // Auto-select the only global profile if there's exactly one
+      const globalProfiles = availableCreatorProfiles.value.filter(p => p.scope === 'global');
+      if (globalProfiles.length === 1) {
+        campaignForm.branding_profile_id = globalProfiles[0].id;
+      } else if (globalProfiles.length > 1) {
+        // If multiple global profiles, keep current selection or default to first global
+        const currentIsGlobal = globalProfiles.some(p => p.id === campaignForm.branding_profile_id);
+        if (!currentIsGlobal) {
+          campaignForm.branding_profile_id = globalProfiles[0]?.id || null;
+        }
+      } else {
+        campaignForm.branding_profile_id = null;
+      }
     } else {
       // Global branding disabled - clear branding profile
       campaignForm.branding_profile_id = null;

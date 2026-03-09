@@ -991,6 +991,8 @@
     layoutOverlays?: import('@/types').LayoutOverlay[];
     campaignId?: number | null;
     selectedCampaign?: import('@/services/campaignApi').Campaign | null;
+    campaignBrandingProfileId?: number | null;
+    brandingType?: 'org' | 'campaign' | 'personal' | 'none';
   }
 
   // Re-export the IntroOutroItem type for use in other components
@@ -1726,9 +1728,31 @@
     showCampaignDropdown.value = !showCampaignDropdown.value;
   }
 
-  function selectCampaign(campaign: Campaign) {
+  async function selectCampaign(campaign: Campaign) {
     selectedCampaign.value = campaign;
     showCampaignDropdown.value = false;
+    
+    // Fetch campaign branding assets to override org branding
+    await loadCampaignBranding(campaign);
+  }
+
+  // Load campaign branding assets and override org branding
+  async function loadCampaignBranding(campaign: Campaign) {
+    try {
+      // Campaign branding overrides org branding completely
+      // This means: no org watermark, no org overlay, no org intro/outro
+      // Only campaign-specific branding is applied
+      
+      // For now, we'll pass the campaign context to the build command
+      // The build command will fetch the campaign's branding profile assets
+      // and apply them instead of org assets
+      
+      console.log('[ClipBuildSettingsDialog] Campaign selected:', campaign.title);
+      console.log('[ClipBuildSettingsDialog] Campaign branding will override org branding');
+      console.log('[ClipBuildSettingsDialog] Campaign branding_profile_id:', campaign.branding_profile_id);
+    } catch (error) {
+      console.error('[ClipBuildSettingsDialog] Failed to load campaign branding:', error);
+    }
   }
 
   // Reset isSubmitting when dialog opens so subsequent builds work
@@ -1785,6 +1809,9 @@
         : undefined,
       campaignId: isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.id : null,
       selectedCampaign: isForCampaign.value ? selectedCampaign.value : null,
+      // Campaign branding context for build command
+      campaignBrandingProfileId: isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.branding_profile_id : null,
+      brandingType: isForCampaign.value && selectedCampaign.value ? 'campaign' : 'org',
     };
 
     console.log('[ClipBuildSettingsDialog] Emitting confirm with aspectRatios:', settings.aspectRatios);

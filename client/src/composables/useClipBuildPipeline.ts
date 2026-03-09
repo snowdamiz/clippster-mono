@@ -67,12 +67,15 @@ export function useClipBuildPipeline() {
         buildNumber = 1;
       }
 
-      // Create build record
+      // Create clip build record with campaign context
       const buildId = await createClipBuild(clipId, {
         aspectRatios: settings.aspectRatios,
         quality: settings.quality,
         frameRate: settings.frameRate,
         outputFormat: settings.format,
+        campaignId: settings.campaignId || null,
+        brandingProfileId: settings.campaignBrandingProfileId ? String(settings.campaignBrandingProfileId) : null,
+        brandingType: settings.brandingType || 'org',
       });
 
       // Load segments from DB or create synthetic
@@ -203,6 +206,11 @@ export function useClipBuildPipeline() {
         outroDuration = settings.outro.duration || null;
       }
 
+      // Campaign branding context
+      const campaignId = settings.campaignId || null;
+      const campaignBrandingProfileId = settings.campaignBrandingProfileId || null;
+      const brandingType = settings.brandingType || 'org';
+
       // Listen for progress events
       if (progressUnlisten) {
         progressUnlisten();
@@ -304,6 +312,10 @@ export function useClipBuildPipeline() {
         clipEffects: null,
         audioEffects: null,
         layoutOverlays: settings.layoutOverlays || null,
+        // Campaign branding context
+        campaignId,
+        campaignBrandingProfileId,
+        brandingType,
       });
 
       // Wait for build to complete

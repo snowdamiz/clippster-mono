@@ -3,9 +3,10 @@ import { ref, computed, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../../composables/useEditor";
 import { getAllClips } from "@/services/database/clips";
-import type { Clip } from "@/services/database/types";
+import { getClipBuilds } from "@/services/database/clip-build";
+import type { Clip, ClipBuild } from "@/services/database/types";
 import type { MediaAsset } from "../../../types/assets";
-import { Film, Plus, Loader2, Check, Search } from "lucide-vue-next";
+import { Film, Plus, Loader2, Check, Search, Briefcase } from "lucide-vue-next";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { buildVideoElement } from "../../../lib/timeline/element-utils";
 import { setDragData } from "../../../lib/drag-data";
@@ -14,6 +15,7 @@ import type { CreateTimelineElement } from "../../../types/timeline";
 const { editor, version } = useEditor();
 
 const clips = ref<Clip[]>([]);
+const clipBuilds = ref<Map<string, ClipBuild[]>>(new Map()); // clipId → builds
 const loading = ref(false);
 const addingIds = ref<Set<string>>(new Set());
 const addedIds = ref<Set<string>>(new Set());
@@ -60,6 +62,12 @@ function formatDuration(seconds: number | null): string {
 	const min = Math.floor(seconds / 60);
 	const sec = Math.floor(seconds % 60);
 	return `${min}:${sec.toString().padStart(2, "0")}`;
+}
+
+function hasCampaignBuild(clipId: string): boolean {
+	const builds = clipBuilds.value.get(clipId);
+	if (!builds || builds.length === 0) return false;
+	return builds.some(b => b.campaign_id !== null && b.campaign_id !== undefined);
 }
 
 function isAlreadyAdded(clip: Clip): boolean {
@@ -109,12 +117,28 @@ async function loadClips() {
 	loading.value = true;
 	try {
 		clips.value = await getAllClips();
+		await loadBuilds();
 		await loadThumbnails();
 	} catch (error) {
 		console.error("[BuiltClipsView] Failed to load clips:", error);
 	} finally {
 		loading.value = false;
 	}
+}
+
+async function loadBuilds() {
+	const buildsMap = new Map<string, ClipBuild[]>();
+	for (const clip of clips.value) {
+		try {
+			const builds = await getClipBuilds(clip.id);
+			if (builds.length > 0) {
+				buildsMap.set(clip.id, builds);
+			}
+		} catch (error) {
+			console.warn(`[BuiltClipsView] Failed to load builds for clip ${clip.id}:`, error);
+		}
+	}
+	clipBuilds.value = buildsMap;
 }
 
 async function loadThumbnails() {
@@ -271,6 +295,15 @@ onMounted(loadClips);
 						/>
 						<div v-else class="flex size-full items-center justify-center">
 							<Film class="size-6 text-zinc-500" />
+						</div>
+						<!-- Campaign badge -->
+						<div
+							v-if="hasCampaignBuild(clip.id)"
+							class="absolute left-1 top-1 flex items-center gap-1 rounded bg-cyan-500/90 px-1.5 py-0.5 text-[10px] font-medium text-white"
+							title="Campaign Build"
+						>
+							<Briefcase class="size-2.5" />
+							<span>Campaign</span>
 						</div>
 						<!-- Duration badge -->
 						<div

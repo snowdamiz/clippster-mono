@@ -324,6 +324,9 @@ pub async fn build_clip_internal_simple(
     clip_effects: Option<Vec<ClipEffectSettings>>,
     audio_effects: Option<Vec<AudioEffectSettings>>,
     layout_overlays: Option<Vec<LayoutOverlaySettings>>,
+    campaign_id: Option<i64>,
+    campaign_branding_profile_id: Option<i64>,
+    branding_type: Option<String>,
     cancel_rx: CancellationToken,
 ) -> Result<ClipBuildResult, String> {
     // Helper to check cancellation
@@ -489,6 +492,9 @@ pub async fn build_clip_internal_simple(
         let stickers = stickers.clone();
         let clip_watermarks = clip_watermarks.clone();
         let layout_overlays = layout_overlays.clone();
+        let campaign_id = campaign_id;
+        let campaign_branding_profile_id = campaign_branding_profile_id;
+        let branding_type = branding_type.clone();
         let cancel_rx = cancel_rx.clone();
         async move {
             // Check for cancellation at the start of each task
@@ -511,9 +517,142 @@ pub async fn build_clip_internal_simple(
             // Parse aspect ratio string (e.g., "16:9")
             let aspect_ratio = parse_aspect_ratio(&aspect_ratio_str)?;
             
+            // Campaign branding override logic
+            // If branding_type is 'campaign', we override org branding completely
+            // This means: no org watermark, no org intro/outro
+            let is_campaign_build = branding_type.as_ref().map(|t| t == "campaign").unwrap_or(false);
+            
+            // Campaign branding assets (will override org assets if campaign build)
+            let mut campaign_intro_path: Option<String> = None;
+            let mut campaign_outro_path: Option<String> = None;
+            let mut campaign_watermark_settings: Option<WatermarkSettings> = None;
+            
+            if is_campaign_build && campaign_branding_profile_id.is_some() {
+                println!("[Rust] Campaign build detected - campaign_id: {:?}, branding_profile_id: {:?}", campaign_id, campaign_branding_profile_id);
+                println!("[Rust] Fetching campaign branding assets from server...");
+                
+                // Get API credentials from environment or app state
+                // In production, these would come from the authenticated user session
+                let api_base_url = std::env::var("API_BASE_URL")
+                    .unwrap_or_else(|_| "https://api.clippster.app".to_string());
+                let auth_token = std::env::var("AUTH_TOKEN")
+                    .unwrap_or_else(|_| "".to_string());
+                
+                if !auth_token.is_empty() {
+                    match crate::api::fetch_campaign_branding_profile(
+                        &api_base_url,
+                        &auth_token,
+                        campaign_branding_profile_id.unwrap(),
+                    ).await {
+                        Ok(profile) => {
+                            println!("[Rust] Campaign branding profile fetched: {}", profile.name);
+                            
+                            // Get storage paths
+                            let paths = match crate::storage::init_storage_dirs() {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    println!("[Rust] Warning: Failed to get storage paths: {}", e);
+                                    return Err::<_, String>(format!("Failed to get storage paths: {}", e));
+                                }
+                            };
+                            
+                            // Download campaign intro if it exists
+                            if let Some(intro_id) = profile.intro_id {
+                                println!("[Rust] Downloading campaign intro asset: {}", intro_id);
+                                match crate::api::download_org_asset(
+                                    &api_base_url,
+                                    &auth_token,
+                                    intro_id,
+                                    "intros",
+                                    profile.organization_id,
+                                    &paths.intros,
+                                ).await {
+                                    Ok(path) => {
+                                        println!("[Rust] Campaign intro downloaded: {}", path);
+                                        campaign_intro_path = Some(path);
+                                    }
+                                    Err(e) => {
+                                        println!("[Rust] Warning: Failed to download campaign intro: {}", e);
+                                    }
+                                }
+                            }
+                            
+                            // Download campaign outro if it exists
+                            if let Some(outro_id) = profile.outro_id {
+                                println!("[Rust] Downloading campaign outro asset: {}", outro_id);
+                                match crate::api::download_org_asset(
+                                    &api_base_url,
+                                    &auth_token,
+                                    outro_id,
+                                    "outros",
+                                    profile.organization_id,
+                                    &paths.outros,
+                                ).await {
+                                    Ok(path) => {
+                                        println!("[Rust] Campaign outro downloaded: {}", path);
+                                        campaign_outro_path = Some(path);
+                                    }
+                                    Err(e) => {
+                                        println!("[Rust] Warning: Failed to download campaign outro: {}", e);
+                                    }
+                                }
+                            }
+                            
+                            // Download campaign watermark if it exists
+                            if let Some(watermark_id) = profile.watermark_id {
+                                println!("[Rust] Downloading campaign watermark asset: {}", watermark_id);
+                                match crate::api::download_org_asset(
+                                    &api_base_url,
+                                    &auth_token,
+                                    watermark_id,
+                                    "watermarks",
+                                    profile.organization_id,
+                                    &paths.watermarks,
+                                ).await {
+                                    Ok(watermark_path) => {
+                                        println!("[Rust] Campaign watermark downloaded: {}", watermark_path);
+                                        
+                                        // Create watermark settings from campaign profile
+                                        let wm_settings = WatermarkSettings {
+                                            enabled: true,
+                                            file_path: watermark_path,
+                                            width: None,
+                                            height: None,
+                                            position: "bottom-right".to_string(),
+                                            opacity: 100,
+                                            margin_x: 20,
+                                            margin_y: 20,
+                                        };
+                                        campaign_watermark_settings = Some(wm_settings);
+                                    }
+                                    Err(e) => {
+                                        println!("[Rust] Warning: Failed to download campaign watermark: {}", e);
+                                    }
+                                }
+                            }
+                            
+                            println!("[Rust] Campaign branding assets ready - intro: {}, outro: {}, watermark: {}",
+                                campaign_intro_path.is_some(),
+                                campaign_outro_path.is_some(),
+                                campaign_watermark_settings.is_some());
+                        }
+                        Err(e) => {
+                            println!("[Rust] Warning: Failed to fetch campaign branding profile: {}", e);
+                            println!("[Rust] Continuing with org branding as fallback");
+                        }
+                    }
+                } else {
+                    println!("[Rust] Warning: No auth token available, cannot fetch campaign branding");
+                    println!("[Rust] Continuing with org branding as fallback");
+                }
+            }
+            
             // Resolve intro/outro for this aspect ratio
-            // Priority: per-ratio settings -> global intro/outro -> none
-            let (effective_intro_path, _effective_intro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
+            // Priority: campaign assets -> per-ratio settings -> global intro/outro -> none
+            let (effective_intro_path, _effective_intro_duration) = if is_campaign_build && campaign_intro_path.is_some() {
+                // Campaign branding overrides everything
+                (campaign_intro_path.clone(), None)
+            } else if let Some(per_ratio) = &intro_outro_per_ratio {
                 if let Some(ratio_config) = per_ratio.get(&aspect_ratio_str) {
                     (ratio_config.intro_path.clone(), ratio_config.intro_duration)
                 } else {
@@ -523,7 +662,10 @@ pub async fn build_clip_internal_simple(
                 (intro_path.as_ref().map(|s| s.to_string()), intro_duration)
             };
 
-            let (effective_outro_path, _effective_outro_duration) = if let Some(per_ratio) = &intro_outro_per_ratio {
+            let (effective_outro_path, _effective_outro_duration) = if is_campaign_build && campaign_outro_path.is_some() {
+                // Campaign branding overrides everything
+                (campaign_outro_path.clone(), None)
+            } else if let Some(per_ratio) = &intro_outro_per_ratio {
                 if let Some(ratio_config) = per_ratio.get(&aspect_ratio_str) {
                     (ratio_config.outro_path.clone(), ratio_config.outro_duration)
                 } else {
@@ -534,11 +676,21 @@ pub async fn build_clip_internal_simple(
             };
             
             if let Some(ref intro) = effective_intro_path {
-                println!("[Rust] Using intro for {}: {}", aspect_ratio_str, intro);
+                let source = if is_campaign_build && campaign_intro_path.is_some() { "campaign" } else { "org" };
+                println!("[Rust] Using {} intro for {}: {}", source, aspect_ratio_str, intro);
             }
             if let Some(ref outro) = effective_outro_path {
-                println!("[Rust] Using outro for {}: {}", aspect_ratio_str, outro);
+                let source = if is_campaign_build && campaign_outro_path.is_some() { "campaign" } else { "org" };
+                println!("[Rust] Using {} outro for {}: {}", source, aspect_ratio_str, outro);
             }
+            
+            // Apply campaign watermark override if available
+            let effective_watermark_settings = if is_campaign_build && campaign_watermark_settings.is_some() {
+                println!("[Rust] Using campaign watermark for {}", aspect_ratio_str);
+                campaign_watermark_settings.clone()
+            } else {
+                watermark_settings.clone()
+            };
             
             // Create filename using the AI-generated clip name in snake_case with build number
             // e.g., "Epic Victory Trash Talk" with 16:9, build 2 -> "epic_victory_trash_talk_16-9_2.mp4"
@@ -724,7 +876,7 @@ pub async fn build_clip_internal_simple(
                         effective_intro_path.as_deref(),
                         effective_outro_path.as_deref(),
                         intro_outro_cache.clone(),
-                        watermark_settings.as_ref(),
+                        effective_watermark_settings.as_ref(),
                         audio_settings.as_ref(),
                         video_filter_segments.as_ref(),
                         effects_filter_chain.as_deref(),
@@ -802,10 +954,10 @@ pub async fn build_clip_internal_simple(
                             &quality,
                             frame_rate,
                             &output_format,
-                            intro_path.as_deref(),
-                            outro_path.as_deref(),
+                            effective_intro_path.as_deref(),
+                            effective_outro_path.as_deref(),
                             intro_outro_cache.clone(),
-                            watermark_settings.as_ref(),
+                            effective_watermark_settings.as_ref(),
                             audio_settings.as_ref(),
                             video_filter_segments.as_ref(),
                             effects_filter_chain.as_deref()
