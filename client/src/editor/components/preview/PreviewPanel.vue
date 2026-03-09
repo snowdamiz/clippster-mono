@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, shallowRef, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, shallowRef, onUnmounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -10,66 +10,15 @@ import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import { buildScene } from "../../renderer/scene-builder";
 import { getLastFrameTime } from "../../lib/time";
 import type { TimelineTrack } from "../../types/timeline";
-import type { AspectRatioId } from "../../types/project";
-import { ChevronDown, Smartphone, Maximize, Minimize } from "lucide-vue-next";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
-import { SOCIAL_OVERLAY_PRESETS } from "../../constants/social-overlay-constants";
-import type { SocialOverlayPreset } from "../../types/social-overlays";
 
 const { editor, version } = useEditor();
-const { isCropMode } = useEditorUIState();
+const { isCropMode, activeSocialOverlay } = useEditorUIState();
 const { selectedElements } = useElementSelection();
 
-const aspectPresets = [
-	{ width: 1920, height: 1080, label: "16:9" },
-	{ width: 1080, height: 1920, label: "9:16" },
-	{ width: 1080, height: 1080, label: "1:1" },
-	{ width: 1080, height: 1350, label: "4:5" },
-];
-
-const showAspectMenu = ref(false);
-const showSocialMenu = ref(false);
-const showSpeedMenu = ref(false);
-const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
-const isFullscreen = ref(false);
-const previewContainerRef = ref<HTMLDivElement | null>(null);
-
-const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
-
-const currentSpeed = computed(() => {
-	void version.value;
-	return editor.playback.getPlaybackRate();
-});
-
-function setSpeed(rate: number) {
-	editor.playback.setPlaybackRate({ rate });
-	showSpeedMenu.value = false;
-}
-
-function toggleSocialOverlay(preset: SocialOverlayPreset) {
-	if (activeSocialOverlay.value?.platform === preset.platform) {
-		activeSocialOverlay.value = null;
-	} else {
-		activeSocialOverlay.value = preset;
-	}
-	showSocialMenu.value = false;
-}
-
-const currentAspectLabel = computed(() => {
-	const w = canvasWidth.value;
-	const h = canvasHeight.value;
-	const match = aspectPresets.find((p) => p.width === w && p.height === h);
-	if (match) return match.label;
-	return `${w}×${h}`;
-});
-
-function setAspectRatio(preset: { width: number; height: number }) {
-	editor.project.updateSettings({ settings: { canvasSize: preset } });
-	showAspectMenu.value = false;
-}
-
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const containerRef = ref<HTMLDivElement | null>(null);
 let lastFrame = -1;
 let lastScene: any = null;
 let rendering = false;
@@ -90,16 +39,6 @@ const activeProject = computed(() => {
 const canvasWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
 const canvasHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
 
-const is916 = computed(() => {
-	return canvasWidth.value === 1080 && canvasHeight.value === 1920;
-});
-
-watch(is916, (val) => {
-	if (!val) {
-		activeSocialOverlay.value = null;
-		showSocialMenu.value = false;
-	}
-});
 const fps = computed(() => activeProject.value?.settings?.fps ?? 30);
 const background = computed(() => activeProject.value?.settings?.background ?? { type: "color" as const, color: "#000000" });
 
@@ -320,6 +259,8 @@ watch(
 	{ immediate: true },
 );
 
+defineExpose({ containerRef });
+
 function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number; opacity: number; rotation: number; isFullFrameOverlay?: boolean }) {
 	if (overlay.isFullFrameOverlay) {
 		return {
@@ -341,174 +282,12 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 	};
 }
 
-function toggleFullscreen() {
-	const container = previewContainerRef.value;
-	if (!container) return;
-
-	if (!isFullscreen.value) {
-		if (container.requestFullscreen) {
-			container.requestFullscreen();
-		}
-	} else {
-		if (document.exitFullscreen) {
-			document.exitFullscreen();
-		}
-	}
-}
-
-function handleFullscreenChange() {
-	isFullscreen.value = !!document.fullscreenElement;
-}
-
-onMounted(() => {
-	document.addEventListener('fullscreenchange', handleFullscreenChange);
-});
-
-onUnmounted(() => {
-	document.removeEventListener('fullscreenchange', handleFullscreenChange);
-});
 </script>
 
 <template>
-	<div class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
-		<!-- Aspect ratio + speed selector bar -->
-		<div class="relative flex items-center justify-center border-b border-white/10 px-3 py-1.5">
-			<!-- Playback speed selector (left) -->
-			<div class="absolute left-2 top-1/2 -translate-y-1/2">
-				<button
-					type="button"
-					:class="[
-						'flex items-center gap-0.5 rounded-md px-1.5 py-1 text-xs transition-colors',
-						currentSpeed !== 1
-							? 'bg-primary/15 text-primary'
-							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-					]"
-					@click="showSpeedMenu = !showSpeedMenu"
-				>
-					{{ currentSpeed }}x
-					<ChevronDown class="size-3" />
-				</button>
-
-				<div
-					v-if="showSpeedMenu"
-					class="absolute left-0 top-full z-50 mt-0.5 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
-				>
-					<button
-						v-for="rate in SPEED_OPTIONS"
-						:key="rate"
-						type="button"
-						:class="[
-							'flex w-full items-center px-4 py-1.5 text-xs transition-colors',
-							currentSpeed === rate
-								? 'text-primary bg-primary/10'
-								: 'text-zinc-300 hover:bg-white/5',
-						]"
-						@click="setSpeed(rate)"
-					>
-						{{ rate }}x
-					</button>
-				</div>
-
-				<div v-if="showSpeedMenu" class="fixed inset-0 z-40" @click="showSpeedMenu = false" />
-			</div>
-
-			<button
-				type="button"
-				class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
-				@click="showAspectMenu = !showAspectMenu"
-			>
-				{{ currentAspectLabel }}
-				<ChevronDown class="size-3" />
-			</button>
-
-			<!-- Dropdown -->
-			<div
-				v-if="showAspectMenu"
-				class="absolute top-full z-50 mt-0.5 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
-			>
-				<button
-					v-for="preset in aspectPresets"
-					:key="preset.label"
-					type="button"
-					:class="[
-						'flex w-full items-center gap-2 px-4 py-1.5 text-xs transition-colors',
-						canvasWidth === preset.width && canvasHeight === preset.height
-							? 'text-primary bg-primary/10'
-							: 'text-zinc-300 hover:bg-white/5',
-					]"
-					@click="setAspectRatio(preset)"
-				>
-					{{ preset.label }}
-					<span class="text-zinc-500">{{ preset.width }}×{{ preset.height }}</span>
-				</button>
-			</div>
-
-			<!-- Click-away -->
-			<div v-if="showAspectMenu" class="fixed inset-0 z-40" @click="showAspectMenu = false" />
-
-			<!-- Right controls: Fullscreen, Social overlay -->
-			<div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
-				<!-- Fullscreen toggle -->
-				<button
-					type="button"
-					class="flex items-center rounded-md p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
-					@click="toggleFullscreen"
-				>
-					<Minimize v-if="isFullscreen" class="size-4" />
-					<Maximize v-else class="size-4" />
-				</button>
-
-				<!-- Social overlay toggle (9:16 only) -->
-				<button
-					v-if="is916"
-					type="button"
-					:class="[
-						'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
-						activeSocialOverlay
-							? 'bg-cyan-500/15 text-cyan-400'
-							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-					]"
-					@click="showSocialMenu = !showSocialMenu"
-				>
-					<Smartphone class="size-3.5" />
-				</button>
-
-				<div
-					v-if="showSocialMenu"
-					class="absolute right-0 top-full z-50 mt-0.5 w-44 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
-				>
-					<button
-						v-if="activeSocialOverlay"
-						type="button"
-						class="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/5"
-						@click="activeSocialOverlay = null; showSocialMenu = false"
-					>
-						Hide Overlay
-					</button>
-					<button
-						v-for="preset in SOCIAL_OVERLAY_PRESETS"
-						:key="preset.platform"
-						type="button"
-						:class="[
-							'flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors',
-							activeSocialOverlay?.platform === preset.platform
-								? 'text-cyan-400 bg-cyan-500/10'
-								: 'text-zinc-300 hover:bg-white/5',
-						]"
-						@click="toggleSocialOverlay(preset)"
-					>
-						<span>{{ preset.icon }}</span>
-						<span>{{ preset.label }}</span>
-						<span class="ml-auto text-[10px] text-zinc-500">{{ preset.aspectRatio }}</span>
-					</button>
-				</div>
-
-				<div v-if="showSocialMenu" class="fixed inset-0 z-40" @click="showSocialMenu = false" />
-			</div>
-		</div>
-
+	<div ref="containerRef" class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
 		<!-- Canvas + Interactive Overlay -->
-		<div ref="previewContainerRef" class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
+		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden p-4">
 			<div class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
 				:style="{ aspectRatio: `${canvasWidth} / ${canvasHeight}` }"
 			>

@@ -370,6 +370,8 @@ defmodule ClippsterServer.Emails do
     |> to(email)
     |> from({app_name, from_email})
     |> subject("You've been invited to join #{org_name} on #{app_name}")
+    |> header("List-Unsubscribe", "<mailto:unsubscribe@clippster.app>")
+    |> header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
     |> html_body(organization_invitation_html(org_name, inviter_name, invite_url, app_name))
     |> text_body(organization_invitation_text(org_name, inviter_name, invite_url, app_name))
   end
@@ -461,6 +463,12 @@ defmodule ClippsterServer.Emails do
                   <p style="margin: 0; font-size: 12px; color: #52525b;">
                     If you don't recognize this organization, you can safely ignore this email.
                   </p>
+                  <p style="margin: 16px 0 0 0; font-size: 11px; color: #3f3f46;">
+                    <a href="mailto:unsubscribe@clippster.app" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
+                  </p>
+                  <p style="margin: 4px 0 0 0; font-size: 11px; color: #3f3f46;">
+                    Clippster · 412 W 39th St, Vancouver, WA 98660
+                  </p>
                 </td>
               </tr>
             </table>
@@ -493,6 +501,9 @@ defmodule ClippsterServer.Emails do
     ---
 
     If you don't recognize this organization, you can safely ignore this email.
+
+    To unsubscribe, email: unsubscribe@clippster.app
+    Clippster · 412 W 39th St, Vancouver, WA 98660
     """
   end
 
@@ -508,6 +519,8 @@ defmodule ClippsterServer.Emails do
     |> to(email)
     |> from({app_name, from_email})
     |> subject("Welcome to the #{app_name} Waitlist")
+    |> header("List-Unsubscribe", "<mailto:unsubscribe@clippster.app>")
+    |> header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
     |> html_body(waitlist_confirmation_html(app_name))
     |> text_body(waitlist_confirmation_text(app_name))
   end
@@ -617,8 +630,11 @@ defmodule ClippsterServer.Emails do
                   <p style="margin: 0 0 16px 0;">
                     <a href="mailto:support@clippster.app" style="color: #06b6d4; text-decoration: none; font-size: 13px;">support@clippster.app</a>
                   </p>
-                  <p style="margin: 0; font-size: 12px; color: #52525b;">
-                    If you didn't sign up for this waitlist, you can safely ignore this email.
+                  <p style="margin: 16px 0 0 0; font-size: 11px; color: #3f3f46;">
+                    <a href="mailto:unsubscribe@clippster.app" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
+                  </p>
+                  <p style="margin: 4px 0 0 0; font-size: 11px; color: #3f3f46;">
+                    Clippster · 412 W 39th St, Vancouver, WA 98660
                   </p>
                 </td>
               </tr>
@@ -662,7 +678,8 @@ defmodule ClippsterServer.Emails do
 
     Questions? Contact us at support@clippster.app
 
-    If you didn't sign up for this waitlist, you can safely ignore this email.
+    To unsubscribe, email: unsubscribe@clippster.app
+    Clippster · 412 W 39th St, Vancouver, WA 98660
     """
   end
 
@@ -678,6 +695,8 @@ defmodule ClippsterServer.Emails do
     |> to(to_email)
     |> from({app_name, from_email})
     |> subject(subject)
+    |> header("List-Unsubscribe", "<mailto:unsubscribe@clippster.app>")
+    |> header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
     |> html_body(admin_broadcast_html(body_html, app_name))
     |> text_body(admin_broadcast_text(subject, body_html, app_name))
   end
@@ -736,6 +755,12 @@ defmodule ClippsterServer.Emails do
                   <p style="margin: 0; font-size: 12px; color: #52525b;">
                     You're receiving this email because you have an account with #{app_name}.
                   </p>
+                  <p style="margin: 16px 0 0 0; font-size: 11px; color: #3f3f46;">
+                    <a href="mailto:unsubscribe@clippster.app" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
+                  </p>
+                  <p style="margin: 4px 0 0 0; font-size: 11px; color: #3f3f46;">
+                    Clippster · 412 W 39th St, Vancouver, WA 98660
+                  </p>
                 </td>
               </tr>
             </table>
@@ -770,6 +795,9 @@ defmodule ClippsterServer.Emails do
     ---
 
     You're receiving this email because you have an account with #{app_name}.
+
+    To unsubscribe, email: unsubscribe@clippster.app
+    Clippster · 412 W 39th St, Vancouver, WA 98660
     """
   end
 
@@ -785,6 +813,8 @@ defmodule ClippsterServer.Emails do
     |> to(email)
     |> from({app_name, from_email})
     |> subject("Welcome to #{app_name} Beta - Access Code Inside")
+    |> header("List-Unsubscribe", "<mailto:unsubscribe@clippster.app>")
+    |> header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
     |> html_body(waitlist_invite_html(beta_code, discount_code, discount_percent, app_name))
     |> text_body(waitlist_invite_text(beta_code, discount_code, discount_percent, app_name))
   end
@@ -1038,6 +1068,12 @@ defmodule ClippsterServer.Emails do
                   </p>
                   <p style="margin: 0; font-size: 12px; color: #52525b;">
                     You're receiving this because you joined the #{app_name} waitlist.
+                  </p>
+                  <p style="margin: 16px 0 0 0; font-size: 11px; color: #3f3f46;">
+                    <a href="mailto:unsubscribe@clippster.app" style="color: #52525b; text-decoration: underline;">Unsubscribe</a>
+                  </p>
+                  <p style="margin: 4px 0 0 0; font-size: 11px; color: #3f3f46;">
+                    Clippster · 412 W 39th St, Vancouver, WA 98660
                   </p>
                 </td>
               </tr>
@@ -1475,6 +1511,9 @@ defmodule ClippsterServer.Emails do
     Need help? Reply to this email or contact support@clippster.app
 
     You're receiving this because you joined the #{app_name} waitlist.
+
+    To unsubscribe, email: unsubscribe@clippster.app
+    Clippster · 412 W 39th St, Vancouver, WA 98660
     """
   end
 end

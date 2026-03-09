@@ -2370,19 +2370,19 @@ function handlePublishNow() {
   align-items: center;
   gap: 0.5rem;
   height: 32px;
-  padding: 0 0.875rem;
-  background-color: var(--sidebar-accent);
-  color: var(--sidebar-bg);
+  padding: 0 0.75rem;
+  background-color: transparent;
+  color: var(--sidebar-accent);
   border: none;
   border-radius: 6px;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 150ms ease;
 }
 
 .export-trigger:hover:not(:disabled) {
-  opacity: 0.9;
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .export-trigger:disabled {
@@ -2391,8 +2391,8 @@ function handlePublishNow() {
 }
 
 .export-trigger__icon {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
 }
 
 /* ===== Responsive ===== */

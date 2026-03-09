@@ -7,9 +7,10 @@
  * - Canvas coords: position (0,0) = canvas center, scale=1 = 100%
  * - Screen coords: pixel position on the displayed (scaled) canvas element
  */
-import { computed, ref, type Ref } from "vue";
+import { computed, nextTick, ref, type Ref } from "vue";
 import { useEditor } from "../useEditor";
 import { useElementSelection } from "../timeline/element/useElementSelection";
+import { usePreviewFocus } from "./usePreviewFocus";
 import type {
 	TimelineTrack,
 	TimelineElement,
@@ -84,6 +85,7 @@ export function usePreviewInteraction({
 }) {
 	const { editor, version } = useEditor();
 	const { selectedElements, selectElement, clearElementSelection, isElementSelected } = useElementSelection();
+	const { previewFocused, setPreviewFocused } = usePreviewFocus();
 
 	const dragState = ref<DragState | null>(null);
 	const hoveredElementId = ref<string | null>(null);
@@ -374,7 +376,7 @@ export function usePreviewInteraction({
 		return editor.timeline.getTracks().find((t) => t.id === trackId)?.locked === true;
 	}
 
-	function handleCanvasMouseDown(event: MouseEvent) {
+	async function handleCanvasMouseDown(event: MouseEvent) {
 		const pos = screenToCanvas(event.clientX, event.clientY);
 		if (!pos) return;
 
@@ -385,7 +387,14 @@ export function usePreviewInteraction({
 			const alreadySelected = isElementSelected({ trackId: hit.trackId, elementId: hit.elementId });
 			if (!alreadySelected) {
 				selectElement({ trackId: hit.trackId, elementId: hit.elementId });
+				// Wait for Vue to flush DOM updates before recording the drag start position.
+				// Selecting a new element may cause the PropertiesPanel to appear on the right,
+				// which shifts the canvas position in the flex layout. If we call startDrag
+				// before the layout settles, getBoundingClientRect() returns the pre-shift rect
+				// and any subsequent mousemove produces a phantom delta, making the element jump.
+				await nextTick();
 			}
+			setPreviewFocused(true);
 			// Prevent drag on locked tracks (still allow selection)
 			if (isTrackLocked(hit.trackId)) return;
 			startDrag(event, hit, "move");
@@ -626,6 +635,7 @@ export function usePreviewInteraction({
 		hoveredElementId,
 		showCenterGuideX,
 		showCenterGuideY,
+		previewFocused,
 		screenToCanvas,
 		canvasToScreen,
 		handleCanvasMouseDown,

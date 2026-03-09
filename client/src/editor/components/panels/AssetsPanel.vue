@@ -175,7 +175,7 @@ function getMediaIcon(type: string) {
 
 			<!-- Header -->
 			<div class="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-				<span class="text-zinc-400 text-sm">Assets</span>
+				<span class="text-zinc-400 text-sm">Media</span>
 				<div class="flex items-center gap-1">
 					<Button variant="ghost" size="icon" class="size-6" @click="showMediaDialog = true">
 						<Plus class="size-3" />
@@ -197,7 +197,7 @@ function getMediaIcon(type: string) {
 				<!-- Empty / drag overlay -->
 				<div
 					v-if="isDragOver || filteredMedia.length === 0"
-					class="flex h-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-white/10 p-8 text-center cursor-pointer"
+					class="flex h-full flex-col items-center justify-center gap-2 rounded-lg p-8 text-center cursor-pointer"
 					@click="openFilePicker"
 				>
 					<Upload class="text-zinc-500 size-8" />
