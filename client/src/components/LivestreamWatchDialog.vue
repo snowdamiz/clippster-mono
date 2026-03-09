@@ -360,6 +360,7 @@
               :watermark-settings="(viewer.state.value.watermarkSettings as any) || null"
               :thumbnail-url="currentClipForPublish.thumbnail_path || null"
               :platform="props.platform"
+              :creator-profile-server-id="sessionCampaign?.creator_profile_id || null"
               @published="handlePublishComplete"
               @close="handleQuickPublishClose"
             />
@@ -528,6 +529,9 @@
   const showWatermark = computed(() => {
     return viewer.state.value.watermarkId && viewer.state.value.watermarkSettings;
   });
+
+  // Get session campaign for this streamer (used for QuickPublishWizard)
+  const sessionCampaign = computed(() => livestreamStore.getSessionCampaign(props.streamerId));
 
   const watermarkStyle = computed<CSSProperties>(() => {
     const settings = viewer.state.value.watermarkSettings;

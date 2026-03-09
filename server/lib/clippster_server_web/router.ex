@@ -679,6 +679,12 @@ defmodule ClippsterServerWeb.Router do
     get("/organizations/:organization_id/posts/:id", PostSubmissionController, :show)
 
     post(
+      "/organizations/:organization_id/posts/presigned-upload",
+      PostSubmissionController,
+      :get_presigned_upload_url
+    )
+
+    post(
       "/organizations/:organization_id/posts/upload-media",
       PostSubmissionController,
       :upload_media

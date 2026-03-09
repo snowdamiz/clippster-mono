@@ -367,14 +367,144 @@
                     </div>
 
                     <div class="build-dialog__addons-section">
+
+                      <!-- Campaign Selection (shown only when user has qualifying campaigns) -->
+                      <div v-if="availableCampaigns.length > 0" class="build-dialog__field build-dialog__campaign-section">
+                        <!-- Checkbox row -->
+                        <button
+                          type="button"
+                          @click="toggleIsForCampaign"
+                          class="build-dialog__campaign-toggle"
+                        >
+                          <div
+                            class="build-dialog__campaign-checkbox"
+                            :class="{ 'build-dialog__campaign-checkbox--checked': isForCampaign }"
+                          >
+                            <CheckIcon v-if="isForCampaign" class="build-dialog__campaign-checkbox-icon" />
+                          </div>
+                          <div class="build-dialog__campaign-toggle-info">
+                            <span class="build-dialog__campaign-toggle-label">
+                              <Megaphone class="build-dialog__campaign-toggle-icon" />
+                              This clip is for a campaign
+                            </span>
+                            <span class="build-dialog__campaign-toggle-hint">
+                              Campaign branding will be applied instead of creator profile branding
+                            </span>
+                          </div>
+                        </button>
+
+                        <!-- Campaign dropdown (shown when checkbox is checked) -->
+                        <Transition name="slide-fade">
+                          <div v-if="isForCampaign" class="build-dialog__campaign-picker">
+                            <label class="build-dialog__field-label">Select Campaign</label>
+                            <div class="build-dialog__dropdown-wrapper">
+                              <button
+                                ref="campaignButtonRef"
+                                @click="toggleCampaignDropdown"
+                                class="build-dialog__dropdown-trigger"
+                              >
+                                <div v-if="selectedCampaign" class="build-dialog__campaign-selected">
+                                  <div class="build-dialog__campaign-selected-icon">
+                                    <img
+                                      v-if="selectedCampaign.cover_image_url"
+                                      :src="selectedCampaign.cover_image_url"
+                                      class="build-dialog__campaign-cover"
+                                    />
+                                    <Megaphone v-else class="build-dialog__campaign-cover-icon" />
+                                  </div>
+                                  <div class="build-dialog__campaign-selected-info">
+                                    <span class="build-dialog__campaign-selected-title">{{ selectedCampaign.title }}</span>
+                                    <span class="build-dialog__campaign-selected-org">{{ selectedCampaign.organization?.name }}</span>
+                                  </div>
+                                  <span v-if="!selectedCampaign.creator_profile_id" class="build-dialog__badge build-dialog__badge--global">
+                                    <Globe class="build-dialog__badge-icon" />
+                                    Global
+                                  </span>
+                                </div>
+                                <span v-else class="build-dialog__dropdown-text build-dialog__dropdown-text--placeholder">
+                                  Select a campaign...
+                                </span>
+                                <ChevronDown
+                                  class="build-dialog__dropdown-icon"
+                                  :class="{ 'build-dialog__dropdown-icon--open': showCampaignDropdown }"
+                                />
+                              </button>
+
+                              <!-- Campaign dropdown list - Teleported -->
+                              <Teleport to="body">
+                                <div
+                                  v-if="showCampaignDropdown"
+                                  ref="campaignDropdownRef"
+                                  class="build-dialog__dropdown-menu"
+                                  :style="{
+                                    top: campaignDropdownPosition.top,
+                                    left: campaignDropdownPosition.left,
+                                    width: campaignDropdownPosition.width,
+                                    maxHeight: campaignDropdownPosition.maxHeight,
+                                  }"
+                                  @click.stop
+                                >
+                                  <div v-if="loadingCampaigns" class="build-dialog__dropdown-loading">Loading campaigns...</div>
+                                  <template v-else>
+                                    <button
+                                      v-for="campaign in availableCampaigns"
+                                      :key="campaign.id"
+                                      @click="selectCampaign(campaign)"
+                                      class="build-dialog__dropdown-item build-dialog__campaign-item"
+                                      :class="{ 'build-dialog__dropdown-item--selected': selectedCampaign?.id === campaign.id }"
+                                    >
+                                      <div class="build-dialog__campaign-item-icon">
+                                        <img
+                                          v-if="campaign.cover_image_url"
+                                          :src="campaign.cover_image_url"
+                                          class="build-dialog__campaign-cover"
+                                        />
+                                        <Megaphone v-else class="build-dialog__campaign-cover-icon" />
+                                      </div>
+                                      <div class="build-dialog__campaign-item-info">
+                                        <span class="build-dialog__campaign-item-title">{{ campaign.title }}</span>
+                                        <span class="build-dialog__campaign-item-org">{{ campaign.organization?.name }}</span>
+                                      </div>
+                                      <span v-if="!campaign.creator_profile_id" class="build-dialog__badge build-dialog__badge--global">
+                                        <Globe class="build-dialog__badge-icon" />
+                                        Global
+                                      </span>
+                                    </button>
+                                  </template>
+                                </div>
+                              </Teleport>
+                            </div>
+
+                            <!-- Campaign branding info notice -->
+                            <div v-if="selectedCampaign" class="build-dialog__campaign-notice">
+                              <div class="build-dialog__campaign-notice-icon">
+                                <CheckIcon class="h-3.5 w-3.5" />
+                              </div>
+                              <p class="build-dialog__campaign-notice-text">
+                                <template v-if="selectedCampaign.creator_profile_id">
+                                  Campaign creator profile branding will be applied to this clip.
+                                </template>
+                                <template v-else>
+                                  {{ selectedCampaign.organization?.name }}'s global branding will be applied to this clip.
+                                </template>
+                              </p>
+                            </div>
+                          </div>
+                        </Transition>
+                      </div>
+
                       <!-- Intro/Outro section - hidden for free tier users -->
                       <div v-if="!isFreeTier" class="build-dialog__intro-outro-section">
                         <!-- Intro Compact Selector -->
                         <div class="build-dialog__field">
                           <div class="build-dialog__field-header">
                             <label class="build-dialog__field-label">Intro</label>
-                            <div v-if="selectedIntro?.isOrgAsset" class="build-dialog__field-badges">
-                              <span class="build-dialog__badge build-dialog__badge--org">
+                            <div class="build-dialog__field-badges">
+                              <span v-if="introLockedByCampaign" class="build-dialog__badge build-dialog__badge--campaign">
+                                <Megaphone class="build-dialog__badge-icon" />
+                                Campaign
+                              </span>
+                              <span v-else-if="selectedIntro?.isOrgAsset" class="build-dialog__badge build-dialog__badge--org">
                                 <Building2 class="build-dialog__badge-icon" />
                                 Org
                               </span>
@@ -383,8 +513,10 @@
                           <div class="build-dialog__dropdown-wrapper">
                             <button
                               ref="introButtonRef"
-                              @click="toggleIntroDropdown"
+                              @click="!introLockedByCampaign && toggleIntroDropdown()"
                               class="build-dialog__dropdown-trigger"
+                              :class="{ 'build-dialog__dropdown-trigger--locked': introLockedByCampaign }"
+                              :disabled="introLockedByCampaign"
                             >
                               <span class="build-dialog__dropdown-text">
                                 {{ selectedIntro ? `${selectedIntro.name} (${formatDuration(selectedIntro.duration || 0)})` : 'None' }}
@@ -449,8 +581,12 @@
                         <div class="build-dialog__field">
                           <div class="build-dialog__field-header">
                             <label class="build-dialog__field-label">Outro</label>
-                            <div v-if="selectedOutro?.isOrgAsset" class="build-dialog__field-badges">
-                              <span class="build-dialog__badge build-dialog__badge--org">
+                            <div class="build-dialog__field-badges">
+                              <span v-if="outroLockedByCampaign" class="build-dialog__badge build-dialog__badge--campaign">
+                                <Megaphone class="build-dialog__badge-icon" />
+                                Campaign
+                              </span>
+                              <span v-else-if="selectedOutro?.isOrgAsset" class="build-dialog__badge build-dialog__badge--org">
                                 <Building2 class="build-dialog__badge-icon" />
                                 Org
                               </span>
@@ -459,8 +595,10 @@
                           <div class="build-dialog__dropdown-wrapper">
                             <button
                               ref="outroButtonRef"
-                              @click="toggleOutroDropdown"
+                              @click="!outroLockedByCampaign && toggleOutroDropdown()"
                               class="build-dialog__dropdown-trigger"
+                              :class="{ 'build-dialog__dropdown-trigger--locked': outroLockedByCampaign }"
+                              :disabled="outroLockedByCampaign"
                             >
                               <span class="build-dialog__dropdown-text">
                                 {{ selectedOutro ? `${selectedOutro.name} (${formatDuration(selectedOutro.duration || 0)})` : 'None' }}
@@ -569,25 +707,53 @@
                           <p class="schedule-dialog__alert-text">Build failed: {{ buildState.error }}</p>
                         </div>
 
-                        <!-- Platform Selection -->
+                        <!-- Platform Selection with Aspect Ratios -->
                         <div class="schedule-dialog__field">
                           <label class="schedule-dialog__label">Platforms *</label>
-                          <div class="schedule-dialog__platforms">
-                            <label
+                          <div class="schedule-dialog__platform-configs">
+                            <div
                               v-for="platform in availablePlatforms"
                               :key="platform.id"
-                              class="schedule-dialog__platform-option"
-                              :class="{ 'schedule-dialog__platform-option--selected': selectedPublishPlatforms.includes(platform.id) }"
+                              class="schedule-dialog__platform-config-row"
                             >
-                              <input
-                                type="checkbox"
-                                :value="platform.id"
-                                v-model="selectedPublishPlatforms"
-                                class="schedule-dialog__checkbox"
-                              />
-                              <component :is="platform.icon" :size="16" />
-                              <span>{{ platform.label }}</span>
-                            </label>
+                              <label
+                                class="schedule-dialog__platform-option"
+                                :class="{ 'schedule-dialog__platform-option--selected': isPlatformSelected(platform.id) }"
+                              >
+                                <input
+                                  type="checkbox"
+                                  :checked="isPlatformSelected(platform.id)"
+                                  @change="togglePlatform(platform.id)"
+                                  class="schedule-dialog__checkbox"
+                                />
+                                <component :is="platform.icon" :size="16" />
+                                <span>{{ platform.label }}</span>
+                              </label>
+                              
+                              <!-- Aspect Ratio Selector (only shown when platform is selected and multiple ratios available) -->
+                              <div
+                                v-if="isPlatformSelected(platform.id) && selectedRatios.length > 1"
+                                class="schedule-dialog__aspect-ratio-selector"
+                              >
+                                <select
+                                  :value="platformConfigs[platform.id]?.aspectRatio"
+                                  @change="updatePlatformAspectRatio(platform.id, ($event.target as HTMLSelectElement).value)"
+                                  class="schedule-dialog__aspect-ratio-select"
+                                >
+                                  <option v-for="ratio in selectedRatios" :key="ratio" :value="ratio">
+                                    {{ ratio }}
+                                  </option>
+                                </select>
+                              </div>
+                              
+                              <!-- Show selected ratio when only one ratio available -->
+                              <div
+                                v-else-if="isPlatformSelected(platform.id) && selectedRatios.length === 1"
+                                class="schedule-dialog__aspect-ratio-badge"
+                              >
+                                {{ selectedRatios[0] }}
+                              </div>
+                            </div>
                           </div>
                           <p v-if="selectedPublishPlatforms.length === 0" class="schedule-dialog__field-hint schedule-dialog__field-hint--error">
                             Please select at least one platform
@@ -606,21 +772,56 @@
                               <div class="schedule-dialog__account-config-label">
                                 <component :is="getPlatformIcon(platformId)" :size="14" />
                                 <span>{{ getPlatformLabel(platformId) }}</span>
+                                <span class="schedule-dialog__account-aspect-ratio">({{ platformConfigs[platformId]?.aspectRatio }})</span>
                               </div>
-                              <div class="schedule-dialog__dropdown-wrapper">
-                                <select v-model="platformAccounts[platformId]" class="schedule-dialog__select">
-                                  <option value="">Select account</option>
-                                  <optgroup v-if="getOrgAccountsForPlatform(platformId).length > 0" label="Organization">
-                                    <option v-for="account in getOrgAccountsForPlatform(platformId)" :key="`org-${account.id}`" :value="`org:${account.id}`">
+                              <div class="relative">
+                                <button
+                                  @click="toggleAccountDropdown(platformId)"
+                                  class="schedule-dialog__input schedule-dialog__select-button"
+                                >
+                                  <span class="truncate">
+                                    {{ getSelectedAccountLabel(platformId) || 'Select account...' }}
+                                  </span>
+                                  <ChevronDown
+                                    class="h-3.5 w-3.5 sm:h-4 sm:w-4 transition-transform"
+                                    :class="{ 'rotate-180': activeAccountDropdown === platformId }"
+                                  />
+                                </button>
+
+                                <!-- Dropdown -->
+                                <div v-if="activeAccountDropdown === platformId" class="schedule-dialog__dropdown">
+                                  <button
+                                    @click="selectAccount(platformId, '')"
+                                    class="schedule-dialog__dropdown-item"
+                                    :class="{ 'schedule-dialog__dropdown-item--selected': !platformAccounts[platformId] }"
+                                  >
+                                    Select account...
+                                  </button>
+                                  <template v-if="getOrgAccountsForPlatform(platformId).length > 0">
+                                    <div class="schedule-dialog__dropdown-group-label">Organization</div>
+                                    <button
+                                      v-for="account in getOrgAccountsForPlatform(platformId)"
+                                      :key="`org-${account.id}`"
+                                      @click="selectAccount(platformId, `org:${account.id}`)"
+                                      class="schedule-dialog__dropdown-item"
+                                      :class="{ 'schedule-dialog__dropdown-item--selected': platformAccounts[platformId] === `org:${account.id}` }"
+                                    >
                                       @{{ account.username }}
-                                    </option>
-                                  </optgroup>
-                                  <optgroup v-if="getPersonalAccountsForPlatform(platformId).length > 0" label="Personal">
-                                    <option v-for="account in getPersonalAccountsForPlatform(platformId)" :key="`user-${account.id}`" :value="`user:${account.id}`">
+                                    </button>
+                                  </template>
+                                  <template v-if="getPersonalAccountsForPlatform(platformId).length > 0">
+                                    <div class="schedule-dialog__dropdown-group-label">Personal</div>
+                                    <button
+                                      v-for="account in getPersonalAccountsForPlatform(platformId)"
+                                      :key="`user-${account.id}`"
+                                      @click="selectAccount(platformId, `user:${account.id}`)"
+                                      class="schedule-dialog__dropdown-item"
+                                      :class="{ 'schedule-dialog__dropdown-item--selected': platformAccounts[platformId] === `user:${account.id}` }"
+                                    >
                                       @{{ account.username }}
-                                    </option>
-                                  </optgroup>
-                                </select>
+                                    </button>
+                                  </template>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -730,6 +931,7 @@ import {
   Youtube,
   FileVideo,
   Building2,
+  Globe,
 } from 'lucide-vue-next';
 import XLogo from '@/components/icons/XLogo.vue';
 import TiktokLogo from '@/components/icons/TiktokLogo.vue';
@@ -738,6 +940,8 @@ import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
 import type { ManualFramingConfig, ManualFramingConfigs } from '@/types';
 import { getAllIntroOutros, type IntroOutro } from '@/services/database';
 import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
+import { ensureAssetDownloaded } from '@/services/orgAssetSync';
+import { invoke } from '@tauri-apps/api/core';
 import { useAuthStore } from '@/stores/auth';
 import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
 import { useClipBuildPipeline } from '@/composables/useClipBuildPipeline';
@@ -843,9 +1047,19 @@ const showOutroDropdown = ref(false);
 const introDropdownPosition = ref({ top: '0px', left: '0px', width: '0px', maxHeight: '300px' });
 const outroDropdownPosition = ref({ top: '0px', left: '0px', width: '0px', maxHeight: '300px' });
 
+// Dropdown state for campaign
+const campaignButtonRef = ref<HTMLElement | null>(null);
+const campaignDropdownRef = ref<HTMLElement | null>(null);
+const showCampaignDropdown = ref(false);
+const campaignDropdownPosition = ref({ top: '0px', left: '0px', width: '0px', maxHeight: '300px' });
+const loadingCampaigns = ref(false);
+
 // Publish settings (Step 5)
-const selectedPublishPlatforms = ref<string[]>([]);
-const platformAccounts = ref<Record<string, string>>({});
+interface PlatformConfig {
+  aspectRatio: string;
+  accountId: string;
+}
+const platformConfigs = ref<Record<string, PlatformConfig>>({});
 const caption = ref('');
 const loadingAccounts = ref(true);
 const orgAccounts = ref<SocialAccount[]>([]);
@@ -853,6 +1067,8 @@ const personalTwitterAccounts = ref<UserTwitterAccount[]>([]);
 const personalTiktokAccounts = ref<UserTiktokAccount[]>([]);
 const personalInstagramAccounts = ref<UserInstagramAccount[]>([]);
 const personalYoutubeAccounts = ref<UserYoutubeAccount[]>([]);
+const activeAccountDropdown = ref<string | null>(null);
+const hasQueuedBackgroundPublish = ref(false);
 
 // Computed
 const buildState = computed(() => buildPipeline.state.value);
@@ -896,6 +1112,8 @@ const currentStepIndex = computed(() => {
 const isFirstStep = computed(() => currentStepIndex.value === 0);
 const isLastStep = computed(() => currentStepIndex.value === visibleSteps.value.length - 1);
 
+const selectedPublishPlatforms = computed(() => Object.keys(platformConfigs.value));
+
 const canProceed = computed(() => {
   switch (currentStep.value) {
     case 'platforms':
@@ -914,15 +1132,76 @@ const canProceed = computed(() => {
 const canPublish = computed(() => {
   if (selectedPublishPlatforms.value.length === 0) return false;
   for (const platformId of selectedPublishPlatforms.value) {
-    if (!platformAccounts.value[platformId]) return false;
+    const config = platformConfigs.value[platformId];
+    if (!config?.accountId || !config?.aspectRatio) return false;
   }
   return true;
 });
 
-const selectedIntro = computed(() => intros.value.find((i) => i.id === selectedIntroId.value) || null);
-const selectedOutro = computed(() => outros.value.find((o) => o.id === selectedOutroId.value) || null);
 const selectedCampaign = computed(() => availableCampaigns.value.find((c) => c.id === selectedCampaignId.value) || null);
+
+// Campaign intro/outro - when campaign is selected, use campaign assets and lock the selection
+const campaignIntro = computed<IntroOutroItem | null>(() => {
+  const campaign = selectedCampaign.value;
+  if (!campaign?.global_intro) return null;
+  return {
+    id: `campaign-intro-${campaign.global_intro.id}`,
+    type: 'intro',
+    name: campaign.global_intro.name,
+    file_path: campaign.global_intro.url,
+    serverUrl: campaign.global_intro.url,
+    serverId: campaign.global_intro.id,
+    duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : null,
+    thumbnail_path: campaign.global_intro.thumbnail_url || null,
+    thumbnail_generation_status: 'completed' as const,
+    organization_id: String(campaign.organization_id),
+    organization_name: campaign.organization?.name || null,
+    isOrgAsset: true,
+    created_at: Date.now(),
+    updated_at: Date.now(),
+  } as any;
+});
+
+const campaignOutro = computed<IntroOutroItem | null>(() => {
+  const campaign = selectedCampaign.value;
+  if (!campaign?.global_outro) return null;
+  return {
+    id: `campaign-outro-${campaign.global_outro.id}`,
+    type: 'outro',
+    name: campaign.global_outro.name,
+    file_path: campaign.global_outro.url,
+    serverUrl: campaign.global_outro.url,
+    serverId: campaign.global_outro.id,
+    duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : null,
+    thumbnail_path: campaign.global_outro.thumbnail_url || null,
+    thumbnail_generation_status: 'completed' as const,
+    organization_id: String(campaign.organization_id),
+    organization_name: campaign.organization?.name || null,
+    isOrgAsset: true,
+    created_at: Date.now(),
+    updated_at: Date.now(),
+  } as any;
+});
+
+// When campaign is selected with assets, use those; otherwise use manual selection
+const selectedIntro = computed(() => {
+  if (isForCampaign.value && campaignIntro.value) return campaignIntro.value;
+  return intros.value.find((i) => i.id === selectedIntroId.value) || null;
+});
+const selectedOutro = computed(() => {
+  if (isForCampaign.value && campaignOutro.value) return campaignOutro.value;
+  return outros.value.find((o) => o.id === selectedOutroId.value) || null;
+});
+
+// Check if intro/outro selection is locked by campaign
+const introLockedByCampaign = computed(() => isForCampaign.value && !!campaignIntro.value);
+const outroLockedByCampaign = computed(() => isForCampaign.value && !!campaignOutro.value);
 const orgId = computed<number | null>(() => {
+  const campaignOrgId = isForCampaign.value ? selectedCampaign.value?.organization_id : null;
+  if (typeof campaignOrgId === 'number') {
+    return campaignOrgId;
+  }
+
   const id = authStore.user?.owned_organization_id;
   return typeof id === 'number' ? id : null;
 });
@@ -1069,6 +1348,11 @@ function handleClickOutside(event: MouseEvent) {
       showOutroDropdown.value = false;
     }
   }
+  if (showCampaignDropdown.value) {
+    if (!campaignButtonRef.value?.contains(target) && !campaignDropdownRef.value?.contains(target)) {
+      showCampaignDropdown.value = false;
+    }
+  }
 }
 
 // Campaign
@@ -1079,6 +1363,30 @@ function toggleIsForCampaign() {
   }
 }
 
+function toggleCampaignDropdown() {
+  if (showCampaignDropdown.value) {
+    showCampaignDropdown.value = false;
+  } else {
+    showIntroDropdown.value = false;
+    showOutroDropdown.value = false;
+    updateDropdownPosition(campaignButtonRef.value, campaignDropdownPosition);
+    showCampaignDropdown.value = true;
+  }
+}
+
+function selectCampaign(campaign: Campaign) {
+  selectedCampaignId.value = campaign.id;
+  showCampaignDropdown.value = false;
+  
+  // Clear manual intro/outro selection when campaign has its own assets
+  if (campaign.global_intro) {
+    selectedIntroId.value = null;
+  }
+  if (campaign.global_outro) {
+    selectedOutroId.value = null;
+  }
+}
+
 // Platform helpers
 function getPlatformIcon(platformId: string) {
   return availablePlatforms.find((p) => p.id === platformId)?.icon || Instagram;
@@ -1086,6 +1394,43 @@ function getPlatformIcon(platformId: string) {
 
 function getPlatformLabel(platformId: string) {
   return availablePlatforms.find((p) => p.id === platformId)?.label || platformId;
+}
+
+function getDefaultAspectRatioForPlatform(platformId: string): string {
+  // Smart defaults based on platform
+  const defaults: Record<string, string> = {
+    instagram: '9:16',
+    tiktok: '9:16',
+    twitter: '16:9',
+    youtube: '16:9',
+  };
+  const defaultRatio = defaults[platformId] || '16:9';
+  // Return default if it's in selected ratios, otherwise return first selected ratio
+  return selectedRatios.value.includes(defaultRatio) ? defaultRatio : selectedRatios.value[0];
+}
+
+function togglePlatform(platformId: string) {
+  if (platformConfigs.value[platformId]) {
+    // Remove platform
+    const { [platformId]: _, ...rest } = platformConfigs.value;
+    platformConfigs.value = rest;
+  } else {
+    // Add platform with default aspect ratio and empty account
+    platformConfigs.value[platformId] = {
+      aspectRatio: getDefaultAspectRatioForPlatform(platformId),
+      accountId: '',
+    };
+  }
+}
+
+function updatePlatformAspectRatio(platformId: string, aspectRatio: string) {
+  if (platformConfigs.value[platformId]) {
+    platformConfigs.value[platformId].aspectRatio = aspectRatio;
+  }
+}
+
+function isPlatformSelected(platformId: string): boolean {
+  return !!platformConfigs.value[platformId];
 }
 
 function getOrgAccountsForPlatform(platformId: string): SocialAccount[] {
@@ -1113,23 +1458,203 @@ function getPersonalAccountsForPlatform(platformId: string): (UserTwitterAccount
   }
 }
 
+function toggleAccountDropdown(platformId: string) {
+  if (activeAccountDropdown.value === platformId) {
+    activeAccountDropdown.value = null;
+  } else {
+    activeAccountDropdown.value = platformId;
+  }
+}
+
+function selectAccount(platformId: string, accountValue: string) {
+  if (platformConfigs.value[platformId]) {
+    platformConfigs.value[platformId].accountId = accountValue;
+  }
+  activeAccountDropdown.value = null;
+}
+
+function getSelectedAccountLabel(platformId: string): string | null {
+  const config = platformConfigs.value[platformId];
+  if (!config?.accountId) return null;
+
+  const [type, idStr] = config.accountId.split(':');
+  const id = parseInt(idStr);
+
+  if (type === 'org') {
+    const account = getOrgAccountsForPlatform(platformId).find(a => a.id === id);
+    return account ? `@${account.username}` : null;
+  } else if (type === 'user') {
+    const accounts = getPersonalAccountsForPlatform(platformId);
+    const account = accounts.find(a => a.id === id);
+    return account ? `@${account.username}` : null;
+  }
+
+  return null;
+}
+
 // Build process
 async function startBuildProcess() {
   if (!props.clip || !props.projectId) return;
+
+  console.warn('[QuickPublishWizard] Starting build process...');
+  console.warn('[QuickPublishWizard] Clip:', props.clip);
+  console.warn('[QuickPublishWizard] Clip path:', props.clipPath);
+  console.warn('[QuickPublishWizard] Project ID:', props.projectId);
+  console.warn('[QuickPublishWizard] Selected intro:', selectedIntro.value);
+  console.warn('[QuickPublishWizard] Selected outro:', selectedOutro.value);
+
+  // Download org intro/outro assets if needed (same logic as ClipsTab.vue)
+  let introForBuild = selectedIntro.value;
+  let outroForBuild = selectedOutro.value;
+  
+  // Start with watermark from props (personal/session watermark)
+  let watermarkForBuild = props.watermarkSettings || null;
+
+  // Handle campaign watermark override (same logic as ClipsTab.vue lines 2622-2657)
+  if (isForCampaign.value && selectedCampaign.value) {
+    const campaign = selectedCampaign.value;
+    console.warn('[QuickPublishWizard] Applying campaign branding for:', campaign.title);
+
+    const campaignCreatorProfile = campaign.creator_profiles?.[0] || campaign.creator_profile;
+    if (campaignCreatorProfile?.watermark?.url) {
+      try {
+        const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
+        const filePath = await invoke<string>('download_org_asset_from_url', {
+          url: campaignCreatorProfile.watermark.url,
+          filename,
+          assetType: 'watermarks',
+          organizationId: String(campaign.organization_id),
+        });
+        let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+        if (campaignCreatorProfile.watermark_settings) {
+          try {
+            const wmSettings = typeof campaignCreatorProfile.watermark_settings === 'string'
+              ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
+              : campaignCreatorProfile.watermark_settings;
+            const ratioConfig = wmSettings['16:9'];
+            if (ratioConfig?.position) defaultPos = ratioConfig.position;
+          } catch (e) {
+            console.warn('[QuickPublishWizard] Failed to parse campaign watermark settings:', e);
+          }
+        }
+        watermarkForBuild = {
+          enabled: true,
+          watermarkId: `org-asset-${campaignCreatorProfile.watermark.id}`,
+          positionX: defaultPos.x,
+          positionY: defaultPos.y,
+          opacity: defaultPos.opacity,
+          scale: defaultPos.scale,
+          perRatioSettings: (campaignCreatorProfile.watermark_settings as any) ?? null,
+        };
+        console.warn('[QuickPublishWizard] Campaign watermark applied:', campaignCreatorProfile.watermark.name);
+      } catch (e) {
+        console.warn('[QuickPublishWizard] Failed to download campaign watermark:', e);
+      }
+    } else if (isForCampaign.value) {
+      // Campaign selected but no watermark - clear any existing watermark
+      watermarkForBuild = null;
+      console.warn('[QuickPublishWizard] Campaign has no watermark, clearing watermark');
+    }
+
+    // Save campaign_id to the clip for payment tracking
+    if (props.clip) {
+      try {
+        const { updateClip } = await import('@/services/database/clips');
+        await updateClip(props.clip.id, { campaign_id: selectedCampaignId.value });
+        console.warn('[QuickPublishWizard] Saved campaign_id', selectedCampaignId.value, 'to clip', props.clip.id);
+      } catch (e) {
+        console.warn('[QuickPublishWizard] Failed to save campaign_id to clip:', e);
+      }
+    }
+  }
+
+  console.warn('[QuickPublishWizard] Watermark for build:', watermarkForBuild);
+
+  // Download org intro if needed
+  if (selectedIntro.value) {
+    const introAny = selectedIntro.value as any;
+    if (introAny.isOrgAsset && introAny.serverId) {
+      console.warn('[QuickPublishWizard] Downloading org intro asset on-demand:', selectedIntro.value.name);
+      try {
+        const introResult = await ensureAssetDownloaded({
+          id: introAny.serverId,
+          name: selectedIntro.value.name,
+          asset_type: 'intro',
+          url: introAny.serverUrl || selectedIntro.value.file_path,
+          organization_id: Number(introAny.organization_id),
+          organization_name: introAny.organization_name || undefined,
+          duration: selectedIntro.value.duration || undefined,
+          thumbnail_url: introAny.thumbnail_path || undefined,
+          inserted_at: introAny.created_at,
+          updated_at: introAny.updated_at,
+        } as unknown as ServerOrganizationAsset);
+
+        if (introResult.success && introResult.filePath) {
+          introForBuild = {
+            ...selectedIntro.value,
+            file_path: introResult.filePath,
+          };
+          console.warn('[QuickPublishWizard] Org intro downloaded to:', introResult.filePath);
+        } else {
+          throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        console.error('[QuickPublishWizard] Failed to download intro:', err);
+        throw err;
+      }
+    }
+  }
+
+  // Download org outro if needed
+  if (selectedOutro.value) {
+    const outroAny = selectedOutro.value as any;
+    if (outroAny.isOrgAsset && outroAny.serverId) {
+      console.warn('[QuickPublishWizard] Downloading org outro asset on-demand:', selectedOutro.value.name);
+      try {
+        const outroResult = await ensureAssetDownloaded({
+          id: outroAny.serverId,
+          name: selectedOutro.value.name,
+          asset_type: 'outro',
+          url: outroAny.serverUrl || selectedOutro.value.file_path,
+          organization_id: Number(outroAny.organization_id),
+          organization_name: outroAny.organization_name || undefined,
+          duration: selectedOutro.value.duration || undefined,
+          thumbnail_url: outroAny.thumbnail_path || undefined,
+          inserted_at: outroAny.created_at,
+          updated_at: outroAny.updated_at,
+        } as unknown as ServerOrganizationAsset);
+
+        if (outroResult.success && outroResult.filePath) {
+          outroForBuild = {
+            ...selectedOutro.value,
+            file_path: outroResult.filePath,
+          };
+          console.warn('[QuickPublishWizard] Org outro downloaded to:', outroResult.filePath);
+        } else {
+          throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
+        }
+      } catch (err) {
+        console.error('[QuickPublishWizard] Failed to download outro:', err);
+        throw err;
+      }
+    }
+  }
 
   const settings = {
     aspectRatios: [...selectedRatios.value],
     quality: quality.value,
     frameRate: frameRate.value,
     format: outputFormat.value,
-    intro: selectedIntro.value,
-    outro: selectedOutro.value,
-    watermark: props.watermarkSettings || null,
+    intro: introForBuild,
+    outro: outroForBuild,
+    watermark: watermarkForBuild,
     framingMode: hasPortraitRatio.value ? 'manual' as const : undefined,
     manualFramingConfigs: hasPortraitRatio.value ? manualFramingConfigs.value : undefined,
     campaignId: isForCampaign.value && selectedCampaignId.value ? selectedCampaignId.value : null,
     selectedCampaign: isForCampaign.value ? selectedCampaign.value : null,
   };
+
+  console.warn('[QuickPublishWizard] Build settings (after download):', settings);
 
   try {
     await buildPipeline.startBuild({
@@ -1157,18 +1682,35 @@ async function handlePublish() {
   if (!canPublish.value) return;
 
   const targets: PublishTarget[] = [];
+  const platformToRatioMap: Record<string, string> = {};
+  
   for (const platformId of selectedPublishPlatforms.value) {
-    const accountValue = platformAccounts.value[platformId];
-    if (!accountValue) continue;
-    const [accountType, accountIdStr] = accountValue.split(':');
+    const config = platformConfigs.value[platformId];
+    if (!config?.accountId) continue;
+    
+    const [accountType, accountIdStr] = config.accountId.split(':');
     targets.push({
       platformId,
       accountType: accountType as 'org' | 'user',
       accountId: Number(accountIdStr),
     });
+    
+    // Store platform to aspect ratio mapping
+    platformToRatioMap[platformId] = config.aspectRatio;
   }
 
-  backgroundPublish.queuePublish(targets, caption.value, orgId.value, buildState.value.thumbnailPath);
+  backgroundPublish.queuePublish(
+    targets,
+    caption.value,
+    orgId.value,
+    buildState.value.thumbnailPath,
+    {
+      creatorProfileId: props.creatorProfileServerId ?? undefined,
+      campaignId: isForCampaign.value && selectedCampaignId.value ? selectedCampaignId.value : undefined,
+      platformToRatioMap,
+    }
+  );
+  hasQueuedBackgroundPublish.value = true;
   
   // Close dialog immediately
   emit('published');
@@ -1179,7 +1721,9 @@ async function handlePublish() {
 function handleClose() {
   if (isBuilding.value) return;
   buildPipeline.cleanup();
-  backgroundPublish.reset();
+  if (!hasQueuedBackgroundPublish.value) {
+    backgroundPublish.reset();
+  }
   emit('close');
   emit('update:modelValue', false);
 }
@@ -1187,8 +1731,10 @@ function handleClose() {
 // Load data
 async function loadIntroOutros() {
   loadingAssets.value = true;
+  console.warn('[QuickPublishWizard] Loading intro/outro assets...');
   try {
     const localAssets = await getAllIntroOutros();
+    console.warn('[QuickPublishWizard] Local assets loaded:', localAssets.length, localAssets);
     const localIntros: IntroOutroItem[] = localAssets
       .filter((a) => a.type === 'intro' && !a.organization_id)
       .map((a) => ({ ...a, isOrgAsset: false }));
@@ -1201,16 +1747,18 @@ async function loadIntroOutros() {
 
     const user = authStore.user;
     const hasOrganizations = user && (user.owned_organization_id || user.created_by_organization_id);
+    console.log('[QuickPublishWizard] User has organizations:', hasOrganizations, 'owned:', user?.owned_organization_id, 'created_by:', user?.created_by_organization_id);
     if (hasOrganizations) {
       try {
         const serverResponse = await getUserOrganizationAssets();
+        console.log('[QuickPublishWizard] Organization assets response:', serverResponse);
         if (serverResponse.success) {
           orgIntros = serverResponse.assets
             .filter((a: ServerOrganizationAsset) => a.asset_type === 'intro')
             .map((a: ServerOrganizationAsset) => ({
               id: `org_${a.id}`,
               name: a.name,
-              file_path: a.url,
+              file_path: a.url, // Remote URL - will be downloaded before build in startBuildProcess
               type: 'intro' as const,
               duration: a.duration || null,
               thumbnail_path: a.thumbnail_url || null,
@@ -1228,7 +1776,7 @@ async function loadIntroOutros() {
             .map((a: ServerOrganizationAsset) => ({
               id: `org_${a.id}`,
               name: a.name,
-              file_path: a.url,
+              file_path: a.url, // Remote URL - will be downloaded before build in startBuildProcess
               type: 'outro' as const,
               duration: a.duration || null,
               thumbnail_path: a.thumbnail_url || null,
@@ -1249,17 +1797,20 @@ async function loadIntroOutros() {
 
     intros.value = [...orgIntros, ...localIntros];
     outros.value = [...orgOutros, ...localOutros];
+    console.warn('[QuickPublishWizard] Final intros:', intros.value.length, 'outros:', outros.value.length);
   } catch (error) {
-    console.error('Failed to load assets:', error);
+    console.error('[QuickPublishWizard] Failed to load assets:', error);
   } finally {
     loadingAssets.value = false;
   }
 }
 
 async function loadAvailableCampaigns() {
+  console.warn('[QuickPublishWizard] Loading campaigns... creatorProfileServerId:', props.creatorProfileServerId);
   try {
     const results: Campaign[] = [];
     const globalRes = await getMyGlobalBrandingCampaigns();
+    console.warn('[QuickPublishWizard] Global campaigns response:', globalRes);
     if (globalRes.success && globalRes.campaigns) {
       results.push(...globalRes.campaigns);
     }
@@ -1274,6 +1825,7 @@ async function loadAvailableCampaigns() {
       }
     }
     availableCampaigns.value = results;
+    console.warn('[QuickPublishWizard] Final campaigns:', results.length, results);
   } catch (e) {
     console.warn('[QuickPublishWizard] Failed to load campaigns:', e);
     availableCampaigns.value = [];
@@ -1356,7 +1908,10 @@ function formatDuration(seconds: number): string {
 watch(
   () => props.modelValue,
   async (isOpen) => {
+    console.warn('[QuickPublishWizard] modelValue changed:', isOpen);
     if (isOpen) {
+      console.warn('[QuickPublishWizard] Dialog opened, loading data...');
+      hasQueuedBackgroundPublish.value = false;
       currentStep.value = 'platforms';
       selectedRatios.value = ['16:9'];
       quality.value = 'high';
@@ -1367,12 +1922,13 @@ watch(
       selectedOutroId.value = null;
       isForCampaign.value = false;
       selectedCampaignId.value = null;
-      selectedPublishPlatforms.value = [];
-      platformAccounts.value = {};
+      platformConfigs.value = {};
       caption.value = '';
       
       buildPipeline.reset();
-      backgroundPublish.reset();
+      if (!hasQueuedBackgroundPublish.value) {
+        backgroundPublish.reset();
+      }
       
       await Promise.all([
         loadIntroOutros(),
@@ -1380,8 +1936,10 @@ watch(
         loadAccounts(),
         loadVideoFrame(),
       ]);
+      console.warn('[QuickPublishWizard] All data loaded. intros:', intros.value.length, 'outros:', outros.value.length, 'campaigns:', availableCampaigns.value.length);
     }
-  }
+  },
+  { immediate: true }
 );
 
 // Handle framing step visibility
@@ -1395,6 +1953,7 @@ watch(
 );
 
 onMounted(() => {
+  console.warn('[QuickPublishWizard] Component mounted');
   document.addEventListener('click', handleClickOutside);
 });
 
@@ -1404,7 +1963,7 @@ onUnmounted(() => {
 });
 </script>
 
-<style>
+<style scoped>
 /* ===== Overlay ===== */
 .build-dialog__overlay {
   position: fixed;
@@ -2039,6 +2598,17 @@ onUnmounted(() => {
   box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
 }
 
+.build-dialog__dropdown-trigger--locked {
+  opacity: 0.7;
+  cursor: not-allowed;
+  background-color: rgba(6, 182, 212, 0.1);
+  border-color: rgba(6, 182, 212, 0.3);
+}
+
+.build-dialog__dropdown-trigger--locked:hover {
+  border-color: rgba(6, 182, 212, 0.3);
+}
+
 .build-dialog__dropdown-text {
   flex: 1;
   white-space: nowrap;
@@ -2059,92 +2629,238 @@ onUnmounted(() => {
   transform: rotate(180deg);
 }
 
-.build-dialog__dropdown-menu {
-  position: fixed;
-  background-color: var(--sidebar-surface);
+.build-dialog__dropdown-text--placeholder {
+  color: var(--sidebar-text-muted);
+  opacity: 0.7;
+}
+
+/* ===== Campaign Section ===== */
+.build-dialog__campaign-section {
+  padding: 0.875rem;
+  background-color: var(--sidebar-hover);
   border: 1px solid var(--sidebar-border);
   border-radius: 8px;
-  padding: 0.25rem;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-  z-index: 9999;
-  overflow-y: auto;
+  gap: 0;
 }
 
-.build-dialog__dropdown-menu::-webkit-scrollbar {
-  width: 6px;
-}
-
-.build-dialog__dropdown-menu::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.build-dialog__dropdown-menu::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-}
-
-.build-dialog__dropdown-item {
-  display: block;
+.build-dialog__campaign-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
   width: 100%;
-  text-align: left;
-  padding: 0.625rem 0.75rem;
-  border-radius: 5px;
-  font-size: 0.875rem;
-  color: var(--sidebar-text);
   background: transparent;
   border: none;
+  padding: 0;
   cursor: pointer;
-  transition: background-color 150ms ease;
+  text-align: left;
+  color: var(--sidebar-text);
 }
 
-.build-dialog__dropdown-item:hover {
-  background-color: var(--sidebar-hover);
-}
-
-.build-dialog__dropdown-item--first {
-  border-bottom: 1px solid var(--sidebar-border);
-  border-radius: 5px 5px 0 0;
-  margin-bottom: 0.25rem;
-}
-
-.build-dialog__dropdown-item--selected {
-  background-color: rgba(6, 182, 212, 0.15);
-  color: var(--sidebar-accent);
-}
-
-.build-dialog__dropdown-item-content {
+.build-dialog__campaign-checkbox {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid var(--sidebar-border);
+  background-color: var(--sidebar-surface);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 150ms ease;
+  margin-top: 1px;
 }
 
-.build-dialog__dropdown-item-left {
+.build-dialog__campaign-checkbox--checked {
+  background-color: var(--sidebar-accent);
+  border-color: var(--sidebar-accent);
+}
+
+.build-dialog__campaign-checkbox-icon {
+  width: 11px;
+  height: 11px;
+  color: #000;
+}
+
+.build-dialog__campaign-toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.build-dialog__campaign-toggle-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex: 1;
-  overflow: hidden;
 }
 
-.build-dialog__dropdown-item-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.build-dialog__dropdown-item-duration {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  margin-left: 0.5rem;
+.build-dialog__campaign-toggle-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--sidebar-accent);
   flex-shrink: 0;
 }
 
-.build-dialog__dropdown-loading,
-.build-dialog__dropdown-empty {
-  padding: 0.625rem 0.75rem;
-  font-size: 0.875rem;
-  text-align: center;
+.build-dialog__campaign-toggle-hint {
+  font-size: 0.75rem;
   color: var(--sidebar-text-muted);
+  line-height: 1.4;
+}
+
+.build-dialog__campaign-picker {
+  margin-top: 0.875rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--sidebar-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.build-dialog__campaign-selected {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.build-dialog__campaign-selected-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: var(--sidebar-surface);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.build-dialog__campaign-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.build-dialog__campaign-cover-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--sidebar-text-muted);
+}
+
+.build-dialog__campaign-selected-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.build-dialog__campaign-selected-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.build-dialog__campaign-selected-org {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+}
+
+.build-dialog__campaign-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+}
+
+.build-dialog__campaign-item-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: var(--sidebar-hover);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.build-dialog__campaign-item-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.build-dialog__campaign-item-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.build-dialog__campaign-item-org {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+}
+
+.build-dialog__campaign-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  background-color: rgba(6, 182, 212, 0.08);
+  border: 1px solid rgba(6, 182, 212, 0.15);
+  border-radius: 6px;
+}
+
+.build-dialog__campaign-notice-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: var(--sidebar-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #000;
+  margin-top: 1px;
+}
+
+.build-dialog__campaign-notice-text {
+  font-size: 0.8125rem;
+  color: var(--sidebar-accent);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.build-dialog__badge--global {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: rgb(134, 239, 172);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+/* Slide-fade transition for campaign picker */
+.slide-fade-enter-active {
+  transition: all 200ms ease-out;
+}
+
+.slide-fade-leave-active {
+  transition: all 150ms ease-in;
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 
 .build-dialog__duration-summary {
@@ -2187,6 +2903,12 @@ onUnmounted(() => {
   background-color: rgba(99, 102, 241, 0.2);
   color: rgb(165, 180, 252);
   border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.build-dialog__badge--campaign {
+  background-color: rgba(6, 182, 212, 0.2);
+  color: rgb(103, 232, 249);
+  border: 1px solid rgba(6, 182, 212, 0.3);
 }
 
 .build-dialog__badge--org-small {
@@ -2442,10 +3164,16 @@ onUnmounted(() => {
   transition: width 200ms ease;
 }
 
-.schedule-dialog__platforms {
+.schedule-dialog__platform-configs {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.schedule-dialog__platform-config-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .schedule-dialog__platform-option {
@@ -2460,6 +3188,7 @@ onUnmounted(() => {
   transition: all 150ms ease;
   font-size: 0.8125rem;
   color: var(--sidebar-text);
+  min-width: 140px;
 }
 
 .schedule-dialog__platform-option:hover {
@@ -2473,6 +3202,47 @@ onUnmounted(() => {
 
 .schedule-dialog__checkbox {
   display: none;
+}
+
+.schedule-dialog__aspect-ratio-selector {
+  flex: 1;
+  max-width: 120px;
+}
+
+.schedule-dialog__aspect-ratio-select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  color: var(--sidebar-text);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all 150ms ease;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  padding-right: 2rem;
+}
+
+.schedule-dialog__aspect-ratio-select:hover {
+  border-color: rgba(6, 182, 212, 0.4);
+}
+
+.schedule-dialog__aspect-ratio-select:focus {
+  outline: none;
+  border-color: var(--sidebar-accent);
+}
+
+.schedule-dialog__aspect-ratio-badge {
+  padding: 0.5rem 0.75rem;
+  background-color: rgba(6, 182, 212, 0.15);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  color: var(--sidebar-accent);
+  font-weight: 500;
 }
 
 .schedule-dialog__field-hint {
@@ -2506,6 +3276,12 @@ onUnmounted(() => {
   color: var(--sidebar-text);
 }
 
+.schedule-dialog__account-aspect-ratio {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  margin-left: 0.25rem;
+}
+
 .schedule-dialog__dropdown-wrapper {
   flex: 1;
 }
@@ -2532,6 +3308,76 @@ onUnmounted(() => {
 .schedule-dialog__textarea:focus {
   outline: none;
   border-color: var(--sidebar-accent);
+}
+
+.schedule-dialog__select-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  text-align: left;
+}
+
+.schedule-dialog__select-button:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.schedule-dialog__dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.schedule-dialog__dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.schedule-dialog__dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.schedule-dialog__dropdown::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.schedule-dialog__dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.8125rem;
+  color: var(--sidebar-text);
+  background: transparent;
+  border: none;
+  transition: background-color 150ms ease;
+  cursor: pointer;
+}
+
+.schedule-dialog__dropdown-item:hover {
+  background-color: var(--sidebar-hover);
+}
+
+.schedule-dialog__dropdown-item--selected {
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+}
+
+.schedule-dialog__dropdown-group-label {
+  padding: 0.5rem 0.875rem 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--sidebar-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .schedule-dialog__caption-info {
@@ -2621,5 +3467,164 @@ onUnmounted(() => {
   .build-dialog__footer {
     padding: 0.875rem 1.25rem;
   }
+}
+</style>
+
+<!-- Non-scoped styles for teleported dropdown menus -->
+<style>
+.build-dialog__dropdown-menu {
+  position: fixed;
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  padding: 0.25rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  z-index: 10001;
+  overflow-y: auto;
+}
+
+.build-dialog__dropdown-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.build-dialog__dropdown-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.build-dialog__dropdown-menu::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.build-dialog__dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.625rem 0.75rem;
+  border-radius: 5px;
+  font-size: 0.875rem;
+  color: var(--sidebar-text);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.build-dialog__dropdown-item:hover {
+  background-color: var(--sidebar-hover);
+}
+
+.build-dialog__dropdown-item--first {
+  border-bottom: 1px solid var(--sidebar-border);
+  border-radius: 5px 5px 0 0;
+  margin-bottom: 0.25rem;
+}
+
+.build-dialog__dropdown-item--selected {
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+}
+
+.build-dialog__dropdown-item-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.build-dialog__dropdown-item-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  overflow: hidden;
+}
+
+.build-dialog__dropdown-item-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.build-dialog__dropdown-item-duration {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  flex-shrink: 0;
+}
+
+.build-dialog__dropdown-loading {
+  padding: 0.75rem;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--sidebar-text-muted);
+}
+
+/* Campaign dropdown items */
+.build-dialog__campaign-item {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.625rem 0.75rem;
+}
+
+.build-dialog__campaign-item-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  overflow: hidden;
+  background-color: var(--sidebar-hover);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.build-dialog__campaign-item-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.build-dialog__campaign-item-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.build-dialog__campaign-item-org {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+}
+
+.build-dialog__campaign-cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.build-dialog__campaign-cover-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--sidebar-text-muted);
+}
+
+.build-dialog__badge--global {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: rgb(134, 239, 172);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.build-dialog__badge-icon {
+  width: 10px;
+  height: 10px;
 }
 </style>

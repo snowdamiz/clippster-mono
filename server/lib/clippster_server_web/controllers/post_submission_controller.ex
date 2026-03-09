@@ -315,6 +315,55 @@ defmodule ClippsterServerWeb.PostSubmissionController do
   end
 
   @doc """
+  POST /api/organizations/:organization_id/posts/presigned-upload
+
+  Generates a presigned URL for direct client-to-R2 upload.
+  This avoids server HTTP timeouts for large files.
+
+  Accepts JSON with:
+  - filename: The filename (e.g. "clip.mp4")
+  - content_type: Optional content type (defaults to "video/mp4")
+
+  Returns presigned upload URL and final media URL.
+  """
+  def get_presigned_upload_url(conn, %{"organization_id" => org_id} = params) do
+    user = conn.assigns.current_user
+
+    if Organizations.is_member?(org_id, user.id) do
+      filename = params["filename"] || "video.mp4"
+      content_type = params["content_type"] || "video/mp4"
+
+      # Generate unique key for the file
+      ext = Path.extname(filename) |> String.downcase()
+      timestamp = DateTime.utc_now() |> DateTime.to_unix()
+      unique_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+      key = "social-media/#{org_id}/#{timestamp}_#{unique_id}#{ext}"
+
+      case ClippsterServer.Storage.generate_presigned_upload_url(key,
+             content_type: content_type,
+             expires_in: 600
+           ) do
+        {:ok, %{upload_url: upload_url, media_url: media_url}} ->
+          json(conn, %{
+            success: true,
+            upload_url: upload_url,
+            media_url: media_url,
+            thumbnail_url: nil
+          })
+
+        {:error, reason} ->
+          conn
+          |> put_status(500)
+          |> json(%{success: false, error: "Failed to generate presigned URL: #{inspect(reason)}"})
+      end
+    else
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Not a member of this organization"})
+    end
+  end
+
+  @doc """
   Upload media for a post submission.
   POST /organizations/:organization_id/posts/upload-media
 

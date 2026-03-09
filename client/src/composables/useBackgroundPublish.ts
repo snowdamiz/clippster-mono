@@ -1,8 +1,8 @@
 import { ref } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '@/composables/useToast';
-import { uploadMediaForPost, publishPost } from '@/services/socialAccountsApi';
-import { uploadUserMediaForPost, publishToUserInstagram } from '@/services/userInstagramApi';
+import { publishPost, uploadMediaForPost } from '@/services/socialAccountsApi';
+import { publishToUserInstagram, uploadUserMediaForPost } from '@/services/userInstagramApi';
 import { publishToUserTwitter } from '@/services/userTwitterApi';
 import { publishToUserTiktok } from '@/services/userTiktokApi';
 import { publishToUserYoutube } from '@/services/userYoutubeApi';
@@ -11,6 +11,11 @@ export interface PublishTarget {
   platformId: string;
   accountType: 'org' | 'user';
   accountId: number;
+}
+
+export interface BackgroundPublishMetadata {
+  creatorProfileId?: number | null;
+  campaignId?: number | null;
 }
 
 export interface BackgroundPublishState {
@@ -33,23 +38,31 @@ function dataUrlToFile(dataUrl: string, filename: string): File {
   return new File([u8arr], filename, { type: mime });
 }
 
+const sharedState = ref<BackgroundPublishState>({
+  uploadStatus: 'idle',
+  publishStatus: 'idle',
+  uploadError: null,
+  publishResults: [],
+});
+
+let uploadPromise: Promise<{ media_url: string; thumbnail_url?: string }> | null = null;
+let pendingPublish: {
+  targets: PublishTarget[];
+  caption: string;
+  orgId: number | null;
+  thumbnailUrl: string | null;
+  metadata?: BackgroundPublishMetadata;
+} | null = null;
+
+function clearActiveJob() {
+  uploadPromise = null;
+  pendingPublish = null;
+}
+
 export function useBackgroundPublish() {
   const { showToast } = useToast();
 
-  const state = ref<BackgroundPublishState>({
-    uploadStatus: 'idle',
-    publishStatus: 'idle',
-    uploadError: null,
-    publishResults: [],
-  });
-
-  let uploadPromise: Promise<{ media_url: string; thumbnail_url?: string }> | null = null;
-  let pendingPublish: {
-    targets: PublishTarget[];
-    caption: string;
-    orgId: number | null;
-    thumbnailUrl: string | null;
-  } | null = null;
+  const state = sharedState;
 
   async function startUpload(
     outputPath: string,
@@ -58,32 +71,26 @@ export function useBackgroundPublish() {
   ): Promise<void> {
     state.value.uploadStatus = 'uploading';
     state.value.uploadError = null;
+    state.value.publishStatus = 'idle';
+    state.value.publishResults = [];
 
     uploadPromise = (async () => {
-      // Read video file as data URL
+      // Read video file as Blob
       const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath: outputPath });
       const fileName = outputPath.split(/[/\\]/).pop() || 'video.mp4';
       const videoFile = dataUrlToFile(videoDataUrl, fileName);
 
-      // Read thumbnail if available
+      // Read thumbnail if provided
       let thumbnailFile: File | undefined;
       if (thumbnailPath) {
-        try {
-          const thumbPath = thumbnailPath.startsWith('file://')
-            ? thumbnailPath.replace('file://', '')
-            : thumbnailPath;
-          if (thumbPath.startsWith('data:')) {
-            thumbnailFile = dataUrlToFile(thumbPath, 'thumbnail.jpg');
-          } else if (!thumbPath.startsWith('http')) {
-            const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
-            thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
-          }
-        } catch (thumbErr) {
-          console.warn('[BackgroundPublish] Could not read thumbnail:', thumbErr);
-        }
+        const thumbnailDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbnailPath });
+        const thumbnailName = thumbnailPath.split(/[/\\]/).pop() || 'thumbnail.jpg';
+        thumbnailFile = dataUrlToFile(thumbnailDataUrl, thumbnailName);
       }
 
-      // Upload to R2
+      console.log('[BackgroundPublish] Uploading to server (server will upload to R2)...');
+      
+      // Upload via server endpoint (like ScheduleClipDialog does)
       let uploadResult;
       if (orgId) {
         uploadResult = await uploadMediaForPost(orgId, videoFile, thumbnailFile);
@@ -92,13 +99,16 @@ export function useBackgroundPublish() {
       }
 
       if (!uploadResult.success || !uploadResult.media_url) {
-        throw new Error(uploadResult.error || 'Upload failed');
+        throw new Error(uploadResult.error || 'Failed to upload media');
       }
 
-      console.log('[BackgroundPublish] R2 upload complete:', uploadResult.media_url);
+      console.log('[BackgroundPublish] Server upload complete:', uploadResult.media_url);
       state.value.uploadStatus = 'complete';
 
-      return { media_url: uploadResult.media_url, thumbnail_url: uploadResult.thumbnail_url };
+      return { 
+        media_url: uploadResult.media_url, 
+        thumbnail_url: uploadResult.thumbnail_url || undefined 
+      };
     })();
 
     // Handle upload errors
@@ -106,12 +116,19 @@ export function useBackgroundPublish() {
       console.error('[BackgroundPublish] Upload failed:', err);
       state.value.uploadStatus = 'error';
       state.value.uploadError = err instanceof Error ? err.message : String(err);
+      clearActiveJob();
     });
 
     // If there's a pending publish, execute it when upload completes
     uploadPromise.then(() => {
       if (pendingPublish) {
-        executePublish(pendingPublish.targets, pendingPublish.caption, pendingPublish.orgId, pendingPublish.thumbnailUrl);
+        executePublish(
+          pendingPublish.targets,
+          pendingPublish.caption,
+          pendingPublish.orgId,
+          pendingPublish.thumbnailUrl,
+          pendingPublish.metadata
+        );
         pendingPublish = null;
       }
     });
@@ -121,7 +138,8 @@ export function useBackgroundPublish() {
     targets: PublishTarget[],
     caption: string,
     orgId: number | null,
-    thumbnailUrl: string | null
+    thumbnailUrl: string | null,
+    metadata?: BackgroundPublishMetadata
   ): void {
     if (targets.length === 0) {
       console.warn('[BackgroundPublish] No targets to publish to');
@@ -133,10 +151,10 @@ export function useBackgroundPublish() {
 
     // If upload is already complete, publish immediately
     if (state.value.uploadStatus === 'complete' && uploadPromise) {
-      executePublish(targets, caption, orgId, thumbnailUrl);
+      executePublish(targets, caption, orgId, thumbnailUrl, metadata);
     } else {
       // Queue the publish for when upload completes
-      pendingPublish = { targets, caption, orgId, thumbnailUrl };
+      pendingPublish = { targets, caption, orgId, thumbnailUrl, metadata };
     }
   }
 
@@ -144,7 +162,8 @@ export function useBackgroundPublish() {
     targets: PublishTarget[],
     caption: string,
     orgId: number | null,
-    thumbnailUrl: string | null
+    thumbnailUrl: string | null,
+    metadata?: BackgroundPublishMetadata
   ): Promise<void> {
     if (!uploadPromise) {
       showToast('Upload was not started — cannot publish', 'error');
@@ -171,6 +190,7 @@ export function useBackgroundPublish() {
             // Org account — use publishPost
             response = await publishPost(orgId, {
               social_account_id: target.accountId,
+              creator_profile_id: metadata?.creatorProfileId || undefined,
               media_url: mediaUrl,
               caption: caption,
               media_type: 'video',
@@ -184,6 +204,8 @@ export function useBackgroundPublish() {
               caption: caption,
               media_type: 'video' as const,
               thumbnail_url: thumbUrl || undefined,
+              creator_profile_id: metadata?.creatorProfileId || undefined,
+              campaign_id: metadata?.campaignId || undefined,
             };
             switch (target.platformId) {
               case 'twitter':
@@ -234,10 +256,12 @@ export function useBackgroundPublish() {
       if (failedCount > 0) {
         showToast(`Failed to publish to ${failedCount} platform${failedCount !== 1 ? 's' : ''}`, 'error');
       }
+      clearActiveJob();
     } catch (err) {
       console.error('[BackgroundPublish] Background publish failed:', err);
       state.value.publishStatus = 'error';
       showToast('Upload failed — could not publish', 'error');
+      clearActiveJob();
     }
   }
 
@@ -248,8 +272,7 @@ export function useBackgroundPublish() {
       uploadError: null,
       publishResults: [],
     };
-    uploadPromise = null;
-    pendingPublish = null;
+    clearActiveJob();
   }
 
   return {

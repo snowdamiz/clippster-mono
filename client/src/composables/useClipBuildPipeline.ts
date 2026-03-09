@@ -93,8 +93,23 @@ export function useClipBuildPipeline() {
 
       // Create synthetic segment if none found
       if (segments.length === 0) {
-        const startTime = clip.start_time ?? clip.current_version_start_time ?? 0;
-        const endTime = clip.end_time ?? clip.current_version_end_time ?? clip.duration ?? 0;
+        // For clips with a file_path (already extracted clips), use the entire clip file
+        // For clips without file_path (building from source), use clip times
+        let startTime: number;
+        let endTime: number;
+        
+        if (clip.file_path || videoPath) {
+          // This is an already-extracted clip file - use entire file (0 to duration)
+          startTime = 0;
+          endTime = clip.duration ?? 0;
+          console.log('[BuildPipeline] Using entire clip file (already extracted):', { startTime, endTime, duration: clip.duration });
+        } else {
+          // Building from source video - use clip times
+          startTime = clip.start_time ?? clip.current_version_start_time ?? 0;
+          endTime = clip.end_time ?? clip.current_version_end_time ?? clip.duration ?? 0;
+          console.log('[BuildPipeline] Extracting from source video:', { startTime, endTime });
+        }
+        
         if (endTime > startTime) {
           segments = [{
             id: `synthetic-${clipId}`,

@@ -18,11 +18,10 @@
                 <X :size="18" />
               </button>
               <div class="schedule-dialog__icon">
-                <Calendar v-if="!immediateMode" :size="24" />
-                <Share2 v-else :size="24" />
+                <Calendar :size="24" />
               </div>
-              <h2 class="schedule-dialog__title">{{ immediateMode ? 'Publish Clip' : 'Schedule Clip' }}</h2>
-              <p class="schedule-dialog__subtitle">{{ immediateMode ? 'Publish this clip to your social media platforms' : 'Schedule this clip to your social media platforms' }}</p>
+              <h2 class="schedule-dialog__title">Schedule Clip</h2>
+              <p class="schedule-dialog__subtitle">Schedule this clip to your social media platforms</p>
             </div>
 
             <!-- Content -->
@@ -47,8 +46,8 @@
                   </div>
                 </div>
 
-                <!-- Selected Date (hidden in immediate mode) -->
-                <div v-if="!immediateMode" class="schedule-dialog__field">
+                <!-- Selected Date -->
+                <div class="schedule-dialog__field">
                   <label class="schedule-dialog__label">Scheduled Date</label>
                   <div class="schedule-dialog__date-display">
                     <CalendarDays :size="16" />
@@ -81,8 +80,8 @@
                   </p>
                 </div>
 
-                <!-- Time Mode Toggle (hidden in immediate mode) -->
-                <div v-if="selectedPlatforms.length > 1 && !immediateMode" class="schedule-dialog__field">
+                <!-- Time Mode Toggle -->
+                <div v-if="selectedPlatforms.length > 1" class="schedule-dialog__field">
                   <div class="schedule-dialog__toggle-row">
                     <label class="schedule-dialog__label">Same time for all platforms</label>
                     <button
@@ -96,8 +95,8 @@
                   </div>
                 </div>
 
-                <!-- Single Time Picker (Same time for all, hidden in immediate mode) -->
-                <div v-if="(sameTimeForAll || selectedPlatforms.length === 1) && !immediateMode" class="schedule-dialog__field">
+                <!-- Single Time Picker (Same time for all) -->
+                <div v-if="sameTimeForAll || selectedPlatforms.length === 1" class="schedule-dialog__field">
                   <label class="schedule-dialog__label">Time *</label>
                   <CustomTimePicker
                     v-model="globalTime"
@@ -108,8 +107,8 @@
                   </p>
                 </div>
 
-                <!-- Per-Platform Configuration (hidden in immediate mode) -->
-                <div v-else-if="!immediateMode" class="schedule-dialog__field">
+                <!-- Per-Platform Configuration -->
+                <div v-else class="schedule-dialog__field">
                   <label class="schedule-dialog__label">Platform Settings</label>
                   <div class="schedule-dialog__platform-configs">
                     <div
@@ -316,11 +315,8 @@
                 class="schedule-dialog__btn schedule-dialog__btn--primary"
               >
                 <Loader2 v-if="scheduling" :size="16" class="schedule-dialog__spinner" />
-                <template v-else>
-                  <Share2 v-if="immediateMode" :size="16" />
-                  <Calendar v-else :size="16" />
-                </template>
-                {{ scheduling ? (immediateMode ? 'Publishing...' : 'Scheduling...') : (immediateMode ? `Publish Now ${selectedPlatforms.length > 0 ? `(${selectedPlatforms.length})` : ''}` : `Schedule ${selectedPlatforms.length > 0 ? `(${selectedPlatforms.length})` : ''}`) }}
+                <Calendar v-else :size="16" />
+                {{ scheduling ? 'Scheduling...' : `Schedule ${selectedPlatforms.length > 0 ? `(${selectedPlatforms.length})` : ''}` }}
               </button>
             </div>
           </div>
@@ -339,10 +335,11 @@ import CustomTimePicker from '@/components/CustomTimePicker.vue';
 import { useToast } from '@/composables/useToast';
 import { useAuthStore } from '@/stores/auth';
 import { listSocialAccounts, uploadMediaForPost, publishPost, type SocialAccount } from '@/services/socialAccountsApi';
-import { listUserTwitterAccounts, publishToUserTwitter, type UserTwitterAccount } from '@/services/userTwitterApi';
-import { listUserTiktokAccounts, publishToUserTiktok, type UserTiktokAccount } from '@/services/userTiktokApi';
-import { listUserInstagramAccounts, uploadUserMediaForPost, publishToUserInstagram, type UserInstagramAccount } from '@/services/userInstagramApi';
-import { listUserYoutubeAccounts, publishToUserYoutube, type UserYoutubeAccount } from '@/services/userYoutubeApi';
+import { listSocialAccounts as listPostForMeAccounts, type ClipperSocialAccount } from '@/services/clipperProfileApi';
+import { publishToUserTwitter } from '@/services/userTwitterApi';
+import { publishToUserTiktok } from '@/services/userTiktokApi';
+import { publishToUserInstagram, uploadUserMediaForPost } from '@/services/userInstagramApi';
+import { publishToUserYoutube } from '@/services/userYoutubeApi';
 import { schedulePost, updateScheduledPostMedia } from '@/services/schedulingApi';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -355,8 +352,6 @@ interface Props {
   duration?: number;
   projectName?: string;
   selectedDate: Date;
-  // When true, skips date/time picker and publishes immediately (scheduled_at = now + 2 min)
-  immediateMode?: boolean;
 }
 
 const props = defineProps<Props>();
@@ -380,10 +375,7 @@ const availablePlatforms = [
 // State
 const loadingAccounts = ref(true);
 const orgAccounts = ref<SocialAccount[]>([]);
-const personalTwitterAccounts = ref<UserTwitterAccount[]>([]);
-const personalTiktokAccounts = ref<UserTiktokAccount[]>([]);
-const personalInstagramAccounts = ref<UserInstagramAccount[]>([]);
-const personalYoutubeAccounts = ref<UserYoutubeAccount[]>([]);
+const personalAccounts = ref<ClipperSocialAccount[]>([]);
 const selectedPlatforms = ref<string[]>([]);
 const sameTimeForAll = ref(true);
 const globalTime = ref('');
@@ -395,8 +387,6 @@ const error = ref<string | null>(null);
 const successCount = ref(0);
 const openDropdown = ref<string | null>(null);
 
-// Background R2 upload promise (started when dialog opens in immediate mode)
-let immediateUploadPromise: Promise<{ media_url: string; thumbnail_url?: string }> | null = null;
 
 const orgName = computed(() => 'Organization');
 const orgId = computed(() => authStore.user?.owned_organization_id);
@@ -428,13 +418,14 @@ function getOrgAccountsForPlatform(platformId: string) {
 }
 
 function getPersonalAccountsForPlatform(platformId: string) {
-  switch (platformId) {
-    case 'twitter': return personalTwitterAccounts.value.filter(a => a.is_active);
-    case 'tiktok': return personalTiktokAccounts.value.filter(a => a.is_active);
-    case 'instagram': return personalInstagramAccounts.value.filter(a => a.is_active);
-    case 'youtube': return personalYoutubeAccounts.value.filter(a => a.is_active);
-    default: return [];
-  }
+  return personalAccounts.value.filter(a => {
+    const accountPlatform = a.platform.toLowerCase();
+    // Handle Twitter/X naming
+    if (platformId === 'twitter') {
+      return accountPlatform === 'twitter' || accountPlatform === 'x';
+    }
+    return accountPlatform === platformId;
+  });
 }
 
 function toggleDropdown(platformId: string) {
@@ -461,14 +452,8 @@ function getSelectedAccountLabel(platformId: string): string {
     const account = orgAccounts.value.find(a => a.id === Number(id));
     return account ? `@${account.username}` : 'Select account';
   } else if (type === 'user') {
-    const allPersonal = [
-      ...personalTwitterAccounts.value,
-      ...personalTiktokAccounts.value,
-      ...personalInstagramAccounts.value,
-      ...personalYoutubeAccounts.value,
-    ];
-    const account = allPersonal.find(a => a.id === Number(id));
-    return account ? `@${account.username}` : 'Select account';
+    const account = personalAccounts.value.find(a => a.id === Number(id));
+    return account && account.username ? `@${account.username}` : 'Select account';
   }
   return 'Select account';
 }
@@ -506,16 +491,13 @@ const canSchedule = computed(() => {
   if (selectedPlatforms.value.length === 0) return false;
   if (scheduling.value) return false;
   
-  // In immediate mode, skip time validation
-  if (!props.immediateMode) {
-    // Check time validity
-    if (sameTimeForAll.value || selectedPlatforms.value.length === 1) {
-      if (!globalTime.value || !isValidTime(globalTime.value)) return false;
-    } else {
-      for (const platformId of selectedPlatforms.value) {
-        const time = platformTimes.value[platformId];
-        if (!time || !isValidTime(time)) return false;
-      }
+  // Check time validity
+  if (sameTimeForAll.value || selectedPlatforms.value.length === 1) {
+    if (!globalTime.value || !isValidTime(globalTime.value)) return false;
+  } else {
+    for (const platformId of selectedPlatforms.value) {
+      const time = platformTimes.value[platformId];
+      if (!time || !isValidTime(time)) return false;
     }
   }
   
@@ -542,20 +524,18 @@ async function loadAccounts() {
       }
     }
     
-    // Load personal accounts for all platforms
-    const personalLoaders = [
-      listUserTwitterAccounts().then(r => { if (r.success) personalTwitterAccounts.value = r.accounts; }).catch(() => {}),
-      listUserTiktokAccounts().then(r => { if (r.success) personalTiktokAccounts.value = r.accounts; }).catch(() => {}),
-      listUserInstagramAccounts().then(r => { if (r.success) personalInstagramAccounts.value = r.accounts; }).catch(() => {}),
-      listUserYoutubeAccounts().then(r => { if (r.success) personalYoutubeAccounts.value = r.accounts; }).catch(() => {}),
-    ];
-    await Promise.all(personalLoaders);
-    console.log('[ScheduleClipDialog] Personal accounts loaded — Twitter:', personalTwitterAccounts.value.length, 'TikTok:', personalTiktokAccounts.value.length, 'Instagram:', personalInstagramAccounts.value.length, 'YouTube:', personalYoutubeAccounts.value.length);
+    // Load PostForMe personal accounts
+    const postForMeResponse = await listPostForMeAccounts();
+    console.log('[ScheduleClipDialog] PostForMe accounts response:', postForMeResponse);
+    if (postForMeResponse.success) {
+      personalAccounts.value = postForMeResponse.social_accounts;
+      console.log('[ScheduleClipDialog] Personal accounts loaded:', personalAccounts.value);
+    }
   } catch (err) {
     console.error('[ScheduleClipDialog] Failed to load accounts:', err);
   } finally {
     loadingAccounts.value = false;
-    console.log('[ScheduleClipDialog] Accounts loading complete. Org:', orgAccounts.value.length);
+    console.log('[ScheduleClipDialog] Accounts loading complete. Org:', orgAccounts.value.length, 'Personal:', personalAccounts.value.length);
   }
 }
 
@@ -566,124 +546,6 @@ async function handleSchedule() {
   scheduling.value = true;
   
   try {
-    // ── Immediate mode: close dialog, background R2 upload → direct publish via PostForMe ──
-    if (props.immediateMode) {
-      // Collect publish targets before closing
-      const publishTargets: { platformId: string; accountType: string; accountId: number }[] = [];
-      for (const platformId of selectedPlatforms.value) {
-        const accountValue = platformAccounts.value[platformId];
-        if (!accountValue) continue;
-        const [accountType, accountIdStr] = accountValue.split(':');
-        publishTargets.push({ platformId, accountType, accountId: Number(accountIdStr) });
-      }
-
-      if (publishTargets.length === 0) {
-        error.value = 'No accounts selected';
-        scheduling.value = false;
-        return;
-      }
-
-      const captionText = caption.value || '';
-      const thumbnailUrlValue = props.thumbnailUrl;
-      const clipId = props.clipId;
-      const currentOrgId = orgId.value;
-      const uploadPromise = immediateUploadPromise;
-
-      // Close dialog immediately so user can continue working
-      showToast(`Publishing ${publishTargets.length} post${publishTargets.length !== 1 ? 's' : ''} — uploading in background...`, 'success');
-      emit('scheduled');
-      emit('close');
-
-      // Background: await R2 upload, then publish each target via direct endpoints
-      (async () => {
-        try {
-          if (!uploadPromise) {
-            showToast('Upload was not started — cannot publish', 'error');
-            return;
-          }
-
-          console.log('[ScheduleClipDialog] Waiting for R2 upload to finish...');
-          const uploadResult = await uploadPromise;
-          const mediaUrl = uploadResult.media_url;
-          const thumbUrl = uploadResult.thumbnail_url || thumbnailUrlValue;
-          console.log('[ScheduleClipDialog] R2 upload done:', mediaUrl);
-
-          let successfulCount = 0;
-          let failedCount = 0;
-
-          for (const target of publishTargets) {
-            try {
-              let response: any;
-              if (target.accountType === 'org' && currentOrgId) {
-                // Org account — use publishPost
-                response = await publishPost(currentOrgId, {
-                  social_account_id: target.accountId,
-                  media_url: mediaUrl,
-                  caption: captionText,
-                  media_type: 'video',
-                  thumbnail_url: thumbUrl,
-                });
-              } else {
-                // Personal account — use platform-specific endpoint
-                const publishData = {
-                  account_id: target.accountId,
-                  media_url: mediaUrl,
-                  caption: captionText,
-                  media_type: 'video' as const,
-                  thumbnail_url: thumbUrl,
-                };
-                switch (target.platformId) {
-                  case 'twitter':
-                    console.log('[ScheduleClipDialog] Calling publishToUserTwitter with data:', publishData);
-                    response = await publishToUserTwitter(publishData);
-                    console.log('[ScheduleClipDialog] publishToUserTwitter response:', response);
-                    break;
-                  case 'instagram':
-                    response = await publishToUserInstagram(publishData);
-                    break;
-                  case 'tiktok':
-                    response = await publishToUserTiktok(publishData);
-                    break;
-                  case 'youtube':
-                    response = await publishToUserYoutube({ ...publishData, title: captionText || 'Video' });
-                    break;
-                  default:
-                    console.error('[ScheduleClipDialog] Unknown platform:', target.platformId);
-                    failedCount++;
-                    continue;
-                }
-              }
-
-              if (response?.success) {
-                successfulCount++;
-                console.log(`[ScheduleClipDialog] Published to ${target.platformId} successfully`);
-              } else {
-                failedCount++;
-                console.error(`[ScheduleClipDialog] Failed to publish to ${target.platformId}:`, response?.error);
-              }
-            } catch (publishErr) {
-              failedCount++;
-              console.error(`[ScheduleClipDialog] Error publishing to ${target.platformId}:`, publishErr);
-            }
-          }
-
-          if (successfulCount > 0) {
-            showToast(`Published to ${successfulCount} platform${successfulCount !== 1 ? 's' : ''} successfully!`, 'success');
-          }
-          if (failedCount > 0) {
-            showToast(`Failed to publish to ${failedCount} platform${failedCount !== 1 ? 's' : ''}`, 'error');
-          }
-        } catch (err) {
-          console.error('[ScheduleClipDialog] Background publish failed:', err);
-          showToast('Upload failed — could not publish', 'error');
-        }
-      })(); // ← CRITICAL FIX: Actually invoke the async function!
-
-      scheduling.value = false;
-      return;
-    }
-
-    // ── Normal scheduled mode: create scheduled posts, background R2 upload ──
     const scheduledPosts: Promise<any>[] = [];
     const scheduledPostIds: number[] = [];
     
@@ -896,47 +758,6 @@ watch(selectedPlatforms, (newPlatforms) => {
   }
 });
 
-// Start R2 upload in background for immediate mode
-function startImmediateUpload() {
-  console.log('[ScheduleClipDialog] Starting background R2 upload for immediate publish...');
-  immediateUploadPromise = (async () => {
-    const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath: props.mediaUrl });
-    const fileName = props.mediaUrl.split(/[/\\]/).pop() || 'video.mp4';
-    const videoFile = dataUrlToFile(videoDataUrl, fileName);
-
-    let thumbnailFile: File | undefined;
-    if (props.thumbnailUrl) {
-      try {
-        const thumbPath = props.thumbnailUrl.startsWith('file://') 
-          ? props.thumbnailUrl.replace('file://', '') 
-          : props.thumbnailUrl;
-        if (thumbPath.startsWith('data:')) {
-          thumbnailFile = dataUrlToFile(thumbPath, 'thumbnail.jpg');
-        } else if (!thumbPath.startsWith('http')) {
-          const thumbDataUrl = await invoke<string>('read_file_as_data_url', { filePath: thumbPath });
-          thumbnailFile = dataUrlToFile(thumbDataUrl, 'thumbnail.jpg');
-        }
-      } catch (thumbErr) {
-        console.warn('[ScheduleClipDialog] Could not read thumbnail:', thumbErr);
-      }
-    }
-
-    let uploadResult;
-    if (orgId.value) {
-      uploadResult = await uploadMediaForPost(orgId.value, videoFile, thumbnailFile);
-    } else {
-      uploadResult = await uploadUserMediaForPost(videoFile, thumbnailFile);
-    }
-
-    if (!uploadResult.success || !uploadResult.media_url) {
-      throw new Error(uploadResult.error || 'Upload failed');
-    }
-
-    console.log('[ScheduleClipDialog] Background R2 upload complete:', uploadResult.media_url);
-    return { media_url: uploadResult.media_url, thumbnail_url: uploadResult.thumbnail_url };
-  })();
-}
-
 // Reset state when dialog opens
 watch(() => props.open, (isOpen) => {
   console.log('[ScheduleClipDialog] Watch triggered, isOpen:', isOpen);
@@ -948,14 +769,8 @@ watch(() => props.open, (isOpen) => {
     caption.value = '';
     error.value = null;
     successCount.value = 0;
-    immediateUploadPromise = null;
     initializeDefaultTime();
     loadAccounts();
-
-    // In immediate mode, start R2 upload right away while user fills in the form
-    if (props.immediateMode) {
-      startImmediateUpload();
-    }
   }
 }, { immediate: true });
 
