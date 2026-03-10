@@ -17,15 +17,29 @@
       <Video class="h-12 w-12 text-muted-foreground/30" />
     </div>
 
-    <!-- Top left: Build number badge (only show if multiple builds exist) -->
-    <div
-      v-if="showBuildNumber !== false && (showBuildNumber || build.build_number > 1)"
-      class="absolute top-4 left-4 z-10"
-    >
+    <!-- Top left: Campaign/Org badges -->
+    <div class="absolute top-4 left-4 z-10 flex flex-col gap-1.5">
+      <!-- Campaign badge (orange) - only show if branding_type is 'campaign' -->
       <span
-        class="text-xs px-2 py-1 rounded-md border bg-green-600/90 text-white border-green-500 shadow-sm font-medium"
+        v-if="build.branding_type === 'campaign' && build.campaign_name"
+        class="text-xs px-2 py-1 rounded-md border bg-orange-500/90 text-white border-orange-400 shadow-sm font-medium"
+        :title="`Campaign: ${build.campaign_name}`"
+        @click.stop="console.log('[BuildCard] Campaign badge clicked:', { branding_type: build.branding_type, campaign_name: build.campaign_name, organization_name: build.organization_name, build_id: build.id })"
       >
-        Build #{{ build.build_number }}
+        {{ build.campaign_name }}
+      </span>
+      <!-- Org badge (unique color per org) - only show if branding_type is 'org' -->
+      <span
+        v-else-if="build.branding_type === 'org' && build.organization_name"
+        class="text-xs px-2 py-1 rounded-md border text-white shadow-sm font-medium"
+        :style="{
+          backgroundColor: getOrgColor(build.organization_id),
+          borderColor: getOrgColor(build.organization_id, 0.8)
+        }"
+        :title="build.organization_name"
+        @click.stop="console.log('[BuildCard] Org badge clicked:', { branding_type: build.branding_type, campaign_name: build.campaign_name, organization_name: build.organization_name, build_id: build.id })"
+      >
+        {{ build.organization_name }}
       </span>
     </div>
 
@@ -131,6 +145,36 @@
   }>();
 
   const { getRelativeTime } = useFormatters();
+
+  // Generate consistent color for organization based on ID
+  function getOrgColor(orgId: number | null, opacity: number = 0.9): string {
+    if (!orgId) return `rgba(59, 130, 246, ${opacity})`; // Default blue
+    
+    const colors = [
+      '#8B5CF6', // Purple
+      '#3B82F6', // Blue
+      '#10B981', // Green
+      '#F59E0B', // Amber
+      '#EF4444', // Red
+      '#06B6D4', // Cyan
+      '#84CC16', // Lime
+      '#EC4899', // Pink
+      '#6366F1', // Indigo
+      '#14B8A6', // Teal
+      '#A855F7', // Violet
+      '#F97316', // Orange (different from campaign orange)
+    ];
+    
+    const colorIndex = orgId % colors.length;
+    const hex = colors[colorIndex];
+    
+    // Convert hex to rgba with opacity
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+  }
 
   const formattedDate = computed(() => {
     if (props.build.completed_at) {

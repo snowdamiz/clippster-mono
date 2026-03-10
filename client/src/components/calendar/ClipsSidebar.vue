@@ -63,20 +63,22 @@
           
           <!-- Org/Campaign badge -->
           <div
-            v-if="getBadgeInfo(entry.build).type === 'campaign'"
-            class="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-orange-500/90 px-1.5 py-0.5 text-[9px] font-medium text-white"
-            :title="`Campaign: ${getBadgeInfo(entry.build).name}`"
+            v-if="entry.build.branding_type === 'campaign' && entry.build.campaign_name"
+            class="absolute left-1 top-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
+            style="background-color: rgba(249, 115, 22, 0.9);"
+            :title="`Campaign: ${entry.build.campaign_name}`"
           >
             <Briefcase class="size-2.5" />
-            <span class="max-w-[50px] truncate">{{ getBadgeInfo(entry.build).name }}</span>
+            <span class="max-w-[50px] truncate">{{ entry.build.campaign_name }}</span>
           </div>
           <div
-            v-else-if="getBadgeInfo(entry.build).type === 'org'"
-            class="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-blue-500/90 px-1.5 py-0.5 text-[9px] font-medium text-white"
-            :title="getBadgeInfo(entry.build).name"
+            v-else-if="entry.build.branding_type === 'org' && entry.build.organization_name"
+            class="absolute left-1 top-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
+            :style="{ backgroundColor: getOrgColor(entry.build.organization_id) + 'E6' }"
+            :title="entry.build.organization_name"
           >
             <Building2 class="size-2.5" />
-            <span class="max-w-[50px] truncate">{{ getBadgeInfo(entry.build).name }}</span>
+            <span class="max-w-[50px] truncate">{{ entry.build.organization_name }}</span>
           </div>
           
           <!-- Duration badge -->
@@ -213,6 +215,28 @@ function getBadgeInfo(build: ClipBuild): { type: 'org' | 'campaign' | null; name
     return { type: 'org', name: build.organization_name };
   }
   return { type: null, name: '' };
+}
+
+// Generate consistent color for organization based on ID (same palette as run colors)
+function getOrgColor(orgId: number | null): string {
+  if (!orgId) return '#3B82F6'; // Default blue
+  
+  const colors = [
+    '#8B5CF6', // Purple
+    '#3B82F6', // Blue
+    '#10B981', // Green
+    '#F59E0B', // Amber
+    '#EF4444', // Red
+    '#06B6D4', // Cyan
+    '#84CC16', // Lime
+    '#EC4899', // Pink
+    '#6366F1', // Indigo
+    '#14B8A6', // Teal
+    '#A855F7', // Violet
+    '#F97316', // Orange
+  ];
+  
+  return colors[orgId % colors.length];
 }
 
 // Format duration (seconds to MM:SS)

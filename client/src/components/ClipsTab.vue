@@ -2042,18 +2042,7 @@
       // Update database status to building
       await updateClipBuildStatus(clip.id, 'building', { progress: 0 });
 
-      // Create build record to get the build number
-      let buildNumber = 1;
-      try {
-        // Get existing builds to determine the next build number
-        const existingBuilds = await getClipBuilds(clip.id);
-        buildNumber = existingBuilds.length + 1;
-      } catch {
-        // Table might not exist yet
-        buildNumber = 1;
-      }
-
-      // buildId is created per target group inside the loop below
+      // buildId and buildNumber are created per target group inside the loop below
 
       // Get the project video file path
       // IMPORTANT: Always use the original raw video, not build outputs
@@ -2635,15 +2624,47 @@
         brandingProfileId: activeCampaignBrandingProfileId,
       });
 
+      // Calculate build number for this target group
+      let buildNumber = 1;
+      try {
+        // Get existing builds to determine the next build number
+        const existingBuilds = await getClipBuilds(clip.id);
+        buildNumber = existingBuilds.length + 1;
+        console.log('[ClipsTab] Calculated build number for target group', tg.key, ':', buildNumber, '(existing builds:', existingBuilds.length, ')');
+      } catch {
+        // Table might not exist yet
+        buildNumber = 1;
+        console.log('[ClipsTab] Using default build number 1 for target group', tg.key);
+      }
+
       // Create a unique build record for this target group
       let buildId: string | null = null;
       try {
+        const brandingType = tg.campaignId ? 'campaign' : tg.organizationId ? 'org' : 'personal';
+        console.log('[ClipsTab] Build branding data:', {
+          targetGroupKey: tg.key,
+          targetGroupType: tg.type,
+          campaignId: tg.campaignId,
+          organizationId: tg.organizationId,
+          calculatedBrandingType: brandingType,
+          campaignName: tg.selectedCampaign?.title,
+          orgName: tg.target?.type === 'org' ? (tg.target as any).name : (tg.selectedCampaign?.organization?.name || null),
+        });
+        
         buildId = await createClipBuild(clip.id, {
           aspectRatios: targetRatios,
           quality: settings.quality,
           frameRate: settings.frameRate,
           outputFormat: settings.format,
           includeSubtitles: props.subtitleSettings?.enabled ?? false,
+          organizationId: tg.organizationId || null,
+          organizationName: tg.target?.type === 'org' 
+            ? (tg.target as any).name
+            : (tg.selectedCampaign?.organization?.name || null),
+          campaignId: tg.campaignId || null,
+          campaignName: tg.selectedCampaign?.title || null,
+          brandingProfileId: tg.brandingProfileId ? String(tg.brandingProfileId) : null,
+          brandingType: brandingType,
         });
         console.log('[ClipsTab] Created build record for target group', tg.key, ':', buildId, 'build number:', buildNumber);
       } catch (err) {

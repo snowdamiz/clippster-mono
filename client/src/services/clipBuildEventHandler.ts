@@ -19,6 +19,7 @@ import { invoke } from '@tauri-apps/api/core';
 interface ClipBuildCompletePayload {
   clip_id: string;
   project_id: string;
+  build_id: string | null;
   success: boolean;
   output_path: string | null;
   all_output_paths: string[];
@@ -313,13 +314,11 @@ async function handleClipBuildComplete(event: { payload: ClipBuildCompletePayloa
         error: undefined,
       });
 
-      // Also update the clip_builds table - find the most recent building record
+      // Also update the clip_builds table - use build_id from the event to match the correct record
       try {
-        const builds = await getClipBuilds(clip_id);
-        const buildingBuild = builds.find((b) => b.status === 'building');
-        if (buildingBuild) {
-          console.log(`[GlobalClipBuildHandler] Updating clip_builds record: ${buildingBuild.id}`);
-          await updateClipBuild(buildingBuild.id, {
+        if (payload.build_id) {
+          console.log(`[GlobalClipBuildHandler] Updating clip_builds record: ${payload.build_id}`);
+          await updateClipBuild(payload.build_id, {
             status: 'completed',
             progress: 100,
             filePath: output_path || undefined,
@@ -331,7 +330,7 @@ async function handleClipBuildComplete(event: { payload: ClipBuildCompletePayloa
           console.log(`[GlobalClipBuildHandler] clip_builds record updated successfully`);
         } else {
           console.warn(
-            `[GlobalClipBuildHandler] No building record found in clip_builds for clip: ${clip_id}`
+            `[GlobalClipBuildHandler] No build_id in completion event for clip: ${clip_id}`
           );
         }
       } catch (buildError) {

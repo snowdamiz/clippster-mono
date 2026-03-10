@@ -254,7 +254,7 @@ pub async fn build_clip_from_segments(
             &output_format_clone,
             run_number,
             build_number,
-            build_id_clone,
+            build_id_clone.clone(),
             intro_path_clone.as_deref(),
             intro_duration,
             outro_path_clone.as_deref(),
@@ -309,6 +309,7 @@ pub async fn build_clip_from_segments(
                 ClipBuildResult {
                     clip_id: clip_id_clone.clone(),
                     project_id: project_id_clone.clone(),
+                    build_id: build_id_clone.clone(),
                     success: false,
                     output_path: None,
                     all_output_paths: Vec::new(),

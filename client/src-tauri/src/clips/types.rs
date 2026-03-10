@@ -82,6 +82,7 @@ pub struct ClipBuildProgress {
 pub struct ClipBuildResult {
     pub clip_id: String,
     pub project_id: String,
+    pub build_id: Option<String>,
     pub success: bool,
     pub output_path: Option<String>,
     /// All output paths (one per aspect ratio)

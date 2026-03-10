@@ -307,7 +307,7 @@ pub async fn build_clip_internal_simple(
     output_format: &str,
     run_number: Option<u32>,
     build_number: Option<u32>,
-    _build_id: Option<String>,
+    build_id: Option<String>,
     intro_path: Option<&str>,
     intro_duration: Option<f64>,
     outro_path: Option<&str>,
@@ -1286,6 +1286,7 @@ pub async fn build_clip_internal_simple(
     let result = ClipBuildResult {
         clip_id: clip_id.to_string(),
         project_id: project_id.to_string(),
+        build_id,
         success: true,
         output_path: first_output_path,
         all_output_paths: all_output_paths.clone(),
