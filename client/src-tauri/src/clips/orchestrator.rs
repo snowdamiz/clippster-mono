@@ -22,6 +22,7 @@ use super::video_processor::{
     apply_rendered_text_overlays_to_video, apply_stickers_to_video,
     build_clip_with_framing_strategy, build_multi_segment_clip_with_framing_strategy,
     build_multi_segment_clip_with_settings, build_single_segment_clip_with_settings,
+    prepare_intro_outro_for_concat,
 };
 use super::{is_build_cancelled, CancellationToken};
 
@@ -1036,9 +1037,54 @@ pub async fn build_clip_internal_simple(
                         segment_paths.push(segment_output);
                     }
                     
-                    // Concatenate all segments
+                    // Calculate target dimensions for intro/outro reframing
+                    use super::video_info::calculate_crop_params;
+                    let (crop_w, crop_h, _crop_x, _crop_y) = calculate_crop_params(
+                        video_info.width,
+                        video_info.height,
+                        &aspect_ratio
+                    );
+                    
+                    // Prepare intro/outro for concatenation (reframe to match aspect ratio if needed)
+                    let prepared_intro_path = if let Some(ref intro) = effective_intro_path {
+                        let prepared = prepare_intro_outro_for_concat(
+                            &app,
+                            intro,
+                            &temp_dir,
+                            "intro",
+                            &aspect_ratio,
+                            &quality,
+                            frame_rate,
+                            crop_w,
+                            crop_h,
+                            intro_outro_cache.clone(),
+                        ).await?;
+                        Some(prepared.to_string_lossy().to_string())
+                    } else {
+                        None
+                    };
+
+                    let prepared_outro_path = if let Some(ref outro) = effective_outro_path {
+                        let prepared = prepare_intro_outro_for_concat(
+                            &app,
+                            outro,
+                            &temp_dir,
+                            "outro",
+                            &aspect_ratio,
+                            &quality,
+                            frame_rate,
+                            crop_w,
+                            crop_h,
+                            intro_outro_cache.clone(),
+                        ).await?;
+                        Some(prepared.to_string_lossy().to_string())
+                    } else {
+                        None
+                    };
+                    
+                    // Concatenate all segments with prepared intro/outro
                     println!("[Rust] Concatenating {} segments for {}", segment_paths.len(), aspect_ratio_str);
-                    concatenate_videos(&app, &segment_paths, &output_path, effective_intro_path.as_deref(), effective_outro_path.as_deref()).await?;
+                    concatenate_videos(&app, &segment_paths, &output_path, prepared_intro_path.as_deref(), prepared_outro_path.as_deref()).await?;
                     
                     // Apply subtitles to the final concatenated video if needed
                     if let Some(subtitle_path) = final_subtitle_file.as_deref() {

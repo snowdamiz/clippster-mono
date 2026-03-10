@@ -168,17 +168,19 @@ pub async fn build_clip_from_segments(
     println!("[Rust]   campaign_branding_profile_id: {:?}", campaign_branding_profile_id);
     println!("[Rust]   branding_type: {:?}", branding_type);
 
-    // Check if clip is already being built and create cancellation token
+    // Track active build by build_id (allows multiple concurrent builds for same clip
+    // when building for multiple org/campaign targets)
+    let build_key = build_id.clone().unwrap_or_else(|| clip_id.clone());
     let cancel_rx = {
         let mut active_builds = ACTIVE_CLIP_BUILDS.lock().unwrap();
-        if active_builds.contains_key(&clip_id) {
-            return Err(format!("Clip {} is already being built", clip_id));
+        if active_builds.contains_key(&build_key) {
+            return Err(format!("Build {} is already running", build_key));
         }
-        // Create a cancellation channel (false = not cancelled, true = cancelled)
         let (cancel_tx, cancel_rx) = watch::channel(false);
-        active_builds.insert(clip_id.clone(), cancel_tx);
+        active_builds.insert(build_key.clone(), cancel_tx);
         cancel_rx
     };
+    let build_key_clone = build_key.clone();
 
     // Clone app handle for use in async block
     let app_clone = app.clone();
@@ -325,8 +327,8 @@ pub async fn build_clip_from_segments(
         // Clean up active build tracking
         {
             let mut active_builds = ACTIVE_CLIP_BUILDS.lock().unwrap();
-            active_builds.remove(&clip_id_clone);
-            println!("[Rust] Removed from active builds: {}", clip_id_clone);
+            active_builds.remove(&build_key_clone);
+            println!("[Rust] Removed from active builds: {}", build_key_clone);
         }
 
         // Emit completion event
@@ -341,30 +343,47 @@ pub async fn build_clip_from_segments(
     Ok(())
 }
 
-// Cancel clip build
+// Cancel clip build — cancels all active builds for the given clip_id
+// (build keys may be build_ids, so we check if any key matches the clip_id
+// or if the clip_id itself is a key for legacy builds without build_id)
 #[tauri::command]
 pub async fn cancel_clip_build(clip_id: String) -> Result<bool, String> {
     println!("[Rust] Canceling clip build: {}", clip_id);
     let active_builds = ACTIVE_CLIP_BUILDS.lock().unwrap();
+    
+    // Try exact match first (legacy: key is clip_id)
     if let Some(cancel_tx) = active_builds.get(&clip_id) {
-        // Send cancellation signal
         if let Err(e) = cancel_tx.send(true) {
             println!("[Rust] Failed to send cancel signal: {}", e);
             return Err(format!("Failed to cancel: {}", e));
         }
         println!("[Rust] Cancel signal sent for clip: {}", clip_id);
-        Ok(true)
-    } else {
-        println!("[Rust] No active build found for clip: {}", clip_id);
-        Ok(false)
+        return Ok(true);
     }
+    
+    // Cancel all builds (keys are build_ids, we cancel everything)
+    let mut cancelled = false;
+    for (key, cancel_tx) in active_builds.iter() {
+        if let Err(e) = cancel_tx.send(true) {
+            println!("[Rust] Failed to send cancel signal for {}: {}", key, e);
+        } else {
+            println!("[Rust] Cancel signal sent for build: {}", key);
+            cancelled = true;
+        }
+    }
+    
+    if !cancelled {
+        println!("[Rust] No active build found for clip: {}", clip_id);
+    }
+    Ok(cancelled)
 }
 
 // Check if clip build is active
 #[tauri::command]
 pub async fn is_clip_build_active(clip_id: String) -> Result<bool, String> {
     let active_builds = ACTIVE_CLIP_BUILDS.lock().unwrap();
-    Ok(active_builds.contains_key(&clip_id))
+    // Check both exact match and if any build is active
+    Ok(active_builds.contains_key(&clip_id) || !active_builds.is_empty())
 }
 
 // Helper function to check if a build has been cancelled

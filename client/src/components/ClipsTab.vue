@@ -670,7 +670,7 @@
   } from 'lucide-vue-next';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useInEditorClips } from '@/stores/useInEditorClips';
-  import ClipBuildSettingsDialog, { type BuildSettings, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
+  import ClipBuildSettingsDialog, { type BuildSettings, type BuildTarget, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
   import type { AnalyzeSpeakersResponse } from '@/services/speaker-detection-api';
@@ -2053,35 +2053,33 @@
         buildNumber = 1;
       }
 
-      // Create the build record now (before starting the build)
-      let buildId: string | null = null;
-      try {
-        buildId = await createClipBuild(clip.id, {
-          aspectRatios: settings.aspectRatios,
-          quality: settings.quality,
-          frameRate: settings.frameRate,
-          outputFormat: settings.format,
-          includeSubtitles: props.subtitleSettings?.enabled ?? false,
-        });
-        console.log('[ClipsTab] Created build record:', buildId, 'with build number:', buildNumber);
-      } catch (err) {
-        console.warn('[ClipsTab] Could not create build record:', err);
-      }
+      // buildId is created per target group inside the loop below
 
       // Get the project video file path
-      // Manual clips from livestreams have file_path directly (already extracted)
-      // Regular clips need to extract from raw_videos
+      // IMPORTANT: Always use the original raw video, not build outputs
+      // clip.file_path may point to a previous build output (e.g., clip_at_112527_9-16_2.mp4)
+      // which would cause FFmpeg to fail when building different aspect ratios
       let projectVideo: { file_path: string; duration?: number | null };
 
-      if (clip.file_path) {
-        // Manual clip - use the file_path directly (already an extracted video file)
+      // Check if file_path points to a build output directory (contains /run-\d+/ or /clips/)
+      const isBuildOutput = clip.file_path && (
+        clip.file_path.includes('\\run-') || 
+        clip.file_path.includes('/run-') ||
+        clip.file_path.match(/clip_at_\d+_\d+-\d+_\d+\.mp4$/)
+      );
+
+      if (clip.file_path && !isBuildOutput) {
+        // Manual clip with valid source file_path (not a build output)
         console.log('[ClipsTab] Using manual clip file_path:', clip.file_path);
         projectVideo = {
           file_path: clip.file_path,
           duration: clip.duration || undefined,
         };
       } else {
-        // Regular clip - get raw video from project
+        // Get raw video from project (for regular clips or if file_path is a build output)
+        if (isBuildOutput) {
+          console.log('[ClipsTab] Detected build output in file_path, using raw video instead:', clip.file_path);
+        }
         const clipProjectId = clip.project_id || props.projectId;
         if (!clipProjectId) {
           throw new Error('No project ID available for clip');
@@ -2091,6 +2089,7 @@
           throw new Error('No project video found');
         }
         projectVideo = rawVideos[0];
+        console.log('[ClipsTab] Using raw video from project:', projectVideo.file_path);
       }
 
       // IMPORTANT: Reload segments from database to get latest edits from timeline
@@ -2636,6 +2635,21 @@
         brandingProfileId: activeCampaignBrandingProfileId,
       });
 
+      // Create a unique build record for this target group
+      let buildId: string | null = null;
+      try {
+        buildId = await createClipBuild(clip.id, {
+          aspectRatios: targetRatios,
+          quality: settings.quality,
+          frameRate: settings.frameRate,
+          outputFormat: settings.format,
+          includeSubtitles: props.subtitleSettings?.enabled ?? false,
+        });
+        console.log('[ClipsTab] Created build record for target group', tg.key, ':', buildId, 'build number:', buildNumber);
+      } catch (err) {
+        console.warn('[ClipsTab] Could not create build record for target group', tg.key, ':', err);
+      }
+
       // Clone watermarkSettings for this target (so campaign overrides don't leak between groups)
       let targetWatermarkSettings = watermarkSettings ? { ...watermarkSettings } : null;
 
@@ -2645,7 +2659,7 @@
       let campaignOverrideWatermark: WatermarkSettings | null = null;
 
       if (activeCampaignId && tg.selectedCampaign && tg.selectedCampaign.id === activeCampaignId) {
-        const campaign = settings.selectedCampaign;
+        const campaign = tg.selectedCampaign;
         console.log('[ClipsTab] Applying campaign branding for:', campaign.title, '(id:', campaign.id, ')');
 
         if (campaign.global_intro) {
@@ -2797,8 +2811,8 @@
         // Save campaign_id to the clip for payment tracking
         try {
           const { updateClip } = await import('@/services/database/clips');
-          await updateClip(clip.id, { campaign_id: settings.campaignId });
-          console.log('[ClipsTab] Saved campaign_id', settings.campaignId, 'to clip', clip.id);
+          await updateClip(clip.id, { campaign_id: activeCampaignId });
+          console.log('[ClipsTab] Saved campaign_id', activeCampaignId, 'to clip', clip.id);
         } catch (e) {
           console.warn('[ClipsTab] Failed to save campaign_id to clip:', e);
         }
@@ -2806,11 +2820,9 @@
       // ── End Campaign Branding Override ───────────────────────────────────────
 
       // ── Org Branding Resolution ─────────────────────────────────────────────
-      // When building for an org target (not campaign), resolve intro/outro from
-      // the org's branding profile since props.creatorDefaultOutro may be from a
-      // different profile than the one selected in the build dialog.
       let orgOverrideIntro: IntroOutroRef | null = null;
       let orgOverrideOutro: IntroOutroRef | null = null;
+      let targetResolvedProfile: any = null; // Stores resolved profile for layout_overlays
 
       if (!activeCampaignId && activeBrandingType === 'org') {
         try {
@@ -2846,6 +2858,7 @@
             const matched = streamerMatch || globalMatch;
             if (matched) {
               profile = matched.profile;
+              targetResolvedProfile = profile;
               console.log('[ClipsTab] Org branding: resolved via platform links:', profile.name, '(source:', matched.source, ')');
             } else {
               console.log('[ClipsTab] Org branding: no matching profile found via resolveApplicableProfiles');
@@ -2902,9 +2915,7 @@
       const effectiveIntro = campaignOverrideIntro ?? orgOverrideIntro ?? (activeCampaignId ? null : (props.creatorDefaultIntro || settings.intro));
       const effectiveOutro = campaignOverrideOutro ?? orgOverrideOutro ?? (activeCampaignId ? null : (props.creatorDefaultOutro || settings.outro));
       // If campaign selected, use campaign watermark; otherwise clear org watermark (don't leak org branding into campaign builds)
-      // IMPORTANT: Also update the local watermarkSettings variable that gets passed to Rust
       if (activeCampaignId && campaignOverrideWatermark) {
-        (settings as any).watermark = campaignOverrideWatermark;
         // Re-resolve watermark for Rust from campaign override
         if (campaignOverrideWatermark.watermarkId) {
           const campaignWm = await resolveWatermarkById(campaignOverrideWatermark.watermarkId);
@@ -2922,7 +2933,7 @@
                 position: pos,
               };
             }
-            watermarkSettings = {
+            targetWatermarkSettings = {
               enabled: true,
               watermarkId: campaignOverrideWatermark.watermarkId,
               filePath: campaignWm.filePath,
@@ -2938,8 +2949,7 @@
           }
         }
       } else if (activeCampaignId) {
-        (settings as any).watermark = null;
-        watermarkSettings = null;
+        targetWatermarkSettings = null;
         console.log('[ClipsTab] Cleared org watermark for campaign build (no campaign watermark set)');
       }
 
@@ -3228,7 +3238,7 @@
             // Get default position from 16:9 config
             const defaultPos = adminWatermarkSettings?.['16:9']?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
 
-            watermarkSettings = {
+            targetWatermarkSettings = {
               enabled: true,
               watermarkId: adminBranding.watermark_id,
               filePath: wmFilePath,
@@ -3252,11 +3262,16 @@
       }
 
       console.log('[ClipsTab] Final branding payload before invoke:', {
-        activeTarget,
+        targetGroup: tg.key,
         activeCampaignId,
         activeCampaignBrandingProfileId,
         activeBrandingType,
-        aspectRatios: settings.aspectRatios,
+        aspectRatios: targetRatios,
+        introPath: introPath,
+        outroPath: outroPath,
+        introDuration: introDuration,
+        outroDuration: outroDuration,
+        hasIntroOutroPerRatio: Object.keys(introOutroPerRatio).length > 0,
       });
 
       await invoke('build_clip_from_segments', {
@@ -3270,7 +3285,7 @@
         transcriptWords: transcriptWords,
         transcriptSegments: transcriptSegments,
         maxWords: props.maxWordsForAspectRatio,
-        aspectRatios: settings.aspectRatios,
+        aspectRatios: targetRatios,
         quality: settings.quality,
         frameRate: settings.frameRate,
         outputFormat: settings.format,
@@ -3282,7 +3297,7 @@
         outroPath: outroPath,
         outroDuration: outroDuration,
         introOutroPerRatio: introOutroPerRatio,
-        watermarkSettings: watermarkSettings,
+        watermarkSettings: targetWatermarkSettings,
         audioSettings: audioSettings,
         framingStrategy: framingStrategy,
         manualFramingConfigs: settings.manualFramingConfigs || null,
@@ -3292,16 +3307,22 @@
         clipWatermarks: clipWatermarksForExport,
         layoutOverlays: await resolveLayoutOverlaysForBuild(
           settings.layoutOverlays
-            || (props.creatorProfile?.layout_overlays
-              ? JSON.parse(props.creatorProfile.layout_overlays)
-              : null)
+            || (targetResolvedProfile?.layout_overlays
+              ? JSON.parse(targetResolvedProfile.layout_overlays)
+              : (props.creatorProfile?.layout_overlays
+                ? JSON.parse(props.creatorProfile.layout_overlays)
+                : null))
         ),
         campaignId: activeCampaignId,
         campaignBrandingProfileId: activeCampaignBrandingProfileId,
         brandingType: activeBrandingType,
       });
 
-      console.log('[ClipsTab] Clip build started successfully');
+      console.log('[ClipsTab] Target group build started:', tg.key);
+      buildNumber++;
+      } // ── End Per-Target Build Loop ──────────────────────────────────────────
+
+      console.log('[ClipsTab] All', targetGroups.length, 'target group builds started successfully');
 
       // Refresh clips to show building status
       emit('refreshClips');
