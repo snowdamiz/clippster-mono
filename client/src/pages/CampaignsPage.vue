@@ -165,9 +165,16 @@
                     </div>
                   </div>
 
-                  <!-- Creator Profiles -->
+                  <!-- Creator Profiles or Global Branding -->
                   <div
-                    v-if="campaign.creator_profiles && campaign.creator_profiles.length > 0"
+                    v-if="isGlobalBrandingCampaign(campaign)"
+                    class="campaign-card__creators campaign-card__creators--global"
+                  >
+                    <Globe class="campaign-card__global-icon" />
+                    <span class="campaign-card__global-text">Any streamer eligible</span>
+                  </div>
+                  <div
+                    v-else-if="campaign.creator_profiles && campaign.creator_profiles.length > 0"
                     class="campaign-card__creators"
                   >
                     <span class="campaign-card__creators-label">Creators:</span>
@@ -341,6 +348,11 @@
     const diffMs = endDate.getTime() - now.getTime();
     const diffDays = Math.ceil(diffMs / 86400000);
     return diffDays;
+  };
+
+  // Check if campaign uses global branding (no specific creator, but has branding profile)
+  const isGlobalBrandingCampaign = (campaign: Campaign) => {
+    return campaign.creator_profile_id === null && campaign.branding_profile_id !== null;
   };
 
   const viewCampaign = (campaign: Campaign) => {
@@ -866,6 +878,29 @@
     align-items: center;
     justify-content: center;
     background-color: rgba(255, 255, 255, 0.06);
+  }
+
+  /* Global Branding Indicator */
+  .campaign-card__creators--global {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.12) 0%, rgba(16, 185, 129, 0.08) 100%);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 6px;
+  }
+
+  .campaign-card__global-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-accent);
+  }
+
+  .campaign-card__global-text {
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
   }
 
   /* Platforms */

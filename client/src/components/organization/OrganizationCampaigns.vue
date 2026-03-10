@@ -2470,6 +2470,8 @@
   const selectGlobalBranding = () => {
     isGlobalBrandingSelected.value = true;
     selectedCreatorProfileIds.value = [];
+    // Clear creator_profile_id for global branding (null means any streamer)
+    campaignForm.creator_profile_id = null;
     // Auto-select the only global profile if there's exactly one
     const globalProfiles = availableCreatorProfiles.value.filter(p => p.scope === 'global');
     if (globalProfiles.length === 1) {
@@ -2602,9 +2604,17 @@
         payment_model: campaignForm.payment_model,
         per_clip_amount: campaignForm.payment_model === 'per_clip' ? campaignForm.per_clip_amount : undefined,
         clips_per_profile: campaignForm.payment_model === 'per_clip' ? campaignForm.clips_per_profile : undefined,
-        creator_profile_id: campaignForm.creator_profile_id || undefined,
+        // For global branding, explicitly send null for creator_profile_id
+        creator_profile_id: isGlobalBrandingSelected.value ? null : (campaignForm.creator_profile_id || undefined),
         branding_profile_id: campaignForm.branding_profile_id || undefined,
       };
+
+      console.log('[Campaign Save] About to save with:', {
+        isGlobalBranding: isGlobalBrandingSelected.value,
+        creator_profile_id: data.creator_profile_id,
+        branding_profile_id: data.branding_profile_id,
+        selectedCreatorProfileIds: selectedCreatorProfileIds.value
+      });
 
       let response;
       if (editingCampaign.value) {
@@ -2613,15 +2623,36 @@
         response = await createCampaign(Number(props.organizationId), data);
       }
 
+      console.log('[Campaign Save] API response:', {
+        success: response.success,
+        campaign: response.campaign ? {
+          id: response.campaign.id,
+          creator_profile_id: response.campaign.creator_profile_id,
+          branding_profile_id: response.campaign.branding_profile_id,
+          creator_profiles: response.campaign.creator_profiles
+        } : null
+      });
+
       if (response.success && response.campaign) {
-        // Save creator profiles assignment (filter out null for Global Branding)
-        const profileIds = selectedCreatorProfileIds.value.filter((id): id is number => id !== null);
-        if (profileIds.length > 0) {
+        // Save creator profiles assignment (only if NOT using global branding)
+        if (!isGlobalBrandingSelected.value) {
+          const profileIds = selectedCreatorProfileIds.value.filter((id): id is number => id !== null);
+          if (profileIds.length > 0) {
+            await setCampaignCreatorProfiles(
+              Number(props.organizationId),
+              response.campaign.id,
+              profileIds
+            );
+          }
+        } else {
+          // For global branding, clear any existing creator profile assignments
+          console.log('[Campaign Save] Clearing creator profiles for global branding campaign');
           await setCampaignCreatorProfiles(
             Number(props.organizationId),
             response.campaign.id,
-            profileIds
+            []
           );
+          console.log('[Campaign Save] Creator profiles cleared');
         }
 
         toast({ title: 'Success', description: `Campaign ${editingCampaign.value ? 'updated' : 'created'}` });

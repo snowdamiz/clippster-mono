@@ -1972,6 +1972,67 @@
       console.log('[ClipsTab] Starting clip build for:', clip.id, 'with settings:', settings);
       console.log('[ClipsTab] Aspect ratios received:', settings.aspectRatios);
 
+      // ── Group build targets by unique type+id ─────────────────────────────
+      // Each group gets its own branding resolution and Rust invoke.
+      // e.g. [{type:'org',id:2,ratio:'16:9'},{type:'org',id:2,ratio:'9:16'},{type:'campaign',id:1,ratio:'16:9'}]
+      // → groups: [{target, ratios:['16:9','9:16']}, {target, ratios:['16:9']}]
+      interface TargetGroup {
+        key: string;
+        type: 'org' | 'campaign' | 'legacy';
+        target: BuildTarget | null;
+        ratios: string[];
+        campaignId: number | null;
+        brandingProfileId: number | null;
+        organizationId: number | undefined;
+        selectedCampaign: any;
+      }
+
+      const targetGroups: TargetGroup[] = [];
+
+      if (settings.buildTargets && settings.buildTargets.length > 0) {
+        const groupMap = new Map<string, TargetGroup>();
+        for (const bt of settings.buildTargets) {
+          const key = `${bt.type}-${bt.id}`;
+          if (!groupMap.has(key)) {
+            groupMap.set(key, {
+              key,
+              type: bt.type,
+              target: bt,
+              ratios: [],
+              campaignId: bt.type === 'campaign' ? bt.id : null,
+              brandingProfileId: bt.brandingProfileId,
+              organizationId: bt.organizationId,
+              selectedCampaign: bt.type === 'campaign' ? settings.selectedCampaign : null,
+            });
+          }
+          const group = groupMap.get(key)!;
+          for (const r of bt.aspectRatios) {
+            if (!group.ratios.includes(r)) group.ratios.push(r);
+          }
+        }
+        targetGroups.push(...groupMap.values());
+      } else {
+        // Legacy: no buildTargets, run a single build with settings defaults
+        targetGroups.push({
+          key: 'legacy',
+          type: 'legacy',
+          target: null,
+          ratios: [...settings.aspectRatios],
+          campaignId: settings.campaignId ?? null,
+          brandingProfileId: settings.campaignBrandingProfileId ?? null,
+          organizationId: undefined,
+          selectedCampaign: settings.selectedCampaign ?? null,
+        });
+      }
+
+      console.log('[ClipsTab] Build target groups:', targetGroups.map(g => ({
+        key: g.key,
+        type: g.type,
+        ratios: g.ratios,
+        campaignId: g.campaignId,
+        brandingProfileId: g.brandingProfileId,
+      })));
+
       const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild, getClipBuilds } = await import(
         '@/services/database'
       );
@@ -2558,14 +2619,32 @@
         console.log('[ClipsTab] Merged subtitle overrides from clip editor:', finalSubtitleOverrides);
       }
 
+      // ── Per-Target Build Loop ──────────────────────────────────────────────
+      // Each target group gets its own branding resolution and Rust invoke.
+      for (const tg of targetGroups) {
+      const activeCampaignId = tg.campaignId;
+      const activeCampaignBrandingProfileId = tg.brandingProfileId;
+      const activeBrandingType = tg.type;
+      const activeTarget = tg.target;
+      const targetRatios = tg.ratios;
+
+      console.log('[ClipsTab] Processing target group:', {
+        key: tg.key,
+        type: tg.type,
+        ratios: targetRatios,
+        campaignId: activeCampaignId,
+        brandingProfileId: activeCampaignBrandingProfileId,
+      });
+
+      // Clone watermarkSettings for this target (so campaign overrides don't leak between groups)
+      let targetWatermarkSettings = watermarkSettings ? { ...watermarkSettings } : null;
+
       // ── Campaign Branding Override ────────────────────────────────────────────
-      // When user selected a campaign, its branding COMPLETELY replaces creator profile branding.
-      // Use local shadowing variables so we don't mutate props.
       let campaignOverrideIntro: IntroOutroRef | null = null;
       let campaignOverrideOutro: IntroOutroRef | null = null;
       let campaignOverrideWatermark: WatermarkSettings | null = null;
 
-      if (settings.campaignId && settings.selectedCampaign) {
+      if (activeCampaignId && tg.selectedCampaign && tg.selectedCampaign.id === activeCampaignId) {
         const campaign = settings.selectedCampaign;
         console.log('[ClipsTab] Applying campaign branding for:', campaign.title, '(id:', campaign.id, ')');
 
@@ -2619,7 +2698,66 @@
           }
         }
 
-        const campaignCreatorProfile = campaign.creator_profiles?.[0] || campaign.creator_profile;
+        const campaignCreatorProfile = campaign.branding_profile || campaign.creator_profiles?.[0] || campaign.creator_profile;
+        // Also check branding_profile for intro/outro if global_intro/global_outro were not set
+        if (!campaignOverrideIntro && campaignCreatorProfile?.intro?.url) {
+          try {
+            const introResult = await ensureAssetDownloaded({
+              id: campaignCreatorProfile.intro.id,
+              name: campaignCreatorProfile.intro.name,
+              asset_type: 'intro',
+              url: campaignCreatorProfile.intro.url,
+              organization_id: campaign.organization_id,
+              organization_name: campaign.organization?.name || '',
+              duration: campaignCreatorProfile.intro.duration ? parseFloat(campaignCreatorProfile.intro.duration) : undefined,
+              inserted_at: campaign.inserted_at,
+              updated_at: campaign.updated_at,
+            } as unknown as ServerOrganizationAsset);
+            if (introResult.success && introResult.filePath) {
+              campaignOverrideIntro = {
+                id: `org-asset-${campaignCreatorProfile.intro.id}`,
+                type: 'intro',
+                name: campaignCreatorProfile.intro.name,
+                file_path: introResult.filePath,
+                duration: campaignCreatorProfile.intro.duration ? parseFloat(campaignCreatorProfile.intro.duration) : null,
+                thumbnail_path: campaignCreatorProfile.intro.thumbnail_url || null,
+              };
+              console.log('[ClipsTab] Campaign branding_profile intro applied:', campaignCreatorProfile.intro.name);
+            }
+          } catch (e) {
+            console.warn('[ClipsTab] Failed to download campaign branding_profile intro:', e);
+          }
+        }
+
+        if (!campaignOverrideOutro && campaignCreatorProfile?.outro?.url) {
+          try {
+            const outroResult = await ensureAssetDownloaded({
+              id: campaignCreatorProfile.outro.id,
+              name: campaignCreatorProfile.outro.name,
+              asset_type: 'outro',
+              url: campaignCreatorProfile.outro.url,
+              organization_id: campaign.organization_id,
+              organization_name: campaign.organization?.name || '',
+              duration: campaignCreatorProfile.outro.duration ? parseFloat(campaignCreatorProfile.outro.duration) : undefined,
+              inserted_at: campaign.inserted_at,
+              updated_at: campaign.updated_at,
+            } as unknown as ServerOrganizationAsset);
+            if (outroResult.success && outroResult.filePath) {
+              campaignOverrideOutro = {
+                id: `org-asset-${campaignCreatorProfile.outro.id}`,
+                type: 'outro',
+                name: campaignCreatorProfile.outro.name,
+                file_path: outroResult.filePath,
+                duration: campaignCreatorProfile.outro.duration ? parseFloat(campaignCreatorProfile.outro.duration) : null,
+                thumbnail_path: campaignCreatorProfile.outro.thumbnail_url || null,
+              };
+              console.log('[ClipsTab] Campaign branding_profile outro applied:', campaignCreatorProfile.outro.name);
+            }
+          } catch (e) {
+            console.warn('[ClipsTab] Failed to download campaign branding_profile outro:', e);
+          }
+        }
+
         if (campaignCreatorProfile?.watermark?.url) {
           try {
             const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
@@ -2667,16 +2805,153 @@
       }
       // ── End Campaign Branding Override ───────────────────────────────────────
 
-      // Determine effective intro/outro:
-      // Campaign branding > creator profile defaults > dialog selection
-      const effectiveIntro = campaignOverrideIntro ?? (settings.campaignId ? null : (props.creatorDefaultIntro || settings.intro));
-      const effectiveOutro = campaignOverrideOutro ?? (settings.campaignId ? null : (props.creatorDefaultOutro || settings.outro));
-      // If campaign selected, use campaign watermark; otherwise fall through to existing settings.watermark
-      if (settings.campaignId && campaignOverrideWatermark) {
-        (settings as any).watermark = campaignOverrideWatermark;
-      } else if (settings.campaignId) {
-        (settings as any).watermark = null;
+      // ── Org Branding Resolution ─────────────────────────────────────────────
+      // When building for an org target (not campaign), resolve intro/outro from
+      // the org's branding profile since props.creatorDefaultOutro may be from a
+      // different profile than the one selected in the build dialog.
+      let orgOverrideIntro: IntroOutroRef | null = null;
+      let orgOverrideOutro: IntroOutroRef | null = null;
+
+      if (!activeCampaignId && activeBrandingType === 'org') {
+        try {
+          // Use the streamer-matched creator profile from props (already resolved by
+          // ProjectWorkspaceDialog to the correct streamer profile, e.g. "Jerzy" not "Clippster").
+          // Fall back to API lookup by brandingProfileId only if props.creatorProfile is unavailable.
+          let profile: any = null;
+
+          // Use resolveApplicableProfiles — the proven streamer matching function that
+          // matches via platform links (channel URL e.g. "jerzynft" on Kick).
+          // This is the same function that produces "Found org streamer match: Jerzy" in logs.
+          const { resolveApplicableProfiles } = await import('@/composables/useBrandingProfileSelection');
+          const clipProjectId = clip.project_id || props.projectId;
+          
+          if (clipProjectId) {
+            const candidates = await resolveApplicableProfiles(clipProjectId);
+            const orgId = activeTarget?.organizationId;
+            
+            // Find the org-streamer match within the target org
+            const streamerMatch = candidates.find((c) =>
+              c.source === 'org-streamer' &&
+              (!orgId || (c.profile as any).organization_id === orgId)
+            );
+            
+            // Fall back to org-global within the same org
+            const globalMatch = !streamerMatch
+              ? candidates.find((c) =>
+                  c.source === 'org-global' &&
+                  (!orgId || (c.profile as any).organization_id === orgId)
+                )
+              : null;
+            
+            const matched = streamerMatch || globalMatch;
+            if (matched) {
+              profile = matched.profile;
+              console.log('[ClipsTab] Org branding: resolved via platform links:', profile.name, '(source:', matched.source, ')');
+            } else {
+              console.log('[ClipsTab] Org branding: no matching profile found via resolveApplicableProfiles');
+            }
+          }
+
+          console.log('[ClipsTab] Org branding profile lookup:', {
+            brandingProfileId: activeCampaignBrandingProfileId,
+            foundProfile: !!profile,
+            profileName: profile?.name || null,
+            introId: profile?.intro_id || null,
+            outroId: profile?.outro_id || null,
+          });
+
+          // Profile from resolveApplicableProfiles is in local format:
+          // outro_id/intro_id are already "org-asset-{id}" strings. Pass directly.
+          if (profile?.intro_id) {
+            const introResolved = await resolveIntroOutroById(profile.intro_id);
+            if (introResolved) {
+              orgOverrideIntro = {
+                id: profile.intro_id,
+                type: 'intro',
+                name: (profile.name || 'Org') + ' Intro',
+                file_path: introResolved.filePath,
+                duration: introResolved.duration,
+                thumbnail_path: null,
+              } as IntroOutroRef;
+              console.log('[ClipsTab] Org profile intro resolved:', profile.intro_id);
+            }
+          }
+
+          if (profile?.outro_id) {
+            const outroResolved = await resolveIntroOutroById(profile.outro_id);
+            if (outroResolved) {
+              orgOverrideOutro = {
+                id: profile.outro_id,
+                type: 'outro',
+                name: (profile.name || 'Org') + ' Outro',
+                file_path: outroResolved.filePath,
+                duration: outroResolved.duration,
+                thumbnail_path: null,
+              } as IntroOutroRef;
+              console.log('[ClipsTab] Org profile outro resolved:', profile.outro_id);
+            }
+          }
+        } catch (e) {
+          console.warn('[ClipsTab] Failed to resolve org branding profile intro/outro:', e);
+        }
       }
+      // ── End Org Branding Resolution ─────────────────────────────────────────
+
+      // Determine effective intro/outro:
+      // Campaign branding > org branding > creator profile defaults > dialog selection
+      const effectiveIntro = campaignOverrideIntro ?? orgOverrideIntro ?? (activeCampaignId ? null : (props.creatorDefaultIntro || settings.intro));
+      const effectiveOutro = campaignOverrideOutro ?? orgOverrideOutro ?? (activeCampaignId ? null : (props.creatorDefaultOutro || settings.outro));
+      // If campaign selected, use campaign watermark; otherwise clear org watermark (don't leak org branding into campaign builds)
+      // IMPORTANT: Also update the local watermarkSettings variable that gets passed to Rust
+      if (activeCampaignId && campaignOverrideWatermark) {
+        (settings as any).watermark = campaignOverrideWatermark;
+        // Re-resolve watermark for Rust from campaign override
+        if (campaignOverrideWatermark.watermarkId) {
+          const campaignWm = await resolveWatermarkById(campaignOverrideWatermark.watermarkId);
+          if (campaignWm) {
+            const wmPerRatio: Record<string, any> = {};
+            const allRatios = ['16:9', '9:16', '1:1', '4:5'];
+            for (const ratio of allRatios) {
+              const pos = (campaignOverrideWatermark.perRatioSettings as any)?.[ratio]?.position
+                ?? { x: campaignOverrideWatermark.positionX, y: campaignOverrideWatermark.positionY, opacity: campaignOverrideWatermark.opacity, scale: campaignOverrideWatermark.scale };
+              wmPerRatio[ratio] = {
+                watermarkId: campaignOverrideWatermark.watermarkId,
+                filePath: campaignWm.filePath,
+                width: campaignWm.width,
+                height: campaignWm.height,
+                position: pos,
+              };
+            }
+            watermarkSettings = {
+              enabled: true,
+              watermarkId: campaignOverrideWatermark.watermarkId,
+              filePath: campaignWm.filePath,
+              width: campaignWm.width,
+              height: campaignWm.height,
+              positionX: campaignOverrideWatermark.positionX,
+              positionY: campaignOverrideWatermark.positionY,
+              opacity: campaignOverrideWatermark.opacity,
+              scale: campaignOverrideWatermark.scale,
+              perRatioSettings: wmPerRatio,
+            };
+            console.log('[ClipsTab] Watermark re-resolved for campaign:', campaignOverrideWatermark.watermarkId);
+          }
+        }
+      } else if (activeCampaignId) {
+        (settings as any).watermark = null;
+        watermarkSettings = null;
+        console.log('[ClipsTab] Cleared org watermark for campaign build (no campaign watermark set)');
+      }
+
+      console.log('[ClipsTab] Campaign branding resolution result:', {
+        hasCampaign: !!activeCampaignId,
+        overrideIntro: campaignOverrideIntro?.name || null,
+        overrideOutro: campaignOverrideOutro?.name || null,
+        overrideWatermark: campaignOverrideWatermark ? 'yes' : 'no',
+        effectiveIntro: effectiveIntro?.name || null,
+        effectiveOutro: effectiveOutro?.name || null,
+        watermarkAfterOverride: (settings as any).watermark?.enabled ? (settings as any).watermark?.watermarkId : null,
+      });
 
       let introPath: string | null = null;
       let outroPath: string | null = null;
@@ -2976,6 +3251,14 @@
         console.log('[ClipsTab] Free tier branding applied successfully');
       }
 
+      console.log('[ClipsTab] Final branding payload before invoke:', {
+        activeTarget,
+        activeCampaignId,
+        activeCampaignBrandingProfileId,
+        activeBrandingType,
+        aspectRatios: settings.aspectRatios,
+      });
+
       await invoke('build_clip_from_segments', {
         projectId: props.projectId,
         clipId: clip.id,
@@ -3013,6 +3296,9 @@
               ? JSON.parse(props.creatorProfile.layout_overlays)
               : null)
         ),
+        campaignId: activeCampaignId,
+        campaignBrandingProfileId: activeCampaignBrandingProfileId,
+        brandingType: activeBrandingType,
       });
 
       console.log('[ClipsTab] Clip build started successfully');

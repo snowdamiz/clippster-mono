@@ -3,6 +3,11 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { ClipWithVersion } from '@/services/database';
 import type { BuildSettings, IntroOutroItem } from '@/components/ClipBuildSettingsDialog.vue';
+import { resolveIntroOutroById } from '@/services/database/intro-outros';
+import { getMyAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
+import { getCampaign } from '@/services/campaignApi';
+import { ensureAssetDownloaded } from '@/services/orgAssetSync';
+import type { ServerOrganizationAsset } from '@/services/organizationAssetsApi';
 
 export interface BuildPipelineState {
   status: 'idle' | 'building' | 'complete' | 'error';
@@ -211,6 +216,196 @@ export function useClipBuildPipeline() {
       const campaignBrandingProfileId = settings.campaignBrandingProfileId || null;
       const brandingType = settings.brandingType || 'org';
 
+      let resolvedIntroOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> | null = null;
+      let resolvedWatermarkSettings = watermarkSettings;
+
+      if (brandingType === 'org' && campaignBrandingProfileId) {
+        try {
+          const profilesResponse = await getMyAssignedCreatorProfiles();
+          const profile = profilesResponse.success
+            ? profilesResponse.profiles.find((p) => p.id === campaignBrandingProfileId)
+            : null;
+
+          console.log('[BuildPipeline] Org branding lookup:', {
+            profileId: campaignBrandingProfileId,
+            foundProfile: !!profile,
+            introId: profile?.intro_id || null,
+            outroId: profile?.outro_id || null,
+            hasIntroRatioSettings: !!profile?.intro_ratio_settings,
+            hasOutroRatioSettings: !!profile?.outro_ratio_settings,
+          });
+
+          if (!introPath && profile?.intro_id) {
+            const resolved = await resolveIntroOutroById(`org-asset-${profile.intro_id}`);
+            if (resolved) {
+              introPath = resolved.filePath;
+              introDuration = resolved.duration;
+            }
+          }
+
+          if (!outroPath && profile?.outro_id) {
+            const resolved = await resolveIntroOutroById(`org-asset-${profile.outro_id}`);
+            if (resolved) {
+              outroPath = resolved.filePath;
+              outroDuration = resolved.duration;
+            }
+          }
+
+          if (profile?.intro_ratio_settings || profile?.outro_ratio_settings) {
+            resolvedIntroOutroPerRatio = {};
+
+            if (profile.intro_ratio_settings) {
+              const introSettings = typeof profile.intro_ratio_settings === 'string'
+                ? JSON.parse(profile.intro_ratio_settings)
+                : profile.intro_ratio_settings;
+
+              for (const ratio of Object.keys(introSettings || {})) {
+                const introId = introSettings?.[ratio]?.introId;
+                if (!introId) continue;
+                const resolved = await resolveIntroOutroById(introId);
+                if (resolved) {
+                  resolvedIntroOutroPerRatio[ratio] = {
+                    ...(resolvedIntroOutroPerRatio[ratio] || {}),
+                    introPath: resolved.filePath,
+                    introDuration: resolved.duration || undefined,
+                  };
+                }
+              }
+            }
+
+            if (profile.outro_ratio_settings) {
+              const outroSettings = typeof profile.outro_ratio_settings === 'string'
+                ? JSON.parse(profile.outro_ratio_settings)
+                : profile.outro_ratio_settings;
+
+              for (const ratio of Object.keys(outroSettings || {})) {
+                const outroId = outroSettings?.[ratio]?.outroId;
+                if (!outroId) continue;
+                const resolved = await resolveIntroOutroById(outroId);
+                if (resolved) {
+                  resolvedIntroOutroPerRatio[ratio] = {
+                    ...(resolvedIntroOutroPerRatio[ratio] || {}),
+                    outroPath: resolved.filePath,
+                    outroDuration: resolved.duration || undefined,
+                  };
+                }
+              }
+            }
+
+            if (Object.keys(resolvedIntroOutroPerRatio).length === 0) {
+              resolvedIntroOutroPerRatio = null;
+            }
+          }
+        } catch (error) {
+          console.warn('[BuildPipeline] Failed to resolve org branding:', error);
+        }
+      }
+
+      if (brandingType === 'campaign' && campaignId) {
+        try {
+          const campaignResponse = await getCampaign(campaignId);
+          const campaign = campaignResponse.success ? campaignResponse.campaign : null;
+
+          console.log('[BuildPipeline] Campaign branding lookup:', {
+            campaignId,
+            hasCampaign: !!campaign,
+            brandingProfileId: campaign?.branding_profile_id || null,
+            hasBrandingProfile: !!campaign?.branding_profile,
+            hasGlobalIntro: !!campaign?.global_intro,
+            hasGlobalOutro: !!campaign?.global_outro,
+            creatorProfilesCount: campaign?.creator_profiles?.length || 0,
+            hasCreatorProfile: !!campaign?.creator_profile,
+          });
+
+          const brandingProfile = campaign?.branding_profile;
+
+          if (!introPath && brandingProfile?.intro) {
+            const introResult = await ensureAssetDownloaded({
+              id: brandingProfile.intro.id,
+              name: brandingProfile.intro.name,
+              asset_type: 'intro',
+              url: brandingProfile.intro.url,
+              organization_id: campaign!.organization_id,
+              organization_name: campaign?.organization?.name || '',
+              duration: brandingProfile.intro.duration ? parseFloat(brandingProfile.intro.duration) : undefined,
+              inserted_at: campaign!.inserted_at,
+              updated_at: campaign!.updated_at,
+            } as unknown as ServerOrganizationAsset);
+            if (introResult.success && introResult.filePath) {
+              introPath = introResult.filePath;
+              introDuration = brandingProfile.intro.duration ? parseFloat(brandingProfile.intro.duration) : null;
+            }
+          }
+
+          if (!outroPath && brandingProfile?.outro) {
+            const outroResult = await ensureAssetDownloaded({
+              id: brandingProfile.outro.id,
+              name: brandingProfile.outro.name,
+              asset_type: 'outro',
+              url: brandingProfile.outro.url,
+              organization_id: campaign!.organization_id,
+              organization_name: campaign?.organization?.name || '',
+              duration: brandingProfile.outro.duration ? parseFloat(brandingProfile.outro.duration) : undefined,
+              inserted_at: campaign!.inserted_at,
+              updated_at: campaign!.updated_at,
+            } as unknown as ServerOrganizationAsset);
+            if (outroResult.success && outroResult.filePath) {
+              outroPath = outroResult.filePath;
+              outroDuration = brandingProfile.outro.duration ? parseFloat(brandingProfile.outro.duration) : null;
+            }
+          }
+
+          const watermarkProfile = brandingProfile || campaign?.creator_profiles?.[0] || campaign?.creator_profile;
+          if (watermarkProfile?.watermark?.url) {
+            const filename = `campaign-watermark-${watermarkProfile.watermark.id}.png`;
+            const filePath = await invoke<string>('download_org_asset_from_url', {
+              url: watermarkProfile.watermark.url,
+              filename,
+              assetType: 'watermarks',
+              organizationId: String(campaign!.organization_id),
+            });
+
+            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+            if (watermarkProfile.watermark_settings) {
+              const wmSettings = typeof watermarkProfile.watermark_settings === 'string'
+                ? JSON.parse(watermarkProfile.watermark_settings as unknown as string)
+                : watermarkProfile.watermark_settings;
+              const ratioConfig = wmSettings?.[settings.aspectRatios[0]] || wmSettings?.['16:9'];
+              if (ratioConfig?.position) defaultPos = ratioConfig.position;
+            }
+
+            resolvedWatermarkSettings = {
+              enabled: true,
+              watermarkId: `org-asset-${watermarkProfile.watermark.id}`,
+              filePath,
+              width: null,
+              height: null,
+              positionX: defaultPos.x,
+              positionY: defaultPos.y,
+              opacity: defaultPos.opacity,
+              scale: defaultPos.scale,
+              perRatioSettings: (watermarkProfile.watermark_settings as any) ?? null,
+            } as any;
+          } else {
+            resolvedWatermarkSettings = null;
+          }
+        } catch (error) {
+          console.warn('[BuildPipeline] Failed to resolve campaign branding:', error);
+        }
+      }
+
+      console.log('[BuildPipeline] Final branding payload before invoke:', {
+        brandingType,
+        campaignId,
+        campaignBrandingProfileId,
+        aspectRatios: settings.aspectRatios,
+        introPath,
+        outroPath,
+        introOutroPerRatio: resolvedIntroOutroPerRatio,
+        watermarkEnabled: !!resolvedWatermarkSettings?.enabled,
+        watermarkId: (resolvedWatermarkSettings as any)?.watermarkId || null,
+      });
+
       // Listen for progress events
       if (progressUnlisten) {
         progressUnlisten();
@@ -299,8 +494,8 @@ export function useClipBuildPipeline() {
         introDuration,
         outroPath,
         outroDuration,
-        introOutroPerRatio: null,
-        watermarkSettings,
+        introOutroPerRatio: resolvedIntroOutroPerRatio,
+        watermarkSettings: resolvedWatermarkSettings,
         audioSettings: null,
         framingStrategy: null,
         manualFramingConfigs: settings.manualFramingConfigs || null,

@@ -615,7 +615,7 @@ pub async fn build_clip_internal_simple(
                                         // Create watermark settings from campaign profile
                                         let wm_settings = WatermarkSettings {
                                             enabled: true,
-                                            watermark_id: campaign_id.to_string(),
+                                            watermark_id: watermark_id.to_string(),
                                             file_path: watermark_path,
                                             width: None,
                                             height: None,

@@ -19,6 +19,7 @@ pub struct ServerCreatorProfile {
 }
 
 /// Response from /user/assigned-creator-profiles endpoint
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct AssignedProfilesResponse {
     pub success: bool,
@@ -73,7 +74,7 @@ pub async fn download_org_asset(
     api_base_url: &str,
     auth_token: &str,
     asset_id: i64,
-    asset_type: &str,
+    _asset_type: &str,
     organization_id: i64,
     storage_path: &std::path::Path,
 ) -> Result<String, String> {

@@ -6,11 +6,11 @@ export async function listOrganizationCampaigns(orgId: number, status?: string) 
   return api.get<{ success: boolean; campaigns: Campaign[]; error?: string }>(`/organizations/${orgId}/campaigns${qs}`)
 }
 
-export async function createCampaign(orgId: number, data: { title: string; description?: string; cover_image_url?: string; creator_profile_id?: number; budget?: string; cpm?: string; min_views_for_payment?: number; join_type?: string; allowed_platforms?: string[]; payment_methods?: string[]; status?: string; starts_at?: string; ends_at?: string }) {
+export async function createCampaign(orgId: number, data: { title: string; description?: string; cover_image_url?: string; creator_profile_id?: number | null; budget?: string; cpm?: string; min_views_for_payment?: number; join_type?: string; allowed_platforms?: string[]; payment_methods?: string[]; status?: string; starts_at?: string; ends_at?: string; branding_profile_id?: number | null }) {
   return api.post<{ success: boolean; campaign?: Campaign; error?: string }>(`/organizations/${orgId}/campaigns`, data)
 }
 
-export async function updateCampaign(orgId: number, campaignId: number, data: Partial<{ title: string; description: string; status: string; budget: string; cpm: string }>) {
+export async function updateCampaign(orgId: number, campaignId: number, data: Partial<{ title: string; description: string; status: string; budget: string; cpm: string; creator_profile_id: number | null; branding_profile_id: number | null; cover_image_url: string; min_views_for_payment: number; join_type: string; allowed_platforms: string[]; payment_methods: string[]; starts_at: string; ends_at: string }>) {
   return api.put<{ success: boolean; campaign?: Campaign; error?: string }>(`/organizations/${orgId}/campaigns/${campaignId}`, data)
 }
 

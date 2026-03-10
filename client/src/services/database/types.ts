@@ -277,8 +277,11 @@ export interface ClipBuild {
   status: 'building' | 'completed' | 'failed';
   error_message: string | null;
   progress: number;
-  // Campaign context
+  // Branding context
+  organization_id: number | null;
+  organization_name: string | null;
   campaign_id: number | null;
+  campaign_name: string | null;
   branding_profile_id: string | null;
   branding_type: 'org' | 'campaign' | 'personal' | 'none';
   // Timestamps

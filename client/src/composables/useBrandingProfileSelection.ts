@@ -101,6 +101,7 @@ function prefixOverlayAssetIds(overlays: unknown[]): unknown[] {
  * Convert a server org creator profile to the local CreatorProfileWithLinks format.
  */
 function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProfileWithLinks {
+  console.log('[serverProfileToLocal] Converting profile:', sp.name, 'server watermark_id:', sp.watermark_id);
   return {
     id: String(sp.id),
     name: sp.name,
@@ -110,9 +111,9 @@ function serverProfileToLocal(sp: ServerOrganizationCreatorProfile): CreatorProf
     outro_id: sp.outro_id != null ? `org-asset-${sp.outro_id}` : null,
     watermark_id: sp.watermark_id != null ? `org-asset-${sp.watermark_id}` : null,
     watermark_settings: sp.watermark_settings ? JSON.stringify(prefixWatermarkSettingsIds(sp.watermark_settings)) : null,
-    intro_outro_settings: null,
-    intro_ratio_settings: null,
-    outro_ratio_settings: null,
+    intro_outro_settings: sp.intro_outro_settings ? JSON.stringify(sp.intro_outro_settings) : null,
+    intro_ratio_settings: sp.intro_ratio_settings || null,
+    outro_ratio_settings: sp.outro_ratio_settings || null,
     auto_dvr_enabled: 0,
     layout_overlays: sp.layout_overlays ? JSON.stringify(prefixOverlayAssetIds(sp.layout_overlays)) : null,
     scope: sp.scope || 'streamer',

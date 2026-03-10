@@ -83,6 +83,7 @@ export interface Campaign {
   global_intro?: CampaignAsset | null;
   global_outro?: CampaignAsset | null;
   creator_profiles?: CampaignCreatorProfile[];
+  branding_profile?: CampaignCreatorProfile | null;
   participants_count?: number;
   joined_at?: string;
 }
@@ -379,7 +380,7 @@ export async function createCampaign(
     title: string;
     description?: string;
     cover_image_url?: string;
-    creator_profile_id?: number;
+    creator_profile_id?: number | null;
     budget?: number;
     cpm?: number;
     cpm_views?: number;
@@ -410,7 +411,7 @@ export async function updateCampaign(
     title: string;
     description: string;
     cover_image_url: string;
-    creator_profile_id: number;
+    creator_profile_id: number | null;
     budget: number;
     cpm: number;
     cpm_views: number;

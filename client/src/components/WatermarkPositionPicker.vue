@@ -425,6 +425,15 @@
     '4:5': CreatorWatermarkRatioConfig | null;
   }
 
+  interface OrgAsset {
+    id: number;
+    name: string;
+    url: string;
+    asset_type: string;
+    width?: number;
+    height?: number;
+  }
+
   interface Props {
     show: boolean;
     watermarkFilePath?: string; // Default watermark file path (local)
@@ -436,6 +445,7 @@
     readOnly?: boolean;
     overlays?: Array<any>; // Layout overlays to render in background
     overlayPreviews?: Record<string, string>; // Overlay preview URLs
+    orgAssets?: OrgAsset[]; // Organization assets for watermark selection
   }
 
   const props = withDefaults(defineProps<Props>(), {
@@ -631,10 +641,39 @@
   async function loadWatermarks() {
     loadingWatermarks.value = true;
     try {
-      watermarks.value = await getAllWatermarkImages();
-      // Load thumbnails for all watermarks
-      for (const wm of watermarks.value) {
-        await loadWatermarkThumbnail(wm);
+      // If orgAssets provided, use organization watermarks
+      if (props.orgAssets && props.orgAssets.length > 0) {
+        // Convert org assets to WatermarkImage format
+        watermarks.value = props.orgAssets
+          .filter(asset => asset.asset_type === 'watermark')
+          .map(asset => ({
+            id: String(asset.id),
+            name: asset.name,
+            file_path: asset.url, // Store URL in file_path for org assets
+            width: asset.width || null,
+            height: asset.height || null,
+            file_size: null,
+            created_at: Date.now(),
+            updated_at: Date.now(),
+            organization_id: null,
+            organization_name: null,
+            server_id: asset.id,
+            sync_status: 'synced' as const,
+          }));
+        
+        // Load thumbnails for org watermarks (use file_path which contains URL)
+        for (const wm of watermarks.value) {
+          if (wm.file_path) {
+            watermarkThumbnailCache.value.set(wm.id, wm.file_path);
+          }
+        }
+      } else {
+        // Use local watermarks
+        watermarks.value = await getAllWatermarkImages();
+        // Load thumbnails for all watermarks
+        for (const wm of watermarks.value) {
+          await loadWatermarkThumbnail(wm);
+        }
       }
     } catch (error) {
       console.error('[WatermarkPositionPicker] Failed to load watermarks:', error);
@@ -753,9 +792,16 @@
     try {
       let dataUrl = watermarkThumbnailCache.value.get(wmId);
       if (!dataUrl) {
-        dataUrl = await invoke<string>('read_file_as_data_url', {
-          filePath: wm.file_path,
-        });
+        // Check if this is an org asset (URL in file_path) or local file
+        if (wm.file_path.startsWith('http')) {
+          // Org asset - download through Tauri to bypass CORS
+          dataUrl = await invoke<string>('download_url_as_data_url', { url: wm.file_path });
+        } else {
+          // Local file
+          dataUrl = await invoke<string>('read_file_as_data_url', {
+            filePath: wm.file_path,
+          });
+        }
         watermarkThumbnailCache.value.set(wmId, dataUrl);
       }
       watermarkDataUrl.value = dataUrl;

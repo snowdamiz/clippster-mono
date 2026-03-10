@@ -7,7 +7,7 @@
         <h3 class="text-sm font-semibold text-zinc-200">Built Clips</h3>
       </div>
       <p class="text-[10px] text-zinc-500">
-        {{ builtClips.length }} clip{{ builtClips.length !== 1 ? 's' : '' }} ready to schedule
+        {{ builtClipsCount }} build{{ builtClipsCount !== 1 ? 's' : '' }} ready to schedule
       </p>
     </div>
 
@@ -30,7 +30,7 @@
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="filteredClips.length === 0" class="flex-1 flex flex-col items-center justify-center px-6 text-center">
+    <div v-else-if="filteredBuilds.length === 0" class="flex-1 flex flex-col items-center justify-center px-6 text-center">
       <Film class="size-8 text-zinc-700 mb-3" />
       <p class="text-sm text-zinc-400 mb-1">
         {{ searchQuery ? 'No clips found' : 'No built clips yet' }}
@@ -40,30 +40,48 @@
       </p>
     </div>
 
-    <!-- Clips List -->
+    <!-- Builds List -->
     <div v-else class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
       <div
-        v-for="clip in filteredClips"
-        :key="clip.id"
-        @mousedown="handleMouseDown($event, clip)"
+        v-for="entry in filteredBuilds"
+        :key="entry.key"
+        @mousedown="handleMouseDown($event, entry)"
         class="group relative bg-white/[0.02] hover:bg-white/[0.05] border border-white/10 rounded-lg overflow-hidden cursor-move transition-all"
-        :class="{ 'opacity-50': draggingClipId === clip.id }"
+        :class="{ 'opacity-50': draggingBuildId === entry.build.id }"
       >
         <!-- Thumbnail -->
         <div class="relative aspect-video bg-zinc-900">
           <img
-            v-if="getThumbnailUrl(clip)"
-            :src="getThumbnailUrl(clip) || ''"
-            :alt="clip.name || 'Clip thumbnail'"
+            v-if="getThumbnailUrl(entry)"
+            :src="getThumbnailUrl(entry) || ''"
+            :alt="entry.clip.name || 'Clip thumbnail'"
             class="w-full h-full object-cover"
           />
           <div v-else class="w-full h-full flex items-center justify-center">
             <FileVideo class="size-6 text-zinc-700" />
           </div>
           
+          <!-- Org/Campaign badge -->
+          <div
+            v-if="getBadgeInfo(entry.build).type === 'campaign'"
+            class="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-orange-500/90 px-1.5 py-0.5 text-[9px] font-medium text-white"
+            :title="`Campaign: ${getBadgeInfo(entry.build).name}`"
+          >
+            <Briefcase class="size-2.5" />
+            <span class="max-w-[50px] truncate">{{ getBadgeInfo(entry.build).name }}</span>
+          </div>
+          <div
+            v-else-if="getBadgeInfo(entry.build).type === 'org'"
+            class="absolute left-1.5 top-1.5 flex items-center gap-1 rounded bg-blue-500/90 px-1.5 py-0.5 text-[9px] font-medium text-white"
+            :title="getBadgeInfo(entry.build).name"
+          >
+            <Building2 class="size-2.5" />
+            <span class="max-w-[50px] truncate">{{ getBadgeInfo(entry.build).name }}</span>
+          </div>
+          
           <!-- Duration badge -->
-          <div v-if="clip.built_duration" class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 bg-black/80 rounded text-[9px] font-medium text-white">
-            {{ formatDuration(clip.built_duration) }}
+          <div v-if="entry.build.duration || entry.clip.built_duration" class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 bg-black/80 rounded text-[9px] font-medium text-white">
+            {{ formatDuration(entry.build.duration || entry.clip.built_duration || 0) }}
           </div>
 
           <!-- Drag hint -->
@@ -77,19 +95,19 @@
 
         <!-- Info -->
         <div class="p-2">
-          <h4 class="text-xs font-medium text-zinc-200 truncate mb-0.5" :title="clip.name || 'Untitled Clip'">
-            {{ clip.name || 'Untitled Clip' }}
+          <h4 class="text-xs font-medium text-zinc-200 truncate mb-0.5" :title="entry.clip.name || 'Untitled Clip'">
+            {{ entry.clip.name || 'Untitled Clip' }}
           </h4>
           <div class="flex items-center gap-1.5 text-[10px] text-zinc-500">
-            <span v-if="clip.project_name" class="truncate">{{ clip.project_name }}</span>
-            <span v-if="clip.project_name && clip.built_at" class="w-0.5 h-0.5 rounded-full bg-zinc-600" />
-            <span v-if="clip.built_at">{{ formatDate(clip.built_at) }}</span>
+            <span v-if="entry.clip.project_name" class="truncate">{{ entry.clip.project_name }}</span>
+            <span v-if="entry.clip.project_name && entry.build.created_at" class="w-0.5 h-0.5 rounded-full bg-zinc-600" />
+            <span v-if="entry.build.created_at">{{ formatDate(entry.build.created_at) }}</span>
           </div>
         </div>
 
         <!-- Schedule button (alternative to drag) -->
         <button
-          @click.stop="$emit('scheduleClip', clip)"
+          @click.stop="$emit('scheduleClip', entry.clip, entry.build)"
           @mousedown.stop
           @dragstart.stop.prevent
           class="absolute top-2 right-2 p-1.5 bg-blue-500/90 hover:bg-blue-500 text-white rounded-md opacity-0 group-hover:opacity-100 transition-all z-10"
@@ -103,16 +121,16 @@
     <!-- Drag Ghost Portal -->
     <Teleport to="body">
       <div
-        v-if="draggingClip"
+        v-if="draggingEntry"
         class="fixed pointer-events-none z-[9999]"
         :style="{ left: `${dragPosition.x - 60}px`, top: `${dragPosition.y - 60}px` }"
       >
         <div class="w-[120px] bg-zinc-900 border-2 border-blue-500 rounded-lg overflow-hidden shadow-2xl">
           <div class="aspect-video bg-zinc-950">
             <img
-              v-if="getThumbnailUrl(draggingClip)"
-              :src="getThumbnailUrl(draggingClip) || ''"
-              :alt="draggingClip.name || 'Clip'"
+              v-if="getThumbnailUrl(draggingEntry)"
+              :src="getThumbnailUrl(draggingEntry) || ''"
+              :alt="draggingEntry.clip.name || 'Clip'"
               class="w-full h-full object-cover"
             />
             <div v-else class="w-full h-full flex items-center justify-center">
@@ -121,7 +139,7 @@
           </div>
           <div class="px-2 py-1 bg-blue-500">
             <p class="text-[10px] font-medium text-white truncate">
-              {{ draggingClip.name || 'Untitled Clip' }}
+              {{ draggingEntry.clip.name || 'Untitled Clip' }}
             </p>
           </div>
         </div>
@@ -132,50 +150,69 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { Film, Search, Loader2, FileVideo, Calendar, GripVertical } from 'lucide-vue-next';
+import { Film, Search, Loader2, FileVideo, Calendar, GripVertical, Briefcase, Building2 } from 'lucide-vue-next';
 import { getAllClips } from '@/services/database/clips';
+import { getClipBuilds } from '@/services/database/clip-build';
 import { getThumbnailByClipId } from '@/services/database/thumbnails';
 import { getStoragePath } from '@/services/storage';
-import type { Clip } from '@/services/database/types';
+import type { Clip, ClipBuild } from '@/services/database/types';
 import { invoke } from '@tauri-apps/api/core';
 
+// Build entry combines clip info with specific build info
+interface BuildEntry {
+  clip: Clip;
+  build: ClipBuild;
+  key: string;
+}
+
 const emit = defineEmits<{
-  (e: 'scheduleClip', clip: Clip): void;
-  (e: 'dragStart', clipData: { clipId: string; clipName: string | null; mediaUrl: string | null; thumbnailUrl: string | null; duration: number | null; projectName: string | null }): void;
+  (e: 'scheduleClip', clip: Clip, build?: ClipBuild): void;
+  (e: 'dragStart', clipData: { clipId: string; buildId: string; clipName: string | null; mediaUrl: string | null; thumbnailUrl: string | null; duration: number | null; projectName: string | null; organizationName: string | null; campaignName: string | null }): void;
   (e: 'dragMove', position: { x: number; y: number }): void;
   (e: 'dragEnd', position: { x: number; y: number }): void;
 }>();
 
 const loading = ref(true);
 const clips = ref<Clip[]>([]);
+const allBuilds = ref<BuildEntry[]>([]);
 const searchQuery = ref('');
-const draggingClip = ref<Clip | null>(null);
-const draggingClipId = ref<string | null>(null);
+const draggingEntry = ref<BuildEntry | null>(null);
+const draggingBuildId = ref<string | null>(null);
 const dragPosition = ref({ x: 0, y: 0 });
 const thumbnailCache = ref<Map<string, string>>(new Map());
 
-// Filter to only built clips
-const builtClips = computed(() => {
-  return clips.value.filter(
-    (clip) => clip.build_status === 'completed' && clip.built_file_path
-  );
-});
+// Count of built clips for header
+const builtClipsCount = computed(() => allBuilds.value.length);
 
 // Search filter
-const filteredClips = computed(() => {
-  if (!searchQuery.value.trim()) return builtClips.value;
+const filteredBuilds = computed(() => {
+  if (!searchQuery.value.trim()) return allBuilds.value;
   
   const query = searchQuery.value.toLowerCase();
-  return builtClips.value.filter((clip) => {
-    const name = (clip.name || '').toLowerCase();
-    const projectName = (clip.project_name || '').toLowerCase();
-    return name.includes(query) || projectName.includes(query);
+  return allBuilds.value.filter((entry) => {
+    const name = (entry.clip.name || '').toLowerCase();
+    const projectName = (entry.clip.project_name || '').toLowerCase();
+    const orgName = (entry.build.organization_name || '').toLowerCase();
+    const campaignName = (entry.build.campaign_name || '').toLowerCase();
+    return name.includes(query) || projectName.includes(query) || orgName.includes(query) || campaignName.includes(query);
   });
 });
 
 // Get thumbnail URL from cache
-function getThumbnailUrl(clip: Clip): string | null {
-  return thumbnailCache.value.get(clip.id) || null;
+function getThumbnailUrl(entry: BuildEntry): string | null {
+  // Try build-specific thumbnail first, then fall back to clip thumbnail
+  return thumbnailCache.value.get(entry.build.id) || thumbnailCache.value.get(entry.clip.id) || null;
+}
+
+// Get badge info for a build
+function getBadgeInfo(build: ClipBuild): { type: 'org' | 'campaign' | null; name: string } {
+  if (build.campaign_id && build.campaign_name) {
+    return { type: 'campaign', name: build.campaign_name };
+  }
+  if (build.organization_id && build.organization_name) {
+    return { type: 'org', name: build.organization_name };
+  }
+  return { type: null, name: '' };
 }
 
 // Format duration (seconds to MM:SS)
@@ -203,7 +240,7 @@ let isDragging = false;
 let dragStartPos = { x: 0, y: 0 };
 const DRAG_THRESHOLD = 5; // pixels before drag starts
 
-function handleMouseDown(event: MouseEvent, clip: Clip) {
+function handleMouseDown(event: MouseEvent, entry: BuildEntry) {
   // Only left mouse button
   if (event.button !== 0) return;
   
@@ -214,8 +251,8 @@ function handleMouseDown(event: MouseEvent, clip: Clip) {
   isDragging = false;
   dragStartPos = { x: event.clientX, y: event.clientY };
   
-  // Store the clip we might drag
-  const potentialDragClip = clip;
+  // Store the entry we might drag
+  const potentialDragEntry = entry;
   
   const handleMouseMove = (e: MouseEvent) => {
     const dx = e.clientX - dragStartPos.x;
@@ -224,19 +261,22 @@ function handleMouseDown(event: MouseEvent, clip: Clip) {
     // Check if we've moved enough to start dragging
     if (!isDragging && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
       isDragging = true;
-      console.log('[ClipsSidebar] Drag start for clip:', potentialDragClip.id, potentialDragClip.name);
+      console.log('[ClipsSidebar] Drag start for build:', potentialDragEntry.build.id);
       
-      draggingClip.value = potentialDragClip;
-      draggingClipId.value = potentialDragClip.id;
+      draggingEntry.value = potentialDragEntry;
+      draggingBuildId.value = potentialDragEntry.build.id;
       
       // Emit drag data to parent
       const dragData = {
-        clipId: potentialDragClip.id,
-        clipName: potentialDragClip.name,
-        mediaUrl: potentialDragClip.built_file_path,
-        thumbnailUrl: thumbnailCache.value.get(potentialDragClip.id) || null,
-        duration: potentialDragClip.built_duration,
-        projectName: potentialDragClip.project_name,
+        clipId: potentialDragEntry.clip.id,
+        buildId: potentialDragEntry.build.id,
+        clipName: potentialDragEntry.clip.name,
+        mediaUrl: potentialDragEntry.build.file_path,
+        thumbnailUrl: thumbnailCache.value.get(potentialDragEntry.build.id) || thumbnailCache.value.get(potentialDragEntry.clip.id) || null,
+        duration: potentialDragEntry.build.duration || potentialDragEntry.clip.built_duration,
+        projectName: potentialDragEntry.clip.project_name,
+        organizationName: potentialDragEntry.build.organization_name || null,
+        campaignName: potentialDragEntry.build.campaign_name || null,
       };
       console.log('[ClipsSidebar] Emitting drag data:', dragData);
       emit('dragStart', dragData);
@@ -255,8 +295,8 @@ function handleMouseDown(event: MouseEvent, clip: Clip) {
     if (isDragging) {
       console.log('[ClipsSidebar] Drag end at:', e.clientX, e.clientY);
       emit('dragEnd', { x: e.clientX, y: e.clientY });
-      draggingClip.value = null;
-      draggingClipId.value = null;
+      draggingEntry.value = null;
+      draggingBuildId.value = null;
     }
     
     isDragging = false;
@@ -266,12 +306,13 @@ function handleMouseDown(event: MouseEvent, clip: Clip) {
   document.addEventListener('mouseup', handleMouseUp);
 }
 
-// Load clips and their thumbnails
+// Load clips and their builds
 async function loadClips() {
   loading.value = true;
   try {
     clips.value = await getAllClips();
-    console.log('[ClipsSidebar] Loaded clips:', clips.value.length, 'built:', builtClips.value.length);
+    await loadBuilds();
+    console.log('[ClipsSidebar] Loaded builds:', allBuilds.value.length);
     await loadThumbnails();
     console.log('[ClipsSidebar] Thumbnails loaded:', thumbnailCache.value.size);
   } catch (error) {
@@ -279,6 +320,30 @@ async function loadClips() {
   } finally {
     loading.value = false;
   }
+}
+
+// Load all builds for all clips
+async function loadBuilds() {
+  const entries: BuildEntry[] = [];
+  for (const clip of clips.value) {
+    try {
+      const builds = await getClipBuilds(clip.id);
+      for (const build of builds) {
+        if (build.status === 'completed' && build.file_path) {
+          entries.push({
+            clip,
+            build,
+            key: build.id,
+          });
+        }
+      }
+    } catch (error) {
+      console.warn(`[ClipsSidebar] Failed to load builds for clip ${clip.id}:`, error);
+    }
+  }
+  // Sort by created_at descending (newest first)
+  entries.sort((a, b) => (b.build.created_at || 0) - (a.build.created_at || 0));
+  allBuilds.value = entries;
 }
 
 // Derive the expected thumbnail path from a video file path
@@ -293,24 +358,24 @@ async function getThumbnailPathForVideoFile(videoPath: string): Promise<string |
   }
 }
 
-// Load thumbnails using the same approach as Clips.vue
+// Load thumbnails for all builds
 async function loadThumbnails() {
-  const clipsNeedingThumbs = builtClips.value.filter(
-    (c) => !thumbnailCache.value.has(c.id)
+  const buildsNeedingThumbs = allBuilds.value.filter(
+    (entry) => !thumbnailCache.value.has(entry.build.id)
   );
-  console.log('[ClipsSidebar] Clips needing thumbnails:', clipsNeedingThumbs.length);
-  if (clipsNeedingThumbs.length === 0) return;
+  console.log('[ClipsSidebar] Builds needing thumbnails:', buildsNeedingThumbs.length);
+  if (buildsNeedingThumbs.length === 0) return;
 
   let hasNew = false;
   const batchSize = 5;
-  for (let i = 0; i < clipsNeedingThumbs.length; i += batchSize) {
-    const batch = clipsNeedingThumbs.slice(i, i + batchSize);
+  for (let i = 0; i < buildsNeedingThumbs.length; i += batchSize) {
+    const batch = buildsNeedingThumbs.slice(i, i + batchSize);
     await Promise.all(
-      batch.map(async (clip) => {
+      batch.map(async (entry) => {
         try {
-          const dataUrl = await loadClipThumbnail(clip);
+          const dataUrl = await loadBuildThumbnail(entry);
           if (dataUrl) {
-            thumbnailCache.value.set(clip.id, dataUrl);
+            thumbnailCache.value.set(entry.build.id, dataUrl);
             hasNew = true;
           }
         } catch (err) {
@@ -326,11 +391,23 @@ async function loadThumbnails() {
   }
 }
 
-// Load thumbnail for a single clip - tries multiple sources and regenerates if needed
-async function loadClipThumbnail(clip: Clip): Promise<string | null> {
-  // Source 1: Derive thumbnail path from built_file_path (most reliable)
-  if (clip.built_file_path) {
-    const derivedPath = await getThumbnailPathForVideoFile(clip.built_file_path);
+// Load thumbnail for a single build - tries multiple sources
+async function loadBuildThumbnail(entry: BuildEntry): Promise<string | null> {
+  const { clip, build } = entry;
+  
+  // Source 1: Build's thumbnail_path
+  if (build.thumbnail_path) {
+    try {
+      const exists = await invoke<boolean>('check_file_exists', { path: build.thumbnail_path });
+      if (exists) {
+        return await invoke<string>('read_file_as_data_url', { filePath: build.thumbnail_path });
+      }
+    } catch { /* try next source */ }
+  }
+  
+  // Source 2: Derive thumbnail path from build's file_path
+  if (build.file_path) {
+    const derivedPath = await getThumbnailPathForVideoFile(build.file_path);
     if (derivedPath) {
       try {
         const exists = await invoke<boolean>('check_file_exists', { path: derivedPath });
@@ -341,7 +418,7 @@ async function loadClipThumbnail(clip: Clip): Promise<string | null> {
     }
   }
 
-  // Source 2: built_thumbnail_path field
+  // Source 3: Clip's built_thumbnail_path field
   if (clip.built_thumbnail_path) {
     try {
       const exists = await invoke<boolean>('check_file_exists', { path: clip.built_thumbnail_path });
@@ -351,7 +428,7 @@ async function loadClipThumbnail(clip: Clip): Promise<string | null> {
     } catch { /* try next source */ }
   }
 
-  // Source 3: Thumbnails table
+  // Source 4: Thumbnails table
   try {
     const thumbnail = await getThumbnailByClipId(clip.id);
     if (thumbnail?.file_path) {
@@ -362,20 +439,20 @@ async function loadClipThumbnail(clip: Clip): Promise<string | null> {
     }
   } catch { /* try regeneration */ }
 
-  // Source 4: Regenerate from video file
-  if (clip.built_file_path) {
+  // Source 5: Regenerate from video file
+  if (build.file_path) {
     try {
-      const videoExists = await invoke<boolean>('check_file_exists', { path: clip.built_file_path });
+      const videoExists = await invoke<boolean>('check_file_exists', { path: build.file_path });
       if (videoExists) {
         const newThumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-          videoPath: clip.built_file_path,
+          videoPath: build.file_path,
           timestampSeconds: 1.0,
           outputFilename: null,
         });
         return await invoke<string>('read_file_as_data_url', { filePath: newThumbnailPath });
       }
     } catch (err) {
-      console.warn(`[ClipsSidebar] Failed to regenerate thumbnail for ${clip.id}:`, err);
+      console.warn(`[ClipsSidebar] Failed to regenerate thumbnail for build ${build.id}:`, err);
     }
   }
 

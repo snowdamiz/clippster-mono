@@ -1272,7 +1272,7 @@
         const thumbnailUrl = buildThumbnailCache.value.get(filePath) || clipThumbnailUrl;
 
         // Create a fake build object for video editor exports
-        const fakeBuild = {
+        const fakeBuild: ClipBuild = {
           id: clip.id,
           clip_id: clip.id,
           build_number: 1,
@@ -1286,14 +1286,19 @@
           output_format: 'mp4' as const,
           include_subtitles: false,
           progress: 100,
-          error: null,
           error_message: null,
           file_size: clip.built_file_size,
           duration: clip.built_duration || clip.duration,
           started_at: clip.created_at,
           created_at: clip.created_at,
           completed_at: clip.built_at || clip.created_at,
-          updated_at: clip.updated_at,
+          // Branding context fields
+          organization_id: null,
+          organization_name: null,
+          campaign_id: null,
+          campaign_name: null,
+          branding_profile_id: null,
+          branding_type: 'personal',
         };
 
         builds.push({

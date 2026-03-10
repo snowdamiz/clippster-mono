@@ -57,6 +57,7 @@ defmodule ClippsterServer.Campaigns do
       :creator_profile,
       :global_intro,
       :global_outro,
+      branding_profile: [:intro, :outro, :watermark, :platform_links],
       participants: :user,
       creator_profiles: :platform_links
     ])
@@ -533,6 +534,7 @@ defmodule ClippsterServer.Campaigns do
           :creator_profile,
           :global_intro,
           :global_outro,
+          branding_profile: [:intro, :outro, :watermark, :platform_links],
           creator_profiles: :platform_links
         ]
       ],
@@ -552,6 +554,7 @@ defmodule ClippsterServer.Campaigns do
           :creator_profile,
           :global_intro,
           :global_outro,
+          branding_profile: [:intro, :outro, :watermark, :platform_links],
           creator_profiles: :platform_links
         ]
       ],
@@ -582,6 +585,7 @@ defmodule ClippsterServer.Campaigns do
           :creator_profile,
           :global_intro,
           :global_outro,
+          branding_profile: [:intro, :outro, :watermark, :platform_links],
           creator_profiles: :platform_links
         ]
       ],

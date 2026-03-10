@@ -391,6 +391,7 @@ defmodule ClippsterServerWeb.CampaignController do
           "description",
           "cover_image_url",
           "creator_profile_id",
+          "branding_profile_id",
           "budget",
           "cpm",
           "cpm_views",
@@ -1052,6 +1053,7 @@ defmodule ClippsterServerWeb.CampaignController do
       id: campaign.id,
       organization_id: campaign.organization_id,
       creator_profile_id: campaign.creator_profile_id,
+      branding_profile_id: campaign.branding_profile_id,
       title: campaign.title,
       description: campaign.description,
       cover_image_url: presign_url(campaign.cover_image_url),
@@ -1118,6 +1120,13 @@ defmodule ClippsterServerWeb.CampaignController do
         if(Ecto.assoc_loaded?(campaign.creator_profiles),
           do: Enum.map(campaign.creator_profiles, &serialize_creator_profile/1),
           else: []
+        ),
+      branding_profile:
+        if(
+          campaign.branding_profile_id && Ecto.assoc_loaded?(campaign.branding_profile) &&
+            campaign.branding_profile,
+          do: serialize_creator_profile(campaign.branding_profile),
+          else: nil
         )
     }
   end
