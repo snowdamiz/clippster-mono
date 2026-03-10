@@ -51,13 +51,16 @@
       >
         <!-- Thumbnail -->
         <div class="relative aspect-video bg-zinc-900">
-          <img
-            v-if="getThumbnailUrl(entry)"
-            :src="getThumbnailUrl(entry) || ''"
-            :alt="entry.clip.name || 'Clip thumbnail'"
-            class="w-full h-full object-cover"
-          />
-          <div v-else class="w-full h-full flex items-center justify-center">
+          <!-- Thumbnail with correct aspect ratio (letterboxed/pillarboxed) -->
+          <div v-if="getThumbnailUrl(entry)" class="absolute inset-0 z-0 flex items-center justify-center">
+            <img
+              :src="getThumbnailUrl(entry) || ''"
+              :alt="entry.clip.name || 'Clip thumbnail'"
+              class="max-w-full max-h-full object-contain"
+              :class="isPortrait(entry.aspectRatio) ? 'h-full w-auto' : 'w-full h-auto'"
+            />
+          </div>
+          <div v-else class="absolute inset-0 z-0 flex items-center justify-center">
             <FileVideo class="size-6 text-zinc-700" />
           </div>
           
@@ -164,6 +167,8 @@ import { invoke } from '@tauri-apps/api/core';
 interface BuildEntry {
   clip: Clip;
   build: ClipBuild;
+  filePath: string;
+  aspectRatio: string | null;
   key: string;
 }
 
@@ -259,6 +264,14 @@ function formatDate(timestamp: number): string {
   return date.toLocaleDateString('default', { month: 'short', day: 'numeric' });
 }
 
+// Check if aspect ratio is portrait (taller than wide)
+function isPortrait(aspectRatio: string | null): boolean {
+  if (!aspectRatio) return false;
+  
+  const [width, height] = aspectRatio.split(':').map(Number);
+  return height > width;
+}
+
 // Mouse-based drag handlers (not HTML5 drag-and-drop)
 let isDragging = false;
 let dragStartPos = { x: 0, y: 0 };
@@ -295,7 +308,7 @@ function handleMouseDown(event: MouseEvent, entry: BuildEntry) {
         clipId: potentialDragEntry.clip.id,
         buildId: potentialDragEntry.build.id,
         clipName: potentialDragEntry.clip.name,
-        mediaUrl: potentialDragEntry.build.file_path,
+        mediaUrl: potentialDragEntry.filePath,
         thumbnailUrl: thumbnailCache.value.get(potentialDragEntry.build.id) || thumbnailCache.value.get(potentialDragEntry.clip.id) || null,
         duration: potentialDragEntry.build.duration || potentialDragEntry.clip.built_duration,
         projectName: potentialDragEntry.clip.project_name,
@@ -346,6 +359,33 @@ async function loadClips() {
   }
 }
 
+// Helper function to parse output paths from a build
+function getOutputPathsFromBuild(build: ClipBuild): string[] {
+  // Try parsing output_paths JSON array first
+  if (build.output_paths) {
+    try {
+      const paths = JSON.parse(build.output_paths);
+      if (Array.isArray(paths) && paths.length > 0) {
+        return paths;
+      }
+    } catch {
+      // Fall through to single file_path
+    }
+  }
+  // Fallback to single file_path
+  if (build.file_path) {
+    return [build.file_path];
+  }
+  return [];
+}
+
+// Extract aspect ratio from filename (e.g., "clip_name_16-9_1.mp4" -> "16:9")
+function extractAspectRatioFromPath(filePath: string): string | null {
+  const fileName = filePath.split(/[/\\]/).pop() || '';
+  const match = fileName.match(/_(\d+-\d+)_\d+\.\w+$/);
+  return match ? match[1].replace('-', ':') : null;
+}
+
 // Load all builds for all clips
 async function loadBuilds() {
   const entries: BuildEntry[] = [];
@@ -353,12 +393,22 @@ async function loadBuilds() {
     try {
       const builds = await getClipBuilds(clip.id);
       for (const build of builds) {
-        if (build.status === 'completed' && build.file_path) {
-          entries.push({
-            clip,
-            build,
-            key: build.id,
-          });
+        if (build.status === 'completed') {
+          const outputPaths = getOutputPathsFromBuild(build);
+          
+          // Create an entry for each output file
+          for (let i = 0; i < outputPaths.length; i++) {
+            const filePath = outputPaths[i];
+            const aspectRatio = extractAspectRatioFromPath(filePath);
+            
+            entries.push({
+              clip,
+              build,
+              filePath,
+              aspectRatio,
+              key: outputPaths.length > 1 ? `${build.id}-${i}` : build.id,
+            });
+          }
         }
       }
     } catch (error) {
@@ -380,6 +430,12 @@ async function getThumbnailPathForVideoFile(videoPath: string): Promise<string |
   } catch {
     return null;
   }
+}
+
+// Get thumbnail path for a specific build entry
+function getThumbnailPathForEntry(entry: BuildEntry): string | null {
+  // For multi-file builds, derive from the specific file path
+  return entry.filePath;
 }
 
 // Load thumbnails for all builds
@@ -429,9 +485,9 @@ async function loadBuildThumbnail(entry: BuildEntry): Promise<string | null> {
     } catch { /* try next source */ }
   }
   
-  // Source 2: Derive thumbnail path from build's file_path
-  if (build.file_path) {
-    const derivedPath = await getThumbnailPathForVideoFile(build.file_path);
+  // Source 2: Derive thumbnail path from entry's specific file_path
+  if (entry.filePath) {
+    const derivedPath = await getThumbnailPathForVideoFile(entry.filePath);
     if (derivedPath) {
       try {
         const exists = await invoke<boolean>('check_file_exists', { path: derivedPath });
@@ -464,12 +520,12 @@ async function loadBuildThumbnail(entry: BuildEntry): Promise<string | null> {
   } catch { /* try regeneration */ }
 
   // Source 5: Regenerate from video file
-  if (build.file_path) {
+  if (entry.filePath) {
     try {
-      const videoExists = await invoke<boolean>('check_file_exists', { path: build.file_path });
+      const videoExists = await invoke<boolean>('check_file_exists', { path: entry.filePath });
       if (videoExists) {
         const newThumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
-          videoPath: build.file_path,
+          videoPath: entry.filePath,
           timestampSeconds: 1.0,
           outputFilename: null,
         });
