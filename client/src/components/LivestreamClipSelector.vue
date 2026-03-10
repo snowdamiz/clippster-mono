@@ -681,16 +681,12 @@
 
       // Save clip to database
       try {
-        const sessionCampaign = props.streamerId ? livestreamStore.getSessionCampaign(props.streamerId) : undefined;
-        const campaignId = sessionCampaign?.id;
-
         const clipId = await createClipRecord(effectiveProjectId, clipFilePath, {
           name: finalClipName,
           duration: clipDuration,
           startTime: clipStartTime,
           endTime: clipEndTime,
           thumbnailPath: thumbnailFilePath || undefined,
-          campaignId,
         });
 
         createdClipId.value = clipId;

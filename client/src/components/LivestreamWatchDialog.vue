@@ -942,6 +942,8 @@
   }
 
   async function handlePublishClip(clipId: string, clipPath: string, projectId: string) {
+    console.log('[WatchDialog] handlePublishClip called:', { clipId, clipPath, projectId });
+    
     // Close the clip selector modal
     showClipModal.value = false;
 
@@ -953,17 +955,22 @@
 
     // Store clip data for publish workflow
     publishClipData.value = { clipId, clipPath, projectId };
+    console.log('[WatchDialog] publishClipData set:', publishClipData.value);
 
     // Load clip data from database
     try {
       const { getClip } = await import('@/services/database/clips');
       const clip = await getClip(clipId);
+      console.log('[WatchDialog] Loaded clip from database:', clip);
       
       if (clip) {
         currentClipForPublish.value = clip;
+        console.log('[WatchDialog] currentClipForPublish set:', currentClipForPublish.value);
         // Open the unified QuickPublishWizard
         showQuickPublishWizard.value = true;
+        console.log('[WatchDialog] showQuickPublishWizard set to true');
       } else {
+        console.error('[WatchDialog] Clip not found in database');
         showError('Error', 'Failed to load clip data');
       }
     } catch (err) {
