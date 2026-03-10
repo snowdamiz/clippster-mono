@@ -140,7 +140,7 @@ defmodule ClippsterServer.Social.PostSubmission do
     |> validate_caption()
     |> validate_scheduled_at()
     |> validate_account_presence()
-    |> put_change(:status, "scheduled")
+    |> put_change(:status, "pending")
     |> foreign_key_constraint(:organization_id)
     |> foreign_key_constraint(:organization_social_account_id)
     |> foreign_key_constraint(:organization_creator_profile_id)

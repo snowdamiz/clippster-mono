@@ -362,9 +362,28 @@ defmodule ClippsterServerWeb.SchedulingController do
 
     posts = Social.get_user_scheduled_posts(user.id, status: status)
 
+    # Gracefully handle any corrupted posts by filtering them out
+    serialized_posts =
+      posts
+      |> Enum.map(fn post ->
+        try do
+          {:ok, serialize_post(post)}
+        rescue
+          e ->
+            require Logger
+            Logger.error("Failed to serialize post #{post.id}: #{inspect(e)}")
+            {:error, post.id}
+        end
+      end)
+      |> Enum.filter(fn
+        {:ok, _} -> true
+        {:error, _} -> false
+      end)
+      |> Enum.map(fn {:ok, post} -> post end)
+
     json(conn, %{
       success: true,
-      posts: Enum.map(posts, &serialize_post/1)
+      posts: serialized_posts
     })
   end
 
@@ -411,9 +430,28 @@ defmodule ClippsterServerWeb.SchedulingController do
 
       {:ok, %{posts: posts, total: total}} = Social.get_org_scheduled_posts(org_id, opts)
 
+      # Gracefully handle any corrupted posts by filtering them out
+      serialized_posts =
+        posts
+        |> Enum.map(fn post ->
+          try do
+            {:ok, serialize_post(post)}
+          rescue
+            e ->
+              require Logger
+              Logger.error("Failed to serialize post #{post.id}: #{inspect(e)}")
+              {:error, post.id}
+          end
+        end)
+        |> Enum.filter(fn
+          {:ok, _} -> true
+          {:error, _} -> false
+        end)
+        |> Enum.map(fn {:ok, post} -> post end)
+
       json(conn, %{
         success: true,
-        posts: Enum.map(posts, &serialize_post/1),
+        posts: serialized_posts,
         total: total
       })
     else

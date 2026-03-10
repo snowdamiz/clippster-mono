@@ -1340,6 +1340,11 @@
   } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
   import { formatLastActive } from '@/utils/timeUtils';
+  import { 
+    initThumbnailCache, 
+    getCachedThumbnail, 
+    setCachedThumbnail 
+  } from '@/db/thumbnail-cache';
   import {
     getMyDashboard,
     getMyReferrals,
@@ -1676,7 +1681,10 @@
   const loadPostsAnalytics = async () => {
     loadingPosts.value = true;
     try {
-      // Sync analytics from PostForMe first
+      // Initialize thumbnail cache
+      await initThumbnailCache();
+      
+      // Sync analytics from PostForMe
       await syncUserAnalytics();
 
       // Load analytics summary
@@ -1688,23 +1696,54 @@
       // Load posts list
       const postsRes = await listUserPosts();
       if (postsRes.success) {
-        userPosts.value = postsRes.posts;
+        // Apply cached thumbnails first
+        const postsWithCache = await Promise.all(
+          postsRes.posts.map(async (post) => {
+            if (!post.thumbnail_url && post.media_url) {
+              const cached = await getCachedThumbnail(post.id);
+              if (cached) {
+                return { ...post, thumbnail_url: cached };
+              }
+            }
+            return post;
+          })
+        );
         
-        // Generate thumbnails for posts missing them
-        const postsNeedingThumbnails = postsRes.posts.filter(post => !post.thumbnail_url && post.media_url);
+        userPosts.value = postsWithCache;
+        
+        // Generate thumbnails for posts missing them (parallel, max 3 concurrent)
+        const postsNeedingThumbnails = postsWithCache.filter(
+          post => !post.thumbnail_url && post.media_url
+        );
+        
         if (postsNeedingThumbnails.length > 0) {
           console.log(`Generating thumbnails for ${postsNeedingThumbnails.length} posts...`);
-          for (const post of postsNeedingThumbnails) {
-            try {
-              await generatePostThumbnail(post.id);
-            } catch (error) {
-              console.error(`Failed to generate thumbnail for post ${post.id}:`, error);
-            }
-          }
-          // Reload posts to get updated thumbnails
-          const updatedPostsRes = await listUserPosts();
-          if (updatedPostsRes.success) {
-            userPosts.value = updatedPostsRes.posts;
+          
+          // Generate in batches of 3 to avoid overwhelming the server
+          const batchSize = 3;
+          for (let i = 0; i < postsNeedingThumbnails.length; i += batchSize) {
+            const batch = postsNeedingThumbnails.slice(i, i + batchSize);
+            await Promise.allSettled(
+              batch.map(async (post) => {
+                try {
+                  const result = await generatePostThumbnail(post.id);
+                  if (result.success && result.thumbnail_url) {
+                    // Cache the thumbnail
+                    await setCachedThumbnail(post.id, result.thumbnail_url);
+                    // Update local state
+                    const idx = userPosts.value.findIndex(p => p.id === post.id);
+                    if (idx >= 0) {
+                      userPosts.value[idx].thumbnail_url = result.thumbnail_url;
+                    }
+                  }
+                } catch (error: any) {
+                  // Silently handle errors (already has thumbnail or FFmpeg failed)
+                  if (error?.response?.status !== 400) {
+                    console.warn(`Failed to generate thumbnail for post ${post.id}:`, error?.response?.data?.error || error.message);
+                  }
+                }
+              })
+            );
           }
         }
       }

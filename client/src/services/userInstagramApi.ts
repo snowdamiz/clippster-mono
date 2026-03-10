@@ -85,6 +85,7 @@ export interface ListPostsResponse {
 export interface PostResponse {
   success: boolean;
   post?: UserPost;
+  thumbnail_url?: string;
   message?: string;
   error?: string;
 }

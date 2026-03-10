@@ -163,11 +163,11 @@ watch(() => props.modelValue, (newValue) => {
 }, { immediate: true });
 
 onMounted(() => {
-  document.addEventListener('click', handleClickOutside);
+  document.addEventListener('mousedown', handleClickOutside);
 });
 
 onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside);
+  document.removeEventListener('mousedown', handleClickOutside);
 });
 </script>
 

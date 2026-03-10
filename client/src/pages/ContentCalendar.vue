@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { formatTime } from '@/utils/dateTimeUtils';
 import {
   CalendarDays,
@@ -690,8 +690,21 @@ async function handleDeleteScheduledPost(postId: number) {
 }
 
 // ── Lifecycle ──
+let pollingInterval: number | null = null;
+
 onMounted(() => {
   loadData();
+  
+  // Poll for updates every 10 seconds to show real-time status changes
+  pollingInterval = window.setInterval(() => {
+    loadData();
+  }, 10000);
+});
+
+onUnmounted(() => {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+  }
 });
 </script>
 

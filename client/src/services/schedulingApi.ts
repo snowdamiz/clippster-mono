@@ -205,7 +205,7 @@ export async function updateScheduledPostMedia(
   thumbnailUrl?: string
 ): Promise<{ success: boolean; updated: number; failed: number; error?: string }> {
   const response = await api.patch('/social/scheduled/update-media', {
-    post_ids: postIds,
+    post_ids: Array.isArray(postIds) ? postIds : [postIds],
     media_url: mediaUrl,
     thumbnail_url: thumbnailUrl,
   });
