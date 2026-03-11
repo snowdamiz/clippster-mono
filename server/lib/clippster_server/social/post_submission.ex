@@ -58,6 +58,9 @@ defmodule ClippsterServer.Social.PostSubmission do
     # Owner type and source
     field :owner_type, :string, default: "org"
     field :clip_id, :string
+    field :clip_build_id, :string
+    field :aspect_ratio, :string
+    field :build_type, :string
 
     belongs_to :organization, Organization
     belongs_to :organization_social_account, SocialAccount
@@ -91,6 +94,9 @@ defmodule ClippsterServer.Social.PostSubmission do
       :media_url,
       :thumbnail_url,
       :clip_id,
+      :clip_build_id,
+      :aspect_ratio,
+      :build_type,
       :owner_type,
       :scheduled_at
     ])

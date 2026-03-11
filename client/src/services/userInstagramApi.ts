@@ -54,6 +54,8 @@ export interface PublishPostData {
   media_type?: 'image' | 'video' | 'reel';
   creator_profile_id?: number;
   campaign_id?: number;
+  clip_id?: string;
+  clip_build_id?: string;
 }
 
 export interface UploadMediaResponse {

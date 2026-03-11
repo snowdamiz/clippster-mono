@@ -247,6 +247,8 @@ export interface PublishToUserTwitterData {
   thumbnail_url?: string;
   creator_profile_id?: number;
   campaign_id?: number;
+  clip_id?: string;
+  clip_build_id?: string;
 }
 
 export interface PublishToUserTwitterResponse {

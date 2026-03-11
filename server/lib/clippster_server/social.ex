@@ -302,6 +302,7 @@ defmodule ClippsterServer.Social do
     query =
       from p in PostSubmission,
         where: p.organization_id == ^organization_id,
+        where: is_nil(p.campaign_id),
         order_by: [desc: p.posted_at, desc: p.inserted_at],
         limit: ^limit,
         offset: ^offset,
@@ -331,6 +332,7 @@ defmodule ClippsterServer.Social do
     count_query =
       from p in PostSubmission,
         where: p.organization_id == ^organization_id,
+        where: is_nil(p.campaign_id),
         select: count(p.id)
 
     count_query =

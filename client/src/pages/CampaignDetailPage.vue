@@ -5,15 +5,17 @@
       :description="campaign?.description || 'Campaign details and management'"
       :show-header="true"
       :icon="Megaphone"
+      :breadcrumbs="breadcrumbItems"
     >
+      <template #firstBreadcrumb>
+        <OrganizationBreadcrumb />
+      </template>
       <template #actions>
         <button v-if="campaign && isAdmin" class="edit-btn" @click="editCampaign">
           <Pencil class="edit-btn__icon" />
           Edit Campaign
         </button>
       </template>
-
-      <Breadcrumbs :items="breadcrumbItems" />
 
       <!-- Loading State -->
       <div v-if="loading" class="campaign-detail__loading">
@@ -290,7 +292,7 @@
     Globe,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
-  import Breadcrumbs from '@/components/Breadcrumbs.vue';
+  import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import { getCampaign, getPlatformDisplayName, type Campaign, type CampaignStats } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
   import { useAuthStore } from '@/stores/auth';
@@ -301,9 +303,8 @@
   const authStore = useAuthStore();
 
   const breadcrumbItems = computed(() => [
-    { label: 'Organizations', to: '/organizations' },
-    { label: campaign.value?.organization?.name || 'Organization', to: `/organization/${route.params.orgId}` },
-    { label: 'Campaigns', to: `/organization/${route.params.orgId}/campaigns` },
+    { label: 'Organizations', path: '/organizations' },
+    { label: 'Campaigns', path: `/organization/${route.params.orgId}/campaigns` },
     { label: campaign.value?.title || 'Campaign' }
   ]);
 

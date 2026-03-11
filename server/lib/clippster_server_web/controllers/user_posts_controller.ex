@@ -781,6 +781,8 @@ defmodule ClippsterServerWeb.UserPostsController do
               organization_id: campaign.organization_id,
               organization_creator_profile_id: creator_profile && creator_profile.id,
               campaign_id: campaign.id,
+              clip_id: params["clip_id"],
+              clip_build_id: params["clip_build_id"],
               user_social_account_id: account.id,
               submitted_by_user_id: user.id,
               platform: platform,
@@ -804,6 +806,41 @@ defmodule ClippsterServerWeb.UserPostsController do
                   post_id: post_data.post_id,
                   post_url: post_data.post_url
                 })
+                
+                # Submit to campaign - clip_url will be populated later from PostForMe feed sync
+                Logger.info("[UserPosts] Attempting to submit clip to campaign #{campaign.id} for user #{user.id}")
+                
+                campaign_submission_attrs = %{
+                  platform: platform,
+                  platform_post_id: post_data.post_id,
+                  social_account_id: account.id
+                }
+                
+                Logger.info("[UserPosts] Campaign submission attrs: #{inspect(campaign_submission_attrs)}")
+                
+                case Campaigns.submit_clip(campaign, user, campaign_submission_attrs) do
+                  {:ok, campaign_submission} ->
+                    Logger.info("[UserPosts] ✅ Successfully submitted clip to campaign #{campaign.id}, submission ID: #{campaign_submission.id}")
+                    
+                  {:error, :not_a_participant} ->
+                    Logger.error("[UserPosts] ❌ User #{user.id} is not a participant in campaign #{campaign.id}")
+                    
+                  {:error, :campaign_not_active} ->
+                    Logger.error("[UserPosts] ❌ Campaign #{campaign.id} is not active")
+                    
+                  {:error, :campaign_not_started} ->
+                    Logger.error("[UserPosts] ❌ Campaign #{campaign.id} has not started yet")
+                    
+                  {:error, :campaign_ended} ->
+                    Logger.error("[UserPosts] ❌ Campaign #{campaign.id} has ended")
+                    
+                  {:error, :platform_not_allowed} ->
+                    Logger.error("[UserPosts] ❌ Platform #{platform} is not allowed for campaign #{campaign.id}")
+                    
+                  {:error, reason} ->
+                    Logger.error("[UserPosts] ❌ Failed to submit to campaign: #{inspect(reason)}")
+                end
+                
                 Logger.info("[UserPosts] Dual-tracked to org #{campaign.organization_id} via campaign #{campaign.id}")
 
               {:error, reason} ->
@@ -892,7 +929,22 @@ defmodule ClippsterServerWeb.UserPostsController do
                           
                           if has_real_data do
                             case Campaigns.update_user_post_analytics(post, analytics) do
-                              {:ok, _} -> Logger.info("[sync_user_posts_analytics] Post #{post.id}: analytics synced successfully")
+                              {:ok, updated_post} -> 
+                                Logger.info("[sync_user_posts_analytics] Post #{post.id}: analytics synced successfully")
+                                
+                                # If this post has a campaign_id, update the CampaignSubmission with the real URL
+                                if updated_post.campaign_id && updated_post.post_url do
+                                  case ClippsterServer.Repo.get_by(ClippsterServer.Campaigns.CampaignSubmission, 
+                                    campaign_id: updated_post.campaign_id,
+                                    platform_post_id: updated_post.post_id) do
+                                    nil -> 
+                                      Logger.debug("[sync_user_posts_analytics] No CampaignSubmission found for post #{post.id}")
+                                    campaign_submission ->
+                                      Campaigns.update_submission_metadata(campaign_submission, %{clip_url: updated_post.post_url})
+                                      Logger.info("[sync_user_posts_analytics] Updated CampaignSubmission clip_url for post #{post.id}")
+                                  end
+                                end
+                                
                               {:error, reason} -> Logger.error("[sync_user_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
                             end
                           else
@@ -1303,6 +1355,10 @@ defmodule ClippsterServerWeb.UserPostsController do
       caption: params["caption"],
       media_url: params["media_url"],
       thumbnail_url: params["thumbnail_url"],
+      clip_id: params["clip_id"],
+      clip_build_id: params["clip_build_id"],
+      aspect_ratio: params["aspect_ratio"],
+      build_type: params["build_type"],
       owner_type: "user",
       post_id: post_data.post_id,
       post_url: post_data.post_url,

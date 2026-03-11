@@ -66,7 +66,7 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
       :platform,
       :platform_post_id
     ])
-    |> validate_required([:campaign_id, :participant_id, :user_id, :clip_url, :platform])
+    |> validate_required([:campaign_id, :participant_id, :user_id, :platform])
     |> validate_inclusion(:platform, @platforms)
     |> validate_url(:clip_url)
     |> detect_platform_from_url()
@@ -74,7 +74,6 @@ defmodule ClippsterServer.Campaigns.CampaignSubmission do
     |> foreign_key_constraint(:participant_id)
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:social_account_id)
-    |> unique_constraint(:clip_url, message: "has already been submitted")
   end
 
   @doc """

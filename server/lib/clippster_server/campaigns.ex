@@ -739,6 +739,15 @@ defmodule ClippsterServer.Campaigns do
   end
 
   @doc """
+  Creates a campaign submission directly (used for published posts).
+  """
+  def create_campaign_submission(attrs) do
+    %CampaignSubmission{}
+    |> CampaignSubmission.create_changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
   Gets a submission by ID.
   """
   def get_submission(id) do

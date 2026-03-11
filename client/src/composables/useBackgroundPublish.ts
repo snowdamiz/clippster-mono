@@ -17,6 +17,12 @@ export interface BackgroundPublishMetadata {
   creatorProfileId?: number | null;
   campaignId?: number | null;
   platformToRatioMap?: Record<string, string>; // Maps platformId to aspect ratio (e.g., 'instagram' -> '9:16')
+  clipId?: string;
+  clipBuildId?: string;
+  organizationId?: number;
+  brandingProfileId?: number;
+  aspectRatio?: string;
+  buildType?: 'org' | 'campaign' | 'personal';
 }
 
 export interface BackgroundPublishState {
@@ -240,6 +246,8 @@ export function useBackgroundPublish() {
               thumbnail_url: thumbUrl || undefined,
               creator_profile_id: metadata?.creatorProfileId || undefined,
               campaign_id: metadata?.campaignId || undefined,
+              clip_id: metadata?.clipId || undefined,
+              clip_build_id: metadata?.clipBuildId || undefined,
             };
             switch (target.platformId) {
               case 'twitter':

@@ -136,7 +136,12 @@ defmodule ClippsterServerWeb.PostSubmissionController do
                 media_type: params["media_type"],
                 caption: params["caption"],
                 media_url: params["media_url"],
-                thumbnail_url: params["thumbnail_url"]
+                thumbnail_url: params["thumbnail_url"],
+                campaign_id: params["campaign_id"],
+                clip_id: params["clip_id"],
+                clip_build_id: params["clip_build_id"],
+                aspect_ratio: params["aspect_ratio"],
+                build_type: params["build_type"]
               }
 
               case Social.create_post_submission(org_id, submission_attrs, user) do

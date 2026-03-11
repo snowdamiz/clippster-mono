@@ -368,145 +368,130 @@
 
                     <div class="build-dialog__addons-section">
 
-                      <!-- Campaign Selection (shown only when user has qualifying campaigns) -->
-                      <div v-if="availableCampaigns.length > 0" class="build-dialog__field build-dialog__campaign-section">
-                        <!-- Checkbox row -->
-                        <button
-                          type="button"
-                          @click="toggleIsForCampaign"
-                          class="build-dialog__campaign-toggle"
-                        >
+                      <!-- Organization Builds Section (shown only when orgs with matching streamer exist) -->
+                      <div v-if="availableOrgs.length > 0" class="build-dialog__field build-dialog__multi-select-section">
+                        <div class="build-dialog__section-header">
+                          <Building2 class="build-dialog__section-icon" />
+                          <span class="build-dialog__section-title">Build for Organizations</span>
+                        </div>
+                        <p class="build-dialog__section-hint">Select organizations and aspect ratios for each build</p>
+                        
+                        <div class="build-dialog__multi-select-list">
                           <div
-                            class="build-dialog__campaign-checkbox"
-                            :class="{ 'build-dialog__campaign-checkbox--checked': isForCampaign }"
+                            v-for="(org, orgIndex) in availableOrgs"
+                            :key="org.profile.id"
+                            class="build-dialog__multi-select-item"
                           >
-                            <CheckIcon v-if="isForCampaign" class="build-dialog__campaign-checkbox-icon" />
-                          </div>
-                          <div class="build-dialog__campaign-toggle-info">
-                            <span class="build-dialog__campaign-toggle-label">
-                              <Megaphone class="build-dialog__campaign-toggle-icon" />
-                              This clip is for a campaign
-                            </span>
-                            <span class="build-dialog__campaign-toggle-hint">
-                              Campaign branding will be applied instead of creator profile branding
-                            </span>
-                          </div>
-                        </button>
-
-                        <!-- Campaign dropdown (shown when checkbox is checked) -->
-                        <Transition name="slide-fade">
-                          <div v-if="isForCampaign" class="build-dialog__campaign-picker">
-                            <label class="build-dialog__field-label">Select Campaign</label>
-                            <div class="build-dialog__dropdown-wrapper">
-                              <button
-                                ref="campaignButtonRef"
-                                @click="toggleCampaignDropdown"
-                                class="build-dialog__dropdown-trigger"
+                            <!-- Org checkbox -->
+                            <button
+                              type="button"
+                              @click="toggleOrgSelection(orgIndex)"
+                              class="build-dialog__multi-select-toggle"
+                            >
+                              <div
+                                class="build-dialog__multi-select-checkbox"
+                                :class="{ 'build-dialog__multi-select-checkbox--checked': org.selected }"
                               >
-                                <div v-if="selectedCampaign" class="build-dialog__campaign-selected">
-                                  <div class="build-dialog__campaign-selected-icon">
-                                    <img
-                                      v-if="selectedCampaign.cover_image_url"
-                                      :src="selectedCampaign.cover_image_url"
-                                      class="build-dialog__campaign-cover"
-                                    />
-                                    <Megaphone v-else class="build-dialog__campaign-cover-icon" />
-                                  </div>
-                                  <div class="build-dialog__campaign-selected-info">
-                                    <span class="build-dialog__campaign-selected-title">{{ selectedCampaign.title }}</span>
-                                    <span class="build-dialog__campaign-selected-org">{{ selectedCampaign.organization?.name }}</span>
-                                  </div>
-                                  <span v-if="!selectedCampaign.creator_profile_id" class="build-dialog__badge build-dialog__badge--global">
-                                    <Globe class="build-dialog__badge-icon" />
-                                    Global
-                                  </span>
-                                </div>
-                                <span v-else class="build-dialog__dropdown-text build-dialog__dropdown-text--placeholder">
-                                  Select a campaign...
-                                </span>
-                                <ChevronDown
-                                  class="build-dialog__dropdown-icon"
-                                  :class="{ 'build-dialog__dropdown-icon--open': showCampaignDropdown }"
-                                />
-                              </button>
-
-                              <!-- Campaign dropdown list - Teleported -->
-                              <Teleport to="body">
-                                <div
-                                  v-if="showCampaignDropdown"
-                                  ref="campaignDropdownRef"
-                                  class="build-dialog__dropdown-menu"
-                                  :style="{
-                                    top: campaignDropdownPosition.top,
-                                    left: campaignDropdownPosition.left,
-                                    width: campaignDropdownPosition.width,
-                                    maxHeight: campaignDropdownPosition.maxHeight,
-                                  }"
-                                  @click.stop
-                                >
-                                  <div v-if="loadingCampaigns" class="build-dialog__dropdown-loading">Loading campaigns...</div>
-                                  <template v-else>
-                                    <button
-                                      v-for="campaign in availableCampaigns"
-                                      :key="campaign.id"
-                                      @click="selectCampaign(campaign)"
-                                      class="build-dialog__dropdown-item build-dialog__campaign-item"
-                                      :class="{ 'build-dialog__dropdown-item--selected': selectedCampaign?.id === campaign.id }"
-                                    >
-                                      <div class="build-dialog__campaign-item-icon">
-                                        <img
-                                          v-if="campaign.cover_image_url"
-                                          :src="campaign.cover_image_url"
-                                          class="build-dialog__campaign-cover"
-                                        />
-                                        <Megaphone v-else class="build-dialog__campaign-cover-icon" />
-                                      </div>
-                                      <div class="build-dialog__campaign-item-info">
-                                        <span class="build-dialog__campaign-item-title">{{ campaign.title }}</span>
-                                        <span class="build-dialog__campaign-item-org">{{ campaign.organization?.name }}</span>
-                                      </div>
-                                      <span v-if="!campaign.creator_profile_id" class="build-dialog__badge build-dialog__badge--global">
-                                        <Globe class="build-dialog__badge-icon" />
-                                        Global
-                                      </span>
-                                    </button>
-                                  </template>
-                                </div>
-                              </Teleport>
-                            </div>
-
-                            <!-- Campaign branding info notice -->
-                            <div v-if="selectedCampaign" class="build-dialog__campaign-notice">
-                              <div class="build-dialog__campaign-notice-icon">
-                                <CheckIcon class="h-3.5 w-3.5" />
+                                <CheckIcon v-if="org.selected" class="build-dialog__multi-select-checkbox-icon" />
                               </div>
-                              <p class="build-dialog__campaign-notice-text">
-                                <template v-if="selectedCampaign.creator_profile_id">
-                                  Campaign creator profile branding will be applied to this clip.
-                                </template>
-                                <template v-else>
-                                  {{ selectedCampaign.organization?.name }}'s global branding will be applied to this clip.
-                                </template>
-                              </p>
-                            </div>
+                              <span class="build-dialog__multi-select-name">{{ org.profile.organization_name || org.profile.name }}</span>
+                            </button>
+                            
+                            <!-- Nested aspect ratio checkboxes (shown when org is selected AND multiple ratios available) -->
+                            <Transition name="slide-fade">
+                              <div v-if="org.selected && hasMultipleAspectRatios" class="build-dialog__nested-ratios">
+                                <button
+                                  v-for="ratio in selectedRatios"
+                                  :key="ratio"
+                                  type="button"
+                                  @click="toggleOrgAspectRatio(orgIndex, ratio)"
+                                  class="build-dialog__ratio-chip"
+                                  :class="{ 'build-dialog__ratio-chip--selected': org.aspectRatios.includes(ratio) }"
+                                >
+                                  <CheckIcon v-if="org.aspectRatios.includes(ratio)" class="build-dialog__ratio-chip-icon" />
+                                  {{ ratio }}
+                                </button>
+                              </div>
+                            </Transition>
                           </div>
-                        </Transition>
+                        </div>
+                      </div>
+
+                      <!-- Campaign Builds Section (shown only when campaigns exist) -->
+                      <div v-if="availableCampaignSelections.length > 0" class="build-dialog__field build-dialog__multi-select-section">
+                        <div class="build-dialog__section-header">
+                          <Megaphone class="build-dialog__section-icon text-orange-400" />
+                          <span class="build-dialog__section-title">Build for Campaigns</span>
+                        </div>
+                        <p class="build-dialog__section-hint">Campaign branding will override organization branding</p>
+                        
+                        <div class="build-dialog__multi-select-list">
+                          <div
+                            v-for="(campaignSel, campaignIndex) in availableCampaignSelections"
+                            :key="campaignSel.campaign.id"
+                            class="build-dialog__multi-select-item"
+                          >
+                            <!-- Campaign checkbox -->
+                            <button
+                              type="button"
+                              @click="toggleCampaignSelectionMulti(campaignIndex)"
+                              class="build-dialog__multi-select-toggle"
+                            >
+                              <div
+                                class="build-dialog__multi-select-checkbox build-dialog__multi-select-checkbox--campaign"
+                                :class="{ 'build-dialog__multi-select-checkbox--checked': campaignSel.selected }"
+                              >
+                                <CheckIcon v-if="campaignSel.selected" class="build-dialog__multi-select-checkbox-icon" />
+                              </div>
+                              <div class="build-dialog__campaign-info">
+                                <span class="build-dialog__multi-select-name">{{ campaignSel.campaign.title }}</span>
+                                <span class="build-dialog__campaign-org-name">{{ campaignSel.campaign.organization?.name }}</span>
+                              </div>
+                              <span v-if="!campaignSel.campaign.branding_profile_id" class="build-dialog__badge build-dialog__badge--global">
+                                <Globe class="build-dialog__badge-icon" />
+                                Global
+                              </span>
+                            </button>
+                            
+                            <!-- Nested aspect ratio checkboxes (shown when campaign is selected AND multiple ratios available) -->
+                            <Transition name="slide-fade">
+                              <div v-if="campaignSel.selected && hasMultipleAspectRatios" class="build-dialog__nested-ratios">
+                                <button
+                                  v-for="ratio in selectedRatios"
+                                  :key="ratio"
+                                  type="button"
+                                  @click="toggleCampaignAspectRatio(campaignIndex, ratio)"
+                                  class="build-dialog__ratio-chip"
+                                  :class="{ 'build-dialog__ratio-chip--selected': campaignSel.aspectRatios.includes(ratio) }"
+                                >
+                                  <CheckIcon v-if="campaignSel.aspectRatios.includes(ratio)" class="build-dialog__ratio-chip-icon" />
+                                  {{ ratio }}
+                                </button>
+                              </div>
+                            </Transition>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <!-- Build count summary -->
+                      <div v-if="totalBuildsCount > 0" class="build-dialog__builds-summary">
+                        <span class="build-dialog__builds-count">{{ totalBuildsCount }} build{{ totalBuildsCount !== 1 ? 's' : '' }} will be created</span>
                       </div>
 
                       <!-- Intro/Outro section - hidden for free tier users -->
-                      <div v-if="!isFreeTier" class="build-dialog__intro-outro-section">
+                      <!-- Disabled when orgs/campaigns are selected (branding comes from their profiles) -->
+                      <div v-if="!isFreeTier" class="build-dialog__intro-outro-section" :class="{ 'build-dialog__intro-outro-section--disabled': hasOrgOrCampaignSelected }">
+                        <div v-if="hasOrgOrCampaignSelected" class="build-dialog__disabled-notice">
+                          <span>Intro/Outro controlled by organization or campaign branding</span>
+                        </div>
                         <!-- Intro Compact Selector -->
                         <div class="build-dialog__field">
                           <div class="build-dialog__field-header">
                             <label class="build-dialog__field-label">Intro</label>
                             <div class="build-dialog__field-badges">
-                              <span v-if="isForCampaign && campaignIntro" class="build-dialog__badge build-dialog__badge--campaign">
-                                <Megaphone class="build-dialog__badge-icon" />
-                                Campaign
-                              </span>
-                              <span v-else-if="!isForCampaign && creatorProfileIntro" class="build-dialog__badge build-dialog__badge--org">
+                              <span v-if="hasOrgOrCampaignSelected" class="build-dialog__badge build-dialog__badge--org">
                                 <Building2 class="build-dialog__badge-icon" />
-                                Creator Profile
+                                Auto
                               </span>
                               <span v-else-if="selectedIntro?.isOrgAsset" class="build-dialog__badge build-dialog__badge--org">
                                 <Building2 class="build-dialog__badge-icon" />
@@ -517,10 +502,10 @@
                           <div class="build-dialog__dropdown-wrapper">
                             <button
                               ref="introButtonRef"
-                              @click="!introLockedByCampaign && toggleIntroDropdown()"
+                              @click="!hasOrgOrCampaignSelected && toggleIntroDropdown()"
                               class="build-dialog__dropdown-trigger"
-                              :class="{ 'build-dialog__dropdown-trigger--locked': introLockedByCampaign }"
-                              :disabled="introLockedByCampaign"
+                              :class="{ 'build-dialog__dropdown-trigger--disabled': hasOrgOrCampaignSelected }"
+                              :disabled="hasOrgOrCampaignSelected"
                             >
                               <span class="build-dialog__dropdown-text">
                                 {{ selectedIntro ? `${selectedIntro.name} (${formatDuration(selectedIntro.duration || 0)})` : 'None' }}
@@ -586,13 +571,9 @@
                           <div class="build-dialog__field-header">
                             <label class="build-dialog__field-label">Outro</label>
                             <div class="build-dialog__field-badges">
-                              <span v-if="isForCampaign && campaignOutro" class="build-dialog__badge build-dialog__badge--campaign">
-                                <Megaphone class="build-dialog__badge-icon" />
-                                Campaign
-                              </span>
-                              <span v-else-if="!isForCampaign && creatorProfileOutro" class="build-dialog__badge build-dialog__badge--org">
+                              <span v-if="hasOrgOrCampaignSelected" class="build-dialog__badge build-dialog__badge--org">
                                 <Building2 class="build-dialog__badge-icon" />
-                                Creator Profile
+                                Auto
                               </span>
                               <span v-else-if="selectedOutro?.isOrgAsset" class="build-dialog__badge build-dialog__badge--org">
                                 <Building2 class="build-dialog__badge-icon" />
@@ -603,10 +584,10 @@
                           <div class="build-dialog__dropdown-wrapper">
                             <button
                               ref="outroButtonRef"
-                              @click="!outroLockedByCampaign && toggleOutroDropdown()"
+                              @click="!hasOrgOrCampaignSelected && toggleOutroDropdown()"
                               class="build-dialog__dropdown-trigger"
-                              :class="{ 'build-dialog__dropdown-trigger--locked': outroLockedByCampaign }"
-                              :disabled="outroLockedByCampaign"
+                              :class="{ 'build-dialog__dropdown-trigger--disabled': hasOrgOrCampaignSelected }"
+                              :disabled="hasOrgOrCampaignSelected"
                             >
                               <span class="build-dialog__dropdown-text">
                                 {{ selectedOutro ? `${selectedOutro.name} (${formatDuration(selectedOutro.duration || 0)})` : 'None' }}
@@ -683,23 +664,6 @@
                   <div v-if="currentStep === 'publish'" key="publish" class="schedule-dialog__step-content">
                     <div class="schedule-dialog__content">
                       <form class="schedule-dialog__form" @submit.prevent="handlePublish">
-                        <!-- Clip Preview -->
-                        <div class="schedule-dialog__field">
-                          <label class="schedule-dialog__label">Clip Preview</label>
-                          <div class="schedule-dialog__clip-preview">
-                            <div class="schedule-dialog__clip-thumbnail">
-                              <img v-if="thumbnailUrl" :src="thumbnailUrl" alt="Clip thumbnail" />
-                              <FileVideo v-else :size="32" class="text-zinc-600" />
-                            </div>
-                            <div class="schedule-dialog__clip-info">
-                              <h3 class="schedule-dialog__clip-name">{{ clip?.current_version_name || clip?.name || 'Untitled Clip' }}</h3>
-                              <div class="schedule-dialog__clip-meta">
-                                <span v-if="clipDuration">{{ formatDuration(clipDuration) }}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
                         <!-- Build Progress -->
                         <div v-if="buildState.status === 'building'" class="schedule-dialog__alert schedule-dialog__alert--info">
                           <Loader2 :size="16" class="schedule-dialog__spinner" />
@@ -715,8 +679,132 @@
                           <p class="schedule-dialog__alert-text">Build failed: {{ buildState.error }}</p>
                         </div>
 
-                        <!-- Platform Selection with Aspect Ratios -->
-                        <div class="schedule-dialog__field">
+                        <!-- Multi-Target Build Grid -->
+                        <div v-if="buildTargets.length > 0" class="schedule-dialog__field">
+                          <label class="schedule-dialog__label">Built Clips ({{ buildTargets.length }})</label>
+                          <p class="schedule-dialog__field-hint">Select platforms and accounts for each aspect ratio</p>
+                          
+                          <!-- Group builds by aspect ratio -->
+                          <div class="space-y-6">
+                            <div
+                              v-for="(targets, aspectRatio) in groupedBuildTargets"
+                              :key="aspectRatio"
+                              class="schedule-dialog__aspect-ratio-group"
+                            >
+                              <!-- Aspect Ratio Header -->
+                              <div class="schedule-dialog__aspect-ratio-header">
+                                <span class="schedule-dialog__aspect-ratio-badge">{{ aspectRatio }}</span>
+                                <div class="schedule-dialog__build-badges">
+                                  <span
+                                    v-for="target in targets"
+                                    :key="`${target.type}-${target.id}`"
+                                    :class="[
+                                      'schedule-dialog__build-badge',
+                                      target.type === 'campaign' ? 'schedule-dialog__build-badge--campaign' :
+                                      target.type === 'org' ? 'schedule-dialog__build-badge--org' :
+                                      'schedule-dialog__build-badge--personal'
+                                    ]"
+                                  >
+                                    {{ target.name }}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              <!-- Platform Selection -->
+                              <div class="schedule-dialog__field">
+                                <label class="schedule-dialog__label">Platforms *</label>
+                                <div class="schedule-dialog__platforms">
+                                  <label
+                                    v-for="platform in availablePlatforms"
+                                    :key="platform.id"
+                                    class="schedule-dialog__platform-option"
+                                    :class="{ 'schedule-dialog__platform-option--selected': targets[0].selectedPlatforms.has(platform.id) }"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      :checked="targets[0].selectedPlatforms.has(platform.id)"
+                                      @change="togglePlatformForAspectRatio(aspectRatio, platform.id)"
+                                      class="schedule-dialog__checkbox"
+                                    />
+                                    <component :is="platform.icon" :size="16" />
+                                    <span>{{ platform.label }}</span>
+                                  </label>
+                                </div>
+                              </div>
+                              
+                              <!-- Account Selection per Platform -->
+                              <div v-if="getSelectedPlatformsForAspectRatio(aspectRatio).length > 0" class="schedule-dialog__field">
+                                <label class="schedule-dialog__label">Accounts *</label>
+                                <div class="schedule-dialog__account-configs">
+                                  <div
+                                    v-for="platformId in getSelectedPlatformsForAspectRatio(aspectRatio)"
+                                    :key="platformId"
+                                    class="schedule-dialog__account-config"
+                                  >
+                                    <div class="schedule-dialog__account-config-header">
+                                      <component :is="getPlatformIcon(platformId)" :size="14" />
+                                      <span>{{ getPlatformLabel(platformId) }}</span>
+                                    </div>
+                                    <div class="schedule-dialog__dropdown-wrapper">
+                                      <button
+                                        type="button"
+                                        @click="toggleAccountDropdownForAspectRatio(aspectRatio, platformId)"
+                                        class="schedule-dialog__dropdown-trigger schedule-dialog__dropdown-trigger--sm"
+                                      >
+                                        <span class="truncate">{{ getAccountLabelForAspectRatio(aspectRatio, platformId) }}</span>
+                                        <ChevronDown
+                                          class="schedule-dialog__dropdown-chevron"
+                                          :class="{ 'schedule-dialog__dropdown-chevron--open': activeAccountDropdown === `${aspectRatio}-${platformId}` }"
+                                          :size="14"
+                                        />
+                                      </button>
+                                      
+                                      <div v-if="activeAccountDropdown === `${aspectRatio}-${platformId}`" class="schedule-dialog__dropdown">
+                                        <!-- Org Accounts Section -->
+                                        <div v-if="getOrgAccountsForPlatform(platformId).length > 0">
+                                          <div class="schedule-dialog__dropdown-group">Organization Accounts</div>
+                                          <button
+                                            v-for="account in getOrgAccountsForPlatform(platformId)"
+                                            :key="`org-${account.id}`"
+                                            type="button"
+                                            @click="selectAccountForAspectRatio(aspectRatio, platformId, `org:${account.id}`)"
+                                            class="schedule-dialog__dropdown-item"
+                                            :class="{ 'schedule-dialog__dropdown-item--selected': targets[0].selectedPlatforms.get(platformId) === `org:${account.id}` }"
+                                          >
+                                            @{{ account.username }}
+                                          </button>
+                                        </div>
+                                        
+                                        <!-- Personal Accounts Section -->
+                                        <div v-if="getPersonalAccountsForPlatform(platformId).length > 0">
+                                          <div class="schedule-dialog__dropdown-group">Personal Accounts</div>
+                                          <button
+                                            v-for="account in getPersonalAccountsForPlatform(platformId)"
+                                            :key="`user-${account.id}`"
+                                            type="button"
+                                            @click="selectAccountForAspectRatio(aspectRatio, platformId, `user:${account.id}`)"
+                                            class="schedule-dialog__dropdown-item"
+                                            :class="{ 'schedule-dialog__dropdown-item--selected': targets[0].selectedPlatforms.get(platformId) === `user:${account.id}` }"
+                                          >
+                                            @{{ account.username }}
+                                          </button>
+                                        </div>
+                                        
+                                        <!-- No Accounts Message -->
+                                        <div v-if="getOrgAccountsForPlatform(platformId).length === 0 && getPersonalAccountsForPlatform(platformId).length === 0" class="schedule-dialog__dropdown-item" style="opacity: 0.6; cursor: default;">
+                                          No accounts connected
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- Legacy Single Build UI (shown when no multi-target builds) -->
+                        <div v-else class="schedule-dialog__field">
                           <label class="schedule-dialog__label">Platforms *</label>
                           
                           <!-- Platform Grid (2 columns) -->
@@ -908,7 +996,7 @@
                 >
                   <Loader2 v-if="isBuilding" class="schedule-dialog__spinner" />
                   <Share2 v-else class="build-dialog__btn-icon" />
-                  <span>{{ isBuilding ? 'Building...' : `Publish (${selectedPublishPlatforms.length})` }}</span>
+                  <span>{{ isBuilding ? 'Building...' : `Publish (${totalSelectedPlatforms})` }}</span>
                 </button>
               </div>
             </div>
@@ -971,6 +1059,7 @@ import { useFreeTierLimits } from '@/composables/useFreeTierLimits';
 import { useClipBuildPipeline } from '@/composables/useClipBuildPipeline';
 import { useBackgroundPublish, type PublishTarget } from '@/composables/useBackgroundPublish';
 import { getMyGlobalBrandingCampaigns, getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
+import { getUserAssignedCreatorProfiles, type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
 import { listSocialAccounts, type SocialAccount } from '@/services/socialAccountsApi';
 import { listUserTwitterAccounts, type UserTwitterAccount } from '@/services/userTwitterApi';
 import { listUserTiktokAccounts, type UserTiktokAccount } from '@/services/userTiktokApi';
@@ -982,6 +1071,35 @@ interface IntroOutroItem extends Omit<IntroOutro, 'id'> {
   isOrgAsset?: boolean;
   serverId?: number;
   serverUrl?: string;
+}
+
+// Multi-target selection interfaces (matching ClipBuildSettingsDialog)
+interface OrgSelection {
+  profile: ServerOrganizationCreatorProfile;
+  selected: boolean;
+  aspectRatios: string[];
+}
+
+interface CampaignSelection {
+  campaign: Campaign;
+  selected: boolean;
+  aspectRatios: string[];
+}
+
+// Build target for multi-org/campaign builds
+export interface BuildTarget {
+  type: 'org' | 'campaign' | 'personal';
+  id: number | null;
+  name: string;
+  aspectRatio: string;
+  organizationId?: number;
+  organizationName?: string;
+  campaignId?: number;
+  campaignName?: string;
+  brandingProfileId?: number;
+  buildFilePath?: string; // Set after build completes
+  buildId?: string; // Database build record ID
+  selectedPlatforms: Map<string, string>; // Map of platform ID to account ID (e.g., 'instagram' -> 'org:123')
 }
 
 type StepId = 'platforms' | 'framing' | 'export' | 'addons' | 'publish';
@@ -1056,10 +1174,35 @@ const intros = ref<IntroOutroItem[]>([]);
 const outros = ref<IntroOutroItem[]>([]);
 const selectedIntroId = ref<string | null>(null);
 const selectedOutroId = ref<string | null>(null);
+const loadingAssets = ref(false);
+
+// Multi-target selection (orgs and campaigns)
+const availableOrgs = ref<OrgSelection[]>([]);
+const availableCampaignSelections = ref<CampaignSelection[]>([]);
+const loadingOrgsAndCampaigns = ref(false);
+const buildTargets = ref<BuildTarget[]>([]); // Generated from selections before build
+
+// Track which account dropdown is open (aspect ratio + platform)
+const activeAccountDropdown = ref<string | null>(null);
+
+// Group build targets by aspect ratio
+const groupedBuildTargets = computed(() => {
+  const groups: Record<string, BuildTarget[]> = {};
+  
+  for (const target of buildTargets.value) {
+    if (!groups[target.aspectRatio]) {
+      groups[target.aspectRatio] = [];
+    }
+    groups[target.aspectRatio].push(target);
+  }
+  
+  return groups;
+});
+
+// Legacy single campaign selection (kept for backward compatibility)
 const isForCampaign = ref(false);
 const availableCampaigns = ref<Campaign[]>([]);
 const selectedCampaignId = ref<number | null>(null);
-const loadingAssets = ref(false);
 
 // Dropdown state for intro/outro
 const introButtonRef = ref<HTMLElement | null>(null);
@@ -1093,7 +1236,6 @@ const personalTwitterAccounts = ref<UserTwitterAccount[]>([]);
 const personalTiktokAccounts = ref<UserTiktokAccount[]>([]);
 const personalInstagramAccounts = ref<UserInstagramAccount[]>([]);
 const personalYoutubeAccounts = ref<UserYoutubeAccount[]>([]);
-const activeAccountDropdown = ref<string | null>(null);
 const activeAspectRatioDropdown = ref<string | null>(null);
 const hasQueuedBackgroundPublish = ref(false);
 
@@ -1157,6 +1299,25 @@ const canProceed = computed(() => {
 });
 
 const canPublish = computed(() => {
+  // Multi-target build flow validation
+  if (buildTargets.value.length > 0) {
+    // Check if at least one target has platforms with accounts selected
+    for (const target of buildTargets.value) {
+      if (target.selectedPlatforms.size === 0) continue;
+      
+      // Check if all selected platforms have accounts
+      for (const [platformId, accountId] of target.selectedPlatforms.entries()) {
+        if (!accountId) return false;
+      }
+      
+      // At least one valid target found
+      return true;
+    }
+    // No valid targets found
+    return false;
+  }
+  
+  // Legacy single-build flow validation
   if (selectedPublishPlatforms.value.length === 0) return false;
   for (const platformId of selectedPublishPlatforms.value) {
     const config = platformConfigs.value[platformId];
@@ -1166,6 +1327,23 @@ const canPublish = computed(() => {
 });
 
 const selectedCampaign = computed(() => availableCampaigns.value.find((c) => c.id === selectedCampaignId.value) || null);
+
+// Count total platforms across all build targets (for multi-target flow) or legacy flow
+const totalSelectedPlatforms = computed(() => {
+  // Multi-target build flow
+  if (buildTargets.value.length > 0) {
+    const uniquePlatforms = new Set<string>();
+    for (const target of buildTargets.value) {
+      for (const platformId of target.selectedPlatforms.keys()) {
+        uniquePlatforms.add(platformId);
+      }
+    }
+    return uniquePlatforms.size;
+  }
+  
+  // Legacy single-build flow
+  return selectedPublishPlatforms.value.length;
+});
 
 // Campaign intro/outro - when campaign is selected, use campaign assets and lock the selection
 const campaignIntro = computed<IntroOutroItem | null>(() => {
@@ -1464,7 +1642,7 @@ function handleClickOutside(event: MouseEvent) {
   // Close account dropdown when clicking outside
   if (activeAccountDropdown.value) {
     const clickedInsideDropdown = (target as Element).closest('.schedule-dialog__dropdown');
-    const clickedInsideButton = (target as Element).closest('.schedule-dialog__select-button');
+    const clickedInsideButton = (target as Element).closest('.schedule-dialog__dropdown-trigger');
     if (!clickedInsideDropdown && !clickedInsideButton) {
       activeAccountDropdown.value = null;
     }
@@ -1637,6 +1815,99 @@ function getPersonalAccountsForPlatform(platformId: string): (UserTwitterAccount
   }
 }
 
+// Aspect ratio-based platform/account selection
+function togglePlatformForAspectRatio(aspectRatio: string, platformId: string) {
+  const targets = groupedBuildTargets.value[aspectRatio];
+  if (!targets || targets.length === 0) return;
+  
+  const firstTarget = targets[0];
+  const isSelected = firstTarget.selectedPlatforms.has(platformId);
+  
+  // Toggle for all targets with this aspect ratio
+  for (const target of targets) {
+    if (isSelected) {
+      target.selectedPlatforms.delete(platformId);
+    } else {
+      // Auto-select account based on target type
+      let defaultAccount = '';
+      
+      if (target.type === 'org' || target.type === 'campaign') {
+        const orgAccounts = getOrgAccountsForPlatform(platformId);
+        if (orgAccounts.length > 0) {
+          defaultAccount = `org:${orgAccounts[0].id}`;
+        }
+      } else {
+        const personalAccounts = getPersonalAccountsForPlatform(platformId);
+        if (personalAccounts.length > 0) {
+          defaultAccount = `user:${personalAccounts[0].id}`;
+        }
+      }
+      
+      target.selectedPlatforms.set(platformId, defaultAccount);
+    }
+  }
+}
+
+function getSelectedPlatformsForAspectRatio(aspectRatio: string): string[] {
+  const targets = groupedBuildTargets.value[aspectRatio];
+  if (!targets || targets.length === 0) return [];
+  
+  return Array.from(targets[0].selectedPlatforms.keys());
+}
+
+function toggleAccountDropdownForAspectRatio(aspectRatio: string, platformId: string) {
+  const key = `${aspectRatio}-${platformId}`;
+  console.log('[QuickPublishWizard] toggleAccountDropdownForAspectRatio:', { aspectRatio, platformId, key });
+  console.log('[QuickPublishWizard] Current activeAccountDropdown:', activeAccountDropdown.value);
+  console.log('[QuickPublishWizard] Org accounts for platform:', getOrgAccountsForPlatform(platformId));
+  console.log('[QuickPublishWizard] Personal accounts for platform:', getPersonalAccountsForPlatform(platformId));
+  
+  activeAccountDropdown.value = activeAccountDropdown.value === key ? null : key;
+  
+  console.log('[QuickPublishWizard] New activeAccountDropdown:', activeAccountDropdown.value);
+}
+
+function selectAccountForAspectRatio(aspectRatio: string, platformId: string, accountId: string) {
+  const targets = groupedBuildTargets.value[aspectRatio];
+  if (!targets) return;
+  
+  // Set account for all targets with this aspect ratio
+  for (const target of targets) {
+    target.selectedPlatforms.set(platformId, accountId);
+  }
+  
+  activeAccountDropdown.value = null;
+}
+
+function getAccountLabelForAspectRatio(aspectRatio: string, platformId: string): string {
+  const targets = groupedBuildTargets.value[aspectRatio];
+  if (!targets || targets.length === 0) return 'Select account...';
+  
+  const accountId = targets[0].selectedPlatforms.get(platformId);
+  if (!accountId) return 'Select account...';
+  
+  return getAccountLabel(platformId, accountId) || 'Select account...';
+}
+
+function getAccountLabel(platformId: string, accountId: string): string | null {
+  if (!accountId) return null;
+  
+  const [type, id] = accountId.split(':');
+  const accountIdNum = Number(id);
+  
+  if (type === 'org') {
+    const accounts = getOrgAccountsForPlatform(platformId);
+    const account = accounts.find(a => a.id === accountIdNum);
+    return account ? `@${account.username}` : null;
+  } else if (type === 'user') {
+    const accounts = getPersonalAccountsForPlatform(platformId);
+    const account = accounts.find(a => a.id === accountIdNum);
+    return account ? `@${account.username}` : null;
+  }
+  
+  return null;
+}
+
 function toggleAccountDropdown(platformId: string) {
   console.log('[QuickPublishWizard] toggleAccountDropdown called for platform:', platformId);
   console.log('[QuickPublishWizard] Current activeAccountDropdown:', activeAccountDropdown.value);
@@ -1678,329 +1949,629 @@ function getSelectedAccountLabel(platformId: string): string | null {
   return null;
 }
 
-// Build process
+// Helper: Load branding assets for an organization target
+async function loadOrgBranding(orgProfile: ServerOrganizationCreatorProfile) {
+  let intro: IntroOutroItem | null = null;
+  let outro: IntroOutroItem | null = null;
+  let watermark: any = null;
+  
+  // Load intro
+  if (orgProfile.intro?.url) {
+    try {
+      const introResult = await ensureAssetDownloaded({
+        id: orgProfile.intro.id,
+        name: orgProfile.intro.name,
+        asset_type: 'intro',
+        url: orgProfile.intro.url,
+        organization_id: orgProfile.organization_id,
+        organization_name: orgProfile.organization_name || undefined,
+        duration: orgProfile.intro.duration || undefined,
+        thumbnail_url: orgProfile.intro.thumbnail_url || undefined,
+        inserted_at: Date.now().toString(),
+        updated_at: Date.now().toString(),
+      } as unknown as ServerOrganizationAsset);
+      
+      if (introResult.success && introResult.filePath) {
+        intro = {
+          id: `org-intro-${orgProfile.intro.id}`,
+          name: orgProfile.intro.name,
+          file_path: introResult.filePath,
+          type: 'intro' as const,
+          duration: orgProfile.intro.duration ? parseFloat(orgProfile.intro.duration) : null,
+          thumbnail_path: orgProfile.intro.thumbnail_url || null,
+          thumbnail_generation_status: null,
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        };
+      }
+    } catch (e) {
+      console.warn('[QuickPublishWizard] Failed to load org intro:', e);
+    }
+  }
+  
+  // Load outro
+  if (orgProfile.outro?.url) {
+    try {
+      const outroResult = await ensureAssetDownloaded({
+        id: orgProfile.outro.id,
+        name: orgProfile.outro.name,
+        asset_type: 'outro',
+        url: orgProfile.outro.url,
+        organization_id: orgProfile.organization_id,
+        organization_name: orgProfile.organization_name || undefined,
+        duration: orgProfile.outro.duration || undefined,
+        thumbnail_url: orgProfile.outro.thumbnail_url || undefined,
+        inserted_at: Date.now().toString(),
+        updated_at: Date.now().toString(),
+      } as unknown as ServerOrganizationAsset);
+      
+      if (outroResult.success && outroResult.filePath) {
+        outro = {
+          id: `org-outro-${orgProfile.outro.id}`,
+          name: orgProfile.outro.name,
+          file_path: outroResult.filePath,
+          type: 'outro' as const,
+          duration: orgProfile.outro.duration ? parseFloat(orgProfile.outro.duration) : null,
+          thumbnail_path: orgProfile.outro.thumbnail_url || null,
+          thumbnail_generation_status: null,
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        };
+      }
+    } catch (e) {
+      console.warn('[QuickPublishWizard] Failed to load org outro:', e);
+    }
+  }
+  
+  // Load watermark
+  if (orgProfile.watermark?.url) {
+    try {
+      const filename = `org-watermark-${orgProfile.watermark.id}.png`;
+      const filePath = await invoke<string>('download_org_asset_from_url', {
+        url: orgProfile.watermark.url,
+        filename,
+        assetType: 'watermarks',
+        organizationId: String(orgProfile.organization_id),
+      });
+      
+      let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+      if (orgProfile.watermark_settings) {
+        try {
+          const wmSettings = typeof orgProfile.watermark_settings === 'string'
+            ? JSON.parse(orgProfile.watermark_settings as unknown as string)
+            : orgProfile.watermark_settings;
+          const ratioConfig = wmSettings['16:9'];
+          if (ratioConfig?.position) defaultPos = ratioConfig.position;
+        } catch (e) {
+          console.warn('[QuickPublishWizard] Failed to parse org watermark settings:', e);
+        }
+      }
+      
+      watermark = {
+        enabled: true,
+        watermarkId: `org-asset-${orgProfile.watermark.id}`,
+        positionX: defaultPos.x,
+        positionY: defaultPos.y,
+        opacity: defaultPos.opacity,
+        scale: defaultPos.scale,
+        perRatioSettings: (orgProfile.watermark_settings as any) ?? null,
+      };
+    } catch (e) {
+      console.warn('[QuickPublishWizard] Failed to load org watermark:', e);
+    }
+  }
+  
+  return { intro, outro, watermark };
+}
+
+// Helper: Load branding assets for a campaign target
+async function loadCampaignBranding(campaign: Campaign) {
+  let intro: IntroOutroItem | null = null;
+  let outro: IntroOutroItem | null = null;
+  let watermark: any = null;
+  
+  // Campaign intro (global_intro takes priority, then branding_profile.intro)
+  if (campaign.global_intro) {
+    try {
+      const introResult = await ensureAssetDownloaded({
+        id: campaign.global_intro.id,
+        name: campaign.global_intro.name,
+        asset_type: 'intro',
+        url: campaign.global_intro.url,
+        organization_id: campaign.organization_id,
+        organization_name: campaign.organization?.name || undefined,
+        duration: campaign.global_intro.duration || undefined,
+        thumbnail_url: campaign.global_intro.thumbnail_url || undefined,
+        inserted_at: Date.now().toString(),
+        updated_at: Date.now().toString(),
+      } as unknown as ServerOrganizationAsset);
+      
+      if (introResult.success && introResult.filePath) {
+        intro = {
+          id: `campaign-intro-${campaign.global_intro.id}`,
+          name: campaign.global_intro.name,
+          file_path: introResult.filePath,
+          type: 'intro' as const,
+          duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : null,
+          thumbnail_path: campaign.global_intro.thumbnail_url || null,
+          thumbnail_generation_status: null,
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        };
+      }
+    } catch (e) {
+      console.warn('[QuickPublishWizard] Failed to load campaign global_intro:', e);
+    }
+  }
+  
+  // Campaign outro (global_outro takes priority, then branding_profile.outro)
+  if (campaign.global_outro) {
+    try {
+      const outroResult = await ensureAssetDownloaded({
+        id: campaign.global_outro.id,
+        name: campaign.global_outro.name,
+        asset_type: 'outro',
+        url: campaign.global_outro.url,
+        organization_id: campaign.organization_id,
+        organization_name: campaign.organization?.name || undefined,
+        duration: campaign.global_outro.duration || undefined,
+        thumbnail_url: campaign.global_outro.thumbnail_url || undefined,
+        inserted_at: Date.now().toString(),
+        updated_at: Date.now().toString(),
+      } as unknown as ServerOrganizationAsset);
+      
+      if (outroResult.success && outroResult.filePath) {
+        outro = {
+          id: `campaign-outro-${campaign.global_outro.id}`,
+          name: campaign.global_outro.name,
+          file_path: outroResult.filePath,
+          type: 'outro' as const,
+          duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : null,
+          thumbnail_path: campaign.global_outro.thumbnail_url || null,
+          thumbnail_generation_status: null,
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        };
+      }
+    } catch (e) {
+      console.warn('[QuickPublishWizard] Failed to load campaign global_outro:', e);
+    }
+  }
+  
+  // Fallback to branding_profile intro/outro if global_intro/outro not set
+  const campaignCreatorProfile = campaign.branding_profile || campaign.creator_profiles?.[0] || campaign.creator_profile;
+  
+  if (!intro && campaignCreatorProfile?.intro?.url) {
+    try {
+      const introResult = await ensureAssetDownloaded({
+        id: campaignCreatorProfile.intro.id,
+        name: campaignCreatorProfile.intro.name,
+        asset_type: 'intro',
+        url: campaignCreatorProfile.intro.url,
+        organization_id: campaign.organization_id,
+        organization_name: campaign.organization?.name || undefined,
+        duration: campaignCreatorProfile.intro.duration || undefined,
+        thumbnail_url: campaignCreatorProfile.intro.thumbnail_url || undefined,
+        inserted_at: Date.now().toString(),
+        updated_at: Date.now().toString(),
+      } as unknown as ServerOrganizationAsset);
+      
+      if (introResult.success && introResult.filePath) {
+        intro = {
+          id: `campaign-intro-${campaignCreatorProfile.intro.id}`,
+          name: campaignCreatorProfile.intro.name,
+          file_path: introResult.filePath,
+          type: 'intro' as const,
+          duration: campaignCreatorProfile.intro.duration ? parseFloat(campaignCreatorProfile.intro.duration) : null,
+          thumbnail_path: campaignCreatorProfile.intro.thumbnail_url || null,
+          thumbnail_generation_status: null,
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        };
+      }
+    } catch (e) {
+      console.warn('[QuickPublishWizard] Failed to load campaign branding_profile intro:', e);
+    }
+  }
+  
+  if (!outro && campaignCreatorProfile?.outro?.url) {
+    try {
+      const outroResult = await ensureAssetDownloaded({
+        id: campaignCreatorProfile.outro.id,
+        name: campaignCreatorProfile.outro.name,
+        asset_type: 'outro',
+        url: campaignCreatorProfile.outro.url,
+        organization_id: campaign.organization_id,
+        organization_name: campaign.organization?.name || undefined,
+        duration: campaignCreatorProfile.outro.duration || undefined,
+        thumbnail_url: campaignCreatorProfile.outro.thumbnail_url || undefined,
+        inserted_at: Date.now().toString(),
+        updated_at: Date.now().toString(),
+      } as unknown as ServerOrganizationAsset);
+      
+      if (outroResult.success && outroResult.filePath) {
+        outro = {
+          id: `campaign-outro-${campaignCreatorProfile.outro.id}`,
+          name: campaignCreatorProfile.outro.name,
+          file_path: outroResult.filePath,
+          type: 'outro' as const,
+          duration: campaignCreatorProfile.outro.duration ? parseFloat(campaignCreatorProfile.outro.duration) : null,
+          thumbnail_path: campaignCreatorProfile.outro.thumbnail_url || null,
+          thumbnail_generation_status: null,
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        };
+      }
+    } catch (e) {
+      console.warn('[QuickPublishWizard] Failed to load campaign branding_profile outro:', e);
+    }
+  }
+  
+  // Campaign watermark
+  if (campaignCreatorProfile?.watermark?.url) {
+    try {
+      const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
+      const filePath = await invoke<string>('download_org_asset_from_url', {
+        url: campaignCreatorProfile.watermark.url,
+        filename,
+        assetType: 'watermarks',
+        organizationId: String(campaign.organization_id),
+      });
+      
+      let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+      if (campaignCreatorProfile.watermark_settings) {
+        try {
+          const wmSettings = typeof campaignCreatorProfile.watermark_settings === 'string'
+            ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
+            : campaignCreatorProfile.watermark_settings;
+          const ratioConfig = wmSettings['16:9'];
+          if (ratioConfig?.position) defaultPos = ratioConfig.position;
+        } catch (e) {
+          console.warn('[QuickPublishWizard] Failed to parse campaign watermark settings:', e);
+        }
+      }
+      
+      watermark = {
+        enabled: true,
+        watermarkId: `org-asset-${campaignCreatorProfile.watermark.id}`,
+        positionX: defaultPos.x,
+        positionY: defaultPos.y,
+        opacity: defaultPos.opacity,
+        scale: defaultPos.scale,
+        perRatioSettings: (campaignCreatorProfile.watermark_settings as any) ?? null,
+      };
+    } catch (e) {
+      console.warn('[QuickPublishWizard] Failed to load campaign watermark:', e);
+    }
+  }
+  
+  return { intro, outro, watermark };
+}
+
+// Generate BuildTarget array from org/campaign selections
+function generateBuildTargets(): BuildTarget[] {
+  const targets: BuildTarget[] = [];
+  
+  // Generate targets for selected orgs
+  for (const org of availableOrgs.value) {
+    if (!org.selected) continue;
+    
+    // Determine which aspect ratios to use for this org
+    const ratios = hasMultipleAspectRatios.value && org.aspectRatios.length > 0
+      ? org.aspectRatios
+      : selectedRatios.value;
+    
+    // Create one target per aspect ratio
+    for (const ratio of ratios) {
+      targets.push({
+        type: 'org',
+        id: org.profile.id,
+        name: org.profile.organization_name || org.profile.name || 'Organization',
+        aspectRatio: ratio,
+        organizationId: org.profile.organization_id,
+        organizationName: org.profile.organization_name,
+        brandingProfileId: org.profile.id,
+        selectedPlatforms: new Map(),
+      });
+    }
+  }
+  
+  // Generate targets for selected campaigns
+  for (const campaignSel of availableCampaignSelections.value) {
+    if (!campaignSel.selected) continue;
+    
+    // Determine which aspect ratios to use for this campaign
+    const ratios = hasMultipleAspectRatios.value && campaignSel.aspectRatios.length > 0
+      ? campaignSel.aspectRatios
+      : selectedRatios.value;
+    
+    // Create one target per aspect ratio
+    for (const ratio of ratios) {
+      targets.push({
+        type: 'campaign',
+        id: campaignSel.campaign.id,
+        name: campaignSel.campaign.title,
+        aspectRatio: ratio,
+        organizationId: campaignSel.campaign.organization_id,
+        organizationName: campaignSel.campaign.organization?.name,
+        campaignId: campaignSel.campaign.id,
+        campaignName: campaignSel.campaign.title,
+        brandingProfileId: campaignSel.campaign.branding_profile_id || undefined,
+        selectedPlatforms: new Map(),
+      });
+    }
+  }
+  
+  // If no orgs/campaigns selected, create personal build targets
+  if (targets.length === 0) {
+    for (const ratio of selectedRatios.value) {
+      targets.push({
+        type: 'personal',
+        id: null,
+        name: 'Personal',
+        aspectRatio: ratio,
+        selectedPlatforms: new Map(),
+      });
+    }
+  }
+  
+  console.log('[QuickPublishWizard] Generated', targets.length, 'build targets:', targets);
+  return targets;
+}
+
+// Build process - Multi-target implementation
 async function startBuildProcess() {
   if (!props.clip || !props.projectId) return;
 
-  console.warn('[QuickPublishWizard] Starting build process...');
-  console.warn('[QuickPublishWizard] Clip:', props.clip);
-  console.warn('[QuickPublishWizard] Clip path:', props.clipPath);
-  console.warn('[QuickPublishWizard] Project ID:', props.projectId);
-  console.warn('[QuickPublishWizard] Selected intro:', selectedIntro.value);
-  console.warn('[QuickPublishWizard] Selected outro:', selectedOutro.value);
-
-  // Start with selected intro/outro from dialog
-  let introForBuild = selectedIntro.value;
-  let outroForBuild = selectedOutro.value;
+  console.log('[QuickPublishWizard] Starting multi-target build process...');
   
-  // Start with watermark from props (personal/session watermark)
-  let watermarkForBuild = props.watermarkSettings || null;
-
-  // ── Campaign Branding Override (matching ClipsTab.vue lines 2677-2841) ──
-  if (isForCampaign.value && selectedCampaign.value) {
-    const campaign = selectedCampaign.value;
-    console.warn('[QuickPublishWizard] Applying campaign branding for:', campaign.title, '(id:', campaign.id, ')');
-
-    // Campaign intro (global_intro takes priority, then branding_profile.intro)
-    if (campaign.global_intro) {
-      try {
-        const introResult = await ensureAssetDownloaded({
-          id: campaign.global_intro.id,
-          name: campaign.global_intro.name,
-          asset_type: 'intro',
-          url: campaign.global_intro.url,
-          organization_id: campaign.organization_id,
-          organization_name: campaign.organization?.name || undefined,
-          duration: campaign.global_intro.duration || undefined,
-          thumbnail_url: campaign.global_intro.thumbnail_url || undefined,
-          inserted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as unknown as ServerOrganizationAsset);
-
-        if (introResult.success && introResult.filePath) {
-          introForBuild = {
-            id: `campaign-intro-${campaign.global_intro.id}`,
-            name: campaign.global_intro.name,
-            file_path: introResult.filePath,
-            type: 'intro' as const,
-            duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : null,
-            thumbnail_path: campaign.global_intro.thumbnail_url || null,
-            thumbnail_generation_status: null,
-            created_at: Date.now(),
-            updated_at: Date.now(),
-          };
-          console.warn('[QuickPublishWizard] Campaign global_intro applied:', campaign.global_intro.name);
-        }
-      } catch (e) {
-        console.warn('[QuickPublishWizard] Failed to download campaign global_intro:', e);
-      }
-    }
-
-    // Campaign outro (global_outro takes priority, then branding_profile.outro)
-    if (campaign.global_outro) {
-      try {
-        const outroResult = await ensureAssetDownloaded({
-          id: campaign.global_outro.id,
-          name: campaign.global_outro.name,
-          asset_type: 'outro',
-          url: campaign.global_outro.url,
-          organization_id: campaign.organization_id,
-          organization_name: campaign.organization?.name || undefined,
-          duration: campaign.global_outro.duration || undefined,
-          thumbnail_url: campaign.global_outro.thumbnail_url || undefined,
-          inserted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as unknown as ServerOrganizationAsset);
-
-        if (outroResult.success && outroResult.filePath) {
-          outroForBuild = {
-            id: `campaign-outro-${campaign.global_outro.id}`,
-            name: campaign.global_outro.name,
-            file_path: outroResult.filePath,
-            type: 'outro' as const,
-            duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : null,
-            thumbnail_path: campaign.global_outro.thumbnail_url || null,
-            thumbnail_generation_status: null,
-            created_at: Date.now(),
-            updated_at: Date.now(),
-          };
-          console.warn('[QuickPublishWizard] Campaign global_outro applied:', campaign.global_outro.name);
-        }
-      } catch (e) {
-        console.warn('[QuickPublishWizard] Failed to download campaign global_outro:', e);
-      }
-    }
-
-    // Fallback to branding_profile intro/outro if global_intro/outro not set
-    const campaignCreatorProfile = campaign.branding_profile || campaign.creator_profiles?.[0] || campaign.creator_profile;
+  // Generate build targets from user selections
+  const targets = generateBuildTargets();
+  buildTargets.value = targets;
+  
+  console.log('[QuickPublishWizard] Building', targets.length, 'targets:', targets);
+  
+  if (targets.length === 0) {
+    console.error('[QuickPublishWizard] No build targets generated');
+    return;
+  }
+  
+  // Import database functions
+  const { createClipBuild } = await import('@/services/database/clip-build');
+  const { updateClip } = await import('@/services/database/clips');
+  
+  // Track all builds
+  const allBuilds: Array<{
+    target: BuildTarget;
+    buildNumber: number;
+    buildId: string;
+  }> = [];
+  
+  // Loop through each target and create a separate build
+  for (let i = 0; i < targets.length; i++) {
+    const target = targets[i];
+    console.log(`[QuickPublishWizard] Processing target ${i + 1}/${targets.length}:`, target.name, target.aspectRatio);
     
-    if (!introForBuild && campaignCreatorProfile?.intro?.url) {
-      try {
-        const introResult = await ensureAssetDownloaded({
-          id: campaignCreatorProfile.intro.id,
-          name: campaignCreatorProfile.intro.name,
-          asset_type: 'intro',
-          url: campaignCreatorProfile.intro.url,
-          organization_id: campaign.organization_id,
-          organization_name: campaign.organization?.name || undefined,
-          duration: campaignCreatorProfile.intro.duration || undefined,
-          thumbnail_url: campaignCreatorProfile.intro.thumbnail_url || undefined,
-          inserted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as unknown as ServerOrganizationAsset);
-
-        if (introResult.success && introResult.filePath) {
-          introForBuild = {
-            id: `campaign-intro-${campaignCreatorProfile.intro.id}`,
-            name: campaignCreatorProfile.intro.name,
-            file_path: introResult.filePath,
-            type: 'intro' as const,
-            duration: campaignCreatorProfile.intro.duration ? parseFloat(campaignCreatorProfile.intro.duration) : null,
-            thumbnail_path: campaignCreatorProfile.intro.thumbnail_url || null,
-            thumbnail_generation_status: null,
-            created_at: Date.now(),
-            updated_at: Date.now(),
-          };
-          console.warn('[QuickPublishWizard] Campaign branding_profile intro applied:', campaignCreatorProfile.intro.name);
-        }
-      } catch (e) {
-        console.warn('[QuickPublishWizard] Failed to download campaign branding_profile intro:', e);
+    let intro: IntroOutroItem | null = null;
+    let outro: IntroOutroItem | null = null;
+    let watermark: any = null;
+    
+    // Load branding based on target type
+    if (target.type === 'org') {
+      // Find the org profile
+      const orgSel = availableOrgs.value.find(o => o.profile.id === target.id);
+      if (orgSel) {
+        const branding = await loadOrgBranding(orgSel.profile);
+        intro = branding.intro;
+        outro = branding.outro;
+        watermark = branding.watermark;
+        console.log('[QuickPublishWizard] Loaded org branding for:', target.name);
       }
-    }
-
-    if (!outroForBuild && campaignCreatorProfile?.outro?.url) {
-      try {
-        const outroResult = await ensureAssetDownloaded({
-          id: campaignCreatorProfile.outro.id,
-          name: campaignCreatorProfile.outro.name,
-          asset_type: 'outro',
-          url: campaignCreatorProfile.outro.url,
-          organization_id: campaign.organization_id,
-          organization_name: campaign.organization?.name || undefined,
-          duration: campaignCreatorProfile.outro.duration || undefined,
-          thumbnail_url: campaignCreatorProfile.outro.thumbnail_url || undefined,
-          inserted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as unknown as ServerOrganizationAsset);
-
-        if (outroResult.success && outroResult.filePath) {
-          outroForBuild = {
-            id: `campaign-outro-${campaignCreatorProfile.outro.id}`,
-            name: campaignCreatorProfile.outro.name,
-            file_path: outroResult.filePath,
-            type: 'outro' as const,
-            duration: campaignCreatorProfile.outro.duration ? parseFloat(campaignCreatorProfile.outro.duration) : null,
-            thumbnail_path: campaignCreatorProfile.outro.thumbnail_url || null,
-            thumbnail_generation_status: null,
-            created_at: Date.now(),
-            updated_at: Date.now(),
-          };
-          console.warn('[QuickPublishWizard] Campaign branding_profile outro applied:', campaignCreatorProfile.outro.name);
+    } else if (target.type === 'campaign') {
+      // Find the campaign
+      const campaignSel = availableCampaignSelections.value.find(c => c.campaign.id === target.id);
+      if (campaignSel) {
+        const branding = await loadCampaignBranding(campaignSel.campaign);
+        intro = branding.intro;
+        outro = branding.outro;
+        watermark = branding.watermark;
+        console.log('[QuickPublishWizard] Loaded campaign branding for:', target.name);
+        
+        // Save campaign_id to clip for payment tracking
+        try {
+          await updateClip(props.clip!.id, { campaign_id: target.campaignId });
+          console.log('[QuickPublishWizard] Saved campaign_id to clip');
+        } catch (e) {
+          console.warn('[QuickPublishWizard] Failed to save campaign_id:', e);
         }
-      } catch (e) {
-        console.warn('[QuickPublishWizard] Failed to download campaign branding_profile outro:', e);
-      }
-    }
-
-    // Campaign watermark
-    if (campaignCreatorProfile?.watermark?.url) {
-      try {
-        const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
-        const filePath = await invoke<string>('download_org_asset_from_url', {
-          url: campaignCreatorProfile.watermark.url,
-          filename,
-          assetType: 'watermarks',
-          organizationId: String(campaign.organization_id),
-        });
-        let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
-        if (campaignCreatorProfile.watermark_settings) {
-          try {
-            const wmSettings = typeof campaignCreatorProfile.watermark_settings === 'string'
-              ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
-              : campaignCreatorProfile.watermark_settings;
-            const ratioConfig = wmSettings['16:9'];
-            if (ratioConfig?.position) defaultPos = ratioConfig.position;
-          } catch (e) {
-            console.warn('[QuickPublishWizard] Failed to parse campaign watermark settings:', e);
-          }
-        }
-        watermarkForBuild = {
-          enabled: true,
-          watermarkId: `org-asset-${campaignCreatorProfile.watermark.id}`,
-          positionX: defaultPos.x,
-          positionY: defaultPos.y,
-          opacity: defaultPos.opacity,
-          scale: defaultPos.scale,
-          perRatioSettings: (campaignCreatorProfile.watermark_settings as any) ?? null,
-        };
-        console.warn('[QuickPublishWizard] Campaign watermark applied:', campaignCreatorProfile.watermark.name);
-      } catch (e) {
-        console.warn('[QuickPublishWizard] Failed to download campaign watermark:', e);
       }
     } else {
-      // Campaign selected but no watermark - clear any existing watermark
-      watermarkForBuild = null;
-      console.warn('[QuickPublishWizard] Campaign has no watermark, clearing watermark');
-    }
-
-    // Save campaign_id to the clip for payment tracking
-    if (props.clip) {
-      try {
-        const { updateClip } = await import('@/services/database/clips');
-        await updateClip(props.clip.id, { campaign_id: selectedCampaignId.value });
-        console.warn('[QuickPublishWizard] Saved campaign_id', selectedCampaignId.value, 'to clip', props.clip.id);
-      } catch (e) {
-        console.warn('[QuickPublishWizard] Failed to save campaign_id to clip:', e);
-      }
-    }
-  }
-  // ── End Campaign Branding Override ──
-
-  console.warn('[QuickPublishWizard] Campaign branding applied - Intro:', introForBuild?.name || 'none', 'Outro:', outroForBuild?.name || 'none', 'Watermark:', watermarkForBuild ? 'yes' : 'no');
-
-  // Download org intro if needed
-  if (selectedIntro.value) {
-    const introAny = selectedIntro.value as any;
-    if (introAny.isOrgAsset && introAny.serverId) {
-      console.warn('[QuickPublishWizard] Downloading org intro asset on-demand:', selectedIntro.value.name);
-      try {
-        const introResult = await ensureAssetDownloaded({
-          id: introAny.serverId,
-          name: selectedIntro.value.name,
-          asset_type: 'intro',
-          url: introAny.serverUrl || selectedIntro.value.file_path,
-          organization_id: Number(introAny.organization_id),
-          organization_name: introAny.organization_name || undefined,
-          duration: selectedIntro.value.duration || undefined,
-          thumbnail_url: introAny.thumbnail_path || undefined,
-          inserted_at: introAny.created_at,
-          updated_at: introAny.updated_at,
-        } as unknown as ServerOrganizationAsset);
-
-        if (introResult.success && introResult.filePath) {
-          introForBuild = {
-            ...selectedIntro.value,
-            file_path: introResult.filePath,
-          };
-          console.warn('[QuickPublishWizard] Org intro downloaded to:', introResult.filePath);
-        } else {
-          throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
+      // Personal build - use selected intro/outro from dialog
+      intro = selectedIntro.value;
+      outro = selectedOutro.value;
+      watermark = props.watermarkSettings || null;
+      
+      // Download org intro/outro if needed
+      if (intro) {
+        const introAny = intro as any;
+        if (introAny.isOrgAsset && introAny.serverId) {
+          try {
+            const introResult = await ensureAssetDownloaded({
+              id: introAny.serverId,
+              name: intro.name,
+              asset_type: 'intro',
+              url: introAny.serverUrl || intro.file_path,
+              organization_id: Number(introAny.organization_id),
+              organization_name: introAny.organization_name || undefined,
+              duration: intro.duration || undefined,
+              thumbnail_url: introAny.thumbnail_path || undefined,
+              inserted_at: introAny.created_at,
+              updated_at: introAny.updated_at,
+            } as unknown as ServerOrganizationAsset);
+            
+            if (introResult.success && introResult.filePath) {
+              intro = { ...intro, file_path: introResult.filePath };
+            }
+          } catch (e) {
+            console.warn('[QuickPublishWizard] Failed to download personal intro:', e);
+          }
         }
-      } catch (err) {
-        console.error('[QuickPublishWizard] Failed to download intro:', err);
-        throw err;
       }
-    }
-  }
-
-  // Download org outro if needed
-  if (selectedOutro.value) {
-    const outroAny = selectedOutro.value as any;
-    if (outroAny.isOrgAsset && outroAny.serverId) {
-      console.warn('[QuickPublishWizard] Downloading org outro asset on-demand:', selectedOutro.value.name);
-      try {
-        const outroResult = await ensureAssetDownloaded({
-          id: outroAny.serverId,
-          name: selectedOutro.value.name,
-          asset_type: 'outro',
-          url: outroAny.serverUrl || selectedOutro.value.file_path,
-          organization_id: Number(outroAny.organization_id),
-          organization_name: outroAny.organization_name || undefined,
-          duration: selectedOutro.value.duration || undefined,
-          thumbnail_url: outroAny.thumbnail_path || undefined,
-          inserted_at: outroAny.created_at,
-          updated_at: outroAny.updated_at,
-        } as unknown as ServerOrganizationAsset);
-
-        if (outroResult.success && outroResult.filePath) {
-          outroForBuild = {
-            ...selectedOutro.value,
-            file_path: outroResult.filePath,
-          };
-          console.warn('[QuickPublishWizard] Org outro downloaded to:', outroResult.filePath);
-        } else {
-          throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
+      
+      if (outro) {
+        const outroAny = outro as any;
+        if (outroAny.isOrgAsset && outroAny.serverId) {
+          try {
+            const outroResult = await ensureAssetDownloaded({
+              id: outroAny.serverId,
+              name: outro.name,
+              asset_type: 'outro',
+              url: outroAny.serverUrl || outro.file_path,
+              organization_id: Number(outroAny.organization_id),
+              organization_name: outroAny.organization_name || undefined,
+              duration: outro.duration || undefined,
+              thumbnail_url: outroAny.thumbnail_path || undefined,
+              inserted_at: outroAny.created_at,
+              updated_at: outroAny.updated_at,
+            } as unknown as ServerOrganizationAsset);
+            
+            if (outroResult.success && outroResult.filePath) {
+              outro = { ...outro, file_path: outroResult.filePath };
+            }
+          } catch (e) {
+            console.warn('[QuickPublishWizard] Failed to download personal outro:', e);
+          }
         }
-      } catch (err) {
-        console.error('[QuickPublishWizard] Failed to download outro:', err);
-        throw err;
       }
     }
-  }
-
-  const settings = {
-    aspectRatios: [...selectedRatios.value],
-    quality: quality.value,
-    frameRate: frameRate.value,
-    format: outputFormat.value,
-    intro: introForBuild,
-    outro: outroForBuild,
-    watermark: watermarkForBuild,
-    framingMode: hasPortraitRatio.value ? 'manual' as const : undefined,
-    manualFramingConfigs: hasPortraitRatio.value ? manualFramingConfigs.value : undefined,
-    campaignId: isForCampaign.value && selectedCampaignId.value ? selectedCampaignId.value : null,
-    selectedCampaign: isForCampaign.value ? selectedCampaign.value : null,
-  };
-
-  console.warn('[QuickPublishWizard] Build settings (after download):', settings);
-
-  try {
-    await buildPipeline.startBuild({
-      clip: props.clip,
-      projectId: props.projectId,
-      settings,
-      videoPath: props.clipPath,
+    
+    // Create build record in database with tracking fields
+    const buildNumber = Date.now();
+    const buildId = await createClipBuild(props.clip!.id, {
+      aspectRatios: [target.aspectRatio],
+      quality: quality.value,
+      frameRate: frameRate.value,
+      outputFormat: outputFormat.value,
+      organizationId: target.organizationId || null,
+      organizationName: target.organizationName || null,
+      campaignId: target.campaignId || null,
+      campaignName: target.campaignName || null,
+      brandingProfileId: target.brandingProfileId ? String(target.brandingProfileId) : null,
+      brandingType: target.type === 'org' ? 'org' : target.type === 'campaign' ? 'campaign' : 'personal',
     });
-    console.warn('[QuickPublishWizard] Build completed successfully');
-  } catch (err) {
-    console.error('[QuickPublishWizard] Build failed:', err);
+    
+    console.log('[QuickPublishWizard] Created build record:', buildId, 'for', target.name);
+    
+    // Store build info
+    allBuilds.push({
+      target,
+      buildNumber,
+      buildId,
+    });
+    
+    // Build settings for this target
+    const settings = {
+      aspectRatios: [target.aspectRatio],
+      quality: quality.value,
+      frameRate: frameRate.value,
+      format: outputFormat.value,
+      intro,
+      outro,
+      watermark,
+      framingMode: target.aspectRatio.includes('9:16') || target.aspectRatio.includes('4:5') ? 'manual' as const : undefined,
+      manualFramingConfigs: target.aspectRatio.includes('9:16') || target.aspectRatio.includes('4:5') ? manualFramingConfigs.value : undefined,
+      campaignId: target.campaignId || null,
+      buildNumber,
+      buildId,
+    };
+    
+    console.log('[QuickPublishWizard] Starting build for target:', target.name, target.aspectRatio);
+    
+    // Start the build (non-blocking - don't await)
+    // The global build event handler in App.vue will show completion notification
+    buildPipeline.startBuild({
+      clip: props.clip!,
+      projectId: props.projectId!,
+      settings,
+      videoPath: props.clipPath!,
+    }).catch((err) => {
+      console.error('[QuickPublishWizard] Build failed for target:', target.name, err);
+    });
+    
+    // Store build metadata for later use
+    target.buildId = buildId;
+    console.log('[QuickPublishWizard] Build started for target:', target.name, target.aspectRatio, 'buildId:', buildId);
   }
+  
+  console.log('[QuickPublishWizard] All builds completed successfully. Total builds:', allBuilds.length);
 }
 
 // Publish
 async function handlePublish() {
   if (!canPublish.value) return;
 
+  // Multi-target build flow
+  if (buildTargets.value.length > 0) {
+    console.log('[QuickPublishWizard] Publishing multi-target builds:', buildTargets.value.length);
+    
+    for (const target of buildTargets.value) {
+      // Skip if no platforms selected
+      if (target.selectedPlatforms.size === 0) {
+        console.warn('[QuickPublishWizard] Skipping target without platforms:', target);
+        continue;
+      }
+      
+      // Build platform to ratio map for this target
+      const platformToRatioMap: Record<string, string> = {};
+      const publishTargets: PublishTarget[] = [];
+      
+      // Publish to each selected platform
+      for (const [platformId, accountId] of target.selectedPlatforms.entries()) {
+        if (!accountId) {
+          console.warn('[QuickPublishWizard] Skipping platform without account:', platformId);
+          continue;
+        }
+        
+        const [accountType, accountIdStr] = accountId.split(':');
+        publishTargets.push({
+          platformId,
+          accountType: accountType as 'org' | 'user',
+          accountId: Number(accountIdStr),
+        });
+        
+        // Map this platform to the target's aspect ratio
+        platformToRatioMap[platformId] = target.aspectRatio;
+      }
+      
+      // Build metadata with tracking fields
+      const metadata = {
+        clipId: props.clip?.id,
+        clipBuildId: target.buildId,
+        organizationId: target.organizationId,
+        campaignId: target.campaignId,
+        brandingProfileId: target.brandingProfileId,
+        aspectRatio: target.aspectRatio,
+        buildType: target.type,
+        platformToRatioMap,
+      };
+      
+      console.log('[QuickPublishWizard] Publishing target:', target.name, target.aspectRatio, 'to', publishTargets.length, 'platforms', metadata);
+      
+      backgroundPublish.queuePublish(
+        publishTargets,
+        caption.value,
+        orgId.value,
+        buildState.value.thumbnailPath,
+        metadata
+      );
+    }
+    
+    hasQueuedBackgroundPublish.value = true;
+    emit('close');
+    return;
+  }
+  
+  // Legacy single build flow (fallback)
   const targets: PublishTarget[] = [];
   const platformToRatioMap: Record<string, string> = {};
   
@@ -2157,31 +2728,233 @@ async function loadCreatorProfileData() {
   }
 }
 
-async function loadAvailableCampaigns() {
-  console.warn('[QuickPublishWizard] Loading campaigns... creatorProfileServerId:', props.creatorProfileServerId);
+// Load available orgs and campaigns for the streamer (matching ClipBuildSettingsDialog)
+async function loadOrgsAndCampaigns() {
+  loadingOrgsAndCampaigns.value = true;
   try {
-    const results: Campaign[] = [];
-    const globalRes = await getMyGlobalBrandingCampaigns();
-    console.warn('[QuickPublishWizard] Global campaigns response:', globalRes);
-    if (globalRes.success && globalRes.campaigns) {
-      results.push(...globalRes.campaigns);
+    // Get streamer name from clip's project or props
+    const streamerName = props.clip?.project_name?.toLowerCase() || '';
+    console.log('[QuickPublishWizard] Loading orgs/campaigns for streamer:', streamerName);
+    
+    // 1. Fetch org profiles assigned to user and filter by streamer match
+    const orgRes = await getUserAssignedCreatorProfiles();
+    const matchingOrgs: OrgSelection[] = [];
+    
+    // Get stream platform and streamer name for matching
+    const streamPlatform = props.platform?.toLowerCase() || null;
+    const streamProjectName = props.clip?.project_name?.toLowerCase() || '';
+    
+    console.log('[QuickPublishWizard] Stream info:', { 
+      platform: streamPlatform, 
+      projectName: streamProjectName 
+    });
+    
+    if (orgRes.success && orgRes.profiles.length > 0) {
+      // Group profiles by organization_id
+      const profilesByOrg = new Map<number, ServerOrganizationCreatorProfile[]>();
+      
+      for (const profile of orgRes.profiles) {
+        const orgId = profile.organization_id;
+        if (!profilesByOrg.has(orgId)) {
+          profilesByOrg.set(orgId, []);
+        }
+        profilesByOrg.get(orgId)!.push(profile);
+      }
+      
+      // For each organization, select ONE profile based on priority
+      for (const [orgId, profiles] of profilesByOrg.entries()) {
+        let selectedProfile: ServerOrganizationCreatorProfile | null = null;
+        
+        // Priority 1: Profile with matching platform_links (streamer-specific match)
+        if (streamPlatform && streamProjectName) {
+          const matchingProfile = profiles.find(p => {
+            if (!p.platform_links || p.platform_links.length === 0) return false;
+            
+            // Check if any platform_link matches the stream platform and name
+            return p.platform_links.some((link: any) => {
+              const linkPlatform = link.platform?.toLowerCase();
+              const linkDisplayName = link.display_name?.toLowerCase() || '';
+              const linkPlatformId = link.platform_id?.toLowerCase() || '';
+              
+              // Match if:
+              // 1. Platform matches (kick, youtube, twitch, etc.)
+              // 2. AND (display_name or platform_id matches the project name)
+              const platformMatches = linkPlatform === streamPlatform;
+              const nameMatches = 
+                linkDisplayName.includes(streamProjectName) ||
+                streamProjectName.includes(linkDisplayName) ||
+                linkPlatformId.includes(streamProjectName) ||
+                streamProjectName.includes(linkPlatformId);
+              
+              return platformMatches && nameMatches;
+            });
+          });
+          
+          if (matchingProfile) {
+            selectedProfile = matchingProfile;
+            console.log('[QuickPublishWizard] ✅ Selected streamer-specific profile:', {
+              org: matchingProfile.organization_name,
+              profile: matchingProfile.name,
+              scope: matchingProfile.scope
+            });
+          }
+        }
+        
+        // Priority 2: Global profile (fallback)
+        if (!selectedProfile) {
+          const globalProfile = profiles.find(p => p.scope === 'global');
+          if (globalProfile) {
+            selectedProfile = globalProfile;
+            console.log('[QuickPublishWizard] ✅ Selected global profile:', {
+              org: globalProfile.organization_name,
+              profile: globalProfile.name,
+              scope: globalProfile.scope
+            });
+          }
+        }
+        
+        // Add the selected profile (only ONE per organization)
+        if (selectedProfile) {
+          matchingOrgs.push({
+            profile: selectedProfile,
+            selected: false,
+            aspectRatios: [],
+          });
+        }
+      }
     }
+    
+    availableOrgs.value = matchingOrgs;
+    console.log('[QuickPublishWizard] Found', matchingOrgs.length, 'organizations with profiles');
+    
+    // 2. Fetch campaigns (global branding + creator-profile-specific)
+    const campaignResults: Campaign[] = [];
+    
+    // Global branding campaigns
+    const globalRes = await getMyGlobalBrandingCampaigns();
+    if (globalRes.success && globalRes.campaigns) {
+      campaignResults.push(...globalRes.campaigns);
+    }
+    
+    // Profile-specific campaigns
     if (props.creatorProfileServerId) {
       const profileRes = await getCampaignsByCreatorProfile(props.creatorProfileServerId);
       if (profileRes.success && profileRes.campaigns) {
         for (const c of profileRes.campaigns) {
-          if (!results.find((r) => r.id === c.id)) {
-            results.push(c);
+          if (!campaignResults.find((r) => r.id === c.id)) {
+            campaignResults.push(c);
           }
         }
       }
     }
-    availableCampaigns.value = results;
-    console.warn('[QuickPublishWizard] Final campaigns:', results.length, results);
+    
+    // Convert to CampaignSelection format
+    availableCampaignSelections.value = campaignResults.map(campaign => ({
+      campaign,
+      selected: false,
+      aspectRatios: [],
+    }));
+    
+    // Also set legacy availableCampaigns for backward compatibility
+    availableCampaigns.value = campaignResults;
+    
+    console.log('[QuickPublishWizard] Found', campaignResults.length, 'campaigns');
   } catch (e) {
-    console.warn('[QuickPublishWizard] Failed to load campaigns:', e);
+    console.warn('[QuickPublishWizard] Failed to load orgs/campaigns:', e);
+    availableOrgs.value = [];
+    availableCampaignSelections.value = [];
     availableCampaigns.value = [];
+  } finally {
+    loadingOrgsAndCampaigns.value = false;
   }
+}
+
+// Toggle org selection
+function toggleOrgSelection(index: number) {
+  const org = availableOrgs.value[index];
+  org.selected = !org.selected;
+  if (!org.selected) {
+    org.aspectRatios = [];
+  }
+}
+
+// Toggle aspect ratio for org
+function toggleOrgAspectRatio(orgIndex: number, ratio: string) {
+  const org = availableOrgs.value[orgIndex];
+  const ratioIndex = org.aspectRatios.indexOf(ratio);
+  if (ratioIndex > -1) {
+    org.aspectRatios.splice(ratioIndex, 1);
+  } else {
+    org.aspectRatios.push(ratio);
+  }
+}
+
+// Toggle campaign selection
+function toggleCampaignSelectionMulti(index: number) {
+  const campaign = availableCampaignSelections.value[index];
+  campaign.selected = !campaign.selected;
+  if (!campaign.selected) {
+    campaign.aspectRatios = [];
+  }
+}
+
+// Toggle aspect ratio for campaign
+function toggleCampaignAspectRatio(campaignIndex: number, ratio: string) {
+  const campaign = availableCampaignSelections.value[campaignIndex];
+  const ratioIndex = campaign.aspectRatios.indexOf(ratio);
+  if (ratioIndex > -1) {
+    campaign.aspectRatios.splice(ratioIndex, 1);
+  } else {
+    campaign.aspectRatios.push(ratio);
+  }
+}
+
+// Check if any org or campaign is selected (for disabling intro/outro)
+const hasOrgOrCampaignSelected = computed(() => {
+  const hasSelectedOrg = availableOrgs.value.some(org => org.selected);
+  const hasSelectedCampaign = availableCampaignSelections.value.some(c => c.selected);
+  return hasSelectedOrg || hasSelectedCampaign;
+});
+
+// Check if multiple aspect ratios are selected
+const hasMultipleAspectRatios = computed(() => selectedRatios.value.length > 1);
+
+// Calculate total builds count
+const totalBuildsCount = computed(() => {
+  let count = 0;
+  
+  // Count org builds (each org × each aspect ratio = 1 build)
+  for (const org of availableOrgs.value) {
+    if (org.selected) {
+      const ratios = hasMultipleAspectRatios.value && org.aspectRatios.length > 0 
+        ? org.aspectRatios 
+        : selectedRatios.value;
+      count += ratios.length;
+    }
+  }
+  
+  // Count campaign builds
+  for (const campaign of availableCampaignSelections.value) {
+    if (campaign.selected) {
+      const ratios = hasMultipleAspectRatios.value && campaign.aspectRatios.length > 0 
+        ? campaign.aspectRatios 
+        : selectedRatios.value;
+      count += ratios.length;
+    }
+  }
+  
+  // If no org/campaign selected, it's a personal build
+  if (count === 0) {
+    count = selectedRatios.value.length;
+  }
+  
+  return count;
+});
+
+// Legacy function for backward compatibility
+async function loadAvailableCampaigns() {
+  // Now handled by loadOrgsAndCampaigns
+  await loadOrgsAndCampaigns();
 }
 
 async function loadAccounts() {
@@ -2295,6 +3068,11 @@ watch(
       platformConfigs.value = {};
       caption.value = '';
       
+      // Reset multi-target selection state
+      availableOrgs.value = [];
+      availableCampaignSelections.value = [];
+      buildTargets.value = [];
+      
       buildPipeline.reset();
       if (!hasQueuedBackgroundPublish.value) {
         backgroundPublish.reset();
@@ -2329,11 +3107,14 @@ watch(
   (status) => {
     if (status === 'complete' && buildState.value.aspectRatioOutputPaths) {
       console.warn('[QuickPublishWizard] Build complete, starting R2 upload');
-      backgroundPublish.startUpload(
-        buildState.value.aspectRatioOutputPaths,
-        buildState.value.thumbnailPath,
-        orgId.value
-      );
+      // Defer upload start to next tick to prevent UI freeze
+      setTimeout(() => {
+        backgroundPublish.startUpload(
+          buildState.value.aspectRatioOutputPaths,
+          buildState.value.thumbnailPath,
+          orgId.value
+        );
+      }, 0);
     }
   }
 );
@@ -2770,6 +3551,164 @@ onUnmounted(() => {
   margin: 0;
 }
 
+.build-dialog__section-hint {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+  margin: 0.25rem 0 0.75rem 0;
+}
+
+.build-dialog__multi-select-section {
+  margin-bottom: 1.5rem;
+}
+
+.build-dialog__multi-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.build-dialog__multi-select-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.build-dialog__multi-select-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.build-dialog__multi-select-checkbox {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--sidebar-border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 150ms ease;
+}
+
+.build-dialog__multi-select-checkbox--checked {
+  background: var(--sidebar-accent);
+  border-color: var(--sidebar-accent);
+}
+
+.build-dialog__multi-select-checkbox--campaign.build-dialog__multi-select-checkbox--checked {
+  background: rgb(249, 115, 22);
+  border-color: rgb(249, 115, 22);
+}
+
+.build-dialog__multi-select-checkbox-icon {
+  width: 12px;
+  height: 12px;
+  color: white;
+}
+
+.build-dialog__multi-select-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-text);
+}
+
+.build-dialog__campaign-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  flex: 1;
+}
+
+.build-dialog__campaign-org-name {
+  font-size: 0.75rem;
+  color: var(--sidebar-text-muted);
+}
+
+.build-dialog__nested-ratios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0.25rem 2.5rem;
+}
+
+.build-dialog__ratio-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 999px;
+  color: var(--sidebar-text-muted);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.build-dialog__ratio-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.build-dialog__ratio-chip--selected {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: var(--sidebar-accent);
+  color: var(--sidebar-accent);
+}
+
+.build-dialog__ratio-chip-icon {
+  width: 10px;
+  height: 10px;
+}
+
+.build-dialog__builds-summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background: rgba(6, 182, 212, 0.1);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  border-radius: 8px;
+}
+
+.build-dialog__builds-count {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--sidebar-accent);
+}
+
+.build-dialog__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 600;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.build-dialog__badge--global {
+  background: rgba(147, 51, 234, 0.15);
+  color: rgb(168, 85, 247);
+  border: 1px solid rgba(147, 51, 234, 0.3);
+}
+
+.build-dialog__badge-icon {
+  width: 10px;
+  height: 10px;
+}
+
 /* ===== Manual Config ===== */
 .build-dialog__manual-config {
   display: flex;
@@ -2973,6 +3912,26 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.build-dialog__intro-outro-section--disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.build-dialog__disabled-notice {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  background-color: rgba(251, 146, 60, 0.1);
+  border: 1px solid rgba(251, 146, 60, 0.3);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: rgb(251, 146, 60);
 }
 
 .build-dialog__dropdown-wrapper {
@@ -3003,6 +3962,18 @@ onUnmounted(() => {
   outline: none;
   border-color: var(--sidebar-accent);
   box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
+}
+
+.build-dialog__dropdown-trigger--disabled,
+.build-dialog__dropdown-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: rgba(39, 39, 42, 0.5);
+}
+
+.build-dialog__dropdown-trigger--disabled:hover,
+.build-dialog__dropdown-trigger:disabled:hover {
+  border-color: var(--sidebar-border);
 }
 
 .build-dialog__dropdown-trigger--locked {
@@ -3574,6 +4545,42 @@ onUnmounted(() => {
   transition: width 200ms ease;
 }
 
+.build-dialog__builds-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.build-dialog__build-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: rgba(39, 39, 42, 0.5);
+  border: 1px solid rgba(63, 63, 70, 0.5);
+  border-radius: 0.5rem;
+}
+
+.build-dialog__build-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.build-dialog__build-badges {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.build-dialog__build-platform,
+.build-dialog__build-account {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
 .schedule-dialog__platform-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -4042,6 +5049,186 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+}
+
+/* ===== Aspect Ratio Grouping ===== */
+.schedule-dialog__aspect-ratio-group {
+  padding: 1rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 8px;
+  overflow: visible;
+  position: relative;
+}
+
+.schedule-dialog__aspect-ratio-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--sidebar-border);
+}
+
+.schedule-dialog__aspect-ratio-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  background-color: rgba(6, 182, 212, 0.15);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--sidebar-accent);
+}
+
+.schedule-dialog__build-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.schedule-dialog__build-badge {
+  padding: 0.25rem 0.625rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid;
+}
+
+.schedule-dialog__build-badge--campaign {
+  background-color: rgba(251, 146, 60, 0.15);
+  border-color: rgba(251, 146, 60, 0.3);
+  color: rgb(251, 146, 60);
+}
+
+.schedule-dialog__build-badge--org {
+  background-color: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: rgb(96, 165, 250);
+}
+
+.schedule-dialog__build-badge--personal {
+  background-color: rgba(113, 113, 122, 0.15);
+  border-color: rgba(113, 113, 122, 0.3);
+  color: rgb(161, 161, 170);
+}
+
+/* ===== Account Configs ===== */
+.schedule-dialog__account-configs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow: visible;
+}
+
+.schedule-dialog__account-config {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem;
+  background-color: var(--sidebar-surface);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  overflow: visible;
+  position: relative;
+}
+
+.schedule-dialog__account-config-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 100px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--sidebar-text-muted);
+}
+
+.schedule-dialog__dropdown-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+.schedule-dialog__dropdown-trigger {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background-color: var(--sidebar-hover);
+  border: 1px solid var(--sidebar-border);
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  transition: all 150ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.schedule-dialog__dropdown-trigger:hover {
+  border-color: var(--sidebar-accent);
+}
+
+.schedule-dialog__dropdown-trigger--sm {
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+}
+
+.schedule-dialog__dropdown-chevron {
+  flex-shrink: 0;
+  color: var(--sidebar-text-muted);
+  transition: transform 150ms ease;
+}
+
+.schedule-dialog__dropdown-chevron--open {
+  transform: rotate(180deg);
+}
+
+.schedule-dialog__dropdown {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+  background-color: var(--sidebar-surface);
+  border: 2px solid var(--sidebar-accent);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  max-height: 200px;
+  min-height: 40px;
+  overflow-y: auto;
+  z-index: 10001;
+}
+
+.schedule-dialog__dropdown-group {
+  padding: 0.5rem 0.75rem 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--sidebar-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.schedule-dialog__dropdown-item {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 0.8125rem;
+  color: var(--sidebar-text);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.schedule-dialog__dropdown-item:hover {
+  background-color: var(--sidebar-hover);
+}
+
+.schedule-dialog__dropdown-item--selected {
+  background-color: rgba(6, 182, 212, 0.15);
+  color: var(--sidebar-accent);
+  font-weight: 500;
 }
 
 .build-dialog__badge-icon {
