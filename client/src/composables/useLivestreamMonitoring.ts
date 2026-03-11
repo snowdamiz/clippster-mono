@@ -999,63 +999,14 @@ async function finalizeRecordingSession(session: { sessionId: string; projectId?
 }
 
 // Handle DVR segment ready - called directly from DVR callback (not via Tauri event)
-// This processes segments the same way as the segment-ready event listener
+// This processes segments silently (no activity logs) since it's internal chunk aggregation for PumpFun
 async function handleDvrSegmentReady(payload: SegmentEventPayload) {
   if (!isMonitoring.value && activeSessions.value.size === 0) return;
 
   const { fetchBalance, hoursRemaining } = useCreditBalance();
-  const info = await getStreamerInfo(payload.streamerId);
-
-  // 1. Update previous segment log
-  const segmentKey = `${payload.streamerId}-${payload.segment}`;
-  const startingLogId = segmentLogIds.get(segmentKey);
-  if (startingLogId) {
-    updateActivityLog(startingLogId, {
-      message: `Segment ${payload.segment} finished recording`,
-      status: 'success',
-    });
-    segmentLogIds.delete(segmentKey);
-  } else {
-    addActivityLog({
-      streamerId: payload.streamerId,
-      streamerName: info.displayName,
-      platform: info.platform,
-      mintId: payload.mintId,
-      message: `Segment ${payload.segment} finished recording`,
-      status: 'success',
-      profileImageUrl: info.profileImageUrl,
-    });
-  }
-
-  // 2. Log next segment starting
   const session = activeSessions.value.get(payload.streamerId);
-  if (session && !session.isStopping) {
-    const nextSegment = payload.segment + 1;
-    const id = addActivityLog({
-      streamerId: payload.streamerId,
-      streamerName: info.displayName,
-      platform: info.platform,
-      mintId: payload.mintId,
-      message: `Segment ${nextSegment} starting recording`,
-      status: 'loading',
-      profileImageUrl: info.profileImageUrl,
-    });
-    const nextSegmentKey = `${payload.streamerId}-${nextSegment}`;
-    segmentLogIds.set(nextSegmentKey, id);
-  }
 
-  // 3. Create log for processing status
-  const processingLogId = addActivityLog({
-    streamerId: payload.streamerId,
-    streamerName: info.displayName,
-    platform: info.platform,
-    mintId: payload.mintId,
-    message: `Processing Segment ${payload.segment}...`,
-    status: 'loading',
-    profileImageUrl: info.profileImageUrl,
-  });
-
-  // Process the segment
+  // Process the segment silently (no activity logs for internal DVR chunk aggregation)
   let detectClips = session?.detectClips ?? true;
 
   if (detectClips) {
@@ -1063,30 +1014,13 @@ async function handleDvrSegmentReady(payload: SegmentEventPayload) {
     const balance = hoursRemaining.value;
     if (balance !== 'unlimited' && typeof balance === 'number' && balance <= 0) {
       detectClips = false;
-      addActivityLog({
-        streamerId: payload.streamerId,
-        streamerName: info.displayName,
-        platform: info.platform,
-        mintId: payload.mintId,
-        message: 'Detection skipped: Insufficient credits. Recording only.',
-        status: 'info',
-        profileImageUrl: info.profileImageUrl,
-      });
     }
   }
 
   const promptContent = session?.promptContent;
 
-  await handleSegmentReady(payload.sessionId, payload, detectClips, promptContent, (status: string) => {
-    const normalized = status.toLowerCase();
-    const isSuccess = status.includes('Found') || status.includes('Detection skipped');
-    const isError = normalized.includes('error') || normalized.includes('failed');
-
-    updateActivityLog(processingLogId, {
-      message: status,
-      status: isSuccess ? 'success' : isError ? 'info' : 'loading',
-    });
-  });
+  // Process segment without status callback (silent processing)
+  await handleSegmentReady(payload.sessionId, payload, detectClips, promptContent);
 }
 
 async function initializeListeners() {
@@ -1116,7 +1050,7 @@ async function initializeListeners() {
     const startingLogId = segmentLogIds.get(segmentKey);
     if (startingLogId) {
       updateActivityLog(startingLogId, {
-        message: `Segment ${payload.segment} finished recording`,
+        message: `Segment ${payload.segment} finished`,
         status: 'success',
       });
       segmentLogIds.delete(segmentKey);
@@ -1127,7 +1061,7 @@ async function initializeListeners() {
         streamerName: info.displayName,
         platform: info.platform,
         mintId: payload.mintId,
-        message: `Segment ${payload.segment} finished recording`,
+        message: `Segment ${payload.segment} finished`,
         status: 'success',
         profileImageUrl: info.profileImageUrl,
       });
@@ -1143,7 +1077,7 @@ async function initializeListeners() {
         streamerName: info.displayName,
         platform: info.platform,
         mintId: payload.mintId,
-        message: `Segment ${nextSegment} starting recording`,
+        message: `Segment ${nextSegment} started`,
         status: 'loading',
         profileImageUrl: info.profileImageUrl,
       });
@@ -1157,7 +1091,7 @@ async function initializeListeners() {
       streamerName: info.displayName,
       platform: info.platform,
       mintId: payload.mintId,
-      message: `Processing Segment ${payload.segment}...`,
+      message: `Detecting clips...`,
       status: 'loading',
       profileImageUrl: info.profileImageUrl,
     });
@@ -1240,7 +1174,7 @@ async function initializeListeners() {
         streamerName: info.displayName,
         platform: info.platform,
         mintId,
-        message: 'Stream ended. Finishing final segments...',
+        message: 'Stream ended',
         status: 'info',
         profileImageUrl: info.profileImageUrl,
       });
@@ -1823,9 +1757,9 @@ export function useLivestreamMonitoring() {
         streamerId: streamer.id,
         streamerName: streamer.displayName,
         platform: streamer.platform,
-        message: `Stream is live! Recording started (${options.detectClips ? 'Auto-Detect' : 'Record Only'}).`,
-        status: 'success',
         mintId: streamer.mintId,
+        message: 'Stream is live - Recording started',
+        status: 'success',
         profileImageUrl: streamer.profileImageUrl,
       });
 
@@ -1843,9 +1777,9 @@ export function useLivestreamMonitoring() {
         streamerId: streamer.id,
         streamerName: streamer.displayName,
         platform: streamer.platform,
-        message: 'Segment 1 starting recording',
-        status: 'loading',
         mintId: streamer.mintId,
+        message: 'Segment 1 started',
+        status: 'loading',
         profileImageUrl: streamer.profileImageUrl,
       });
       segmentLogIds.set(`${streamer.id}-1`, id);
