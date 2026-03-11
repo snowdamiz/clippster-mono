@@ -73,7 +73,7 @@ defmodule ClippsterServer.BetaCodes do
   """
   def get_code_stats do
     total = Repo.aggregate(BetaCode, :count)
-    used = Repo.aggregate(from(c in BetaCode, where: not is_nil(c.used_by_user_id)), :count)
+    used = Repo.aggregate(from(c in BetaCode, where: not is_nil(c.verified_at)), :count)
 
     %{
       total: total,
