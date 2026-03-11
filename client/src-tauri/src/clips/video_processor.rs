@@ -3061,6 +3061,131 @@ pub async fn build_clip_with_framing_strategy(
                 burn_subtitles_to_video(app, temp, output_path, sub_path, quality).await?;
                 let _ = std::fs::remove_file(temp);
             }
+
+            // Handle intro/outro concatenation for MultiRegion mode
+            if intro_path.is_some() || outro_path.is_some() {
+                println!("[Rust] MultiRegion mode: intro/outro detected, preparing concatenation");
+                
+                let paths = crate::storage::init_storage_dirs()
+                    .map_err(|e| format!("Failed to get storage paths: {}", e))?;
+                let temp_dir = paths.temp.join(format!("multi_region_concat_{}", uuid::Uuid::new_v4()));
+                std::fs::create_dir_all(&temp_dir)
+                    .map_err(|e| format!("Failed to create temp directory: {}", e))?;
+
+                // Parse target aspect ratio for intro/outro preparation
+                let aspect_ratio = parse_aspect_ratio_string(target_aspect_ratio).unwrap_or(
+                    super::types::AspectRatio {
+                        width: 9.0,
+                        height: 16.0,
+                    },
+                );
+
+                // Calculate output dimensions for intro/outro (not crop dimensions)
+                // Use standard width of 1080px and calculate height based on aspect ratio
+                let output_w = 1080u32;
+                let output_h = (output_w as f32 * aspect_ratio.height / aspect_ratio.width) as u32;
+                
+                println!("[Rust] MultiRegion: Output dimensions for intro/outro: {}x{}", output_w, output_h);
+
+                // Prepare intro/outro to match aspect ratio
+                let mut intro_file: Option<std::path::PathBuf> = None;
+                let mut outro_file: Option<std::path::PathBuf> = None;
+
+                if let Some(intro) = intro_path {
+                    println!("[Rust] MultiRegion: Processing intro video...");
+                    intro_file = Some(
+                        prepare_intro_outro_for_concat(
+                            app,
+                            intro,
+                            &temp_dir,
+                            "intro",
+                            &aspect_ratio,
+                            quality,
+                            frame_rate,
+                            output_w,
+                            output_h,
+                            intro_outro_cache.clone(),
+                        )
+                        .await?,
+                    );
+                }
+
+                if let Some(outro) = outro_path {
+                    println!("[Rust] MultiRegion: Processing outro video...");
+                    outro_file = Some(
+                        prepare_intro_outro_for_concat(
+                            app,
+                            outro,
+                            &temp_dir,
+                            "outro",
+                            &aspect_ratio,
+                            quality,
+                            frame_rate,
+                            output_w,
+                            output_h,
+                            intro_outro_cache.clone(),
+                        )
+                        .await?,
+                    );
+                }
+
+                // Move the main clip to temp and concatenate
+                let main_clip_temp = temp_dir.join("main_clip.mp4");
+                std::fs::copy(output_path, &main_clip_temp)
+                    .map_err(|e| format!("Failed to copy main clip: {}", e))?;
+
+                // Build concat list
+                let concat_list_path = temp_dir.join("concat_list.txt");
+                let mut concat_content = String::new();
+
+                if let Some(ref intro) = intro_file {
+                    concat_content.push_str(&format!("file '{}'\n", intro.to_string_lossy().replace("\\", "/")));
+                }
+
+                concat_content.push_str(&format!("file '{}'\n", main_clip_temp.to_string_lossy().replace("\\", "/")));
+
+                if let Some(ref outro) = outro_file {
+                    concat_content.push_str(&format!("file '{}'\n", outro.to_string_lossy().replace("\\", "/")));
+                }
+
+                std::fs::write(&concat_list_path, concat_content)
+                    .map_err(|e| format!("Failed to write concat list: {}", e))?;
+
+                // Run FFmpeg concat
+                println!("[Rust] MultiRegion: Concatenating intro/main/outro...");
+                let output = app
+                    .shell()
+                    .sidecar("ffmpeg")
+                    .unwrap()
+                    .args([
+                        "-nostdin",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        &concat_list_path.to_string_lossy(),
+                        "-c",
+                        "copy",
+                        "-movflags",
+                        "+faststart",
+                        "-y",
+                        &output_path.to_string_lossy(),
+                    ])
+                    .output()
+                    .await
+                    .map_err(|e| format!("Failed to run ffmpeg concat: {}", e))?;
+
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    return Err(format!("FFmpeg concat failed: {}", stderr));
+                }
+
+                println!("[Rust] MultiRegion: Concatenation complete");
+
+                // Clean up temp directory
+                let _ = std::fs::remove_dir_all(&temp_dir);
+            }
         }
     }
 

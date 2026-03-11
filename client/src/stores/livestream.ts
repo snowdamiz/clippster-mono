@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { SupportedLivestreamPlatform } from '@/types/livestream';
-import type { Campaign } from '@/services/campaignApi';
 
 export interface LivestreamWatchState {
   isOpen: boolean;
@@ -11,11 +10,6 @@ export interface LivestreamWatchState {
   profileImageUrl?: string;
   platform: SupportedLivestreamPlatform;
   isInPipMode: boolean;
-}
-
-export interface SessionCampaignContext {
-  campaign: Campaign;
-  streamerId: string;
 }
 
 export const useLivestreamStore = defineStore('livestream', () => {
@@ -30,10 +24,6 @@ export const useLivestreamStore = defineStore('livestream', () => {
     isInPipMode: false,
   });
 
-  // Campaign context for active sessions (streamerId -> Campaign)
-  const sessionCampaigns = ref<Map<string, Campaign>>(new Map());
-
-  
   // Computed getters
   const isWatching = computed(() => watchState.value.isOpen || watchState.value.isInPipMode);
   const isInPipMode = computed(() => watchState.value.isInPipMode);
@@ -111,23 +101,9 @@ export const useLivestreamStore = defineStore('livestream', () => {
     watchState.value.isInPipMode = false;
   }
 
-  // Campaign context management
-  function setSessionCampaign(streamerId: string, campaign: Campaign) {
-    sessionCampaigns.value.set(streamerId, campaign);
-  }
-
-  function getSessionCampaign(streamerId: string): Campaign | undefined {
-    return sessionCampaigns.value.get(streamerId);
-  }
-
-  function clearSessionCampaign(streamerId: string) {
-    sessionCampaigns.value.delete(streamerId);
-  }
-
   return {
     // State
     watchState,
-    sessionCampaigns,
     
     // Getters
     isWatching,
@@ -143,9 +119,6 @@ export const useLivestreamStore = defineStore('livestream', () => {
     exitPipMode,
     reset,
     forceClose,
-    setSessionCampaign,
-    getSessionCampaign,
-    clearSessionCampaign,
   };
 });
 

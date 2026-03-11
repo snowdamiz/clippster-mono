@@ -445,28 +445,6 @@
               </div>
             </div>
 
-            <!-- Portfolio Preview -->
-            <div v-if="clipper.portfolio_clips?.length" class="org-clippers__portfolio-preview">
-              <div
-                v-for="clip in clipper.portfolio_clips.slice(0, 2)"
-                :key="clip.id"
-                class="org-clippers__portfolio-thumb"
-              >
-                <img
-                  v-if="clip.thumbnail_url"
-                  :src="clip.thumbnail_url"
-                  class="org-clippers__portfolio-img"
-                  alt="Portfolio clip"
-                />
-                <div v-else class="org-clippers__portfolio-placeholder">
-                  <Play class="org-clippers__portfolio-play-icon" />
-                </div>
-              </div>
-              <div v-if="clipper.portfolio_clips.length > 2" class="org-clippers__portfolio-more">
-                +{{ clipper.portfolio_clips.length - 2 }} more
-              </div>
-            </div>
-
             <!-- Tags + Languages -->
             <div class="org-clippers__tags-row">
               <div class="org-clippers__tags">
@@ -508,7 +486,7 @@
             <button
               v-if="!isOwnProfile(clipper)"
               class="org-clippers__action-btn org-clippers__action-btn--invite"
-              @click="openInviteDialog(clipper, $event)"
+              @click="handleInvite(clipper, $event)"
             >
               <Send class="org-clippers__action-icon" />
               Invite
@@ -519,44 +497,44 @@
       </div>
     </template>
 
-    <!-- Campaign Invite Dialog -->
+    <!-- Organization Invite Confirmation Dialog -->
     <Dialog v-model:open="showInviteDialog">
       <DialogContent class="org-clippers__dialog">
         <DialogHeader>
-          <DialogTitle>Invite to Campaign</DialogTitle>
+          <DialogTitle>Invite to Organization</DialogTitle>
           <DialogDescription>
-            Select a campaign to invite {{ selectedClipperForInvite?.display_name }} to
+            Invite {{ selectedClipperForInvite?.display_name }} to join your organization as a member
           </DialogDescription>
         </DialogHeader>
         <div class="org-clippers__dialog-body">
-          <div v-if="loadingCampaigns" class="org-clippers__loading-campaigns">Loading campaigns...</div>
-          <div v-else-if="organizationCampaigns.length === 0" class="org-clippers__no-campaigns">
-            <p>No active campaigns available.</p>
-            <p class="org-clippers__no-campaigns-hint">Create a campaign first to invite clippers.</p>
-          </div>
-          <div v-else class="org-clippers__campaign-list">
-            <button
-              v-for="campaign in organizationCampaigns"
-              :key="campaign.id"
-              class="org-clippers__campaign-option"
-              :class="{ 'org-clippers__campaign-option--selected': selectedCampaignId === campaign.id }"
-              @click="selectedCampaignId = campaign.id"
-            >
-              <div class="org-clippers__campaign-option-info">
-                <span class="org-clippers__campaign-option-title">{{ campaign.title }}</span>
-                <span class="org-clippers__campaign-option-meta">
-                  {{ campaign.participants_count || 0 }} participants
-                </span>
+          <div v-if="selectedClipperForInvite" class="org-clippers__invite-info">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden">
+                <img
+                  v-if="selectedClipperForInvite.avatar_url"
+                  :src="selectedClipperForInvite.avatar_url"
+                  class="w-full h-full object-cover"
+                />
+                <UserCircle v-else class="w-6 h-6 text-primary" />
               </div>
-              <CheckCircle v-if="selectedCampaignId === campaign.id" class="org-clippers__campaign-check" />
-            </button>
+              <div>
+                <div class="font-semibold text-foreground">{{ selectedClipperForInvite.display_name }}</div>
+                <div class="text-sm text-muted-foreground">
+                  {{ selectedClipperForInvite.experience_level || 'Clipper' }}
+                </div>
+              </div>
+            </div>
+            <p class="text-sm text-muted-foreground">
+              This will send an invitation email to the clipper. They will be able to accept or decline the invitation.
+            </p>
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" @click="showInviteDialog = false">Cancel</Button>
-          <Button @click="sendCampaignInvite" :disabled="!selectedCampaignId || organizationCampaigns.length === 0">
-            <Send class="org-clippers__btn-icon" />
-            Send Invite
+          <Button @click="sendOrganizationInvite" :disabled="inviteSending">
+            <Loader2 v-if="inviteSending" class="w-4 h-4 animate-spin mr-2" />
+            <Send v-else class="org-clippers__btn-icon" />
+            Send Invitation
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -567,6 +545,7 @@
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted } from 'vue';
   import { useRouter } from 'vue-router';
+  import { useToast } from '@/composables/useToast';
   import {
     Users,
     Trophy,
@@ -585,6 +564,7 @@
     Instagram,
     Youtube,
     Facebook,
+    Loader2,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import {
@@ -616,12 +596,13 @@
     getSpecialtyTagLabel,
     getLanguageName,
   } from '@/services/clipperProfilesApi';
-  import { listMyCampaigns, type Campaign } from '@/services/campaignApi';
+  import { inviteUserToOrganization } from '@/services/organizationsApi';
   import { useAuthStore } from '@/stores/auth';
 
   // Props
   const props = defineProps<{
     activeView: 'directory' | 'leaderboard';
+    organizationId: string | number;
   }>();
 
   // Computed to use prop
@@ -629,6 +610,7 @@
 
   const router = useRouter();
   const authStore = useAuthStore();
+  const { showToast } = useToast();
 
   // Get current user ID for checking if viewing own profile
   const currentUserId = computed(() => authStore.user?.id);
@@ -642,12 +624,10 @@
   const loading = ref(true);
   const clippers = ref<ClipperProfile[]>([]);
 
-  // Campaign invite dialog state
+  // Organization invite dialog state
   const showInviteDialog = ref(false);
   const selectedClipperForInvite = ref<ClipperProfile | null>(null);
-  const organizationCampaigns = ref<Campaign[]>([]);
-  const selectedCampaignId = ref<number | null>(null);
-  const loadingCampaigns = ref(false);
+  const inviteSending = ref(false);
 
   // Leaderboard state
   const loadingLeaderboard = ref(true);
@@ -869,35 +849,37 @@
     router.push(`/messages?to=${clipper.user_id}`);
   };
 
-  // Campaign invite handlers
-  const openInviteDialog = async (clipper: ClipperProfile, event: Event) => {
+  // Organization invite handlers
+  const handleInvite = async (clipper: ClipperProfile, event: Event) => {
     event.preventDefault();
     event.stopPropagation();
     selectedClipperForInvite.value = clipper;
-    selectedCampaignId.value = null;
     showInviteDialog.value = true;
-
-    // Load organization's campaigns
-    loadingCampaigns.value = true;
-    try {
-      const response = await listMyCampaigns();
-      if (response.success) {
-        // Filter to only active campaigns
-        organizationCampaigns.value = response.campaigns.filter((c) => c.status === 'active');
-      }
-    } catch (error) {
-      console.error('Failed to load campaigns:', error);
-    } finally {
-      loadingCampaigns.value = false;
-    }
   };
 
-  const sendCampaignInvite = () => {
-    if (!selectedClipperForInvite.value || !selectedCampaignId.value) return;
-    const campaign = organizationCampaigns.value.find((c) => c.id === selectedCampaignId.value);
-    const inviteMessage = `Hi! I'd like to invite you to join our campaign "${campaign?.title}". Would you be interested in participating?`;
-    router.push(`/messages?to=${selectedClipperForInvite.value.user_id}&message=${encodeURIComponent(inviteMessage)}`);
-    showInviteDialog.value = false;
+  const sendOrganizationInvite = async () => {
+    if (!selectedClipperForInvite.value || !props.organizationId) return;
+    
+    inviteSending.value = true;
+    try {
+      const result = await inviteUserToOrganization(
+        props.organizationId,
+        selectedClipperForInvite.value.user_id,
+        'member'
+      );
+      
+      if (result.success) {
+        showToast(`Invitation sent to ${selectedClipperForInvite.value.display_name}`, 'success');
+        showInviteDialog.value = false;
+      } else {
+        showToast(result.error || 'Failed to send invitation', 'error');
+      }
+    } catch (error) {
+      console.error('Failed to send invitation:', error);
+      showToast('Failed to send invitation', 'error');
+    } finally {
+      inviteSending.value = false;
+    }
   };
 
   onMounted(() => {

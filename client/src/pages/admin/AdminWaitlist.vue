@@ -236,23 +236,34 @@
                   <span v-else class="admin-waitlist__code-empty">—</span>
                 </td>
                 <td class="admin-waitlist__td">
-                  <button 
-                    v-if="!entry.invited_at" 
-                    class="admin-waitlist__invite-btn" 
-                    @click="inviteEntry(entry.id)"
-                    :disabled="inviting"
-                  >
-                    <UserPlus class="admin-waitlist__invite-icon" />
-                    Invite
-                  </button>
-                  <button 
-                    v-else 
-                    class="admin-waitlist__copy-btn" 
-                    @click="copyWaitlistEmail(entry.email)"
-                  >
-                    <Copy class="admin-waitlist__copy-icon" />
-                    Copy
-                  </button>
+                  <div v-if="!entry.invited_at">
+                    <button 
+                      class="admin-waitlist__invite-btn" 
+                      @click="inviteEntry(entry.id)"
+                      :disabled="inviting"
+                    >
+                      <UserPlus class="admin-waitlist__invite-icon" />
+                      Invite
+                    </button>
+                  </div>
+                  <div v-else class="admin-waitlist__action-buttons">
+                    <button 
+                      class="admin-waitlist__reinvite-btn" 
+                      @click="reinviteEntry(entry.id)"
+                      :disabled="inviting"
+                      title="Cancel old codes and send new invite"
+                    >
+                      <RefreshCcw class="admin-waitlist__reinvite-icon" />
+                      Reinvite
+                    </button>
+                    <button 
+                      class="admin-waitlist__copy-btn" 
+                      @click="copyWaitlistEmail(entry.email)"
+                    >
+                      <Copy class="admin-waitlist__copy-icon" />
+                      Copy
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -275,7 +286,7 @@
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
   import { formatDateTime } from '@/utils/dateTimeUtils';
-  import { UserPlus, Users, Activity, RefreshCw, Loader2, Copy, AlertTriangle } from 'lucide-vue-next';
+  import { UserPlus, Users, Activity, RefreshCw, Loader2, Copy, AlertTriangle, RefreshCcw } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import api from '@/services/api';
 
@@ -362,6 +373,23 @@
         await fetchWaitlist();
       } else {
         error.value = response.data.error || 'Failed to send invite';
+      }
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Unknown error occurred';
+    } finally {
+      inviting.value = false;
+    }
+  };
+
+  const reinviteEntry = async (entryId: number) => {
+    inviting.value = true;
+    error.value = null;
+    try {
+      const response = await api.post(`/admin/waitlist/${entryId}/reinvite`, inviteConfig.value);
+      if (response.data.success) {
+        await fetchWaitlist();
+      } else {
+        error.value = response.data.error || 'Failed to send reinvite';
       }
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Unknown error occurred';
@@ -1131,6 +1159,42 @@
   .admin-waitlist__add-user-icon {
     width: 16px;
     height: 16px;
+  }
+
+  /* Action buttons container */
+  .admin-waitlist__action-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  /* Reinvite button */
+  .admin-waitlist__reinvite-btn {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.375rem 0.75rem;
+    background: linear-gradient(to right, #f59e0b, #ea580c);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .admin-waitlist__reinvite-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .admin-waitlist__reinvite-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .admin-waitlist__reinvite-icon {
+    width: 12px;
+    height: 12px;
+    margin-right: 0.375rem;
   }
 
   /* Add User Form */

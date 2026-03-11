@@ -683,6 +683,7 @@
     :settings="formData.watermark_settings || undefined"
     :overlays="formData.layout_overlays"
     :overlay-previews="overlayPreviews"
+    :org-assets="mode === 'organization' ? orgAssets : undefined"
     @close="showWatermarkPositionPicker = false"
     @save="handleWatermarkSettingsSave"
   />
@@ -2058,20 +2059,33 @@
     let profile: ServerOrganizationCreatorProfile | undefined;
     const profileImageUrl = getProfileImageFromLinks();
 
+    // Helper to extract numeric ID from org-asset-X format
+    const extractNumericId = (id: string | number | null): number | null => {
+      if (id === null || id === undefined) return null;
+      const str = String(id);
+      if (str.startsWith('org-asset-')) {
+        const num = parseInt(str.replace('org-asset-', ''), 10);
+        return isNaN(num) ? null : num;
+      }
+      const num = parseInt(str, 10);
+      return isNaN(num) ? null : num;
+    };
+
     if (isEditing.value && props.profile) {
       // Update existing profile
-      const response = await updateOrganizationCreatorProfile(props.organizationId, props.profile.id, {
+      const updateData = {
         name: formData.value.name,
         description: formData.value.description || null,
         profile_image_url: profileImageUrl || null,
-        intro_id: formData.value.intro_id as number | null,
-        outro_id: formData.value.outro_id as number | null,
-        watermark_id: formData.value.watermark_id as number | null,
+        intro_id: extractNumericId(formData.value.intro_id),
+        outro_id: extractNumericId(formData.value.outro_id),
+        watermark_id: extractNumericId(formData.value.watermark_id),
         watermark_settings: formData.value.watermark_settings,
         intro_outro_settings: formData.value.intro_outro_settings ? JSON.parse(formData.value.intro_outro_settings) : null,
         layout_overlays: cleanOverlaysForServer(),
         scope: formData.value.scope,
-      });
+      };
+      const response = await updateOrganizationCreatorProfile(props.organizationId, props.profile.id, updateData);
 
       if (!response.success || !response.profile) {
         throw new Error(response.error || 'Failed to update profile');
@@ -2111,9 +2125,9 @@
         name: formData.value.name,
         description: formData.value.description || undefined,
         profile_image_url: profileImageUrl,
-        intro_id: formData.value.intro_id as number | null,
-        outro_id: formData.value.outro_id as number | null,
-        watermark_id: formData.value.watermark_id as number | null,
+        intro_id: extractNumericId(formData.value.intro_id),
+        outro_id: extractNumericId(formData.value.outro_id),
+        watermark_id: extractNumericId(formData.value.watermark_id),
         watermark_settings: formData.value.watermark_settings || undefined,
         layout_overlays: cleanOverlaysForServer(),
         scope: formData.value.scope,

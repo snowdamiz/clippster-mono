@@ -2481,6 +2481,9 @@
         clip.builds[existingBuildIdx].output_paths = JSON.stringify(all_output_paths || [output_path]);
       }
       console.log(`[Projects] Local state updated for completed clip: ${clip_id}`);
+      
+      // Show success toast with Publish Now option
+      success('Build Complete', 'Your clip has been built successfully. Ready to publish!');
     } else if (isCancelled) {
       clip.build_status = 'pending';
       clip.build_progress = 0;
@@ -3564,6 +3567,8 @@
 
     try {
       console.log('[Projects] Starting folder build with aspectRatios:', settings.aspectRatios);
+      console.log('[Projects] buildTargets:', settings.buildTargets);
+      
       // Get the video file for this clip's segment
       const videos = projectVideos.value[clip.segment_id];
       if (!videos || videos.length === 0) {
@@ -3571,6 +3576,13 @@
         return;
       }
       const videoPath = videos[0].file_path;
+      
+      // Check if we have multi-build targets (orgs/campaigns selected)
+      if (settings.buildTargets && settings.buildTargets.length > 0) {
+        console.log('[Projects] Multi-build mode: processing', settings.buildTargets.length, 'targets');
+        await executeMultiBuildTargets(clip, videoPath, settings);
+        return;
+      }
 
       // IMPORTANT: Reload segments from database to get latest edits from timeline
       // The clip object may have stale data if user edited segments on timeline
@@ -4200,6 +4212,297 @@
     } finally {
       // Reset the build in progress flag
       isFolderBuildInProgress.value = false;
+    }
+  }
+
+  // Execute multiple build targets sequentially (for org/campaign multi-builds)
+  async function executeMultiBuildTargets(
+    clip: ClipWithVersionAndSegment,
+    videoPath: string,
+    settings: BuildSettings
+  ) {
+    const buildTargets = settings.buildTargets!;
+    console.log(`[Projects] Starting ${buildTargets.length} sequential builds`);
+    
+    const { createClipBuild, getClipBuilds, updateClipBuild } = await import('@/services/database/clip-build');
+    const { getClipSegmentsByVersionId } = await import('@/services/database/clip-segments');
+    const { updateClipBuildStatus } = await import('@/services/database');
+    
+    // Load segments once (shared across all builds)
+    let segments: any[] = [];
+    const versionId = clip.current_version_id || clip.current_version?.id;
+    if (versionId) {
+      try {
+        const dbSegments = await getClipSegmentsByVersionId(versionId);
+        if (dbSegments.length > 0) {
+          segments = dbSegments.map((s: any) => ({
+            id: s.id,
+            start_time: s.start_time,
+            end_time: s.end_time,
+            duration: s.duration || s.end_time - s.start_time,
+            transcript: s.transcript || null,
+          }));
+        }
+      } catch (err) {
+        console.warn('[Projects] Could not load segments:', err);
+      }
+    }
+    
+    // Fallback to synthetic segment
+    if (segments.length === 0) {
+      const startTime = clip.current_version?.start_time ?? clip.start_time ?? 0;
+      const endTime = clip.current_version?.end_time ?? clip.end_time ?? 0;
+      segments = [{
+        id: `fallback-${clip.id}`,
+        start_time: startTime,
+        end_time: endTime,
+        duration: endTime - startTime,
+        transcript: null,
+      }];
+    }
+    
+    // Process each build target sequentially
+    for (let i = 0; i < buildTargets.length; i++) {
+      const target = buildTargets[i];
+      console.log(`[Projects] Building ${i + 1}/${buildTargets.length}: ${target.type} - ${target.name} (${target.aspectRatios.join(', ')})`);
+      
+      // Get build number
+      let buildNumber = 1;
+      try {
+        const existingBuilds = await getClipBuilds(clip.id);
+        buildNumber = existingBuilds.length + 1;
+      } catch {
+        buildNumber = 1;
+      }
+      
+      // Create build record for this target
+      const buildId = await createClipBuild(clip.id, {
+        aspectRatios: target.aspectRatios,
+        quality: settings.quality,
+        frameRate: settings.frameRate,
+        outputFormat: settings.format,
+        organizationId: target.organizationId || null,
+        organizationName: target.organizationName || null,
+        campaignId: target.type === 'campaign' ? target.id : null,
+        campaignName: target.type === 'campaign' ? target.name : null,
+        brandingProfileId: target.brandingProfileId ? String(target.brandingProfileId) : null,
+        brandingType: target.type,
+      });
+      
+      // Fetch branding assets for this target (watermark, intro, outro)
+      let watermarkSettings = null;
+      let introPath: string | null = null;
+      let introDuration: number | null = null;
+      let outroPath: string | null = null;
+      let outroDuration: number | null = null;
+      const introOutroPerRatio: Record<string, any> = {};
+      
+      // Fetch org/campaign branding profile assets
+      if (target.brandingProfileId && target.organizationId) {
+        try {
+          const { getUserAssignedCreatorProfiles } = await import('@/services/organizationProfilesApi');
+          const { ensureAssetDownloaded } = await import('@/services/orgAssetSync');
+          
+          // Get the creator profile to access its assets
+          const profilesRes = await getUserAssignedCreatorProfiles();
+          if (profilesRes.success && profilesRes.profiles) {
+            const profile = profilesRes.profiles.find(p => p.id === Number(target.brandingProfileId));
+            
+            if (profile) {
+              // Download and apply watermark
+              if (profile.watermark) {
+                const wmResult = await ensureAssetDownloaded({
+                  id: profile.watermark.id,
+                  name: profile.watermark.name,
+                  asset_type: 'watermark',
+                  url: profile.watermark.url || '',
+                  thumbnail_url: profile.watermark.thumbnail_url || null,
+                  organization_id: target.organizationId,
+                  organization_name: target.organizationName || '',
+                  width: null,
+                  height: null,
+                  duration: null,
+                  file_size: null,
+                  mime_type: null,
+                  uploaded_by: null,
+                  inserted_at: profile.inserted_at,
+                  updated_at: profile.updated_at,
+                } as any);
+                if (wmResult.success && wmResult.filePath) {
+                  // Parse watermark settings for position
+                  let posX = 88, posY = 81, opacity = 80, scale = 20;
+                  if (profile.watermark_settings) {
+                    const wmSettings = typeof profile.watermark_settings === 'string' 
+                      ? JSON.parse(profile.watermark_settings) 
+                      : profile.watermark_settings;
+                    const defaultRatio = wmSettings['16:9'] || wmSettings['9:16'] || Object.values(wmSettings)[0];
+                    if (defaultRatio?.position) {
+                      posX = defaultRatio.position.x ?? posX;
+                      posY = defaultRatio.position.y ?? posY;
+                      opacity = defaultRatio.position.opacity ?? opacity;
+                      scale = defaultRatio.position.scale ?? scale;
+                    }
+                  }
+                  watermarkSettings = {
+                    enabled: true,
+                    watermarkId: String(profile.watermark.id),
+                    filePath: wmResult.filePath,
+                    width: null,
+                    height: null,
+                    positionX: posX,
+                    positionY: posY,
+                    opacity: opacity,
+                    scale: scale,
+                    perRatioSettings: profile.watermark_settings,
+                  };
+                  console.log(`[Projects] Applied ${target.type} watermark:`, profile.watermark.name);
+                }
+              }
+              
+              // Download and apply intro
+              if (profile.intro) {
+                const introResult = await ensureAssetDownloaded({
+                  id: profile.intro.id,
+                  name: profile.intro.name,
+                  asset_type: 'intro',
+                  url: profile.intro.url || '',
+                  thumbnail_url: profile.intro.thumbnail_url || null,
+                  organization_id: target.organizationId,
+                  organization_name: target.organizationName || '',
+                  width: null,
+                  height: null,
+                  duration: profile.intro.duration,
+                  file_size: null,
+                  mime_type: null,
+                  uploaded_by: null,
+                  inserted_at: profile.inserted_at,
+                  updated_at: profile.updated_at,
+                } as any);
+                if (introResult.success && introResult.filePath) {
+                  introPath = introResult.filePath;
+                  introDuration = profile.intro.duration;
+                  console.log(`[Projects] Applied ${target.type} intro:`, profile.intro.name);
+                }
+              }
+              
+              // Download and apply outro
+              if (profile.outro) {
+                const outroResult = await ensureAssetDownloaded({
+                  id: profile.outro.id,
+                  name: profile.outro.name,
+                  asset_type: 'outro',
+                  url: profile.outro.url || '',
+                  thumbnail_url: profile.outro.thumbnail_url || null,
+                  organization_id: target.organizationId,
+                  organization_name: target.organizationName || '',
+                  width: null,
+                  height: null,
+                  duration: profile.outro.duration,
+                  file_size: null,
+                  mime_type: null,
+                  uploaded_by: null,
+                  inserted_at: profile.inserted_at,
+                  updated_at: profile.updated_at,
+                } as any);
+                if (outroResult.success && outroResult.filePath) {
+                  outroPath = outroResult.filePath;
+                  outroDuration = profile.outro.duration;
+                  console.log(`[Projects] Applied ${target.type} outro:`, profile.outro.name);
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`[Projects] Failed to fetch branding for ${target.type} ${target.name}:`, err);
+        }
+      }
+      
+      // Create promise for build completion
+      const buildCompletePromise = new Promise<void>((resolve, reject) => {
+        const handleComplete = async (event: any) => {
+          const payload = event.payload;
+          if (payload.clip_id !== clip.id) return;
+          
+          window.removeEventListener('clip-build-complete' as any, handleComplete);
+          
+          if (payload.success && payload.output_path) {
+            await updateClipBuild(buildId, {
+              status: 'completed',
+              filePath: payload.output_path,
+              outputPaths: payload.all_output_paths,
+              thumbnailPath: payload.thumbnail_path || undefined,
+              duration: payload.duration || undefined,
+            });
+            resolve();
+          } else {
+            await updateClipBuild(buildId, {
+              status: 'failed',
+              errorMessage: payload.error || 'Build failed',
+            });
+            reject(new Error(payload.error || 'Build failed'));
+          }
+        };
+        
+        // Listen for Tauri event
+        import('@tauri-apps/api/event').then(({ listen }) => {
+          listen('clip-build-complete', handleComplete);
+        });
+      });
+      
+      // Start the build
+      await invoke('build_clip_from_segments', {
+        projectId: clip.segment_id,
+        clipId: clip.id,
+        clipName: clip.current_version?.name || clip.name || 'Untitled',
+        videoPath,
+        segments,
+        subtitleSettings: null,
+        subtitleOverrides: settings.subtitleOverrides || null,
+        transcriptWords: [],
+        transcriptSegments: [],
+        maxWords: 3,
+        aspectRatios: target.aspectRatios,
+        quality: settings.quality,
+        frameRate: settings.frameRate,
+        outputFormat: settings.format,
+        runNumber: clip.run_number || null,
+        buildNumber,
+        buildId,
+        introPath,
+        introDuration,
+        outroPath,
+        outroDuration,
+        introOutroPerRatio: Object.keys(introOutroPerRatio).length > 0 ? introOutroPerRatio : null,
+        watermarkSettings,
+        audioSettings: null,
+        framingStrategy: null,
+        manualFramingConfigs: settings.manualFramingConfigs || null,
+        segmentFramingConfigs: null,
+        videoFilterSegments: null,
+        textOverlays: null,
+        stickers: null,
+        clipWatermarks: null,
+        clipEffects: null,
+        audioEffects: null,
+        layoutOverlays: settings.layoutOverlays || null,
+        campaignId: target.type === 'campaign' ? target.id : null,
+        campaignBrandingProfileId: target.brandingProfileId,
+        brandingType: target.type,
+      });
+      
+      // Wait for this build to complete before starting next
+      await buildCompletePromise;
+      console.log(`[Projects] Completed build ${i + 1}/${buildTargets.length}`);
+    }
+    
+    success('Builds completed', `Successfully built ${buildTargets.length} clips.`);
+    showFolderBuildDialog.value = false;
+    folderClipToBuild.value = null;
+    isFolderBuildInProgress.value = false;
+    
+    // Refresh clips list
+    if (clip.segment_id) {
+      await loadFolderClips(clip.segment_id);
     }
   }
 

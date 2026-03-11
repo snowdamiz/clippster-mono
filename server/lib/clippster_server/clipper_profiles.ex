@@ -178,10 +178,14 @@ defmodule ClippsterServer.ClipperProfiles do
   defp filter_by_verified(query, _), do: query
 
   defp visible_in_public_directory(query) do
+    alias ClippsterServer.Accounts.User
+    
     query
+    |> join(:inner, [p], u in User, on: p.user_id == u.id)
     |> where([p], p.is_public == true)
     |> where([p], fragment("char_length(trim(coalesce(?, ''))) > 0", p.display_name))
     |> where([p], fragment("char_length(trim(coalesce(?, ''))) > 0", p.slug))
+    |> where([p, u], u.subscription_tier != "basic" or is_nil(u.subscription_tier))
   end
 
   defp present_string?(value) when is_binary(value), do: String.trim(value) != ""
@@ -769,7 +773,8 @@ defmodule ClippsterServer.ClipperProfiles do
       ClippsterServer.Campaigns.UserPost
       |> where([p], p.user_id == ^user_id)
       |> where([p], p.status == "published")
-      |> where([p], p.inserted_at >= ^start_dt and p.inserted_at <= ^end_dt)
+      |> where([p], not is_nil(p.posted_at))
+      |> where([p], p.posted_at >= ^start_dt and p.posted_at <= ^end_dt)
       |> select([p], coalesce(sum(p.view_count), 0))
       |> Repo.one()
 
@@ -800,7 +805,8 @@ defmodule ClippsterServer.ClipperProfiles do
       ClippsterServer.Campaigns.UserPost
       |> where([p], p.user_id == ^user_id)
       |> where([p], p.status == "published")
-      |> where([p], p.inserted_at >= ^start_dt and p.inserted_at <= ^end_dt)
+      |> where([p], not is_nil(p.posted_at))
+      |> where([p], p.posted_at >= ^start_dt and p.posted_at <= ^end_dt)
       |> Repo.aggregate(:count)
 
     post_submission_count + user_post_count

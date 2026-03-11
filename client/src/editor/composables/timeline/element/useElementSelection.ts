@@ -3,11 +3,13 @@
  */
 import { computed } from "vue";
 import { useEditor } from "../../useEditor";
+import { usePreviewFocus } from "../../preview/usePreviewFocus";
 
 type ElementRef = { trackId: string; elementId: string };
 
 export function useElementSelection() {
 	const { editor, version } = useEditor();
+	const { setPreviewFocused } = usePreviewFocus();
 
 	const selectedElements = computed(() => {
 		void version.value; // trigger reactivity
@@ -54,6 +56,7 @@ export function useElementSelection() {
 	}
 
 	function clearElementSelection() {
+		setPreviewFocused(false);
 		editor.selection.clearSelection();
 	}
 
@@ -98,6 +101,7 @@ export function useElementSelection() {
 	}
 
 	function selectAllInTrack({ trackId }: { trackId: string }) {
+		setPreviewFocused(false);
 		const track = editor.timeline.getTrackById({ trackId });
 		if (!track) return;
 		const elements = track.elements.map((e) => ({ trackId, elementId: e.id }));
@@ -111,6 +115,7 @@ export function useElementSelection() {
 		isAltKey,
 		isShiftKey,
 	}: ElementRef & { isMultiKey: boolean; isAltKey?: boolean; isShiftKey?: boolean }) {
+		setPreviewFocused(false);
 		if (isAltKey) {
 			rippleSelect({ trackId, elementId });
 		} else if (isShiftKey) {

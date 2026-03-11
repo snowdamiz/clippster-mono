@@ -57,6 +57,7 @@ defmodule ClippsterServer.Campaigns do
       :creator_profile,
       :global_intro,
       :global_outro,
+      branding_profile: [:intro, :outro, :watermark, :platform_links],
       participants: :user,
       creator_profiles: :platform_links
     ])
@@ -318,9 +319,17 @@ defmodule ClippsterServer.Campaigns do
   For open campaigns, automatically approves.
   """
   def apply_to_campaign(%Campaign{} = campaign, %User{} = user, application_note \\ nil) do
+    now = DateTime.utc_now()
+    
     cond do
       campaign.status != "active" ->
         {:error, :campaign_not_active}
+      
+      not is_nil(campaign.starts_at) and DateTime.compare(now, campaign.starts_at) == :lt ->
+        {:error, :campaign_not_started}
+      
+      not is_nil(campaign.ends_at) and DateTime.compare(now, campaign.ends_at) == :gt ->
+        {:error, :campaign_ended}
 
       already_participant?(campaign.id, user.id) ->
         {:error, :already_participating}
@@ -525,6 +534,7 @@ defmodule ClippsterServer.Campaigns do
           :creator_profile,
           :global_intro,
           :global_outro,
+          branding_profile: [:intro, :outro, :watermark, :platform_links],
           creator_profiles: :platform_links
         ]
       ],
@@ -544,6 +554,7 @@ defmodule ClippsterServer.Campaigns do
           :creator_profile,
           :global_intro,
           :global_outro,
+          branding_profile: [:intro, :outro, :watermark, :platform_links],
           creator_profiles: :platform_links
         ]
       ],
@@ -574,6 +585,7 @@ defmodule ClippsterServer.Campaigns do
           :creator_profile,
           :global_intro,
           :global_outro,
+          branding_profile: [:intro, :outro, :watermark, :platform_links],
           creator_profiles: :platform_links
         ]
       ],
@@ -628,6 +640,7 @@ defmodule ClippsterServer.Campaigns do
   """
   def submit_clip(%Campaign{} = campaign, %User{} = user, attrs) do
     participant = get_participant_by_campaign_and_user(campaign.id, user.id)
+    now = DateTime.utc_now()
 
     cond do
       is_nil(participant) or participant.status != "approved" ->
@@ -635,6 +648,12 @@ defmodule ClippsterServer.Campaigns do
 
       campaign.status != "active" ->
         {:error, :campaign_not_active}
+      
+      not is_nil(campaign.starts_at) and DateTime.compare(now, campaign.starts_at) == :lt ->
+        {:error, :campaign_not_started}
+      
+      not is_nil(campaign.ends_at) and DateTime.compare(now, campaign.ends_at) == :gt ->
+        {:error, :campaign_ended}
 
       true ->
         clip_url = Map.get(attrs, :clip_url) || Map.get(attrs, "clip_url")
@@ -717,6 +736,15 @@ defmodule ClippsterServer.Campaigns do
     submission
     |> Ecto.Changeset.change(attrs)
     |> Repo.update()
+  end
+
+  @doc """
+  Creates a campaign submission directly (used for published posts).
+  """
+  def create_campaign_submission(attrs) do
+    %CampaignSubmission{}
+    |> CampaignSubmission.create_changeset(attrs)
+    |> Repo.insert()
   end
 
   @doc """
@@ -1282,7 +1310,8 @@ defmodule ClippsterServer.Campaigns do
   end
 
   @doc """
-  Lists all posts for a user.
+  Lists all posts for a user (personal posts only, returns structs).
+  Used by sync functions that need actual UserPost structs.
   """
   def list_user_posts(user_id) do
     from(p in UserPost,
@@ -1290,6 +1319,77 @@ defmodule ClippsterServer.Campaigns do
       order_by: [desc: p.inserted_at]
     )
     |> Repo.all()
+  end
+
+  @doc """
+  Lists ALL posts for a user including both personal and organization posts.
+  Returns maps (not structs) for frontend display.
+  """
+  def list_all_user_posts(user_id) do
+    # Get personal posts from user_posts table
+    personal_posts =
+      from(p in UserPost,
+        where: p.user_id == ^user_id,
+        select: %{
+          id: p.id,
+          platform: p.platform,
+          provider: p.provider,
+          provider_post_id: p.provider_post_id,
+          post_id: p.post_id,
+          post_url: p.post_url,
+          caption: p.caption,
+          media_url: p.media_url,
+          thumbnail_url: p.thumbnail_url,
+          media_type: p.media_type,
+          status: p.status,
+          view_count: p.view_count,
+          like_count: p.like_count,
+          comment_count: p.comment_count,
+          save_count: p.save_count,
+          reach_count: p.reach_count,
+          impressions_count: p.impressions_count,
+          published_at: p.inserted_at,
+          inserted_at: p.inserted_at,
+          source: "personal"
+        }
+      )
+      |> Repo.all()
+
+    # Get organization posts from post_submissions table
+    org_posts =
+      from(p in ClippsterServer.Social.PostSubmission,
+        where: p.submitted_by_user_id == ^user_id,
+        where: p.status == "published",
+        select: %{
+          id: p.id,
+          platform: p.platform,
+          provider: p.provider,
+          provider_post_id: p.provider_post_id,
+          post_id: p.post_id,
+          post_url: p.post_url,
+          caption: p.caption,
+          media_url: p.media_url,
+          thumbnail_url: p.thumbnail_url,
+          media_type: p.media_type,
+          status: p.status,
+          view_count: p.view_count,
+          like_count: p.like_count,
+          comment_count: p.comment_count,
+          save_count: p.save_count,
+          reach_count: p.reach_count,
+          impressions_count: p.impressions_count,
+          published_at: p.posted_at,
+          inserted_at: p.inserted_at,
+          source: "organization"
+        }
+      )
+      |> Repo.all()
+
+    # Combine and sort by published_at/inserted_at descending
+    (personal_posts ++ org_posts)
+    |> Enum.sort_by(fn post -> 
+      post.published_at || post.inserted_at || ~U[1970-01-01 00:00:00Z]
+    end, {:desc, DateTime})
   end
 
   @doc """
@@ -1305,6 +1405,7 @@ defmodule ClippsterServer.Campaigns do
 
   @doc """
   Gets analytics summary for a user's posts.
+  Includes both personal posts (user_posts) and organization posts (post_submissions).
   """
   def get_user_analytics_summary(user_id, opts \\ []) do
     days = Keyword.get(opts, :days, 30)
@@ -1312,7 +1413,8 @@ defmodule ClippsterServer.Campaigns do
 
     since = DateTime.utc_now() |> DateTime.add(-days, :day)
 
-    query =
+    # Get analytics from personal posts
+    personal_query =
       from p in UserPost,
         where: p.user_id == ^user_id,
         where: p.status == "published",
@@ -1327,12 +1429,43 @@ defmodule ClippsterServer.Campaigns do
           total_impressions: sum(p.impressions_count)
         }
 
-    query =
+    personal_query =
       if account_id,
-        do: where(query, [p], p.clipper_social_account_id == ^account_id),
-        else: query
+        do: where(personal_query, [p], p.clipper_social_account_id == ^account_id),
+        else: personal_query
 
-    Repo.one(query)
+    personal_stats = Repo.one(personal_query)
+
+    # Get analytics from organization posts
+    org_query =
+      from p in ClippsterServer.Social.PostSubmission,
+        where: p.submitted_by_user_id == ^user_id,
+        where: p.status == "published",
+        where: p.posted_at >= ^since,
+        select: %{
+          total_posts: count(p.id),
+          total_views: sum(p.view_count),
+          total_likes: sum(p.like_count),
+          total_comments: sum(p.comment_count),
+          total_saves: sum(p.save_count),
+          total_reach: sum(p.reach_count),
+          total_impressions: sum(p.impressions_count)
+        }
+
+    # Note: account_id filtering doesn't apply to org posts as they use different account schema
+
+    org_stats = Repo.one(org_query)
+
+    # Combine the stats
+    %{
+      total_posts: (personal_stats.total_posts || 0) + (org_stats.total_posts || 0),
+      total_views: (personal_stats.total_views || 0) + (org_stats.total_views || 0),
+      total_likes: (personal_stats.total_likes || 0) + (org_stats.total_likes || 0),
+      total_comments: (personal_stats.total_comments || 0) + (org_stats.total_comments || 0),
+      total_saves: (personal_stats.total_saves || 0) + (org_stats.total_saves || 0),
+      total_reach: (personal_stats.total_reach || 0) + (org_stats.total_reach || 0),
+      total_impressions: (personal_stats.total_impressions || 0) + (org_stats.total_impressions || 0)
+    }
   end
 
   @doc """

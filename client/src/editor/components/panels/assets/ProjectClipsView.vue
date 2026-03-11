@@ -36,6 +36,7 @@ const addedIds = ref<Set<string>>(new Set());
 const extractionStatus = ref<Map<string, string>>(new Map());
 const searchQuery = ref("");
 const thumbnailCache = ref<Map<string, string>>(new Map());
+const projectThumbnailCache = ref<Map<string, string>>(new Map());
 const addedMediaIds = ref<Map<string, string>>(new Map()); // clipId → mediaAssetId
 
 const activeProject = computed(() => {
@@ -103,12 +104,38 @@ function getClipDuration(clip: Clip): number | null {
 	return null;
 }
 
+async function loadProjectThumbnails() {
+	const projectsNeedingThumbs = projects.value.filter(
+		(p) => p.thumbnail_path && !projectThumbnailCache.value.has(p.id),
+	);
+	if (projectsNeedingThumbs.length === 0) return;
+
+	let hasNew = false;
+	await Promise.all(
+		projectsNeedingThumbs.map(async (project) => {
+			try {
+				const dataUrl = await invoke<string>("read_file_as_data_url", {
+					filePath: project.thumbnail_path,
+				});
+				projectThumbnailCache.value.set(project.id, dataUrl);
+				hasNew = true;
+			} catch (err) {
+				console.warn(`[ProjectClipsView] Failed to load thumbnail for project ${project.id}:`, err);
+			}
+		}),
+	);
+	if (hasNew) {
+		projectThumbnailCache.value = new Map(projectThumbnailCache.value);
+	}
+}
+
 async function loadProjects() {
 	loading.value = true;
 	try {
 		const all = await getAllProjects();
 		// Only show parent projects — child segments are aggregated when selected
 		projects.value = all.filter((p) => !p.parent_id);
+		await loadProjectThumbnails();
 	} catch (error) {
 		console.error("[ProjectClipsView] Failed to load projects:", error);
 	} finally {
@@ -388,29 +415,38 @@ onMounted(loadProjects);
 					</p>
 				</div>
 
-				<div v-else class="space-y-0.5 p-2">
+				<div
+					v-else
+					class="grid grid-cols-3 gap-2 p-3"
+				>
 					<button
 						v-for="project in filteredProjects"
 						:key="project.id"
 						type="button"
-						class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+						class="group relative overflow-hidden rounded-lg border border-white/10 text-left transition-colors hover:border-white/20"
 						@click="selectProject(project)"
 					>
-						<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-white/5">
-							<FolderOpen class="size-4 text-zinc-400" />
-						</div>
-						<div class="min-w-0 flex-1">
-							<div class="truncate text-xs font-medium text-zinc-200">
-								{{ project.name }}
+						<!-- Thumbnail -->
+						<div class="relative aspect-video bg-zinc-800 flex items-center justify-center">
+							<img
+								v-if="projectThumbnailCache.get(project.id)"
+								:src="projectThumbnailCache.get(project.id)"
+								:alt="project.name"
+								class="size-full object-cover"
+							/>
+							<FolderOpen v-else class="size-8 text-zinc-600" />
+							<div class="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex">
+								<ChevronRight class="size-5 text-white" />
 							</div>
-							<div class="text-[10px] text-zinc-500">
-								{{ formatDate(project.created_at) }}
-								<span v-if="project.platform" class="ml-1 text-zinc-600">
-									· {{ project.platform }}
-								</span>
-							</div>
 						</div>
-						<ChevronRight class="size-3.5 shrink-0 text-zinc-600" />
+						<!-- Name -->
+						<div class="truncate px-2 py-1 text-xs font-medium text-zinc-200">
+							{{ project.name }}
+						</div>
+						<!-- Meta -->
+						<div class="truncate px-2 pb-1 text-[10px] text-zinc-500">
+							{{ formatDate(project.created_at) }}<span v-if="project.platform"> · {{ project.platform }}</span>
+						</div>
 					</button>
 				</div>
 			</template>
@@ -433,7 +469,7 @@ onMounted(loadProjects);
 				<div
 					v-else
 					class="grid gap-2 p-3"
-					style="grid-template-columns: repeat(auto-fill, minmax(100px, 1fr))"
+					style="grid-template-columns: repeat(3, 1fr)"
 				>
 					<div
 						v-for="clip in filteredClips"

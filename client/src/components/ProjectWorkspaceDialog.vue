@@ -120,6 +120,7 @@
                   :aspect-ratio="selectedAspectRatio"
                   :creator-default-intro="creatorDefaultIntro"
                   :creator-default-outro="creatorDefaultOutro"
+                  :creator-profile="creatorProfile"
                   :creator-profile-server-id="creatorProfileServerId"
                   :is-transcribing="isTranscribing"
                   :transcribe-progress="transcribeProgressValue"
@@ -254,12 +255,12 @@
     deleteClip,
     getWatermarkByServerId,
     getCreatorProfileByProjectId,
-    getIntroOutroById,
     getProject,
     createClipVersion,
     updateClip,
     getOrCreateManualSession,
   } from '@/services/database';
+  import { resolveIntroOutroById } from '@/services/database/intro-outros';
   import { resolveBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import { getWatermarkImage } from '@/services/database/watermarks';
   import { getVideoEditorProjectsForClip, type VideoEditorProject } from '@/services/database';
@@ -1666,6 +1667,14 @@
       const profile = await resolveBrandingProfile(projectId);
       creatorProfile.value = profile;
 
+      console.log('[ProjectWorkspaceDialog] Resolved branding profile:', {
+        name: profile?.name,
+        id: profile?.id,
+        context_type: profile?.context_type,
+        watermark_id: profile?.watermark_id,
+        watermark_settings: profile?.watermark_settings,
+      });
+
       // Extract server ID for campaign lookup (org profiles have numeric string IDs)
       if (profile && profile.context_type === 'organization' && profile.id && !profile.id.startsWith('campaign-')) {
         const serverId = parseInt(profile.id, 10);
@@ -1682,13 +1691,16 @@
           profile.watermark_id
         );
 
-        // Apply watermark settings from creator profile (if not already applied from project)
-        if (profile.watermark_id && !watermarkSettings.value.enabled) {
-          console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id);
+        // Apply watermark settings from creator profile
+        // Profile watermark should override project-saved watermark (unless user explicitly customized it)
+        if (profile.watermark_id) {
+          console.log('[ProjectWorkspaceDialog] Applying creator watermark:', profile.watermark_id, 'current enabled:', watermarkSettings.value.enabled, 'current watermarkId:', watermarkSettings.value.watermarkId);
 
           // Parse the creator's per-ratio watermark settings
           let perRatioSettings = null;
           let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+          let effectiveWatermarkId = profile.watermark_id;
+          
           if (profile.watermark_settings) {
             try {
               perRatioSettings = JSON.parse(profile.watermark_settings);
@@ -1698,6 +1710,12 @@
               if (ratioConfig?.position) {
                 defaultPos = ratioConfig.position;
               }
+              // IMPORTANT: Use the per-ratio watermarkId if available, as it may differ from
+              // the main profile.watermark_id (which can be stale or incorrectly set)
+              if (ratioConfig?.watermarkId) {
+                effectiveWatermarkId = ratioConfig.watermarkId;
+                console.log('[ProjectWorkspaceDialog] Using per-ratio watermarkId:', effectiveWatermarkId, 'instead of profile.watermark_id:', profile.watermark_id);
+              }
             } catch (e) {
               console.warn('[ProjectWorkspaceDialog] Failed to parse creator watermark settings:', e);
             }
@@ -1706,7 +1724,7 @@
           const newSettings = {
             ...watermarkSettings.value,
             enabled: true,
-            watermarkId: profile.watermark_id,
+            watermarkId: effectiveWatermarkId,
             positionX: defaultPos.x,
             positionY: defaultPos.y,
             opacity: defaultPos.opacity,
@@ -1734,20 +1752,35 @@
         }
 
         // Load creator's default intro (will be auto-applied when building clips)
+        // Use resolveIntroOutroById which handles org-asset-* IDs by downloading from server
         if (profile.intro_id) {
-          const intro = await getIntroOutroById(profile.intro_id);
-          if (intro) {
-            creatorDefaultIntro.value = intro;
-            console.log('[ProjectWorkspaceDialog] Loaded creator default intro:', intro.name);
+          const introResolved = await resolveIntroOutroById(profile.intro_id);
+          if (introResolved) {
+            creatorDefaultIntro.value = {
+              id: profile.intro_id,
+              type: 'intro',
+              name: profile.name + ' Intro',
+              file_path: introResolved.filePath,
+              duration: introResolved.duration,
+              thumbnail_path: null,
+            } as IntroOutro;
+            console.log('[ProjectWorkspaceDialog] Loaded creator default intro:', profile.intro_id);
           }
         }
 
         // Load creator's default outro (will be auto-applied when building clips)
         if (profile.outro_id) {
-          const outro = await getIntroOutroById(profile.outro_id);
-          if (outro) {
-            creatorDefaultOutro.value = outro;
-            console.log('[ProjectWorkspaceDialog] Loaded creator default outro:', outro.name);
+          const outroResolved = await resolveIntroOutroById(profile.outro_id);
+          if (outroResolved) {
+            creatorDefaultOutro.value = {
+              id: profile.outro_id,
+              type: 'outro',
+              name: profile.name + ' Outro',
+              file_path: outroResolved.filePath,
+              duration: outroResolved.duration,
+              thumbnail_path: null,
+            } as IntroOutro;
+            console.log('[ProjectWorkspaceDialog] Loaded creator default outro:', profile.outro_id);
           }
         }
       } else {
@@ -1776,6 +1809,8 @@
             // Parse per-ratio settings to get default position
             let perRatioSettings = null;
             let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+            let effectiveWatermarkId = adminBranding.watermark_id;
+            
             if (adminBranding.watermark_settings) {
               try {
                 perRatioSettings = typeof adminBranding.watermark_settings === 'string' 
@@ -1786,6 +1821,10 @@
                 if (ratioConfig?.position) {
                   defaultPos = ratioConfig.position;
                 }
+                // Use per-ratio watermarkId if available
+                if (ratioConfig?.watermarkId) {
+                  effectiveWatermarkId = ratioConfig.watermarkId;
+                }
               } catch (e) {
                 console.warn('[ProjectWorkspaceDialog] Failed to parse admin watermark settings:', e);
               }
@@ -1793,7 +1832,7 @@
             
             const newSettings = {
               enabled: true,
-              watermarkId: adminBranding.watermark_id,
+              watermarkId: effectiveWatermarkId,
               positionX: defaultPos.x,
               positionY: defaultPos.y,
               opacity: defaultPos.opacity,
@@ -1808,9 +1847,9 @@
               watermarkId: newSettings.watermarkId,
             });
             
-            // Pre-set currentWatermarkId to the admin watermark ID BEFORE updating
+            // Pre-set currentWatermarkId to the effective watermark ID BEFORE updating
             // watermarkSettings — this ensures the watcher sees no change and skips reload
-            currentWatermarkId.value = adminBranding.watermark_id;
+            currentWatermarkId.value = effectiveWatermarkId;
             
             if (mediaPanelRef.value) {
               mediaPanelRef.value.setWatermarkSettings(newSettings);

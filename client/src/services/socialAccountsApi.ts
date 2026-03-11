@@ -494,6 +494,11 @@ export async function publishPost(
     privacy?: 'public' | 'unlisted' | 'private';
     made_for_kids?: boolean;
     category_id?: string;
+    campaign_id?: number;
+    clip_id?: string;
+    clip_build_id?: string;
+    aspect_ratio?: string;
+    build_type?: string;
   }
 ): Promise<PostResponse> {
   try {

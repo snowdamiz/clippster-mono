@@ -47,6 +47,12 @@ export function useFilmstrip({
 	const objectUrls = new Set<string>();
 	let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 	let currentController: AbortController | null = null;
+	// Monotonically-increasing counter. Incremented before each requestFilmstrip call.
+	// Each onFrame closure captures its own generation so that:
+	//   - Synchronously-delivered cached frames (delivered before requestFilmstrip returns
+	//     and before currentController is updated) are NOT falsely treated as stale.
+	//   - Callbacks from a superseded extraction are correctly discarded.
+	let extractionGeneration = 0;
 
 	const taskKey = computed(() => element.value.id);
 
@@ -127,29 +133,57 @@ export function useFilmstrip({
 		// Collect new frames progressively
 		const newFrames: FilmstripFrame[] = [];
 
+		// Serialize canvas write + toBlob operations so the shared canvas is never
+		// overwritten before the previous toBlob callback fires.
+		let conversionQueue: Promise<void> = Promise.resolve();
+
+		// Increment generation BEFORE calling requestFilmstrip. The service may
+		// deliver cached frames synchronously (inside requestFilmstrip, before it
+		// returns). If we used currentController for the abort check, those frames
+		// would see the OLD (already-aborted) controller and be silently dropped —
+		// causing blank thumbnails on zoom-out when timestamps are cache-hits.
+		// The generation counter is captured in the closure before the call, so
+		// synchronous and asynchronous frames are treated identically.
+		const myGeneration = ++extractionGeneration;
+
 		currentController = filmstripService.requestFilmstrip({
 			taskKey: taskKey.value,
 			mediaId,
 			file: asset.file,
 			timestamps,
 			onFrame: (timestamp: number, bitmap: ImageBitmap) => {
-				// Skip if this extraction was already cancelled
-				if (currentController?.signal.aborted) return;
+				if (extractionGeneration !== myGeneration) return;
 
-				// Reuse a single shared canvas to avoid creating GPU-backed canvases per frame
-				// (WKWebView on macOS has a hard limit on canvas contexts and will crash)
-				const conversion = getConversionCanvas(bitmap.width, bitmap.height);
-				if (!conversion) return;
-				conversion.ctx.drawImage(bitmap, 0, 0);
-				conversion.canvas.toBlob((blob) => {
-					if (!blob || currentController?.signal.aborted) return;
-					const objectUrl = URL.createObjectURL(blob);
-					objectUrls.add(objectUrl);
-					newFrames.push({ timestamp, bitmap, objectUrl });
-					// Sort by timestamp and update reactively
-					newFrames.sort((a, b) => a.timestamp - b.timestamp);
-					frames.value = [...newFrames];
-				}, "image/jpeg", 0.7);
+				// Chain onto the queue so only one drawImage+toBlob runs at a time.
+				conversionQueue = conversionQueue.then(
+					() =>
+						new Promise<void>((resolve) => {
+							if (extractionGeneration !== myGeneration) {
+								resolve();
+								return;
+							}
+
+							// Reuse a single shared canvas to avoid creating GPU-backed canvases per frame
+							// (WKWebView on macOS has a hard limit on canvas contexts and will crash)
+							const conversion = getConversionCanvas(bitmap.width, bitmap.height);
+							if (!conversion) {
+								resolve();
+								return;
+							}
+
+							conversion.ctx.drawImage(bitmap, 0, 0);
+							conversion.canvas.toBlob((blob) => {
+								resolve(); // always advance the queue
+								if (!blob || extractionGeneration !== myGeneration) return;
+								const objectUrl = URL.createObjectURL(blob);
+								objectUrls.add(objectUrl);
+								newFrames.push({ timestamp, bitmap, objectUrl });
+								// Sort by timestamp and update reactively
+								newFrames.sort((a, b) => a.timestamp - b.timestamp);
+								frames.value = [...newFrames];
+							}, "image/jpeg", 0.7);
+						}),
+				);
 			},
 			onDone: () => {
 				isLoading.value = false;

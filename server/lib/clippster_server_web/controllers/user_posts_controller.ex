@@ -11,6 +11,7 @@ defmodule ClippsterServerWeb.UserPostsController do
   alias ClippsterServer.Campaigns.UserPost
   alias ClippsterServer.Organizations
   alias ClippsterServer.Social
+  alias ClippsterServer.Social.PostSubmission
   alias ClippsterServer.Social.Providers.PostForMe
 
   @doc """
@@ -135,7 +136,7 @@ defmodule ClippsterServerWeb.UserPostsController do
 
     posts =
       case params["account_id"] do
-        nil -> Campaigns.list_user_posts(user.id)
+        nil -> Campaigns.list_all_user_posts(user.id)
         account_id -> Campaigns.list_user_posts_by_account(user.id, account_id)
       end
 
@@ -265,6 +266,58 @@ defmodule ClippsterServerWeb.UserPostsController do
         conn
         |> put_status(404)
         |> json(%{success: false, error: "Post or account not found"})
+
+      {:error, reason} ->
+        conn
+        |> put_status(500)
+        |> json(%{success: false, error: inspect(reason)})
+    end
+  end
+
+  @doc """
+  Generate thumbnail for a post that's missing one.
+
+  POST /api/user/posts/:id/generate-thumbnail
+  """
+  def generate_thumbnail(conn, %{"id" => id}) do
+    user = conn.assigns.current_user
+
+    with {:ok, post, post_type} <- find_user_post_for_thumbnail(user.id, id),
+         :ok <- validate_needs_thumbnail(post),
+         {:ok, thumbnail_url} <- generate_thumbnail_from_video(post.media_url) do
+      case update_post_thumbnail(post, post_type, thumbnail_url) do
+        {:ok, updated_post} ->
+          conn
+          |> json(%{
+            success: true,
+            post: serialize_post_map(updated_post),
+            thumbnail_url: thumbnail_url,
+            message: "Thumbnail generated successfully"
+          })
+
+        {:error, changeset} ->
+          conn
+          |> put_status(422)
+          |> json(%{
+            success: false,
+            error: extract_changeset_error(changeset)
+          })
+      end
+    else
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "Post not found"})
+
+      {:error, :has_thumbnail} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Post already has a thumbnail"})
+
+      {:error, :no_media_url} ->
+        conn
+        |> put_status(400)
+        |> json(%{success: false, error: "Post has no media URL"})
 
       {:error, reason} ->
         conn
@@ -648,6 +701,44 @@ defmodule ClippsterServerWeb.UserPostsController do
     }
   end
 
+  defp serialize_post(%{} = post) when is_map(post) do
+    # Generate presigned URLs for R2 storage URLs
+    thumbnail_url = if post.thumbnail_url && String.contains?(post.thumbnail_url, ".r2.cloudflarestorage.com") do
+      ClippsterServer.Storage.presigned_url!(post.thumbnail_url, expires_in: 3600)
+    else
+      post.thumbnail_url
+    end
+
+    media_url = if post.media_url && String.contains?(post.media_url, ".r2.cloudflarestorage.com") do
+      ClippsterServer.Storage.presigned_url!(post.media_url, expires_in: 3600)
+    else
+      post.media_url
+    end
+
+    %{
+      id: post.id,
+      platform: post.platform,
+      post_id: post.post_id,
+      post_url: post.post_url,
+      caption: post.caption,
+      media_url: media_url,
+      thumbnail_url: thumbnail_url,
+      media_type: post.media_type,
+      status: post.status,
+      view_count: post.view_count || 0,
+      like_count: post.like_count || 0,
+      comment_count: post.comment_count || 0,
+      save_count: post.save_count || 0,
+      reach_count: post.reach_count || 0,
+      impressions_count: post.impressions_count || 0,
+      synced_at: Map.get(post, :synced_at),
+      published_at: post.published_at,
+      inserted_at: post.inserted_at,
+      updated_at: Map.get(post, :updated_at),
+      source: Map.get(post, :source)
+    }
+  end
+
   defp extract_changeset_error(changeset) do
     errors = Ecto.Changeset.traverse_errors(changeset, fn {msg, _opts} -> msg end)
 
@@ -690,6 +781,8 @@ defmodule ClippsterServerWeb.UserPostsController do
               organization_id: campaign.organization_id,
               organization_creator_profile_id: creator_profile && creator_profile.id,
               campaign_id: campaign.id,
+              clip_id: params["clip_id"],
+              clip_build_id: params["clip_build_id"],
               user_social_account_id: account.id,
               submitted_by_user_id: user.id,
               platform: platform,
@@ -713,6 +806,41 @@ defmodule ClippsterServerWeb.UserPostsController do
                   post_id: post_data.post_id,
                   post_url: post_data.post_url
                 })
+                
+                # Submit to campaign - clip_url will be populated later from PostForMe feed sync
+                Logger.info("[UserPosts] Attempting to submit clip to campaign #{campaign.id} for user #{user.id}")
+                
+                campaign_submission_attrs = %{
+                  platform: platform,
+                  platform_post_id: post_data.post_id,
+                  social_account_id: account.id
+                }
+                
+                Logger.info("[UserPosts] Campaign submission attrs: #{inspect(campaign_submission_attrs)}")
+                
+                case Campaigns.submit_clip(campaign, user, campaign_submission_attrs) do
+                  {:ok, campaign_submission} ->
+                    Logger.info("[UserPosts] ✅ Successfully submitted clip to campaign #{campaign.id}, submission ID: #{campaign_submission.id}")
+                    
+                  {:error, :not_a_participant} ->
+                    Logger.error("[UserPosts] ❌ User #{user.id} is not a participant in campaign #{campaign.id}")
+                    
+                  {:error, :campaign_not_active} ->
+                    Logger.error("[UserPosts] ❌ Campaign #{campaign.id} is not active")
+                    
+                  {:error, :campaign_not_started} ->
+                    Logger.error("[UserPosts] ❌ Campaign #{campaign.id} has not started yet")
+                    
+                  {:error, :campaign_ended} ->
+                    Logger.error("[UserPosts] ❌ Campaign #{campaign.id} has ended")
+                    
+                  {:error, :platform_not_allowed} ->
+                    Logger.error("[UserPosts] ❌ Platform #{platform} is not allowed for campaign #{campaign.id}")
+                    
+                  {:error, reason} ->
+                    Logger.error("[UserPosts] ❌ Failed to submit to campaign: #{inspect(reason)}")
+                end
+                
                 Logger.info("[UserPosts] Dual-tracked to org #{campaign.organization_id} via campaign #{campaign.id}")
 
               {:error, reason} ->
@@ -801,7 +929,22 @@ defmodule ClippsterServerWeb.UserPostsController do
                           
                           if has_real_data do
                             case Campaigns.update_user_post_analytics(post, analytics) do
-                              {:ok, _} -> Logger.info("[sync_user_posts_analytics] Post #{post.id}: analytics synced successfully")
+                              {:ok, updated_post} -> 
+                                Logger.info("[sync_user_posts_analytics] Post #{post.id}: analytics synced successfully")
+                                
+                                # If this post has a campaign_id, update the CampaignSubmission with the real URL
+                                if updated_post.campaign_id && updated_post.post_url do
+                                  case ClippsterServer.Repo.get_by(ClippsterServer.Campaigns.CampaignSubmission, 
+                                    campaign_id: updated_post.campaign_id,
+                                    platform_post_id: updated_post.post_id) do
+                                    nil -> 
+                                      Logger.debug("[sync_user_posts_analytics] No CampaignSubmission found for post #{post.id}")
+                                    campaign_submission ->
+                                      Campaigns.update_submission_metadata(campaign_submission, %{clip_url: updated_post.post_url})
+                                      Logger.info("[sync_user_posts_analytics] Updated CampaignSubmission clip_url for post #{post.id}")
+                                  end
+                                end
+                                
                               {:error, reason} -> Logger.error("[sync_user_posts_analytics] Post #{post.id}: sync failed: #{inspect(reason)}")
                             end
                           else
@@ -1005,6 +1148,199 @@ defmodule ClippsterServerWeb.UserPostsController do
 
   defp extract_feed_analytics(_platform, _item, _account), do: %{}
 
+  # Thumbnail generation helpers
+
+  defp find_user_post_for_thumbnail(user_id, post_id) do
+    # Try user_posts table first
+    case Campaigns.get_user_post(post_id) do
+      %UserPost{user_id: ^user_id} = post ->
+        {:ok, post, :user_post}
+
+      %UserPost{} ->
+        {:error, :not_found}
+
+      nil ->
+        # Try post_submissions table
+        case Social.get_post_submission(post_id) do
+          %PostSubmission{submitted_by_user_id: ^user_id} = post ->
+            {:ok, post, :post_submission}
+
+          %PostSubmission{} ->
+            {:error, :not_found}
+
+          nil ->
+            {:error, :not_found}
+        end
+    end
+  end
+
+  defp update_post_thumbnail(post, :user_post, thumbnail_url) do
+    Campaigns.update_user_post(post, %{thumbnail_url: thumbnail_url})
+  end
+
+  defp update_post_thumbnail(post, :post_submission, thumbnail_url) do
+    # Use Repo.update directly with a simple changeset
+    post
+    |> Ecto.Changeset.change(%{thumbnail_url: thumbnail_url})
+    |> ClippsterServer.Repo.update()
+  end
+
+  defp serialize_post_map(%UserPost{} = post), do: serialize_post(post)
+
+  defp serialize_post_map(%PostSubmission{} = post) do
+    # Generate presigned URLs for R2 storage URLs
+    thumbnail_url = if post.thumbnail_url && String.contains?(post.thumbnail_url, ".r2.cloudflarestorage.com") do
+      ClippsterServer.Storage.presigned_url!(post.thumbnail_url, expires_in: 3600)
+    else
+      post.thumbnail_url
+    end
+
+    media_url = if post.media_url && String.contains?(post.media_url, ".r2.cloudflarestorage.com") do
+      ClippsterServer.Storage.presigned_url!(post.media_url, expires_in: 3600)
+    else
+      post.media_url
+    end
+
+    %{
+      id: post.id,
+      platform: post.platform,
+      post_id: post.post_id,
+      post_url: post.post_url,
+      caption: post.caption,
+      media_url: media_url,
+      thumbnail_url: thumbnail_url,
+      media_type: post.media_type,
+      status: post.status,
+      view_count: post.view_count || 0,
+      like_count: post.like_count || 0,
+      comment_count: post.comment_count || 0,
+      save_count: post.save_count || 0,
+      reach_count: post.reach_count || 0,
+      impressions_count: post.impressions_count || 0,
+      published_at: post.posted_at,
+      inserted_at: post.inserted_at,
+      source: "organization"
+    }
+  end
+
+  defp validate_needs_thumbnail(post) do
+    cond do
+      is_nil(post.media_url) or post.media_url == "" ->
+        {:error, :no_media_url}
+
+      not is_nil(post.thumbnail_url) and post.thumbnail_url != "" ->
+        {:error, :has_thumbnail}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp generate_thumbnail_from_video(media_url) do
+    # Use FFmpeg to extract a frame from the video
+    timestamp = DateTime.utc_now() |> DateTime.to_unix()
+    unique_id = :crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)
+    thumbnail_key = "social-media/thumbnails/#{timestamp}_#{unique_id}.jpg"
+
+    # Download video to temp file
+    with {:ok, video_data} <- download_video(media_url),
+         {:ok, temp_video_path} <- write_temp_file(video_data, ".mp4"),
+         {:ok, thumbnail_data} <- extract_frame_with_ffmpeg(temp_video_path),
+         {:ok, thumbnail_url} <- upload_thumbnail(thumbnail_data, thumbnail_key) do
+      # Clean up temp file
+      File.rm(temp_video_path)
+      {:ok, thumbnail_url}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp download_video(url) do
+    # Extract the key from the R2 URL
+    case ClippsterServer.Storage.extract_key_from_url(url) do
+      {:ok, key} ->
+        # Download directly from R2 using ExAws
+        bucket = ClippsterServer.Storage.bucket()
+        config = ClippsterServer.Storage.config()
+        
+        case ExAws.S3.get_object(bucket, key) |> ExAws.request(config) do
+          {:ok, %{body: body}} ->
+            {:ok, body}
+          
+          {:error, reason} ->
+            Logger.error("[download_video] S3 download failed for key #{key}: #{inspect(reason)}")
+            {:error, reason}
+        end
+      
+      {:error, _} ->
+        # Not an R2 URL, try direct HTTP download
+        headers = [{"User-Agent", "ClippsterServer/1.0"}]
+        options = [timeout: 30_000, recv_timeout: 30_000, follow_redirect: true, max_redirect: 5]
+        
+        case HTTPoison.get(url, headers, options) do
+          {:ok, %{status_code: 200, body: body}} -> 
+            {:ok, body}
+          
+          {:ok, %{status_code: status, body: body}} -> 
+            Logger.error("[download_video] HTTP #{status} for URL: #{url}")
+            Logger.error("[download_video] Response body: #{inspect(body)}")
+            {:error, "HTTP #{status}"}
+          
+          {:error, reason} -> 
+            Logger.error("[download_video] Request failed: #{inspect(reason)}")
+            {:error, reason}
+        end
+    end
+  end
+
+  defp write_temp_file(data, ext) do
+    temp_dir = System.tmp_dir!()
+    filename = "video_#{:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)}#{ext}"
+    path = Path.join(temp_dir, filename)
+
+    case File.write(path, data) do
+      :ok -> {:ok, path}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp extract_frame_with_ffmpeg(video_path) do
+    output_path = "#{video_path}_thumb.jpg"
+
+    # Extract frame at 1 second with scale to 640px width
+    args = [
+      "-i", video_path,
+      "-ss", "00:00:01",
+      "-vframes", "1",
+      "-vf", "scale=640:-1",
+      "-q:v", "2",
+      output_path
+    ]
+
+    case System.cmd("ffmpeg", args, stderr_to_stdout: true) do
+      {_, 0} ->
+        case File.read(output_path) do
+          {:ok, data} ->
+            File.rm(output_path)
+            {:ok, data}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {output, _} ->
+        Logger.error("[generate_thumbnail] FFmpeg failed: #{output}")
+        {:error, :ffmpeg_failed}
+    end
+  end
+
+  defp upload_thumbnail(data, key) do
+    case ClippsterServer.Storage.upload_file(data, key, content_type: "image/jpeg") do
+      {:ok, url} -> {:ok, url}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   defp create_org_submission(user, account, post_data, params, platform, profile, campaign_id) do
     submission_attrs = %{
       organization_id: profile.organization_id,
@@ -1019,6 +1355,10 @@ defmodule ClippsterServerWeb.UserPostsController do
       caption: params["caption"],
       media_url: params["media_url"],
       thumbnail_url: params["thumbnail_url"],
+      clip_id: params["clip_id"],
+      clip_build_id: params["clip_build_id"],
+      aspect_ratio: params["aspect_ratio"],
+      build_type: params["build_type"],
       owner_type: "user",
       post_id: post_data.post_id,
       post_url: post_data.post_url,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
+import { useIntersectionObserver } from "@vueuse/core";
 import { useEditor } from "../../../composables/useEditor";
 import { buildStickerElement } from "../../../lib/timeline/element-utils";
 import {
@@ -12,20 +13,15 @@ import {
 	type CollectionInfo,
 	type IconSearchResult,
 } from "../../../lib/iconify-api";
-import {
-	STICKER_CATEGORIES,
-	STICKER_CATEGORY_CONFIG,
-} from "../../../constants/stickers-constants";
-import type { StickerCategory } from "../../../types/stickers";
 import StickerItem from "./StickerItem.vue";
-import { Search, ArrowLeft, Loader2, ChevronRight, Smile } from "lucide-vue-next";
+import { ArrowLeft, Loader2, Smile } from "lucide-vue-next";
+import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor();
 
 type ViewMode = "search" | "browse" | "collection";
 
 const searchQuery = ref("");
-const selectedCategory = ref<StickerCategory>("all");
 const selectedCollection = ref<string | null>(null);
 const viewMode = ref<ViewMode>("browse");
 
@@ -37,56 +33,62 @@ const recentStickers = ref<string[]>([]);
 const isLoadingCollections = ref(false);
 const isLoadingCollection = ref(false);
 const isSearching = ref(false);
+const isLoadingMoreSearch = ref(false);
 const addingSticker = ref<string | null>(null);
 
 const MAX_RECENT_STICKERS = 50;
+const ICONS_PER_PAGE = 60;
 
 let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
-const popularForCategory = computed(() => {
-	const cat = selectedCategory.value;
-	if (cat === "all") {
-		return [
-			...POPULAR_COLLECTIONS.emoji,
-			...POPULAR_COLLECTIONS.general,
-			...POPULAR_COLLECTIONS.brands,
-		];
-	}
-	return POPULAR_COLLECTIONS[cat as keyof typeof POPULAR_COLLECTIONS] ?? [];
-});
+const popularForCategory = [
+	...POPULAR_COLLECTIONS.emoji,
+	...POPULAR_COLLECTIONS.brands,
+];
 
-const filteredCollections = computed(() => {
-	const cat = selectedCategory.value;
-	if (cat === "all") return collections.value;
-	const categoryName = STICKER_CATEGORY_CONFIG[cat];
-	if (!categoryName) return collections.value;
-	return Object.fromEntries(
-		Object.entries(collections.value).filter(
-			([, info]) => info.category === categoryName,
-		),
-	);
-});
+// ── Collection pagination ──
+const collectionDisplayCount = ref(ICONS_PER_PAGE);
 
 const collectionIcons = computed(() => {
 	if (!currentCollection.value) return [];
 	const prefix = currentCollection.value.prefix;
 	const allIcons: string[] = [];
-
 	if (currentCollection.value.categories) {
 		for (const icons of Object.values(currentCollection.value.categories)) {
-			for (const icon of icons) {
-				allIcons.push(`${prefix}:${icon}`);
-			}
+			for (const icon of icons) allIcons.push(`${prefix}:${icon}`);
 		}
 	}
-
 	if (currentCollection.value.uncategorized) {
-		for (const icon of currentCollection.value.uncategorized) {
-			allIcons.push(`${prefix}:${icon}`);
-		}
+		for (const icon of currentCollection.value.uncategorized) allIcons.push(`${prefix}:${icon}`);
 	}
-
 	return allIcons;
+});
+
+const displayedCollectionIcons = computed(() =>
+	collectionIcons.value.slice(0, collectionDisplayCount.value),
+);
+
+const hasMoreCollectionIcons = computed(
+	() => collectionDisplayCount.value < collectionIcons.value.length,
+);
+
+// ── Search pagination ──
+const hasMoreSearchResults = ref(false);
+
+// ── Sentinel refs for infinite scroll ──
+const collectionSentinel = ref<HTMLElement | null>(null);
+const searchSentinel = ref<HTMLElement | null>(null);
+
+useIntersectionObserver(collectionSentinel, ([entry]) => {
+	if (entry.isIntersecting && hasMoreCollectionIcons.value) {
+		collectionDisplayCount.value += ICONS_PER_PAGE;
+	}
+});
+
+useIntersectionObserver(searchSentinel, ([entry]) => {
+	if (entry.isIntersecting && hasMoreSearchResults.value && !isLoadingMoreSearch.value) {
+		loadMoreSearch();
+	}
 });
 
 function getSampleIcons(prefix: string): string[] {
@@ -107,6 +109,7 @@ async function loadCollections() {
 }
 
 async function loadCollection(prefix: string) {
+	collectionDisplayCount.value = ICONS_PER_PAGE;
 	isLoadingCollection.value = true;
 	try {
 		currentCollection.value = await getCollection(prefix);
@@ -124,12 +127,13 @@ async function doSearch(query: string) {
 		viewMode.value = "browse";
 		return;
 	}
-
 	isSearching.value = true;
+	hasMoreSearchResults.value = false;
 	viewMode.value = "search";
 	try {
-		const category = STICKER_CATEGORY_CONFIG[selectedCategory.value];
-		searchResults.value = await searchIcons(query, 100, undefined, category);
+		const result = await searchIcons(query, 60);
+		searchResults.value = result;
+		hasMoreSearchResults.value = result.total > result.icons.length;
 	} catch (error) {
 		console.error("Search failed:", error);
 		searchResults.value = null;
@@ -138,11 +142,26 @@ async function doSearch(query: string) {
 	}
 }
 
+async function loadMoreSearch() {
+	if (!searchResults.value || !searchQuery.value.trim() || isLoadingMoreSearch.value) return;
+	isLoadingMoreSearch.value = true;
+	try {
+		const result = await searchIcons(searchQuery.value, 60, undefined, undefined, searchResults.value.icons.length);
+		searchResults.value = {
+			...searchResults.value,
+			icons: [...searchResults.value.icons, ...result.icons],
+		};
+		hasMoreSearchResults.value = searchResults.value.total > searchResults.value.icons.length;
+	} catch (error) {
+		console.error("Load more search failed:", error);
+	} finally {
+		isLoadingMoreSearch.value = false;
+	}
+}
+
 function handleSearchInput() {
 	if (searchDebounce) clearTimeout(searchDebounce);
-	searchDebounce = setTimeout(() => {
-		doSearch(searchQuery.value);
-	}, 300);
+	searchDebounce = setTimeout(() => doSearch(searchQuery.value), 300);
 }
 
 function selectCollection(prefix: string) {
@@ -164,22 +183,12 @@ function goBack() {
 	}
 }
 
-function selectCategory(cat: StickerCategory) {
-	selectedCategory.value = cat;
-	viewMode.value = "browse";
-	selectedCollection.value = null;
-	currentCollection.value = null;
-}
-
 function addStickerToTimeline(iconName: string) {
 	addingSticker.value = iconName;
 	try {
 		const currentTime = editor.playback.getCurrentTime();
 		const element = buildStickerElement({ iconName, startTime: currentTime });
-		editor.timeline.insertElement({
-			element,
-			placement: { mode: "auto" },
-		});
+		editor.timeline.insertElement({ element, placement: { mode: "auto" } });
 		addToRecent(iconName);
 	} finally {
 		addingSticker.value = null;
@@ -191,50 +200,17 @@ function addToRecent(iconName: string) {
 	recentStickers.value = recent.slice(0, MAX_RECENT_STICKERS);
 }
 
-watch(selectedCategory, () => {
-	if (searchQuery.value.trim()) {
-		doSearch(searchQuery.value);
-	}
-});
-
-onMounted(() => {
-	loadCollections();
-});
+onMounted(() => loadCollections());
 </script>
 
 <template>
 	<div class="flex h-full flex-col overflow-hidden">
 		<!-- Search bar -->
-		<div class="shrink-0 border-b border-white/10 px-3 py-2">
-			<div class="relative">
-				<Search class="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search stickers..."
-					class="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-8 pr-3 text-sm text-zinc-200 placeholder-zinc-500 outline-none focus:border-white/20"
-					@input="handleSearchInput"
-				/>
-			</div>
-		</div>
-
-		<!-- Category tabs -->
-		<div class="flex shrink-0 gap-1 border-b border-white/10 px-3 py-1.5">
-			<button
-				v-for="cat in STICKER_CATEGORIES"
-				:key="cat"
-				type="button"
-				:class="[
-					'rounded-md px-2.5 py-1 text-xs capitalize transition-colors',
-					selectedCategory === cat
-						? 'bg-white/10 text-zinc-200'
-						: 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5',
-				]"
-				@click="selectCategory(cat)"
-			>
-				{{ cat }}
-			</button>
-		</div>
+		<PanelSearchBar
+			v-model="searchQuery"
+			placeholder="Search stickers..."
+			@input="handleSearchInput"
+		/>
 
 		<!-- Back button -->
 		<button
@@ -252,8 +228,8 @@ onMounted(() => {
 
 		<!-- Content -->
 		<div class="min-h-0 flex-1 overflow-y-auto">
-			<!-- Loading -->
-			<div v-if="isLoadingCollections || isSearching || isLoadingCollection" class="flex items-center justify-center py-16">
+			<!-- Loading (initial) -->
+			<div v-if="isLoadingCollections || isLoadingCollection || (isSearching && !searchResults)" class="flex items-center justify-center py-16">
 				<Loader2 class="size-5 animate-spin text-zinc-500" />
 			</div>
 
@@ -272,6 +248,10 @@ onMounted(() => {
 							@add="addStickerToTimeline"
 						/>
 					</div>
+					<!-- Sentinel + loading indicator -->
+					<div ref="searchSentinel" class="flex items-center justify-center py-3">
+						<Loader2 v-if="isLoadingMoreSearch" class="size-4 animate-spin text-zinc-600" />
+					</div>
 				</div>
 				<div v-else class="flex flex-col items-center justify-center gap-2 py-16 text-center">
 					<Smile class="size-8 text-zinc-600" :stroke-width="1.5" />
@@ -285,13 +265,15 @@ onMounted(() => {
 				<div v-if="collectionIcons.length > 0" class="p-2">
 					<div class="grid grid-cols-5 gap-1">
 						<StickerItem
-							v-for="iconName in collectionIcons"
+							v-for="iconName in displayedCollectionIcons"
 							:key="iconName"
 							:icon-name="iconName"
 							:is-adding="addingSticker === iconName"
 							@add="addStickerToTimeline"
 						/>
 					</div>
+					<!-- Sentinel -->
+					<div ref="collectionSentinel" class="h-4" />
 				</div>
 				<div v-else class="flex flex-col items-center justify-center gap-2 py-16 text-center">
 					<p class="text-sm text-zinc-500">No icons in this collection</p>
@@ -314,65 +296,40 @@ onMounted(() => {
 					</div>
 				</div>
 
-				<!-- Popular collections -->
+				<!-- Collections grid -->
 				<div class="p-2">
-					<p class="mb-1.5 px-1 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Collections</p>
-					<div class="flex flex-col gap-0.5">
+					<div class="grid grid-cols-2 gap-1.5">
 						<button
 							v-for="col in popularForCategory"
 							:key="col.prefix"
 							type="button"
-							class="group flex items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-white/5"
+							class="group flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] p-2.5 text-left transition-colors hover:border-white/[0.12] hover:bg-white/[0.06]"
 							@click="selectCollection(col.prefix)"
 						>
-							<!-- Sample icons preview -->
-							<div class="flex shrink-0 items-center -space-x-1">
-								<div
-									v-for="sample in getSampleIcons(col.prefix).slice(0, 3)"
+							<!-- Sample icons -->
+							<div class="flex items-center gap-1">
+								<img
+									v-for="sample in getSampleIcons(col.prefix).slice(0, 4)"
 									:key="sample"
-									class="flex size-7 items-center justify-center rounded-md border border-white/[0.06] bg-white/[0.04] p-1"
-								>
-									<img
-										:src="getIconSvgUrl(sample, { width: 24, height: 24 })"
-										:alt="sample"
-										class="size-full object-contain"
-										loading="lazy"
-									/>
-								</div>
+									:src="getIconSvgUrl(sample, { width: 32, height: 32 })"
+									:alt="sample"
+									class="size-5 object-contain"
+									loading="lazy"
+								/>
 								<div
 									v-if="getSampleIcons(col.prefix).length === 0"
-									class="flex size-7 items-center justify-center rounded-md border border-white/[0.06] bg-white/[0.04]"
+									class="flex gap-1"
 								>
-									<Smile class="size-3.5 text-zinc-600" />
+									<div v-for="i in 4" :key="i" class="size-5 rounded bg-white/5" />
 								</div>
 							</div>
-							<!-- Info -->
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-[13px] font-medium text-zinc-300 group-hover:text-zinc-100">{{ col.name }}</p>
-								<p v-if="collections[col.prefix]" class="text-[11px] text-zinc-600">
+							<!-- Name + count -->
+							<div>
+								<p class="truncate text-[11px] font-medium text-zinc-300 group-hover:text-zinc-100">{{ col.name }}</p>
+								<p v-if="collections[col.prefix]" class="text-[10px] text-zinc-600">
 									{{ collections[col.prefix].total.toLocaleString() }} icons
 								</p>
 							</div>
-							<ChevronRight class="size-3.5 shrink-0 text-zinc-600 opacity-0 transition-opacity group-hover:opacity-100" />
-						</button>
-					</div>
-				</div>
-
-				<!-- All collections -->
-				<div v-if="Object.keys(filteredCollections).length > popularForCategory.length" class="border-t border-white/5 p-2">
-					<p class="mb-1.5 px-1 text-[11px] font-medium uppercase tracking-wider text-zinc-500">All Collections</p>
-					<div class="flex flex-col gap-0.5">
-						<button
-							v-for="(info, prefix) in filteredCollections"
-							:key="prefix"
-							type="button"
-							class="group flex items-center justify-between rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/5"
-							@click="selectCollection(prefix as string)"
-						>
-							<div class="min-w-0 flex-1">
-								<p class="truncate text-[13px] text-zinc-400 group-hover:text-zinc-200">{{ info.name }}</p>
-							</div>
-							<span class="ml-2 shrink-0 text-[11px] text-zinc-600">{{ info.total.toLocaleString() }}</span>
 						</button>
 					</div>
 				</div>

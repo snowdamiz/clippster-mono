@@ -15,10 +15,10 @@ import type { WaveformPeak } from '@/services/waveformService';
 // ============================================================================
 
 export const WAVEFORM_COLORS = {
-  // Base waveform color (teal like CapCut)
-  BASE: '#5eead4',
-  // Played portion (white/light)
-  PLAYED: '#ffffff',
+  // Base waveform color (matches app accent cyan)
+  BASE: '#0ea5e9',
+  // Played portion (same cyan as base)
+  PLAYED: '#0ea5e9',
   // Loud level indicators
   YELLOW: '#facc15',
   ORANGE: '#fb923c',
@@ -230,7 +230,7 @@ function renderBarsStyle(ctx: CanvasRenderingContext2D, params: BarsRenderParams
       barHeight,
       magnitude,
       isBeforePlayhead ? playedColor : baseColor,
-      useGradientColors && !isBeforePlayhead
+      useGradientColors
     );
 
     ctx.fillStyle = fillStyle;
@@ -300,7 +300,7 @@ function renderMirrorStyle(ctx: CanvasRenderingContext2D, params: MirrorRenderPa
         positiveHeight,
         magnitude,
         color,
-        useGradientColors && !isBeforePlayhead
+        useGradientColors
       );
       ctx.fillStyle = fillStyle;
       ctx.fillRect(x, centerY - positiveHeight, actualBarWidth, positiveHeight);
@@ -315,7 +315,7 @@ function renderMirrorStyle(ctx: CanvasRenderingContext2D, params: MirrorRenderPa
         negativeHeight,
         magnitude,
         color,
-        useGradientColors && !isBeforePlayhead
+        useGradientColors
       );
       ctx.fillStyle = fillStyle;
       ctx.fillRect(x, centerY, actualBarWidth, negativeHeight);

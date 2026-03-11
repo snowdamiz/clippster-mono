@@ -103,7 +103,8 @@
               <tr>
                 <th class="admin-beta__th">Code</th>
                 <th class="admin-beta__th">Status</th>
-                <th class="admin-beta__th">Used By</th>
+                <th class="admin-beta__th">Assigned To</th>
+                <th class="admin-beta__th">Verified</th>
                 <th class="admin-beta__th">Created</th>
                 <th class="admin-beta__th">Actions</th>
               </tr>
@@ -114,7 +115,7 @@
                   <code class="admin-beta__code">{{ code.code }}</code>
                 </td>
                 <td class="admin-beta__td">
-                  <span v-if="code.used" class="admin-beta__status admin-beta__status--used">
+                  <span v-if="code.verified_at" class="admin-beta__status admin-beta__status--used">
                     <XCircle class="admin-beta__status-icon" />
                     Used
                   </span>
@@ -124,20 +125,21 @@
                   </span>
                 </td>
                 <td class="admin-beta__td">
-                  <template v-if="code.used_by">
-                    <span v-if="code.used_by.email" class="admin-beta__user">{{ code.used_by.email }}</span>
-                    <code v-else-if="code.used_by.wallet_address" class="admin-beta__wallet">
-                      {{ formatWalletAddress(code.used_by.wallet_address) }}
-                    </code>
-                    <span v-else class="admin-beta__user">User #{{ code.used_by.id }}</span>
-                  </template>
+                  <span v-if="code.assigned_email" class="admin-beta__user">{{ code.assigned_email }}</span>
+                  <span v-else class="admin-beta__no-user">-</span>
+                </td>
+                <td class="admin-beta__td">
+                  <div v-if="code.verified_at" class="admin-beta__verified">
+                    <span class="admin-beta__date">{{ formatDate(code.verified_at) }}</span>
+                    <span v-if="code.verified_from_ip" class="admin-beta__ip">{{ code.verified_from_ip }}</span>
+                  </div>
                   <span v-else class="admin-beta__no-user">-</span>
                 </td>
                 <td class="admin-beta__td">
                   <span class="admin-beta__date">{{ formatDate(code.created_at) }}</span>
                 </td>
                 <td class="admin-beta__td">
-                  <button v-if="!code.used" class="admin-beta__copy-btn" @click="copyBetaCode(code.code, code.id)">
+                  <button v-if="!code.verified_at" class="admin-beta__copy-btn" @click="copyBetaCode(code.code, code.id)">
                     <Check
                       v-if="copiedCodeId === code.id"
                       class="admin-beta__copy-icon admin-beta__copy-icon--success"
@@ -733,6 +735,18 @@
   .admin-beta__used-at {
     font-size: 0.75rem;
     color: var(--sidebar-text-muted);
+  }
+
+  .admin-beta__verified {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .admin-beta__ip {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    font-family: monospace;
   }
 
   .admin-beta__empty {

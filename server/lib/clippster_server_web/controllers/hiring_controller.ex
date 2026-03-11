@@ -189,54 +189,78 @@ defmodule ClippsterServerWeb.HiringController do
 
   @doc "Browse all active public hiring posts"
   def index(conn, params) do
-    filters = %{
-      "content_types" =>
-        params["content_types"] ||
-          params["content_types[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
-      "languages" =>
-        params["languages"] || params["languages[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
-      "platforms" =>
-        params["platforms"] || params["platforms[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
-      "payment_type" => params["payment_type"]
-    }
-
-    posts = Hiring.list_public_hiring_posts(filters)
-
-    # Check which posts the current user has applied to
     user = conn.assigns[:current_user]
-    my_applications = if user, do: Hiring.list_my_applications(user.id), else: []
-    applied_post_ids = MapSet.new(Enum.map(my_applications, & &1.hiring_post_id))
+    
+    # Basic tier users cannot view hiring posts
+    if user && user.subscription_tier == "basic" do
+      json(conn, %{
+        success: true,
+        hiring_posts: []
+      })
+    else
+      filters = %{
+        "content_types" =>
+          params["content_types"] ||
+            params["content_types[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
+        "languages" =>
+          params["languages"] || params["languages[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
+        "platforms" =>
+          params["platforms"] || params["platforms[]"] |> List.wrap() |> Enum.reject(&is_nil/1),
+        "payment_type" => params["payment_type"]
+      }
 
-    json(conn, %{
-      success: true,
-      hiring_posts:
-        Enum.map(posts, fn post ->
-          serialize_post(post)
-          |> Map.put(:has_applied, MapSet.member?(applied_post_ids, post.id))
-        end)
-    })
+      posts = Hiring.list_public_hiring_posts(filters)
+
+      # Check which posts the current user has applied to
+      my_applications = if user, do: Hiring.list_my_applications(user.id), else: []
+      applied_post_ids = MapSet.new(Enum.map(my_applications, & &1.hiring_post_id))
+
+      json(conn, %{
+        success: true,
+        hiring_posts:
+          Enum.map(posts, fn post ->
+            serialize_post(post)
+            |> Map.put(:has_applied, MapSet.member?(applied_post_ids, post.id))
+          end)
+      })
+    end
   end
 
   @doc "Get a single hiring post detail"
   def show(conn, %{"id" => id}) do
-    case Hiring.get_hiring_post(String.to_integer(id)) do
-      nil ->
-        json(conn |> put_status(404), %{success: false, error: "Hiring post not found"})
+    user = conn.assigns[:current_user]
+    
+    # Basic tier users cannot view hiring posts
+    if user && user.subscription_tier == "basic" do
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Upgrade to Starter or higher to view hiring posts"})
+    else
+      case Hiring.get_hiring_post(String.to_integer(id)) do
+        nil ->
+          json(conn |> put_status(404), %{success: false, error: "Hiring post not found"})
 
-      post ->
-        user = conn.assigns[:current_user]
-        has_applied = if user, do: Hiring.has_applied?(post.id, user.id), else: false
+        post ->
+          has_applied = if user, do: Hiring.has_applied?(post.id, user.id), else: false
 
-        json(conn, %{
-          success: true,
-          hiring_post: serialize_post(post) |> Map.put(:has_applied, has_applied)
-        })
+          json(conn, %{
+            success: true,
+            hiring_post: serialize_post(post) |> Map.put(:has_applied, has_applied)
+          })
+      end
     end
   end
 
   @doc "Submit an application to a hiring post"
   def apply(conn, %{"id" => id} = params) do
     user = conn.assigns[:current_user]
+    
+    # Basic tier users cannot apply to hiring posts
+    if user.subscription_tier == "basic" do
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Upgrade to Starter or higher to apply to hiring posts"})
+    else
 
     case Hiring.apply_to_hiring_post(String.to_integer(id), user.id, params["message"]) do
       {:ok, application} ->
@@ -265,6 +289,7 @@ defmodule ClippsterServerWeb.HiringController do
             errors: format_changeset_errors(changeset)
           })
         end
+    end
     end
   end
 

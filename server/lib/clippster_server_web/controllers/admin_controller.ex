@@ -630,6 +630,9 @@ defmodule ClippsterServerWeb.AdminController do
             else
               nil
             end,
+          assigned_email: code.assigned_email,
+          verified_at: code.verified_at,
+          verified_from_ip: code.verified_from_ip,
           created_at: code.inserted_at
         }
       end)
@@ -2340,6 +2343,54 @@ defmodule ClippsterServerWeb.AdminController do
               conn
               |> put_status(:conflict)
               |> json(%{success: false, error: "#{email} has already been invited"})
+
+            {:error, reason} ->
+              conn
+              |> put_status(:internal_server_error)
+              |> json(%{success: false, error: inspect(reason)})
+          end
+        else
+          conn
+          |> put_status(:not_found)
+          |> json(%{success: false, error: "Waitlist entry not found"})
+        end
+
+      _ ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{success: false, error: "Invalid entry ID"})
+    end
+  end
+
+  @doc """
+  Reinvites a single waitlist entry by ID.
+  Cancels old beta code and discount code, generates new ones, and sends new email.
+  """
+  def reinvite_waitlist_entry(conn, %{"id" => entry_id_string} = params) do
+    admin_id = conn.assigns.current_user.id
+
+    discount_config = %{
+      percent_off: Map.get(params, "percent_off", 30),
+      duration_months: Map.get(params, "duration_months", 1),
+      allowed_tiers: Map.get(params, "allowed_tiers", ["creator"])
+    }
+
+    case Integer.parse(entry_id_string) do
+      {entry_id, ""} ->
+        entry = ClippsterServer.Repo.get(ClippsterServer.Waitlist.WaitlistEntry, entry_id)
+
+        if entry do
+          case ClippsterServer.Waitlist.reinvite_entry(entry, admin_id, discount_config) do
+            {:ok, updated_entry} ->
+              json(conn, %{
+                success: true,
+                entry: %{
+                  id: updated_entry.id,
+                  email: updated_entry.email,
+                  invited_at: updated_entry.invited_at,
+                  email_sent_at: updated_entry.email_sent_at
+                }
+              })
 
             {:error, reason} ->
               conn

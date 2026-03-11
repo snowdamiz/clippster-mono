@@ -236,6 +236,8 @@ export interface PublishToUserYoutubeData {
   category_id?: string;
   creator_profile_id?: number;
   campaign_id?: number;
+  clip_id?: string;
+  clip_build_id?: string;
 }
 
 export interface PublishToUserYoutubeResponse {

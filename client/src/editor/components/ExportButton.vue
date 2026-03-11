@@ -13,6 +13,7 @@ import {
 	CropIcon,
 	Trash2,
 	Megaphone,
+	Share2,
 } from "lucide-vue-next";
 import ManualPOIEditor from "../../components/poi/ManualPOIEditor.vue";
 import type { ManualFramingConfig, ManualFramingConfigs } from "@/types";
@@ -736,6 +737,13 @@ async function handleCopyError() {
 		setTimeout(() => { copied.value = false; }, 1000);
 	}
 }
+
+function handlePublishNow() {
+	// TODO: Open ClipBuildSettingsDialog in publish mode with exported clip
+	console.log('[ExportButton] Publish Now clicked for exported clip:', exportedPath.value);
+	// For now, show a toast notification
+	alert('Publish workflow will open ClipBuildSettingsDialog in publish mode - coming soon!');
+}
 </script>
 
 <template>
@@ -791,7 +799,11 @@ async function handleCopyError() {
 										</div>
 
 										<div class="export-dialog__success-actions">
-											<button class="export-dialog__success-btn export-dialog__success-btn--primary" @click="handleDownload">
+											<button class="export-dialog__success-btn export-dialog__success-btn--primary" @click="handlePublishNow">
+												<Share2 :size="16" />
+												Publish Now
+											</button>
+											<button class="export-dialog__success-btn" @click="handleDownload">
 												<Download :size="16" />
 												Download to Local File
 											</button>
@@ -2358,19 +2370,19 @@ async function handleCopyError() {
   align-items: center;
   gap: 0.5rem;
   height: 32px;
-  padding: 0 0.875rem;
-  background-color: var(--sidebar-accent);
-  color: var(--sidebar-bg);
+  padding: 0 0.75rem;
+  background-color: transparent;
+  color: var(--sidebar-accent);
   border: none;
   border-radius: 6px;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 150ms ease;
 }
 
 .export-trigger:hover:not(:disabled) {
-  opacity: 0.9;
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 .export-trigger:disabled {
@@ -2379,8 +2391,8 @@ async function handleCopyError() {
 }
 
 .export-trigger__icon {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
 }
 
 /* ===== Responsive ===== */
