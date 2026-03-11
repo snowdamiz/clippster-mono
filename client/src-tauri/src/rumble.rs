@@ -536,6 +536,33 @@ pub async fn download_rumble_vod(
     }
     
     tokio::spawn(async move {
+        // Get video duration first for progress reporting
+        println!("[Rumble] Fetching video duration...");
+        let duration_output = no_window(
+            tokio::process::Command::new(&ytdlp_path)
+                .arg("--print")
+                .arg("duration")
+                .arg("--impersonate").arg("chrome")
+                .arg(&vod_url),
+        )
+        .output()
+        .await;
+
+        let total_duration = if let Ok(output) = duration_output {
+            if output.status.success() {
+                let duration_str = String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .to_string();
+                duration_str.parse::<f64>().ok()
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        println!("[Rumble] Total duration: {:?}", total_duration);
+
         let mut cmd = tokio::process::Command::new(&ytdlp_path);
         no_window(&mut cmd);
         
@@ -549,8 +576,9 @@ pub async fn download_rumble_vod(
             .arg("-o").arg(&output_file_str)
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--external-downloader").arg("ffmpeg")
-            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--newline")
             .arg("--progress")
             .stdout(std::process::Stdio::piped())
@@ -580,6 +608,7 @@ pub async fn download_rumble_vod(
         
         let app_progress = app_clone.clone();
         let download_id_progress = download_id_clone.clone();
+        let duration_for_progress = total_duration;
         tokio::spawn(async move {
             use tokio::io::{AsyncBufReadExt, BufReader};
             let mut stdout_reader = BufReader::new(stdout).lines();
@@ -595,15 +624,17 @@ pub async fn download_rumble_vod(
                                 if line.contains("[download]") && line.contains("%") {
                                     if let Some(percent_str) = line.split_whitespace()
                                         .find(|s| s.ends_with('%'))
-                                        .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
                                     {
-                                        let _ = app_progress.emit("download-progress", DownloadProgress {
-                                            download_id: download_id_progress.clone(),
-                                            progress: percent_str,
-                                            current_time: None,
-                                            total_time: None,
-                                            status: format!("Downloading... {}%", percent_str as u32),
-                                        });
+                                        if let Ok(percent) = percent_str.trim_end_matches('%').parse::<f64>() {
+                                            let current_time = duration_for_progress.map(|dur| (percent / 100.0) * dur);
+                                            let _ = app_progress.emit("download-progress", DownloadProgress {
+                                                download_id: download_id_progress.clone(),
+                                                progress: percent.min(99.0),
+                                                current_time,
+                                                total_time: duration_for_progress,
+                                                status: format!("Downloading: {:.1}%", percent),
+                                            });
+                                        }
                                     }
                                 }
                             }
@@ -1557,8 +1588,9 @@ pub async fn download_rumble_vod_segment(
             .arg("-o").arg(&video_path_str)
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--external-downloader").arg("ffmpeg")
-            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--download-sections").arg(&section_arg)
             .arg("--force-keyframes-at-cuts")
             .arg("--no-part")

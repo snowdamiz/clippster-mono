@@ -1201,6 +1201,9 @@ pub async fn download_twitch_vod(
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location")
             .arg(&ffmpeg_dir)
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--no-part") // Don't use .part files
             .arg("--newline") // Output progress on new lines
             .arg("--progress") // Show progress
@@ -1660,8 +1663,9 @@ pub async fn download_twitch_vod_segment(
             .arg("-o").arg(&video_path_str)
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
-            .arg("--external-downloader").arg("ffmpeg")
-            .arg("--external-downloader-args").arg("ffmpeg:-progress pipe:2 -nostats")
+            .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
+            .arg("--merge-output-format").arg("mp4")
             .arg("--download-sections").arg(&section_arg)
             .arg("--force-keyframes-at-cuts")  // Ensure clean cuts
             .arg("--no-part")  // Don't use .part files

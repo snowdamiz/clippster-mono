@@ -563,7 +563,7 @@ pub async fn download_youtube_vod(
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
-            .arg("--concurrent-fragments").arg("8")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
             .arg("--merge-output-format").arg("mp4")
             .arg("--newline")
             .arg("--progress")
@@ -1650,7 +1650,7 @@ pub async fn download_youtube_vod_segment(
             .arg("--impersonate").arg("chrome")
             .arg("--ffmpeg-location").arg(&ffmpeg_dir)
             .arg("--format").arg("bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best")
-            .arg("--concurrent-fragments").arg("8")
+            .arg("--concurrent-fragments").arg("16")  // 16x parallel downloads for speed
             .arg("--merge-output-format").arg("mp4")
             .arg("--download-sections").arg(&section_arg)
             .arg("--force-keyframes-at-cuts")  // Ensure clean cuts
