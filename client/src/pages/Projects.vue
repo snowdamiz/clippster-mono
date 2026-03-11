@@ -4731,21 +4731,24 @@
   const filteredProjects = computed(() => {
     let result = projects.value;
 
-    // Filter out empty projects (projects with no raw videos)
+    // Filter out empty projects (projects with no raw videos AND no clips)
     // This hides folders that were created for downloads but the download hasn't completed yet
-    // or failed/was cancelled. Only show projects that have at least one raw video.
+    // or failed/was cancelled. Show projects that have at least one raw video OR at least one clip.
     result = result.filter((p) => {
       const videos = projectVideos.value[p.id] || [];
-      // For parent projects (folders), check if any child has videos
+      const clipCount = getClipCount(p.id);
+      
+      // For parent projects (folders), check if any child has videos or clips
       if (hasChildren(p.id)) {
         const childProjects = projects.value.filter(child => child.parent_id === p.id);
         return childProjects.some(child => {
           const childVideos = projectVideos.value[child.id] || [];
-          return childVideos.length > 0;
+          const childClipCount = getClipCount(child.id);
+          return childVideos.length > 0 || childClipCount > 0;
         });
       }
-      // For regular projects, check if they have videos
-      return videos.length > 0;
+      // For regular projects, check if they have videos OR clips
+      return videos.length > 0 || clipCount > 0;
     });
 
     // 1. Filter by View Mode (only if NOT searching)

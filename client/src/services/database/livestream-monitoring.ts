@@ -478,13 +478,14 @@ export async function updateSegmentStatus(
 /**
  * Create or find a project for manual clips from watch mode.
  * This is called when a user creates their first clip while watching.
- * 
+ *
  * Logic:
- * 1. Check if there's an active auto-detect session for this streamer today → reuse that project
- * 2. Check if there's an existing manual clip project from today → reuse that project
- * 3. Otherwise, create a new project with unified naming format
+ * 1. Check if there's an existing manual clip project from today → reuse that project
+ * 2. Otherwise, create a new project with "Manual Clips" prefix
+ *
+ * Project name format: "Manual Clips - {displayName} Live M/D/YYYY, H:MM:SS AM/PM"
  * 
- * Project name format: "{displayName} Live M/D/YYYY, H:MM:SS AM/PM" (matches auto-detect format)
+ * Note: Manual clips are kept SEPARATE from auto-detect projects
  */
 export async function createLivestreamClipProject(
   displayName: string,
@@ -496,31 +497,9 @@ export async function createLivestreamClipProject(
   const platformName = platform || 'PumpFun';
   const startOfToday = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000); // Midnight today (Unix timestamp)
 
-  // Step 1: Check for active auto-detect session from today
-  // If auto-detect is running, manual clips should go to the same project
-  const activeSession = await db.select<{ project_id: string }[]>(
-    `SELECT project_id FROM livestream_sessions 
-     WHERE mint_id = ? AND project_id IS NOT NULL AND created_at > ?
-     ORDER BY created_at DESC LIMIT 1`,
-    [mintId, startOfToday]
-  );
-
-  if (activeSession.length > 0 && activeSession[0].project_id) {
-    // Verify the project still exists
-    const existingProject = await db.select<{ id: string }[]>(
-      'SELECT id FROM projects WHERE id = ?',
-      [activeSession[0].project_id]
-    );
-
-    if (existingProject.length > 0) {
-      console.log('[LiveMonitor] Reusing active auto-detect project for manual clip:', activeSession[0].project_id);
-      return activeSession[0].project_id;
-    }
-  }
-
-  // Step 2: Check for existing manual clip project from today with matching name pattern
-  // Project names start with "{displayName} Live " so we can search by prefix
-  const namePrefix = `${displayName} Live `;
+  // Step 1: Check for existing manual clip project from today with matching name pattern
+  // Manual clip project names start with "Manual Clips - {displayName} Live "
+  const namePrefix = `Manual Clips - ${displayName} Live `;
   const existingManualProject = await db.select<{ id: string, name: string, created_at: number }[]>(
     userId === null
       ? `SELECT id, name, created_at FROM projects 
@@ -539,9 +518,9 @@ export async function createLivestreamClipProject(
     return existingManualProject[0].id;
   }
 
-  // Step 3: Create a new project with unified naming format
-  const projectName = `${displayName} Live ${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true })}`;
-  const projectDescription = `Clips from ${platformName} livestream ${displayName} (${mintId})`;
+  // Step 2: Create a new manual clip project with "Manual Clips" prefix
+  const projectName = `Manual Clips - ${displayName} Live ${new Date().toLocaleString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hour12: true })}`;
+  const projectDescription = `Manual clips from ${platformName} livestream ${displayName} (${mintId})`;
   const projectId = await createProject(projectName, projectDescription, undefined, platformName);
   
   console.log('[LiveMonitor] Created new manual clip project:', projectId, projectName);

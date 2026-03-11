@@ -627,6 +627,16 @@ const twitchDvrSessions = ref<Map<string, { mintId: string; channelName: string;
 type TwitterDvrSession = { mintId: string; sessionId: string; outputDir: string };
 const twitterDvrSessions = ref<Map<string, { mintId: string; broadcastUrl: string; sessionId: string; outputDir: string }>>(new Map());
 
+// Track YouTube DVR sessions separately (they use yt-dlp, not LiveKit)
+// Key: streamerId, Value: { mintId (channel ID), sessionId, outputDir }
+type YouTubeDvrSession = { mintId: string; sessionId: string; outputDir: string };
+const youtubeDvrSessions = ref<Map<string, { mintId: string; channelId: string; sessionId: string; outputDir: string }>>(new Map());
+
+// Track Rumble DVR sessions separately (they use yt-dlp, not LiveKit)
+// Key: streamerId, Value: { mintId (channel ID), sessionId, outputDir }
+type RumbleDvrSession = { mintId: string; sessionId: string; outputDir: string };
+const rumbleDvrSessions = ref<Map<string, { mintId: string; channelId: string; sessionId: string; outputDir: string }>>(new Map());
+
 // Track active viewer sessions to prevent cleanup when user is watching
 const activeViewerSessions = ref<Map<string, ActiveViewerSession>>(new Map());
 
@@ -676,6 +686,20 @@ async function cleanupStreamerDvr(streamerId: string, mintId: string): Promise<v
   const twitterSession = twitterDvrSessions.value.get(streamerId);
   if (twitterSession) {
     await stopTwitterDvrRecording(streamerId);
+    return;
+  }
+  
+  // Check for YouTube DVR session
+  const youtubeSession = youtubeDvrSessions.value.get(streamerId);
+  if (youtubeSession) {
+    await stopYouTubeDvrRecording(streamerId);
+    return;
+  }
+  
+  // Check for Rumble DVR session
+  const rumbleSession = rumbleDvrSessions.value.get(streamerId);
+  if (rumbleSession) {
+    await stopRumbleDvrRecording(streamerId);
     return;
   }
   
@@ -969,6 +993,198 @@ function removeTwitterDvrSession(streamerId: string): void {
   const newMap = new Map(twitterDvrSessions.value);
   newMap.delete(streamerId);
   twitterDvrSessions.value = newMap;
+
+  // Also remove from general DVR sessions
+  updateDvrSessionsMap((map) => {
+    map.delete(streamerId);
+  });
+}
+
+// Start YouTube DVR recording using yt-dlp
+async function startYouTubeDvrRecording(streamer: MonitoredStreamer): Promise<boolean> {
+  // Check if already has YouTube DVR recording
+  if (youtubeDvrSessions.value.has(streamer.id)) {
+    console.log('[LiveMonitor] YouTube DVR already active for:', streamer.id);
+    return true;
+  }
+
+  try {
+    // Generate a DVR session ID
+    const sessionId = `youtube-dvr-${streamer.mintId}-${Date.now()}`;
+
+    // Start yt-dlp recording via Rust backend with 4-second segments for DVR
+    const { startYouTubeRecording, getYouTubeSessionOutputDir } = await import('@/services/youtube');
+    await startYouTubeRecording(
+      streamer.mintId, // channel ID
+      streamer.id, // streamer ID
+      sessionId,
+      1 // 1 minute triggers 4-second segments in backend for smooth DVR playback
+    );
+
+    // Get the output directory
+    const outputDir = await getYouTubeSessionOutputDir(sessionId);
+
+    // Track the YouTube DVR session
+    const newMap = new Map(youtubeDvrSessions.value);
+    newMap.set(streamer.id, { mintId: streamer.mintId, channelId: streamer.mintId, sessionId, outputDir });
+    youtubeDvrSessions.value = newMap;
+
+    // Also track in general DVR sessions for compatibility
+    updateDvrSessionsMap((map) => {
+      map.set(streamer.id, { mintId: streamer.mintId });
+    });
+
+    console.log(
+      '[LiveMonitor] Started YouTube DVR recording for',
+      streamer.mintId,
+      'output:',
+      outputDir
+    );
+    return true;
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to start YouTube DVR for', streamer.mintId, error);
+    return false;
+  }
+}
+
+// Stop YouTube DVR recording
+async function stopYouTubeDvrRecording(streamerId: string): Promise<void> {
+  const session = youtubeDvrSessions.value.get(streamerId);
+  if (!session) return;
+
+  try {
+    // Use session-specific stop to avoid killing concurrent auto-detect sessions
+    const { stopYouTubeRecordingSession } = await import('@/services/youtube');
+    await stopYouTubeRecordingSession(session.sessionId);
+    console.log('[LiveMonitor] Stopped YouTube DVR session:', session.sessionId);
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to stop YouTube DVR session', error);
+  }
+
+  // Remove from tracking
+  const newMap = new Map(youtubeDvrSessions.value);
+  newMap.delete(streamerId);
+  youtubeDvrSessions.value = newMap;
+}
+
+// Get YouTube DVR session info
+function getYouTubeDvrSession(streamerId: string): YouTubeDvrSession | null {
+  return youtubeDvrSessions.value.get(streamerId) || null;
+}
+
+// Manually add a YouTube DVR session (for temp recordings started outside monitoring)
+function addYouTubeDvrSession(streamerId: string, mintId: string, sessionId: string, outputDir: string): void {
+  const newMap = new Map(youtubeDvrSessions.value);
+  newMap.set(streamerId, { mintId, channelId: mintId, sessionId, outputDir });
+  youtubeDvrSessions.value = newMap;
+
+  // Also track in general DVR sessions for compatibility
+  updateDvrSessionsMap((map) => {
+    map.set(streamerId, { mintId });
+  });
+}
+
+// Manually remove a YouTube DVR session
+function removeYouTubeDvrSession(streamerId: string): void {
+  const newMap = new Map(youtubeDvrSessions.value);
+  newMap.delete(streamerId);
+  youtubeDvrSessions.value = newMap;
+
+  // Also remove from general DVR sessions
+  updateDvrSessionsMap((map) => {
+    map.delete(streamerId);
+  });
+}
+
+// Start Rumble DVR recording using yt-dlp
+async function startRumbleDvrRecording(streamer: MonitoredStreamer): Promise<boolean> {
+  // Check if already has Rumble DVR recording
+  if (rumbleDvrSessions.value.has(streamer.id)) {
+    console.log('[LiveMonitor] Rumble DVR already active for:', streamer.id);
+    return true;
+  }
+
+  try {
+    // Generate a DVR session ID
+    const sessionId = `rumble-dvr-${streamer.mintId}-${Date.now()}`;
+
+    // Start yt-dlp recording via Rust backend with 4-second segments for DVR
+    const { startRumbleRecording, getRumbleSessionOutputDir } = await import('@/services/rumble');
+    await startRumbleRecording(
+      streamer.mintId, // channel ID
+      streamer.id, // streamer ID
+      sessionId,
+      1 // 1 minute triggers 4-second segments in backend for smooth DVR playback
+    );
+
+    // Get the output directory
+    const outputDir = await getRumbleSessionOutputDir(sessionId);
+
+    // Track the Rumble DVR session
+    const newMap = new Map(rumbleDvrSessions.value);
+    newMap.set(streamer.id, { mintId: streamer.mintId, channelId: streamer.mintId, sessionId, outputDir });
+    rumbleDvrSessions.value = newMap;
+
+    // Also track in general DVR sessions for compatibility
+    updateDvrSessionsMap((map) => {
+      map.set(streamer.id, { mintId: streamer.mintId });
+    });
+
+    console.log(
+      '[LiveMonitor] Started Rumble DVR recording for',
+      streamer.mintId,
+      'output:',
+      outputDir
+    );
+    return true;
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to start Rumble DVR for', streamer.mintId, error);
+    return false;
+  }
+}
+
+// Stop Rumble DVR recording
+async function stopRumbleDvrRecording(streamerId: string): Promise<void> {
+  const session = rumbleDvrSessions.value.get(streamerId);
+  if (!session) return;
+
+  try {
+    // Use session-specific stop to avoid killing concurrent auto-detect sessions
+    const { stopRumbleRecordingSession } = await import('@/services/rumble');
+    await stopRumbleRecordingSession(session.sessionId);
+    console.log('[LiveMonitor] Stopped Rumble DVR session:', session.sessionId);
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to stop Rumble DVR session', error);
+  }
+
+  // Remove from tracking
+  const newMap = new Map(rumbleDvrSessions.value);
+  newMap.delete(streamerId);
+  rumbleDvrSessions.value = newMap;
+}
+
+// Get Rumble DVR session info
+function getRumbleDvrSession(streamerId: string): RumbleDvrSession | null {
+  return rumbleDvrSessions.value.get(streamerId) || null;
+}
+
+// Manually add a Rumble DVR session (for temp recordings started outside monitoring)
+function addRumbleDvrSession(streamerId: string, mintId: string, sessionId: string, outputDir: string): void {
+  const newMap = new Map(rumbleDvrSessions.value);
+  newMap.set(streamerId, { mintId, channelId: mintId, sessionId, outputDir });
+  rumbleDvrSessions.value = newMap;
+
+  // Also track in general DVR sessions for compatibility
+  updateDvrSessionsMap((map) => {
+    map.set(streamerId, { mintId });
+  });
+}
+
+// Manually remove a Rumble DVR session
+function removeRumbleDvrSession(streamerId: string): void {
+  const newMap = new Map(rumbleDvrSessions.value);
+  newMap.delete(streamerId);
+  rumbleDvrSessions.value = newMap;
 
   // Also remove from general DVR sessions
   updateDvrSessionsMap((map) => {
@@ -1950,6 +2166,20 @@ export function useLivestreamMonitoring() {
     stopTwitterDvrRecording,
     addTwitterDvrSession,
     removeTwitterDvrSession,
+    // YouTube DVR exports
+    youtubeDvrSessions,
+    getYouTubeDvrSession,
+    startYouTubeDvrRecording,
+    stopYouTubeDvrRecording,
+    addYouTubeDvrSession,
+    removeYouTubeDvrSession,
+    // Rumble DVR exports
+    rumbleDvrSessions,
+    getRumbleDvrSession,
+    startRumbleDvrRecording,
+    stopRumbleDvrRecording,
+    addRumbleDvrSession,
+    removeRumbleDvrSession,
     // Auto DVR exports
     initAutoDvrPolling,
     stopAutoDvrPolling,

@@ -387,7 +387,6 @@
 
                               <!-- Play Clip -->
                               <button
-                                v-if="!props.playOnCardClick"
                                 class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
                                 @click.stop="
                                   onPlayClip(clip);
@@ -1846,7 +1845,7 @@
       emit('seekVideo', firstSegment.start_time);
     }
 
-    hoveredClipId.value = hoveredClipId.value === clipId ? null : clipId;
+    hoveredClipId.value = clipId;
     emit('clipHover', clipId);
     emit('scrollToTimeline');
   }
