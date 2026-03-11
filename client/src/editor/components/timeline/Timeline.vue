@@ -975,7 +975,6 @@
     <TimelineContextMenu :position="contextMenuPos" :element-ref="contextMenuElement" @close="closeContextMenu" />
 
     <TimelineScrollbar
-      v-if="tracksScrollRef"
       :scroll-container="tracksScrollRef"
       :track-labels-width="trackLabelsWidth"
     />
