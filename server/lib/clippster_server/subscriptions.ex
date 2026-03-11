@@ -26,6 +26,7 @@ defmodule ClippsterServer.Subscriptions do
 
   # Subscription tiers with pricing and credits (1 credit = 1 minute)
   @subscription_tiers %{
+    "basic" => %{monthly_credits: 0, usd: 15.99, name: "Basic"},
     "starter" => %{monthly_credits: 600, usd: 29.99, name: "Starter"},
     "creator" => %{monthly_credits: 1800, usd: 54.99, name: "Creator"},
     "pro" => %{monthly_credits: 9000, usd: 204.99, name: "Pro"}
@@ -527,7 +528,7 @@ defmodule ClippsterServer.Subscriptions do
   # Subscription Tier Changes
   # ============================================================================
 
-  @tier_price_hierarchy %{"starter" => 1, "creator" => 2, "pro" => 3}
+  @tier_price_hierarchy %{"basic" => 0.5, "starter" => 1, "creator" => 2, "pro" => 3}
 
   @doc """
   Changes subscription tier (upgrade/downgrade) for a user with an active Stripe subscription.
@@ -589,8 +590,14 @@ defmodule ClippsterServer.Subscriptions do
             })
             |> Repo.update()
 
-          # Grant the new tier's credits
-          {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+          # If downgrading to basic tier, wipe all credits
+          if pending_tier == "basic" do
+            {:ok, _} = Credits.set_credits(user_id, 0)
+            IO.puts("[Subscriptions] Wiped all credits for user #{user_id} (downgraded to Basic)")
+          else
+            # Grant the new tier's credits
+            {:ok, _} = Credits.add_credits(user_id, tier_info.monthly_credits)
+          end
 
           IO.puts(
             "[Subscriptions] Applied pending downgrade for user #{user_id}: #{user.subscription_tier} -> #{pending_tier}"
@@ -736,7 +743,8 @@ defmodule ClippsterServer.Subscriptions do
               metadata: %{
                 subscription_tier: new_tier,
                 monthly_credits: to_string(new_tier_info.monthly_credits),
-                pending_downgrade: "true"
+                pending_downgrade: "true",
+                wipe_credits_on_apply: if(new_tier == "basic", do: "true", else: "false")
               }
             }
 

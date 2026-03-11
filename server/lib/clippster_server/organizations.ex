@@ -566,18 +566,25 @@ defmodule ClippsterServer.Organizations do
   @doc """
   Accepts an invitation and adds the user as a member.
   """
-  def accept_invitation(plain_token, %User{} = user) do
-    invitation = get_invitation_by_token(plain_token)
+  def accept_invitation(token, %User{} = user) do
+    invitation =
+      OrganizationInvitation
+      |> where([i], i.token == ^token and i.status == "pending")
+      |> preload([:organization, :invited_by_user])
+      |> Repo.one()
 
     cond do
       is_nil(invitation) ->
         {:error, :invalid_token}
 
-      not OrganizationInvitation.can_accept?(invitation) ->
+      OrganizationInvitation.expired?(invitation) ->
         {:error, :invitation_expired}
 
       invitation.email != user.email ->
         {:error, :email_mismatch}
+
+      user.subscription_tier == "basic" ->
+        {:error, :basic_tier_cannot_join}
 
       is_member?(invitation.organization_id, user.id) ->
         # Already a member, just mark invitation as accepted

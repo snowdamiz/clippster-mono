@@ -383,9 +383,90 @@
                   </div>
                 </div>
 
-                <!-- Paid Tiers -->
+                <!-- Basic Tier Card -->
                 <div
-                  v-for="tier in subscriptionTiers"
+                  v-if="subscriptionTiers.find(t => t.id === 'basic')"
+                  class="billing-tier"
+                  :class="{ 'billing-tier--current': isCurrentTier('basic') }"
+                >
+                  <!-- Current Badge -->
+                  <div v-if="isCurrentTier('basic')" class="billing-tier__badge billing-tier__badge--current">
+                    <Check class="billing-tier__badge-icon" />
+                    <span>Current Plan</span>
+                  </div>
+
+                  <div class="billing-tier__content">
+                    <div class="billing-tier__header">
+                      <h3 class="billing-tier__name">Basic</h3>
+                      <div class="billing-tier__price">
+                        <span class="billing-tier__price-currency">$</span>
+                        <span class="billing-tier__price-amount">{{ billingInterval === 'yearly' ? '175.89' : '15.99' }}</span>
+                        <span class="billing-tier__price-period">{{ billingInterval === 'yearly' ? '/yr' : '/mo' }}</span>
+                      </div>
+                      <div v-if="billingInterval === 'yearly'" class="billing-tier__price-effective">
+                        $14.66/mo effective
+                      </div>
+                    </div>
+
+                    <div class="billing-tier__credits billing-tier__credits--free">
+                      <Zap class="billing-tier__credits-icon" />
+                      <span class="billing-tier__credits-value">0</span>
+                      <span class="billing-tier__credits-label">credits/month</span>
+                    </div>
+
+                    <div class="billing-tier__divider"></div>
+
+                    <ul class="billing-tier__features">
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Unlimited clip builds</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Social posting &amp; scheduling</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Campaign participation</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Custom watermark &amp; intro/outro</span>
+                      </li>
+                      <li class="billing-tier__feature billing-tier__feature--disabled">
+                        <X class="billing-tier__feature-icon billing-tier__feature-icon--disabled" />
+                        <span>No AI clip detection</span>
+                      </li>
+                      <li class="billing-tier__feature billing-tier__feature--disabled">
+                        <X class="billing-tier__feature-icon billing-tier__feature-icon--disabled" />
+                        <span>No AI Video Creator</span>
+                      </li>
+                      <li class="billing-tier__feature billing-tier__feature--disabled">
+                        <X class="billing-tier__feature-icon billing-tier__feature-icon--disabled" />
+                        <span>No organization membership</span>
+                      </li>
+                      <li class="billing-tier__feature" style="font-size: 0.75rem; color: rgb(156, 163, 175);">
+                        <span>Large credit pack only (1,800 @ $44)</span>
+                      </li>
+                    </ul>
+
+                    <button
+                      class="billing-tier__btn"
+                      :class="{ 'billing-tier__btn--current': isCurrentTier('basic') }"
+                      @click="handleBasicTierClick"
+                      :disabled="isCurrentTier('basic') || isPendingTier('basic')"
+                    >
+                      <span v-if="isCurrentTier('basic')">Current Plan</span>
+                      <span v-else-if="isPendingTier('basic')">Switching at period end</span>
+                      <span v-else-if="hasActiveSubscription">Switch Plan</span>
+                      <span v-else>Get Started</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Paid Tiers (Starter, Creator, Pro) -->
+                <div
+                  v-for="tier in subscriptionTiers.filter(t => t.id !== 'basic')"
                   :key="tier.id"
                   class="billing-tier"
                   :class="{
@@ -670,6 +751,9 @@
                   </p>
                   <p v-if="tierChangeIsUpgrade" class="billing-modal__info-muted">
                     You'll also receive {{ tierChangeCreditDiff }} additional credits now.
+                  </p>
+                  <p v-if="tierChangeTarget?.id === 'basic'" class="billing-modal__info-warning" style="color: rgb(239, 68, 68); font-weight: 600; margin-top: 12px;">
+                    ⚠️ Downgrading to Basic will remove all your AI credits. This cannot be undone.
                   </p>
                 </div>
 
@@ -1016,7 +1100,7 @@
   const creditPackErrorMessage = ref('');
 
   // Tier hierarchy for upgrade/downgrade detection
-  const TIER_HIERARCHY: Record<string, number> = { starter: 1, creator: 2, pro: 3 };
+  const TIER_HIERARCHY: Record<string, number> = { basic: 0.5, starter: 1, creator: 2, pro: 3 };
 
   // Computed values
   const sortedCreditPacks = computed(() => {
@@ -1226,6 +1310,24 @@
     } else {
       // No active sub — go through Stripe checkout
       selectedSubscription.value = tier;
+      showPaymentModal.value = true;
+    }
+  }
+
+  /** Handle clicking Basic tier card button */
+  function handleBasicTierClick() {
+    if (isCurrentTier('basic')) return;
+
+    const basicTier = subscriptionTiers.value.find(t => t.id === 'basic');
+    if (!basicTier) return;
+
+    if (hasActiveSubscription.value && subscriptionStatus.value?.status === 'active') {
+      // Show warning about credit wipe when downgrading to Basic
+      tierChangeTarget.value = basicTier;
+      showTierChangeConfirm.value = true;
+    } else {
+      // No active sub — go through Stripe checkout
+      selectedSubscription.value = basicTier;
       showPaymentModal.value = true;
     }
   }
@@ -2160,7 +2262,7 @@
 
   @media (min-width: 1400px) {
     .billing-plans__grid {
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
     }
   }
 

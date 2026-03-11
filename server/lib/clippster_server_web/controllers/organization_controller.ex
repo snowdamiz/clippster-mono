@@ -567,6 +567,11 @@ defmodule ClippsterServerWeb.OrganizationController do
         conn
         |> put_status(400)
         |> json(%{success: false, error: "This invitation was sent to a different email address"})
+
+      {:error, :basic_tier_cannot_join} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Upgrade to Starter or higher to join organizations"})
     end
   end
 

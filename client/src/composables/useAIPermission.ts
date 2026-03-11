@@ -15,6 +15,7 @@ export function useAIPermission() {
    * Returns true if:
    * - User is not authenticated (will be blocked by auth anyway)
    * - User is an admin
+   * - User is not on Basic tier
    * - User is not restricted, OR user is restricted but has allow_ai enabled
    */
   const isAIAllowed = computed(() => {
@@ -26,6 +27,9 @@ export function useAIPermission() {
 
     // Admins always have AI access
     if (user.is_admin) return true;
+
+    // Basic tier users do NOT have AI clip detection access
+    if ((user as any).subscription_tier === 'basic') return false;
 
     // Check permissions store for restriction settings
     if (permissionsStore.isRestricted) {

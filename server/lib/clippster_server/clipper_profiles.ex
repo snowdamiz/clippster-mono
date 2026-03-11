@@ -178,10 +178,14 @@ defmodule ClippsterServer.ClipperProfiles do
   defp filter_by_verified(query, _), do: query
 
   defp visible_in_public_directory(query) do
+    alias ClippsterServer.Accounts.User
+    
     query
+    |> join(:inner, [p], u in User, on: p.user_id == u.id)
     |> where([p], p.is_public == true)
     |> where([p], fragment("char_length(trim(coalesce(?, ''))) > 0", p.display_name))
     |> where([p], fragment("char_length(trim(coalesce(?, ''))) > 0", p.slug))
+    |> where([p, u], u.subscription_tier != "basic" or is_nil(u.subscription_tier))
   end
 
   defp present_string?(value) when is_binary(value), do: String.trim(value) != ""

@@ -32,6 +32,29 @@ const subscriptionPlans = [
     accentColor: 'zinc'
   },
   {
+    name: 'Basic',
+    price: 15.99,
+    period: 'month',
+    credits: 0,
+    description: 'Essential features',
+    icon: Zap,
+    features: [
+      'Unlimited clip builds',
+      'Social posting & scheduling',
+      'Campaign participation',
+      'Custom watermark',
+    ],
+    limitations: [
+      'No AI clip detection',
+      'No AI Video Creator',
+      'No organization features',
+      'Large credit pack only (1,800 @ $44)',
+    ],
+    cta: 'Get Started',
+    highlight: false,
+    accentColor: 'sky'
+  },
+  {
     name: 'Starter',
     price: 29.99,
     period: 'month',
@@ -476,7 +499,7 @@ export function PricingPage() {
 
         {/* Subscription Plans */}
         <section className="mb-24">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 max-w-7xl mx-auto">
             {subscriptionPlans.map((plan, index) => {
               const Icon = plan.icon
               

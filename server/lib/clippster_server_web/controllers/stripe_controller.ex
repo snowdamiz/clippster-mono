@@ -15,6 +15,7 @@ defmodule ClippsterServerWeb.StripeController do
   def create_checkout_session(conn, %{"pack_type" => pack_type} = params) do
     with {:ok, user_id} <- get_user_id_from_token(conn),
          {:ok, user} <- get_user(user_id),
+         {:ok, _} <- validate_tier_pack_access(user, pack_type),
          {:ok, pack_info} <- validate_pack_type(pack_type) do
       success_url =
         StripeReturn.success_url(conn, params)
@@ -84,6 +85,11 @@ defmodule ClippsterServerWeb.StripeController do
         conn
         |> put_status(400)
         |> json(%{success: false, error: "Invalid pack type"})
+
+      {:error, :tier_restriction} ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Basic tier can only purchase the Large credit pack (1,800 credits)"})
     end
   end
 
@@ -1100,6 +1106,15 @@ defmodule ClippsterServerWeb.StripeController do
     case Credits.get_pack_info(pack_type) do
       nil -> {:error, :invalid_pack}
       pack_info -> {:ok, pack_info}
+    end
+  end
+
+  defp validate_tier_pack_access(user, pack_type) do
+    # Basic tier can only purchase large pack
+    if user.subscription_tier == "basic" && pack_type != "large" do
+      {:error, :tier_restriction}
+    else
+      {:ok, :allowed}
     end
   end
 end
