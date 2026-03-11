@@ -613,11 +613,14 @@ pub async fn download_youtube_vod(
                                         .find(|s| s.ends_with('%'))
                                         .and_then(|s| s.trim_end_matches('%').parse::<f64>().ok())
                                     {
+                                        // Calculate current_time from percentage and total_duration
+                                        let current_time = total_duration.map(|dur| (percent_str / 100.0) * dur);
+                                        
                                         let _ = app_progress.emit("download-progress", DownloadProgress {
                                             download_id: download_id_progress.clone(),
                                             progress: percent_str,
-                                            current_time: None,
-                                            total_time: None,
+                                            current_time,
+                                            total_time: total_duration,
                                             status: format!("Downloading... {}%", percent_str as u32),
                                         });
                                     }

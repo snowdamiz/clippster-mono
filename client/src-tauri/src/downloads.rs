@@ -1762,12 +1762,14 @@ pub async fn download_kick_vod(
     title: String,
     video_url: String,
     channel_slug: String,
+    page_url: Option<String>,
 ) -> Result<(), String> {
     println!("[Kick] download_kick_vod called with:");
     println!("[Kick]   download_id: {}", download_id);
     println!("[Kick]   title: {}", title);
     println!("[Kick]   video_url: {}", video_url);
     println!("[Kick]   channel_slug: {}", channel_slug);
+    println!("[Kick]   page_url: {:?}", page_url);
 
     // Check if download already exists
     {
@@ -2059,13 +2061,15 @@ pub async fn download_kick_vod(
         }
 
         // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
+        // Use page_url for yt-dlp if available (to get platform thumbnail), otherwise use video_url
         println!("[Kick] Generating thumbnail...");
         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
+        let thumbnail_source_url = page_url.as_ref().unwrap_or(&video_url);
         
         let thumbnail_path_str = match generate_thumbnail_hybrid(
             &ytdlp_path,
             &ffmpeg_path,
-            &video_url,
+            thumbnail_source_url,
             &thumbnail_path,
             "00:00:05",
         ).await {
