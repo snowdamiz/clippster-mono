@@ -23,6 +23,7 @@ mod rumble;
 mod sidecar;
 mod storage;
 mod stripe_callback;
+mod thumbnail_utils;
 mod twitch;
 mod twitter;
 mod ui_utils;

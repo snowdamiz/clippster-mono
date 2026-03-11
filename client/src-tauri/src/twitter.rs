@@ -9,6 +9,7 @@ use serde::Serialize;
 use tauri::Emitter;
 use tokio::sync::oneshot;
 use crate::storage;
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
 use tokio::io::AsyncBufReadExt;
 use base64::Engine;
 
@@ -850,29 +851,23 @@ pub async fn download_twitter_vod(
                 // Get file metadata
                 let file_size = std::fs::metadata(&output_file_str).ok().map(|m| m.len());
                 
-                // Generate thumbnail
+                // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
                 println!("[Twitter] Generating thumbnail...");
                 let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-                let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
-                    .args([
-                        "-hwaccel", "auto",
-                        "-ss", "00:00:05",
-                        "-i", &output_file_str,
-                        "-vframes", "1",
-                        "-vf", "scale=320:-1",
-                        "-y",
-                        thumbnail_path.to_str().unwrap_or(""),
-                    ]))
-                    .output()
-                    .await;
                 
-                let thumbnail_path_str = match thumbnail_result {
-                    Ok(output) if output.status.success() => {
+                let thumbnail_path_str = match generate_thumbnail_hybrid(
+                    &ytdlp_path,
+                    &ffmpeg_path,
+                    &vod_url,
+                    &thumbnail_path,
+                    "00:00:05",
+                ).await {
+                    Ok(()) => {
                         println!("[Twitter] Thumbnail generated: {}", thumbnail_path.display());
                         Some(thumbnail_path.to_string_lossy().to_string())
                     }
-                    _ => {
-                        println!("[Twitter] Thumbnail generation failed");
+                    Err(e) => {
+                        println!("[Twitter] Thumbnail generation failed: {}", e);
                         None
                     }
                 };

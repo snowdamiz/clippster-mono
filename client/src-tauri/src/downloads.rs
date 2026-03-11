@@ -8,6 +8,7 @@ use crate::ffmpeg_utils::{
     detect_hardware_encoder, extract_duration_from_ffmpeg_output, get_video_info, parse_ffmpeg_time,
 };
 use crate::storage;
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
 
 mod kick_downloads_helpers;
 use kick_downloads_helpers::{no_window, resolve_kick_ytdlp_binary, resolve_kick_ffmpeg_binary};
@@ -2057,29 +2058,23 @@ pub async fn download_kick_vod(
             return Err("Download cancelled".to_string());
         }
 
-        // Generate thumbnail
+        // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
         println!("[Kick] Generating thumbnail...");
         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
-            .args([
-                "-hwaccel", "auto",
-                "-ss", "00:00:05",
-                "-i", &video_path_str,
-                "-vframes", "1",
-                "-vf", "scale=320:-1",
-                "-y",
-                thumbnail_path.to_str().unwrap_or(""),
-            ]))
-            .output()
-            .await;
-
-        let thumbnail_path_str = match thumbnail_result {
-            Ok(output) if output.status.success() => {
+        
+        let thumbnail_path_str = match generate_thumbnail_hybrid(
+            &ytdlp_path,
+            &ffmpeg_path,
+            &video_url,
+            &thumbnail_path,
+            "00:00:05",
+        ).await {
+            Ok(()) => {
                 println!("[Kick] Thumbnail generated: {}", thumbnail_path.display());
                 Some(thumbnail_path.to_string_lossy().to_string())
             }
-            _ => {
-                println!("[Kick] Thumbnail generation failed");
+            Err(e) => {
+                println!("[Kick] Thumbnail generation failed: {}", e);
                 None
             }
         };

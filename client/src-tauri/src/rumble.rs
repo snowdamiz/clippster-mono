@@ -11,6 +11,7 @@ use tokio::sync::oneshot;
 use tauri::Emitter;
 
 use crate::storage;
+use crate::thumbnail_utils::generate_thumbnail_hybrid;
 use tokio::io::AsyncBufReadExt;
 use crate::downloads::{
     DownloadProgress, DownloadResult, ACTIVE_DOWNLOADS, ACTIVE_DOWNLOAD_CANCELLERS, DOWNLOAD_METADATA,
@@ -923,29 +924,23 @@ pub async fn download_rumble_vod(
                             .ok()
                             .map(|m| m.len());
                         
-                        // Generate thumbnail
+                        // Generate thumbnail using hybrid approach (yt-dlp first, FFmpeg fallback)
                         println!("[Rumble] Generating thumbnail...");
                         let thumbnail_path = paths.thumbnails.join(format!("{}_thumb.jpg", filename.replace(".mp4", "")));
-                        let thumbnail_result = no_window(tokio::process::Command::new(&ffmpeg_path)
-                            .args([
-                                "-hwaccel", "auto",
-                                "-ss", "00:00:05",
-                                "-i", &output_file_str,
-                                "-vframes", "1",
-                                "-vf", "scale=320:-1",
-                                "-y",
-                                thumbnail_path.to_str().unwrap_or(""),
-                            ]))
-                            .output()
-                            .await;
                         
-                        let thumbnail_path_str = match thumbnail_result {
-                            Ok(output) if output.status.success() => {
+                        let thumbnail_path_str = match generate_thumbnail_hybrid(
+                            ytdlp_path.to_str().unwrap_or("yt-dlp"),
+                            ffmpeg_path.to_str().unwrap_or("ffmpeg"),
+                            &vod_url,
+                            &thumbnail_path,
+                            "00:00:05",
+                        ).await {
+                            Ok(()) => {
                                 println!("[Rumble] Thumbnail generated: {}", thumbnail_path.display());
                                 Some(thumbnail_path.to_string_lossy().to_string())
                             }
-                            _ => {
-                                println!("[Rumble] Thumbnail generation failed");
+                            Err(e) => {
+                                println!("[Rumble] Thumbnail generation failed: {}", e);
                                 None
                             }
                         };
