@@ -1,6 +1,7 @@
 import { execSync, spawnSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import net from 'net';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +15,12 @@ function run(cmd, opts = {}) {
     return true;
   } catch {
     return false;
+  }
+}
+
+function runRequired(cmd, opts = {}) {
+  if (!run(cmd, opts)) {
+    throw new Error(`Command failed: ${cmd}`);
   }
 }
 
@@ -34,8 +41,7 @@ function isDockerRunning() {
   }
 }
 
-function isPostgresContainerRunning() {
-  // Try docker compose ps (without --status flag which is unreliable on Windows)
+function isComposePostgresRunning() {
   try {
     const output = execSync(
       'docker compose -f server/docker-compose.yml ps db --format json',
@@ -60,31 +66,36 @@ function isPostgresContainerRunning() {
   return false;
 }
 
-function isPostgresReady() {
-  // Try via docker compose exec first
-  try {
-    execSync(
-      'docker compose -f server/docker-compose.yml exec -T db pg_isready -U postgres',
-      { cwd: ROOT, stdio: 'ignore' }
-    );
-    return true;
-  } catch {}
+function canConnectToPort(host, port, timeoutMs = 1000) {
+  return new Promise(resolve => {
+    const socket = new net.Socket();
+    let settled = false;
 
-  // Fallback: try connecting directly (handles non-compose postgres)
-  try {
-    execSync('docker run --rm --network host postgres:15 pg_isready -h localhost -U postgres',
-      { stdio: 'ignore' });
-    return true;
-  } catch {}
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      socket.destroy();
+      resolve(result);
+    };
 
-  return false;
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+    socket.connect(port, host);
+  });
 }
 
-async function waitForPostgres(maxAttempts = 30) {
+async function isHostPostgresReady() {
+  return canConnectToPort('localhost', 5432);
+}
+
+async function waitForHostPostgres(maxAttempts = 30) {
   for (let i = 0; i < maxAttempts; i++) {
-    if (isPostgresReady()) return true;
+    if (await isHostPostgresReady()) return true;
     await new Promise(r => setTimeout(r, 1000));
   }
+
   return false;
 }
 
@@ -94,14 +105,14 @@ async function main() {
   // 1. Install root + workspace dependencies
   console.log('--- Installing dependencies ---');
   removePackageLock(ROOT);
-  run('yarn install');
+  runRequired('yarn install');
 
   // 2. Install non-workspace dependencies
   console.log('\n--- Installing non-workspace dependencies ---');
   removePackageLock(path.join(ROOT, 'client/src-tauri/pumpfun-service'));
-  run('yarn install', { cwd: path.join(ROOT, 'client/src-tauri/pumpfun-service') });
+  runRequired('yarn install', { cwd: path.join(ROOT, 'client/src-tauri/pumpfun-service') });
   removePackageLock(path.join(ROOT, 'server'));
-  run('yarn install', { cwd: path.join(ROOT, 'server') });
+  runRequired('yarn install', { cwd: path.join(ROOT, 'server') });
 
   // 3. Install & build remotion-renderer sidecar
   console.log('\n--- Building remotion-renderer sidecar ---');
@@ -110,15 +121,19 @@ async function main() {
 
   if (!fs.existsSync(bundlePath)) {
     removePackageLock(sidecarDir);
-    run('yarn install', { cwd: sidecarDir });
-    run('yarn build', { cwd: sidecarDir });
+    runRequired('yarn install', { cwd: sidecarDir });
+    runRequired('yarn build', { cwd: sidecarDir });
   } else {
     console.log('remotion-renderer bundle already exists, skipping build.');
   }
 
   // 3. Docker Postgres
   console.log('\n--- Checking PostgreSQL ---');
-  if (!isDockerRunning()) {
+  const hostPostgresReady = await isHostPostgresReady();
+
+  if (hostPostgresReady) {
+    console.log('PostgreSQL is already reachable on localhost:5432.');
+  } else if (!isDockerRunning()) {
     console.log('Docker is not running. Starting Docker...');
     if (process.platform === 'darwin') {
       spawnSync('open', ['-a', 'Docker'], { stdio: 'inherit' });
@@ -148,26 +163,30 @@ async function main() {
     console.log('Docker is ready.');
   }
 
-  if (isPostgresContainerRunning()) {
-    console.log('PostgreSQL container is already running.');
-  } else {
-    console.log('Starting PostgreSQL container...');
-    run('docker compose -f server/docker-compose.yml up -d');
-  }
+  if (!(await isHostPostgresReady())) {
+    if (isComposePostgresRunning()) {
+      console.log(
+        'PostgreSQL container is running but localhost:5432 is unavailable. Recreating the container to refresh port bindings...'
+      );
+      runRequired('docker compose -f server/docker-compose.yml up -d --force-recreate db');
+    } else {
+      console.log('Starting PostgreSQL container...');
+      runRequired('docker compose -f server/docker-compose.yml up -d db');
+    }
 
-  console.log('Waiting for PostgreSQL to be ready...');
-  const ready = await waitForPostgres();
-  if (!ready) {
-    console.error('PostgreSQL did not become ready in time.');
-    process.exit(1);
+    console.log('Waiting for PostgreSQL to be reachable on localhost:5432...');
+    const ready = await waitForHostPostgres();
+    if (!ready) {
+      throw new Error('PostgreSQL did not become reachable on localhost:5432 in time.');
+    }
   }
   console.log('PostgreSQL is ready.');
 
   // 4. Elixir server setup
   console.log('\n--- Setting up Elixir server ---');
-  run('mix deps.get', { cwd: path.join(ROOT, 'server') });
-  run('mix ecto.create', { cwd: path.join(ROOT, 'server') });
-  run('mix ecto.migrate', { cwd: path.join(ROOT, 'server') });
+  runRequired('mix deps.get', { cwd: path.join(ROOT, 'server') });
+  runRequired('mix ecto.create', { cwd: path.join(ROOT, 'server') });
+  runRequired('mix ecto.migrate', { cwd: path.join(ROOT, 'server') });
   console.log('\n=== Setup complete ===\n');
 }
 

@@ -360,10 +360,11 @@ export function useTimelineDragDrop({
 		if (!mediaAsset) return;
 
 		const trackType: TrackType = dragData.mediaType === "audio" ? "audio" : "video";
+		const trackName = dragData.mediaType === "image" ? "Image track" : undefined;
 		let trackId: string;
 
 		if (target.isNewTrack) {
-			trackId = editor.timeline.addTrack({ type: trackType, index: target.trackIndex });
+			trackId = editor.timeline.addTrack({ type: trackType, index: target.trackIndex, name: trackName });
 		} else {
 			const track = tracks.value[target.trackIndex];
 			if (!track) return;

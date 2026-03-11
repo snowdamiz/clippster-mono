@@ -27,6 +27,7 @@ import FiltersView from "./assets/FiltersView.vue";
 import AdjustmentsView from "./assets/AdjustmentsView.vue";
 import TransitionsView from "./assets/TransitionsView.vue";
 import BrandingView from "./assets/BrandingView.vue";
+import UploadMediaView from "./assets/UploadMediaView.vue";
 import TranscriptView from "./assets/TranscriptView.vue";
 
 const props = defineProps<{
@@ -36,7 +37,7 @@ const props = defineProps<{
 const { editor, version } = useEditor();
 const { startDrag, wasDragCompleted } = usePointerDrag();
 const showMediaDialog = ref(false);
-const dialogTab = ref<"built" | "projects">("built");
+const dialogTab = ref<"upload" | "built" | "projects">("upload");
 const viewMode = ref<"grid" | "list">("grid");
 const isProcessing = ref(false);
 const progress = ref(0);
@@ -250,6 +251,10 @@ function getMediaIcon(type: string) {
 							<div v-if="item.duration" class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white">
 								{{ formatDuration(item.duration) }}
 							</div>
+							<!-- Type badge -->
+							<div class="absolute left-1 top-1 rounded bg-black/60 p-0.5">
+								<component :is="getMediaIcon(item.type)" class="size-2.5 text-zinc-300" />
+							</div>
 						</div>
 						<!-- Name -->
 						<div class="truncate px-2 py-1 text-xs">{{ item.name }}</div>
@@ -317,6 +322,7 @@ function getMediaIcon(type: string) {
 					<div class="flex items-center border-b border-white/10 px-4 mt-3 shrink-0">
 						<button
 							v-for="tab in ([
+								{ key: 'upload', label: 'Upload', icon: Upload },
 								{ key: 'built', label: 'Built Clips', icon: Clapperboard },
 								{ key: 'projects', label: 'Projects', icon: FolderOpen },
 							] as const)"
@@ -336,7 +342,8 @@ function getMediaIcon(type: string) {
 					</div>
 					<!-- Tab content -->
 					<div class="flex-1 overflow-hidden">
-						<BuiltClipsView v-if="dialogTab === 'built'" />
+						<UploadMediaView v-if="dialogTab === 'upload'" />
+						<BuiltClipsView v-else-if="dialogTab === 'built'" />
 						<ProjectClipsView v-else-if="dialogTab === 'projects'" />
 					</div>
 				</DialogContent>

@@ -48,6 +48,8 @@ const generatingStep = ref("");
 
 // Subscribe to transcript manager changes
 let unsubscribe: (() => void) | null = null;
+let loadTranscriptRequestId = 0;
+let lastTimingGapLogKey: string | null = null;
 
 // Current playback time from editor
 const currentTime = computed(() => {
@@ -228,15 +230,38 @@ function setWordRef(el: any, index: number) {
 
 // Load transcript from editor's timeline video elements
 async function loadTranscript() {
+	const requestId = ++loadTranscriptRequestId;
 	loading.value = true;
 	error.value = null;
 	words.value = [];
 
 	try {
-		// Check transcript manager first — project-loader may have already set words
-		const managerWords = editor.transcript.getWords();
-		if (managerWords.length > 0) {
+		const syncManagerWords = (reason: string): boolean => {
+			if (requestId !== loadTranscriptRequestId) {
+				console.log("[TranscriptView] Aborting stale transcript load", {
+					requestId,
+					activeRequestId: loadTranscriptRequestId,
+					reason,
+				});
+				return true;
+			}
+
+			const managerWords = editor.transcript.getWords();
+			if (managerWords.length === 0) return false;
+
+			console.log("[TranscriptView] Using transcript manager words", {
+				requestId,
+				reason,
+				count: managerWords.length,
+				firstWord: managerWords[0]?.word,
+				lastWord: managerWords[managerWords.length - 1]?.word,
+			});
 			words.value = managerWords;
+			return true;
+		};
+
+		// Check transcript manager first — project-loader may have already set words
+		if (syncManagerWords("initial-check")) {
 			return;
 		}
 
@@ -253,6 +278,16 @@ async function loadTranscript() {
 		let clipId = activeProject.settings?.sourceClipId;
 		let clipStart = activeProject.settings?.sourceClipStartTime;
 		let clipEnd = activeProject.settings?.sourceClipEndTime;
+		let clipSegments: Array<{ start: number; end: number }> | null = null;
+
+		console.log("[TranscriptView] Loading transcript", {
+			requestId,
+			projectId: activeProject.metadata.id,
+			transcriptProjectId,
+			clipId,
+			clipStart,
+			clipEnd,
+		});
 
 		// If no sourceProjectId in settings, try resolving from media asset file paths
 		if (!transcriptProjectId) {
@@ -281,12 +316,60 @@ async function loadTranscript() {
 		}
 
 		const { parseTranscriptToWords } = await import("@/utils/timelineUtils");
+		if (syncManagerWords("after-parser-import")) {
+			return;
+		}
+
+		const filterAndRebase = (wordList: TranscriptWord[]): TranscriptWord[] => {
+			if (clipStart == null || clipEnd == null) return wordList;
+
+			if (clipSegments && clipSegments.length > 0) {
+				const result: TranscriptWord[] = [];
+				let outputOffset = 0;
+
+				for (const seg of clipSegments) {
+					const segWords = wordList
+						.filter((w) => w.start >= seg.start && w.start < seg.end)
+						.map((w) => ({
+							...w,
+							start: w.start - seg.start + outputOffset,
+							end: w.end - seg.start + outputOffset,
+						}));
+
+					result.push(...segWords);
+					outputOffset += seg.end - seg.start;
+				}
+
+				console.log("[TranscriptView] filterAndRebase using clip segments", {
+					requestId,
+					segments: clipSegments.map((seg) => `${seg.start.toFixed(1)}-${seg.end.toFixed(1)}`),
+					matched: result.length,
+				});
+				return result;
+			}
+
+			const result = wordList
+				.filter((w) => w.start >= clipStart && w.start < clipEnd)
+				.map((w) => ({ ...w, start: w.start - clipStart, end: w.end - clipStart }));
+
+			console.log("[TranscriptView] filterAndRebase using clip range", {
+				requestId,
+				clipStart,
+				clipEnd,
+				matched: result.length,
+			});
+			return result;
+		};
 
 		// Strategy 1: Try clip segments' transcript_raw_json (available for previously built clips)
 		if (clipId) {
 			try {
 				const { getClipSegmentsByClipId } = await import("@/services/database/clip-segments");
 				const segments = await getClipSegmentsByClipId(clipId);
+				clipSegments = segments.map((seg) => ({
+					start: seg.start_time,
+					end: seg.end_time,
+				}));
 				const segmentWords: TranscriptWord[] = [];
 
 				for (const seg of segments) {
@@ -303,8 +386,21 @@ async function loadTranscript() {
 					}
 				}
 
+				if (syncManagerWords("after-segment-query")) {
+					return;
+				}
+
 				if (segmentWords.length > 0) {
 					segmentWords.sort((a, b) => a.start - b.start);
+					if (syncManagerWords("before-strategy-1-commit")) {
+						return;
+					}
+					console.log("[TranscriptView] Strategy 1 loaded segment transcript words", {
+						requestId,
+						clipId,
+						segmentCount: segments.length,
+						wordCount: segmentWords.length,
+					});
 					editor.transcript.setWords(segmentWords);
 					words.value = segmentWords;
 					return;
@@ -314,17 +410,12 @@ async function loadTranscript() {
 			}
 		}
 
-		// Helper to filter and rebase words to clip time range
-		function filterAndRebase(wordList: TranscriptWord[]): TranscriptWord[] {
-			if (clipStart == null || clipEnd == null) return wordList;
-			return wordList
-				.filter((w) => w.start >= clipStart && w.start < clipEnd)
-				.map((w) => ({ ...w, start: w.start - clipStart, end: w.end - clipStart }));
-		}
-
 		// Strategy 2: Load stitched VOD transcript and filter/rebase to clip time range
 		const { getTranscriptWithSegmentsByProjectId } = await import("@/services/database/transcripts");
 		const { transcript } = await getTranscriptWithSegmentsByProjectId(transcriptProjectId);
+		if (syncManagerWords("after-stitched-transcript-query")) {
+			return;
+		}
 
 		if (transcript && transcript.raw_json) {
 			const parsed = parseTranscriptToWords(transcript.raw_json);
@@ -339,6 +430,15 @@ async function loadTranscript() {
 				loadedWords = filterAndRebase(loadedWords);
 
 				if (loadedWords.length > 0) {
+					if (syncManagerWords("before-strategy-2-commit")) {
+						return;
+					}
+					console.log("[TranscriptView] Strategy 2 loaded stitched transcript words", {
+						requestId,
+						transcriptProjectId,
+						parsedCount: parsed.length,
+						loadedCount: loadedWords.length,
+					});
 					editor.transcript.setWords(loadedWords);
 					words.value = loadedWords;
 					return;
@@ -407,8 +507,20 @@ async function loadTranscript() {
 							i === 0 || !(Math.abs(w.start - arr[i - 1].start) < 0.01 && w.word === arr[i - 1].word)
 						);
 						const finalWords = filterAndRebase(unique);
+						if (syncManagerWords("after-chunked-transcript-query")) {
+							return;
+						}
 
 						if (finalWords.length > 0) {
+							if (syncManagerWords("before-strategy-3-commit")) {
+								return;
+							}
+							console.log("[TranscriptView] Strategy 3 loaded chunked transcript words", {
+								requestId,
+								chunkWordCount: chunkWords.length,
+								uniqueCount: unique.length,
+								finalCount: finalWords.length,
+							});
 							editor.transcript.setWords(finalWords);
 							words.value = finalWords;
 							return;
@@ -447,6 +559,9 @@ async function loadTranscript() {
 
 		if (captionWords.length > 0) {
 			captionWords.sort((a, b) => a.start - b.start);
+			if (syncManagerWords("before-caption-fallback-commit")) {
+				return;
+			}
 			// Set words in transcript manager
 			editor.transcript.setWords(captionWords);
 			words.value = captionWords;
@@ -665,27 +780,57 @@ async function handleGenerateTranscript() {
 function updateCurrentWordIndex() {
 	if (words.value.length === 0) {
 		currentWordIndex.value = -1;
+		lastTimingGapLogKey = null;
 		return;
 	}
+
+	const ACTIVE_WORD_GRACE_SECONDS = 0.08;
 	const time = currentTime.value;
 	let newIndex = -1;
 	for (let i = 0; i < words.value.length; i++) {
-		if (time >= words.value[i].start && time <= words.value[i].end) {
+		if (
+			time >= words.value[i].start - ACTIVE_WORD_GRACE_SECONDS &&
+			time <= words.value[i].end + ACTIVE_WORD_GRACE_SECONDS
+		) {
 			newIndex = i;
 			break;
 		}
 	}
-	if (newIndex === -1) {
-		let closest = 0;
-		let closestDist = Infinity;
-		for (let i = 0; i < words.value.length; i++) {
-			const d = Math.abs(words.value[i].start - time);
-			if (d < closestDist) {
-				closestDist = d;
-				closest = i;
-			}
+
+	if (newIndex === -1 && currentWordIndex.value !== -1) {
+		const currentWord = words.value[currentWordIndex.value];
+		if (
+			currentWord &&
+			time > currentWord.end &&
+			time <= currentWord.end + ACTIVE_WORD_GRACE_SECONDS
+		) {
+			newIndex = currentWordIndex.value;
 		}
-		if (closestDist < 2.0) newIndex = closest;
+	}
+
+	if (newIndex === -1) {
+		const nextWord = words.value.find((word) => word.start > time);
+		if (nextWord) {
+			const gapToNext = nextWord.start - time;
+			if (gapToNext > 0.25 && gapToNext < 2.0) {
+				const logKey = `${nextWord.word}:${nextWord.start.toFixed(2)}:${time.toFixed(2)}`;
+				if (lastTimingGapLogKey !== logKey) {
+					console.log("[TranscriptView] No active transcript word at playback time", {
+						time,
+						nextWord: nextWord.word,
+						nextWordStart: nextWord.start,
+						gapToNext,
+					});
+					lastTimingGapLogKey = logKey;
+				}
+			} else if (gapToNext <= 0.25) {
+				lastTimingGapLogKey = null;
+			}
+		} else {
+			lastTimingGapLogKey = null;
+		}
+	} else {
+		lastTimingGapLogKey = null;
 	}
 
 	if (newIndex !== currentWordIndex.value) {
@@ -1124,7 +1269,13 @@ onMounted(() => {
 
 	// Subscribe to transcript manager changes
 	unsubscribe = editor.transcript.subscribe(() => {
-		words.value = editor.transcript.getWords();
+		const managerWords = editor.transcript.getWords();
+		console.log("[TranscriptView] Transcript manager updated", {
+			count: managerWords.length,
+			firstWord: managerWords[0]?.word,
+			lastWord: managerWords[managerWords.length - 1]?.word,
+		});
+		words.value = managerWords;
 	});
 });
 

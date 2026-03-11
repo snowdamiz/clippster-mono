@@ -55,7 +55,7 @@
   } from 'lucide-vue-next';
   import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-  const tracksContainerHeight = { min: 0, max: 800 };
+  const tracksContainerHeight = { min: 0 };
 
   const { editor, version } = useEditor({
     subscribe: {
@@ -422,7 +422,7 @@
   const totalTracksHeight = computed(() => getTotalTracksHeight({ tracks: tracks.value }));
 
   const tracksAreaHeight = computed(() => {
-    const base = Math.max(tracksContainerHeight.min, Math.min(tracksContainerHeight.max, totalTracksHeight.value));
+    const base = Math.max(tracksContainerHeight.min, totalTracksHeight.value);
     if (activeNewTrackDrop.value) return base + INSERT_GAP_SIZE;
     return base;
   });
@@ -453,6 +453,12 @@
     return Math.min(16, Math.floor(containerH - contentH));
   });
 
+  function onTrackLabelsWheel(event: WheelEvent) {
+    const tracksEl = tracksScrollRef.value;
+    if (!tracksEl) return;
+    tracksEl.scrollTop += event.deltaY;
+  }
+
   function onScrollAreaWheel(event: WheelEvent) {
     const isZoomGesture = event.ctrlKey || event.metaKey;
 
@@ -461,7 +467,6 @@
       return;
     }
 
-    // Horizontal scroll: Shift+wheel, trackpad horizontal swipe, or normal vertical wheel
     const scrollEl = tracksScrollRef.value;
     if (!scrollEl) return;
 
@@ -471,8 +476,13 @@
       // Shift+scroll or trackpad horizontal swipe
       scrollEl.scrollLeft += event.shiftKey ? event.deltaY : event.deltaX;
     } else {
-      // Normal vertical scroll → scroll timeline horizontally
-      scrollEl.scrollLeft += event.deltaY;
+      // Vertical scroll: scroll tracks vertically when overflowing, else scroll horizontally
+      const canScrollVertically = scrollEl.scrollHeight > scrollEl.clientHeight;
+      if (canScrollVertically) {
+        scrollEl.scrollTop += event.deltaY;
+      } else {
+        scrollEl.scrollLeft += event.deltaY;
+      }
     }
   }
 
@@ -619,7 +629,7 @@
 
       <div class="flex flex-1 overflow-hidden">
         <!-- Track labels sidebar -->
-        <div class="flex w-44 shrink-0 flex-col border-r border-white/10 bg-[#18181b]">
+        <div class="flex w-44 shrink-0 flex-col border-r border-white/10 bg-[#18181b]" @wheel.prevent="onTrackLabelsWheel">
           <!-- Header — same h-4 as TimelineRuler so track list starts at identical offset -->
           <div class="flex h-4 shrink-0 items-end justify-between bg-[#18181b] pb-px pl-3 pr-1 mt-2">
             <span class="text-[10px] font-semibold uppercase tracking-widest text-white/25">Tracks</span>
@@ -652,9 +662,9 @@
           </div>
 
           <!-- Track labels list -->
-          <div v-if="tracks.length > 0" ref="trackLabelsRef" class="flex-1 overflow-hidden -mt-2">
-            <div ref="trackLabelsScrollRef" class="size-full overflow-auto">
-              <div class="flex flex-col gap-1" :style="{ paddingTop: `${tracksVerticalOffset}px` }">
+          <div v-if="tracks.length > 0" ref="trackLabelsRef" class="relative flex-1 min-h-0 -mt-2">
+            <div ref="trackLabelsScrollRef" class="absolute inset-0 overflow-y-hidden overflow-x-hidden">
+              <div class="flex flex-col gap-1 pb-6" :style="{ paddingTop: `${tracksVerticalOffset}px` }">
                 <div
                   v-for="(track, tIdx) in tracks"
                   :key="track.id"
@@ -823,7 +833,7 @@
 
           <div
             ref="tracksScrollRef"
-            class="size-full overflow-x-auto overflow-y-hidden hide-native-scrollbar"
+            class="absolute inset-0 overflow-x-auto overflow-y-auto hide-native-scrollbar"
             @mousedown="onScrollAreaMouseDown"
             @click="onScrollAreaClick"
             @wheel="onScrollAreaWheel"
@@ -861,7 +871,7 @@
               <div
                 class="relative"
                 :style="{
-                  height: `${tracksAreaHeight + tracksVerticalOffset}px`,
+                  height: `${tracksAreaHeight + tracksVerticalOffset + 24}px`,
                   paddingTop: `${tracksVerticalOffset}px`,
                 }"
               >
@@ -980,7 +990,7 @@
   </section>
 </template>
 
-<style scoped>
+<style>
   .hide-native-scrollbar {
     scrollbar-width: none !important;
   }

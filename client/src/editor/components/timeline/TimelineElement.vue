@@ -167,7 +167,13 @@ const isHidden = computed(
 );
 
 const trackHeight = computed(() => getTrackHeight({ type: props.track.type }));
-const tileWidth = computed(() => trackHeight.value * (16 / 9));
+const isImageElement = computed(() => props.element.type === "image");
+const tileWidth = computed(() => {
+	if (isImageElement.value && mediaAsset.value?.width && mediaAsset.value?.height) {
+		return trackHeight.value * (mediaAsset.value.width / mediaAsset.value.height);
+	}
+	return trackHeight.value * (16 / 9);
+});
 
 const trackClasses = computed(() => getTrackClasses({ type: props.track.type }));
 const borderColor = computed(() => getTrackBorderColor({ type: props.track.type }));

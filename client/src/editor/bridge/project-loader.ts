@@ -35,6 +35,7 @@ import type {
 	VideoEditorAudioTrackRecord,
 } from "@/services/database/video-editor-edits";
 import { getClip } from "@/services/database/clips";
+import { getRawVideosByProjectId } from "@/services/database/raw-videos";
 import { getCreatorProfileByProjectId } from "@/services/database/creator-profiles";
 import { resolveBrandingProfile } from "@/composables/useBrandingProfileSelection";
 import { useBrandingConfig } from "../composables/useBrandingConfig";
@@ -79,38 +80,68 @@ export async function loadClippsterProject(projectId: string): Promise<EditorCor
 			await resolveAndInitBranding(sources);
 		}
 
-		// Backfill sourceProjectId and clip timing if missing (for projects created before this was added)
-		if (!loadedProject?.settings?.sourceProjectId || !loadedProject?.settings?.sourceClipId) {
-			try {
-				const sources = await getVideoEditorSourcesByProjectId(projectId);
-				let resolved = await resolveSourceProject(sources);
+		try {
+			const sources = await getVideoEditorSourcesByProjectId(projectId);
+			const tracks = editor.timeline.getTracks();
+			const assets = editor.media.getAssets();
+			const resolvedFromTimeline = await resolveSourceProjectFromTimeline({
+				tracks,
+				assets,
+			});
+			let resolved = resolvedFromTimeline ?? await resolveSourceProject(sources);
 
-				// If sources are empty/unhelpful, try resolving from media asset file paths
-				if (!resolved) {
-					const assets = editor.media.getAssets();
-					resolved = await resolveSourceProjectFromAssets(assets);
-				}
+			// If sources are empty/unhelpful, try resolving from media asset file paths
+			if (!resolved) {
+				resolved = await resolveSourceProjectFromAssets(assets);
+			}
 
-				if (resolved) {
-					console.log("[bridge] Resolved source:", JSON.stringify(resolved));
+			const refreshedAssets = await refreshDerivedClipAssets({
+				projectId,
+				tracks,
+				assets,
+				preferredClipId: resolved?.sourceClipId ?? null,
+			});
+			if (refreshedAssets) {
+				editor.media.setAssets({ assets: refreshedAssets });
+			}
+
+			if (resolved && loadedProject) {
+				const currentSettings = loadedProject.settings ?? DEFAULT_PROJECT_SETTINGS;
+				const shouldUpdateSourceSettings =
+					currentSettings.sourceProjectId !== resolved.sourceProjectId ||
+					currentSettings.sourceClipId !== resolved.sourceClipId ||
+					currentSettings.sourceClipStartTime !== resolved.sourceClipStartTime ||
+					currentSettings.sourceClipEndTime !== resolved.sourceClipEndTime;
+
+				if (shouldUpdateSourceSettings) {
+					console.log("[bridge] Reconciling transcript source settings", {
+						projectId,
+						current: {
+							sourceProjectId: currentSettings.sourceProjectId ?? null,
+							sourceClipId: currentSettings.sourceClipId ?? null,
+							sourceClipStartTime: currentSettings.sourceClipStartTime ?? null,
+							sourceClipEndTime: currentSettings.sourceClipEndTime ?? null,
+						},
+						resolved,
+						resolutionSource: resolvedFromTimeline ? "timeline" : "fallback",
+					});
 					editor.project.setActiveProject({
 						project: {
 							...loadedProject,
 							settings: {
-								...loadedProject.settings,
-								sourceProjectId: loadedProject.settings.sourceProjectId ?? resolved.sourceProjectId,
-								sourceClipId: resolved.sourceClipId ?? loadedProject.settings.sourceClipId,
-								sourceClipStartTime: resolved.sourceClipStartTime ?? loadedProject.settings.sourceClipStartTime,
-								sourceClipEndTime: resolved.sourceClipEndTime ?? loadedProject.settings.sourceClipEndTime,
+								...currentSettings,
+								sourceProjectId: resolved.sourceProjectId,
+								sourceClipId: resolved.sourceClipId,
+								sourceClipStartTime: resolved.sourceClipStartTime,
+								sourceClipEndTime: resolved.sourceClipEndTime,
 							},
 						},
 					});
 					await editor.project.saveCurrentProject();
-					console.log("[bridge] Backfilled source project:", resolved.sourceProjectId, "clip:", resolved.sourceClipId);
 				}
-			} catch {
-				// Non-fatal
 			}
+		} catch (error) {
+			console.warn("[bridge] Failed to reconcile transcript source settings:", error);
 		}
 
 		// Load transcript data from source project if available
@@ -639,6 +670,211 @@ async function resolveSourceProjectFromAssets(
 	return null;
 }
 
+async function resolveSourceProjectFromTimeline({
+	tracks,
+	assets,
+}: {
+	tracks: TimelineTrack[];
+	assets: MediaAsset[];
+}): Promise<{
+	sourceProjectId: string;
+	sourceClipId: string | null;
+	sourceClipStartTime: number | null;
+	sourceClipEndTime: number | null;
+} | null> {
+	const mediaById = new Map<string, MediaAsset>(
+		assets.map((asset) => [asset.id, asset]),
+	);
+	const clipUsage = new Map<
+		string,
+		{ totalDuration: number; assetPaths: Set<string> }
+	>();
+
+	for (const track of tracks) {
+		if (track.type !== "video") continue;
+
+		for (const element of track.elements) {
+			if (element.type !== "video") continue;
+
+			const asset = mediaById.get(element.mediaId);
+			const pathToCheck = asset?.filePath || asset?.url || "";
+			const match = pathToCheck.match(/clip_([0-9a-f-]{36})\./i);
+			if (!match) continue;
+
+			const clipId = match[1];
+			const existing = clipUsage.get(clipId) ?? {
+				totalDuration: 0,
+				assetPaths: new Set<string>(),
+			};
+			existing.totalDuration += element.duration ?? 0;
+			if (pathToCheck) {
+				existing.assetPaths.add(pathToCheck);
+			}
+			clipUsage.set(clipId, existing);
+		}
+	}
+
+	if (clipUsage.size === 0) {
+		return null;
+	}
+
+	const sortedCandidates = [...clipUsage.entries()].sort(
+		(a, b) => b[1].totalDuration - a[1].totalDuration,
+	);
+
+	if (sortedCandidates.length > 1) {
+		console.log("[bridge] Multiple clip-derived assets found on timeline; using primary candidate", {
+			candidates: sortedCandidates.map(([clipId, data]) => ({
+				clipId,
+				totalDuration: data.totalDuration,
+				assetPaths: [...data.assetPaths],
+			})),
+		});
+	}
+
+	const [clipId, usage] = sortedCandidates[0];
+	const clip = await getClip(clipId);
+	if (!clip?.project_id) {
+		return null;
+	}
+
+	console.log("[bridge] Resolved source project from timeline clip asset", {
+		clipId,
+		totalDuration: usage.totalDuration,
+		assetPaths: [...usage.assetPaths],
+		clipStartTime: clip.start_time ?? null,
+		clipEndTime: clip.end_time ?? null,
+	});
+
+	return {
+		sourceProjectId: clip.project_id,
+		sourceClipId: clip.id,
+		sourceClipStartTime: clip.start_time ?? null,
+		sourceClipEndTime: clip.end_time ?? null,
+	};
+}
+
+async function refreshDerivedClipAssets({
+	projectId,
+	tracks,
+	assets,
+	preferredClipId,
+}: {
+	projectId: string;
+	tracks: TimelineTrack[];
+	assets: MediaAsset[];
+	preferredClipId?: string | null;
+}): Promise<MediaAsset[] | null> {
+	const mediaById = new Map<string, MediaAsset>(
+		assets.map((asset) => [asset.id, asset]),
+	);
+	const refreshedAssetIds = new Set<string>();
+	let updatedAssets: MediaAsset[] | null = null;
+
+	for (const track of tracks) {
+		if (track.type !== "video") continue;
+
+		for (const element of track.elements) {
+			if (element.type !== "video") continue;
+
+			const asset = mediaById.get(element.mediaId);
+			const filePath = asset?.filePath;
+			if (!asset || !filePath || refreshedAssetIds.has(asset.id)) continue;
+
+			const match = filePath.match(/clip_([0-9a-f-]{36})\./i);
+			if (!match) continue;
+
+			const clipId = match[1];
+			if (preferredClipId && clipId !== preferredClipId) continue;
+
+			const clip = await getClip(clipId);
+			if (!clip?.project_id || clip.built_file_path === filePath) continue;
+			if (clip.start_time == null || clip.end_time == null) continue;
+
+			const rawVideos = await getRawVideosByProjectId(clip.project_id);
+			const rawVideo = rawVideos[0];
+			if (!rawVideo?.file_path) continue;
+
+			const expectedDuration = Math.max(0, clip.end_time - clip.start_time);
+			let actualDuration: number | null = null;
+
+			try {
+				const metadata = await invoke<{ duration: number }>("get_video_metadata", {
+					videoPath: filePath,
+				});
+				actualDuration = metadata.duration;
+			} catch (error) {
+				console.warn("[bridge] Failed to probe extracted clip asset duration", {
+					projectId,
+					clipId,
+					filePath,
+					error,
+				});
+			}
+
+			const needsRefresh =
+				actualDuration == null ||
+				Math.abs(actualDuration - expectedDuration) > 0.05;
+
+			console.log("[bridge] Checking derived clip asset timing", {
+				projectId,
+				clipId,
+				filePath,
+				expectedDuration,
+				actualDuration,
+				needsRefresh,
+			});
+
+			if (!needsRefresh) {
+				refreshedAssetIds.add(asset.id);
+				continue;
+			}
+
+			await invoke("extract_clip", {
+				sourcePath: rawVideo.file_path,
+				outputPath: filePath,
+				startTime: clip.start_time,
+				endTime: clip.end_time,
+			});
+
+			console.log("[bridge] Refreshed derived clip asset from source clip", {
+				projectId,
+				clipId,
+				filePath,
+				startTime: clip.start_time,
+				endTime: clip.end_time,
+				expectedDuration,
+			});
+
+			const refreshedAsset = await storageService.loadMediaAsset({
+				projectId,
+				id: asset.id,
+			});
+			if (refreshedAsset) {
+				if (!updatedAssets) {
+					updatedAssets = [...assets];
+				}
+
+				const assetIndex = updatedAssets.findIndex((candidate) => candidate.id === asset.id);
+				if (assetIndex !== -1) {
+					const previousAsset = updatedAssets[assetIndex];
+					if (previousAsset.url) {
+						URL.revokeObjectURL(previousAsset.url);
+					}
+					if (previousAsset.thumbnailUrl?.startsWith("blob:")) {
+						URL.revokeObjectURL(previousAsset.thumbnailUrl);
+					}
+					updatedAssets[assetIndex] = refreshedAsset;
+				}
+			}
+
+			refreshedAssetIds.add(asset.id);
+		}
+	}
+
+	return updatedAssets;
+}
+
 /**
  * Filter words to a clip's segments and rebase timing.
  * For multi-segment clips, each segment's words are placed sequentially
@@ -702,6 +938,12 @@ async function loadTranscriptData(
 	try {
 		const { parseTranscriptToWords } = await import("@/utils/timelineUtils");
 		const editor = EditorCore.getInstance();
+		console.log("[bridge] loadTranscriptData request", {
+			sourceProjectId,
+			sourceClipId: clipTiming?.sourceClipId ?? null,
+			sourceClipStartTime: clipTiming?.sourceClipStartTime ?? null,
+			sourceClipEndTime: clipTiming?.sourceClipEndTime ?? null,
+		});
 
 		// Strategy 1: Try clip segments' transcript_raw_json (available for previously built clips)
 		if (clipTiming?.sourceClipId) {
@@ -727,7 +969,10 @@ async function loadTranscriptData(
 				if (segmentWords.length > 0) {
 					segmentWords.sort((a, b) => a.start - b.start);
 					editor.transcript.setWords(segmentWords);
-					console.log("[bridge] Loaded transcript with", segmentWords.length, "words from clip segments");
+					console.log("[bridge] Loaded transcript with", segmentWords.length, "words from clip segments", {
+						firstWord: segmentWords[0]?.word,
+						lastWord: segmentWords[segmentWords.length - 1]?.word,
+					});
 					return;
 				}
 				console.log("[bridge] Strategy 1: no transcript_raw_json in clip segments, trying next");
@@ -767,7 +1012,10 @@ async function loadTranscriptData(
 
 				if (transcriptWords.length > 0) {
 					editor.transcript.setWords(transcriptWords);
-					console.log("[bridge] Loaded transcript with", transcriptWords.length, "words from stitched VOD transcript");
+					console.log("[bridge] Loaded transcript with", transcriptWords.length, "words from stitched VOD transcript", {
+						firstWord: transcriptWords[0]?.word,
+						lastWord: transcriptWords[transcriptWords.length - 1]?.word,
+					});
 					return;
 				}
 				console.log("[bridge] Strategy 2: stitched transcript had words but none in clip range");
@@ -858,7 +1106,10 @@ async function loadTranscriptData(
 
 				if (finalWords.length > 0) {
 					editor.transcript.setWords(finalWords);
-					console.log("[bridge] Loaded transcript with", finalWords.length, "words from chunked transcript chunks");
+					console.log("[bridge] Loaded transcript with", finalWords.length, "words from chunked transcript chunks", {
+						firstWord: finalWords[0]?.word,
+						lastWord: finalWords[finalWords.length - 1]?.word,
+					});
 					return;
 				}
 				console.log("[bridge] Strategy 3: chunked transcript had words but none in clip range");
