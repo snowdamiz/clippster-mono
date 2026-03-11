@@ -233,6 +233,13 @@ async function loadTranscript() {
 	words.value = [];
 
 	try {
+		// Check transcript manager first — project-loader may have already set words
+		const managerWords = editor.transcript.getWords();
+		if (managerWords.length > 0) {
+			words.value = managerWords;
+			return;
+		}
+
 		const activeProject = editor.project.getActive();
 		if (!activeProject) {
 			error.value = "No active project.";
@@ -242,24 +249,175 @@ async function loadTranscript() {
 		// Use the original Clippster project ID for transcript lookup.
 		// The transcript is stored against the source project (the one with the VOD),
 		// not the video editor project ID.
-		const transcriptProjectId = activeProject.settings?.sourceProjectId ?? activeProject.metadata.id;
+		let transcriptProjectId = activeProject.settings?.sourceProjectId;
+		let clipId = activeProject.settings?.sourceClipId;
+		let clipStart = activeProject.settings?.sourceClipStartTime;
+		let clipEnd = activeProject.settings?.sourceClipEndTime;
 
-		// Try loading from the project's existing transcript (SQLite)
-		const { useTranscriptData } = await import("@/composables/useTranscriptData");
-		const { loadTranscriptData, transcriptData } = useTranscriptData(ref(transcriptProjectId));
-		await loadTranscriptData(transcriptProjectId);
+		// If no sourceProjectId in settings, try resolving from media asset file paths
+		if (!transcriptProjectId) {
+			const assets = editor.media.getAssets();
+			for (const asset of assets) {
+				const pathToCheck = (asset as any).filePath || asset.url || "";
+				const match = pathToCheck.match(/clip_([0-9a-f-]{36})\./i);
+				if (match) {
+					try {
+						const { getClip } = await import("@/services/database/clips");
+						const clip = await getClip(match[1]);
+						if (clip?.project_id) {
+							transcriptProjectId = clip.project_id;
+							clipId = clipId ?? clip.id;
+							clipStart = clipStart ?? clip.start_time;
+							clipEnd = clipEnd ?? clip.end_time;
+							break;
+						}
+					} catch { /* not found */ }
+				}
+			}
+		}
 
-		if (transcriptData.value && transcriptData.value.words.length > 0) {
-			const loadedWords = transcriptData.value.words.map((w: any) => ({
-				word: w.word || w.text || w.content || String(w),
-				start: w.start || w.begin || w.startTime || 0,
-				end: w.end || w.finish || w.endTime || 0,
-				confidence: w.confidence,
-			}));
-			// Set words in transcript manager
-			editor.transcript.setWords(loadedWords);
-			words.value = loadedWords;
-			return;
+		if (!transcriptProjectId) {
+			transcriptProjectId = activeProject.metadata.id;
+		}
+
+		const { parseTranscriptToWords } = await import("@/utils/timelineUtils");
+
+		// Strategy 1: Try clip segments' transcript_raw_json (available for previously built clips)
+		if (clipId) {
+			try {
+				const { getClipSegmentsByClipId } = await import("@/services/database/clip-segments");
+				const segments = await getClipSegmentsByClipId(clipId);
+				const segmentWords: TranscriptWord[] = [];
+
+				for (const seg of segments) {
+					if (!seg.transcript_raw_json) continue;
+					const parsed = parseTranscriptToWords(seg.transcript_raw_json);
+					for (const w of parsed) {
+						const wa = w as any;
+						segmentWords.push({
+							word: wa.word || wa.text || String(wa),
+							start: wa.start || wa.begin || 0,
+							end: wa.end || wa.finish || 0,
+							confidence: wa.confidence,
+						});
+					}
+				}
+
+				if (segmentWords.length > 0) {
+					segmentWords.sort((a, b) => a.start - b.start);
+					editor.transcript.setWords(segmentWords);
+					words.value = segmentWords;
+					return;
+				}
+			} catch {
+				// Fall through to Strategy 2
+			}
+		}
+
+		// Helper to filter and rebase words to clip time range
+		function filterAndRebase(wordList: TranscriptWord[]): TranscriptWord[] {
+			if (clipStart == null || clipEnd == null) return wordList;
+			return wordList
+				.filter((w) => w.start >= clipStart && w.start < clipEnd)
+				.map((w) => ({ ...w, start: w.start - clipStart, end: w.end - clipStart }));
+		}
+
+		// Strategy 2: Load stitched VOD transcript and filter/rebase to clip time range
+		const { getTranscriptWithSegmentsByProjectId } = await import("@/services/database/transcripts");
+		const { transcript } = await getTranscriptWithSegmentsByProjectId(transcriptProjectId);
+
+		if (transcript && transcript.raw_json) {
+			const parsed = parseTranscriptToWords(transcript.raw_json);
+			if (parsed.length > 0) {
+				let loadedWords: TranscriptWord[] = parsed.map((w: any) => ({
+					word: w.word || w.text || w.content || String(w),
+					start: w.start || w.begin || w.startTime || 0,
+					end: w.end || w.finish || w.endTime || 0,
+					confidence: w.confidence,
+				}));
+
+				loadedWords = filterAndRebase(loadedWords);
+
+				if (loadedWords.length > 0) {
+					editor.transcript.setWords(loadedWords);
+					words.value = loadedWords;
+					return;
+				}
+			}
+		}
+
+		// Strategy 3: Fall back to chunked transcript chunks (when stitching failed or never ran)
+		try {
+			const { getRawVideosByProjectId } = await import("@/services/database/raw-videos");
+			const { getChunkedTranscriptByRawVideoId, getTranscriptChunks } = await import("@/services/database/chunked-transcripts");
+
+			const rawVideos = await getRawVideosByProjectId(transcriptProjectId);
+			if (rawVideos.length > 0) {
+				const chunkedTranscript = await getChunkedTranscriptByRawVideoId(rawVideos[0].id);
+				if (chunkedTranscript) {
+					const chunks = await getTranscriptChunks(chunkedTranscript.id);
+					const chunkWords: TranscriptWord[] = [];
+
+					for (const chunk of chunks) {
+						try {
+							const chunkData = JSON.parse(chunk.raw_json);
+							if (chunkData.segments && Array.isArray(chunkData.segments)) {
+								for (const seg of chunkData.segments) {
+									if (seg.words && Array.isArray(seg.words)) {
+										for (const w of seg.words) {
+											const wordText = w.word || w.text;
+											const start = w.start ?? w.startTime;
+											const end = w.end ?? w.endTime;
+											if (wordText && typeof start === "number" && typeof end === "number") {
+												chunkWords.push({
+													word: wordText,
+													start: start + chunk.start_time,
+													end: end + chunk.start_time,
+													confidence: w.confidence ?? w.prob,
+												});
+											}
+										}
+									}
+								}
+							}
+							if (chunkData.words && Array.isArray(chunkData.words)) {
+								for (const w of chunkData.words) {
+									const wordText = w.word || w.text;
+									const start = w.start ?? w.startTime;
+									const end = w.end ?? w.endTime;
+									if (wordText && typeof start === "number" && typeof end === "number") {
+										chunkWords.push({
+											word: wordText,
+											start: start + chunk.start_time,
+											end: end + chunk.start_time,
+											confidence: w.confidence ?? w.prob,
+										});
+									}
+								}
+							}
+						} catch {
+							// Skip unparseable chunks
+						}
+					}
+
+					if (chunkWords.length > 0) {
+						chunkWords.sort((a, b) => a.start - b.start);
+						// Deduplicate
+						const unique = chunkWords.filter((w, i, arr) =>
+							i === 0 || !(Math.abs(w.start - arr[i - 1].start) < 0.01 && w.word === arr[i - 1].word)
+						);
+						const finalWords = filterAndRebase(unique);
+
+						if (finalWords.length > 0) {
+							editor.transcript.setWords(finalWords);
+							words.value = finalWords;
+							return;
+						}
+					}
+				}
+			}
+		} catch {
+			// Fall through to caption fallback
 		}
 
 		// Fallback: check if caption elements exist on timeline (they have word-level data)

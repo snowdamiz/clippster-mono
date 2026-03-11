@@ -72,6 +72,9 @@ export interface TProjectSettings {
 	background: TBackground;
 	brandingConfig?: BrandingConfig;
 	sourceProjectId?: string | null;
+	sourceClipId?: string | null;
+	sourceClipStartTime?: number | null;
+	sourceClipEndTime?: number | null;
 }
 
 export interface TTimelineViewState {
