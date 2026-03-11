@@ -463,11 +463,14 @@
   const { toast } = useToast();
   const authStore = useAuthStore();
 
-  const breadcrumbItems = computed(() => [
-    { label: 'Organizations', path: '/organizations' },
-    { label: 'Campaigns', path: `/organization/${route.params.id}/campaigns` },
-    { label: campaign.value?.title || 'Campaign' }
-  ]);
+  const breadcrumbItems = computed(() => {
+    const orgId = route.params.id;
+    return [
+      { label: 'Organizations', path: '/organizations' },
+      { label: 'Campaigns', path: orgId ? `/organization/${orgId}/campaigns` : '/organizations' },
+      { label: campaign.value?.title || 'Campaign' }
+    ];
+  });
 
   const loading = ref(true);
   const campaign = ref<Campaign | null>(null);

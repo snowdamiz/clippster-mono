@@ -38,6 +38,7 @@ const scheduledPosts = ref<ScheduledPost[]>([]);
 const campaigns = ref<Campaign[]>([]);
 const externalSubmissions = ref<ExternalPostSubmission[]>([]);
 const userPosts = ref<UserPost[]>([]);
+const thumbnailUrls = ref<Map<number, string>>(new Map());
 
 // Calendar state
 const currentDate = ref(new Date());
@@ -388,6 +389,29 @@ async function loadData() {
   }
 }
 
+async function loadThumbnailUrls() {
+  if (!scheduledPosts.value.length) return;
+  
+  for (const post of scheduledPosts.value) {
+    if (post.thumbnail_url) {
+      // Check if it's a local file path (starts with drive letter or /)
+      const isLocalPath = /^[A-Za-z]:\\/.test(post.thumbnail_url) || post.thumbnail_url.startsWith('/');
+      
+      if (isLocalPath) {
+        try {
+          const dataUrl = await invoke<string>('read_file_as_data_url', { filePath: post.thumbnail_url });
+          thumbnailUrls.value.set(post.id, dataUrl);
+        } catch (error) {
+          console.warn(`[ContentCalendar] Failed to load thumbnail for post ${post.id}:`, error);
+        }
+      } else {
+        // Already a URL (http/https), use directly
+        thumbnailUrls.value.set(post.id, post.thumbnail_url);
+      }
+    }
+  }
+}
+
 async function loadScheduledPosts() {
   try {
     const orgId = authStore.user?.owned_organization_id;
@@ -426,10 +450,9 @@ async function loadScheduledPosts() {
     
     scheduledPosts.value = allPosts;
     console.log('[ContentCalendar] Total scheduled posts:', allPosts.length);
-    // Debug: Check thumbnail_url in posts
-    allPosts.forEach(post => {
-      console.log(`[ContentCalendar] Post ${post.id} thumbnail_url:`, post.thumbnail_url ? `${post.thumbnail_url.substring(0, 50)}...` : 'null');
-    });
+    
+    // Load thumbnails after posts are loaded
+    await loadThumbnailUrls();
   } catch (err) {
     console.warn('[ContentCalendar] Failed to load scheduled posts:', err);
   }
@@ -690,21 +713,9 @@ async function handleDeleteScheduledPost(postId: number) {
 }
 
 // ── Lifecycle ──
-let pollingInterval: number | null = null;
 
 onMounted(() => {
   loadData();
-  
-  // Poll for updates every 10 seconds to show real-time status changes
-  pollingInterval = window.setInterval(() => {
-    loadData();
-  }, 10000);
-});
-
-onUnmounted(() => {
-  if (pollingInterval) {
-    clearInterval(pollingInterval);
-  }
 });
 </script>
 
@@ -1028,11 +1039,11 @@ onUnmounted(() => {
             <template v-if="event.type === 'scheduled-post'">
               <!-- Thumbnail -->
               <div
-                v-if="(event.data as ScheduledPost).thumbnail_url"
+                v-if="thumbnailUrls.get((event.data as ScheduledPost).id) || (event.data as ScheduledPost).thumbnail_url"
                 class="relative w-full aspect-video rounded-md overflow-hidden bg-zinc-900/50 border border-white/5"
               >
                 <img
-                  :src="(event.data as ScheduledPost).thumbnail_url!"
+                  :src="thumbnailUrls.get((event.data as ScheduledPost).id) || (event.data as ScheduledPost).thumbnail_url!"
                   :alt="(event.data as ScheduledPost).caption ?? 'Post thumbnail'"
                   class="w-full h-full object-cover"
                 />
